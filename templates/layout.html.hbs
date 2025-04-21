@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>{{ title }}</title>
+        <style>
+        :root {
+            --red-bg: #ffcccc;
+            --amber-bg: #ffe6b3;
+            --green-bg: #ccffcc;
+            --primary-color: #4CAF50;
+            --hover-color: #45a049;
+            --border-color: #ddd;
+            --text-color: #333;
+            --light-bg: #f4f4f4;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+            margin: 0;
+            padding: 10px;
+            max-width: 1200px;
+            margin: 0 auto;
+            color: var(--text-color);
+        }
+
+        header {
+            margin-bottom: 20px;
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 10px;
+        }
+
+        h1, h2, h3, h4 {
+            margin-top: 0;
+            color: var(--text-color);
+        }
+
+        /* Card-based technique display */
+        .techniques-container {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 15px;
+        }
+
+        .technique-card {
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-bottom: 15px;
+        }
+
+        .technique-card.red {
+            border-top: 5px solid #ff6666;
+            background-color: var(--red-bg);
+        }
+
+        .technique-card.amber {
+            border-top: 5px solid #ffcc66;
+            background-color: var(--amber-bg);
+        }
+
+        .technique-card.green {
+            border-top: 5px solid #66cc66;
+            background-color: var(--green-bg);
+        }
+
+        .technique-header {
+            padding: 10px 15px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background-color: rgba(255, 255, 255, 0.5);
+        }
+
+        .technique-header h3 {
+            margin: 0;
+            font-size: 18px;
+        }
+
+        .technique-details {
+            padding: 0 15px;
+        }
+
+        .technique-section {
+            margin-bottom: 15px;
+        }
+
+        .technique-section h4 {
+            margin-bottom: 5px;
+            font-size: 16px;
+        }
+
+        .technique-section p {
+            margin: 0;
+            padding: 5px;
+            background-color: rgba(255, 255, 255, 0.7);
+            border-radius: 4px;
+        }
+
+        /* Forms */
+        .edit-form {
+            padding: 15px;
+            background-color: white;
+            border-top: 1px solid var(--border-color);
+        }
+
+        .form-group {
+            margin-bottom: 15px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+
+        .form-buttons {
+            display: flex;
+            gap: 10px;
+        }
+
+        select, textarea {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            font-family: inherit;
+        }
+
+        textarea {
+            min-height: 80px;
+            resize: vertical;
+        }
+
+        .status-select {
+            width: auto;
+            min-width: 100px;
+        }
+
+        /* Buttons */
+        .btn {
+            padding: 8px 16px;
+            background-color: var(--primary-color);
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+
+        .btn:hover {
+            background-color: var(--hover-color);
+        }
+
+        .edit-btn {
+            background-color: #2196F3;
+        }
+
+        .edit-btn:hover {
+            background-color: #0b7dda;
+        }
+
+        .save-btn {
+            background-color: var(--primary-color);
+        }
+
+        .cancel-btn {
+            background-color: #f44336;
+        }
+
+        .cancel-btn:hover {
+            background-color: #d32f2f;
+        }
+
+        .add-btn {
+            margin-top: 5px;
+        }
+
+        /* Add Form */
+        .add-form {
+            margin-top: 30px;
+            padding: 15px;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            background-color: var(--light-bg);
+        }
+
+        .add-form h3 {
+            margin-top: 0;
+        }
+
+        /* Student list styling */
+        .student-link {
+            display: block;
+            padding: 15px;
+            margin: 10px 0;
+            background-color: var(--light-bg);
+            text-decoration: none;
+            color: var(--text-color);
+            border-radius: 8px;
+            border-left: 5px solid var(--primary-color);
+            transition: all 0.3s ease;
+        }
+
+        .student-link:hover {
+            background-color: #e4e4e4;
+            transform: translateX(5px);
+        }
+
+        /* Responsive adjustments */
+        @media (max-width: 768px) {
+            .techniques-container {
+                grid-template-columns: 1fr;
+            }
+            
+            body {
+                padding: 10px;
+            }
+            
+            .technique-header {
+                flex-direction: column;
+                text-align: center;
+            }
+            
+            .technique-header button {
+                margin-top: 10px;
+                width: 100%;
+            }
+            
+            .form-buttons {
+                flex-direction: column;
+            }
+            
+            .form-buttons button {
+                width: 100%;
+                margin-bottom: 5px;
+            }
+        }
+        </style>
+    </head>
+    <body>
+        <header>
+            <h1>{{ title }}</h1>
+            <nav>
+                <a href="/" class="btn">Home</a>
+            </nav>
+        </header>
+        <main>
+            {{> content}}
+        </main>
+    </body>
+</html>

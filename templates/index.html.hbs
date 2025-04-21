@@ -1,0 +1,11 @@
+{{#*inline "content"}}
+<h2>Students</h2>
+<div class="students-list">
+    {{#each students}}
+        <a href="/student/{{ this.id }}" class="student-link">{{ this.username }}</a>
+    {{ else }}
+        <p>No students found.</p>
+    {{/each}}
+</div>
+{{/inline}}
+{{> layout}}
