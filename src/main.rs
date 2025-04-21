@@ -8,7 +8,10 @@ mod routes;
 
 use rocket_dyn_templates::Template;
 
-use routes::{add_technique_to_student, index, student_techniques, update_student_technique_route};
+use routes::{
+    add_multiple_techniques_to_student, add_technique_to_student,
+    create_and_assign_technique_route, index, student_techniques, update_student_technique_route,
+};
 use sqlx::SqlitePool;
 
 static DATABASE_URL: &str = "sqlite://sqlite.db";
@@ -30,7 +33,9 @@ async fn rocket() -> _ {
                 index,
                 student_techniques,
                 update_student_technique_route,
-                add_technique_to_student
+                add_technique_to_student,
+                add_multiple_techniques_to_student,
+                create_and_assign_technique_route
             ],
         )
         .manage(pool) // This is the key line that was missing

@@ -1,11 +1,12 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="light-mode">
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>{{ title }}</title>
         <style>
         :root {
+            /* Light mode variables */
             --red-bg: #ffcccc;
             --amber-bg: #ffe6b3;
             --green-bg: #ccffcc;
@@ -14,6 +15,28 @@
             --border-color: #ddd;
             --text-color: #333;
             --light-bg: #f4f4f4;
+            --card-bg: white;
+            --body-bg: white;
+            --warning-bg: #fff3cd;
+            --warning-fg: #856404;
+            --header-border: #ddd;
+        }
+
+        /* Dark mode variables */
+        html.dark-mode {
+            --red-bg: #3a2222;
+            --amber-bg: #3a2f1a;
+            --green-bg: #1e331e;
+            --primary-color: #3e8e41;
+            --hover-color: #357a38;
+            --border-color: #555;
+            --text-color: #eee;
+            --light-bg: #333;
+            --card-bg: #222;
+            --body-bg: #121212;
+            --warning-bg: #3a2f1a;
+            --warning-fg: white;
+            --header-border: #444;
         }
 
         * {
@@ -28,17 +51,46 @@
             max-width: 1200px;
             margin: 0 auto;
             color: var(--text-color);
+            background-color: var(--body-bg);
         }
 
         header {
             margin-bottom: 20px;
-            border-bottom: 1px solid var(--border-color);
+            border-bottom: 1px solid var(--header-border);
             padding-bottom: 10px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            width: 100%;
         }
+
+        header .column {
+            width: 100%;
+          }
+
+        header .row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            width: 100%;
+          }
 
         h1, h2, h3, h4 {
             margin-top: 0;
             color: var(--text-color);
+        }
+
+        /* Dark mode toggle */
+        .theme-toggle {
+            background: none;
+            border: none;
+            border-radius: 20px;
+            padding: 8px 16px;
+            color: var(--text-color);
+        }
+
+        .theme-toggle:hover {
+            background-color: var(--light-bg);
         }
 
         /* Card-based technique display */
@@ -52,7 +104,7 @@
             border: 1px solid var(--border-color);
             border-radius: 8px;
             overflow: hidden;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
             margin-bottom: 15px;
         }
 
@@ -76,7 +128,7 @@
             display: flex;
             justify-content: space-between;
             align-items: center;
-            background-color: rgba(255, 255, 255, 0.5);
+            background-color: rgba(255, 255, 255, 0.1);
         }
 
         .technique-header h3 {
@@ -100,14 +152,28 @@
         .technique-section p {
             margin: 0;
             padding: 5px;
-            background-color: rgba(255, 255, 255, 0.7);
+            background-color: rgba(255, 255, 255, 0.1);
             border-radius: 4px;
+        }
+
+        .warning-container {
+            margin-bottom: 8px;
+        }
+        
+        .warning-message {
+            padding: 8px 12px;
+            background-color: var(--warning-bg);
+            border-left: 4px solid #ffc107;
+            color: var(--warning-fg);
+            border-radius: 4px;
+            font-size: 14px;
+            animation: fadeIn 0.3s;
         }
 
         /* Forms */
         .edit-form {
             padding: 15px;
-            background-color: white;
+            background-color: var(--card-bg);
             border-top: 1px solid var(--border-color);
         }
 
@@ -126,12 +192,14 @@
             gap: 10px;
         }
 
-        select, textarea {
+        select, textarea, input[type="text"] {
             width: 100%;
             padding: 8px;
             border: 1px solid var(--border-color);
             border-radius: 4px;
             font-family: inherit;
+            background-color: var(--light-bg);
+            color: var(--text-color);
         }
 
         textarea {
@@ -179,10 +247,6 @@
             background-color: #d32f2f;
         }
 
-        .add-btn {
-            margin-top: 5px;
-        }
-
         /* Add Form */
         .add-form {
             margin-top: 30px;
@@ -206,12 +270,59 @@
             color: var(--text-color);
             border-radius: 8px;
             border-left: 5px solid var(--primary-color);
-            transition: all 0.3s ease;
         }
 
         .student-link:hover {
-            background-color: #e4e4e4;
+            background-color: var(--hover-color);
+            color: white;
             transform: translateX(5px);
+        }
+
+        /* New classes for dark mode */
+        .read-only-text {
+            background-color: var(--light-bg);
+            color: var(--text-color);
+        }
+
+        .technique-checkbox-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+        
+        .technique-checkbox {
+            display: flex;
+            align-items: center;
+            padding: 5px;
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            background-color: var(--card-bg);
+        }
+        
+        .technique-checkbox input {
+            margin-right: 8px;
+            width: auto;
+        }
+        
+        .toggle-btn {
+            background-color: #6c757d;
+            color: white;
+            cursor: pointer;
+        }
+        
+        .toggle-btn:hover {
+            background-color: #5a6268;
+        }
+        
+        .create-btn {
+            background-color: var(--primary-color);
+            color: white;
+            cursor: pointer;
+        }
+        
+        .create-btn:hover {
+            background-color: var(--hover-color);
         }
 
         /* Responsive adjustments */
@@ -225,13 +336,11 @@
             }
             
             .technique-header {
-                flex-direction: column;
                 text-align: center;
             }
             
             .technique-header button {
                 margin-top: 10px;
-                width: 100%;
             }
             
             .form-buttons {
@@ -242,18 +351,69 @@
                 width: 100%;
                 margin-bottom: 5px;
             }
+
+            header {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+
+            .theme-toggle {
+                margin-top: 10px;
+            }
         }
         </style>
     </head>
     <body>
         <header>
-            <h1>{{ title }}</h1>
-            <nav>
-                <a href="/" class="btn">Home</a>
-            </nav>
+            <div class="column">
+                <h1>{{ title }}</h1>
+                <div class="row">
+                    <nav>
+                        <a href="/" class="btn">Home</a>
+                    </nav>
+                    <button id="themeToggle" class="theme-toggle" onclick="toggleTheme()">
+                        <span class="icon">🌙</span>
+                    </button>
+                </dev>
+            </div>
+
         </header>
         <main>
             {{> content}}
         </main>
+        <script>
+            function getPreferredTheme() {
+                const savedTheme = localStorage.getItem('theme');
+                if (savedTheme) {
+                    return savedTheme;
+                }
+                
+                if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+                    return 'dark';
+                }
+                
+                return 'light';
+            }
+
+            function applyTheme(theme) {
+                if (theme === 'dark') {
+                    document.documentElement.classList.add('dark-mode');
+                    document.getElementById('themeToggle').innerHTML = '<span class="icon">☀️</span>';
+                } else {
+                    document.documentElement.classList.remove('dark-mode');
+                    document.getElementById('themeToggle').innerHTML = '<span class="icon">🌙</span>';
+                }
+                localStorage.setItem('theme', theme);
+            }
+
+            function toggleTheme() {
+                const isDark = document.documentElement.classList.contains('dark-mode');
+                applyTheme(isDark ? 'light' : 'dark');
+            }
+
+            document.addEventListener('DOMContentLoaded', () => {
+                applyTheme(getPreferredTheme());
+            });
+        </script>
     </body>
 </html>

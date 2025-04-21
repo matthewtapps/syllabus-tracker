@@ -2,14 +2,16 @@ use rocket::form::Form;
 use rocket::response::Redirect;
 use rocket::{State, http::Status};
 use rocket_dyn_templates::{Template, context};
+use serde_json::json;
 use sqlx::{Pool, Sqlite};
 
 use crate::db::{
-    assign_technique_to_student, get_student_technique, update_student_technique, update_technique,
+    add_techniques_to_student, assign_technique_to_student, create_and_assign_technique,
+    get_student_technique, get_unassigned_techniques, update_student_technique, update_technique,
 };
 use crate::{
     db::{get_all_techniques, get_student_techniques, get_user},
-    models::{DbUser, StudentTechnique, User},
+    models::{DbUser, User},
 };
 
 #[get("/")]
@@ -36,29 +38,45 @@ pub async fn index(db: &State<Pool<Sqlite>>) -> Template {
 #[get("/student/<id>")]
 pub async fn student_techniques(id: i64) -> Result<Template, Status> {
     let student = match get_user(id).await {
-        Ok(user) => user,
-        Err(_) => return Err(Status::NotFound),
+        Ok(student) => student,
+        Err(e) => {
+            error!("Failed to get student {}: {:?}", id, e);
+            return Err(Status::NotFound);
+        }
     };
 
-    let student_techniques: Vec<StudentTechnique> = match get_student_techniques(student.id).await {
-        Ok(student_techniques) => student_techniques,
-        Err(_) => return Err(Status::InternalServerError),
+    let student_techniques = match get_student_techniques(id).await {
+        Ok(techniques) => techniques,
+        Err(e) => {
+            error!("Failed to get techniques for student {}: {:?}", id, e);
+            return Err(Status::InternalServerError);
+        }
     };
 
     let all_techniques = match get_all_techniques().await {
-        Ok(all_techniques) => all_techniques,
-        Err(_) => return Err(Status::InternalServerError),
+        Ok(techniques) => techniques,
+        Err(e) => {
+            error!("Failed to get all techniques: {:?}", e);
+            return Err(Status::InternalServerError);
+        }
     };
 
-    Ok(Template::render(
-        "student_techniques",
-        context! {
-            title: format!("{}'s Techniques", student.username),
-            student: student,
-            student_techniques: student_techniques,
-            all_techniques: all_techniques,
-        },
-    ))
+    let unassigned_techniques = match get_unassigned_techniques(id).await {
+        Ok(techniques) => techniques,
+        Err(e) => {
+            error!("Failed to get unassigned techniques: {:?}", e);
+            return Err(Status::InternalServerError);
+        }
+    };
+
+    let context = json!({
+        "student": student,
+        "student_techniques": student_techniques,
+        "all_techniques": all_techniques,
+        "unassigned_techniques": unassigned_techniques
+    });
+
+    Ok(Template::render("student_techniques", context))
 }
 
 #[derive(FromForm)]
@@ -85,7 +103,6 @@ pub async fn update_student_technique_route(
         }
     };
 
-    // Step 1: Update the student-specific details
     if let Err(e) =
         update_student_technique(id, &form.status, &form.student_notes, &form.coach_notes).await
     {
@@ -93,7 +110,6 @@ pub async fn update_student_technique_route(
         return Err(Status::InternalServerError);
     }
 
-    // Step 2: Update the global technique details
     if let Err(e) = update_technique(
         student_technique.technique_id,
         &form.technique_name,
@@ -105,8 +121,6 @@ pub async fn update_student_technique_route(
             "Failed to update global technique {}: {:?}",
             student_technique.technique_id, e
         );
-        // Continue anyway, as we've already updated the student-specific details
-        // You might want to add a flash message here to indicate partial success
     }
 
     Ok(Redirect::to(uri!(student_techniques(
@@ -114,7 +128,6 @@ pub async fn update_student_technique_route(
     ))))
 }
 
-// Form structure for adding a technique to a student
 #[derive(FromForm)]
 pub struct AddTechniqueForm {
     technique_id: i64,
@@ -129,6 +142,51 @@ pub async fn add_technique_to_student(
         error!(
             "Failed to assign technique {} to student {}: {:?}",
             form.technique_id, student_id, e
+        );
+        return Err(Status::InternalServerError);
+    }
+
+    Ok(Redirect::to(uri!(student_techniques(student_id))))
+}
+
+#[derive(FromForm)]
+pub struct AddMultipleTechniquesForm {
+    technique_ids: Vec<i64>,
+}
+
+#[post("/student/<student_id>/add_techniques", data = "<form>")]
+pub async fn add_multiple_techniques_to_student(
+    student_id: i64,
+    form: Form<AddMultipleTechniquesForm>,
+) -> Result<Redirect, Status> {
+    if let Err(e) = add_techniques_to_student(student_id, form.technique_ids.clone()).await {
+        error!(
+            "Failed to assign techniques with ids {:?} to student {}: {:?}",
+            form.technique_ids, student_id, e
+        );
+        return Err(Status::InternalServerError);
+    }
+    Ok(Redirect::to(uri!(student_techniques(student_id))))
+}
+
+#[derive(FromForm)]
+pub struct CreateTechniqueForm {
+    name: String,
+    description: String,
+}
+
+#[post("/student/<student_id>/create_technique", data = "<form>")]
+pub async fn create_and_assign_technique_route(
+    student_id: i64,
+    form: Form<CreateTechniqueForm>,
+) -> Result<Redirect, Status> {
+    // TODO: Coach ID instead of hardcoded 1
+
+    if let Err(e) = create_and_assign_technique(1, student_id, &form.name, &form.description).await
+    {
+        error!(
+            "Failed to create and assign technique to student {}: {:?}",
+            student_id, e
         );
         return Err(Status::InternalServerError);
     }

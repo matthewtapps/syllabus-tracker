@@ -52,14 +52,14 @@
                             </select>
                         </div>
                         <div class="form-group">
-                            <label for="coach-notes-{{ this.id }}">Coach Notes:</label>
-                            <textarea name="coach_notes" id="coach-notes-{{this.id}}">{{this.coach_notes}}</textarea>
-                        </div>
-                        <div class="form-group">
                             <label for="student-notes-view-{{ this.id }}">Student Notes (Read-only):</label>
                             <div class="read-only-text">{{ this.student_notes }}</div>
                             <!-- Hidden field to preserve student notes when coach submits the form -->
                             <input type="hidden" name="student_notes" value="{{ this.student_notes }}">
+                        </div>
+                        <div class="form-group">
+                            <label for="coach-notes-{{ this.id }}">Coach Notes:</label>
+                            <textarea name="coach_notes" id="coach-notes-{{this.id}}">{{this.coach_notes}}</textarea>
                         </div>
                         <div class="form-group">
                             <div class="warning-container"
@@ -105,180 +105,49 @@
 {{ else }}
     <p>No techniques assigned to this student yet.</p>
 {{/if}}
-<!-- Add Technique Form -->
 <div class="add-form">
-    <h3>Add Technique to Student</h3>
-    <form action="/student/{{ student.id }}/add_technique" method="post">
+    <h3>Add Techniques to Student</h3>
+
+    <!-- Bulk Add Section -->
+    <form action="/student/{{ student.id }}/add_techniques" method="post">
         <div class="form-group">
-            <label for="technique">Select Technique:</label>
-            <select name="technique_id" id="technique" required>
-                <option value="">-- Select a Technique --</option>
-                {{#each all_techniques}}
-                    <option value="{{ this.id }}">{{ this.name }}</option>
-                {{/each}}
-            </select>
+            <h4>Select Existing Techniques</h4>
+            {{#if unassigned_techniques}}
+                <div class="technique-checkbox-grid">
+                    {{#each unassigned_techniques}}
+                        <div class="technique-checkbox">
+                            <input type="checkbox" id="tech-{{this.id}}" name="technique_ids" value="{{this.id}}">
+                            <label for="tech-{{this.id}}">{{this.name}}</label>
+                        </div>
+                    {{/each}}
+                </div>
+                <button type="submit" class="btn add-btn">Add Selected Techniques</button>
+            {{else}}
+                <p>All techniques have been assigned to this student.</p>
+            {{/if}}
         </div>
-        <button type="submit" class="btn add-btn">Add Technique</button>
     </form>
+
+    <!-- Create New Technique Toggle -->
+    <button class="btn toggle-btn" onclick="toggleCreateForm()">Create New Technique</button>
+    
+    <!-- Create New Technique Form (Hidden by default) -->
+    <div id="create-technique-form" style="display: none;">
+        <h4>Create New Technique</h4>
+        <form action="/student/{{ student.id }}/create_technique" method="post">
+            <div class="form-group">
+                <label for="new-technique-name">Technique Name:</label>
+                <input type="text" id="new-technique-name" name="name" required>
+            </div>
+            <div class="form-group">
+                <label for="new-technique-description">Description:</label>
+                <textarea id="new-technique-description" name="description" required></textarea>
+            </div>
+            <button type="submit" class="btn create-btn">Create & Add to Student</button>
+            <button type="cancel" class="btn cancel-btn" onclick="toggleCreateForm()">Cancel</button>
+        </form>
+    </div>
 </div>
-<style>
-    .techniques-container {
-        display: grid;
-        grid-template-columns: 1fr;
-        gap: 16px;
-        margin-bottom: 20px;
-    }
-    
-    .technique-card {
-        border: 1px solid #ddd;
-        border-radius: 8px;
-        overflow: hidden;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-    }
-    
-    .technique-card.red {
-        border-left: 5px solid #dc3545;
-    }
-    
-    .technique-card.amber {
-        border-left: 5px solid #ffc107;
-    }
-    
-    .technique-card.green {
-        border-left: 5px solid #28a745;
-    }
-    
-    .technique-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        padding: 12px 16px;
-        background-color: #f8f9fa;
-        border-bottom: 1px solid #eee;
-        cursor: pointer;
-    }
-    
-    .technique-header:hover {
-        background-color: #e9ecef;
-    }
-    
-    .technique-header h3 {
-        margin: 0;
-    }
-    
-    .technique-details {
-        padding: 16px;
-        border-top: 1px solid #eee;
-    }
-    
-    .technique-section {
-        margin-bottom: 16px;
-    }
-    
-    .technique-section:last-child {
-        margin-bottom: 0;
-    }
-    
-    .edit-btn {
-        background-color: #007bff;
-        color: white;
-        border: none;
-        border-radius: 4px;
-        padding: 6px 12px;
-        cursor: pointer;
-    }
-    
-    .edit-btn:hover {
-        background-color: #0069d9;
-    }
-    
-    .edit-form {
-        padding: 16px;
-        border-top: 1px solid #eee;
-        background-color: #f9f9f9;
-    }
-
-    .warning-container {
-        margin-bottom: 8px;
-    }
-    
-    .warning-message {
-        padding: 8px 12px;
-        background-color: #fff3cd;
-        border-left: 4px solid #ffc107;
-        color: #856404;
-        border-radius: 4px;
-        font-size: 14px;
-        animation: fadeIn 0.3s;
-    }
-    
-    @keyframes fadeIn {
-        from { opacity: 0; }
-        to { opacity: 1; }
-    }
-
-    .read-only-text {
-        padding: 8px;
-        background: #f5f5f5;
-        border: 1px solid #ddd;
-        border-radius: 4px;
-        min-height: 60px;
-    }
-    
-    .form-group {
-        margin-bottom: 16px;
-    }
-    
-    .form-group label {
-        display: block;
-        margin-bottom: 6px;
-        font-weight: 500;
-    }
-    
-    .form-group input,
-    .form-group textarea,
-    .form-group select {
-        width: 100%;
-        padding: 8px;
-        border: 1px solid #ddd;
-        border-radius: 4px;
-    }
-    
-    .form-group textarea {
-        min-height: 80px;
-    }
-    
-    .form-buttons {
-        display: flex;
-        gap: 10px;
-    }
-    
-    .save-btn {
-        padding: 8px 16px;
-        background-color: #28a745;
-        color: white;
-        border: none;
-        border-radius: 4px;
-        cursor: pointer;
-    }
-    
-    .save-btn:hover {
-        background-color: #218838;
-    }
-    
-    .cancel-btn {
-        padding: 8px 16px;
-        background-color: #6c757d;
-        color: white;
-        border: none;
-        border-radius: 4px;
-        cursor: pointer;
-    }
-    
-    .cancel-btn:hover {
-        background-color: #5a6268;
-    }
-</style>
 <script>
     function toggleTechniqueDetails(id, event) {
         // Prevent the click from triggering for child elements
@@ -331,6 +200,15 @@
         } else {
             // Hide warning if value is back to original
             warningElement.style.display = 'none';
+        }
+    }
+
+    function toggleCreateForm() {
+        const form = document.getElementById('create-technique-form');
+        if (form.style.display === 'none') {
+            form.style.display = 'block';
+        } else {
+            form.style.display = 'none';
         }
     }
 </script>
