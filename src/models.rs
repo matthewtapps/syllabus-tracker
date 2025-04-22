@@ -2,30 +2,6 @@ use chrono::{DateTime, NaiveDateTime, Utc};
 use serde::Serialize;
 
 #[derive(Serialize)]
-pub struct User {
-    pub id: i64,
-    pub username: String,
-    pub role: String,
-}
-
-#[derive(sqlx::FromRow)]
-pub struct DbUser {
-    pub id: Option<i64>,
-    pub username: Option<String>,
-    pub role: Option<String>,
-}
-
-impl From<DbUser> for User {
-    fn from(user: DbUser) -> Self {
-        Self {
-            id: user.id.unwrap_or_default(),
-            username: user.username.unwrap_or_default(),
-            role: user.role.unwrap_or_default(),
-        }
-    }
-}
-
-#[derive(Serialize)]
 pub struct Technique {
     pub id: i64,
     pub name: String,
@@ -94,11 +70,17 @@ impl From<DbStudentTechnique> for StudentTechnique {
             status: db.status.unwrap_or_default(),
             student_notes: db.student_notes.unwrap_or_default(),
             coach_notes: db.coach_notes.unwrap_or_default(),
-            created_at: db.created_at
-                .map(|dt| chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(dt, chrono::Utc))
+            created_at: db
+                .created_at
+                .map(|dt| {
+                    chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(dt, chrono::Utc)
+                })
                 .unwrap_or_else(|| chrono::Utc::now()),
-            updated_at: db.updated_at
-                .map(|dt| chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(dt, chrono::Utc))
+            updated_at: db
+                .updated_at
+                .map(|dt| {
+                    chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(dt, chrono::Utc)
+                })
                 .unwrap_or_else(|| chrono::Utc::now()),
         }
     }

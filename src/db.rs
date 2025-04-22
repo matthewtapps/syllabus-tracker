@@ -1,10 +1,11 @@
 use crate::DATABASE_URL;
+use crate::auth::{DbUser, User};
 use chrono::Utc;
 use rocket::response::Redirect;
 use sqlx::sqlite::SqlitePoolOptions;
 use sqlx::{Error, Pool, Sqlite};
 
-use crate::models::{DbStudentTechnique, DbTechnique, StudentTechnique, Technique, User};
+use crate::models::{DbStudentTechnique, DbTechnique, StudentTechnique, Technique};
 
 async fn conn() -> Result<Pool<Sqlite>, sqlx::Error> {
     let pool = SqlitePoolOptions::new()
@@ -16,39 +17,66 @@ async fn conn() -> Result<Pool<Sqlite>, sqlx::Error> {
 }
 
 pub async fn get_user(id: i64) -> Result<User, sqlx::Error> {
-    let row = sqlx::query_as!(User, "SELECT id, username, role FROM users WHERE id=?", id)
-        .fetch_one(&conn().await?)
-        .await?;
-    Ok(row)
-}
-
-pub async fn get_users_by_role(role: &str) -> Result<Vec<User>, sqlx::Error> {
-    let rows: Vec<User> = sqlx::query_as!(
-        User,
-        "
-SELECT id, username, role 
-FROM users 
-WHERE role=?
-            ",
-        role
+    let row = sqlx::query_as!(
+        DbUser,
+        "SELECT id, username, role, display_name FROM users WHERE id=?",
+        id
     )
-    .fetch_all(&conn().await?)
+    .fetch_one(&conn().await?)
     .await?;
-    Ok(rows)
+    Ok(User::from(row))
 }
 
-pub async fn add_technique(
-    name: &str,
-    description: &str,
-    coach_id: i64,
-) -> Result<i64, sqlx::Error> {
-    let res = sqlx::query("INSERT INTO techniques (name, description, coach_id) VALUES (?, ?, ?)")
-        .bind(name)
-        .bind(description)
-        .bind(coach_id)
-        .execute(&conn().await?)
-        .await?;
-    Ok(res.last_insert_rowid())
+pub async fn update_user_display_name(user_id: i64, display_name: &str) -> Result<(), sqlx::Error> {
+    sqlx::query!(
+        "UPDATE users SET display_name = ? WHERE id = ?",
+        display_name,
+        user_id
+    )
+    .execute(&conn().await?)
+    .await?;
+
+    Ok(())
+}
+
+pub async fn update_user_password(user_id: i64, new_password: &str) -> Result<(), sqlx::Error> {
+    // Hash the password
+    let hashed_password =
+        bcrypt::hash(new_password, bcrypt::DEFAULT_COST).map_err(|_| sqlx::Error::RowNotFound)?;
+
+    sqlx::query!(
+        "UPDATE users SET password = ? WHERE id = ?",
+        hashed_password,
+        user_id
+    )
+    .execute(&conn().await?)
+    .await?;
+
+    Ok(())
+}
+
+pub async fn update_username(user_id: i64, new_username: &str) -> Result<(), sqlx::Error> {
+    let existing = sqlx::query!(
+        "SELECT id FROM users WHERE username = ? AND id != ?",
+        new_username,
+        user_id
+    )
+    .fetch_optional(&conn().await?)
+    .await?;
+
+    if existing.is_some() {
+        return Err(sqlx::Error::RowNotFound); // Using this as a stand-in for "username taken" error
+    }
+
+    sqlx::query!(
+        "UPDATE users SET username = ? WHERE id = ?",
+        new_username,
+        user_id
+    )
+    .execute(&conn().await?)
+    .await?;
+
+    Ok(())
 }
 
 pub async fn get_all_techniques() -> Result<Vec<Technique>, Error> {
@@ -206,6 +234,22 @@ pub async fn create_technique(
     Ok(res.last_insert_rowid())
 }
 
+pub async fn update_student_notes(id: i64, student_notes: &str) -> Result<(), sqlx::Error> {
+    let now = Utc::now();
+    sqlx::query!(
+        "UPDATE student_techniques
+         SET student_notes = ?, updated_at = ?
+         WHERE id = ?",
+        student_notes,
+        now,
+        id
+    )
+    .execute(&conn().await?)
+    .await?;
+
+    Ok(())
+}
+
 pub async fn get_unassigned_techniques(student_id: i64) -> Result<Vec<Technique>, sqlx::Error> {
     let rows = sqlx::query_as!(
         DbTechnique,
@@ -246,4 +290,52 @@ pub async fn create_and_assign_technique(
     assign_technique_to_student(technique_id, student_id).await?;
 
     Ok(Redirect::to(format!("/student/{}", student_id)))
+}
+
+pub async fn authenticate_user(username: &str, password: &str) -> Result<bool, sqlx::Error> {
+    let user = sqlx::query!(
+        "SELECT id, username, password, role FROM users WHERE username = ?",
+        username
+    )
+    .fetch_optional(&conn().await?)
+    .await?;
+
+    match user {
+        Some(user) => {
+            // Verify the password using bcrypt
+            match bcrypt::verify(password, &user.password) {
+                Ok(valid) => Ok(valid),
+                Err(_) => Ok(false),
+            }
+        }
+        _ => Ok(false),
+    }
+}
+
+pub async fn create_user(username: &str, password: &str, role: &str) -> Result<i64, sqlx::Error> {
+    let hashed_password =
+        bcrypt::hash(password, bcrypt::DEFAULT_COST).map_err(|_| sqlx::Error::RowNotFound)?;
+
+    let res = sqlx::query!(
+        "INSERT INTO users (username, password, role) VALUES (?, ?, ?)",
+        username,
+        hashed_password,
+        role
+    )
+    .execute(&conn().await?)
+    .await?;
+
+    Ok(res.last_insert_rowid())
+}
+
+pub async fn get_user_by_username(username: &str) -> Result<User, sqlx::Error> {
+    let row = sqlx::query_as!(
+        DbUser,
+        "SELECT id, username, role, display_name FROM users WHERE username = ?",
+        username
+    )
+    .fetch_one(&conn().await?)
+    .await?;
+
+    Ok(User::from(row))
 }

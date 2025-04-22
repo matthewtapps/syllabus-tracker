@@ -1,22 +1,27 @@
 use rocket::form::Form;
+use rocket::http::{Cookie, CookieJar, SameSite};
 use rocket::response::Redirect;
 use rocket::{State, http::Status};
 use rocket_dyn_templates::{Template, context};
 use serde_json::json;
 use sqlx::{Pool, Sqlite};
 
+use crate::auth::{DbUser, User};
 use crate::db::{
-    add_techniques_to_student, assign_technique_to_student, create_and_assign_technique,
-    get_student_technique, get_unassigned_techniques, update_student_technique, update_technique,
+    add_techniques_to_student, assign_technique_to_student, authenticate_user,
+    create_and_assign_technique, get_all_techniques, get_student_technique,
+    get_unassigned_techniques, update_student_notes, update_student_technique, update_technique,
+    update_user_display_name, update_user_password, update_username,
 };
-use crate::{
-    db::{get_all_techniques, get_student_techniques, get_user},
-    models::{DbUser, User},
-};
+use crate::db::{get_student_techniques, get_user};
 
 #[get("/")]
-pub async fn index(db: &State<Pool<Sqlite>>) -> Template {
-    // Fetch all students for the index page
+pub async fn index(user: User, db: &State<Pool<Sqlite>>) -> Result<Template, Redirect> {
+    if user.role == "student" {
+        return Err(Redirect::to(format!("/student/{}", user.id)));
+    }
+
+    // Fetch students for the index page
     let students: Vec<User> =
         sqlx::query_as::<_, DbUser>("SELECT * FROM Users WHERE Role = 'student'")
             .fetch_all(&**db)
@@ -26,17 +31,29 @@ pub async fn index(db: &State<Pool<Sqlite>>) -> Template {
             .map(User::from)
             .collect();
 
-    Template::render(
+    Ok(Template::render(
         "index",
         context! {
             title: "Jiu Jitsu Syllabus Tracker",
             students: students,
+            current_user: user,
+            current_route: "home",
         },
-    )
+    ))
+}
+
+#[get("/", rank = 2)]
+pub fn index_anon() -> Redirect {
+    Redirect::to("/login")
 }
 
 #[get("/student/<id>")]
-pub async fn student_techniques(id: i64) -> Result<Template, Status> {
+pub async fn student_techniques(id: i64, user: User) -> Result<Template, Status> {
+    // Check permissions - coaches can see all, students can only see their own
+    if user.role != "coach" && user.id != id {
+        return Err(Status::Forbidden);
+    }
+
     let student = match get_user(id).await {
         Ok(student) => student,
         Err(e) => {
@@ -45,7 +62,7 @@ pub async fn student_techniques(id: i64) -> Result<Template, Status> {
         }
     };
 
-    let student_techniques = match get_student_techniques(id).await {
+    let techniques = match get_student_techniques(id).await {
         Ok(techniques) => techniques,
         Err(e) => {
             error!("Failed to get techniques for student {}: {:?}", id, e);
@@ -69,11 +86,14 @@ pub async fn student_techniques(id: i64) -> Result<Template, Status> {
         }
     };
 
+    // Update the json! macro with the new variable name
     let context = json!({
         "student": student,
-        "student_techniques": student_techniques,
+        "student_techniques": techniques,  // Changed from student_techniques
         "all_techniques": all_techniques,
-        "unassigned_techniques": unassigned_techniques
+        "unassigned_techniques": unassigned_techniques,
+        "current_user": user,
+        "current_route": "student"
     });
 
     Ok(Template::render("student_techniques", context))
@@ -92,9 +112,9 @@ pub struct UpdateStudentTechniqueForm {
 pub async fn update_student_technique_route(
     id: i64,
     form: Form<UpdateStudentTechniqueForm>,
-    // You might want to add user authentication context here to verify coach role
+    user: User,
 ) -> Result<Redirect, Status> {
-    // Get the student technique to retrieve student_id for redirect
+    // Get the student technique to retrieve student_id for redirect and permission check
     let student_technique = match get_student_technique(id).await {
         Ok(st) => st,
         Err(e) => {
@@ -103,24 +123,41 @@ pub async fn update_student_technique_route(
         }
     };
 
-    if let Err(e) =
-        update_student_technique(id, &form.status, &form.student_notes, &form.coach_notes).await
-    {
-        error!("Failed to update student technique {}: {:?}", id, e);
-        return Err(Status::InternalServerError);
+    // Check permissions - coaches can edit everything, students can only edit their own notes
+    if user.role != "coach" && (user.id != student_technique.student_id) {
+        return Err(Status::Forbidden);
     }
 
-    if let Err(e) = update_technique(
-        student_technique.technique_id,
-        &form.technique_name,
-        &form.technique_description,
-    )
-    .await
-    {
-        error!(
-            "Failed to update global technique {}: {:?}",
-            student_technique.technique_id, e
-        );
+    // If this is a student editing their own technique, only update student_notes
+    if user.role == "student" {
+        if let Err(e) = update_student_notes(id, &form.student_notes).await {
+            error!(
+                "Failed to update student notes for technique {}: {:?}",
+                id, e
+            );
+            return Err(Status::InternalServerError);
+        }
+    } else {
+        // Coach can update everything
+        if let Err(e) =
+            update_student_technique(id, &form.status, &form.student_notes, &form.coach_notes).await
+        {
+            error!("Failed to update student technique {}: {:?}", id, e);
+            return Err(Status::InternalServerError);
+        }
+
+        if let Err(e) = update_technique(
+            student_technique.technique_id,
+            &form.technique_name,
+            &form.technique_description,
+        )
+        .await
+        {
+            error!(
+                "Failed to update global technique {}: {:?}",
+                student_technique.technique_id, e
+            );
+        }
     }
 
     Ok(Redirect::to(uri!(student_techniques(
@@ -137,7 +174,12 @@ pub struct AddTechniqueForm {
 pub async fn add_technique_to_student(
     student_id: i64,
     form: Form<AddTechniqueForm>,
+    user: User,
 ) -> Result<Redirect, Status> {
+    if user.role != "coach" {
+        return Err(Status::Forbidden);
+    }
+
     if let Err(e) = assign_technique_to_student(form.technique_id, student_id).await {
         error!(
             "Failed to assign technique {} to student {}: {:?}",
@@ -158,7 +200,12 @@ pub struct AddMultipleTechniquesForm {
 pub async fn add_multiple_techniques_to_student(
     student_id: i64,
     form: Form<AddMultipleTechniquesForm>,
+    user: User,
 ) -> Result<Redirect, Status> {
+    if user.role != "coach" {
+        return Err(Status::Forbidden);
+    }
+
     if let Err(e) = add_techniques_to_student(student_id, form.technique_ids.clone()).await {
         error!(
             "Failed to assign techniques with ids {:?} to student {}: {:?}",
@@ -179,10 +226,14 @@ pub struct CreateTechniqueForm {
 pub async fn create_and_assign_technique_route(
     student_id: i64,
     form: Form<CreateTechniqueForm>,
+    user: User,
 ) -> Result<Redirect, Status> {
-    // TODO: Coach ID instead of hardcoded 1
+    if user.role != "coach" {
+        return Err(Status::Forbidden);
+    }
 
-    if let Err(e) = create_and_assign_technique(1, student_id, &form.name, &form.description).await
+    if let Err(e) =
+        create_and_assign_technique(user.id, student_id, &form.name, &form.description).await
     {
         error!(
             "Failed to create and assign technique to student {}: {:?}",
@@ -192,4 +243,235 @@ pub async fn create_and_assign_technique_route(
     }
 
     Ok(Redirect::to(uri!(student_techniques(student_id))))
+}
+
+#[get("/profile")]
+pub async fn profile(user: User) -> Template {
+    Template::render(
+        "profile",
+        context! {
+            title: "Your Profile - Jiu Jitsu Syllabus Tracker",
+            current_user: user,
+            current_route: "profile"
+        },
+    )
+}
+
+#[derive(FromForm)]
+pub struct UpdateNameForm {
+    display_name: String,
+}
+
+#[post("/profile/update-name", data = "<form>")]
+pub async fn update_name(user: User, form: Form<UpdateNameForm>) -> Result<Template, Status> {
+    if let Err(e) = update_user_display_name(user.id, &form.display_name).await {
+        error!("Failed to update display name: {:?}", e);
+        return Ok(Template::render(
+            "profile",
+            context! {
+                title: "Your Profile - Jiu Jitsu Syllabus Tracker",
+                current_user: user,
+                message: "Failed to update display name",
+                message_type: "error",
+                current_route: "profile"
+            },
+        ));
+    }
+
+    // Get updated user data
+    let updated_user = match get_user(user.id).await {
+        Ok(user) => user,
+        Err(_) => {
+            return Ok(Template::render(
+                "profile",
+                context! {
+                    title: "Your Profile - Jiu Jitsu Syllabus Tracker",
+                    current_user: user,
+                    message: "Display name updated but couldn't refresh user data",
+                    message_type: "warning",
+                    current_route: "profile"
+                },
+            ));
+        }
+    };
+
+    Ok(Template::render(
+        "profile",
+        context! {
+            title: "Your Profile - Jiu Jitsu Syllabus Tracker",
+            current_user: updated_user,
+            message: "Display name updated successfully",
+            message_type: "success",
+            current_route: "profile"
+        },
+    ))
+}
+
+#[derive(FromForm)]
+pub struct UpdatePasswordForm {
+    current_password: String,
+    new_password: String,
+    confirm_password: String,
+}
+
+#[post("/profile/update-password", data = "<form>")]
+pub async fn update_password(
+    user: User,
+    form: Form<UpdatePasswordForm>,
+) -> Result<Template, Status> {
+    // Verify passwords match
+    if form.new_password != form.confirm_password {
+        return Ok(Template::render(
+            "profile",
+            context! {
+                title: "Your Profile - Jiu Jitsu Syllabus Tracker",
+                current_user: user,
+                message: "New passwords do not match",
+                message_type: "error",
+                current_route: "profile"
+            },
+        ));
+    }
+
+    // Verify current password
+    let is_valid = match authenticate_user(&user.username, &form.current_password).await {
+        Ok(valid) => valid,
+        Err(_) => false,
+    };
+
+    if !is_valid {
+        return Ok(Template::render(
+            "profile",
+            context! {
+                title: "Your Profile - Jiu Jitsu Syllabus Tracker",
+                user: user,
+                message: "Current password is incorrect",
+                message_type: "error",
+                current_route: "profile"
+            },
+        ));
+    }
+
+    // Update password
+    if let Err(e) = update_user_password(user.id, &form.new_password).await {
+        error!("Failed to update password: {:?}", e);
+        return Ok(Template::render(
+            "profile",
+            context! {
+                title: "Your Profile - Jiu Jitsu Syllabus Tracker",
+                current_user: user,
+                message: "Failed to update password",
+                message_type: "error",
+                current_route: "profile"
+            },
+        ));
+    }
+
+    Ok(Template::render(
+        "profile",
+        context! {
+            title: "Your Profile - Jiu Jitsu Syllabus Tracker",
+            current_user: user,
+            message: "Password updated successfully",
+            message_type: "success",
+                current_route: "profile"
+        },
+    ))
+}
+
+#[derive(FromForm)]
+pub struct UpdateUsernameForm {
+    username: String,
+}
+
+#[post("/profile/update-username", data = "<form>")]
+pub async fn update_username_route(
+    user: User,
+    form: Form<UpdateUsernameForm>,
+    cookies: &CookieJar<'_>,
+) -> Result<Template, Status> {
+    // Don't allow empty username
+    if form.username.trim().is_empty() {
+        return Ok(Template::render(
+            "profile",
+            context! {
+                title: "Your Profile - Jiu Jitsu Syllabus Tracker",
+                current_user: user,
+                message: "Username cannot be empty",
+                message_type: "error",
+                current_route: "profile"
+            },
+        ));
+    }
+
+    // Update username in database
+    match update_username(user.id, &form.username).await {
+        Ok(_) => {
+            // Get updated user data first
+            match get_user(user.id).await {
+                Ok(updated_user) => {
+                    // Now update all cookies with the latest user data
+
+                    // Remove old cookies
+                    cookies.remove_private(Cookie::build("logged_in"));
+                    cookies.remove_private(Cookie::build("user_role"));
+                    cookies.remove_private(Cookie::build("user_id"));
+
+                    // Add new cookies with updated information
+                    cookies.add_private(
+                        Cookie::build(("logged_in", updated_user.username.clone()))
+                            .same_site(SameSite::Lax),
+                    );
+                    cookies.add_private(
+                        Cookie::build(("user_role", updated_user.role.clone()))
+                            .same_site(SameSite::Lax),
+                    );
+                    cookies.add_private(
+                        Cookie::build(("user_id", updated_user.id.to_string()))
+                            .same_site(SameSite::Lax),
+                    );
+
+                    // Now render the template with the updated user data
+                    Ok(Template::render(
+                        "profile",
+                        context! {
+                            title: "Your Profile - Jiu Jitsu Syllabus Tracker",
+                            message: "Username updated successfully",
+                            message_type: "success",
+                            current_route: "profile",
+                            current_user: updated_user
+                        },
+                    ))
+                }
+                Err(_) => {
+                    // This is unlikely to happen, but handle it just in case
+                    Ok(Template::render(
+                        "profile",
+                        context! {
+                            title: "Your Profile - Jiu Jitsu Syllabus Tracker",
+                            current_user: User {
+                                id: user.id,
+                                username: form.username.clone(),
+                                role: user.role.clone(),
+                                display_name: user.display_name.clone(),
+                            },
+                            message: "Username updated but couldn't refresh user data",
+                            message_type: "warning",
+                            current_route: "profile",
+                        },
+                    ))
+                }
+            }
+        }
+        Err(_) => Ok(Template::render(
+            "profile",
+            context! {
+                title: "Your Profile - Jiu Jitsu Syllabus Tracker",
+                message: "Username already taken or couldn't be updated",
+                message_type: "error",
+                current_route: "profile",
+                current_user: user, // Important! Add this
+            },
+        )),
+    }
 }

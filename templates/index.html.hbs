@@ -1,11 +1,80 @@
 {{#*inline "content"}}
 <h2>Students</h2>
+{{#if (eq current_user.role "coach")}}
+    <!-- Search filter for coaches only -->
+    <div class="search-container">
+        <input type="text"
+               id="studentSearch"
+               placeholder="Filter students..."
+               class="search-input">
+        <button type="button"
+                id="clearSearch"
+                class="btn clear-btn"
+                style="display: none">Clear</button>
+    </div>
+{{/if}}
 <div class="students-list">
     {{#each students}}
-        <a href="/student/{{ this.id }}" class="student-link">{{ this.username }}</a>
+        <a href="/student/{{ this.id }}"
+           class="student-link"
+           data-username="{{ this.username }}"
+           data-display-name="{{ this.display_name }}">
+            <span class="student-display-name">{{ this.display_name }}</span>
+            <span class="student-username">({{ this.username }})</span>
+        </a>
     {{ else }}
-        <p>No students found.</p>
+        <p id="no-students">No students found.</p>
     {{/each}}
+    <p id="no-results" style="display: none;">No students match your search.</p>
 </div>
+{{#if (eq current_user.role "coach")}}
+    <script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const searchInput = document.getElementById('studentSearch');
+        const clearButton = document.getElementById('clearSearch');
+        const studentLinks = document.querySelectorAll('.student-link');
+        const noResults = document.getElementById('no-results');
+        const noStudents = document.getElementById('no-students');
+        
+        // Show clear button when search has content
+        searchInput.addEventListener('input', function() {
+            const searchText = this.value.toLowerCase();
+            let matchCount = 0;
+            
+            studentLinks.forEach(function(link) {
+                const username = link.getAttribute('data-username').toLowerCase();
+                const displayName = link.getAttribute('data-display-name').toLowerCase();
+                
+                // Check if either username or display name matches the search
+                if (username.includes(searchText) || displayName.includes(searchText)) {
+                    link.style.display = 'block';
+                    matchCount++;
+                } else {
+                    link.style.display = 'none';
+                }
+            });
+            
+            // Show the clear button when there's text in the search
+            clearButton.style.display = this.value ? 'inline-block' : 'none';
+            
+            // Show "no results" message if no matches found and we have students
+            if (matchCount === 0 && studentLinks.length > 0) {
+                noResults.style.display = 'block';
+                if (noStudents) noStudents.style.display = 'none';
+            } else {
+                noResults.style.display = 'none';
+                if (noStudents) noStudents.style.display = studentLinks.length === 0 ? 'block' : 'none';
+            }
+        });
+        
+        // Clear search when button is clicked
+        clearButton.addEventListener('click', function() {
+            searchInput.value = '';
+            searchInput.dispatchEvent(new Event('input'));
+            searchInput.focus();
+        });
+    });
+    </script>
+{{/if}}
 {{/inline}}
 {{> layout}}

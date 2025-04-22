@@ -192,7 +192,7 @@
             gap: 10px;
         }
 
-        select, textarea, input[type="text"] {
+        select, textarea, input[type="text"], input[type="password"] {
             width: 100%;
             padding: 8px;
             border: 1px solid var(--border-color);
@@ -325,6 +325,136 @@
             background-color: var(--hover-color);
         }
 
+        .auth-container {
+            max-width: 400px;
+            margin: 40px auto;
+            padding: 20px;
+            background-color: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .auth-form .form-group {
+            margin-bottom: 20px;
+        }
+        
+        .error-message {
+            background-color: #ffebee;
+            color: #c62828;
+            padding: 10px;
+            border-left: 4px solid #c62828;
+            margin-bottom: 20px;
+            border-radius: 4px;
+        }
+
+        .profile-container {
+            max-width: 800px;
+            margin: 20px auto;
+            padding: 20px;
+            background-color: var(--card-bg);
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .profile-info {
+            margin-bottom: 20px;
+            padding: 15px;
+            background-color: var(--light-bg);
+            border-radius: 4px;
+        }
+
+        .profile-forms {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+        }
+
+        .profile-form {
+            padding: 15px;
+            background-color: var(--light-bg);
+            border-radius: 4px;
+        }
+
+        .message {
+            padding: 10px;
+            margin-bottom: 15px;
+            border-radius: 4px;
+        }
+
+        .message.success {
+            background-color: var(--green-bg);
+            color: var(--text-color);
+        }
+
+        .message.error {
+            background-color: var(--red-bg);
+            color: var(--text-color);
+        }
+
+        /* Add these styles to your existing CSS in layout.html.hbs */
+        .search-container {
+            margin-bottom: 20px;
+            display: flex;
+            gap: 10px;
+        }
+
+        .search-input {
+            flex: 1;
+            padding: 10px;
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            background-color: var(--light-bg);
+            color: var(--text-color);
+            font-size: 16px;
+        }
+
+        .clear-btn {
+            background-color: #6c757d;
+            color: white;
+        }
+
+        .clear-btn:hover {
+            background-color: #5a6268;
+        }
+
+        .student-display-name {
+            font-weight: bold;
+        }
+
+        .student-username {
+            opacity: 0.7;
+            margin-left: 5px;
+        }
+
+        #no-results {
+            padding: 15px;
+            background-color: var(--warning-bg);
+            border-radius: 4px;
+            text-align: center;
+        }
+
+        .mobile-menu-toggle {
+            display: none;
+            background: none;
+            border: none;
+            font-size: 24px;
+            color: var(--text-color);
+            cursor: pointer;
+            padding: 5px 10px;
+            margin-right: 10px;
+            border-radius: 4px;
+        }
+
+        .mobile-menu-toggle:hover {
+            background-color: var(--light-bg);
+        }
+
+        .main-nav {
+            display: flex;
+            gap: 10px;
+        }
+
         /* Responsive adjustments */
         @media (max-width: 768px) {
             .techniques-container {
@@ -360,6 +490,57 @@
             .theme-toggle {
                 margin-top: 10px;
             }
+
+            .auth-container {
+                width: 100%;
+                margin: 20px auto;
+            }
+
+            .mobile-menu-toggle {
+                display: block;
+            }
+            
+            .main-nav {
+                display: none;
+                position: absolute;
+                top: 100%;
+                left: 0;
+                right: 0;
+                background-color: var(--card-bg);
+                flex-direction: column;
+                padding: 10px;
+                box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+                z-index: 100;
+                border-bottom: 1px solid var(--border-color);
+            }
+            
+            .main-nav.active {
+                display: flex;
+            }
+            
+            .main-nav .btn {
+                text-align: center;
+                margin-bottom: 8px;
+                display: block;
+            }
+            
+            .row {
+                position: relative;
+                align-items: center;
+            }
+            
+            header .column {
+                width: 100%;
+            }
+            
+            header .row {
+                justify-content: space-between;
+            }
+            
+            h1 {
+                font-size: 1.5rem;
+                margin-bottom: 10px;
+            }
         }
         </style>
     </head>
@@ -368,20 +549,51 @@
             <div class="column">
                 <h1>{{ title }}</h1>
                 <div class="row">
-                    <nav>
-                        <a href="/" class="btn">Home</a>
-                    </nav>
-                    <button id="themeToggle" class="theme-toggle" onclick="toggleTheme()">
-                        <span class="icon">🌙</span>
+                    <button id="mobileMenuToggle" class="mobile-menu-toggle">
+                        <span class="menu-icon">☰</span>
                     </button>
-                </dev>
-            </div>
-
-        </header>
-        <main>
-            {{> content}}
-        </main>
-        <script>
+                    <nav id="mainNav" class="main-nav">
+                        {{#if (eq current_route "login")}}
+                        {{ else }}
+                            {{#if (ne current_user.role "coach")}}
+                                {{#if (ne current_route "student")}}
+                                    <a href="/" class="btn">Home</a>
+                                {{/if}}
+                            {{/if}}
+                            {{#if (ne current_user.role "student")}}
+                                {{#if (ne current_route "home")}}
+                                    <a href="/" class="btn">Home</a>
+                                {{/if}}
+                            {{/if}}
+                            {{#if current_user}}
+                                {{#if (ne current_route "profile")}}
+                                    <a href="/profile" class="btn">Profile</a>
+                                {{/if}}
+                                {{#if (eq current_user.role "coach")}}
+                                    {{#if (ne current_route "register")}}
+                                        <a href="/register" class="btn">Register User</a>
+                                    {{/if}}
+                                {{/if}}
+                                <a href="/logout" class="btn">Logout (
+                                    {{#if current_user.display_name }}
+                                    {{ current_user.display_name }}{{ else }}{{ current_user.username }}{{/if}})</a>
+                                {{ else }}
+                                    {{#if (ne current_route "login")}}
+                                        <a href="/login" class="btn">Login</a>
+                                    {{/if}}
+                                {{/if}}
+                            {{/if}}
+                        </nav>
+                        <button id="themeToggle" class="theme-toggle" onclick="toggleTheme()">
+                            <span class="icon">🌙</span>
+                        </button>
+                    </div>
+                </div>
+            </header>
+            <main>
+                {{> content}}
+            </main>
+            <script>
             function getPreferredTheme() {
                 const savedTheme = localStorage.getItem('theme');
                 if (savedTheme) {
@@ -414,6 +626,51 @@
             document.addEventListener('DOMContentLoaded', () => {
                 applyTheme(getPreferredTheme());
             });
-        </script>
-    </body>
-</html>
+
+            document.addEventListener('DOMContentLoaded', function() {
+                const mobileMenuToggle = document.getElementById('mobileMenuToggle');
+                const mainNav = document.getElementById('mainNav');
+                
+                if (mobileMenuToggle && mainNav) {
+                    // Toggle menu on hamburger button click
+                    mobileMenuToggle.addEventListener('click', function(event) {
+                        event.stopPropagation();
+                        mainNav.classList.toggle('active');
+                        
+                        // Change icon when menu is open
+                        const menuIcon = mobileMenuToggle.querySelector('.menu-icon');
+                        if (mainNav.classList.contains('active')) {
+                            menuIcon.textContent = '✕'; // Use X when menu is open
+                        } else {
+                            menuIcon.textContent = '☰'; // Use hamburger when closed
+                        }
+                    });
+                    
+                    // Close menu when clicking outside
+                    document.addEventListener('click', function(event) {
+                        if (mainNav.classList.contains('active') && 
+                            !mainNav.contains(event.target) && 
+                            !mobileMenuToggle.contains(event.target)) {
+                            mainNav.classList.remove('active');
+                            mobileMenuToggle.querySelector('.menu-icon').textContent = '☰';
+                        }
+                    });
+                    
+                    // Close menu when a link is clicked
+                    const navLinks = mainNav.querySelectorAll('a');
+                    navLinks.forEach(link => {
+                        link.addEventListener('click', function() {
+                            mainNav.classList.remove('active');
+                            mobileMenuToggle.querySelector('.menu-icon').textContent = '☰';
+                        });
+                    });
+                    
+                    // Hide menu toggle if no nav items
+                    if (navLinks.length === 0) {
+                        mobileMenuToggle.style.display = 'none';
+                    }
+                }
+            });
+            </script>
+        </body>
+    </html>
