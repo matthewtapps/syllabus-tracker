@@ -2,7 +2,7 @@ name: Deploy to Production
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main ]  # Adjust to your main branch name
 
 jobs:
   build-and-deploy:
@@ -38,26 +38,25 @@ jobs:
         chmod 600 ~/.ssh/id_ed25519
         ssh-keyscan -H ${{ secrets.SERVER_IP }} >> ~/.ssh/known_hosts
       
-    - name: Deploy application
+    - name: Prepare for deployment
       run: |
-        # Create a deployment package
-        tar -czf deploy.tar.gz -C target/release syllabus-tracker
+        # Create deployment directory structure if it doesn't exist
+        ssh ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} "mkdir -p /var/www/syllabus-tracker/target/release"
         
-        # Transfer files to server
-        scp -P ${{ secrets.SERVER_PORT }} deploy.tar.gz ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }}:/tmp/
+    - name: Transfer binary to server
+      run: |
+        # Transfer the binary directly
+        scp target/release/syllabus-tracker ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }}:/var/www/syllabus-tracker/target/release/
         
-        # Deploy on server
-        ssh -p ${{ secrets.SERVER_PORT }} ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} << 'EOF'
-          # Extract the deployment package
-          sudo tar -xzf /tmp/deploy.tar.gz -C /var/www/syllabus-tracker/
+    - name: Configure and restart service
+      run: |
+        ssh ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} << 'EOF'
+          # Set executable permissions
+          chmod +x /var/www/syllabus-tracker/target/release/syllabus-tracker
           
-          # Set proper permissions
-          sudo chown deploy:deploy /var/www/syllabus-tracker/syllabus-tracker
-          sudo chmod +x /var/www/syllabus-tracker/syllabus-tracker
+          # Restart the service using our wrapper
+          sudo /usr/local/bin/deploy-restart-service
           
-          # Restart the service
-          sudo systemctl restart syllabus-tracker.service
-          
-          # Clean up
-          rm /tmp/deploy.tar.gz
+          # Check service status
+          systemctl status syllabus-tracker.service --no-pager
         EOF
