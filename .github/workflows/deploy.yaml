@@ -57,13 +57,13 @@ jobs:
         
     - name: Configure and restart service
       run: |
-        ssh ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} << 'EOF'
-          # Set executable permissions
-          chmod +x /var/www/syllabus-tracker/target/release/syllabus-tracker
-          
-          # Restart the service using our wrapper
-          sudo /usr/local/bin/deploy-restart-service
-          
-          # Check service status
-          systemctl status syllabus-tracker.service --no-pager
-        EOF
+          ssh ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} << 'EOF'
+            # Set executable permissions
+            chmod +x /var/www/syllabus-tracker/target/release/syllabus-tracker
+            
+            # Restart service directly
+            sudo systemctl restart syllabus-tracker.service
+            
+            # Check service status
+            systemctl status syllabus-tracker.service --no-pager
+          EOF
