@@ -1,0 +1,44 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT *\n         FROM techniques\n         ORDER BY name",
+  "describe": {
+    "columns": [
+      {
+        "name": "id",
+        "ordinal": 0,
+        "type_info": "Integer"
+      },
+      {
+        "name": "name",
+        "ordinal": 1,
+        "type_info": "Text"
+      },
+      {
+        "name": "description",
+        "ordinal": 2,
+        "type_info": "Text"
+      },
+      {
+        "name": "coach_id",
+        "ordinal": 3,
+        "type_info": "Integer"
+      },
+      {
+        "name": "coach_name",
+        "ordinal": 4,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "da5dfa7e40abf6727e312066095c619a64d1a030828ce8af713180cd14579ee5"
+}

@@ -1,0 +1,44 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT t.* FROM techniques t\n         WHERE t.id NOT IN (\n             SELECT technique_id FROM student_techniques \n             WHERE student_id = ?\n         )",
+  "describe": {
+    "columns": [
+      {
+        "name": "id",
+        "ordinal": 0,
+        "type_info": "Integer"
+      },
+      {
+        "name": "name",
+        "ordinal": 1,
+        "type_info": "Text"
+      },
+      {
+        "name": "description",
+        "ordinal": 2,
+        "type_info": "Text"
+      },
+      {
+        "name": "coach_id",
+        "ordinal": 3,
+        "type_info": "Integer"
+      },
+      {
+        "name": "coach_name",
+        "ordinal": 4,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "fea0ee427678dbc024f4106d3c8cc583a72681686876804f35d0299009d6edb5"
+}
