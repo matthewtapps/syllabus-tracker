@@ -21,6 +21,10 @@ use routes::{
 };
 use sqlx::SqlitePool;
 
+#[cfg(feature = "production")]
+static DATABASE_URL: &str = "sqlite:///var/www/syllabus-tracker/data/sqlite.db";
+
+#[cfg(not(feature = "production"))]
 static DATABASE_URL: &str = "sqlite://sqlite.db";
 
 #[derive(Debug, Error)]
