@@ -1,0 +1,63 @@
+name: Deploy to Production
+
+on:
+  push:
+    branches: [ main ]  # Adjust to your main branch name
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+      
+    - name: Install Rust
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: stable
+        profile: minimal
+        override: true
+      
+    - name: Cache dependencies
+      uses: actions/cache@v3
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+        
+    - name: Build release
+      run: cargo build --release
+      
+    - name: Set up SSH
+      run: |
+        mkdir -p ~/.ssh
+        echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
+        chmod 600 ~/.ssh/id_ed25519
+        ssh-keyscan -H ${{ secrets.SERVER_IP }} >> ~/.ssh/known_hosts
+      
+    - name: Deploy application
+      run: |
+        # Create a deployment package
+        tar -czf deploy.tar.gz -C target/release your-app
+        
+        # Transfer files to server
+        scp -P ${{ secrets.SERVER_PORT }} deploy.tar.gz ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }}:/tmp/
+        
+        # Deploy on server
+        ssh -p ${{ secrets.SERVER_PORT }} ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} << 'EOF'
+          # Extract the deployment package
+          sudo tar -xzf /tmp/deploy.tar.gz -C /var/www/your-app/
+          
+          # Set proper permissions
+          sudo chown deploy:deploy /var/www/your-app/your-app
+          sudo chmod +x /var/www/your-app/your-app
+          
+          # Restart the service
+          sudo systemctl restart your-app.service
+          
+          # Clean up
+          rm /tmp/deploy.tar.gz
+        EOF
