@@ -58,6 +58,11 @@ jobs:
       run: |
         ssh ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} "mkdir -p /var/www/syllabus-tracker/templates"
         scp -r templates/* ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }}:/var/www/syllabus-tracker/templates/
+
+    - name: Transfer static files
+      run: |
+        ssh ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} "mkdir -p /var/www/syllabus-tracker/static"
+        scp -r static/* ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }}:/var/www/syllabus-tracker/static/
         
     - name: Configure and restart service
       run: |

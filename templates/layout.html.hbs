@@ -593,6 +593,8 @@
             <main>
                 {{> content}}
             </main>
+            <script>window.apiKey = "{{honeycomb_api_key}}"</script>
+            <script type="module" src="/static/js/frontend-telemetry.js"></script>
             <script>
             function getPreferredTheme() {
                 const savedTheme = localStorage.getItem('theme');

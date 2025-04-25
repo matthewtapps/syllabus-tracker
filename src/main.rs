@@ -12,8 +12,14 @@ use auth::{
     unauthorized,
 };
 use once_cell::sync::Lazy;
+use rocket::fs::FileServer;
 use rocket_airlock::Airlock;
 use rocket_dyn_templates::Template;
+use rocket_dyn_templates::handlebars::Context;
+use rocket_dyn_templates::handlebars::Handlebars;
+use rocket_dyn_templates::handlebars::Helper;
+use rocket_dyn_templates::handlebars::Output;
+use rocket_dyn_templates::handlebars::RenderContext;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::Once;
@@ -98,10 +104,10 @@ async fn rocket() -> _ {
                 update_username_route
             ],
         )
+        .mount("/static", FileServer::from("static"))
         .register("/", catchers![unauthorized, forbidden])
         .manage(pool)
         .attach(TelemetryFairing)
-        .attach(Template::fairing())
         .attach(Airlock::<JiuJitsuHatch>::fairing())
         .attach(rocket::fairing::AdHoc::on_shutdown(
             "Telemetry Shutdown",
@@ -111,4 +117,21 @@ async fn rocket() -> _ {
                 })
             },
         ))
+        .attach(Template::custom(|engines| {
+            let honeycomb_api_key = std::env::var("HONEYCOMB_API_KEY").unwrap_or_default();
+
+            engines.handlebars.register_helper(
+                "honeycomb_api_key",
+                Box::new(
+                    move |_h: &Helper,
+                          _: &Handlebars,
+                          _: &Context,
+                          _: &mut RenderContext,
+                          out: &mut dyn Output| {
+                        out.write(&honeycomb_api_key)?;
+                        Ok(())
+                    },
+                ),
+            );
+        }))
 }
