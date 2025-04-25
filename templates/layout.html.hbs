@@ -1,10 +1,25 @@
 <!DOCTYPE html>
-<html lang="en" class="light-mode">
+<html lang="en">
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>{{ title }}</title>
+        <script>
+        (function() {
+          const savedTheme = localStorage.getItem('theme');
+          const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+          
+          if (savedTheme === 'dark' || (!savedTheme && prefersDark)) {
+            document.documentElement.classList.add('dark-mode');
+          }
+        })();
+        </script>
         <style>
+        html {
+            background-color: var(--body-bg);
+            transition: background-color 0.2s ease;
+        }
+
         :root {
             /* Light mode variables */
             --red-bg: #ffcccc;
@@ -20,6 +35,7 @@
             --warning-bg: #fff3cd;
             --warning-fg: #856404;
             --header-border: #ddd;
+            transition: all 0.2s ease;
         }
 
         /* Dark mode variables */
@@ -52,6 +68,7 @@
             margin: 0 auto;
             color: var(--text-color);
             background-color: var(--body-bg);
+            transition: background-color 0.2s ease, color 0.2s ease;
         }
 
         header {
