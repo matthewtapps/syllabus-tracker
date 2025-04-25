@@ -5,6 +5,7 @@ use rocket::{State, http::Status};
 use rocket_dyn_templates::{Template, context};
 use serde_json::json;
 use sqlx::{Pool, Sqlite};
+use tracing::instrument;
 
 use crate::auth::{DbUser, User};
 use crate::db::{
@@ -15,8 +16,10 @@ use crate::db::{
 };
 use crate::db::{get_student_techniques, get_user};
 
+#[instrument]
 #[get("/")]
 pub async fn index(user: User, db: &State<Pool<Sqlite>>) -> Result<Template, Redirect> {
+    info!("Accessing index page");
     if user.role == "student" {
         return Err(Redirect::to(format!("/student/{}", user.id)));
     }
@@ -42,13 +45,17 @@ pub async fn index(user: User, db: &State<Pool<Sqlite>>) -> Result<Template, Red
     ))
 }
 
+#[instrument]
 #[get("/", rank = 2)]
 pub fn index_anon() -> Redirect {
+    info!("Redirecting to login");
     Redirect::to("/login")
 }
 
+#[instrument]
 #[get("/student/<id>")]
 pub async fn student_techniques(id: i64, user: User) -> Result<Template, Status> {
+    info!("Accessing student-specific page");
     // Check permissions - coaches can see all, students can only see their own
     if user.role != "coach" && user.id != id {
         return Err(Status::Forbidden);
@@ -99,7 +106,7 @@ pub async fn student_techniques(id: i64, user: User) -> Result<Template, Status>
     Ok(Template::render("student_techniques", context))
 }
 
-#[derive(FromForm)]
+#[derive(FromForm, Debug)]
 pub struct UpdateStudentTechniqueForm {
     status: String,
     coach_notes: String,
@@ -108,12 +115,14 @@ pub struct UpdateStudentTechniqueForm {
     technique_description: String,
 }
 
+#[instrument]
 #[post("/student_technique/<id>", data = "<form>")]
 pub async fn update_student_technique_route(
     id: i64,
     form: Form<UpdateStudentTechniqueForm>,
     user: User,
 ) -> Result<Redirect, Status> {
+    info!("Updating student technique");
     // Get the student technique to retrieve student_id for redirect and permission check
     let student_technique = match get_student_technique(id).await {
         Ok(st) => st,
@@ -165,17 +174,19 @@ pub async fn update_student_technique_route(
     ))))
 }
 
-#[derive(FromForm)]
+#[derive(FromForm, Debug)]
 pub struct AddTechniqueForm {
     technique_id: i64,
 }
 
+#[instrument]
 #[post("/student/<student_id>/add_technique", data = "<form>")]
 pub async fn add_technique_to_student(
     student_id: i64,
     form: Form<AddTechniqueForm>,
     user: User,
 ) -> Result<Redirect, Status> {
+    info!("Adding technique to student");
     if user.role != "coach" {
         return Err(Status::Forbidden);
     }
@@ -191,17 +202,19 @@ pub async fn add_technique_to_student(
     Ok(Redirect::to(uri!(student_techniques(student_id))))
 }
 
-#[derive(FromForm)]
+#[derive(FromForm, Debug)]
 pub struct AddMultipleTechniquesForm {
     technique_ids: Vec<i64>,
 }
 
+#[instrument]
 #[post("/student/<student_id>/add_techniques", data = "<form>")]
 pub async fn add_multiple_techniques_to_student(
     student_id: i64,
     form: Form<AddMultipleTechniquesForm>,
     user: User,
 ) -> Result<Redirect, Status> {
+    info!("Adding multiple techniques to student");
     if user.role != "coach" {
         return Err(Status::Forbidden);
     }
@@ -216,18 +229,20 @@ pub async fn add_multiple_techniques_to_student(
     Ok(Redirect::to(uri!(student_techniques(student_id))))
 }
 
-#[derive(FromForm)]
+#[derive(FromForm, Debug)]
 pub struct CreateTechniqueForm {
     name: String,
     description: String,
 }
 
+#[instrument]
 #[post("/student/<student_id>/create_technique", data = "<form>")]
 pub async fn create_and_assign_technique_route(
     student_id: i64,
     form: Form<CreateTechniqueForm>,
     user: User,
 ) -> Result<Redirect, Status> {
+    info!("Creating and assigning new technique to student");
     if user.role != "coach" {
         return Err(Status::Forbidden);
     }
@@ -245,8 +260,10 @@ pub async fn create_and_assign_technique_route(
     Ok(Redirect::to(uri!(student_techniques(student_id))))
 }
 
+#[instrument]
 #[get("/profile")]
 pub async fn profile(user: User) -> Template {
+    info!("Accessing profile page");
     Template::render(
         "profile",
         context! {
@@ -257,13 +274,15 @@ pub async fn profile(user: User) -> Template {
     )
 }
 
-#[derive(FromForm)]
+#[derive(FromForm, Debug)]
 pub struct UpdateNameForm {
     display_name: String,
 }
 
+#[instrument]
 #[post("/profile/update-name", data = "<form>")]
 pub async fn update_name(user: User, form: Form<UpdateNameForm>) -> Result<Template, Status> {
+    info!("Updating user display name");
     if let Err(e) = update_user_display_name(user.id, &form.display_name).await {
         error!("Failed to update display name: {:?}", e);
         return Ok(Template::render(
@@ -314,12 +333,13 @@ pub struct UpdatePasswordForm {
     confirm_password: String,
 }
 
+#[instrument(skip_all, fields(user))]
 #[post("/profile/update-password", data = "<form>")]
 pub async fn update_password(
     user: User,
     form: Form<UpdatePasswordForm>,
 ) -> Result<Template, Status> {
-    // Verify passwords match
+    info!("Updating user password");
     if form.new_password != form.confirm_password {
         return Ok(Template::render(
             "profile",
@@ -379,18 +399,19 @@ pub async fn update_password(
     ))
 }
 
-#[derive(FromForm)]
+#[derive(FromForm, Debug)]
 pub struct UpdateUsernameForm {
     username: String,
 }
 
+#[instrument]
 #[post("/profile/update-username", data = "<form>")]
 pub async fn update_username_route(
     user: User,
     form: Form<UpdateUsernameForm>,
     cookies: &CookieJar<'_>,
 ) -> Result<Template, Status> {
-    // Don't allow empty username
+    info!("Updating user username");
     if form.username.trim().is_empty() {
         return Ok(Template::render(
             "profile",

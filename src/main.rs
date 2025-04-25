@@ -5,13 +5,20 @@ mod auth;
 mod db;
 mod models;
 mod routes;
+mod telemetry;
 
 use auth::{
     JiuJitsuHatch, forbidden, login, logout, process_login, process_register, register,
     unauthorized,
 };
+use once_cell::sync::Lazy;
 use rocket_airlock::Airlock;
 use rocket_dyn_templates::Template;
+use std::sync::Arc;
+use std::sync::Mutex;
+use std::sync::Once;
+use telemetry::TelemetryFairing;
+use telemetry::init_honeycomb_telemetry;
 use thiserror::Error;
 
 use routes::{
@@ -26,6 +33,10 @@ static DATABASE_URL: &str = "sqlite:///var/www/syllabus-tracker/data/sqlite.db";
 
 #[cfg(not(feature = "production"))]
 static DATABASE_URL: &str = "sqlite://sqlite.db";
+
+static TELEMETRY_INIT: Once = Once::new();
+static TELEMETRY_GUARD: Lazy<Arc<Mutex<Option<telemetry::OtelGuard>>>> =
+    Lazy::new(|| Arc::new(Mutex::new(None)));
 
 #[derive(Debug, Error)]
 pub enum Error {
@@ -53,9 +64,17 @@ impl From<rocket::figment::Error> for Error {
 
 #[launch]
 async fn rocket() -> _ {
+    TELEMETRY_INIT.call_once(|| {
+        let guard = init_honeycomb_telemetry();
+        // Store the guard in the static variable
+        *TELEMETRY_GUARD.lock().unwrap() = Some(guard);
+    });
+
     let pool = SqlitePool::connect(DATABASE_URL)
         .await
         .expect("Failed to connect to SQLite database");
+
+    tracing::info!("Starting syllabus tracker");
 
     rocket::build()
         .mount(
@@ -81,6 +100,15 @@ async fn rocket() -> _ {
         )
         .register("/", catchers![unauthorized, forbidden])
         .manage(pool)
+        .attach(TelemetryFairing)
         .attach(Template::fairing())
         .attach(Airlock::<JiuJitsuHatch>::fairing())
+        .attach(rocket::fairing::AdHoc::on_shutdown(
+            "Telemetry Shutdown",
+            |_| {
+                Box::pin(async {
+                    telemetry::shutdown_telemetry();
+                })
+            },
+        ))
 }

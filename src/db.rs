@@ -4,10 +4,13 @@ use chrono::Utc;
 use rocket::response::Redirect;
 use sqlx::sqlite::SqlitePoolOptions;
 use sqlx::{Error, Pool, Sqlite};
+use tracing::instrument;
 
 use crate::models::{DbStudentTechnique, DbTechnique, StudentTechnique, Technique};
 
+#[instrument]
 async fn conn() -> Result<Pool<Sqlite>, sqlx::Error> {
+    info!("Opening databsae connection");
     let pool = SqlitePoolOptions::new()
         .max_connections(5)
         .connect(DATABASE_URL)
@@ -16,7 +19,9 @@ async fn conn() -> Result<Pool<Sqlite>, sqlx::Error> {
     Ok(pool)
 }
 
+#[instrument]
 pub async fn get_user(id: i64) -> Result<User, sqlx::Error> {
+    info!("Fetching user by ID");
     let row = sqlx::query_as!(
         DbUser,
         "SELECT id, username, role, display_name FROM users WHERE id=?",
@@ -27,7 +32,9 @@ pub async fn get_user(id: i64) -> Result<User, sqlx::Error> {
     Ok(User::from(row))
 }
 
+#[instrument]
 pub async fn update_user_display_name(user_id: i64, display_name: &str) -> Result<(), sqlx::Error> {
+    info!("Updating user display name");
     sqlx::query!(
         "UPDATE users SET display_name = ? WHERE id = ?",
         display_name,
@@ -39,7 +46,9 @@ pub async fn update_user_display_name(user_id: i64, display_name: &str) -> Resul
     Ok(())
 }
 
+#[instrument(skip_all, fields(user_id))]
 pub async fn update_user_password(user_id: i64, new_password: &str) -> Result<(), sqlx::Error> {
+    info!("Updating user password");
     // Hash the password
     let hashed_password =
         bcrypt::hash(new_password, bcrypt::DEFAULT_COST).map_err(|_| sqlx::Error::RowNotFound)?;
@@ -55,7 +64,9 @@ pub async fn update_user_password(user_id: i64, new_password: &str) -> Result<()
     Ok(())
 }
 
+#[instrument]
 pub async fn update_username(user_id: i64, new_username: &str) -> Result<(), sqlx::Error> {
+    info!("Updating user username");
     let existing = sqlx::query!(
         "SELECT id FROM users WHERE username = ? AND id != ?",
         new_username,
@@ -79,7 +90,9 @@ pub async fn update_username(user_id: i64, new_username: &str) -> Result<(), sql
     Ok(())
 }
 
+#[instrument]
 pub async fn get_all_techniques() -> Result<Vec<Technique>, Error> {
+    info!("Getting all techniques");
     let rows = sqlx::query_as!(
         DbTechnique,
         "SELECT *
@@ -95,11 +108,13 @@ pub async fn get_all_techniques() -> Result<Vec<Technique>, Error> {
         .collect())
 }
 
+#[instrument]
 pub async fn update_technique(
     technique_id: i64,
     name: &str,
     description: &str,
 ) -> Result<(), sqlx::Error> {
+    info!("Updating technique");
     sqlx::query!(
         "UPDATE techniques 
          SET name = ?, description = ?
@@ -125,10 +140,12 @@ pub async fn update_technique(
     Ok(())
 }
 
+#[instrument]
 pub async fn assign_technique_to_student(
     technique_id: i64,
     student_id: i64,
 ) -> Result<i64, sqlx::Error> {
+    info!("Assigning technique to student");
     struct ReturnRow {
         id: i64,
     }
@@ -160,7 +177,9 @@ pub async fn assign_technique_to_student(
     Ok(res.last_insert_rowid())
 }
 
+#[instrument]
 pub async fn get_student_techniques(student_id: i64) -> Result<Vec<StudentTechnique>, sqlx::Error> {
+    info!("Getting student techniques");
     let rows = sqlx::query_as!(
         DbStudentTechnique,
         "SELECT * FROM student_techniques
@@ -179,9 +198,11 @@ pub async fn get_student_techniques(student_id: i64) -> Result<Vec<StudentTechni
         .collect())
 }
 
+#[instrument]
 pub async fn get_student_technique(
     student_technique_id: i64,
 ) -> Result<StudentTechnique, sqlx::Error> {
+    info!("Getting student technique");
     let row = sqlx::query_as!(
         DbStudentTechnique,
         "SELECT * FROM student_techniques
@@ -194,12 +215,14 @@ pub async fn get_student_technique(
     Ok(StudentTechnique::from(row))
 }
 
+#[instrument]
 pub async fn update_student_technique(
     id: i64,
     status: &str,
     student_notes: &str,
     coach_notes: &str,
 ) -> Result<(), sqlx::Error> {
+    info!("Updating student technique");
     let now = Utc::now();
     sqlx::query!(
         "UPDATE student_techniques
@@ -217,11 +240,13 @@ pub async fn update_student_technique(
     Ok(())
 }
 
+#[instrument]
 pub async fn create_technique(
     name: &str,
     description: &str,
     coach_id: i64,
 ) -> Result<i64, sqlx::Error> {
+    info!("Creating technique");
     let res = sqlx::query!(
         "INSERT INTO techniques (name, description, coach_id)
          VALUES (?, ?, ?)",
@@ -234,7 +259,9 @@ pub async fn create_technique(
     Ok(res.last_insert_rowid())
 }
 
+#[instrument]
 pub async fn update_student_notes(id: i64, student_notes: &str) -> Result<(), sqlx::Error> {
+    info!("Updating student notes");
     let now = Utc::now();
     sqlx::query!(
         "UPDATE student_techniques
@@ -250,7 +277,9 @@ pub async fn update_student_notes(id: i64, student_notes: &str) -> Result<(), sq
     Ok(())
 }
 
+#[instrument]
 pub async fn get_unassigned_techniques(student_id: i64) -> Result<Vec<Technique>, sqlx::Error> {
+    info!("Getting unassigned techniques");
     let rows = sqlx::query_as!(
         DbTechnique,
         "SELECT t.* FROM techniques t
@@ -268,10 +297,12 @@ pub async fn get_unassigned_techniques(student_id: i64) -> Result<Vec<Technique>
         .collect())
 }
 
+#[instrument]
 pub async fn add_techniques_to_student(
     student_id: i64,
     technique_ids: Vec<i64>,
 ) -> Result<Redirect, sqlx::Error> {
+    info!("Adding technique to student");
     for technique_id in technique_ids {
         assign_technique_to_student(technique_id, student_id).await?;
     }
@@ -279,12 +310,14 @@ pub async fn add_techniques_to_student(
     Ok(Redirect::to(format!("/student/{}", student_id)))
 }
 
+#[instrument]
 pub async fn create_and_assign_technique(
     coach_id: i64,
     student_id: i64,
     technique_name: &str,
     technique_description: &str,
 ) -> Result<Redirect, sqlx::Error> {
+    info!("Creating and assigning technique to student");
     let technique_id = create_technique(technique_name, technique_description, coach_id).await?;
 
     assign_technique_to_student(technique_id, student_id).await?;
@@ -292,7 +325,9 @@ pub async fn create_and_assign_technique(
     Ok(Redirect::to(format!("/student/{}", student_id)))
 }
 
+#[instrument(skip_all, fields(username))]
 pub async fn authenticate_user(username: &str, password: &str) -> Result<bool, sqlx::Error> {
+    info!("Authenticating user");
     let user = sqlx::query!(
         "SELECT id, username, password, role FROM users WHERE username = ?",
         username
@@ -312,7 +347,10 @@ pub async fn authenticate_user(username: &str, password: &str) -> Result<bool, s
     }
 }
 
+#[instrument(skip_all, fields(username, role))]
 pub async fn create_user(username: &str, password: &str, role: &str) -> Result<i64, sqlx::Error> {
+    info!("Creating new user");
+
     let hashed_password =
         bcrypt::hash(password, bcrypt::DEFAULT_COST).map_err(|_| sqlx::Error::RowNotFound)?;
 
@@ -328,7 +366,9 @@ pub async fn create_user(username: &str, password: &str, role: &str) -> Result<i
     Ok(res.last_insert_rowid())
 }
 
+#[instrument]
 pub async fn get_user_by_username(username: &str) -> Result<User, sqlx::Error> {
+    info!("Getting user by username");
     let row = sqlx::query_as!(
         DbUser,
         "SELECT id, username, role, display_name FROM users WHERE username = ?",

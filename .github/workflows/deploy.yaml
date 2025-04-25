@@ -32,6 +32,9 @@ jobs:
       run: cargo build --release --features production
       env:
         ROCKET_SECRET_KEY: ${{ secrets.ROCKET_SECRET_KEY }}
+        HONEYCOMB_API_KEY: ${{ secrets.HONEYCOMB_API_KEY }}
+        RUST_LOG: info,sqlx::query=debug,sqlx=warn,rocket=warn,opentelemetry=info
+        DEPLOYMENT_ENV: production
       
     - name: Set up SSH
       run: |
