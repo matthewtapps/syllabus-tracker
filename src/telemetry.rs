@@ -1,5 +1,7 @@
 use dotenv::dotenv;
-use opentelemetry::{KeyValue, trace::TracerProvider as _};
+use hyper::body::Incoming;
+use opentelemetry::{Context, KeyValue, global, trace::TracerProvider as _};
+use opentelemetry_http::{HeaderExtractor, Request as OtelRequest};
 use opentelemetry_otlp::{Protocol, WithExportConfig, WithTonicConfig};
 use opentelemetry_sdk::{
     Resource,
@@ -148,4 +150,10 @@ pub fn shutdown_telemetry() {
 
     let guard = TELEMETRY_GUARD.lock().unwrap().take();
     drop(guard); // This will trigger the Drop impl and shutdown
+}
+
+fn extract_context_from_request(req: &OtelRequest<Incoming>) -> Context {
+    global::get_text_map_propagator(|propagator| {
+        propagator.extract(&HeaderExtractor(req.headers()))
+    })
 }
