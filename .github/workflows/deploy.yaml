@@ -35,6 +35,7 @@ jobs:
         HONEYCOMB_API_KEY: ${{ secrets.HONEYCOMB_API_KEY }}
         RUST_LOG: info,sqlx::query=debug,sqlx=warn,rocket=warn,opentelemetry=info
         DEPLOYMENT_ENV: production
+        OTEL_SERVICE_NAME: syllabus-tracker
       
     - name: Set up SSH
       run: |

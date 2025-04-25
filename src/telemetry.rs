@@ -132,10 +132,6 @@ pub fn init_honeycomb_telemetry() -> OtelGuard {
         .with(OpenTelemetryLayer::new(tracer))
         .init();
 
-    let span = tracing::info_span!("telemetry_init");
-    let _guard = span.enter();
-    tracing::info!("Honeycomb telemetry initialized");
-
     OtelGuard { tracer_provider }
 }
 
