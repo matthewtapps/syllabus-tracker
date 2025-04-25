@@ -49,17 +49,10 @@
             rustfmt
             clippy
             cargo
-            #
-            # xorg.libXcursor
-            # xorg.libXrandr
-            # xorg.libXi
-            # xorg.libX11
-            # xorg.libxcb
 
             openssl
             pkg-config
             lld
-            vulkan-loader
           ];
         };
 
