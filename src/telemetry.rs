@@ -1,27 +1,31 @@
 use dotenv::dotenv;
-use opentelemetry::{KeyValue, trace::TracerProvider as _};
+use opentelemetry::{
+    KeyValue,
+    global::{self},
+    propagation::TextMapCompositePropagator,
+    trace::TracerProvider as _,
+};
 use opentelemetry_otlp::{Protocol, WithExportConfig, WithTonicConfig};
 use opentelemetry_sdk::{
     Resource,
+    propagation::{BaggagePropagator, TraceContextPropagator},
     trace::{RandomIdGenerator, Sampler, SdkTracerProvider},
 };
 use opentelemetry_semantic_conventions::{
     SCHEMA_URL,
-    attribute::{SERVICE_NAME, SERVICE_VERSION},
+    attribute::{HTTP_CLIENT_IP, HTTP_URL, SERVICE_NAME, SERVICE_VERSION},
     resource::DEPLOYMENT_ENVIRONMENT_NAME,
+    trace::{HTTP_REQUEST_METHOD, HTTP_RESPONSE_STATUS_CODE, HTTP_ROUTE},
 };
 use rocket::{
     Data, Request, Response,
     fairing::{Fairing, Info, Kind},
 };
-use std::time::Instant;
 use tonic::metadata::MetadataMap;
-use tracing::info_span;
-use tracing_opentelemetry::OpenTelemetryLayer;
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+use tracing::{info, instrument};
+use tracing_subscriber::{Registry, layer::SubscriberExt};
 
-use crate::TELEMETRY_GUARD;
-
+#[derive(Debug)]
 pub struct TelemetryFairing;
 
 #[rocket::async_trait]
@@ -33,40 +37,31 @@ impl Fairing for TelemetryFairing {
         }
     }
 
+    #[instrument]
     async fn on_request(&self, request: &mut Request<'_>, _: &mut Data<'_>) {
         let method = request.method().to_string();
         let uri = request.uri().to_string();
+        let route = request
+            .route()
+            .map(|r| r.uri.to_string())
+            .unwrap_or_default();
+        let client_ip = request
+            .client_ip()
+            .map(|ip| ip.to_string())
+            .unwrap_or_default();
 
-        let start_time = Instant::now();
-
-        let span = info_span!(
-            "http_request",
-            otel.name = format!("{} {}", method, uri),
-            http.method = method,
-            http.uri = uri,
-            http.route = request.route().map(|r| r.uri.to_string()),
+        info!(
+            { HTTP_REQUEST_METHOD } = method,
+            { HTTP_ROUTE } = route,
+            { HTTP_URL } = uri,
+            { HTTP_CLIENT_IP } = client_ip,
         );
-
-        request.local_cache(|| (span, start_time));
     }
 
-    async fn on_response<'r>(&self, request: &'r Request<'_>, response: &mut Response<'r>) {
-        let (span, start_time) = request.local_cache(|| {
-            let span = info_span!("http_request");
-            (span, Instant::now())
-        });
+    async fn on_response<'r>(&self, _request: &'r Request<'_>, response: &mut Response<'r>) {
+        let status_code = response.status().code as i64;
 
-        let duration = start_time.elapsed();
-
-        span.record("http.status_code", &response.status().code);
-        span.record("http.duration_ms", duration.as_millis() as i64);
-
-        let _entered = span.enter();
-        tracing::info!(
-            "Completed request in {}ms with status {}",
-            duration.as_millis(),
-            response.status().code
-        );
+        info!({ HTTP_RESPONSE_STATUS_CODE } = status_code);
     }
 }
 
@@ -83,8 +78,21 @@ fn resource() -> Resource {
         .build()
 }
 
-// Construct TracerProvider for OpenTelemetryLayer
-fn init_tracer_provider() -> SdkTracerProvider {
+pub fn init_tracing() {
+    match dotenv() {
+        Ok(path) => tracing::debug!("Loaded environment from {:?}", path),
+        Err(e) => tracing::debug!("Could not load .env file: {}", e),
+    }
+
+    let baggage_propagator = BaggagePropagator::new();
+    let trace_context_propagator = TraceContextPropagator::new();
+    let composite_propagator = TextMapCompositePropagator::new(vec![
+        Box::new(baggage_propagator),
+        Box::new(trace_context_propagator),
+    ]);
+
+    global::set_text_map_propagator(composite_propagator);
+
     let honeycomb_api_key =
         std::env::var("HONEYCOMB_API_KEY").expect("HONEYCOMB_API_KEY environment variable not set");
 
@@ -107,45 +115,18 @@ fn init_tracer_provider() -> SdkTracerProvider {
         .with_batch_exporter(exporter)
         .build();
 
-    tracer_provider
-}
-
-pub struct OtelGuard {
-    tracer_provider: SdkTracerProvider,
-}
-
-pub fn init_honeycomb_telemetry() -> OtelGuard {
-    match dotenv() {
-        Ok(path) => tracing::debug!("Loaded environment from {:?}", path),
-        Err(e) => tracing::debug!("Could not load .env file: {}", e),
-    }
-    let tracer_provider = init_tracer_provider();
-
     let tracer = tracer_provider.tracer("syllabus-tracker");
+
+    let otel_layer = tracing_opentelemetry::layer().with_tracer(tracer);
 
     let env_filter = tracing_subscriber::EnvFilter::try_from_default_env()
         .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info"));
 
-    tracing_subscriber::registry()
+    let subscriber = Registry::default()
         .with(env_filter)
         .with(tracing_subscriber::fmt::layer())
-        .with(OpenTelemetryLayer::new(tracer))
-        .init();
+        .with(otel_layer);
 
-    OtelGuard { tracer_provider }
-}
-
-impl Drop for OtelGuard {
-    fn drop(&mut self) {
-        if let Err(err) = self.tracer_provider.shutdown() {
-            eprintln!("Failed to shut down tracer provider: {:?}", err);
-        }
-    }
-}
-
-pub fn shutdown_telemetry() {
-    println!("Shutting down telemetry...");
-
-    let guard = TELEMETRY_GUARD.lock().unwrap().take();
-    drop(guard); // This will trigger the Drop impl and shutdown
+    tracing::subscriber::set_global_default(subscriber)
+        .expect("Failed to set global default subscriber");
 }

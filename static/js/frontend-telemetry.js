@@ -12,9 +12,9 @@ const sdk = new HoneycombWebSDK({
   instrumentations: [
     getWebAutoInstrumentations({
       "@opentelemetry/instrumentation-xml-http-request": configDefaults,
-      "@opentelemetry/instrumentation-fetch": configDefaults,
       "@opentelemetry/instrumentation-document-load": configDefaults,
       "@opentelemetry/instrumentation-user-interaction": configDefaults,
+      "@opentelemetry/instrumentation-fetch": configDefaults,
     }),
   ],
 });

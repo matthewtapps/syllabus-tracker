@@ -11,7 +11,6 @@ use auth::{
     JiuJitsuHatch, forbidden, login, logout, process_login, process_register, register,
     unauthorized,
 };
-use once_cell::sync::Lazy;
 use rocket::fs::FileServer;
 use rocket_airlock::Airlock;
 use rocket_dyn_templates::Template;
@@ -20,11 +19,8 @@ use rocket_dyn_templates::handlebars::Handlebars;
 use rocket_dyn_templates::handlebars::Helper;
 use rocket_dyn_templates::handlebars::Output;
 use rocket_dyn_templates::handlebars::RenderContext;
-use std::sync::Arc;
-use std::sync::Mutex;
-use std::sync::Once;
 use telemetry::TelemetryFairing;
-use telemetry::init_honeycomb_telemetry;
+use telemetry::init_tracing;
 use thiserror::Error;
 
 use routes::{
@@ -39,10 +35,6 @@ static DATABASE_URL: &str = "sqlite:///var/www/syllabus-tracker/data/sqlite.db";
 
 #[cfg(not(feature = "production"))]
 static DATABASE_URL: &str = "sqlite://sqlite.db";
-
-static TELEMETRY_INIT: Once = Once::new();
-static TELEMETRY_GUARD: Lazy<Arc<Mutex<Option<telemetry::OtelGuard>>>> =
-    Lazy::new(|| Arc::new(Mutex::new(None)));
 
 #[derive(Debug, Error)]
 pub enum Error {
@@ -70,17 +62,13 @@ impl From<rocket::figment::Error> for Error {
 
 #[launch]
 async fn rocket() -> _ {
-    TELEMETRY_INIT.call_once(|| {
-        let guard = init_honeycomb_telemetry();
-        // Store the guard in the static variable
-        *TELEMETRY_GUARD.lock().unwrap() = Some(guard);
-    });
+    init_tracing();
 
     let pool = SqlitePool::connect(DATABASE_URL)
         .await
         .expect("Failed to connect to SQLite database");
 
-    tracing::info!("Starting syllabus tracker");
+    info!("Starting syllabus tracker");
 
     rocket::build()
         .mount(
@@ -109,14 +97,6 @@ async fn rocket() -> _ {
         .manage(pool)
         .attach(TelemetryFairing)
         .attach(Airlock::<JiuJitsuHatch>::fairing())
-        .attach(rocket::fairing::AdHoc::on_shutdown(
-            "Telemetry Shutdown",
-            |_| {
-                Box::pin(async {
-                    telemetry::shutdown_telemetry();
-                })
-            },
-        ))
         .attach(Template::custom(|engines| {
             let honeycomb_api_key = std::env::var("HONEYCOMB_API_KEY").unwrap_or_default();
 
