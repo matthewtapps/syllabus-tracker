@@ -2,13 +2,19 @@ name: Deploy to Production
 
 on:
   push:
-    branches: [ main ]  # Adjust to your main branch name
+    branches: [ main ]
 
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
     
     steps:
+    - uses: honeycombio/gha-buildevents@v2
+      with: 
+        apikey: ${{ secrets.HONEYCOMB_API_KEY }}
+        dataset: syllabus-tracker-build-events
+        status: ${{ job.status }}
+
     - name: Checkout code
       uses: actions/checkout@v3
       
@@ -29,7 +35,11 @@ jobs:
         key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
         
     - name: Build release
-      run: cargo build --release --features production
+      run: |
+        STEP_ID=build_release
+        STEP_START=$(date +%s)
+        cargo build --release --features production
+        buildevents step $TRACE_ID $STEP_ID $STEP_START $STEP_ID
       env:
         ROCKET_SECRET_KEY: ${{ secrets.ROCKET_SECRET_KEY }}
         HONEYCOMB_API_KEY: ${{ secrets.HONEYCOMB_API_KEY }}
@@ -39,39 +49,56 @@ jobs:
       
     - name: Set up SSH
       run: |
+        STEP_ID=set_up_ssh
+        STEP_START=$(date +%s)
         mkdir -p ~/.ssh
         echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
         chmod 600 ~/.ssh/id_ed25519
         ssh-keyscan -H ${{ secrets.SERVER_IP }} >> ~/.ssh/known_hosts
+        buildevents step $TRACE_ID $STEP_ID $STEP_START $STEP_ID
       
     - name: Prepare for deployment
       run: |
+        STEP_ID=prepare_deployment
+        STEP_START=$(date +%s)
         # Create deployment directory structure if it doesn't exist
         ssh ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} "mkdir -p /var/www/syllabus-tracker/target/release"
+        buildevents step $TRACE_ID $STEP_ID $STEP_START $STEP_ID
         
     - name: Transfer binary to server
       run: |
-        # Transfer the binary directly
+        STEP_ID=trasfer_binary
+        STEP_START=$(date +%s)
         scp target/release/syllabus-tracker ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }}:/var/www/syllabus-tracker/target/release/
+        buildevents step $TRACE_ID $STEP_ID $STEP_START $STEP_ID
 
     - name: Transfer template files
       run: |
+        STEP_ID=transfer_templates
+        STEP_START=$(date +%s)
         ssh ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} "mkdir -p /var/www/syllabus-tracker/templates"
         scp -r templates/* ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }}:/var/www/syllabus-tracker/templates/
+        buildevents step $TRACE_ID $STEP_ID $STEP_START $STEP_ID
 
     - name: Transfer static files
       run: |
+        STEP_ID=transfer_static
+        STEP_START=$(date +%s)
         ssh ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} "mkdir -p /var/www/syllabus-tracker/static"
         scp -r static/* ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }}:/var/www/syllabus-tracker/static/
+        buildevents step $TRACE_ID $STEP_ID $STEP_START $STEP_ID
         
     - name: Configure and restart service
       run: |
-          ssh ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} << 'EOF'
-            chmod +x /var/www/syllabus-tracker/target/release/syllabus-tracker
+        STEP_ID=restart_production
+        STEP_START=$(date +%s)
+        ssh ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} << 'EOF'
+          chmod +x /var/www/syllabus-tracker/target/release/syllabus-tracker
 
-            sudo systemctl daemon-reload
-            
-            sudo systemctl restart syllabus-tracker.service
-            
-            systemctl status syllabus-tracker.service --no-pager
-          EOF
+          sudo systemctl daemon-reload
+          
+          sudo systemctl restart syllabus-tracker.service
+          
+          systemctl status syllabus-tracker.service --no-pager
+        EOF
+        buildevents step $TRACE_ID $STEP_ID $STEP_START $STEP_ID
