@@ -6,6 +6,7 @@ use rocket_airlock::{Airlock, Hatch, Result as HatchResult};
 use rocket_dyn_templates::{Template, context};
 
 use crate::db;
+use crate::telemetry::TracingSpan;
 
 use super::User;
 
@@ -51,61 +52,70 @@ impl Hatch for JiuJitsuHatch {
 }
 
 #[get("/login?<username>&<error>")]
-pub fn login(username: Option<String>, error: Option<String>) -> Template {
-    Template::render(
-        "login",
-        context! {
-            title: "Login - Jiu Jitsu Syllabus Tracker",
-            username: username.unwrap_or_default(),
-            error: error,
-            current_route: "login"
-        },
-    )
+pub fn login(span: TracingSpan, username: Option<String>, error: Option<String>) -> Template {
+    span.in_scope(|| {
+        Template::render(
+            "login",
+            context! {
+                title: "Login - Jiu Jitsu Syllabus Tracker",
+                username: username.unwrap_or_default(),
+                error: error,
+                current_route: "login"
+            },
+        )
+    })
 }
 
 #[post("/login", data = "<form>")]
 pub async fn process_login(
+    span: TracingSpan,
     airlock: Airlock<JiuJitsuHatch>,
     form: Form<LoginForm>,
     cookies: &CookieJar<'_>,
 ) -> Result<Redirect, Redirect> {
-    info!("Login attempt: {}", &form.username);
+    span.in_scope_async(|| async {
+        info!("Login attempt: {}", &form.username);
 
-    match airlock
-        .hatch
-        .authenticate_user(&form.username, &form.password)
-        .await
-    {
-        true => {
-            info!("Authentication successful for {}", &form.username);
-            cookies.add_private(
-                Cookie::build(("logged_in", form.username.clone())).same_site(SameSite::Lax),
-            );
-
-            // Store user role in a separate cookie for role-based access
-            if let Ok(user) = db::get_user_by_username(&form.username).await {
-                cookies
-                    .add_private(Cookie::build(("user_role", user.role)).same_site(SameSite::Lax));
+        match airlock
+            .hatch
+            .authenticate_user(&form.username, &form.password)
+            .await
+        {
+            true => {
+                info!("Authentication successful for {}", &form.username);
                 cookies.add_private(
-                    Cookie::build(("user_id", user.id.to_string())).same_site(SameSite::Lax),
+                    Cookie::build(("logged_in", form.username.clone())).same_site(SameSite::Lax),
                 );
-            }
 
-            Ok(Redirect::to("/"))
+                // Store user role in a separate cookie for role-based access
+                if let Ok(user) = db::get_user_by_username(&form.username).await {
+                    cookies.add_private(
+                        Cookie::build(("user_role", user.role)).same_site(SameSite::Lax),
+                    );
+                    cookies.add_private(
+                        Cookie::build(("user_id", user.id.to_string())).same_site(SameSite::Lax),
+                    );
+                }
+
+                Ok(Redirect::to("/"))
+            }
+            _ => Err(Redirect::to(format!(
+                "/login?username={}&error=Invalid%20username%20or%20password",
+                form.username
+            ))),
         }
-        _ => Err(Redirect::to(format!(
-            "/login?username={}&error=Invalid%20username%20or%20password",
-            form.username
-        ))),
-    }
+    })
+    .await
 }
 
 #[get("/logout")]
-pub fn logout(cookies: &CookieJar<'_>) -> Redirect {
-    cookies.remove_private(Cookie::build("logged_in"));
-    cookies.remove_private(Cookie::build("user_role"));
-    cookies.remove_private(Cookie::build("user_id"));
-    Redirect::to("/login")
+pub fn logout(span: TracingSpan, cookies: &CookieJar<'_>) -> Redirect {
+    span.in_scope(|| {
+        cookies.remove_private(Cookie::build("logged_in"));
+        cookies.remove_private(Cookie::build("user_role"));
+        cookies.remove_private(Cookie::build("user_id"));
+        Redirect::to("/login")
+    })
 }
 
 #[derive(FromForm)]
@@ -116,20 +126,22 @@ pub struct LoginForm {
 
 // Registration routes - only coaches can register new users
 #[rocket::get("/register")]
-pub fn register(user: User) -> Result<Template, Redirect> {
-    // Check if user is a coach
-    if user.role != "coach" {
-        return Err(Redirect::to("/"));
-    }
+pub fn register(span: TracingSpan, user: User) -> Result<Template, Redirect> {
+    span.in_scope(|| {
+        // Check if user is a coach
+        if user.role != "coach" {
+            return Err(Redirect::to("/"));
+        }
 
-    Ok(Template::render(
-        "register",
-        context! {
-            title: "Register New User - Jiu Jitsu Syllabus Tracker",
-            current_route: "register",
-            current_user: user,
-        },
-    ))
+        Ok(Template::render(
+            "register",
+            context! {
+                title: "Register New User - Jiu Jitsu Syllabus Tracker",
+                current_route: "register",
+                current_user: user,
+            },
+        ))
+    })
 }
 
 #[derive(FromForm)]
@@ -140,16 +152,23 @@ pub struct RegisterForm {
 }
 
 #[post("/register", data = "<form>")]
-pub async fn process_register(user: User, form: Form<RegisterForm>) -> Result<Redirect, Redirect> {
-    // Check if user is a coach
-    if user.role != "coach" {
-        return Err(Redirect::to("/"));
-    }
+pub async fn process_register(
+    span: TracingSpan,
+    user: User,
+    form: Form<RegisterForm>,
+) -> Result<Redirect, Redirect> {
+    span.in_scope_async(|| async {
+        // Check if user is a coach
+        if user.role != "coach" {
+            return Err(Redirect::to("/"));
+        }
 
-    match db::create_user(&form.username, &form.password, &form.role).await {
-        Ok(_) => Ok(Redirect::to("/")),
-        Err(_) => Err(Redirect::to("/register?error=Registration%20failed")),
-    }
+        match db::create_user(&form.username, &form.password, &form.role).await {
+            Ok(_) => Ok(Redirect::to("/")),
+            Err(_) => Err(Redirect::to("/register?error=Registration%20failed")),
+        }
+    })
+    .await
 }
 
 #[catch(401)]

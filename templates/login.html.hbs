@@ -2,14 +2,16 @@
 <div class="auth-container">
     <h2>Login</h2>
     {{#if error}}
-    <div class="error-message">
-        {{error}}
-    </div>
+        <div class="error-message">{{ error }}</div>
     {{/if}}
-    <form action="/login" method="post" class="auth-form">
+    <form action="/login" method="post" class="auth-form" id="login">
         <div class="form-group">
             <label for="username">Username:</label>
-            <input type="text" id="username" name="username" value="{{username}}" required>
+            <input type="text"
+                   id="username"
+                   name="username"
+                   value="{{ username }}"
+                   required>
         </div>
         <div class="form-group">
             <label for="password">Password:</label>

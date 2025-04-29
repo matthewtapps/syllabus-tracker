@@ -1,8 +1,9 @@
 use dotenv::dotenv;
+use once_cell::sync::OnceCell;
 use opentelemetry::{
-    KeyValue,
+    Context, KeyValue,
     global::{self},
-    propagation::TextMapCompositePropagator,
+    propagation::{Extractor, TextMapCompositePropagator},
     trace::TracerProvider as _,
 };
 use opentelemetry_otlp::{Protocol, WithExportConfig, WithTonicConfig};
@@ -20,10 +21,70 @@ use opentelemetry_semantic_conventions::{
 use rocket::{
     Data, Request, Response,
     fairing::{Fairing, Info, Kind},
+    http::Status,
+    request::{FromRequest, Outcome},
 };
+use std::collections::HashMap;
 use tonic::metadata::MetadataMap;
-use tracing::{info, instrument};
+use tracing::{Instrument, Span, info_span};
+use tracing_opentelemetry::OpenTelemetrySpanExt;
 use tracing_subscriber::{Registry, layer::SubscriberExt};
+
+static REQUEST_CONTEXT: OnceCell<Context> = OnceCell::new();
+
+#[derive(Clone)]
+pub struct TracingSpan<T = Span>(T);
+
+impl TracingSpan {
+    pub fn enter(&self) -> tracing::span::Entered<'_> {
+        self.0.enter()
+    }
+
+    pub fn in_scope<F, R>(&self, f: F) -> R
+    where
+        F: FnOnce() -> R,
+    {
+        self.0.in_scope(f)
+    }
+
+    pub fn inner(&self) -> &Span {
+        &self.0
+    }
+
+    pub async fn in_scope_async<F, Fut, R>(&self, f: F) -> R
+    where
+        F: FnOnce() -> Fut,
+        Fut: std::future::Future<Output = R>,
+    {
+        Instrument::instrument(f(), self.0.clone()).await
+    }
+}
+
+#[rocket::async_trait]
+impl<'r> FromRequest<'r> for TracingSpan {
+    type Error = ();
+
+    async fn from_request(request: &'r Request<'_>) -> Outcome<Self, ()> {
+        match request.local_cache(|| TracingSpan::<Option<Span>>(None)) {
+            TracingSpan(Some(span)) => Outcome::Success(TracingSpan(span.to_owned())),
+            TracingSpan(_) => Outcome::Error((Status::InternalServerError, ())),
+        }
+    }
+}
+
+struct OwnedHeaderExtractor {
+    headers: HashMap<String, String>,
+}
+
+impl Extractor for OwnedHeaderExtractor {
+    fn get(&self, key: &str) -> Option<&str> {
+        self.headers.get(key).map(|s| s.as_str())
+    }
+
+    fn keys(&self) -> Vec<&str> {
+        self.headers.keys().map(|k| k.as_str()).collect()
+    }
+}
 
 #[derive(Debug)]
 pub struct TelemetryFairing;
@@ -37,8 +98,27 @@ impl Fairing for TelemetryFairing {
         }
     }
 
-    #[instrument]
     async fn on_request(&self, request: &mut Request<'_>, _: &mut Data<'_>) {
+        let mut headers = HashMap::new();
+
+        let trace_headers = ["traceparent", "tracestate", "baggage"];
+
+        for &header_name in &trace_headers {
+            if let Some(value) = request.headers().get_one(header_name) {
+                headers.insert(header_name.to_string(), value.to_string());
+            }
+        }
+        println!("headers: {:?}", headers.clone(),);
+
+        let extractor = OwnedHeaderExtractor { headers };
+
+        let parent_context =
+            global::get_text_map_propagator(|propagator| propagator.extract(&extractor));
+
+        println!("context: {:?}", parent_context);
+
+        let _ = REQUEST_CONTEXT.set(parent_context.clone());
+
         let method = request.method().to_string();
         let uri = request.uri().to_string();
         let route = request
@@ -50,18 +130,32 @@ impl Fairing for TelemetryFairing {
             .map(|ip| ip.to_string())
             .unwrap_or_default();
 
-        info!(
+        let span = info_span!(
+            "on_request",
             { HTTP_REQUEST_METHOD } = method,
             { HTTP_ROUTE } = route,
             { HTTP_URL } = uri,
             { HTTP_CLIENT_IP } = client_ip,
         );
+
+        span.set_parent(parent_context);
+
+        request.local_cache(|| TracingSpan::<Option<Span>>(Some(span.clone())));
+
+        let _guard = span.entered();
     }
 
-    async fn on_response<'r>(&self, _request: &'r Request<'_>, response: &mut Response<'r>) {
-        let status_code = response.status().code as i64;
+    async fn on_response<'r>(&self, request: &'r Request<'_>, response: &mut Response<'r>) {
+        if let Some(span) = request
+            .local_cache(|| TracingSpan::<Option<Span>>(None))
+            .0
+            .to_owned()
+        {
+            let _entered_span = span.entered();
+            _entered_span.record(HTTP_RESPONSE_STATUS_CODE, response.status().code);
 
-        info!({ HTTP_RESPONSE_STATUS_CODE } = status_code);
+            drop(_entered_span);
+        }
     }
 }
 

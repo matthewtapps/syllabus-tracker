@@ -53,6 +53,8 @@
             openssl
             pkg-config
             lld
+
+            typescript-language-server
           ];
         };
 

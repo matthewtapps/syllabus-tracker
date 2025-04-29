@@ -28,7 +28,9 @@
                     </div>
                     <!-- Edit Form (Hidden by default) -->
                     <div id="edit-form-{{ this.id }}" class="edit-form" style="display: none;">
-                        <form action="/student_technique/{{ this.id }}" method="post">
+                        <form action="/student_technique/{{ this.id }}"
+                              method="post"
+                              id="student-technique-edit">
                             {{#if (eq ../current_user.role "coach")}}
                                 <!-- Coach-only editable fields -->
                                 <div class="form-group">
@@ -138,7 +140,9 @@
         <div class="add-form">
             <h3>Add Techniques to Student</h3>
             <!-- Bulk Add Section -->
-            <form action="/student/{{ student.id }}/add_techniques" method="post">
+            <form action="/student/{{ student.id }}/add_techniques"
+                  method="post"
+                  id="student-technique-add">
                 <div class="form-group">
                     <h4>Select Existing Techniques</h4>
                     {{#if unassigned_techniques}}
@@ -164,7 +168,9 @@
             <!-- Create New Technique Form (Hidden by default) -->
             <div id="create-technique-form" style="display: none;">
                 <h4>Create New Technique</h4>
-                <form action="/student/{{ student.id }}/create_technique" method="post">
+                <form action="/student/{{ student.id }}/create_technique"
+                      method="post"
+                      id="student-technique-create">
                     <div class="form-group">
                         <label for="new-technique-name">Technique Name:</label>
                         <input type="text" id="new-technique-name" name="name" required>
