@@ -65,6 +65,7 @@ pub async fn student_techniques(
     span: TracingSpan,
     id: i64,
     user: User,
+    db: &State<Pool<Sqlite>>,
 ) -> Result<Template, Status> {
     span.in_scope_async(|| async {
         info!("Accessing student-specific page");
@@ -73,7 +74,7 @@ pub async fn student_techniques(
             return Err(Status::Forbidden);
         }
 
-        let student = match get_user(id).await {
+        let student = match get_user(db, id).await {
             Ok(student) => student,
             Err(e) => {
                 error!("Failed to get student {}: {:?}", id, e);
@@ -81,7 +82,7 @@ pub async fn student_techniques(
             }
         };
 
-        let techniques = match get_student_techniques(id).await {
+        let techniques = match get_student_techniques(db, id).await {
             Ok(techniques) => techniques,
             Err(e) => {
                 error!("Failed to get techniques for student {}: {:?}", id, e);
@@ -89,7 +90,7 @@ pub async fn student_techniques(
             }
         };
 
-        let all_techniques = match get_all_techniques().await {
+        let all_techniques = match get_all_techniques(db).await {
             Ok(techniques) => techniques,
             Err(e) => {
                 error!("Failed to get all techniques: {:?}", e);
@@ -97,7 +98,7 @@ pub async fn student_techniques(
             }
         };
 
-        let unassigned_techniques = match get_unassigned_techniques(id).await {
+        let unassigned_techniques = match get_unassigned_techniques(db, id).await {
             Ok(techniques) => techniques,
             Err(e) => {
                 error!("Failed to get unassigned techniques: {:?}", e);
@@ -135,11 +136,12 @@ pub async fn update_student_technique_route(
     id: i64,
     form: Form<UpdateStudentTechniqueForm>,
     user: User,
+    db: &State<Pool<Sqlite>>,
 ) -> Result<Redirect, Status> {
     span.in_scope_async(|| async {
         info!("Updating student technique");
         // Get the student technique to retrieve student_id for redirect and permission check
-        let student_technique = match get_student_technique(id).await {
+        let student_technique = match get_student_technique(db, id).await {
             Ok(st) => st,
             Err(e) => {
                 error!("Failed to retrieve student technique {}: {:?}", id, e);
@@ -154,7 +156,7 @@ pub async fn update_student_technique_route(
 
         // If this is a student editing their own technique, only update student_notes
         if user.role == "student" {
-            if let Err(e) = update_student_notes(id, &form.student_notes).await {
+            if let Err(e) = update_student_notes(db, id, &form.student_notes).await {
                 error!(
                     "Failed to update student notes for technique {}: {:?}",
                     id, e
@@ -163,15 +165,21 @@ pub async fn update_student_technique_route(
             }
         } else {
             // Coach can update everything
-            if let Err(e) =
-                update_student_technique(id, &form.status, &form.student_notes, &form.coach_notes)
-                    .await
+            if let Err(e) = update_student_technique(
+                db,
+                id,
+                &form.status,
+                &form.student_notes,
+                &form.coach_notes,
+            )
+            .await
             {
                 error!("Failed to update student technique {}: {:?}", id, e);
                 return Err(Status::InternalServerError);
             }
 
             if let Err(e) = update_technique(
+                db,
                 student_technique.technique_id,
                 &form.technique_name,
                 &form.technique_description,
@@ -203,6 +211,7 @@ pub async fn add_technique_to_student(
     student_id: i64,
     form: Form<AddTechniqueForm>,
     user: User,
+    db: &State<Pool<Sqlite>>,
 ) -> Result<Redirect, Status> {
     span.in_scope_async(|| async {
         info!("Adding technique to student");
@@ -210,7 +219,7 @@ pub async fn add_technique_to_student(
             return Err(Status::Forbidden);
         }
 
-        if let Err(e) = assign_technique_to_student(form.technique_id, student_id).await {
+        if let Err(e) = assign_technique_to_student(db, form.technique_id, student_id).await {
             error!(
                 "Failed to assign technique {} to student {}: {:?}",
                 form.technique_id, student_id, e
@@ -234,6 +243,7 @@ pub async fn add_multiple_techniques_to_student(
     student_id: i64,
     form: Form<AddMultipleTechniquesForm>,
     user: User,
+    db: &State<Pool<Sqlite>>,
 ) -> Result<Redirect, Status> {
     span.in_scope_async(|| async {
         info!("Adding multiple techniques to student");
@@ -241,7 +251,8 @@ pub async fn add_multiple_techniques_to_student(
             return Err(Status::Forbidden);
         }
 
-        if let Err(e) = add_techniques_to_student(student_id, form.technique_ids.clone()).await {
+        if let Err(e) = add_techniques_to_student(db, student_id, form.technique_ids.clone()).await
+        {
             error!(
                 "Failed to assign techniques with ids {:?} to student {}: {:?}",
                 form.technique_ids, student_id, e
@@ -266,6 +277,7 @@ pub async fn create_and_assign_technique_route(
     student_id: i64,
     form: Form<CreateTechniqueForm>,
     user: User,
+    db: &State<Pool<Sqlite>>,
 ) -> Result<Redirect, Status> {
     span.in_scope_async(|| async {
         info!("Creating and assigning new technique to student");
@@ -274,7 +286,8 @@ pub async fn create_and_assign_technique_route(
         }
 
         if let Err(e) =
-            create_and_assign_technique(user.id, student_id, &form.name, &form.description).await
+            create_and_assign_technique(db, user.id, student_id, &form.name, &form.description)
+                .await
         {
             error!(
                 "Failed to create and assign technique to student {}: {:?}",
@@ -313,10 +326,11 @@ pub async fn update_name(
     span: TracingSpan,
     user: User,
     form: Form<UpdateNameForm>,
+    db: &State<Pool<Sqlite>>,
 ) -> Result<Template, Status> {
     let entered = span.enter();
     info!("Updating user display name");
-    if let Err(e) = update_user_display_name(user.id, &form.display_name).await {
+    if let Err(e) = update_user_display_name(db, user.id, &form.display_name).await {
         error!("Failed to update display name: {:?}", e);
         drop(entered);
         return Ok(Template::render(
@@ -332,7 +346,7 @@ pub async fn update_name(
     }
 
     // Get updated user data
-    let updated_user = match get_user(user.id).await {
+    let updated_user = match get_user(db, user.id).await {
         Ok(user) => user,
         Err(_) => {
             return Ok(Template::render(
@@ -373,6 +387,7 @@ pub async fn update_password(
     span: TracingSpan,
     user: User,
     form: Form<UpdatePasswordForm>,
+    db: &State<Pool<Sqlite>>,
 ) -> Result<Template, Status> {
     span.in_scope_async(|| async {
         info!("Updating user password");
@@ -391,7 +406,7 @@ pub async fn update_password(
         }
 
         // Verify current password
-        let is_valid = match authenticate_user(&user.username, &form.current_password).await {
+        let is_valid = match authenticate_user(db, &user.username, &form.current_password).await {
             Ok(valid) => valid,
             Err(_) => false,
         };
@@ -411,7 +426,7 @@ pub async fn update_password(
         }
 
         // Update password
-        if let Err(e) = update_user_password(user.id, &form.new_password).await {
+        if let Err(e) = update_user_password(db, user.id, &form.new_password).await {
             error!("Failed to update password: {:?}", e);
             return Ok(Template::render(
                 "profile",
@@ -450,6 +465,7 @@ pub async fn update_username_route(
     user: User,
     form: Form<UpdateUsernameForm>,
     cookies: &CookieJar<'_>,
+    db: &State<Pool<Sqlite>>,
 ) -> Result<Template, Status> {
     span.in_scope_async(|| async {
         info!("Updating user username");
@@ -467,10 +483,10 @@ pub async fn update_username_route(
         }
 
         // Update username in database
-        match update_username(user.id, &form.username).await {
+        match update_username(db, user.id, &form.username).await {
             Ok(_) => {
                 // Get updated user data first
-                match get_user(user.id).await {
+                match get_user(db, user.id).await {
                     Ok(updated_user) => {
                         // Now update all cookies with the latest user data
 

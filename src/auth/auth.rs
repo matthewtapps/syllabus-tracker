@@ -1,11 +1,12 @@
 use rocket::form::Form;
 use rocket::http::{Cookie, CookieJar, SameSite};
 use rocket::response::Redirect;
-use rocket::{Build, Request, Rocket, Route};
+use rocket::{Build, Request, Rocket, Route, State};
 use rocket_airlock::{Airlock, Hatch, Result as HatchResult};
 use rocket_dyn_templates::{Template, context};
+use sqlx::{Pool, Sqlite};
 
-use crate::db;
+use crate::db::{authenticate_user, create_user, get_user_by_username};
 use crate::telemetry::TracingSpan;
 
 use super::User;
@@ -13,8 +14,13 @@ use super::User;
 pub struct JiuJitsuHatch {}
 
 impl JiuJitsuHatch {
-    pub async fn authenticate_user(&self, username: &str, password: &str) -> bool {
-        match db::authenticate_user(username, password).await {
+    pub async fn authenticate_user(
+        &self,
+        db: &State<Pool<Sqlite>>,
+        username: &str,
+        password: &str,
+    ) -> bool {
+        match authenticate_user(db, username, password).await {
             Ok(success) => success,
             Err(e) => {
                 error!("Authentication error: {:?}", e);
@@ -72,13 +78,14 @@ pub async fn process_login(
     airlock: Airlock<JiuJitsuHatch>,
     form: Form<LoginForm>,
     cookies: &CookieJar<'_>,
+    db: &State<Pool<Sqlite>>,
 ) -> Result<Redirect, Redirect> {
     span.in_scope_async(|| async {
         info!("Login attempt: {}", &form.username);
 
         match airlock
             .hatch
-            .authenticate_user(&form.username, &form.password)
+            .authenticate_user(db, &form.username, &form.password)
             .await
         {
             true => {
@@ -88,7 +95,7 @@ pub async fn process_login(
                 );
 
                 // Store user role in a separate cookie for role-based access
-                if let Ok(user) = db::get_user_by_username(&form.username).await {
+                if let Ok(user) = get_user_by_username(db, &form.username).await {
                     cookies.add_private(
                         Cookie::build(("user_role", user.role)).same_site(SameSite::Lax),
                     );
@@ -156,6 +163,7 @@ pub async fn process_register(
     span: TracingSpan,
     user: User,
     form: Form<RegisterForm>,
+    db: &State<Pool<Sqlite>>,
 ) -> Result<Redirect, Redirect> {
     span.in_scope_async(|| async {
         // Check if user is a coach
@@ -163,7 +171,7 @@ pub async fn process_register(
             return Err(Redirect::to("/"));
         }
 
-        match db::create_user(&form.username, &form.password, &form.role).await {
+        match create_user(db, &form.username, &form.password, &form.role).await {
             Ok(_) => Ok(Redirect::to("/")),
             Err(_) => Err(Redirect::to("/register?error=Registration%20failed")),
         }

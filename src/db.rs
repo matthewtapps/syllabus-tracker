@@ -1,53 +1,48 @@
-use crate::DATABASE_URL;
 use crate::auth::{DbUser, User};
 use chrono::Utc;
 use rocket::response::Redirect;
-use sqlx::sqlite::SqlitePoolOptions;
 use sqlx::{Error, Pool, Sqlite};
 use tracing::instrument;
 
 use crate::models::{DbStudentTechnique, DbTechnique, StudentTechnique, Technique};
 
 #[instrument]
-async fn conn() -> Result<Pool<Sqlite>, sqlx::Error> {
-    info!("Opening databsae connection");
-    let pool = SqlitePoolOptions::new()
-        .max_connections(5)
-        .connect(DATABASE_URL)
-        .await?;
-
-    Ok(pool)
-}
-
-#[instrument]
-pub async fn get_user(id: i64) -> Result<User, sqlx::Error> {
+pub async fn get_user(pool: &Pool<Sqlite>, id: i64) -> Result<User, sqlx::Error> {
     info!("Fetching user by ID");
     let row = sqlx::query_as!(
         DbUser,
         "SELECT id, username, role, display_name FROM users WHERE id=?",
         id
     )
-    .fetch_one(&conn().await?)
+    .fetch_one(pool)
     .await?;
     Ok(User::from(row))
 }
 
 #[instrument]
-pub async fn update_user_display_name(user_id: i64, display_name: &str) -> Result<(), sqlx::Error> {
+pub async fn update_user_display_name(
+    pool: &Pool<Sqlite>,
+    user_id: i64,
+    display_name: &str,
+) -> Result<(), sqlx::Error> {
     info!("Updating user display name");
     sqlx::query!(
         "UPDATE users SET display_name = ? WHERE id = ?",
         display_name,
         user_id
     )
-    .execute(&conn().await?)
+    .execute(pool)
     .await?;
 
     Ok(())
 }
 
 #[instrument(skip_all, fields(user_id))]
-pub async fn update_user_password(user_id: i64, new_password: &str) -> Result<(), sqlx::Error> {
+pub async fn update_user_password(
+    pool: &Pool<Sqlite>,
+    user_id: i64,
+    new_password: &str,
+) -> Result<(), sqlx::Error> {
     info!("Updating user password");
     // Hash the password
     let hashed_password =
@@ -58,21 +53,25 @@ pub async fn update_user_password(user_id: i64, new_password: &str) -> Result<()
         hashed_password,
         user_id
     )
-    .execute(&conn().await?)
+    .execute(pool)
     .await?;
 
     Ok(())
 }
 
 #[instrument]
-pub async fn update_username(user_id: i64, new_username: &str) -> Result<(), sqlx::Error> {
+pub async fn update_username(
+    pool: &Pool<Sqlite>,
+    user_id: i64,
+    new_username: &str,
+) -> Result<(), sqlx::Error> {
     info!("Updating user username");
     let existing = sqlx::query!(
         "SELECT id FROM users WHERE username = ? AND id != ?",
         new_username,
         user_id
     )
-    .fetch_optional(&conn().await?)
+    .fetch_optional(pool)
     .await?;
 
     if existing.is_some() {
@@ -84,14 +83,14 @@ pub async fn update_username(user_id: i64, new_username: &str) -> Result<(), sql
         new_username,
         user_id
     )
-    .execute(&conn().await?)
+    .execute(pool)
     .await?;
 
     Ok(())
 }
 
 #[instrument]
-pub async fn get_all_techniques() -> Result<Vec<Technique>, Error> {
+pub async fn get_all_techniques(pool: &Pool<Sqlite>) -> Result<Vec<Technique>, Error> {
     info!("Getting all techniques");
     let rows = sqlx::query_as!(
         DbTechnique,
@@ -99,7 +98,7 @@ pub async fn get_all_techniques() -> Result<Vec<Technique>, Error> {
          FROM techniques
          ORDER BY name",
     )
-    .fetch_all(&conn().await?)
+    .fetch_all(pool)
     .await?;
 
     Ok(rows
@@ -110,6 +109,7 @@ pub async fn get_all_techniques() -> Result<Vec<Technique>, Error> {
 
 #[instrument]
 pub async fn update_technique(
+    pool: &Pool<Sqlite>,
     technique_id: i64,
     name: &str,
     description: &str,
@@ -123,7 +123,7 @@ pub async fn update_technique(
         description,
         technique_id
     )
-    .execute(&conn().await?)
+    .execute(pool)
     .await?;
 
     sqlx::query!(
@@ -134,7 +134,7 @@ pub async fn update_technique(
         description,
         technique_id
     )
-    .execute(&conn().await?)
+    .execute(pool)
     .await?;
 
     Ok(())
@@ -142,6 +142,7 @@ pub async fn update_technique(
 
 #[instrument]
 pub async fn assign_technique_to_student(
+    pool: &Pool<Sqlite>,
     technique_id: i64,
     student_id: i64,
 ) -> Result<i64, sqlx::Error> {
@@ -156,7 +157,7 @@ pub async fn assign_technique_to_student(
         technique_id,
         student_id
     )
-    .fetch_optional(&conn().await?)
+    .fetch_optional(pool)
     .await?;
 
     if let Some(row) = exists {
@@ -171,14 +172,17 @@ pub async fn assign_technique_to_student(
         student_id,
         technique_id
     )
-    .execute(&conn().await?)
+    .execute(pool)
     .await?;
 
     Ok(res.last_insert_rowid())
 }
 
 #[instrument]
-pub async fn get_student_techniques(student_id: i64) -> Result<Vec<StudentTechnique>, sqlx::Error> {
+pub async fn get_student_techniques(
+    pool: &Pool<Sqlite>,
+    student_id: i64,
+) -> Result<Vec<StudentTechnique>, sqlx::Error> {
     info!("Getting student techniques");
     let rows = sqlx::query_as!(
         DbStudentTechnique,
@@ -189,7 +193,7 @@ pub async fn get_student_techniques(student_id: i64) -> Result<Vec<StudentTechni
 ",
         student_id
     )
-    .fetch_all(&conn().await?)
+    .fetch_all(pool)
     .await?;
 
     Ok(rows
@@ -200,6 +204,7 @@ pub async fn get_student_techniques(student_id: i64) -> Result<Vec<StudentTechni
 
 #[instrument]
 pub async fn get_student_technique(
+    pool: &Pool<Sqlite>,
     student_technique_id: i64,
 ) -> Result<StudentTechnique, sqlx::Error> {
     info!("Getting student technique");
@@ -209,7 +214,7 @@ pub async fn get_student_technique(
          WHERE id = ?",
         student_technique_id
     )
-    .fetch_one(&conn().await?)
+    .fetch_one(pool)
     .await?;
 
     Ok(StudentTechnique::from(row))
@@ -217,6 +222,7 @@ pub async fn get_student_technique(
 
 #[instrument]
 pub async fn update_student_technique(
+    pool: &Pool<Sqlite>,
     id: i64,
     status: &str,
     student_notes: &str,
@@ -234,7 +240,7 @@ pub async fn update_student_technique(
         now,
         id
     )
-    .execute(&conn().await?)
+    .execute(pool)
     .await?;
 
     Ok(())
@@ -242,6 +248,7 @@ pub async fn update_student_technique(
 
 #[instrument]
 pub async fn create_technique(
+    pool: &Pool<Sqlite>,
     name: &str,
     description: &str,
     coach_id: i64,
@@ -254,13 +261,17 @@ pub async fn create_technique(
         description,
         coach_id
     )
-    .execute(&conn().await?)
+    .execute(pool)
     .await?;
     Ok(res.last_insert_rowid())
 }
 
 #[instrument]
-pub async fn update_student_notes(id: i64, student_notes: &str) -> Result<(), sqlx::Error> {
+pub async fn update_student_notes(
+    pool: &Pool<Sqlite>,
+    id: i64,
+    student_notes: &str,
+) -> Result<(), sqlx::Error> {
     info!("Updating student notes");
     let now = Utc::now();
     sqlx::query!(
@@ -271,14 +282,17 @@ pub async fn update_student_notes(id: i64, student_notes: &str) -> Result<(), sq
         now,
         id
     )
-    .execute(&conn().await?)
+    .execute(pool)
     .await?;
 
     Ok(())
 }
 
 #[instrument]
-pub async fn get_unassigned_techniques(student_id: i64) -> Result<Vec<Technique>, sqlx::Error> {
+pub async fn get_unassigned_techniques(
+    pool: &Pool<Sqlite>,
+    student_id: i64,
+) -> Result<Vec<Technique>, sqlx::Error> {
     info!("Getting unassigned techniques");
     let rows = sqlx::query_as!(
         DbTechnique,
@@ -289,7 +303,7 @@ pub async fn get_unassigned_techniques(student_id: i64) -> Result<Vec<Technique>
          )",
         student_id
     )
-    .fetch_all(&conn().await?)
+    .fetch_all(pool)
     .await?;
     Ok(rows
         .iter()
@@ -299,12 +313,13 @@ pub async fn get_unassigned_techniques(student_id: i64) -> Result<Vec<Technique>
 
 #[instrument]
 pub async fn add_techniques_to_student(
+    pool: &Pool<Sqlite>,
     student_id: i64,
     technique_ids: Vec<i64>,
 ) -> Result<Redirect, sqlx::Error> {
     info!("Adding technique to student");
     for technique_id in technique_ids {
-        assign_technique_to_student(technique_id, student_id).await?;
+        assign_technique_to_student(pool, technique_id, student_id).await?;
     }
 
     Ok(Redirect::to(format!("/student/{}", student_id)))
@@ -312,27 +327,33 @@ pub async fn add_techniques_to_student(
 
 #[instrument]
 pub async fn create_and_assign_technique(
+    pool: &Pool<Sqlite>,
     coach_id: i64,
     student_id: i64,
     technique_name: &str,
     technique_description: &str,
 ) -> Result<Redirect, sqlx::Error> {
     info!("Creating and assigning technique to student");
-    let technique_id = create_technique(technique_name, technique_description, coach_id).await?;
+    let technique_id =
+        create_technique(pool, technique_name, technique_description, coach_id).await?;
 
-    assign_technique_to_student(technique_id, student_id).await?;
+    assign_technique_to_student(pool, technique_id, student_id).await?;
 
     Ok(Redirect::to(format!("/student/{}", student_id)))
 }
 
 #[instrument(skip_all, fields(username))]
-pub async fn authenticate_user(username: &str, password: &str) -> Result<bool, sqlx::Error> {
+pub async fn authenticate_user(
+    pool: &Pool<Sqlite>,
+    username: &str,
+    password: &str,
+) -> Result<bool, sqlx::Error> {
     info!("Authenticating user");
     let user = sqlx::query!(
         "SELECT id, username, password, role FROM users WHERE username = ?",
         username
     )
-    .fetch_optional(&conn().await?)
+    .fetch_optional(pool)
     .await?;
 
     match user {
@@ -348,7 +369,12 @@ pub async fn authenticate_user(username: &str, password: &str) -> Result<bool, s
 }
 
 #[instrument(skip_all, fields(username, role))]
-pub async fn create_user(username: &str, password: &str, role: &str) -> Result<i64, sqlx::Error> {
+pub async fn create_user(
+    pool: &Pool<Sqlite>,
+    username: &str,
+    password: &str,
+    role: &str,
+) -> Result<i64, sqlx::Error> {
     info!("Creating new user");
 
     let hashed_password =
@@ -360,21 +386,24 @@ pub async fn create_user(username: &str, password: &str, role: &str) -> Result<i
         hashed_password,
         role
     )
-    .execute(&conn().await?)
+    .execute(pool)
     .await?;
 
     Ok(res.last_insert_rowid())
 }
 
 #[instrument]
-pub async fn get_user_by_username(username: &str) -> Result<User, sqlx::Error> {
+pub async fn get_user_by_username(
+    pool: &Pool<Sqlite>,
+    username: &str,
+) -> Result<User, sqlx::Error> {
     info!("Getting user by username");
     let row = sqlx::query_as!(
         DbUser,
         "SELECT id, username, role, display_name FROM users WHERE username = ?",
         username
     )
-    .fetch_one(&conn().await?)
+    .fetch_one(pool)
     .await?;
 
     Ok(User::from(row))
