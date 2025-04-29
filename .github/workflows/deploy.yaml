@@ -102,3 +102,27 @@ jobs:
           systemctl status syllabus-tracker.service --no-pager
         EOF
         buildevents step $TRACE_ID $STEP_ID $STEP_START $STEP_ID
+    - name: Create Honeycomb deployment marker
+      run: |
+        DEPLOY_TIME=$(date +%s)
+        GIT_COMMIT_HASH=$(git rev-parse HEAD)
+        GIT_COMMIT_MESSAGE=$(git log -1 --pretty=%B | tr -d '\n')
+        
+        curl -X POST "https://api.honeycomb.io/1/markers/__all__" \
+          -H "X-Honeycomb-Team: ${{ secrets.HONEYCOMB_MARKER_KEY }}" \
+          -H "Content-Type: application/json" \
+          -d "{
+            \"message\": \"Deployed commit ${GIT_COMMIT_HASH}\",
+            \"type\": \"deploy\",
+            \"start_time\": ${DEPLOY_TIME},
+            \"url\": \"https://github.com/${{ github.repository }}/commit/${{ github.sha }}\",
+            \"metadata\": {
+              \"commit_hash\": \"${GIT_COMMIT_HASH}\",
+              \"commit_message\": \"${GIT_COMMIT_MESSAGE}\",
+              \"github_actor\": \"${{ github.actor }}\",
+              \"github_repository\": \"${{ github.repository }}\",
+              \"github_ref\": \"${{ github.ref }}\"
+            }
+          }"
+      env:
+        HONEYCOMB_API_KEY: ${{ secrets.HONEYCOMB_API_KEY }}
