@@ -13,7 +13,37 @@ import {
 import { SemanticResourceAttributes } from "https://cdn.jsdelivr.net/npm/@opentelemetry/semantic-conventions/+esm";
 import { registerInstrumentations } from "https://cdn.jsdelivr.net/npm/@opentelemetry/instrumentation/+esm";
 
-const exporter = new OTLPTraceExporter({
+// Create a custom exporter that uses the Beacon API for more reliable delivery
+class BeaconOTLPTraceExporter extends OTLPTraceExporter {
+  constructor(config) {
+    super(config);
+    this.beaconUrl = config.url;
+    this.beaconHeaders = config.headers;
+  }
+
+  // Override send method to attempt Beacon API as fallback
+  send(items, onSuccess, onError) {
+    // Store serialized spans for potential beacon use
+    const jsonData = this.serialize(items);
+
+    // Try standard XHR/fetch first
+    super.send(items, onSuccess, (error) => {
+      // If standard export fails, try sendBeacon as fallback
+      console.log("Falling back to sendBeacon for telemetry export");
+      const blob = new Blob([jsonData], { type: "application/json" });
+      const beaconSuccess = navigator.sendBeacon(this.beaconUrl, blob);
+
+      if (beaconSuccess) {
+        onSuccess();
+      } else {
+        onError(error);
+      }
+    });
+  }
+}
+
+// Initialize the exporter with beacon fallback support
+const exporter = new BeaconOTLPTraceExporter({
   url: "https://api.honeycomb.io/v1/traces",
   headers: {
     "x-honeycomb-team": window.apiKey,
@@ -37,6 +67,8 @@ registerInstrumentations({
   instrumentations: [getWebAutoInstrumentations()],
 });
 
+let flushSuccess = false;
+
 document.addEventListener("DOMContentLoaded", function () {
   const tracer = provider.getTracer("forms");
 
@@ -51,54 +83,74 @@ document.addEventListener("DOMContentLoaded", function () {
 
       event.preventDefault();
 
-      // Get form details for span attributes
       const formId = form.id || "unnamed-form";
       const formAction = form.action || window.location.href;
       const formMethod = form.method || "get";
 
-      tracer.startActiveSpan(`form_submit_${formId}`, async (span) => {
-        span.setAttribute("form.action", formAction);
-        span.setAttribute("form.method", formMethod);
-        span.setAttribute("form.id", formId);
+      const formSpan = tracer.startSpan(`form_submit_${formId}`);
+      formSpan.setAttribute("form.action", formAction);
+      formSpan.setAttribute("form.method", formMethod);
+      formSpan.setAttribute("form.id", formId);
+
+      let response = null;
+
+      try {
+        const formData = new FormData(form);
+
+        const traceparent = `00-${formSpan.spanContext().traceId}-${formSpan.spanContext().spanId}-01`;
+        const headers = { traceparent };
+
+        const fetchSpan = tracer.startSpan("fetch_request", {
+          parent: formSpan,
+          attributes: {
+            "http.url": formAction,
+            "http.method": formMethod,
+          },
+        });
 
         try {
-          const formData = new FormData(form);
-
-          const traceparent = `00-${span.spanContext().traceId}-${span.spanContext().spanId}-01`;
-
-          const headers = {
-            traceparent,
-          };
-
-          span.end();
-
-          await provider.forceFlush();
-
-          const response = await fetch(formAction, {
+          response = await fetch(formAction, {
             method: formMethod,
             body: formData,
             headers: headers,
             redirect: "follow",
           });
 
-          if (response.redirected) {
-            // If the response is a redirect, follow it
-            window.location.href = response.url;
-          } else {
-            // Otherwise, replace the current page with the response
-            const html = await response.text();
-            document.open();
-            document.write(html);
-            document.close();
-          }
+          fetchSpan.setAttribute("http.status_code", response.status);
+          fetchSpan.setAttribute("http.redirected", response.redirected);
+
+          fetchSpan.end();
         } catch (error) {
-          console.error("Form submission error:", error);
-          span.recordException(error);
-          span.end();
-          await provider.forceFlush();
-          form.submit(); // Fallback to normal submission
+          fetchSpan.recordException(error);
+          fetchSpan.end();
+          throw error;
         }
-      });
+
+        formSpan.end();
+
+        await flushTelemetryBeforeNavigation();
+
+        if (response && response.redirected) {
+          window.location.href = response.url;
+        } else if (response) {
+          const html = await response.text();
+          document.open();
+          document.write(html);
+          document.close();
+        }
+      } catch (error) {
+        console.error("Form submission error:", error);
+
+        // Record error and end span
+        formSpan.recordException(error);
+        formSpan.end();
+
+        // Try to flush telemetry
+        await flushTelemetryBeforeNavigation();
+
+        // Fallback to normal form submission
+        form.submit();
+      }
     });
   });
 });
@@ -132,4 +184,14 @@ function getOrCreateSessionId() {
   }
 
   return sessionId;
+}
+
+async function flushTelemetryBeforeNavigation() {
+  try {
+    await provider.forceFlush();
+    flushSuccess = true;
+    return true;
+  } catch (e) {
+    return false;
+  }
 }

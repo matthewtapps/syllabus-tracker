@@ -141,7 +141,7 @@ impl Fairing for TelemetryFairing {
             { HTTP_USER_AGENT } = %request.headers().get_one("User-Agent").unwrap_or(""),
             { HTTP_RESPONSE_STATUS_CODE } = tracing::field::Empty,
             { SESSION_ID } = session_id,
-            { USER_ID} = user_id
+            { USER_ID } = user_id
         );
 
         span.set_parent(parent_context);
@@ -180,8 +180,8 @@ fn resource() -> Resource {
 
 pub fn init_tracing() {
     match dotenv() {
-        Ok(path) => tracing::debug!("Loaded environment from {:?}", path),
-        Err(e) => tracing::debug!("Could not load .env file: {}", e),
+        Ok(path) => debug!("Loaded environment from {:?}", path),
+        Err(e) => debug!("Could not load .env file: {}", e),
     }
 
     let baggage_propagator = BaggagePropagator::new();

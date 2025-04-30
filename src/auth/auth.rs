@@ -96,7 +96,8 @@ pub async fn process_login(
     db: &State<Pool<Sqlite>>,
 ) -> Result<Redirect, Redirect> {
     span.in_scope_async(|| async {
-        info!("Login attempt: {}", &form.username);
+        let message = format!("Login attempt: {}", &form.username);
+        info!(message = message);
 
         match airlock
             .hatch
@@ -104,9 +105,10 @@ pub async fn process_login(
             .await
         {
             true => {
-                info!("Authentication successful for {}", &form.username);
+                let message = format!("Authentication successful for {}", &form.username);
+                info!(message = message);
 
-                let mut cookie = Cookie::build(("logged_in", form.username.clone()))
+                let cookie = Cookie::build(("logged_in", form.username.clone()))
                     .same_site(SameSite::Lax)
                     .max_age(Duration::hours(1));
                 cookies.add_private(cookie);

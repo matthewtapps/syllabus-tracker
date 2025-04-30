@@ -2,7 +2,7 @@ use crate::auth::{DbUser, User};
 use chrono::Utc;
 use rocket::response::Redirect;
 use sqlx::{Error, Pool, Sqlite};
-use tracing::instrument;
+use tracing::{info, instrument};
 
 use crate::models::{DbStudentTechnique, DbTechnique, StudentTechnique, Technique};
 

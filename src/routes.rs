@@ -6,6 +6,7 @@ use rocket::{State, http::Status};
 use rocket_dyn_templates::{Template, context};
 use serde_json::json;
 use sqlx::{Pool, Sqlite};
+use tracing::{error, info};
 
 use crate::auth::User;
 use crate::db::{

@@ -29,6 +29,7 @@ use routes::{
     update_password, update_student_technique_route, update_username_route,
 };
 use sqlx::SqlitePool;
+use tracing::info;
 
 #[cfg(feature = "production")]
 static DATABASE_URL: &str = "sqlite:///var/www/syllabus-tracker/data/sqlite.db";
