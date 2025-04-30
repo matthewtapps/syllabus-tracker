@@ -1,44 +1,54 @@
+use rocket::Request;
 use rocket::form::Form;
 use rocket::http::{Cookie, CookieJar, SameSite};
-use rocket::response::Redirect;
+use rocket::response::{self, Redirect, Responder};
 use rocket::{State, http::Status};
 use rocket_dyn_templates::{Template, context};
 use serde_json::json;
 use sqlx::{Pool, Sqlite};
 
-use crate::auth::{DbUser, User};
+use crate::auth::User;
 use crate::db::{
     add_techniques_to_student, assign_technique_to_student, authenticate_user,
     create_and_assign_technique, get_all_techniques, get_student_technique,
-    get_unassigned_techniques, update_student_notes, update_student_technique, update_technique,
-    update_user_display_name, update_user_password, update_username,
+    get_unassigned_techniques, get_users_by_role, update_student_notes, update_student_technique,
+    update_technique, update_user_display_name, update_user_password, update_username,
 };
 use crate::db::{get_student_techniques, get_user};
 use crate::telemetry::TracingSpan;
 
+pub enum IndexResponse {
+    TemplateResponse(Template),
+    RedirectResponse(Redirect),
+    ErrorResponse(Status),
+}
+
+impl<'r> Responder<'r, 'static> for IndexResponse {
+    fn respond_to(self, request: &'r Request<'_>) -> response::Result<'static> {
+        match self {
+            IndexResponse::TemplateResponse(template) => template.respond_to(request),
+            IndexResponse::RedirectResponse(redirect) => redirect.respond_to(request),
+            IndexResponse::ErrorResponse(status) => status.respond_to(request),
+        }
+    }
+}
+
 #[get("/")]
-pub async fn index<'a>(
-    span: TracingSpan,
-    user: User,
-    db: &State<Pool<Sqlite>>,
-) -> Result<Template, Redirect> {
+pub async fn index(span: TracingSpan, user: User, db: &State<Pool<Sqlite>>) -> IndexResponse {
     span.in_scope_async(|| async {
         info!("Accessing index page");
         if user.role == "student" {
-            return Err(Redirect::to(format!("/student/{}", user.id)));
+            return IndexResponse::RedirectResponse(Redirect::to(format!("/student/{}", user.id)));
         }
-
         // Fetch students for the index page
-        let students: Vec<User> =
-            sqlx::query_as::<_, DbUser>("SELECT * FROM Users WHERE Role = 'student'")
-                .fetch_all(&**db)
-                .await
-                .unwrap_or_default()
-                .into_iter()
-                .map(User::from)
-                .collect();
-
-        Ok(Template::render(
+        let students = match get_users_by_role(db, "student").await {
+            Ok(students) => students,
+            Err(e) => {
+                error!("Failed to get users by role {}: {:?}", "student", e);
+                return IndexResponse::ErrorResponse(Status::InternalServerError);
+            }
+        };
+        IndexResponse::TemplateResponse(Template::render(
             "index",
             context! {
                 title: "Jiu Jitsu Syllabus Tracker",

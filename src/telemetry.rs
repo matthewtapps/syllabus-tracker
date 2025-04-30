@@ -14,9 +14,9 @@ use opentelemetry_sdk::{
 };
 use opentelemetry_semantic_conventions::{
     SCHEMA_URL,
-    attribute::{HTTP_CLIENT_IP, HTTP_URL, SERVICE_NAME, SERVICE_VERSION},
+    attribute::{HTTP_URL, HTTP_USER_AGENT, SERVICE_NAME, SERVICE_VERSION},
     resource::DEPLOYMENT_ENVIRONMENT_NAME,
-    trace::{HTTP_REQUEST_METHOD, HTTP_RESPONSE_STATUS_CODE, HTTP_ROUTE},
+    trace::{HTTP_REQUEST_METHOD, HTTP_RESPONSE_STATUS_CODE},
 };
 use rocket::{
     Data, Request, Response,
@@ -33,7 +33,7 @@ use tracing_subscriber::{Registry, layer::SubscriberExt};
 static REQUEST_CONTEXT: OnceCell<Context> = OnceCell::new();
 
 #[derive(Clone)]
-pub struct TracingSpan<T = Span>(T);
+pub struct TracingSpan<T = Span>(pub T);
 
 impl TracingSpan {
     pub fn enter(&self) -> tracing::span::Entered<'_> {
@@ -108,34 +108,26 @@ impl Fairing for TelemetryFairing {
                 headers.insert(header_name.to_string(), value.to_string());
             }
         }
-        println!("headers: {:?}", headers.clone(),);
 
         let extractor = OwnedHeaderExtractor { headers };
 
         let parent_context =
             global::get_text_map_propagator(|propagator| propagator.extract(&extractor));
 
-        println!("context: {:?}", parent_context);
-
         let _ = REQUEST_CONTEXT.set(parent_context.clone());
 
-        let method = request.method().to_string();
-        let uri = request.uri().to_string();
-        let route = request
-            .route()
-            .map(|r| r.uri.to_string())
-            .unwrap_or_default();
-        let client_ip = request
-            .client_ip()
-            .map(|ip| ip.to_string())
-            .unwrap_or_default();
+        let span_name = format!("{} {}", request.method(), request.uri().path());
 
         let span = info_span!(
-            "on_request",
-            { HTTP_REQUEST_METHOD } = method,
-            { HTTP_ROUTE } = route,
-            { HTTP_URL } = uri,
-            { HTTP_CLIENT_IP } = client_ip,
+            // info_span! requires a static string, not a dynamic string;
+            // otel.name does not have the same constraint, and overwrites
+            // the name field
+            "",
+            otel.name = %span_name,
+            { HTTP_REQUEST_METHOD } = %request.method(),
+            { HTTP_URL } = %request.uri().path(),
+            { HTTP_USER_AGENT } = %request.headers().get_one("User-Agent").unwrap_or(""),
+            { HTTP_RESPONSE_STATUS_CODE } = tracing::field::Empty,
         );
 
         span.set_parent(parent_context);

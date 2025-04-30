@@ -408,3 +408,12 @@ pub async fn get_user_by_username(
 
     Ok(User::from(row))
 }
+
+#[instrument]
+pub async fn get_users_by_role(pool: &Pool<Sqlite>, role: &str) -> Result<Vec<User>, sqlx::Error> {
+    let rows = sqlx::query_as::<_, DbUser>("SELECT * FROM Users WHERE Role = 'student'")
+        .fetch_all(pool)
+        .await?;
+
+    Ok(rows.iter().map(|row| User::from(row.clone())).collect())
+}

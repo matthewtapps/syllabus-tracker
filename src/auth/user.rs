@@ -7,7 +7,7 @@ use rocket_airlock::Airlock;
 use serde::Serialize;
 use tracing::{Instrument, info_span};
 
-use crate::{auth::JiuJitsuHatch, db::get_user_by_username};
+use crate::{auth::JiuJitsuHatch, db::get_user_by_username, telemetry::TracingSpan};
 
 #[derive(Debug, Serialize, Clone)]
 pub struct User {
@@ -43,7 +43,17 @@ impl<'r> FromRequest<'r> for User {
     async fn from_request(request: &'r Request<'_>) -> Outcome<Self, Self::Error> {
         let cookies = request.cookies();
 
-        let auth_span = info_span!("user_auth_guard",);
+        let parent_span = request
+            .local_cache(|| TracingSpan::<Option<tracing::Span>>(None))
+            .0
+            .to_owned();
+
+        let auth_span = if let Some(parent) = parent_span {
+            let span = info_span!(parent: parent, "user_auth_guard");
+            span
+        } else {
+            info_span!("user_auth_guard")
+        };
 
         async move {
             if let Some(logged_in) = cookies.get_private("logged_in") {
