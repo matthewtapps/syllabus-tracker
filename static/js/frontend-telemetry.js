@@ -1,7 +1,11 @@
 import { getWebAutoInstrumentations } from "https://cdn.jsdelivr.net/npm/@opentelemetry/auto-instrumentations-web/+esm";
 import { ZoneContextManager } from "https://cdn.jsdelivr.net/npm/@opentelemetry/context-zone/+esm";
 import { OTLPTraceExporter } from "https://cdn.jsdelivr.net/npm/@opentelemetry/exporter-trace-otlp-http/+esm";
-import { resourceFromAttributes } from "https://cdn.jsdelivr.net/npm/@opentelemetry/resources/+esm";
+import {
+  resourceFromAttributes,
+  envDetector,
+  processDetector,
+} from "https://cdn.jsdelivr.net/npm/@opentelemetry/resources/+esm";
 import {
   WebTracerProvider,
   BatchSpanProcessor,
@@ -20,8 +24,9 @@ const provider = new WebTracerProvider({
   spanProcessors: [new BatchSpanProcessor(exporter)],
   resource: resourceFromAttributes({
     [SemanticResourceAttributes.SERVICE_NAME]: "syllabus-tracker-frontend",
-    user_agent_original: window.navigator.userAgent,
+    "session.id": getOrCreateSessionId(),
   }),
+  resourceDetectors: [envDetector, processDetector],
 });
 
 provider.register({
@@ -97,3 +102,22 @@ document.addEventListener("DOMContentLoaded", function () {
     });
   });
 });
+
+function getOrCreateSessionId() {
+  // Check if we already have a session ID in localStorage
+  let sessionId = localStorage.getItem("otel_session_id");
+
+  // If not, create a new one
+  if (!sessionId) {
+    // Generate a random session ID
+    sessionId =
+      "session_" +
+      Math.random().toString(36).substring(2, 15) +
+      Math.random().toString(36).substring(2, 15);
+
+    // Store it in localStorage
+    localStorage.setItem("otel_session_id", sessionId);
+  }
+
+  return sessionId;
+}
