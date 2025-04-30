@@ -13,37 +13,7 @@ import {
 import { SemanticResourceAttributes } from "https://cdn.jsdelivr.net/npm/@opentelemetry/semantic-conventions/+esm";
 import { registerInstrumentations } from "https://cdn.jsdelivr.net/npm/@opentelemetry/instrumentation/+esm";
 
-// Create a custom exporter that uses the Beacon API for more reliable delivery
-class BeaconOTLPTraceExporter extends OTLPTraceExporter {
-  constructor(config) {
-    super(config);
-    this.beaconUrl = config.url;
-    this.beaconHeaders = config.headers;
-  }
-
-  // Override send method to attempt Beacon API as fallback
-  send(items, onSuccess, onError) {
-    // Store serialized spans for potential beacon use
-    const jsonData = this.serialize(items);
-
-    // Try standard XHR/fetch first
-    super.send(items, onSuccess, (error) => {
-      // If standard export fails, try sendBeacon as fallback
-      console.log("Falling back to sendBeacon for telemetry export");
-      const blob = new Blob([jsonData], { type: "application/json" });
-      const beaconSuccess = navigator.sendBeacon(this.beaconUrl, blob);
-
-      if (beaconSuccess) {
-        onSuccess();
-      } else {
-        onError(error);
-      }
-    });
-  }
-}
-
-// Initialize the exporter with beacon fallback support
-const exporter = new BeaconOTLPTraceExporter({
+const exporter = new OTLPTraceExporter({
   url: "https://api.honeycomb.io/v1/traces",
   headers: {
     "x-honeycomb-team": window.apiKey,
@@ -82,6 +52,11 @@ document.addEventListener("DOMContentLoaded", function () {
       }
 
       event.preventDefault();
+
+      const submitButton = getSubmitButton(form);
+      if (submitButton) {
+        setButtonLoading(submitButton, true);
+      }
 
       const formId = form.id || "unnamed-form";
       const formAction = form.action || window.location.href;
@@ -123,6 +98,10 @@ document.addEventListener("DOMContentLoaded", function () {
         } catch (error) {
           fetchSpan.recordException(error);
           fetchSpan.end();
+
+          if (submitButton) {
+            setButtonLoading(submitButton, false);
+          }
           throw error;
         }
 
@@ -141,14 +120,15 @@ document.addEventListener("DOMContentLoaded", function () {
       } catch (error) {
         console.error("Form submission error:", error);
 
-        // Record error and end span
         formSpan.recordException(error);
         formSpan.end();
 
-        // Try to flush telemetry
         await flushTelemetryBeforeNavigation();
 
-        // Fallback to normal form submission
+        if (submitButton) {
+          setButtonLoading(submitButton, false);
+        }
+
         form.submit();
       }
     });
@@ -193,5 +173,45 @@ async function flushTelemetryBeforeNavigation() {
     return true;
   } catch (e) {
     return false;
+  }
+}
+
+function getSubmitButton(form) {
+  let submitButton = form.querySelector('button[type="submit"]');
+
+  if (!submitButton) {
+    submitButton = form.querySelector('input[type="submit"]');
+  }
+
+  if (!submitButton) {
+    const buttons = Array.from(form.querySelectorAll("button:not([type])"));
+    if (buttons.length > 0) {
+      submitButton = buttons[0]; // Use the first one
+    }
+  }
+
+  if (!submitButton) {
+    const buttons = Array.from(form.querySelectorAll("button"));
+    if (buttons.length > 0) {
+      submitButton = buttons[buttons.length - 1]; // Typically the last button is submit
+    }
+  }
+
+  return submitButton;
+}
+
+function setButtonLoading(button, isLoading) {
+  if (isLoading) {
+    button.dataset.originalText = button.innerHTML;
+
+    button.classList.add("btn-loading");
+    button.innerHTML = '<span class="loading-spinner"></span>';
+    button.disabled = true;
+  } else {
+    if (button.dataset.originalText) {
+      button.innerHTML = button.dataset.originalText;
+    }
+    button.classList.remove("btn-loading");
+    button.disabled = false;
   }
 }
