@@ -103,20 +103,32 @@ document.addEventListener("DOMContentLoaded", function () {
   });
 });
 
-function getOrCreateSessionId() {
-  // Check if we already have a session ID in localStorage
-  let sessionId = localStorage.getItem("otel_session_id");
+function setCookie(name, value, minutes) {
+  const expires = new Date();
+  expires.setTime(expires.getTime() + minutes * 60 * 1000);
+  document.cookie = `${name}=${value};expires=${expires.toUTCString()};path=/;SameSite=Lax`;
+}
 
-  // If not, create a new one
+function getCookie(name) {
+  const nameEQ = name + "=";
+  const ca = document.cookie.split(";");
+  for (let i = 0; i < ca.length; i++) {
+    let c = ca[i].trim();
+    if (c.indexOf(nameEQ) === 0) return c.substring(nameEQ.length, c.length);
+  }
+  return null;
+}
+
+function getOrCreateSessionId() {
+  let sessionId = getCookie("otel_session_id");
+
   if (!sessionId) {
-    // Generate a random session ID
     sessionId =
       "session_" +
       Math.random().toString(36).substring(2, 15) +
       Math.random().toString(36).substring(2, 15);
 
-    // Store it in localStorage
-    localStorage.setItem("otel_session_id", sessionId);
+    setCookie("otel_session_id", sessionId, 5);
   }
 
   return sessionId;

@@ -14,7 +14,7 @@ use opentelemetry_sdk::{
 };
 use opentelemetry_semantic_conventions::{
     SCHEMA_URL,
-    attribute::{HTTP_URL, HTTP_USER_AGENT, SERVICE_NAME, SERVICE_VERSION},
+    attribute::{HTTP_URL, HTTP_USER_AGENT, SERVICE_NAME, SERVICE_VERSION, SESSION_ID, USER_ID},
     resource::DEPLOYMENT_ENVIRONMENT_NAME,
     trace::{HTTP_REQUEST_METHOD, HTTP_RESPONSE_STATUS_CODE},
 };
@@ -109,6 +109,18 @@ impl Fairing for TelemetryFairing {
             }
         }
 
+        let session_id = request
+            .cookies()
+            .get("otel_session_id")
+            .map(|cookie| cookie.value().to_string())
+            .unwrap_or_else(|| "unknown_session".to_string());
+
+        let user_id = request
+            .cookies()
+            .get("user_id")
+            .map(|cookie| cookie.value().to_string())
+            .unwrap_or_else(|| "unknown_session".to_string());
+
         let extractor = OwnedHeaderExtractor { headers };
 
         let parent_context =
@@ -128,6 +140,8 @@ impl Fairing for TelemetryFairing {
             { HTTP_URL } = %request.uri().path(),
             { HTTP_USER_AGENT } = %request.headers().get_one("User-Agent").unwrap_or(""),
             { HTTP_RESPONSE_STATUS_CODE } = tracing::field::Empty,
+            { SESSION_ID } = session_id,
+            { USER_ID} = user_id
         );
 
         span.set_parent(parent_context);

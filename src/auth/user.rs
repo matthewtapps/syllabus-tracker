@@ -81,7 +81,7 @@ impl<'r> FromRequest<'r> for User {
                             .expect("Hatch 'JiuJitsuHatch' was not installed into the airlock.")
                             .hatch;
 
-                        if hatch.is_session_expired(&username).await {
+                        if hatch.is_session_expired(&username, cookies).await {
                             return Outcome::Forward(Status::Unauthorized);
                         }
 

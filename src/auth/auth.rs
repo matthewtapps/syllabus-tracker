@@ -1,10 +1,12 @@
 use rocket::form::Form;
 use rocket::http::{Cookie, CookieJar, SameSite};
 use rocket::response::Redirect;
+use rocket::time::{Duration, OffsetDateTime};
 use rocket::{Build, Request, Rocket, Route, State};
 use rocket_airlock::{Airlock, Hatch, Result as HatchResult};
 use rocket_dyn_templates::{Template, context};
 use sqlx::{Pool, Sqlite};
+use tracing::info;
 
 use crate::db::{authenticate_user, create_user, get_user_by_username};
 use crate::telemetry::TracingSpan;
@@ -29,9 +31,22 @@ impl JiuJitsuHatch {
         }
     }
 
-    pub async fn is_session_expired(&self, _username: &str) -> bool {
-        // For now, we'll assume sessions don't expire
-        false
+    pub async fn is_session_expired(&self, _username: &str, cookies: &CookieJar<'_>) -> bool {
+        if let Some(timestamp_cookie) = cookies.get_private("session_timestamp") {
+            if let Ok(timestamp) = timestamp_cookie.value().parse::<i64>() {
+                // Check if the timestamp is older than 1 hour
+                let session_time = OffsetDateTime::from_unix_timestamp(timestamp).ok();
+                let current_time = OffsetDateTime::now_utc();
+
+                if let Some(session_time) = session_time {
+                    let elapsed = current_time - session_time;
+                    return elapsed > Duration::hours(1);
+                }
+            }
+        }
+
+        // If we can't parse the timestamp or it doesn't exist, consider session expired
+        true
     }
 }
 
@@ -90,17 +105,30 @@ pub async fn process_login(
         {
             true => {
                 info!("Authentication successful for {}", &form.username);
+
+                let mut cookie = Cookie::build(("logged_in", form.username.clone()))
+                    .same_site(SameSite::Lax)
+                    .max_age(Duration::hours(1));
+                cookies.add_private(cookie);
+
+                let current_timestamp = OffsetDateTime::now_utc().unix_timestamp().to_string();
                 cookies.add_private(
-                    Cookie::build(("logged_in", form.username.clone())).same_site(SameSite::Lax),
+                    Cookie::build(("session_timestamp", current_timestamp))
+                        .same_site(SameSite::Lax)
+                        .max_age(Duration::hours(1)),
                 );
 
                 // Store user role in a separate cookie for role-based access
                 if let Ok(user) = get_user_by_username(db, &form.username).await {
                     cookies.add_private(
-                        Cookie::build(("user_role", user.role)).same_site(SameSite::Lax),
+                        Cookie::build(("user_role", user.role))
+                            .same_site(SameSite::Lax)
+                            .max_age(Duration::hours(1)),
                     );
                     cookies.add_private(
-                        Cookie::build(("user_id", user.id.to_string())).same_site(SameSite::Lax),
+                        Cookie::build(("user_id", user.id.to_string()))
+                            .same_site(SameSite::Lax)
+                            .max_age(Duration::hours(1)),
                     );
                 }
 
@@ -121,6 +149,8 @@ pub fn logout(span: TracingSpan, cookies: &CookieJar<'_>) -> Redirect {
         cookies.remove_private(Cookie::build("logged_in"));
         cookies.remove_private(Cookie::build("user_role"));
         cookies.remove_private(Cookie::build("user_id"));
+        cookies.remove_private(Cookie::build("session_timestamp"));
+        cookies.remove_private(Cookie::build("otel_session_id"));
         Redirect::to("/login")
     })
 }
