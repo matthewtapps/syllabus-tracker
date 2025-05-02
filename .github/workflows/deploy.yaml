@@ -61,7 +61,7 @@ jobs:
         STEP_ID=deploy_docker
         STEP_START=$(date +%s)
           
-        ssh ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} "cd ~/syllabus-tracker && docker-compose -f docker-compose.production.yml down || true && docker-compose -f docker-compose.production.yml build --no-cache && docker-compose -f docker-compose.procuction.yml up -d"
+        ssh ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} "cd ~/syllabus-tracker && docker-compose -f docker-compose.production.yml down || true && docker-compose -f docker-compose.production.yml build --no-cache && docker-compose -f docker-compose.production.yml up -d"
         
         buildevents step $TRACE_ID $STEP_ID $STEP_START $STEP_ID
         
