@@ -57,6 +57,7 @@ services:
     networks:
       - internal
       - external
+      - syllabus-net
 
 networks:
   internal:
