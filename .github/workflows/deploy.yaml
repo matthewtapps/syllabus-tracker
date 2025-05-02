@@ -18,35 +18,6 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v3
       
-    - name: Install Rust
-      uses: actions-rs/toolchain@v1
-      with:
-        toolchain: stable
-        profile: minimal
-        override: true
-      
-    - name: Cache dependencies
-      uses: actions/cache@v3
-      with:
-        path: |
-          ~/.cargo/registry
-          ~/.cargo/git
-          target
-        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-        
-    - name: Build release
-      run: |
-        STEP_ID=build_release
-        STEP_START=$(date +%s)
-        cargo build --release --features production
-        buildevents step $TRACE_ID $STEP_ID $STEP_START $STEP_ID
-      env:
-        ROCKET_SECRET_KEY: ${{ secrets.ROCKET_SECRET_KEY }}
-        HONEYCOMB_API_KEY: ${{ secrets.HONEYCOMB_API_KEY }}
-        RUST_LOG: info,sqlx::query=debug,sqlx=warn,rocket=warn,opentelemetry=info
-        DEPLOYMENT_ENV: production
-        OTEL_SERVICE_NAME: syllabus-tracker
-      
     - name: Set up SSH
       run: |
         STEP_ID=set_up_ssh
@@ -57,51 +28,43 @@ jobs:
         ssh-keyscan -H ${{ secrets.SERVER_IP }} >> ~/.ssh/known_hosts
         buildevents step $TRACE_ID $STEP_ID $STEP_START $STEP_ID
       
-    - name: Prepare for deployment
+    - name: Transfer application files
       run: |
-        STEP_ID=prepare_deployment
+        STEP_ID=transfer_app
         STEP_START=$(date +%s)
-        # Create deployment directory structure if it doesn't exist
-        ssh ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} "mkdir -p /var/www/syllabus-tracker/target/release"
+        # Create deployment directory if it doesn't exist
+        ssh ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} "mkdir -p ~/syllabus-tracker"
+        
+        # Transfer all necessary files
+        rsync -avz --exclude='target' --exclude='.git' \
+          ./ ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }}:~/syllabus-tracker/
+        
+        buildevents step $TRACE_ID $STEP_ID $STEP_START $STEP_ID
+
+    - name: Generate secrets file
+      run: |
+        STEP_ID=generate_secrets
+        STEP_START=$(date +%s)
+        
+        # Create .secrets.env file with necessary environment variables
+        echo "HONEYCOMB_API_KEY=${{ secrets.HONEYCOMB_API_KEY }}" > .secrets.env
+        echo "ROCKET_SECRET_KEY=${{ secrets.ROCKET_SECRET_KEY }}" >> .secrets.env
+        
+        # Transfer to server
+        scp .secrets.env ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }}:~/syllabus-tracker/
+        
+        # Log timing with buildevents
         buildevents step $TRACE_ID $STEP_ID $STEP_START $STEP_ID
         
-    - name: Transfer binary to server
+    - name: Deploy with Docker
       run: |
-        STEP_ID=trasfer_binary
+        STEP_ID=deploy_docker
         STEP_START=$(date +%s)
-        scp target/release/syllabus-tracker ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }}:/var/www/syllabus-tracker/target/release/
-        buildevents step $TRACE_ID $STEP_ID $STEP_START $STEP_ID
-
-    - name: Transfer template files
-      run: |
-        STEP_ID=transfer_templates
-        STEP_START=$(date +%s)
-        ssh ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} "mkdir -p /var/www/syllabus-tracker/templates"
-        scp -r templates/* ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }}:/var/www/syllabus-tracker/templates/
-        buildevents step $TRACE_ID $STEP_ID $STEP_START $STEP_ID
-
-    - name: Transfer static files
-      run: |
-        STEP_ID=transfer_static
-        STEP_START=$(date +%s)
-        ssh ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} "mkdir -p /var/www/syllabus-tracker/static"
-        scp -r static/* ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }}:/var/www/syllabus-tracker/static/
+          
+        ssh ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} "cd ~/syllabus-tracker && docker-compose -f docker-compose.production.yml down || true && docker-compose -f docker-compose.production.yml build --no-cache && docker-compose -f docker-compose.procuction.yml up -d"
+        
         buildevents step $TRACE_ID $STEP_ID $STEP_START $STEP_ID
         
-    - name: Configure and restart service
-      run: |
-        STEP_ID=restart_production
-        STEP_START=$(date +%s)
-        ssh ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} << 'EOF'
-          chmod +x /var/www/syllabus-tracker/target/release/syllabus-tracker
-
-          sudo systemctl daemon-reload
-          
-          sudo systemctl restart syllabus-tracker.service
-          
-          systemctl status syllabus-tracker.service --no-pager
-        EOF
-        buildevents step $TRACE_ID $STEP_ID $STEP_START $STEP_ID
     - name: Create Honeycomb deployment marker
       run: |
         DEPLOY_TIME=$(date +%s)

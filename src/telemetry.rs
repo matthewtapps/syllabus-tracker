@@ -1,4 +1,3 @@
-use dotenv::dotenv;
 use once_cell::sync::OnceCell;
 use opentelemetry::{
     Context, KeyValue,
@@ -6,7 +5,6 @@ use opentelemetry::{
     propagation::{Extractor, TextMapCompositePropagator},
     trace::TracerProvider as _,
 };
-use opentelemetry_otlp::{Protocol, WithExportConfig, WithTonicConfig};
 use opentelemetry_sdk::{
     Resource,
     propagation::{BaggagePropagator, TraceContextPropagator},
@@ -15,7 +13,6 @@ use opentelemetry_sdk::{
 use opentelemetry_semantic_conventions::{
     SCHEMA_URL,
     attribute::{HTTP_URL, HTTP_USER_AGENT, SERVICE_NAME, SERVICE_VERSION, SESSION_ID, USER_ID},
-    resource::DEPLOYMENT_ENVIRONMENT_NAME,
     trace::{HTTP_REQUEST_METHOD, HTTP_RESPONSE_STATUS_CODE},
 };
 use rocket::{
@@ -25,7 +22,6 @@ use rocket::{
     request::{FromRequest, Outcome},
 };
 use std::collections::HashMap;
-use tonic::metadata::MetadataMap;
 use tracing::{Instrument, Span, info_span};
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 use tracing_subscriber::{Registry, layer::SubscriberExt};
@@ -171,7 +167,6 @@ fn resource() -> Resource {
             [
                 KeyValue::new(SERVICE_NAME, env!("CARGO_PKG_NAME")),
                 KeyValue::new(SERVICE_VERSION, env!("CARGO_PKG_VERSION")),
-                KeyValue::new(DEPLOYMENT_ENVIRONMENT_NAME, "develop"),
             ],
             SCHEMA_URL,
         )
@@ -179,11 +174,6 @@ fn resource() -> Resource {
 }
 
 pub fn init_tracing() {
-    match dotenv() {
-        Ok(path) => debug!("Loaded environment from {:?}", path),
-        Err(e) => debug!("Could not load .env file: {}", e),
-    }
-
     let baggage_propagator = BaggagePropagator::new();
     let trace_context_propagator = TraceContextPropagator::new();
     let composite_propagator = TextMapCompositePropagator::new(vec![
@@ -193,18 +183,8 @@ pub fn init_tracing() {
 
     global::set_text_map_propagator(composite_propagator);
 
-    let honeycomb_api_key =
-        std::env::var("HONEYCOMB_API_KEY").expect("HONEYCOMB_API_KEY environment variable not set");
-
-    let mut metadata = MetadataMap::new();
-    metadata.insert("x-honeycomb-team", honeycomb_api_key.parse().unwrap());
-
     let exporter = opentelemetry_otlp::SpanExporter::builder()
         .with_tonic()
-        .with_endpoint("https://api.honeycomb.io:443")
-        .with_tls_config(tonic::transport::ClientTlsConfig::new().with_native_roots())
-        .with_protocol(Protocol::Grpc)
-        .with_metadata(metadata)
         .build()
         .unwrap();
 
