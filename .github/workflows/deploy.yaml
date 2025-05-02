@@ -1,23 +1,59 @@
-name: Deploy to Production
-
+name: Build and Deploy to Production
 on:
   push:
     branches: [ main ]
 
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
-    
+    permissions:
+      contents: read
+      packages: write
+
     steps:
     - uses: honeycombio/gha-buildevents@v2
       with: 
         apikey: ${{ secrets.HONEYCOMB_API_KEY }}
         dataset: syllabus-tracker-build-events
         status: ${{ job.status }}
-
+        
     - name: Checkout code
       uses: actions/checkout@v3
       
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v2
+
+    - name: Log in to the Container registry
+      uses: docker/login-action@v2
+      with:
+        registry: ${{ env.REGISTRY }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+        
+    - name: Extract metadata for Docker
+      id: meta
+      uses: docker/metadata-action@v4
+      with:
+        images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+        tags: |
+          type=sha,format=short
+          type=ref,event=branch
+          latest
+          
+    - name: Build and push Docker image
+      uses: docker/build-push-action@v4
+      with:
+        context: .
+        push: true
+        tags: ${{ steps.meta.outputs.tags }}
+        labels: ${{ steps.meta.outputs.labels }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+        
     - name: Set up SSH
       run: |
         STEP_ID=set_up_ssh
@@ -27,16 +63,17 @@ jobs:
         chmod 600 ~/.ssh/id_ed25519
         ssh-keyscan -H ${{ secrets.SERVER_IP }} >> ~/.ssh/known_hosts
         buildevents step $TRACE_ID $STEP_ID $STEP_START $STEP_ID
-      
-    - name: Transfer application files
+        
+    - name: Transfer files to server
       run: |
-        STEP_ID=transfer_app
+        STEP_ID=transfer_files
         STEP_START=$(date +%s)
+        
         # Create deployment directory if it doesn't exist
         ssh ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} "mkdir -p ~/syllabus-tracker"
         
-        # Transfer all necessary files
-        rsync -avz --exclude='target' --exclude='.git' \
+        # Transfer all necessary files except large directories
+        rsync -avz --exclude='target' --exclude='.git' --exclude='node_modules' \
           ./ ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }}:~/syllabus-tracker/
         
         buildevents step $TRACE_ID $STEP_ID $STEP_START $STEP_ID
@@ -53,15 +90,49 @@ jobs:
         # Transfer to server
         scp .secrets.env ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }}:~/syllabus-tracker/
         
-        # Log timing with buildevents
+        buildevents step $TRACE_ID $STEP_ID $STEP_START $STEP_ID
+        
+    - name: Set up GitHub Container Registry credentials on server
+      run: |
+        STEP_ID=setup_registry_creds
+        STEP_START=$(date +%s)
+        
+        # Create or update the GitHub registry credentials on the server
+        ssh ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} "mkdir -p ~/.docker"
+        
+        # Create a JSON config for Docker to authenticate with GHCR
+        cat > docker_config.json << EOF
+        {
+          "auths": {
+            "${{ env.REGISTRY }}": {
+              "auth": "$(echo -n ${{ github.actor }}:${{ secrets.GITHUB_TOKEN }} | base64)"
+            }
+          }
+        }
+        EOF
+        
+        # Transfer to server
+        scp docker_config.json ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }}:~/.docker/config.json
+        
         buildevents step $TRACE_ID $STEP_ID $STEP_START $STEP_ID
         
     - name: Deploy with Docker
       run: |
         STEP_ID=deploy_docker
         STEP_START=$(date +%s)
-          
-        ssh ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} "cd ~/syllabus-tracker && docker-compose -f docker-compose.production.yml down || true && docker-compose -f docker-compose.production.yml build --no-cache && docker-compose -f docker-compose.production.yml up -d"
+        
+        # Get the short commit SHA for image tagging
+        COMMIT_SHA=$(git rev-parse --short HEAD)
+        FULL_IMAGE_NAME="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:sha-${COMMIT_SHA}"
+        
+        # Use the production docker compose file but with the image from GHCR
+        ssh ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} "cd ~/syllabus-tracker && \
+          export APP_IMAGE=${FULL_IMAGE_NAME} && \
+          docker compose -f docker-compose.production.yml pull && \
+          docker compose -f docker-compose.production.yml up -d"
+        
+        # Clean up old images after successful deployment
+        ssh ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} "docker image prune -f"
         
         buildevents step $TRACE_ID $STEP_ID $STEP_START $STEP_ID
         

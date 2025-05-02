@@ -31,12 +31,6 @@ use routes::{
 use sqlx::SqlitePool;
 use tracing::info;
 
-#[cfg(feature = "production")]
-static DATABASE_URL: &str = "sqlite:///var/www/syllabus-tracker/data/sqlite.db";
-
-#[cfg(not(feature = "production"))]
-static DATABASE_URL: &str = "sqlite://sqlite.db";
-
 #[derive(Debug, Error)]
 pub enum Error {
     #[error("Hatch")]
@@ -65,7 +59,9 @@ impl From<rocket::figment::Error> for Error {
 async fn rocket() -> _ {
     init_tracing();
 
-    let pool = SqlitePool::connect(DATABASE_URL)
+    let database_url = std::env::var("DATABASE_URL").unwrap_or_default();
+
+    let pool = SqlitePool::connect(&database_url)
         .await
         .expect("Failed to connect to SQLite database");
 

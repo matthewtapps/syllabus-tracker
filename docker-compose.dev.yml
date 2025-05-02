@@ -36,7 +36,6 @@ services:
 
 networks:
   syllabus-net:
-      name: syllabus-tracker-dev_syllabus-net
 
 volumes:
   target-cache:
