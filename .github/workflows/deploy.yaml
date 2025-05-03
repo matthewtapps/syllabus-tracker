@@ -72,9 +72,15 @@ jobs:
         # Create deployment directory if it doesn't exist
         ssh ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} "mkdir -p ~/syllabus-tracker"
         
+        # Create scripts directory if it doesn't exist
+        ssh ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} "mkdir -p ~/syllabus-tracker/scripts"
+        
         # Transfer all necessary files except large directories
         rsync -avz --exclude='target' --exclude='.git' --exclude='node_modules' \
           ./ ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }}:~/syllabus-tracker/
+        
+        # Make sure backup script is executable
+        ssh ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} "chmod +x ~/syllabus-tracker/scripts/backup.sh"
         
         buildevents step $TRACE_ID $STEP_ID $STEP_START $STEP_ID
 
