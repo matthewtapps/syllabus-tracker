@@ -5,6 +5,8 @@ receivers:
         endpoint: 0.0.0.0:4317
       http:
         endpoint: 0.0.0.0:4318
+  docker_stats:
+    endpoint: unix:///var/run/docker.sock
 
 processors:
   batch:
@@ -25,3 +27,7 @@ service:
       receivers: [otlp]
       processors: [batch]
       exporters: [otlp, debug]
+    metrics:
+      receivers: [docker_stats]
+      processors: [batch]
+      exporters: [debug]
