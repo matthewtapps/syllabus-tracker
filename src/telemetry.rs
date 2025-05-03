@@ -5,8 +5,10 @@ use opentelemetry::{
     propagation::{Extractor, TextMapCompositePropagator},
     trace::TracerProvider as _,
 };
+use opentelemetry_otlp::MetricExporter;
 use opentelemetry_sdk::{
     Resource,
+    metrics::SdkMeterProvider,
     propagation::{BaggagePropagator, TraceContextPropagator},
     trace::{RandomIdGenerator, Sampler, SdkTracerProvider},
 };
@@ -183,7 +185,7 @@ pub fn init_tracing() {
 
     global::set_text_map_propagator(composite_propagator);
 
-    let exporter = opentelemetry_otlp::SpanExporter::builder()
+    let span_exporter = opentelemetry_otlp::SpanExporter::builder()
         .with_tonic()
         .build()
         .unwrap();
@@ -192,7 +194,7 @@ pub fn init_tracing() {
         .with_sampler(Sampler::AlwaysOn)
         .with_id_generator(RandomIdGenerator::default())
         .with_resource(resource())
-        .with_batch_exporter(exporter)
+        .with_batch_exporter(span_exporter)
         .build();
 
     let tracer = tracer_provider.tracer("syllabus-tracker");
@@ -209,4 +211,13 @@ pub fn init_tracing() {
 
     tracing::subscriber::set_global_default(subscriber)
         .expect("Failed to set global default subscriber");
+
+    let meter_exporter = MetricExporter::builder().with_tonic().build().unwrap();
+
+    let meter_provider = SdkMeterProvider::builder()
+        .with_resource(resource())
+        .with_periodic_exporter(meter_exporter)
+        .build();
+
+    global::set_meter_provider(meter_provider);
 }
