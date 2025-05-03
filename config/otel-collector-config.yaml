@@ -22,9 +22,6 @@ processors:
   resource:
     attributes:
       - action: insert
-        key: service.name
-        value: "syllabus-tracker"
-      - action: insert
         key: service.instance.id
         value: "${HOSTNAME}"
       - action: insert
@@ -43,7 +40,7 @@ exporters:
       "x-honeycomb-team": "${HONEYCOMB_API_KEY}"
       "x-honeycomb-dataset": "syllabus-tracker-metrics"
   debug:
-    verbosity: detailed
+    verbosity: normal
 
 service:
   pipelines:
@@ -52,6 +49,18 @@ service:
       processors: [batch, resource]
       exporters: [otlp/traces, debug]
     metrics:
-      receivers: [docker_stats, hostmetrics]
+      receivers: [docker_stats, hostmetrics, otlp]
       processors: [batch, resource]
       exporters: [otlp/metrics, debug]
+
+  # Otel Collector internal telemetry configuration
+  telemetry:
+    metrics:
+      level: normal
+      readers:
+        - periodic:
+            exporter:
+              otlp:
+                protocol: http/protobuf
+                # Send to itself, which can then be exported as normal
+                endpoint: http://localhost:4318
