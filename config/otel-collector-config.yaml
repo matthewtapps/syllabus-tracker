@@ -23,10 +23,16 @@ processors:
     send_batch_size: 1024
 
 exporters:
-  otlp:
+  otlp/traces:
     endpoint: "api.honeycomb.io:443"
     headers:
       "x-honeycomb-team": "${HONEYCOMB_API_KEY}"
+      "x-honeycomb-dataset": "syllabus-tracker"
+  otlp/metrics:
+    endpoint: "api.honeycomb.io:443"
+    headers:
+      "x-honeycomb-team": "${HONEYCOMB_API_KEY}"
+      "x-honeycomb-dataset": "syllabus-tracker-metrics"
   debug:
     verbosity: detailed
 
