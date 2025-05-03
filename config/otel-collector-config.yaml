@@ -8,14 +8,12 @@ receivers:
   docker_stats:
     endpoint: unix:///var/run/docker.sock
   hostmetrics:
-    collection_interval: 10s
+    collection_interval: 40s
     scrapers:
       cpu:
       memory:
       load:
       disk:
-      filesystem:
-      network:
 
 processors:
   batch:
@@ -41,8 +39,8 @@ service:
     traces:
       receivers: [otlp]
       processors: [batch]
-      exporters: [otlp, debug]
+      exporters: [otlp/traces, debug]
     metrics:
       receivers: [docker_stats, hostmetrics]
       processors: [batch]
-      exporters: [otlp, debug]
+      exporters: [otlp/metrics, debug]
