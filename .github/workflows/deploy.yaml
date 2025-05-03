@@ -111,6 +111,12 @@ jobs:
       with:
         apikey: ${{ secrets.HONEYCOMB_API_KEY }}
         dataset: syllabus-tracker-build-events
+
+    - name: Set build start timestamp
+      id: build-image
+      run: |
+        echo "STEP_START=$(date +%s)" >> $GITHUB_OUTPUT
+        echo "STEP_ID=build-image" >> $GITHUB_OUTPUT
     
     - name: Checkout code
       uses: actions/checkout@v3
@@ -154,6 +160,14 @@ jobs:
     - name: Get short SHA
       id: get_short_sha
       run: echo "short_sha=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+
+    - name: End build event
+      id: end-build
+      run: |
+        STEP_ID=$(echo "${{ steps.build-image.outputs.STEP_ID }}")
+        STEP_START=$(echo "${{ steps.build-image.outputs.STEP_START }}")
+        
+        buildevents step $TRACE_ID $STEP_ID $STEP_START $STEP_ID
 
   deploy:
     needs: [check-changes, build]
