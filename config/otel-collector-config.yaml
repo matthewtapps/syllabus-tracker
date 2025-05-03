@@ -19,6 +19,17 @@ processors:
   batch:
     timeout: 1s
     send_batch_size: 1024
+  resource:
+    attributes:
+      - action: insert
+        key: service.name
+        value: "syllabus-tracker"
+      - action: insert
+        key: service.instance.id
+        value: "${HOSTNAME}"
+      - action: insert
+        key: deployment.environment
+        value: "${OTEL_ENVIRONMENT}"
 
 exporters:
   otlp/traces:
@@ -38,9 +49,9 @@ service:
   pipelines:
     traces:
       receivers: [otlp]
-      processors: [batch]
+      processors: [batch, resource]
       exporters: [otlp/traces, debug]
     metrics:
       receivers: [docker_stats, hostmetrics]
-      processors: [batch]
+      processors: [batch, resource]
       exporters: [otlp/metrics, debug]
