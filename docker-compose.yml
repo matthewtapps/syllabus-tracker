@@ -4,7 +4,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-      target: development
+      target: dev
     ports:
       - "8000:8000"
     env_file:
@@ -12,8 +12,10 @@ services:
       - config/dev.env
       - .secrets.env
     volumes:
-      - ./:/usr/src/app
-      - target-cache:/usr/src/app/target
+      - ./:/app
+      - cargo-cache:/usr/local/cargo/registry
+      - target-cache:/app/target
+      - /app/target
     depends_on:
       - otel-collector
     networks:
@@ -38,4 +40,6 @@ networks:
   syllabus-net:
 
 volumes:
+  cargo-cache:
   target-cache:
+  sccache-data:

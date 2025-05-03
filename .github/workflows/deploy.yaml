@@ -128,8 +128,8 @@ jobs:
         # Use the production docker compose file but with the image from GHCR
         ssh ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} "cd ~/syllabus-tracker && \
           export APP_IMAGE=${FULL_IMAGE_NAME} && \
-          docker compose -f docker-compose.production.yml pull && \
-          docker compose -f docker-compose.production.yml up -d"
+          docker compose -f docker-compose.prod.yml pull && \
+          docker compose -f docker-compose.prod.yml up -d"
         
         # Clean up old images after successful deployment
         ssh ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} "docker image prune -f"

@@ -43,6 +43,7 @@
             nodePackages.prettier
             djlint
             sqlx-cli
+            docker-buildx
 
             rustc
             rust-analyzer-unwrapped
@@ -61,6 +62,8 @@
         NIX_LD_LIBRARY_PATH = "${lib.makeLibraryPath buildInputs}";
         LD_LIBRARY_PATH = "${lib.makeLibraryPath buildInputs}";
         NIX_LD = lib.fileContents "${stdenv.cc}/nix-support/dynamic-linker";
+
+        COMPOSE_BAKE = true;
 
         RUST_SRC_PATH = "${toolchain}/lib/rustlib/src/rust/library";
 
