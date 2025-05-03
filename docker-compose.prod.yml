@@ -20,10 +20,13 @@ services:
       - internal
       
   otel-collector:
-    image: otel/opentelemetry-collector:latest
+    image: otel/opentelemetry-collector-contrib:latest
     command: ["--config=/etc/otel-collector-config.yaml"]
     volumes:
       - ./config/otel-collector-config.yaml:/etc/otel-collector-config.yaml
+      - /var/run/docker.sock:/var/run/docker.sock
+    group_add:
+    - 988
     env_file:
       - config/common.env
       - config/prod.env
@@ -48,15 +51,20 @@ services:
       - "80:80"
       - "443:443"
     volumes:
-      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf
+      - ./nginx/default.conf:/etc/nginx/conf.d/ssl.conf.template
+      - ./scripts/nginx-entrypoint.sh:/entrypoint.sh
       - ./nginx/ssl:/etc/letsencrypt
       - ./nginx/www:/var/www
       - ./static:/var/www/static
+    env_file:
+      - config/prod.env
     depends_on:
       - app
     networks:
       - internal
       - external
+    entrypoint:
+      - /entrypoint.sh
 
   backup:
     image: alpine:latest

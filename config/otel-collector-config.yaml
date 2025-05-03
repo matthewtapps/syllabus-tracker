@@ -30,4 +30,4 @@ service:
     metrics:
       receivers: [docker_stats]
       processors: [batch]
-      exporters: [debug]
+      exporters: [otlp, debug]
