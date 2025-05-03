@@ -8,7 +8,7 @@ receivers:
   docker_stats:
     endpoint: unix:///var/run/docker.sock
   hostmetrics:
-    collection_interval: 40s
+    collection_interval: 2s
     scrapers:
       cpu:
       memory:
