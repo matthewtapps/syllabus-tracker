@@ -69,12 +69,13 @@ services:
   backup:
     image: alpine:latest
     volumes:
-      - app-data:/data/source:ro
+      - app-data:/app/data
       - ./backups:/data/backups
       - ./scripts:/scripts
     env_file:
       - config/prod.env
       - config/backup-service.env
+      - .secrets.env
     command: |
       /bin/sh -c '
       apk add --no-cache sqlite findutils tzdata curl go bc
@@ -85,7 +86,13 @@ services:
       # Run the backup script
       exec /scripts/backup.sh
       '
-    restart: always
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "sh", "-c", "test -f /tmp/backup-state/heartbeat && find /tmp/backup-state/heartbeat -mmin -15 | grep heartbeat"]
+      interval: 1m
+      timeout: 10s
+      retries: 3
+      start_period: 30s
     depends_on:
       - app
       - otel-collector
