@@ -47,11 +47,11 @@ service:
     traces:
       receivers: [otlp]
       processors: [batch, resource]
-      exporters: [otlp/traces, debug]
+      exporters: [otlp/traces]
     metrics:
       receivers: [docker_stats, hostmetrics, otlp]
       processors: [batch, resource]
-      exporters: [otlp/metrics, debug]
+      exporters: [otlp/metrics]
 
   # Otel Collector internal telemetry configuration
   telemetry:
