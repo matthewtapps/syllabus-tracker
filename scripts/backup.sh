@@ -174,10 +174,7 @@ perform_backup() {
     --service ${OTEL_SERVICE_NAME} \
     --name "database_backup_process" \
     --kind internal \
-    --attr "process_id=${PROCESS_ID}" \
-    --attr "job_id=${JOB_ID}" \
-    --attr "schedule=${SCHEDULE_SPEC}" \
-    --attr "database_file=${DATABASE_FILE}" \
+    --attrs "process_id=${PROCESS_ID},job_id=${JOB_ID},schedule=${SCHEDULE_SPEC},database_file=${DATABASE_FILE}" \
     -- sh -c "
     echo \"Parent span: Starting database backup process\"
     
@@ -220,8 +217,7 @@ perform_backup() {
     
     # STEP 2: Clean up old backups (child span)
     otel-cli exec --service ${OTEL_SERVICE_NAME} --name \"backup_cleanup\" --kind internal \
-      --attr \"backups_before=\${BACKUPS_BEFORE}\" \
-      --attr \"retention_days=${BACKUP_RETENTION_DAYS}\" \
+      --attrs \"backups_before=\${BACKUPS_BEFORE},retention_days=${BACKUP_RETENTION_DAYS}\" \
       -- sh -c \"
         echo \\\"Cleaning up old backups...\\\"
         
@@ -252,15 +248,7 @@ perform_backup() {
     
     # STEP 3: Create a summary span to capture the overall result
     otel-cli exec --service ${OTEL_SERVICE_NAME} --name \"backup_summary\" --kind internal \
-      --attr \"backup_file=${BACKUP_FILE}\" \
-      --attr \"file_size_bytes=${FILE_SIZE}\" \
-      --attr \"success=true\" \
-      --attr \"backups_before=${BACKUPS_BEFORE}\" \
-      --attr \"backups_after=\$(find ${BACKUP_DIR} -name \"sqlite-*.db\" | wc -l)\" \
-      --attr \"total_backup_size_bytes=\$(du -sb ${BACKUP_DIR} | cut -f1)\" \
-      --attr \"schedule_spec=${SCHEDULE_SPEC}\" \
-      --attr \"duration_seconds=\${DURATION}\" \
-      --attr \"job_id=${JOB_ID}\" \
+      --attrs \"backup_file=${BACKUP_FILE},file_size_bytes=${FILE_SIZE},success=true,backups_before=${BACKUPS_BEFORE},backups_after=\$(find ${BACKUP_DIR} -name \"sqlite-*.db\" | wc -l),total_backup_size_bytes=\$(du -sb ${BACKUP_DIR} | cut -f1),schedule_spec=${SCHEDULE_SPEC},duration_seconds=\${DURATION},job_id=${JOB_ID}\" \
       -- echo \"Backup process completed successfully at \$(date). Total duration: \${DURATION} seconds\"
   "
 
@@ -279,9 +267,7 @@ rotate_logs() {
   
   # Send a log rotation event to telemetry
   otel-cli span --service ${OTEL_SERVICE_NAME} --name "log_rotation" --kind internal \
-    --attr "action=rotate_logs" \
-    --attr "log_dir=${LOG_DIR}" \
-    --attr "retention_days=${LOG_RETENTION_DAYS}" \
+    --attrs "action=rotate_logs,log_dir=${LOG_DIR},retention_days=${LOG_RETENTION_DAYS}" \
     --span-event "log_rotation_completed" \
     --message "Rotated backup logs older than ${LOG_RETENTION_DAYS} days"
 }
