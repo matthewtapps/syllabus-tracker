@@ -6,31 +6,28 @@ use rocket::{Build, Request, Rocket, Route, State};
 use rocket_airlock::{Airlock, Hatch, Result as HatchResult};
 use rocket_dyn_templates::{Template, context};
 use sqlx::{Pool, Sqlite};
-use tracing::info;
+use tracing::{info, instrument};
 
 use crate::db::{authenticate_user, create_user, get_user_by_username};
 use crate::telemetry::TracingSpan;
 
 use super::User;
 
+#[derive(Debug)]
 pub struct JiuJitsuHatch {}
 
 impl JiuJitsuHatch {
+    #[instrument]
     pub async fn authenticate_user(
         &self,
         db: &State<Pool<Sqlite>>,
         username: &str,
         password: &str,
     ) -> bool {
-        match authenticate_user(db, username, password).await {
-            Ok(success) => success,
-            Err(e) => {
-                error!("Authentication error: {:?}", e);
-                false
-            }
-        }
+        authenticate_user(db, username, password).await.unwrap()
     }
 
+    #[instrument]
     pub async fn is_session_expired(&self, _username: &str, cookies: &CookieJar<'_>) -> bool {
         if let Some(timestamp_cookie) = cookies.get_private("session_timestamp") {
             if let Ok(timestamp) = timestamp_cookie.value().parse::<i64>() {
@@ -97,7 +94,7 @@ pub async fn process_login(
 ) -> Result<Redirect, Redirect> {
     span.in_scope_async(|| async {
         let message = format!("Login attempt: {}", &form.username);
-        info!(message = message);
+        info!(message = message, username = &form.username);
 
         match airlock
             .hatch

@@ -3,6 +3,7 @@ extern crate rocket;
 
 mod auth;
 mod db;
+mod error;
 mod models;
 mod routes;
 mod telemetry;
@@ -11,6 +12,7 @@ use auth::{
     JiuJitsuHatch, forbidden, login, logout, process_login, process_register, register,
     unauthorized,
 };
+use error::{AppError, internal_server_error};
 use rocket::fs::FileServer;
 use rocket_airlock::Airlock;
 use rocket_dyn_templates::Template;
@@ -19,6 +21,7 @@ use rocket_dyn_templates::handlebars::Handlebars;
 use rocket_dyn_templates::handlebars::Helper;
 use rocket_dyn_templates::handlebars::Output;
 use rocket_dyn_templates::handlebars::RenderContext;
+use telemetry::ErrorTelemetryFairing;
 use telemetry::TelemetryFairing;
 use telemetry::init_tracing;
 use thiserror::Error;
@@ -41,6 +44,8 @@ pub enum Error {
     Figment(rocket::figment::Error),
     #[error("{0}")]
     Sqlx(#[from] sqlx::Error),
+    #[error("Application error: {0}")]
+    App(#[from] AppError),
 }
 
 impl From<anyhow::Error> for Error {
@@ -90,9 +95,13 @@ async fn rocket() -> _ {
             ],
         )
         .mount("/static", FileServer::from("static"))
-        .register("/", catchers![unauthorized, forbidden])
+        .register(
+            "/",
+            catchers![unauthorized, forbidden, internal_server_error],
+        )
         .manage(pool)
         .attach(TelemetryFairing)
+        .attach(ErrorTelemetryFairing)
         .attach(Airlock::<JiuJitsuHatch>::fairing())
         .attach(Template::custom(|engines| {
             let honeycomb_api_key = std::env::var("HONEYCOMB_API_KEY").unwrap_or_default();
