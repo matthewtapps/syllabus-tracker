@@ -155,10 +155,52 @@ impl Fairing for TelemetryFairing {
             .0
             .to_owned()
         {
-            let _entered_span = span.entered();
-            _entered_span.record(HTTP_RESPONSE_STATUS_CODE, response.status().code);
+            let entered_span = span.entered();
+            entered_span.record(HTTP_RESPONSE_STATUS_CODE, response.status().code);
 
-            drop(_entered_span);
+            drop(entered_span);
+        }
+    }
+}
+
+pub struct ErrorTelemetryFairing;
+
+#[rocket::async_trait]
+impl Fairing for ErrorTelemetryFairing {
+    fn info(&self) -> Info {
+        Info {
+            name: "Error Telemetry",
+            kind: Kind::Response,
+        }
+    }
+
+    async fn on_response<'r>(&self, request: &'r Request<'_>, response: &mut Response<'r>) {
+        let status = response.status();
+
+        if status.code >= 500 {
+            let span = request
+                .local_cache(|| TracingSpan::<Option<Span>>(None))
+                .0
+                .to_owned();
+
+            if let Some(span) = span {
+                let entered_span = span.entered();
+
+                entered_span.record(
+                    "error",
+                    &tracing::field::display(format!("HTTP Error: {}", status.code)),
+                );
+                entered_span.record("error.kind", &tracing::field::display("server_error"));
+                entered_span.record("http.status_code", status.code);
+
+                if let Some(err_msg) = request.local_cache(|| Option::<String>::None) {
+                    entered_span.record("error.message", &tracing::field::display(err_msg));
+                }
+
+                entered_span.record("otel.status_code", &tracing::field::display("ERROR"));
+
+                drop(entered_span)
+            }
         }
     }
 }

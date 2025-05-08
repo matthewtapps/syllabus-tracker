@@ -1,0 +1,11 @@
+{{#*inline "content"}}
+<div class="error-container">
+    <h2>Error {{ error_code }}</h2>
+    <div class="error-message">{{ error_message }}</div>
+    <div class="error-actions">
+        <a href="/" class="btn">Return to Home</a>
+        <button onclick="window.history.back()" class="btn">Go Back</button>
+    </div>
+</div>
+{{/inline}}
+{{> layout}}
