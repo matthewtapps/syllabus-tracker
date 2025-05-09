@@ -8,20 +8,15 @@ mod models;
 mod routes;
 mod telemetry;
 
-use auth::{
-    JiuJitsuHatch, forbidden, login, logout, process_login, process_register, register,
-    unauthorized,
-};
+use auth::{forbidden, login, logout, process_login, process_register, register, unauthorized};
 use error::{AppError, internal_server_error};
 use rocket::fs::FileServer;
-use rocket_airlock::Airlock;
 use rocket_dyn_templates::Template;
 use rocket_dyn_templates::handlebars::Context;
 use rocket_dyn_templates::handlebars::Handlebars;
 use rocket_dyn_templates::handlebars::Helper;
 use rocket_dyn_templates::handlebars::Output;
 use rocket_dyn_templates::handlebars::RenderContext;
-use telemetry::ErrorTelemetryFairing;
 use telemetry::TelemetryFairing;
 use telemetry::init_tracing;
 use thiserror::Error;
@@ -73,6 +68,7 @@ async fn rocket() -> _ {
     info!("Starting syllabus tracker");
 
     rocket::build()
+        .manage(pool)
         .mount(
             "/",
             routes![
@@ -94,15 +90,12 @@ async fn rocket() -> _ {
                 update_username_route
             ],
         )
-        .mount("/static", FileServer::from("static"))
+        .mount("/static", FileServer::new("static"))
         .register(
             "/",
             catchers![unauthorized, forbidden, internal_server_error],
         )
-        .manage(pool)
         .attach(TelemetryFairing)
-        .attach(ErrorTelemetryFairing)
-        .attach(Airlock::<JiuJitsuHatch>::fairing())
         .attach(Template::custom(|engines| {
             let honeycomb_api_key = std::env::var("HONEYCOMB_API_KEY").unwrap_or_default();
 

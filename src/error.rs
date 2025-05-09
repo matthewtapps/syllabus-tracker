@@ -3,8 +3,6 @@ use rocket_dyn_templates::{Template, context};
 use thiserror::Error;
 use tracing::{Span, error, warn};
 
-use crate::telemetry::TracingSpan;
-
 #[derive(Error, Debug)]
 pub enum AppError {
     #[error("Database error: {0}")]
@@ -116,29 +114,9 @@ impl From<rocket::Error> for AppError {
 }
 
 #[catch(500)]
-pub fn internal_server_error(req: &Request) -> Template {
-    if let Some(span) = req
-        .local_cache(|| TracingSpan::<Option<Span>>(None))
-        .0
-        .as_ref()
-    {
-        let _guard = span.enter();
+pub fn internal_server_error(_req: &Request) -> Template {
+    error!("Unhandled internal server error occurred");
 
-        // If we haven't already logged an error via AppError
-        if span.field("error.message").is_none() {
-            span.record("error", &tracing::field::display("Internal Server Error"));
-            span.record("error.kind", &tracing::field::display("server_error"));
-            span.record("otel.status_code", &tracing::field::display("ERROR"));
-
-            // Log the error within the span context
-            error!("Unhandled internal server error occurred");
-        }
-    } else {
-        // No span available, just log the error
-        error!("Internal server error occurred (no span context available)");
-    }
-
-    // Return a friendly error page
     Template::render(
         "error",
         context! {

@@ -24,7 +24,7 @@ use rocket::{
     request::{FromRequest, Outcome},
 };
 use std::collections::HashMap;
-use tracing::{Instrument, Span, info_span};
+use tracing::{Span, info_span};
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 use tracing_subscriber::{Registry, layer::SubscriberExt};
 
@@ -32,31 +32,6 @@ static REQUEST_CONTEXT: OnceCell<Context> = OnceCell::new();
 
 #[derive(Clone)]
 pub struct TracingSpan<T = Span>(pub T);
-
-impl TracingSpan {
-    pub fn enter(&self) -> tracing::span::Entered<'_> {
-        self.0.enter()
-    }
-
-    pub fn in_scope<F, R>(&self, f: F) -> R
-    where
-        F: FnOnce() -> R,
-    {
-        self.0.in_scope(f)
-    }
-
-    pub fn inner(&self) -> &Span {
-        &self.0
-    }
-
-    pub async fn in_scope_async<F, Fut, R>(&self, f: F) -> R
-    where
-        F: FnOnce() -> Fut,
-        Fut: std::future::Future<Output = R>,
-    {
-        Instrument::instrument(f(), self.0.clone()).await
-    }
-}
 
 #[rocket::async_trait]
 impl<'r> FromRequest<'r> for TracingSpan {

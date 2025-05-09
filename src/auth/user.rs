@@ -1,13 +1,4 @@
-use rocket::{
-    Request,
-    http::Status,
-    request::{FromRequest, Outcome},
-};
-use rocket_airlock::Airlock;
 use serde::Serialize;
-use tracing::{Instrument, info_span};
-
-use crate::{auth::JiuJitsuHatch, db::get_user_by_username, telemetry::TracingSpan};
 
 #[derive(Debug, Serialize, Clone)]
 pub struct User {
@@ -33,75 +24,5 @@ impl From<DbUser> for User {
             role: user.role.unwrap_or_default(),
             display_name: user.display_name.unwrap_or_default(),
         }
-    }
-}
-
-#[rocket::async_trait]
-impl<'r> FromRequest<'r> for User {
-    type Error = ();
-
-    async fn from_request(request: &'r Request<'_>) -> Outcome<Self, Self::Error> {
-        let cookies = request.cookies();
-
-        let parent_span = request
-            .local_cache(|| TracingSpan::<Option<tracing::Span>>(None))
-            .0
-            .to_owned();
-
-        let auth_span = if let Some(parent) = parent_span {
-            let span = info_span!(parent: parent, "user_auth_guard");
-            span
-        } else {
-            info_span!("user_auth_guard")
-        };
-
-        async move {
-            if let Some(logged_in) = cookies.get_private("logged_in") {
-                let username = logged_in.value().to_string();
-                let role = cookies
-                    .get_private("user_role")
-                    .map(|c| c.value().to_string())
-                    .unwrap_or_else(|| "student".to_string());
-                let id = cookies
-                    .get_private("user_id")
-                    .and_then(|c| c.value().parse::<i64>().ok())
-                    .unwrap_or_default();
-
-                let db = request
-                    .rocket()
-                    .state::<sqlx::Pool<sqlx::Sqlite>>()
-                    .expect("Database pool not found in managed state");
-
-                match get_user_by_username(db, &username).await {
-                    Ok(user) => {
-                        // Check if session is expired
-                        let hatch = request
-                            .guard::<Airlock<JiuJitsuHatch>>()
-                            .await
-                            .expect("Hatch 'JiuJitsuHatch' was not installed into the airlock.")
-                            .hatch;
-
-                        if hatch.is_session_expired(&username, cookies).await {
-                            return Outcome::Forward(Status::Unauthorized);
-                        }
-
-                        Outcome::Success(user)
-                    }
-                    Err(_) => {
-                        // Fallback to basic user info
-                        Outcome::Success(User {
-                            id,
-                            username,
-                            role,
-                            display_name: String::new(),
-                        })
-                    }
-                }
-            } else {
-                Outcome::Forward(Status::Unauthorized)
-            }
-        }
-        .instrument(auth_span)
-        .await
     }
 }
