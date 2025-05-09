@@ -23,7 +23,7 @@ services:
     image: otel/opentelemetry-collector-contrib:latest
     command: ["--config=/etc/otel-collector-config.yaml"]
     volumes:
-      - ./config/otel-collector-config.yaml:/etc/otel-collector-config.yaml
+      - ./config/otel-collector-config.prod.yaml:/etc/otel-collector-config.yaml
       - /var/run/docker.sock:/var/run/docker.sock
     group_add:
     - 988

@@ -12,10 +12,10 @@ services:
       - config/dev.env
       - .secrets.env
     volumes:
-      - ./:/app
+      - ./:/usr/src/app
       - cargo-cache:/usr/local/cargo/registry
-      - target-cache:/app/target
-      - /app/target
+      - target-cache:/usr/src/app/target
+      - /usr/src/app/target
     depends_on:
       - otel-collector
     networks:
@@ -25,7 +25,7 @@ services:
     image: otel/opentelemetry-collector-contrib:latest
     command: ["--config=/etc/otel-collector-config.yaml"]
     volumes:
-      - ./config/otel-collector-config.yaml:/etc/otel-collector-config.yaml
+      - ./config/otel-collector-config.dev.yaml:/etc/otel-collector-config.yaml
     env_file:
       - config/common.env
       - config/dev.env
