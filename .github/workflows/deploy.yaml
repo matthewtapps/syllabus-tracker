@@ -249,6 +249,7 @@ jobs:
           --include="scripts/***" \
           --include="nginx/***" \
           --include="static/***" \
+          --include="migrations/***" \
           --exclude="*" \
           ./ ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }}:~/syllabus-tracker/ > $RSYNC_OUTPUT
         
