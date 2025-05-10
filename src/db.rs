@@ -13,7 +13,7 @@ pub async fn get_user(pool: &Pool<Sqlite>, id: i64) -> Result<User, AppError> {
     info!("Fetching user by ID");
     let row = sqlx::query_as!(
         DbUser,
-        "SELECT id, username, role, display_name FROM users WHERE id=?",
+        "SELECT id, username, role, display_name, archived FROM users WHERE id=?",
         id
     )
     .fetch_optional(pool)
@@ -418,7 +418,7 @@ pub async fn get_user_by_username(pool: &Pool<Sqlite>, username: &str) -> Result
     info!("Getting user by username");
     let row = sqlx::query_as!(
         DbUser,
-        "SELECT id, username, role, display_name FROM users WHERE username = ?",
+        "SELECT id, username, role, display_name, archived FROM users WHERE username = ?",
         username
     )
     .fetch_optional(pool)
@@ -434,19 +434,94 @@ pub async fn get_user_by_username(pool: &Pool<Sqlite>, username: &str) -> Result
 }
 
 #[instrument]
-pub async fn get_users_by_role(pool: &Pool<Sqlite>, role: &str) -> Result<Vec<User>, AppError> {
-    let rows = sqlx::query_as::<_, DbUser>("SELECT * FROM Users WHERE Role = 'student'")
+pub async fn get_users_by_role(
+    pool: &Pool<Sqlite>,
+    role: &str,
+    show_archived: bool,
+) -> Result<Vec<User>, AppError> {
+    info!(role = %role, show_archived = %show_archived, "Getting users by role");
+
+    let query = if show_archived {
+        "SELECT id, username, role, display_name, archived FROM users WHERE role = ?"
+    } else {
+        "SELECT id, username, role, display_name, archived FROM users WHERE role = ? AND archived IS 0"
+    };
+
+    let rows = sqlx::query_as::<_, DbUser>(query)
+        .bind(role)
+        .fetch_all(pool)
+        .await?;
+
+    let users: Vec<User> = rows.into_iter().map(User::from).collect();
+
+    Ok(users)
+}
+
+#[instrument]
+pub async fn get_all_users(pool: &Pool<Sqlite>) -> Result<Vec<User>, AppError> {
+    let rows = sqlx::query_as::<_, DbUser>("SELECT * FROM Users")
         .fetch_all(pool)
         .await?;
 
     let users: Vec<User> = rows.into_iter().map(User::from).collect();
 
     if users.is_empty() {
-        return Err(AppError::NotFound(format!(
-            "No users found for role {}",
-            role
-        )));
+        return Err(AppError::NotFound(format!("No users found",)));
     }
 
     Ok(users)
+}
+
+#[instrument]
+pub async fn update_user_admin(
+    pool: &Pool<Sqlite>,
+    user_id: i64,
+    username: &str,
+    display_name: &str,
+    role: &str,
+) -> Result<(), AppError> {
+    info!("Admin updating user");
+
+    let existing = sqlx::query!(
+        "SELECT id FROM users WHERE username = ? AND id != ?",
+        username,
+        user_id
+    )
+    .fetch_optional(pool)
+    .await?;
+
+    if existing.is_some() {
+        return Err(AppError::Validation("Username already exists".to_string()));
+    }
+
+    sqlx::query!(
+        "UPDATE users SET username = ?, display_name = ?, role = ? WHERE id = ?",
+        username,
+        display_name,
+        role,
+        user_id
+    )
+    .execute(pool)
+    .await?;
+
+    Ok(())
+}
+
+#[instrument]
+pub async fn set_user_archived(
+    pool: &Pool<Sqlite>,
+    user_id: i64,
+    archive: bool,
+) -> Result<bool, AppError> {
+    info!("Toggling user archived status");
+
+    sqlx::query!(
+        "UPDATE users SET archived = ? WHERE id = ?",
+        archive,
+        user_id
+    )
+    .execute(pool)
+    .await?;
+
+    Ok(archive)
 }

@@ -11,9 +11,10 @@ use tracing::info;
 use crate::auth::{Permission, Role, User};
 use crate::db::{
     add_techniques_to_student, assign_technique_to_student, authenticate_user,
-    create_and_assign_technique, get_all_techniques, get_student_technique,
-    get_unassigned_techniques, get_users_by_role, update_student_notes, update_student_technique,
-    update_technique, update_user_display_name, update_user_password, update_username,
+    create_and_assign_technique, get_all_techniques, get_all_users, get_student_technique,
+    get_unassigned_techniques, get_users_by_role, set_user_archived, update_student_notes,
+    update_student_technique, update_technique, update_user_admin, update_user_display_name,
+    update_user_password, update_username,
 };
 use crate::db::{get_student_techniques, get_user};
 use crate::error::AppError;
@@ -47,7 +48,7 @@ pub async fn index(user: User, db: &State<Pool<Sqlite>>) -> IndexResponse {
                 return IndexResponse::ErrorResponse(Status::Forbidden);
             }
 
-            match get_users_by_role(db, "student").await {
+            match get_users_by_role(db, "student", false).await {
                 Ok(students) => IndexResponse::TemplateResponse(Template::render(
                     "index",
                     context! {
@@ -418,4 +419,127 @@ pub async fn update_username_route<'r>(
             ))))
         }
     }
+}
+
+#[get("/users?<message>")]
+pub async fn admin_users(
+    user: User,
+    db: &State<Pool<Sqlite>>,
+    message: Option<String>,
+) -> Result<Template, Status> {
+    user.require_permission(Permission::EditUserRoles)?;
+
+    let users = get_all_users(db).await?;
+
+    let active_users: Vec<_> = users.iter().filter(|u| !u.archived).cloned().collect();
+    let archived_users: Vec<_> = users.iter().filter(|u| u.archived).cloned().collect();
+
+    Ok(Template::render(
+        "users",
+        context! {
+            title: "User Management - Admin",
+            current_user: user,
+            active_users: active_users,
+            archived_users: archived_users,
+            current_route: "admin_users",
+            message,
+        },
+    ))
+}
+
+#[get("/users/<id>/edit?<message>")]
+pub async fn admin_edit_user(
+    id: i64,
+    user: User,
+    db: &State<Pool<Sqlite>>,
+    message: Option<String>,
+) -> Result<Template, Status> {
+    user.require_permission(Permission::EditUserRoles)?;
+
+    let edit_user = get_user(db, id).await?;
+
+    Ok(Template::render(
+        "edit_user",
+        context! {
+            title: "Edit User - Admin",
+            current_user: user,
+            edit_user: edit_user,
+            current_route: "admin_users",
+            message,
+        },
+    ))
+}
+
+#[derive(Debug, FromForm)]
+pub struct AdminEditUserForm<'r> {
+    #[field(validate = len(3..30).or_else(msg!("Username must be between 3 and 30 characters")))]
+    #[field(validate = omits(' ').or_else(msg!("Username cannot contain spaces")))]
+    username: &'r str,
+    display_name: &'r str,
+    role: &'r str,
+    #[field(validate = len(0..).or_else(msg!("Password cannot be negative length")))]
+    password: &'r str,
+}
+
+#[post("/users/<id>/edit", data = "<form>")]
+pub async fn admin_process_edit_user<'r>(
+    id: i64,
+    user: User,
+    form: Form<Contextual<'r, AdminEditUserForm<'r>>>,
+    db: &State<Pool<Sqlite>>,
+) -> Result<Redirect, Status> {
+    user.require_permission(Permission::EditUserRoles)?;
+
+    if form.value.is_none() {
+        let error_message = form
+            .context
+            .errors()
+            .next()
+            .map(|err| err.to_string())
+            .unwrap_or_else(|| "Validation failed".to_string());
+
+        return Ok(Redirect::to(uri!(admin_edit_user(
+            id,
+            Some(&error_message)
+        ))));
+    }
+
+    let form_value = form.value.as_ref().unwrap();
+
+    update_user_admin(
+        db,
+        id,
+        form_value.username,
+        &form_value.display_name,
+        &form_value.role,
+    )
+    .await?;
+
+    if !form_value.password.is_empty() {
+        update_user_password(db, id, form_value.password).await?;
+    }
+
+    Ok(Redirect::to(uri!(admin_users(Some(
+        "User updated successfully"
+    )))))
+}
+
+#[post("/users/<id>/archive")]
+pub async fn admin_archive_user(
+    id: i64,
+    user: User,
+    db: &State<Pool<Sqlite>>,
+) -> Result<Redirect, Status> {
+    user.require_permission(Permission::DeleteUsers)?;
+
+    let current_state = user.archived;
+
+    let now_archived: bool = set_user_archived(db, id, !current_state).await?;
+
+    let message: String = match now_archived {
+        true => "User archived successfully".to_string(),
+        false => "User unarchived successfully".to_string(),
+    };
+
+    Ok(Redirect::to(uri!(admin_users(Some(message)))))
 }

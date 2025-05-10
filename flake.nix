@@ -43,6 +43,7 @@
             nodePackages.prettier
             djlint
             sqlx-cli
+            sqlite
             docker-buildx
 
             rustc

@@ -9,6 +9,7 @@ pub struct User {
     pub username: String,
     pub role: Role,
     pub display_name: String,
+    pub archived: bool,
 }
 
 #[derive(sqlx::FromRow, Clone)]
@@ -17,6 +18,7 @@ pub struct DbUser {
     pub username: Option<String>,
     pub role: Option<String>,
     pub display_name: Option<String>,
+    pub archived: Option<bool>,
 }
 
 impl From<DbUser> for User {
@@ -26,6 +28,7 @@ impl From<DbUser> for User {
             username: user.username.unwrap_or_default(),
             role: Role::from_str(&user.role.unwrap_or_default()).unwrap(),
             display_name: user.display_name.unwrap_or_default(),
+            archived: user.archived.unwrap_or_default(),
         }
     }
 }

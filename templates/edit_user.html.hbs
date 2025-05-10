@@ -1,0 +1,64 @@
+{{#*inline "content"}}
+<div class="admin-container">
+    <h2>Edit User: {{ edit_user.username }}</h2>
+    {{#if message}}
+        <div class="message {{ message_type }}">{{ message }}</div>
+    {{/if}}
+    <form action="/users/{{ edit_user.id }}/edit"
+          method="post"
+          class="admin-form">
+        <div class="form-group">
+            <label for="username">Username:</label>
+            <input type="text"
+                   id="username"
+                   name="username"
+                   value="{{ edit_user.username }}"
+                   required>
+            <small class="form-help">Must be 3-30 characters without spaces</small>
+            {{#if form_context}}
+                {{#each form_context.field_errors.username}}
+                    <div class="field-error">{{ this }}</div>
+                {{/each}}
+            {{/if}}
+        </div>
+        <div class="form-group">
+            <label for="display_name">Display Name:</label>
+            <input type="text"
+                   id="display_name"
+                   name="display_name"
+                   value="{{ edit_user.display_name }}">
+        </div>
+        <div class="form-group">
+            <label for="role">Role:</label>
+            <select id="role" name="role">
+                <option value="student" {{#if (eq edit_user.role "Student")}}selected{{/if}}>Student
+                </option>
+                <option value="coach" {{#if (eq edit_user.role "Coach")}}selected{{/if}}>Coach
+                </option>
+                <option value="admin" {{#if (eq edit_user.role "Admin")}}selected{{/if}}>Admin
+                </option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label for="password">New Password (leave blank to keep unchanged):</label>
+            <input type="password" id="password" name="password">
+            <small class="form-help">Must be at least 8 characters if provided</small>
+            {{#if form_context}}
+                {{#each form_context.field_errors.password}}
+                    <div class="field-error">{{ this }}</div>
+                {{/each}}
+            {{/if}}
+        </div>
+        <div class="form-buttons">
+            <button type="submit" class="btn btn-primary">Save Changes</button>
+            <a href="/users" class="btn">Cancel</a>
+        </div>
+    </form>
+    {{#if (eq edit_user.role "Student")}}
+        <div class="student-link-container">
+            <a href="/student/{{ edit_user.id }}" class="btn">View Student Techniques</a>
+        </div>
+    {{/if}}
+</div>
+{{/inline}}
+{{> layout}}

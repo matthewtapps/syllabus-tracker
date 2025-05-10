@@ -1,0 +1,125 @@
+{{#*inline "content"}}
+<div class="admin-container">
+    <h2>User Management</h2>
+    {{#if message}}
+        <div class="message {{ message_type }}">{{ message }}</div>
+    {{/if}}
+    <div class="admin-controls">
+        <button id="toggle-archived-btn" class="btn">
+            <span id="show-archived-text">
+                {{#if archived_users}}
+                    Show Archived Users (
+                    {{#each archived_users}}
+                        {{#unless @last}}{{/unless}}{{/each}}{{@index}})
+                    {{ else }}
+                        Show Archived Users (0)
+                    {{/if}}
+                </span>
+                <span id="hide-archived-text" style="display: none;">Hide Archived Users</span>
+            </button>
+            <a href="/register" class="btn btn-primary">Create New User</a>
+        </div>
+        <h3>Active Users</h3>
+        <div class="user-list">
+            <table class="admin-table">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Username</th>
+                        <th>Display Name</th>
+                        <th>Role</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {{#each active_users}}
+                        <tr>
+                            <td>{{ this.id }}</td>
+                            <td>{{ this.username }}</td>
+                            <td>{{ this.display_name }}</td>
+                            <td>{{ this.role }}</td>
+                            <td class="actions">
+                                <a href="/users/{{ this.id }}/edit" class="btn btn-small">Edit</a>
+                                <form action="/users/{{ this.id }}/archive"
+                                      method="post"
+                                      class="inline-form">
+                                    <button type="submit" class="btn btn-small btn-archive">Archive</button>
+                                </form>
+                                {{#if (or (eq this.role "student") (eq this.role "Student"))}}
+                                    <a href="/student/{{ this.id }}" class="btn btn-small">View Techniques</a>
+                                {{/if}}
+                            </td>
+                        </tr>
+                    {{ else }}
+                        <tr>
+                            <td colspan="5" class="empty-message">No active users found</td>
+                        </tr>
+                    {{/each}}
+                </tbody>
+            </table>
+        </div>
+        <div id="archived-users-section" style="display: none;">
+            <h3>Archived Users</h3>
+            <div class="user-list">
+                <table class="admin-table archived-table">
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Username</th>
+                            <th>Display Name</th>
+                            <th>Role</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {{#each archived_users}}
+                            <tr class="archived-row">
+                                <td>{{ this.id }}</td>
+                                <td>{{ this.username }}</td>
+                                <td>{{ this.display_name }}</td>
+                                <td>{{ this.role }}</td>
+                                <td class="actions">
+                                    <a href="/users/{{ this.id }}/edit" class="btn btn-small">Edit</a>
+                                    <form action="/users/{{ this.id }}/archive"
+                                          method="post"
+                                          class="inline-form">
+                                        <button type="submit" class="btn btn-small btn-restore">Restore</button>
+                                    </form>
+                                    {{#if (or (eq this.role "student") (eq this.role "Student"))}}
+                                        <a href="/student/{{ this.id }}" class="btn btn-small">View Techniques</a>
+                                    {{/if}}
+                                </td>
+                            </tr>
+                        {{ else }}
+                            <tr>
+                                <td colspan="5" class="empty-message">No archived users found</td>
+                            </tr>
+                        {{/each}}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const toggleButton = document.getElementById('toggle-archived-btn');
+            const archivedSection = document.getElementById('archived-users-section');
+            const showText = document.getElementById('show-archived-text');
+            const hideText = document.getElementById('hide-archived-text');
+            
+            toggleButton.addEventListener('click', function() {
+                // Toggle visibility
+                if (archivedSection.style.display === 'none') {
+                    archivedSection.style.display = 'block';
+                    showText.style.display = 'none';
+                    hideText.style.display = 'inline';
+                } else {
+                    archivedSection.style.display = 'none';
+                    showText.style.display = 'inline';
+                    hideText.style.display = 'none';
+                }
+            });
+        });
+        </script>
+    </div>
+{{/inline}}
+{{> layout}}

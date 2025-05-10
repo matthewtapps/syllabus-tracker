@@ -8,7 +8,8 @@
         <script>
         (function() {
           const savedTheme = localStorage.getItem('theme');
-          const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+          const mediaQuery = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)');
+          const prefersDark = mediaQuery ? mediaQuery['matches'] : false;
           
           if (savedTheme === 'dark' || (!savedTheme && prefersDark)) {
             document.documentElement.classList.add('dark-mode');
@@ -495,6 +496,111 @@
             to { transform: rotate(360deg); }
         }
 
+        /* Admin Styles */
+        .admin-container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .admin-controls {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 20px;
+        }
+
+        .admin-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 20px;
+        }
+
+        .admin-table th,
+        .admin-table td {
+            padding: 10px;
+            text-align: left;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .admin-table th {
+            background-color: var(--light-bg);
+            font-weight: bold;
+        }
+
+        .admin-table tr:hover {
+            background-color: var(--light-bg);
+        }
+
+        .archived-row {
+            opacity: 0.6;
+            background-color: var(--light-bg);
+        }
+
+        .status-active {
+            color: #4CAF50;
+            font-weight: bold;
+        }
+
+        .status-archived {
+            color: #999;
+            font-style: italic;
+        }
+
+        .admin-form {
+            max-width: 600px;
+            margin: 0 auto;
+        }
+
+        .actions {
+            display: flex;
+            gap: 5px;
+        }
+
+        .btn-small {
+            padding: 3px 8px;
+            font-size: 0.8em;
+        }
+
+        .btn-archive {
+            background-color: #f44336;
+        }
+
+        .btn-restore {
+            background-color: #4CAF50;
+        }
+
+        .btn-primary {
+            background-color: #2196F3;
+        }
+
+        .inline-form {
+            display: inline;
+        }
+
+        .student-link-container {
+            margin-top: 20px;
+            text-align: center;
+        }
+
+        .empty-message {
+            text-align: center;
+            font-style: italic;
+            color: #999;
+            padding: 20px;
+        }
+
+        .archived-table {
+            background-color: rgba(0,0,0,0.03);
+        }
+
+#toggle-archived-btn {
+            background-color: #6c757d;
+        }
+
+#toggle-archived-btn:hover {
+            background-color: #5a6268;
+        }
+
         /* Responsive adjustments */
         @media (max-width: 768px) {
             .techniques-container {
@@ -603,6 +709,9 @@
                     {{/unless}}
                     {{ #if (and(has_permission current_user "RegisterUsers") (ne current_route "register"))}}
                     <a href="/register" class="btn">Register User</a>
+                {{/if}}
+                {{#if (and (eq current_user.role "Admin") (ne current_route "admin_users"))}}
+                    <a href="/users" class="btn">User Management</a>
                 {{/if}}
                 <a href="/logout" class="btn">Logout (
                     {{#if current_user.display_name}}

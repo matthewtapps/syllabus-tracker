@@ -25,9 +25,10 @@ use telemetry::init_tracing;
 use thiserror::Error;
 
 use routes::{
-    add_multiple_techniques_to_student, add_technique_to_student,
-    create_and_assign_technique_route, index, index_anon, profile, student_techniques, update_name,
-    update_password, update_student_technique_route, update_username_route,
+    add_multiple_techniques_to_student, add_technique_to_student, admin_archive_user,
+    admin_edit_user, admin_process_edit_user, admin_users, create_and_assign_technique_route,
+    index, index_anon, profile, student_techniques, update_name, update_password,
+    update_student_technique_route, update_username_route,
 };
 use sqlx::SqlitePool;
 use tracing::info;
@@ -88,7 +89,11 @@ async fn rocket() -> _ {
                 profile,
                 update_name,
                 update_password,
-                update_username_route
+                update_username_route,
+                admin_users,
+                admin_edit_user,
+                admin_process_edit_user,
+                admin_archive_user,
             ],
         )
         .mount("/static", FileServer::new("static"))
