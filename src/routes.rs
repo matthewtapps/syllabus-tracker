@@ -1,14 +1,14 @@
 use rocket::Request;
-use rocket::form::Form;
+use rocket::form::{Contextual, Form, FromForm};
 use rocket::http::{Cookie, CookieJar, SameSite};
 use rocket::response::{self, Redirect, Responder};
 use rocket::{State, http::Status};
 use rocket_dyn_templates::{Template, context};
 use serde_json::json;
 use sqlx::{Pool, Sqlite};
-use tracing::{error, info};
+use tracing::info;
 
-use crate::auth::User;
+use crate::auth::{Permission, Role, User};
 use crate::db::{
     add_techniques_to_student, assign_technique_to_student, authenticate_user,
     create_and_assign_technique, get_all_techniques, get_student_technique,
@@ -16,6 +16,8 @@ use crate::db::{
     update_technique, update_user_display_name, update_user_password, update_username,
 };
 use crate::db::{get_student_techniques, get_user};
+use crate::error::AppError;
+use crate::models::{StudentTechnique, Technique};
 
 pub enum IndexResponse {
     TemplateResponse(Template),
@@ -36,26 +38,32 @@ impl<'r> Responder<'r, 'static> for IndexResponse {
 #[get("/")]
 pub async fn index(user: User, db: &State<Pool<Sqlite>>) -> IndexResponse {
     info!("Accessing index page");
-    if user.role == "student" {
-        return IndexResponse::RedirectResponse(Redirect::to(format!("/student/{}", user.id)));
-    }
-    // Fetch students for the index page
-    let students = match get_users_by_role(db, "student").await {
-        Ok(students) => students,
-        Err(e) => {
-            error!("Failed to get users by role {}: {:?}", "student", e);
-            return IndexResponse::ErrorResponse(Status::InternalServerError);
+    match user.role {
+        Role::Student => {
+            IndexResponse::RedirectResponse(Redirect::to(format!("/student/{}", user.id)))
         }
-    };
-    IndexResponse::TemplateResponse(Template::render(
-        "index",
-        context! {
-            title: "Jiu Jitsu Syllabus Tracker",
-            students: students,
-            current_user: user,
-            current_route: "home",
-        },
-    ))
+        _ => {
+            if !user.has_permission(Permission::ViewAllStudents) {
+                return IndexResponse::ErrorResponse(Status::Forbidden);
+            }
+
+            match get_users_by_role(db, "student").await {
+                Ok(students) => IndexResponse::TemplateResponse(Template::render(
+                    "index",
+                    context! {
+                        title: "Jiu Jitsu Syllabus Tracker",
+                        students: students,
+                        current_user: user,
+                        current_route: "home",
+                    },
+                )),
+                Err(err) => {
+                    err.log_and_record("Index page");
+                    IndexResponse::ErrorResponse(err.status_code())
+                }
+            }
+        }
+    }
 }
 
 #[get("/", rank = 2)]
@@ -72,51 +80,25 @@ pub async fn student_techniques(
     db: &State<Pool<Sqlite>>,
 ) -> Result<Template, Status> {
     info!("Accessing student-specific page");
-    // Check permissions - coaches can see all, students can only see their own
-    if user.role != "coach" && user.id != id {
+    if user.id != id && !user.has_permission(Permission::ViewAllStudents) {
         return Err(Status::Forbidden);
     }
 
-    let student = match get_user(db, id).await {
-        Ok(student) => student,
-        Err(e) => {
-            error!("Failed to get student {}: {:?}", id, e);
-            return Err(Status::NotFound);
-        }
-    };
+    let student: User = get_user(db, id).await?;
+    let techniques: Vec<StudentTechnique> = get_student_techniques(db, id).await?;
+    let all_techniques: Vec<Technique> = get_all_techniques(db).await?;
+    let unassigned_techniques: Vec<Technique> = get_unassigned_techniques(db, id).await?;
 
-    let techniques = match get_student_techniques(db, id).await {
-        Ok(techniques) => techniques,
-        Err(e) => {
-            error!("Failed to get techniques for student {}: {:?}", id, e);
-            return Err(Status::InternalServerError);
-        }
-    };
-
-    let all_techniques = match get_all_techniques(db).await {
-        Ok(techniques) => techniques,
-        Err(e) => {
-            error!("Failed to get all techniques: {:?}", e);
-            return Err(Status::InternalServerError);
-        }
-    };
-
-    let unassigned_techniques = match get_unassigned_techniques(db, id).await {
-        Ok(techniques) => techniques,
-        Err(e) => {
-            error!("Failed to get unassigned techniques: {:?}", e);
-            return Err(Status::InternalServerError);
-        }
-    };
-
-    // Update the json! macro with the new variable name
     let context = json!({
         "student": student,
-        "student_techniques": techniques,  // Changed from student_techniques
+        "student_techniques": techniques,
         "all_techniques": all_techniques,
         "unassigned_techniques": unassigned_techniques,
         "current_user": user,
-        "current_route": "student"
+        "current_route": "student",
+        "can_edit_all_techniques": user.has_permission(Permission::EditAllTechniques),
+        "can_assign_techniques": user.has_permission(Permission::AssignTechniques),
+        "can_create_techniques": user.has_permission(Permission::CreateTechniques)
     });
 
     Ok(Template::render("student_techniques", context))
@@ -139,52 +121,28 @@ pub async fn update_student_technique_route(
     db: &State<Pool<Sqlite>>,
 ) -> Result<Redirect, Status> {
     info!("Updating student technique");
-    // Get the student technique to retrieve student_id for redirect and permission check
-    let student_technique = match get_student_technique(db, id).await {
-        Ok(st) => st,
-        Err(e) => {
-            error!("Failed to retrieve student technique {}: {:?}", id, e);
-            return Err(Status::NotFound);
-        }
-    };
+    let student_technique: StudentTechnique = get_student_technique(db, id).await?;
 
-    // Check permissions - coaches can edit everything, students can only edit their own notes
-    if user.role != "coach" && (user.id != student_technique.student_id) {
-        return Err(Status::Forbidden);
-    }
+    let is_own_technique = user.id == student_technique.student_id;
 
-    // If this is a student editing their own technique, only update student_notes
-    if user.role == "student" {
-        if let Err(e) = update_student_notes(db, id, &form.student_notes).await {
-            error!(
-                "Failed to update student notes for technique {}: {:?}",
-                id, e
-            );
-            return Err(Status::InternalServerError);
-        }
+    if is_own_technique {
+        update_student_notes(db, id, &form.student_notes).await?;
     } else {
-        // Coach can update everything
-        if let Err(e) =
-            update_student_technique(db, id, &form.status, &form.student_notes, &form.coach_notes)
-                .await
-        {
-            error!("Failed to update student technique {}: {:?}", id, e);
-            return Err(Status::InternalServerError);
-        }
+        user.require_all_permissions(&[
+            Permission::EditAllTechniques,
+            Permission::ViewAllStudents,
+        ])?;
 
-        if let Err(e) = update_technique(
+        update_student_technique(db, id, &form.status, &form.student_notes, &form.coach_notes)
+            .await?;
+
+        update_technique(
             db,
             student_technique.technique_id,
             &form.technique_name,
             &form.technique_description,
         )
-        .await
-        {
-            error!(
-                "Failed to update global technique {}: {:?}",
-                student_technique.technique_id, e
-            );
-        }
+        .await?;
     }
 
     Ok(Redirect::to(uri!(student_techniques(
@@ -204,18 +162,10 @@ pub async fn add_technique_to_student(
     user: User,
     db: &State<Pool<Sqlite>>,
 ) -> Result<Redirect, Status> {
+    user.require_permission(Permission::AssignTechniques)?;
     info!("Adding technique to student");
-    if user.role != "coach" {
-        return Err(Status::Forbidden);
-    }
 
-    if let Err(e) = assign_technique_to_student(db, form.technique_id, student_id).await {
-        error!(
-            "Failed to assign technique {} to student {}: {:?}",
-            form.technique_id, student_id, e
-        );
-        return Err(Status::InternalServerError);
-    }
+    assign_technique_to_student(db, form.technique_id, student_id).await?;
 
     Ok(Redirect::to(uri!(student_techniques(student_id))))
 }
@@ -232,18 +182,10 @@ pub async fn add_multiple_techniques_to_student(
     user: User,
     db: &State<Pool<Sqlite>>,
 ) -> Result<Redirect, Status> {
+    user.require_permission(Permission::AssignTechniques)?;
     info!("Adding multiple techniques to student");
-    if user.role != "coach" {
-        return Err(Status::Forbidden);
-    }
 
-    if let Err(e) = add_techniques_to_student(db, student_id, form.technique_ids.clone()).await {
-        error!(
-            "Failed to assign techniques with ids {:?} to student {}: {:?}",
-            form.technique_ids, student_id, e
-        );
-        return Err(Status::InternalServerError);
-    }
+    add_techniques_to_student(db, student_id, form.technique_ids.clone()).await?;
 
     Ok(Redirect::to(uri!(student_techniques(student_id))))
 }
@@ -261,261 +203,219 @@ pub async fn create_and_assign_technique_route(
     user: User,
     db: &State<Pool<Sqlite>>,
 ) -> Result<Redirect, Status> {
-    info!("Creating and assigning new technique to student");
-    if user.role != "coach" {
-        return Err(Status::Forbidden);
-    }
+    user.require_all_permissions(&[Permission::AssignTechniques, Permission::CreateTechniques])?;
 
-    if let Err(e) =
-        create_and_assign_technique(db, user.id, student_id, &form.name, &form.description).await
-    {
-        error!(
-            "Failed to create and assign technique to student {}: {:?}",
-            student_id, e
-        );
-        return Err(Status::InternalServerError);
-    }
+    info!("Creating and assigning new technique to student");
+
+    create_and_assign_technique(db, user.id, student_id, &form.name, &form.description).await?;
 
     Ok(Redirect::to(uri!(student_techniques(student_id))))
 }
 
-#[get("/profile")]
-pub async fn profile(user: User) -> Template {
+#[get("/profile?<message>&<message_type>")]
+pub async fn profile(
+    user: User,
+    message: Option<String>,
+    message_type: Option<String>,
+) -> Template {
     info!("Accessing profile page");
     Template::render(
         "profile",
         context! {
             title: "Your Profile - Jiu Jitsu Syllabus Tracker",
             current_user: user,
-            current_route: "profile"
+            current_route: "profile",
+            message,
+            message_type,
         },
     )
 }
 
 #[derive(FromForm, Debug)]
-pub struct UpdateNameForm {
-    display_name: String,
+pub struct UpdateNameForm<'r> {
+    #[field(validate = len(1..100).or_else(msg!("Display name cannot be empty")))]
+    display_name: &'r str,
 }
 
 #[post("/profile/update-name", data = "<form>")]
-pub async fn update_name(
+pub async fn update_name<'r>(
     user: User,
-    form: Form<UpdateNameForm>,
+    form: Form<Contextual<'r, UpdateNameForm<'r>>>,
     db: &State<Pool<Sqlite>>,
-) -> Result<Template, Status> {
+) -> Result<Redirect, Status> {
     info!("Updating user display name");
-    if let Err(e) = update_user_display_name(db, user.id, &form.display_name).await {
-        error!("Failed to update display name: {:?}", e);
-        return Ok(Template::render(
-            "profile",
-            context! {
-                title: "Your Profile - Jiu Jitsu Syllabus Tracker",
-                current_user: user,
-                message: "Failed to update display name",
-                message_type: "error",
-                current_route: "profile"
-            },
-        ));
+
+    if form.value.is_none() {
+        let error_message = form
+            .context
+            .errors()
+            .next()
+            .map(|err| err.to_string())
+            .unwrap_or_else(|| "Validation failed".to_string());
+
+        return Ok(Redirect::to(uri!(profile(
+            Some(&error_message),
+            Some("error")
+        ))));
     }
 
-    // Get updated user data
-    let updated_user = match get_user(db, user.id).await {
-        Ok(user) => user,
-        Err(_) => {
-            return Ok(Template::render(
-                "profile",
-                context! {
-                    title: "Your Profile - Jiu Jitsu Syllabus Tracker",
-                    current_user: user,
-                    message: "Display name updated but couldn't refresh user data",
-                    message_type: "warning",
-                    current_route: "profile"
-                },
-            ));
-        }
-    };
+    // Form is valid, extract the display name
+    let display_name = &form.value.as_ref().unwrap().display_name;
 
-    Ok(Template::render(
-        "profile",
-        context! {
-            title: "Your Profile - Jiu Jitsu Syllabus Tracker",
-            current_user: updated_user,
-            message: "Display name updated successfully",
-            message_type: "success",
-            current_route: "profile"
-        },
-    ))
+    match update_user_display_name(db, user.id, display_name).await {
+        Ok(_) => Ok(Redirect::to(uri!(profile(
+            Some("Display name successfully updated"),
+            Some("success")
+        )))),
+        Err(e) => {
+            e.log_and_record("Display name update failed");
+
+            Ok(Redirect::to(uri!(profile(
+                Some("Failed to update display name"),
+                Some("error")
+            ))))
+        }
+    }
 }
 
 #[derive(FromForm)]
-pub struct UpdatePasswordForm {
-    current_password: String,
-    new_password: String,
-    confirm_password: String,
+pub struct UpdatePasswordForm<'r> {
+    current_password: &'r str,
+    #[field(validate = len(5..).or_else(msg!("Password must be at least 5 characters long")))]
+    new_password: &'r str,
+    #[field(validate = eq(self.new_password).or_else(msg!("Passwords did not match")))]
+    confirm_password: &'r str,
 }
 
 #[post("/profile/update-password", data = "<form>")]
-pub async fn update_password(
+pub async fn update_password<'r>(
     user: User,
-    form: Form<UpdatePasswordForm>,
+    form: Form<Contextual<'r, UpdatePasswordForm<'r>>>,
     db: &State<Pool<Sqlite>>,
-) -> Result<Template, Status> {
+) -> Result<Redirect, Status> {
     info!("Updating user password");
-    if form.new_password != form.confirm_password {
-        info!("New passwords didn't match");
-        return Ok(Template::render(
-            "profile",
-            context! {
-                title: "Your Profile - Jiu Jitsu Syllabus Tracker",
-                current_user: user,
-                message: "New passwords do not match",
-                message_type: "error",
-                current_route: "profile"
-            },
-        ));
+
+    if form.value.is_none() {
+        let error_message = form
+            .context
+            .errors()
+            .next()
+            .map(|err| err.to_string())
+            .unwrap_or_else(|| "Validation failed".to_string());
+
+        return Ok(Redirect::to(uri!(profile(
+            Some(&error_message),
+            Some("error")
+        ))));
     }
 
-    // Verify current password
-    let is_valid = match authenticate_user(db, &user.username, &form.current_password).await {
-        Ok(valid) => valid,
-        Err(_) => false,
-    };
+    let form_value = form.value.as_ref().unwrap();
 
-    if !is_valid {
-        info!("Invalid current password");
-        return Ok(Template::render(
-            "profile",
-            context! {
-                title: "Your Profile - Jiu Jitsu Syllabus Tracker",
-                user: user,
-                message: "Current password is incorrect",
-                message_type: "error",
-                current_route: "profile"
-            },
-        ));
-    }
+    match authenticate_user(db, &user.username, &form_value.current_password).await {
+        Ok(true) => match update_user_password(db, user.id, &form_value.new_password).await {
+            Ok(_) => Ok(Redirect::to(uri!(profile(
+                Some("Password successfully updated"),
+                Some("success")
+            )))),
+            Err(e) => {
+                e.log_and_record("Password update failed");
 
-    // Update password
-    if let Err(e) = update_user_password(db, user.id, &form.new_password).await {
-        error!("Failed to update password: {:?}", e);
-        return Ok(Template::render(
-            "profile",
-            context! {
-                title: "Your Profile - Jiu Jitsu Syllabus Tracker",
-                current_user: user,
-                message: "Failed to update password",
-                message_type: "error",
-                current_route: "profile"
-            },
-        ));
-    }
-
-    Ok(Template::render(
-        "profile",
-        context! {
-            title: "Your Profile - Jiu Jitsu Syllabus Tracker",
-            current_user: user,
-            message: "Password updated successfully",
-            message_type: "success",
-                current_route: "profile"
+                Ok(Redirect::to(uri!(profile(
+                    Some("Failed to update password"),
+                    Some("error")
+                ))))
+            }
         },
-    ))
+        Ok(false) => Ok(Redirect::to(uri!(profile(
+            Some("Invalid current password"),
+            Some("error")
+        )))),
+        Err(e) => {
+            e.log_and_record("Authentication error");
+
+            Ok(Redirect::to(uri!(profile(
+                Some("Authentication error"),
+                Some("error")
+            ))))
+        }
+    }
 }
 
 #[derive(FromForm, Debug)]
-pub struct UpdateUsernameForm {
-    username: String,
+pub struct UpdateUsernameForm<'r> {
+    #[field(validate = len(4..50).or_else(msg!("Username must be between 4 and 50 characters long")))]
+    #[field(validate = omits(' ').or_else(msg!("Username cannot contain spaces")))]
+    username: &'r str,
 }
 
 #[post("/profile/update-username", data = "<form>")]
-pub async fn update_username_route(
+pub async fn update_username_route<'r>(
     user: User,
-    form: Form<UpdateUsernameForm>,
+    form: Form<Contextual<'r, UpdateUsernameForm<'r>>>,
     cookies: &CookieJar<'_>,
     db: &State<Pool<Sqlite>>,
-) -> Result<Template, Status> {
+) -> Result<Redirect, Status> {
     info!("Updating user username");
-    if form.username.trim().is_empty() {
-        return Ok(Template::render(
-            "profile",
-            context! {
-                title: "Your Profile - Jiu Jitsu Syllabus Tracker",
-                current_user: user,
-                message: "Username cannot be empty",
-                message_type: "error",
-                current_route: "profile"
-            },
-        ));
+
+    if form.value.is_none() {
+        let error_message = form
+            .context
+            .errors()
+            .next()
+            .map(|err| err.to_string())
+            .unwrap_or_else(|| "Validation failed".to_string());
+
+        return Ok(Redirect::to(uri!(profile(
+            Some(&error_message),
+            Some("error")
+        ))));
     }
 
-    // Update username in database
-    match update_username(db, user.id, &form.username).await {
-        Ok(_) => {
-            // Get updated user data first
-            match get_user(db, user.id).await {
-                Ok(updated_user) => {
-                    // Now update all cookies with the latest user data
+    let username = &form.value.as_ref().unwrap().username;
 
-                    // Remove old cookies
-                    cookies.remove_private(Cookie::build("logged_in"));
-                    cookies.remove_private(Cookie::build("user_role"));
-                    cookies.remove_private(Cookie::build("user_id"));
+    match update_username(db, user.id, username).await {
+        Ok(_) => match get_user(db, user.id).await {
+            Ok(updated_user) => {
+                cookies.remove_private(Cookie::build("logged_in"));
+                cookies.remove_private(Cookie::build("user_role"));
+                cookies.remove_private(Cookie::build("user_id"));
 
-                    // Add new cookies with updated information
-                    cookies.add_private(
-                        Cookie::build(("logged_in", updated_user.username.clone()))
-                            .same_site(SameSite::Lax),
-                    );
-                    cookies.add_private(
-                        Cookie::build(("user_role", updated_user.role.clone()))
-                            .same_site(SameSite::Lax),
-                    );
-                    cookies.add_private(
-                        Cookie::build(("user_id", updated_user.id.to_string()))
-                            .same_site(SameSite::Lax),
-                    );
+                cookies.add_private(
+                    Cookie::build(("logged_in", updated_user.username.clone()))
+                        .same_site(SameSite::Lax),
+                );
+                cookies.add_private(
+                    Cookie::build(("user_role", updated_user.role.to_string()))
+                        .same_site(SameSite::Lax),
+                );
+                cookies.add_private(
+                    Cookie::build(("user_id", updated_user.id.to_string()))
+                        .same_site(SameSite::Lax),
+                );
 
-                    // Now render the template with the updated user data
-                    Ok(Template::render(
-                        "profile",
-                        context! {
-                            title: "Your Profile - Jiu Jitsu Syllabus Tracker",
-                            message: "Username updated successfully",
-                            message_type: "success",
-                            current_route: "profile",
-                            current_user: updated_user
-                        },
-                    ))
-                }
-                Err(_) => {
-                    // This is unlikely to happen, but handle it just in case
-                    Ok(Template::render(
-                        "profile",
-                        context! {
-                            title: "Your Profile - Jiu Jitsu Syllabus Tracker",
-                            current_user: User {
-                                id: user.id,
-                                username: form.username.clone(),
-                                role: user.role.clone(),
-                                display_name: user.display_name.clone(),
-                            },
-                            message: "Username updated but couldn't refresh user data",
-                            message_type: "warning",
-                            current_route: "profile",
-                        },
-                    ))
-                }
+                Ok(Redirect::to(uri!(profile(
+                    Some("Username updated successfully"),
+                    Some("success")
+                ))))
             }
+            Err(_) => Ok(Redirect::to(uri!(profile(
+                Some("Username updated but couldn't refresh user data"),
+                Some("warning")
+            )))),
+        },
+        Err(e) => {
+            e.log_and_record("Username update failed");
+
+            let error_message = if matches!(e, AppError::Validation(_)) {
+                "Username already taken"
+            } else {
+                "Failed to update username"
+            };
+
+            Ok(Redirect::to(uri!(profile(
+                Some(error_message),
+                Some("error")
+            ))))
         }
-        Err(_) => Ok(Template::render(
-            "profile",
-            context! {
-                title: "Your Profile - Jiu Jitsu Syllabus Tracker",
-                message: "Username already taken or couldn't be updated",
-                message_type: "error",
-                current_route: "profile",
-                current_user: user, // Important! Add this
-            },
-        )),
     }
 }

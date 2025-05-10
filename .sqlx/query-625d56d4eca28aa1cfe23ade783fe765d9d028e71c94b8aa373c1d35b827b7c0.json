@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT * FROM student_techniques\n         WHERE student_id = ?\n        ORDER BY updated_at DESC\n\n",
+  "query": "SELECT * FROM student_techniques\n         WHERE student_id = ?\n        ORDER BY updated_at DESC\n",
   "describe": {
     "columns": [
       {
@@ -70,5 +70,5 @@
       true
     ]
   },
-  "hash": "122772161fdb7ab06f34fac622a5889a58ed1096a911e94a3ffc5995228d306d"
+  "hash": "625d56d4eca28aa1cfe23ade783fe765d9d028e71c94b8aa373c1d35b827b7c0"
 }

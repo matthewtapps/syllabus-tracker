@@ -593,49 +593,41 @@
                         <span class="menu-icon">☰</span>
                     </button>
                     <nav id="mainNav" class="main-nav">
-                        {{#if (eq current_route "login")}}
-                        {{ else }}
-                            {{#if (ne current_user.role "coach")}}
-                                {{#if (ne current_route "student")}}
-                                    <a href="/" class="btn">Home</a>
-                                {{/if}}
-                            {{/if}}
-                            {{#if (ne current_user.role "student")}}
-                                {{#if (ne current_route "home")}}
-                                    <a href="/" class="btn">Home</a>
-                                {{/if}}
-                            {{/if}}
-                            {{#if current_user}}
-                                {{#if (ne current_route "profile")}}
-                                    <a href="/profile" class="btn">Profile</a>
-                                {{/if}}
-                                {{#if (eq current_user.role "coach")}}
-                                    {{#if (ne current_route "register")}}
-                                        <a href="/register" class="btn">Register User</a>
-                                    {{/if}}
-                                {{/if}}
-                                <a href="/logout" class="btn">Logout (
-                                    {{#if current_user.display_name }}
-                                    {{ current_user.display_name }}{{ else }}{{ current_user.username }}{{/if}})</a>
-                                {{ else }}
-                                    {{#if (ne current_route "login")}}
-                                        <a href="/login" class="btn">Login</a>
-                                    {{/if}}
-                                {{/if}}
-                            {{/if}}
-                        </nav>
-                        <button id="themeToggle" class="theme-toggle" onclick="toggleTheme()">
-                            <span class="icon">🌙</span>
-                        </button>
-                    </div>
-                </div>
-            </header>
-            <main>
-                {{> content}}
-            </main>
-            <script>window.apiKey = "{{honeycomb_api_key}}"</script>
-            <script type="module" src="/static/js/frontend-telemetry.js"></script>
-            <script>
+                        {{#unless (eq current_route "login")}}
+                        {{#if current_user}}
+                            {{#unless (eq current_route "home")}}
+                            <a href="/" class="btn">Home</a>
+                        {{/unless}}
+                        {{#unless (eq current_route "profile")}}
+                        <a href="/profile" class="btn">Profile</a>
+                    {{/unless}}
+                    {{ #if (and(has_permission current_user "RegisterUsers") (ne current_route "register"))}}
+                    <a href="/register" class="btn">Register User</a>
+                {{/if}}
+                <a href="/logout" class="btn">Logout (
+                    {{#if current_user.display_name}}
+                        {{ current_user.display_name }}
+                    {{ else }}
+                        {{ current_user.username }}
+                    {{/if}}
+                )</a>
+            {{ else }}
+                <a href="/login" class="btn">Login</a>
+            {{/if}}
+        {{/unless}}
+    </nav>
+    <button id="themeToggle" class="theme-toggle" onclick="toggleTheme()">
+        <span class="icon">🌙</span>
+    </button>
+</div>
+</div>
+</header>
+<main>
+    {{> content}}
+</main>
+<script>window.apiKey = "{{honeycomb_api_key}}"</script>
+<script type="module" src="/static/js/frontend-telemetry.js"></script>
+<script>
             function getPreferredTheme() {
                 const savedTheme = localStorage.getItem('theme');
                 if (savedTheme) {
@@ -713,6 +705,6 @@
                     }
                 }
             });
-            </script>
-        </body>
-    </html>
+</script>
+</body>
+</html>

@@ -1,6 +1,7 @@
 {{#*inline "content"}}
 <div class="profile-container">
     <h2>Your Profile</h2>
+    {{!-- Display message if present --}}
     {{#if message}}
         <div class="message {{ message_type }}">{{ message }}</div>
     {{/if}}
@@ -11,6 +12,11 @@
         <p>
             <strong>Role:</strong> {{ current_user.role }}
         </p>
+        {{#if current_user.display_name}}
+            <p>
+                <strong>Display Name:</strong> {{ current_user.display_name }}
+            </p>
+        {{/if}}
     </div>
     <div class="profile-forms">
         <div class="profile-form">
@@ -54,6 +60,7 @@
                 <div class="form-group">
                     <label for="new-password">New Password:</label>
                     <input type="password" id="new-password" name="new_password" required>
+                    <small class="form-help">Must be at least 6 characters long</small>
                 </div>
                 <div class="form-group">
                     <label for="confirm-password">Confirm New Password:</label>

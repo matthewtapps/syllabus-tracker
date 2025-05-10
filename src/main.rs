@@ -8,6 +8,7 @@ mod models;
 mod routes;
 mod telemetry;
 
+use auth::{Permission, Role};
 use auth::{forbidden, login, logout, process_login, process_register, register, unauthorized};
 use error::{AppError, internal_server_error};
 use rocket::fs::FileServer;
@@ -15,8 +16,10 @@ use rocket_dyn_templates::Template;
 use rocket_dyn_templates::handlebars::Context;
 use rocket_dyn_templates::handlebars::Handlebars;
 use rocket_dyn_templates::handlebars::Helper;
+use rocket_dyn_templates::handlebars::HelperResult;
 use rocket_dyn_templates::handlebars::Output;
 use rocket_dyn_templates::handlebars::RenderContext;
+use rocket_dyn_templates::handlebars::RenderErrorReason;
 use telemetry::TelemetryFairing;
 use telemetry::init_tracing;
 use thiserror::Error;
@@ -31,8 +34,6 @@ use tracing::info;
 
 #[derive(Debug, Error)]
 pub enum Error {
-    #[error("Hatch")]
-    Hatch,
     #[error("{0}")]
     Anyhow(anyhow::Error),
     #[error("{0}")]
@@ -108,6 +109,93 @@ async fn rocket() -> _ {
                           _: &mut RenderContext,
                           out: &mut dyn Output| {
                         out.write(&honeycomb_api_key)?;
+                        Ok(())
+                    },
+                ),
+            );
+
+            engines.handlebars.register_helper(
+                "has_permission",
+                Box::new(
+                    |h: &Helper,
+                     _: &Handlebars,
+                     _ctx: &Context,
+                     _: &mut RenderContext,
+                     out: &mut dyn Output|
+                     -> HelperResult {
+                        let user =
+                            h.param(0)
+                                .and_then(|v| v.value().as_object())
+                                .ok_or_else(|| {
+                                    RenderErrorReason::ParamNotFoundForName(
+                                        "has_permission",
+                                        "user".to_string(),
+                                    )
+                                })?;
+
+                        let permission_str =
+                            h.param(1).and_then(|v| v.value().as_str()).ok_or_else(|| {
+                                RenderErrorReason::ParamNotFoundForName(
+                                    "has_permission",
+                                    "permission".to_string(),
+                                )
+                            })?;
+
+                        let permission = match permission_str {
+                            "RegisterUsers" => Permission::RegisterUsers,
+                            "ViewAllStudents" => Permission::ViewAllStudents,
+                            "EditAllTechniques" => Permission::EditAllTechniques,
+                            "AssignTechniques" => Permission::AssignTechniques,
+                            "CreateTechniques" => Permission::CreateTechniques,
+                            _ => return Ok(()), // Unknown permission, return false
+                        };
+
+                        let role_str = user
+                            .get("role")
+                            .and_then(|v| match v {
+                                serde_json::Value::String(s) => Some(s.as_str()),
+                                serde_json::Value::Object(o) => {
+                                    o.get("type").and_then(|t| t.as_str())
+                                }
+                                _ => None,
+                            })
+                            .unwrap_or("student");
+
+                        let role = match role_str {
+                            "Coach" => Role::Coach,
+                            "Admin" => Role::Admin,
+                            _ => Role::Student,
+                        };
+
+                        if role.has_permission(permission) {
+                            out.write("true")?;
+                        }
+
+                        Ok(())
+                    },
+                ),
+            );
+
+            engines.handlebars.register_helper(
+                "and",
+                Box::new(
+                    |h: &Helper,
+                     _: &Handlebars,
+                     _: &Context,
+                     _: &mut RenderContext,
+                     out: &mut dyn Output|
+                     -> HelperResult {
+                        let params = h.params();
+                        let all_true = params.iter().all(|param| match param.value() {
+                            serde_json::Value::Bool(b) => *b,
+                            serde_json::Value::String(s) => s == "true",
+                            _ => false,
+                        });
+
+                        if all_true {
+                            out.write("true")?;
+                        }
+
                         Ok(())
                     },
                 ),

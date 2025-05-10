@@ -1,4 +1,4 @@
-use rocket::Request;
+use rocket::{Request, http::Status};
 use rocket_dyn_templates::{Template, context};
 use thiserror::Error;
 use tracing::{Span, error, warn};
@@ -79,7 +79,7 @@ impl AppError {
         }
     }
 
-    pub fn status_code(&self) -> rocket::http::Status {
+    pub fn status_code(&self) -> Status {
         match self {
             AppError::Database(_) => rocket::http::Status::InternalServerError,
             AppError::Authentication(_) => rocket::http::Status::Unauthorized,
@@ -91,13 +91,17 @@ impl AppError {
             AppError::Internal(_) => rocket::http::Status::InternalServerError,
         }
     }
+
+    pub fn to_status_with_log(self, context: &str) -> Status {
+        self.log_and_record(context);
+        self.status_code()
+    }
 }
 
 impl<'r> rocket::response::Responder<'r, 'static> for AppError {
     fn respond_to(self, req: &'r rocket::Request<'_>) -> rocket::response::Result<'static> {
-        self.log_and_record(&format!("Request to {} {}", req.method(), req.uri()));
-
-        self.status_code().respond_to(req)
+        self.to_status_with_log(&format!("Request to {} {}", req.method(), req.uri()))
+            .respond_to(req)
     }
 }
 
@@ -110,6 +114,12 @@ impl From<bcrypt::BcryptError> for AppError {
 impl From<rocket::Error> for AppError {
     fn from(error: rocket::Error) -> Self {
         AppError::Redirect(format!("Rocket error: {}", error))
+    }
+}
+
+impl From<AppError> for Status {
+    fn from(err: AppError) -> Self {
+        err.to_status_with_log("Error conversion into Status")
     }
 }
 
