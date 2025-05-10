@@ -12,10 +12,10 @@ services:
       - config/dev.env
       - .secrets.env
     volumes:
-      - ./:/usr/src/app
+      - ./:/app
       - cargo-cache:/usr/local/cargo/registry
       - target-cache:/usr/src/app/target
-      - /usr/src/app/target
+      - /app/target
     depends_on:
       - otel-collector
     networks:

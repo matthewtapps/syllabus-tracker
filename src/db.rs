@@ -3,8 +3,7 @@ use crate::{
     error::AppError,
 };
 use chrono::Utc;
-use rocket::response::Redirect;
-use sqlx::{Error, Pool, Sqlite};
+use sqlx::{Pool, Sqlite};
 use tracing::{info, instrument};
 
 use crate::models::{DbStudentTechnique, DbTechnique, StudentTechnique, Technique};
@@ -17,9 +16,16 @@ pub async fn get_user(pool: &Pool<Sqlite>, id: i64) -> Result<User, AppError> {
         "SELECT id, username, role, display_name FROM users WHERE id=?",
         id
     )
-    .fetch_one(pool)
+    .fetch_optional(pool)
     .await?;
-    Ok(User::from(row))
+
+    match row {
+        Some(user) => Ok(User::from(user)),
+        _ => Err(AppError::NotFound(format!(
+            "User with id {} not found in database",
+            id
+        ))),
+    }
 }
 
 #[instrument]
@@ -48,8 +54,7 @@ pub async fn update_user_password(
 ) -> Result<(), AppError> {
     info!("Updating user password");
     // Hash the password
-    let hashed_password =
-        bcrypt::hash(new_password, bcrypt::DEFAULT_COST).map_err(|_| sqlx::Error::RowNotFound)?;
+    let hashed_password = bcrypt::hash(new_password, bcrypt::DEFAULT_COST)?;
 
     sqlx::query!(
         "UPDATE users SET password = ? WHERE id = ?",
@@ -93,7 +98,7 @@ pub async fn update_username(
 }
 
 #[instrument]
-pub async fn get_all_techniques(pool: &Pool<Sqlite>) -> Result<Vec<Technique>, Error> {
+pub async fn get_all_techniques(pool: &Pool<Sqlite>) -> Result<Vec<Technique>, AppError> {
     info!("Getting all techniques");
     let rows = sqlx::query_as!(
         DbTechnique,
@@ -192,17 +197,17 @@ pub async fn get_student_techniques(
         "SELECT * FROM student_techniques
          WHERE student_id = ?
         ORDER BY updated_at DESC
-
 ",
         student_id
     )
     .fetch_all(pool)
     .await?;
 
-    Ok(rows
+    let techniques: Vec<StudentTechnique> = rows
         .iter()
         .map(|row| StudentTechnique::from(row.clone()))
-        .collect())
+        .collect();
+    Ok(techniques)
 }
 
 #[instrument]
@@ -308,10 +313,13 @@ pub async fn get_unassigned_techniques(
     )
     .fetch_all(pool)
     .await?;
-    Ok(rows
+
+    // No error thrown if there are no techniques found
+    let techniques: Vec<Technique> = rows
         .iter()
         .map(|row| Technique::from(row.clone()))
-        .collect())
+        .collect();
+    Ok(techniques)
 }
 
 #[instrument]
@@ -319,13 +327,13 @@ pub async fn add_techniques_to_student(
     pool: &Pool<Sqlite>,
     student_id: i64,
     technique_ids: Vec<i64>,
-) -> Result<Redirect, AppError> {
+) -> Result<(), AppError> {
     info!("Adding technique to student");
     for technique_id in technique_ids {
         assign_technique_to_student(pool, technique_id, student_id).await?;
     }
 
-    Ok(Redirect::to(format!("/student/{}", student_id)))
+    Ok(())
 }
 
 #[instrument]
@@ -335,14 +343,14 @@ pub async fn create_and_assign_technique(
     student_id: i64,
     technique_name: &str,
     technique_description: &str,
-) -> Result<Redirect, AppError> {
+) -> Result<(), AppError> {
     info!("Creating and assigning technique to student");
     let technique_id =
         create_technique(pool, technique_name, technique_description, coach_id).await?;
 
     assign_technique_to_student(pool, technique_id, student_id).await?;
 
-    Ok(Redirect::to(format!("/student/{}", student_id)))
+    Ok(())
 }
 
 #[instrument(skip_all, fields(username))]
@@ -380,8 +388,18 @@ pub async fn create_user(
 ) -> Result<i64, AppError> {
     info!("Creating new user");
 
-    let hashed_password =
-        bcrypt::hash(password, bcrypt::DEFAULT_COST).map_err(|_| sqlx::Error::RowNotFound)?;
+    let existing_user = sqlx::query!("SELECT id FROM users WHERE username = ?", username)
+        .fetch_optional(pool)
+        .await?;
+
+    if existing_user.is_some() {
+        return Err(AppError::Validation(format!(
+            "Username '{}' already exists",
+            username
+        )));
+    }
+
+    let hashed_password = bcrypt::hash(password, bcrypt::DEFAULT_COST)?;
 
     let res = sqlx::query!(
         "INSERT INTO users (username, password, role) VALUES (?, ?, ?)",
@@ -403,10 +421,16 @@ pub async fn get_user_by_username(pool: &Pool<Sqlite>, username: &str) -> Result
         "SELECT id, username, role, display_name FROM users WHERE username = ?",
         username
     )
-    .fetch_one(pool)
+    .fetch_optional(pool)
     .await?;
 
-    Ok(User::from(row))
+    match row {
+        Some(db_user) => Ok(User::from(db_user)),
+        _ => Err(AppError::NotFound(format!(
+            "User with username {} not found in database",
+            username
+        ))),
+    }
 }
 
 #[instrument]
@@ -415,5 +439,14 @@ pub async fn get_users_by_role(pool: &Pool<Sqlite>, role: &str) -> Result<Vec<Us
         .fetch_all(pool)
         .await?;
 
-    Ok(rows.iter().map(|row| User::from(row.clone())).collect())
+    let users: Vec<User> = rows.into_iter().map(User::from).collect();
+
+    if users.is_empty() {
+        return Err(AppError::NotFound(format!(
+            "No users found for role {}",
+            role
+        )));
+    }
+
+    Ok(users)
 }

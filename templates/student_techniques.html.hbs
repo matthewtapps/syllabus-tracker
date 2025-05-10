@@ -31,7 +31,7 @@
                         <form action="/student_technique/{{ this.id }}"
                               method="post"
                               id="student-technique-edit">
-                            {{#if (eq ../current_user.role "coach")}}
+                            {{#if ../can_edit_all_techniques}}
                                 <!-- Coach-only editable fields -->
                                 <div class="form-group">
                                     <label for="status-{{ this.id }}">Status:</label>
@@ -63,7 +63,7 @@
                             <!-- Student Notes -->
                             <div class="form-group">
                                 <label for="student-notes-{{ this.id }}">Student Notes:</label>
-                                {{#if (eq ../current_user.role "student")}}
+                                {{#if (eq ../student.id ../current_user.id)}}
                                     <textarea name="student_notes" id="student-notes-{{this.id}}">{{this.student_notes}}</textarea>
                                 {{ else }}
                                     <!-- Read-only for coaches -->
@@ -74,7 +74,7 @@
                             <!-- Coach Notes -->
                             <div class="form-group">
                                 <label for="coach-notes-{{ this.id }}">Coach Notes:</label>
-                                {{#if (eq ../current_user.role "coach")}}
+                                {{#if ../can_edit_all_techniques}}
                                     <textarea name="coach_notes" id="coach-notes-{{this.id}}">{{this.coach_notes}}</textarea>
                                 {{ else }}
                                     <!-- Read-only for students -->
@@ -82,7 +82,7 @@
                                     <input type="hidden" name="coach_notes" value="{{ this.coach_notes }}">
                                 {{/if}}
                             </div>
-                            {{#if (eq ../current_user.role "coach")}}
+                            {{#if ../can_edit_all_techniques}}
                                 <!-- Technique Name and Description - Coach only -->
                                 <div class="form-group">
                                     <div class="warning-container"
@@ -136,7 +136,7 @@
         <p>No techniques assigned to this student yet.</p>
     {{/if}}
     <!-- Add Technique Form - Only visible to coaches -->
-    {{#if (eq current_user.role "coach")}}
+    {{#if ../can_assign_techniques}}
         <div class="add-form">
             <h3>Add Techniques to Student</h3>
             <!-- Bulk Add Section -->
@@ -163,26 +163,28 @@
                     {{/if}}
                 </div>
             </form>
-            <!-- Create New Technique Toggle -->
-            <button class="btn toggle-btn" onclick="toggleCreateForm()">Create New Technique</button>
-            <!-- Create New Technique Form (Hidden by default) -->
-            <div id="create-technique-form" style="display: none;">
-                <h4>Create New Technique</h4>
-                <form action="/student/{{ student.id }}/create_technique"
-                      method="post"
-                      id="student-technique-create">
-                    <div class="form-group">
-                        <label for="new-technique-name">Technique Name:</label>
-                        <input type="text" id="new-technique-name" name="name" required>
-                    </div>
-                    <div class="form-group">
-                        <label for="new-technique-description">Description:</label>
-                        <textarea id="new-technique-description" name="description" required></textarea>
-                    </div>
-                    <button type="submit" class="btn create-btn">Create & Add to Student</button>
-                    <button type="button" class="btn cancel-btn" onclick="toggleCreateForm()">Cancel</button>
-                </form>
-            </div>
+            {{#if ../can_create_techniques}}
+                <!-- Create New Technique Toggle -->
+                <button class="btn toggle-btn" onclick="toggleCreateForm()">Create New Technique</button>
+                <!-- Create New Technique Form (Hidden by default) -->
+                <div id="create-technique-form" style="display: none;">
+                    <h4>Create New Technique</h4>
+                    <form action="/student/{{ student.id }}/create_technique"
+                          method="post"
+                          id="student-technique-create">
+                        <div class="form-group">
+                            <label for="new-technique-name">Technique Name:</label>
+                            <input type="text" id="new-technique-name" name="name" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="new-technique-description">Description:</label>
+                            <textarea id="new-technique-description" name="description" required></textarea>
+                        </div>
+                        <button type="submit" class="btn create-btn">Create & Add to Student</button>
+                        <button type="button" class="btn cancel-btn" onclick="toggleCreateForm()">Cancel</button>
+                    </form>
+                </div>
+            {{/if}}
         </div>
     {{/if}}
     <script>

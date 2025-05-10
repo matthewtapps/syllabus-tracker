@@ -1,4 +1,4 @@
-use rocket::form::Form;
+use rocket::form::{Contextual, Form};
 use rocket::http::{Cookie, CookieJar, SameSite, Status};
 use rocket::request::{FromRequest, Outcome};
 use rocket::response::Redirect;
@@ -8,8 +8,9 @@ use sqlx::{Pool, Sqlite, SqlitePool};
 use tracing::info;
 
 use crate::db::{authenticate_user, create_user, get_user_by_username};
+use crate::error::AppError;
 
-use super::User;
+use super::{Permission, User};
 
 #[rocket::async_trait]
 impl<'r> FromRequest<'r> for User {
@@ -17,67 +18,64 @@ impl<'r> FromRequest<'r> for User {
 
     async fn from_request(request: &'r Request<'_>) -> Outcome<Self, Self::Error> {
         let auth_span = tracing::info_span!("user_auth_guard");
-
         let _guard = auth_span.enter();
 
         let cookies = request.cookies();
 
-        if let Some(logged_in) = cookies.get_private("logged_in") {
-            let username = logged_in.value().to_string();
+        let username = match cookies.get_private("logged_in") {
+            Some(cookie) => cookie.value().to_string(),
+            _ => {
+                tracing::info!("No logged_in cookie found");
+                return Outcome::Forward(Status::Unauthorized);
+            }
+        };
 
-            let role = cookies
-                .get_private("user_role")
-                .map(|c| c.value().to_string())
-                .unwrap_or_else(|| "student".to_string());
+        let db = match request.rocket().state::<SqlitePool>() {
+            Some(pool) => pool,
+            _ => {
+                tracing::error!("Database pool not found in managed state");
+                return Outcome::Error((Status::InternalServerError, ()));
+            }
+        };
 
-            let id = cookies
-                .get_private("user_id")
-                .and_then(|c| c.value().parse::<i64>().ok())
-                .unwrap_or_default();
-
-            let db = request
-                .rocket()
-                .state::<SqlitePool>()
-                .expect("Database pool not found in managed state");
-
-            if let Some(timestamp_cookie) = cookies.get_private("session_timestamp") {
-                if let Ok(timestamp) = timestamp_cookie.value().parse::<i64>() {
-                    use rocket::time::{Duration, OffsetDateTime};
-
-                    let session_time = OffsetDateTime::from_unix_timestamp(timestamp).ok();
+        if let Some(timestamp_cookie) = cookies.get_private("session_timestamp") {
+            if let Ok(timestamp) = timestamp_cookie.value().parse::<i64>() {
+                use rocket::time::{Duration, OffsetDateTime};
+                if let Ok(session_time) = OffsetDateTime::from_unix_timestamp(timestamp) {
                     let current_time = OffsetDateTime::now_utc();
+                    let elapsed = current_time - session_time;
 
-                    if let Some(session_time) = session_time {
-                        let elapsed = current_time - session_time;
-                        if elapsed > Duration::hours(1) {
-                            warn!(username, "Session expired");
-                            return Outcome::Forward(Status::Unauthorized);
-                        }
+                    if elapsed > Duration::hours(1) {
+                        tracing::warn!(username = %username, "Session expired");
+                        return Outcome::Forward(Status::Unauthorized);
                     }
                 }
             }
+        }
 
-            match get_user_by_username(db, &username).await {
-                Ok(user) => {
-                    info!(username, role = user.role, "User authenticated");
-                    Outcome::Success(user)
-                }
-                Err(err) => {
-                    error!(username, error = ?err, "Database error fetching user");
+        match get_user_by_username(db, &username).await {
+            Ok(user) => {
+                tracing::info!(username = %username, role = %user.role.as_str(), "User authenticated");
+                Outcome::Success(user)
+            }
+            Err(err) => {
+                tracing::error!(username = %username, error = ?err, "Failed to fetch user");
 
-                    Outcome::Success(User {
-                        id,
-                        username,
-                        role,
-                        display_name: String::new(),
-                    })
+                match err {
+                    AppError::NotFound(_) => Outcome::Forward(Status::Unauthorized),
+                    _ => Outcome::Error((Status::InternalServerError, ())),
                 }
             }
-        } else {
-            warn!("No logged_in cookie found");
-            Outcome::Forward(Status::Unauthorized)
         }
     }
+}
+
+#[derive(FromForm)]
+pub struct LoginForm<'r> {
+    #[field(validate = len(1..).or_else(msg!("Username is required")))]
+    username: &'r str,
+    #[field(validate = len(1..).or_else(msg!("Password is required")))]
+    password: &'r str,
 }
 
 #[get("/login?<username>&<error>")]
@@ -94,19 +92,37 @@ pub fn login(username: Option<String>, error: Option<String>) -> Template {
 }
 
 #[post("/login", data = "<form>")]
-pub async fn process_login(
-    form: Form<LoginForm>,
+pub async fn process_login<'r>(
+    form: Form<Contextual<'r, LoginForm<'r>>>,
     cookies: &CookieJar<'_>,
     db: &State<Pool<Sqlite>>,
 ) -> Result<Redirect, Status> {
-    let message = format!("Login attempt: {}", &form.username);
-    info!(message = message, username = &form.username);
+    if form.value.is_none() {
+        let error_message = form
+            .context
+            .errors()
+            .next()
+            .map(|err| err.to_string())
+            .unwrap_or_else(|| "Validation failed".to_string());
 
-    match authenticate_user(db, &form.username, &form.password).await {
+        let username = form.context.field_value("username").unwrap_or_default();
+
+        return Ok(Redirect::to(uri!(login(
+            Some(username),
+            Some(&error_message)
+        ))));
+    }
+
+    let form_value = form.value.as_ref().unwrap();
+
+    let message = format!("Login attempt: {}", form_value.username);
+    info!(message = message, username = form_value.username);
+
+    match authenticate_user(db, form_value.username, form_value.password).await {
         Ok(true) => {
-            info!(username = %form.username, "Authentication successful");
+            info!(username = %form_value.username, "Authentication successful");
 
-            let cookie = Cookie::build(("logged_in", form.username.clone()))
+            let cookie = Cookie::build(("logged_in", form_value.username.to_string()))
                 .same_site(SameSite::Lax)
                 .max_age(rocket::time::Duration::hours(1));
             cookies.add_private(cookie);
@@ -120,9 +136,9 @@ pub async fn process_login(
                     .max_age(rocket::time::Duration::hours(1)),
             );
 
-            if let Ok(user) = get_user_by_username(db, &form.username).await {
+            if let Ok(user) = get_user_by_username(db, form_value.username).await {
                 cookies.add_private(
-                    Cookie::build(("user_role", user.role))
+                    Cookie::build(("user_role", user.role.to_string()))
                         .same_site(SameSite::Lax)
                         .max_age(rocket::time::Duration::hours(1)),
                 );
@@ -136,16 +152,12 @@ pub async fn process_login(
             Ok(Redirect::to("/"))
         }
         _ => {
-            warn!(username = %form.username, "Authentication failed");
+            warn!(username = %form_value.username, "Authentication failed");
 
-            let encoded_username = urlencoding::encode(&form.username);
-
-            let error_uri = format!(
-                "/login?username={}&error=Invalid%20username%20or%20password",
-                encoded_username
-            );
-
-            Ok(Redirect::to(error_uri))
+            Ok(Redirect::to(uri!(login(
+                Some(form_value.username),
+                Some("Invalid username or password")
+            ))))
         }
     }
 }
@@ -160,17 +172,9 @@ pub fn logout(cookies: &CookieJar<'_>) -> Redirect {
     Redirect::to("/login")
 }
 
-#[derive(FromForm)]
-pub struct LoginForm {
-    username: String,
-    password: String,
-}
-
-#[rocket::get("/register")]
-pub fn register(user: User) -> Result<Template, Redirect> {
-    if user.role != "coach" {
-        return Err(Redirect::to("/"));
-    }
+#[get("/register?<err>")]
+pub fn register(user: User, err: Option<String>) -> Result<Template, Status> {
+    user.require_permission(Permission::RegisterUsers)?;
 
     Ok(Template::render(
         "register",
@@ -178,30 +182,63 @@ pub fn register(user: User) -> Result<Template, Redirect> {
             title: "Register New User - Jiu Jitsu Syllabus Tracker",
             current_route: "register",
             current_user: user,
+            error: err
         },
     ))
 }
 
 #[derive(FromForm)]
-pub struct RegisterForm {
-    username: String,
-    password: String,
-    role: String,
+pub struct RegisterForm<'r> {
+    #[field(validate = len(3..30).or_else(msg!("Username must be between 3 and 30 characters")))]
+    #[field(validate = omits(' ').or_else(msg!("Username cannot contain spaces")))]
+    username: &'r str,
+    #[field(validate = len(5..).or_else(msg!("Password must be at least 5 characters")))]
+    password: &'r str,
+    #[field(validate = eq(self.password).or_else(msg!("Passwords did not match")))]
+    confirm_password: &'r str,
+    role: &'r str,
 }
 
 #[post("/register", data = "<form>")]
-pub async fn process_register(
+pub async fn process_register<'r>(
     user: User,
-    form: Form<RegisterForm>,
+    form: Form<Contextual<'r, RegisterForm<'r>>>,
     db: &State<Pool<Sqlite>>,
-) -> Result<Redirect, Redirect> {
-    if user.role != "coach" {
-        return Err(Redirect::to("/"));
+) -> Result<Redirect, Status> {
+    user.require_permission(Permission::RegisterUsers)?;
+
+    if form.value.is_none() {
+        let error_message = form
+            .context
+            .errors()
+            .next()
+            .map(|err| err.to_string())
+            .unwrap_or_else(|| "Validation failed".to_string());
+
+        return Ok(Redirect::to(uri!(register(Some(&error_message)))));
     }
 
-    match create_user(db, &form.username, &form.password, &form.role).await {
+    let form_value = form.value.as_ref().unwrap();
+
+    match create_user(
+        db,
+        form_value.username,
+        form_value.password,
+        form_value.role,
+    )
+    .await
+    {
         Ok(_) => Ok(Redirect::to("/")),
-        Err(_) => Err(Redirect::to("/register?error=Registration%20failed")),
+        Err(err) => {
+            err.log_and_record("User registration");
+
+            if let AppError::Validation(msg) = &err {
+                Ok(Redirect::to(uri!(register(Some(msg)))))
+            } else {
+                // For all other errors, return the appropriate status code
+                Err(err.status_code())
+            }
+        }
     }
 }
 
