@@ -11,7 +11,10 @@ mod telemetry;
 #[cfg(test)]
 mod test;
 
-use api::{api_login, api_me, api_me_unauthorized, serve_spa_index};
+use api::{
+    api_get_student_techniques, api_get_students, api_login, api_logout, api_me,
+    api_me_unauthorized, api_update_student_technique, serve_spa_index,
+};
 use auth::{Permission, Role};
 use auth::{forbidden, login, logout, process_login, process_register, register, unauthorized};
 use db::clean_expired_sessions;
@@ -111,12 +114,23 @@ pub async fn init_rocket(pool: SqlitePool) -> Rocket<Build> {
 
     rocket::build()
         .manage(pool)
-        .mount("/api", routes![api_login, api_me, api_me_unauthorized])
+        .mount(
+            "/api",
+            routes![
+                api_login,
+                api_me,
+                api_me_unauthorized,
+                api_update_student_technique,
+                api_get_student_techniques,
+                api_logout,
+                api_get_students
+            ],
+        )
         .mount("/ui", routes![serve_spa_index])
-        .mount("/ui", FileServer::new(relative!("./frontend/dist")).rank(2))
+        .mount("/ui", FileServer::new(relative!("frontend/dist")).rank(2))
         .mount(
             "/ui/assets",
-            FileServer::new(relative!("./frontend/dist/assets")),
+            FileServer::new(relative!("frontend/dist/assets")),
         )
         .mount(
             "/",

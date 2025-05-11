@@ -1,4 +1,4 @@
-use rocket::{Request, http::Status};
+use rocket::{Request, http::Status, serde::json::Json};
 use rocket_dyn_templates::{Template, context};
 use thiserror::Error;
 use tracing::{Span, error, warn};

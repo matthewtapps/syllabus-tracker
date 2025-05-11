@@ -1,3 +1,7 @@
+// frontend/src/components/login-form.tsx
+import { useState } from "react"
+import { useNavigate } from "react-router-dom";
+import { login } from "@/lib/api"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import {
@@ -6,17 +10,21 @@ import {
 } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { useState } from "react"
-import { login } from "@/lib/api"
+
+interface LoginFormProps extends React.ComponentProps<"div"> {
+  onSuccess: () => void;
+}
 
 export function LoginForm({
   className,
+  onSuccess,
   ...props
-}: React.ComponentProps<"div">) {
+}: LoginFormProps) {
   const [username, setUsername] = useState("")
   const [password, setPassword] = useState("")
   const [error, setError] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(false)
+  const navigate = useNavigate();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -26,9 +34,15 @@ export function LoginForm({
     try {
       const response = await login({ username, password })
 
-      if (response.success && response.redirect_url) {
-        // Redirect to the main application
-        window.location.href = response.redirect_url
+      if (response.success) {
+        onSuccess();
+
+        // Navigate based on user role
+        if (response.user?.role === 'student' || response.user?.role === 'Student') {
+          navigate(`/student/${response.user.id}`);
+        } else {
+          navigate('/dashboard');
+        }
       } else {
         setError(response.error || "Login failed. Please try again.")
       }
@@ -43,14 +57,15 @@ export function LoginForm({
   return (
     <div className={cn("flex flex-col gap-6", className)} {...props}>
       <Card>
-        <CardContent>
+        <CardContent className="pt-6">
           <form onSubmit={handleSubmit}>
             <div className="flex flex-col gap-6">
               <div className="grid gap-3">
                 <Label htmlFor="username">Username</Label>
                 <Input
                   id="username"
-                  type="username"
+                  type="text"
+                  placeholder="Enter your username"
                   required
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
@@ -70,7 +85,7 @@ export function LoginForm({
               </div>
 
               {error && (
-                <div className="p-3 text-sm font-medium text-red-600 bg-red-50 rounded-md">
+                <div className="p-3 text-sm font-medium text-destructive bg-destructive/10 rounded-md">
                   {error}
                 </div>
               )}
