@@ -1,3 +1,12 @@
+CREATE TABLE IF NOT EXISTS users (
+    id INTEGER PRIMARY KEY,
+    username TEXT NOT NULL UNIQUE,
+    role TEXT NOT NULL,
+    password TEXT NOT NULL DEFAULT '',
+    display_name TEXT,
+    archived BOOLEAN NOT NULL DEFAULT FALSE
+);
+
 CREATE TABLE IF NOT EXISTS techniques (
     id INTEGER PRIMARY KEY,
     name TEXT NOT NULL,
@@ -5,12 +14,6 @@ CREATE TABLE IF NOT EXISTS techniques (
     coach_id INTEGER,
     coach_name TEXT,
     FOREIGN KEY (coach_id) REFERENCES users (id)
-);
-
-CREATE TABLE IF NOT EXISTS users (
-    id INTEGER PRIMARY KEY,
-    username TEXT NOT NULL UNIQUE,
-    role TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS student_techniques (
