@@ -57,6 +57,10 @@
             lld
 
             typescript-language-server
+
+            # New frontend
+            pnpm
+            nodejs-slim_22
           ];
         };
 
