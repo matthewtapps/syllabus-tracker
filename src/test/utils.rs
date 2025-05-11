@@ -2,9 +2,11 @@
 pub mod test_db {
     use crate::auth::Role;
     use crate::db::{
-        assign_technique_to_student, create_technique, create_user, update_student_technique,
+        assign_technique_to_student, create_technique, create_user, get_student_technique,
+        update_student_technique,
     };
     use crate::error::AppError;
+    use crate::models::StudentTechnique;
     use sqlx::{Pool, Sqlite, SqlitePool};
     use std::collections::HashMap;
     use std::sync::Once;
@@ -236,6 +238,11 @@ pub mod test_db {
         pub technique_id_map: HashMap<String, i64>,
     }
 
+    #[derive(sqlx::FromRow)]
+    struct IdRow {
+        id: i64,
+    }
+
     impl TestDb {
         pub fn user_id(&self, username: &str) -> Option<i64> {
             self.user_id_map.get(username).copied()
@@ -258,17 +265,18 @@ pub mod test_db {
                 .technique_id(technique_name)
                 .ok_or_else(|| sqlx::Error::RowNotFound)?;
 
-            let result = sqlx::query!(
+            let result = sqlx::query_as::<_, IdRow>(
                 "SELECT id FROM student_techniques 
              WHERE student_id = ? AND technique_id = ?",
-                student_id,
-                technique_id
             )
+            .bind(student_id)
+            .bind(technique_id)
             .fetch_one(&self.pool)
             .await?;
 
             Ok(result.id)
         }
+
         #[allow(dead_code)]
         pub async fn student_technique_ids(
             &self,
@@ -278,15 +286,16 @@ pub mod test_db {
                 .user_id(student_username)
                 .ok_or_else(|| sqlx::Error::RowNotFound)?;
 
-            let results = sqlx::query!(
+            let results = sqlx::query_as::<_, IdRow>(
                 "SELECT id FROM student_techniques WHERE student_id = ?",
-                student_id
             )
+            .bind(student_id)
             .fetch_all(&self.pool)
             .await?;
 
             Ok(results.into_iter().map(|row| row.id).collect())
         }
+
         #[allow(dead_code)]
         pub async fn first_student_technique_id(
             &self,
@@ -296,21 +305,19 @@ pub mod test_db {
                 .user_id(student_username)
                 .ok_or_else(|| sqlx::Error::RowNotFound)?;
 
-            let result = sqlx::query!(
+            let result = sqlx::query_as::<_, IdRow>(
                 "SELECT id FROM student_techniques WHERE student_id = ? LIMIT 1",
-                student_id
             )
+            .bind(student_id)
             .fetch_one(&self.pool)
             .await?;
 
             Ok(result.id)
         }
+
         #[allow(dead_code)]
-        pub async fn get_student_technique(
-            &self,
-            id: i64,
-        ) -> Result<crate::models::StudentTechnique, crate::error::AppError> {
-            crate::db::get_student_technique(&self.pool, id).await
+        pub async fn get_student_technique(&self, id: i64) -> Result<StudentTechnique, AppError> {
+            get_student_technique(&self.pool, id).await
         }
     }
 }

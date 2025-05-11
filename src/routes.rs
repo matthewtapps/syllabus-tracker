@@ -21,17 +21,17 @@ use crate::error::AppError;
 use crate::models::{StudentTechnique, Technique};
 
 pub enum IndexResponse {
-    TemplateResponse(Template),
-    RedirectResponse(Redirect),
-    ErrorResponse(Status),
+    Template(Template),
+    Redirect(Box<Redirect>),
+    Error(Status),
 }
 
 impl<'r> Responder<'r, 'static> for IndexResponse {
     fn respond_to(self, request: &'r Request<'_>) -> response::Result<'static> {
         match self {
-            IndexResponse::TemplateResponse(template) => template.respond_to(request),
-            IndexResponse::RedirectResponse(redirect) => redirect.respond_to(request),
-            IndexResponse::ErrorResponse(status) => status.respond_to(request),
+            IndexResponse::Template(template) => template.respond_to(request),
+            IndexResponse::Redirect(redirect) => redirect.respond_to(request),
+            IndexResponse::Error(status) => status.respond_to(request),
         }
     }
 }
@@ -41,15 +41,15 @@ pub async fn index(user: User, db: &State<Pool<Sqlite>>) -> IndexResponse {
     info!("Accessing index page");
     match user.role {
         Role::Student => {
-            IndexResponse::RedirectResponse(Redirect::to(format!("/student/{}", user.id)))
+            IndexResponse::Redirect(Box::new(Redirect::to(format!("/student/{}", user.id))))
         }
         _ => {
             if !user.has_permission(Permission::ViewAllStudents) {
-                return IndexResponse::ErrorResponse(Status::Forbidden);
+                return IndexResponse::Error(Status::Forbidden);
             }
 
             match get_users_by_role(db, "student", false).await {
-                Ok(students) => IndexResponse::TemplateResponse(Template::render(
+                Ok(students) => IndexResponse::Template(Template::render(
                     "index",
                     context! {
                         title: "Jiu Jitsu Syllabus Tracker",
@@ -60,7 +60,7 @@ pub async fn index(user: User, db: &State<Pool<Sqlite>>) -> IndexResponse {
                 )),
                 Err(err) => {
                     err.log_and_record("Index page");
-                    IndexResponse::ErrorResponse(err.status_code())
+                    IndexResponse::Error(err.status_code())
                 }
             }
         }
@@ -313,8 +313,8 @@ pub async fn update_password<'r>(
 
     let form_value = form.value.as_ref().unwrap();
 
-    match authenticate_user(db, &user.username, &form_value.current_password).await {
-        Ok(true) => match update_user_password(db, user.id, &form_value.new_password).await {
+    match authenticate_user(db, &user.username, form_value.current_password).await {
+        Ok(true) => match update_user_password(db, user.id, form_value.new_password).await {
             Ok(_) => Ok(Redirect::to(uri!(profile(
                 Some("Password successfully updated"),
                 Some("success")
@@ -511,8 +511,8 @@ pub async fn admin_process_edit_user<'r>(
         db,
         id,
         form_value.username,
-        &form_value.display_name,
-        &form_value.role,
+        form_value.display_name,
+        form_value.role,
     )
     .await?;
 

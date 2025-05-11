@@ -466,7 +466,7 @@ pub async fn get_all_users(pool: &Pool<Sqlite>) -> Result<Vec<User>, AppError> {
     let users: Vec<User> = rows.into_iter().map(User::from).collect();
 
     if users.is_empty() {
-        return Err(AppError::NotFound(format!("No users found",)));
+        return Err(AppError::NotFound("No users found".to_string()));
     }
 
     Ok(users)

@@ -2,6 +2,7 @@ use anyhow::Error;
 use once_cell::sync::Lazy;
 use rocket::serde::Serialize;
 use std::collections::HashSet;
+use std::fmt;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Permission {
@@ -86,20 +87,22 @@ impl Role {
         }
     }
 
-    pub fn to_string(&self) -> String {
-        match self {
-            Role::Student => "student".to_string(),
-            Role::Coach => "coach".to_string(),
-            Role::Admin => "admin".to_string(),
-        }
-    }
-
     pub fn from_str(s: &str) -> Result<Self, Error> {
         match s {
             "student" => Ok(Role::Student),
             "coach" => Ok(Role::Coach),
             "admin" => Ok(Role::Admin),
             _ => Err(Error::msg(format!("Unknown role: {}", s))),
+        }
+    }
+}
+
+impl fmt::Display for Role {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Role::Student => write!(f, "student"),
+            Role::Coach => write!(f, "coach"),
+            Role::Admin => write!(f, "admin"),
         }
     }
 }

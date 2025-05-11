@@ -1,7 +1,7 @@
 name: Build and Deploy to Production
 on:
   push:
-    branches: [ main ]
+    branches: [main]
 
 env:
   REGISTRY: ghcr.io
@@ -15,88 +15,156 @@ jobs:
       code_changed: ${{ steps.changed-files.outputs.any_changed }}
       all_changed_files: ${{ steps.changed-files.outputs.all_changed_files }}
       trace_start: ${{ steps.set-trace-start.outputs.trace-start }}
-    
+
     steps:
-    - name: Set trace start timestamp
-      id: set-trace-start
-      run: |
-        echo "trace-start=$(date +%s)" >> $GITHUB_OUTPUT
-    
-    - uses: honeycombio/gha-buildevents@v2
-      with:
-        apikey: ${{ secrets.HONEYCOMB_API_KEY }}
-        dataset: syllabus-tracker-build-events
-    
-    - uses: actions/checkout@v3
-      with:
-        fetch-depth: 0
-    
-    - name: Check changed files
-      id: changed-files
-      uses: tj-actions/changed-files@ed68ef82c095e0d48ec87eccea555d944a631a4c # v46
-      with:
-        files: |
-          **/*.rs
-          Cargo.toml
-          Cargo.lock
-          rust-toolchain.toml
-          Dockerfile
-          migrations/**
-          .sqlx/**
-          static/**
-          templates/**
-        files_ignore: |
-          **/*.md
-          .github/**
-          docker-compose*.yml
-          config/**
-          scripts/**
-          .envrc
-          .gitignore
-          nginx/**
-          **/*.png
-          **/*.ico
-          **/*.html
-          **/*.hbs
-    
-    - name: Log changed files information
-      id: log-changed-files
-      run: |
-        STEP_ID=analyze_changed_files
-        STEP_START=$(date +%s)
-        
-        echo "Code changed: ${{ steps.changed-files.outputs.any_changed }}"
-        
-        # Add patterns that were checked to telemetry
-        echo " any_code_changed=${{ steps.changed-files.outputs.any_changed }}" >> $BUILDEVENT_FILE
-        
-        # Add a count of changed files
-        FILE_COUNT=$(echo "${{ steps.changed-files.outputs.all_changed_files }}" | wc -w)
-        echo " changed_files_count=${FILE_COUNT}" >> $BUILDEVENT_FILE
-        
-        # Add the files that were detected as changed
-        if [[ -n "${{ steps.changed-files.outputs.all_changed_files }}" ]]; then
-          # All changed files
-          echo " changed_files=${{ steps.changed-files.outputs.all_changed_files }}" >> $BUILDEVENT_FILE
-          
-          # Add file types to help analyze what kind of changes
-          RS_COUNT=$(echo "${{ steps.changed-files.outputs.all_changed_files }}" | grep -c "\.rs$" || echo "0")
-          TOML_COUNT=$(echo "${{ steps.changed-files.outputs.all_changed_files }}" | grep -c "\.toml$" || echo "0")
-          SQL_COUNT=$(echo "${{ steps.changed-files.outputs.all_changed_files }}" | grep -c "\.sql$" || echo "0")
-          TEMPLATE_COUNT=$(echo "${{ steps.changed-files.outputs.all_changed_files }}" | grep -c "\.html\.hbs$" || echo "0")
-          
-          echo " rs_files_changed=${RS_COUNT}" >> $BUILDEVENT_FILE
-          echo " toml_files_changed=${TOML_COUNT}" >> $BUILDEVENT_FILE
-          echo " sql_files_changed=${SQL_COUNT}" >> $BUILDEVENT_FILE
-          echo " template_files_changed=${TEMPLATE_COUNT}" >> $BUILDEVENT_FILE
-        else
-          echo " changed_files=none" >> $BUILDEVENT_FILE
-        fi
-        
-        buildevents step $TRACE_ID $STEP_ID $STEP_START $STEP_ID
+      - name: Set trace start timestamp
+        id: set-trace-start
+        run: |
+          echo "trace-start=$(date +%s)" >> $GITHUB_OUTPUT
+
+      - uses: honeycombio/gha-buildevents@v2
+        with:
+          apikey: ${{ secrets.HONEYCOMB_API_KEY }}
+          dataset: syllabus-tracker-build-events
+
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check changed files
+        id: changed-files
+        uses: tj-actions/changed-files@ed68ef82c095e0d48ec87eccea555d944a631a4c # v46
+        with:
+          files: |
+            **/*.rs
+            Cargo.toml
+            Cargo.lock
+            rust-toolchain.toml
+            Dockerfile
+            migrations/**
+            .sqlx/**
+            static/**
+            templates/**
+          files_ignore: |
+            **/*.md
+            .github/**
+            docker-compose*.yml
+            config/**
+            scripts/**
+            .envrc
+            .gitignore
+            nginx/**
+            **/*.png
+            **/*.ico
+            **/*.html
+            **/*.hbs
+
+      - name: Log changed files information
+        id: log-changed-files
+        run: |
+          STEP_ID=analyze_changed_files
+          STEP_START=$(date +%s)
+
+          echo "Code changed: ${{ steps.changed-files.outputs.any_changed }}"
+
+          # Add patterns that were checked to telemetry
+          echo " any_code_changed=${{ steps.changed-files.outputs.any_changed }}" >> $BUILDEVENT_FILE
+
+          # Add a count of changed files
+          FILE_COUNT=$(echo "${{ steps.changed-files.outputs.all_changed_files }}" | wc -w)
+          echo " changed_files_count=${FILE_COUNT}" >> $BUILDEVENT_FILE
+
+          # Add the files that were detected as changed
+          if [[ -n "${{ steps.changed-files.outputs.all_changed_files }}" ]]; then
+            # All changed files
+            echo " changed_files=${{ steps.changed-files.outputs.all_changed_files }}" >> $BUILDEVENT_FILE
+            
+            # Add file types to help analyze what kind of changes
+            RS_COUNT=$(echo "${{ steps.changed-files.outputs.all_changed_files }}" | grep -c "\.rs$" || echo "0")
+            TOML_COUNT=$(echo "${{ steps.changed-files.outputs.all_changed_files }}" | grep -c "\.toml$" || echo "0")
+            SQL_COUNT=$(echo "${{ steps.changed-files.outputs.all_changed_files }}" | grep -c "\.sql$" || echo "0")
+            TEMPLATE_COUNT=$(echo "${{ steps.changed-files.outputs.all_changed_files }}" | grep -c "\.html\.hbs$" || echo "0")
+            
+            echo " rs_files_changed=${RS_COUNT}" >> $BUILDEVENT_FILE
+            echo " toml_files_changed=${TOML_COUNT}" >> $BUILDEVENT_FILE
+            echo " sql_files_changed=${SQL_COUNT}" >> $BUILDEVENT_FILE
+            echo " template_files_changed=${TEMPLATE_COUNT}" >> $BUILDEVENT_FILE
+          else
+            echo " changed_files=none" >> $BUILDEVENT_FILE
+          fi
+
+          buildevents step $TRACE_ID $STEP_ID $STEP_START $STEP_ID
+
+  test:
+    needs: check-changes
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: honeycombio/gha-buildevents@v2
+        with:
+          apikey: ${{ secrets.HONEYCOMB_API_KEY }}
+          dataset: syllabus-tracker-build-events
+
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+          components: rustfmt, clippy
+
+      - name: Cache dependencies
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Set test start time
+        id: test-start
+        run: |
+          echo "STEP_START=$(date +%s)" >> $GITHUB_OUTPUT
+          echo "STEP_ID=run_tests" >> $GITHUB_OUTPUT
+
+      - name: Run cargo fmt check
+        run: |
+          cargo fmt --all -- --check
+          echo " fmt_passed=true" >> $BUILDEVENT_FILE
+
+      - name: Run cargo clippy
+        run: |
+          cargo clippy -- -D warnings
+          echo " clippy_passed=true" >> $BUILDEVENT_FILE
+        env:
+          SQLX_OFFLINE: "true"
+
+      - name: Run tests
+        run: |
+          echo "Contents of .sqlx directory:"
+          find .sqlx -type f | sort
+          echo "Number of query files: $(find .sqlx -type f | wc -l)"
+
+          cargo test
+          echo " tests_passed=true" >> $BUILDEVENT_FILE
+        env:
+          SQLX_OFFLINE: "true"
+
+      - name: Log test results to telemetry
+        run: |
+          STEP_ID=$(echo "${{ steps.test-start.outputs.STEP_ID }}")
+          STEP_START=$(echo "${{ steps.test-start.outputs.STEP_START }}")
+
+          buildevents step $TRACE_ID $STEP_ID $STEP_START $STEP_ID
 
   build:
-    needs: check-changes
+    needs:
+      - check-changes
     if: needs.check-changes.outputs.code_changed == 'true'
     runs-on: ubuntu-latest
     permissions:
@@ -104,289 +172,258 @@ jobs:
       packages: write
     outputs:
       image_tag: ${{ steps.get_short_sha.outputs.short_sha }}
-    
+
     steps:
-    - uses: honeycombio/gha-buildevents@v2
-      with:
-        apikey: ${{ secrets.HONEYCOMB_API_KEY }}
-        dataset: syllabus-tracker-build-events
+      - uses: honeycombio/gha-buildevents@v2
+        with:
+          apikey: ${{ secrets.HONEYCOMB_API_KEY }}
+          dataset: syllabus-tracker-build-events
 
-    - name: Set build start timestamp
-      id: build-image
-      run: |
-        echo "STEP_START=$(date +%s)" >> $GITHUB_OUTPUT
-        echo "STEP_ID=build-image" >> $GITHUB_OUTPUT
-    
-    - name: Checkout code
-      uses: actions/checkout@v3
-    
-    - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v2
-    
-    - name: Log in to the Container registry
-      uses: docker/login-action@v2
-      with:
-        registry: ${{ env.REGISTRY }}
-        username: ${{ github.actor }}
-        password: ${{ secrets.GITHUB_TOKEN }}
-    
-    - name: Extract metadata for Docker
-      id: meta
-      uses: docker/metadata-action@v4
-      with:
-        images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-        tags: |
-          type=sha,format=short
-          type=ref,event=branch
-          latest
-    
-    - name: Build and push Docker image
-      uses: docker/build-push-action@v4
-      with:
-        context: .
-        push: true
-        tags: ${{ steps.meta.outputs.tags }}
-        labels: ${{ steps.meta.outputs.labels }}
-        cache-from: type=gha
-        cache-to: type=gha,mode=max
-    
-    - name: Log build details to telemetry
-      run: |
-        IMAGE_TAGS="${{ steps.meta.outputs.tags }}"
-        echo " docker_image_tags=${IMAGE_TAGS}" >> $BUILDEVENT_FILE
-        echo " build_successful=true" >> $BUILDEVENT_FILE
-    
-    - name: Get short SHA
-      id: get_short_sha
-      run: echo "short_sha=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+      - name: Set build start timestamp
+        id: build-image
+        run: |
+          echo "STEP_START=$(date +%s)" >> $GITHUB_OUTPUT
+          echo "STEP_ID=build-image" >> $GITHUB_OUTPUT
 
-    - name: End build event
-      id: end-build
-      run: |
-        STEP_ID=$(echo "${{ steps.build-image.outputs.STEP_ID }}")
-        STEP_START=$(echo "${{ steps.build-image.outputs.STEP_START }}")
-        
-        buildevents step $TRACE_ID $STEP_ID $STEP_START $STEP_ID
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to the Container registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata for Docker
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=sha,format=short
+            type=ref,event=branch
+            latest
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Log build details to telemetry
+        run: |
+          IMAGE_TAGS="${{ steps.meta.outputs.tags }}"
+          echo " docker_image_tags=${IMAGE_TAGS}" >> $BUILDEVENT_FILE
+          echo " build_successful=true" >> $BUILDEVENT_FILE
+
+      - name: Get short SHA
+        id: get_short_sha
+        run: echo "short_sha=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+
+      - name: End build event
+        id: end-build
+        run: |
+          STEP_ID=$(echo "${{ steps.build-image.outputs.STEP_ID }}")
+          STEP_START=$(echo "${{ steps.build-image.outputs.STEP_START }}")
+
+          buildevents step $TRACE_ID $STEP_ID $STEP_START $STEP_ID
 
   deploy:
-    needs: [check-changes, build]
-    if: always()
+    needs: [check-changes, build, test]
+    if: |
+      always() &&
+      (needs.check-changes.outputs.code_changed != 'true' ||
+      needs.build.result == 'success') &&
+      (needs.test.result == 'success' || needs.test.result == 'skipped')
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
-    
+
     steps:
-    - name: Get workflow conclusion
-      uses: technote-space/workflow-conclusion-action@v3
-    
-    - uses: honeycombio/gha-buildevents@v2
-      with:
-        apikey: ${{ secrets.HONEYCOMB_API_KEY }}
-        dataset: syllabus-tracker-build-events
-        # Provide status in the final job to end the trace properly
-        status: ${{ env.WORKFLOW_CONCLUSION }}
-        # Reference the trace-start from the first job
-        trace-start: ${{ needs.check-changes.outputs.trace_start }}
-    
-    - name: Checkout code
-      uses: actions/checkout@v3
-    
-    - name: Set up SSH
-      run: |
-        STEP_ID=set_up_ssh
-        STEP_START=$(date +%s)
-        mkdir -p ~/.ssh
-        echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
-        chmod 600 ~/.ssh/id_ed25519
-        ssh-keyscan -H ${{ secrets.SERVER_IP }} >> ~/.ssh/known_hosts
-        echo " step_name=set_up_ssh" >> $BUILDEVENT_FILE
-        buildevents step $TRACE_ID $STEP_ID $STEP_START $STEP_ID
-    
-    - name: Get image to deploy
-      id: get_image
-      run: |
-        STEP_ID=get_image
-        STEP_START=$(date +%s)
-        
-        if [[ "${{ needs.check-changes.outputs.code_changed }}" == "true" ]]; then
-          # Use newly built image
-          COMMIT_SHA="${{ needs.build.outputs.image_tag }}"
-          IMAGE_NAME="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:sha-${COMMIT_SHA}"
-          IMAGE_TYPE="newly_built"
-          echo "Using newly built image with SHA: ${COMMIT_SHA}"
-        else
-          # Get latest image with tag 'latest'
-          IMAGE_NAME="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest"
-          IMAGE_TYPE="latest_existing"
-          echo "Reusing existing latest image"
-        fi
-        
-        # Output for use in the workflow
-        echo "image_name=${IMAGE_NAME}" >> $GITHUB_OUTPUT
-        
-        # Add to buildevents for telemetry - note the leading space
-        echo " deployed_image=${IMAGE_NAME}" >> $BUILDEVENT_FILE
-        echo " image_type=${IMAGE_TYPE}" >> $BUILDEVENT_FILE
-        
-        buildevents step $TRACE_ID $STEP_ID $STEP_START $STEP_ID
-    
-    - name: Transfer files to server
-      run: |
-        STEP_ID=transfer_files
-        STEP_START=$(date +%s)
-        
-        # Create deployment directory if it doesn't exist
-        ssh ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} "mkdir -p ~/syllabus-tracker"
-        
-        # Create a temporary file to store rsync output
-        RSYNC_OUTPUT="/tmp/rsync_output.txt"
-        
-        # Transfer configuration files only
-        rsync -avzi --stats \
-          --include="docker-compose.prod.yml" \
-          --include="config/***" \
-          --include="scripts/***" \
-          --include="nginx/***" \
-          --include="static/***" \
-          --include="migrations/***" \
-          --exclude="*" \
-          ./ ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }}:~/syllabus-tracker/ > $RSYNC_OUTPUT
-        
-        # Extract transfer statistics
-        TOTAL_SIZE=$(cat $RSYNC_OUTPUT | grep "total size is" | grep -oE "[0-9]+" | head -1 || echo "0")
-        TRANSFERRED_COUNT=$(cat $RSYNC_OUTPUT | grep "^>" | wc -l || echo "0")
-        
-        # Key telemetry fields as simple key-value pairs
-        echo " transferred_files_count=${TRANSFERRED_COUNT}" >> $BUILDEVENT_FILE
-        echo " transferred_files_size_bytes=${TOTAL_SIZE}" >> $BUILDEVENT_FILE
-        
-        # Include all transferred files (since there aren't many)
-        if [[ $TRANSFERRED_COUNT -gt 0 ]]; then
-          # Get all files, join with spaces
-          ALL_FILES=$(cat $RSYNC_OUTPUT | grep "^>" | awk '{print $2}' | tr '\n' ' ')
-          echo " transferred_files=${ALL_FILES}" >> $BUILDEVENT_FILE
-        fi
-        
-        # Make scripts executable
-        ssh ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} "chmod +x ~/syllabus-tracker/scripts/*.sh"
-        
-        buildevents step $TRACE_ID $STEP_ID $STEP_START $STEP_ID
-    
-    - name: Generate secrets file
-      run: |
-        STEP_ID=generate_secrets
-        STEP_START=$(date +%s)
-        
-        # Create .secrets.env file with necessary environment variables
-        echo "HONEYCOMB_API_KEY=${{ secrets.HONEYCOMB_API_KEY }}" > .secrets.env
-        echo "ROCKET_SECRET_KEY=${{ secrets.ROCKET_SECRET_KEY }}" >> .secrets.env
-        
-        # Transfer to server
-        scp .secrets.env ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }}:~/syllabus-tracker/
-        
-        echo " secrets_generated=true" >> $BUILDEVENT_FILE
-        buildevents step $TRACE_ID $STEP_ID $STEP_START $STEP_ID
-    
-    - name: Set up GitHub Container Registry credentials on server
-      run: |
-        STEP_ID=setup_registry_creds
-        STEP_START=$(date +%s)
-        
-        # Create a JSON config for Docker to authenticate with GHCR
-        cat > docker_config.json << EOF
-        {
-          "auths": {
-            "${{ env.REGISTRY }}": {
-              "auth": "$(echo -n ${{ github.actor }}:${{ secrets.GITHUB_TOKEN }} | base64)"
+      - name: Get workflow conclusion
+        uses: technote-space/workflow-conclusion-action@v3
+
+      - uses: honeycombio/gha-buildevents@v2
+        with:
+          apikey: ${{ secrets.HONEYCOMB_API_KEY }}
+          dataset: syllabus-tracker-build-events
+          # Provide status in the final job to end the trace properly
+          status: ${{ env.WORKFLOW_CONCLUSION }}
+          # Reference the trace-start from the first job
+          trace-start: ${{ needs.check-changes.outputs.trace_start }}
+
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up SSH
+        run: |
+          STEP_ID=set_up_ssh
+          STEP_START=$(date +%s)
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H ${{ secrets.SERVER_IP }} >> ~/.ssh/known_hosts
+          buildevents step $TRACE_ID $STEP_ID $STEP_START $STEP_ID
+
+      - name: Get image to deploy
+        id: get_image
+        run: |
+          STEP_ID=get_image
+          STEP_START=$(date +%s)
+
+          if [[ "${{ needs.check-changes.outputs.code_changed }}" == "true" ]]; then
+            COMMIT_SHA="${{ needs.build.outputs.image_tag }}"
+            IMAGE_NAME="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:sha-${COMMIT_SHA}"
+            echo "Using newly built image with SHA: ${COMMIT_SHA}"
+          else
+            IMAGE_NAME="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest"
+            echo "Reusing existing latest image"
+          fi
+
+          echo "image_name=${IMAGE_NAME}" >> $GITHUB_OUTPUT
+
+          echo " deployed_image=${IMAGE_NAME}" >> $BUILDEVENT_FILE
+
+          buildevents step $TRACE_ID $STEP_ID $STEP_START $STEP_ID
+
+      - name: Transfer files to server
+        run: |
+          STEP_ID=transfer_files
+          STEP_START=$(date +%s)
+
+          ssh ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} "mkdir -p ~/syllabus-tracker"
+
+          RSYNC_OUTPUT="/tmp/rsync_output.txt"
+
+          rsync -avzi --stats \
+            --include="docker-compose.prod.yml" \
+            --include="config/***" \
+            --include="scripts/***" \
+            --include="nginx/***" \
+            --include="static/***" \
+            --include="migrations/***" \
+            --exclude="*" \
+            ./ ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }}:~/syllabus-tracker/ > $RSYNC_OUTPUT
+
+          TRANSFERRED_COUNT=$(cat $RSYNC_OUTPUT | grep "^>" | wc -l || echo "0")
+
+          echo " transferred_files_count=${TRANSFERRED_COUNT}" >> $BUILDEVENT_FILE
+
+          ssh ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} "chmod +x ~/syllabus-tracker/scripts/*.sh"
+
+          buildevents step $TRACE_ID $STEP_ID $STEP_START $STEP_ID
+
+      - name: Generate secrets file
+        run: |
+          STEP_ID=generate_secrets
+          STEP_START=$(date +%s)
+
+          echo "HONEYCOMB_API_KEY=${{ secrets.HONEYCOMB_API_KEY }}" > .secrets.env
+          echo "ROCKET_SECRET_KEY=${{ secrets.ROCKET_SECRET_KEY }}" >> .secrets.env
+
+          scp .secrets.env ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }}:~/syllabus-tracker/
+
+          buildevents step $TRACE_ID $STEP_ID $STEP_START $STEP_ID
+
+      - name: Set up GitHub Container Registry credentials on server
+        run: |
+          STEP_ID=setup_registry_creds
+          STEP_START=$(date +%s)
+
+          # Create a JSON config for Docker to authenticate with GHCR
+          cat > docker_config.json << EOF
+          {
+            "auths": {
+              "${{ env.REGISTRY }}": {
+                "auth": "$(echo -n ${{ github.actor }}:${{ secrets.GITHUB_TOKEN }} | base64)"
+              }
             }
           }
-        }
-        EOF
-        
-        # Transfer to server
-        ssh ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} "mkdir -p ~/.docker"
-        scp docker_config.json ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }}:~/.docker/config.json
-        
-        echo " registry_credentials_configured=true" >> $BUILDEVENT_FILE
-        buildevents step $TRACE_ID $STEP_ID $STEP_START $STEP_ID
-    
-    - name: Deploy with Docker Compose
-      run: |
-        STEP_ID=deploy_docker
-        STEP_START=$(date +%s)
+          EOF
 
-        NEW_IMAGE="${{ steps.get_image.outputs.image_name }}"
-        
-        echo "Deploying image: $NEW_IMAGE..."
-        
-        ssh ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} "cd ~/syllabus-tracker && \
-          export APP_IMAGE=${NEW_IMAGE} && \
-          docker compose -f docker-compose.prod.yml pull && \
-          docker compose -f docker-compose.prod.yml up -d"
-        
-        echo "Monitoring deployment for 30 seconds..."
-        sleep 30
-        
-        CONTAINER_STATUS=$(ssh ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} \
-          "docker ps --filter name=syllabus-tracker-app --format '{{.Status}}' | grep -o '(healthy)\\|(unhealthy)' || echo 'not found'")
-        
-        echo "Container status: $CONTAINER_STATUS"
-        
-        if [[ "$CONTAINER_STATUS" != *"healthy"* ]]; then
-          echo "Warning: Container is not healthy. Deployment may have failed."
-          echo " deployment_status=unhealthy" >> $BUILDEVENT_FILE
-          echo " deploy_completed=false" >> $BUILDEVENT_FILE
+          ssh ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} "mkdir -p ~/.docker"
+          scp docker_config.json ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }}:~/.docker/config.json
+
           buildevents step $TRACE_ID $STEP_ID $STEP_START $STEP_ID
-          exit 1
-        fi
-        
-        MIGRATION_FAILURE=$(ssh ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} \
-          "docker logs --since 1m syllabus-tracker-app-1 2>&1 | grep -i 'failed to run migrations' || echo ''")
-        
-        if [ -n "$MIGRATION_FAILURE" ]; then
-          echo "Warning: Migration failure detected in logs: $MIGRATION_FAILURE"
-          echo " deployment_status=migration_failed" >> $BUILDEVENT_FILE
-          echo " deploy_completed=false" >> $BUILDEVENT_FILE
+
+      - name: Deploy with Docker Compose
+        run: |
+          STEP_ID=deploy_docker
+          STEP_START=$(date +%s)
+
+          NEW_IMAGE="${{ steps.get_image.outputs.image_name }}"
+
+          ssh ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} "cd ~/syllabus-tracker && \
+            export APP_IMAGE=${NEW_IMAGE} && \
+            docker compose -f docker-compose.prod.yml pull && \
+            docker compose -f docker-compose.prod.yml up -d"
+
+          echo "Monitoring deployment for 30 seconds..."
+          sleep 30
+
+          CONTAINER_STATUS=$(ssh ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} \
+            "docker ps --filter name=syllabus-tracker-app --format '{{.Status}}' | grep -o '(healthy)\\|(unhealthy)' || echo 'not found'")
+
+          if [[ "$CONTAINER_STATUS" != *"healthy"* ]]; then
+            echo "Warning: Container is not healthy. Deployment may have failed."
+            echo " deployment_status=unhealthy" >> $BUILDEVENT_FILE
+            echo " deploy_completed=false" >> $BUILDEVENT_FILE
+            buildevents step $TRACE_ID $STEP_ID $STEP_START $STEP_ID
+            exit 1
+          fi
+
+          MIGRATION_FAILURE=$(ssh ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} \
+            "docker logs --since 1m syllabus-tracker-app-1 2>&1 | grep -i 'failed to run migrations' || echo ''")
+
+          if [ -n "$MIGRATION_FAILURE" ]; then
+            echo "Warning: Migration failure detected in logs: $MIGRATION_FAILURE"
+            echo " deployment_status=migration_failed" >> $BUILDEVENT_FILE
+            echo " deploy_completed=false" >> $BUILDEVENT_FILE
+            buildevents step $TRACE_ID $STEP_ID $STEP_START $STEP_ID
+            exit 1
+          fi
+
+          ssh ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} "docker image prune -f"
+
+          echo " deployed_image=${NEW_IMAGE}" >> $BUILDEVENT_FILE
           buildevents step $TRACE_ID $STEP_ID $STEP_START $STEP_ID
-          exit 1
-        fi
-        
-        ssh ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} "docker image prune -f"
-        
-        echo " deployment_status=success" >> $BUILDEVENT_FILE
-        echo " deploy_completed=true" >> $BUILDEVENT_FILE
-        echo " deployed_image=${NEW_IMAGE}" >> $BUILDEVENT_FILE
-        buildevents step $TRACE_ID $STEP_ID $STEP_START $STEP_ID
-    
-    - name: Create Honeycomb deployment marker
-      run: |
-        STEP_ID=create_marker
-        STEP_START=$(date +%s)
-        
-        DEPLOY_TIME=$(date +%s)
-        GIT_COMMIT_HASH=$(git rev-parse HEAD)
-        GIT_COMMIT_MESSAGE=$(git log -1 --pretty=%B | tr -d '\n')
-        
-        curl -X POST "https://api.honeycomb.io/1/markers/__all__" \
-          -H "X-Honeycomb-Team: ${{ secrets.HONEYCOMB_MARKER_KEY }}" \
-          -H "Content-Type: application/json" \
-          -d "{
-            \"message\": \"Deployed commit ${GIT_COMMIT_HASH}\",
-            \"type\": \"deploy\",
-            \"start_time\": ${DEPLOY_TIME},
-            \"url\": \"https://github.com/${{ github.repository }}/commit/${{ github.sha }}\",
-            \"metadata\": {
-              \"commit_hash\": \"${GIT_COMMIT_HASH}\",
-              \"commit_message\": \"${GIT_COMMIT_MESSAGE}\",
-              \"github_actor\": \"${{ github.actor }}\",
-              \"github_repository\": \"${{ github.repository }}\",
-              \"github_ref\": \"${{ github.ref }}\",
-              \"code_changed\": \"${{ needs.check-changes.outputs.code_changed }}\"
-            }
-          }"
-        
-        echo " marker_created=true" >> $BUILDEVENT_FILE
-        buildevents step $TRACE_ID $STEP_ID $STEP_START $STEP_ID
-      env:
-        HONEYCOMB_API_KEY: ${{ secrets.HONEYCOMB_API_KEY }}
+
+      - name: Create Honeycomb deployment marker
+        run: |
+          STEP_ID=create_marker
+          STEP_START=$(date +%s)
+
+          DEPLOY_TIME=$(date +%s)
+          GIT_COMMIT_HASH=$(git rev-parse HEAD)
+          GIT_COMMIT_MESSAGE=$(git log -1 --pretty=%B | tr -d '\n')
+
+          curl -X POST "https://api.honeycomb.io/1/markers/__all__" \
+            -H "X-Honeycomb-Team: ${{ secrets.HONEYCOMB_MARKER_KEY }}" \
+            -H "Content-Type: application/json" \
+            -d "{
+              \"message\": \"Deployed commit ${GIT_COMMIT_HASH}\",
+              \"type\": \"deploy\",
+              \"start_time\": ${DEPLOY_TIME},
+              \"url\": \"https://github.com/${{ github.repository }}/commit/${{ github.sha }}\",
+              \"metadata\": {
+                \"commit_hash\": \"${GIT_COMMIT_HASH}\",
+                \"commit_message\": \"${GIT_COMMIT_MESSAGE}\",
+                \"github_actor\": \"${{ github.actor }}\",
+                \"github_repository\": \"${{ github.repository }}\",
+                \"github_ref\": \"${{ github.ref }}\",
+                \"code_changed\": \"${{ needs.check-changes.outputs.code_changed }}\"
+              }
+            }"
+
+          buildevents step $TRACE_ID $STEP_ID $STEP_START $STEP_ID
+        env:
+          HONEYCOMB_API_KEY: ${{ secrets.HONEYCOMB_API_KEY }}

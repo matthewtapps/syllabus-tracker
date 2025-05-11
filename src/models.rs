@@ -75,13 +75,13 @@ impl From<DbStudentTechnique> for StudentTechnique {
                 .map(|dt| {
                     chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(dt, chrono::Utc)
                 })
-                .unwrap_or_else(|| chrono::Utc::now()),
+                .unwrap_or_else(chrono::Utc::now),
             updated_at: db
                 .updated_at
                 .map(|dt| {
                     chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(dt, chrono::Utc)
                 })
-                .unwrap_or_else(|| chrono::Utc::now()),
+                .unwrap_or_else(chrono::Utc::now),
         }
     }
 }

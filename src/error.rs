@@ -72,10 +72,10 @@ impl AppError {
         };
 
         if is_valid_span {
-            current_span.record("error", &tracing::field::display(&message));
-            current_span.record("error.kind", &tracing::field::display(error_kind));
-            current_span.record("error.message", &tracing::field::display(&message));
-            current_span.record("otel.status_code", &tracing::field::display("ERROR"));
+            current_span.record("error", tracing::field::display(&message));
+            current_span.record("error.kind", tracing::field::display(error_kind));
+            current_span.record("error.message", tracing::field::display(&message));
+            current_span.record("otel.status_code", tracing::field::display("ERROR"));
         }
     }
 
@@ -92,7 +92,7 @@ impl AppError {
         }
     }
 
-    pub fn to_status_with_log(self, context: &str) -> Status {
+    pub fn to_status_with_log(&self, context: &str) -> Status {
         self.log_and_record(context);
         self.status_code()
     }

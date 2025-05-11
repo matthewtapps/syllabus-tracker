@@ -163,16 +163,16 @@ impl Fairing for ErrorTelemetryFairing {
 
                 entered_span.record(
                     "error",
-                    &tracing::field::display(format!("HTTP Error: {}", status.code)),
+                    tracing::field::display(format!("HTTP Error: {}", status.code)),
                 );
-                entered_span.record("error.kind", &tracing::field::display("server_error"));
+                entered_span.record("error.kind", tracing::field::display("server_error"));
                 entered_span.record("http.status_code", status.code);
 
                 if let Some(err_msg) = request.local_cache(|| Option::<String>::None) {
-                    entered_span.record("error.message", &tracing::field::display(err_msg));
+                    entered_span.record("error.message", tracing::field::display(err_msg));
                 }
 
-                entered_span.record("otel.status_code", &tracing::field::display("ERROR"));
+                entered_span.record("otel.status_code", tracing::field::display("ERROR"));
 
                 drop(entered_span)
             }

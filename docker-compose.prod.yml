@@ -37,11 +37,11 @@ services:
         order: start-first
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
-      interval: 10s
+      interval: 60s
       timeout: 5s
       retries: 3
       start_period: 30s
-      
+
   otel-collector:
     image: otel/opentelemetry-collector-contrib:latest
     command: ["--config=/etc/otel-collector-config.yaml"]
@@ -49,7 +49,7 @@ services:
       - ./config/otel-collector-config.prod.yaml:/etc/otel-collector-config.yaml
       - /var/run/docker.sock:/var/run/docker.sock
     group_add:
-    - 988
+      - 988
     env_file:
       - config/common.env
       - config/prod.env
@@ -102,16 +102,22 @@ services:
     command: |
       /bin/sh -c '
       apk add --no-cache sqlite findutils tzdata curl go bc
-      
+
       go install github.com/equinix-labs/otel-cli@latest
       export PATH=$PATH:/root/go/bin
-      
+
       # Run the backup script
       exec /scripts/backup.sh
       '
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "sh", "-c", "test -f /tmp/backup-state/heartbeat && find /tmp/backup-state/heartbeat -mmin -15 | grep heartbeat"]
+      test:
+        [
+          "CMD",
+          "sh",
+          "-c",
+          "test -f /tmp/backup-state/heartbeat && find /tmp/backup-state/heartbeat -mmin -15 | grep heartbeat",
+        ]
       interval: 1m
       timeout: 10s
       retries: 3
