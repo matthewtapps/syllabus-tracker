@@ -1,6 +1,7 @@
 #[macro_use]
 extern crate rocket;
 
+mod api;
 mod auth;
 mod db;
 mod error;
@@ -10,11 +11,12 @@ mod telemetry;
 #[cfg(test)]
 mod test;
 
+use api::{api_login, api_me, api_me_unauthorized, serve_spa_index};
 use auth::{Permission, Role};
 use auth::{forbidden, login, logout, process_login, process_register, register, unauthorized};
 use db::clean_expired_sessions;
 use error::{AppError, internal_server_error};
-use rocket::fs::FileServer;
+use rocket::fs::{FileServer, relative};
 use rocket::{Build, Rocket, tokio};
 use rocket_dyn_templates::Template;
 use rocket_dyn_templates::handlebars::Context;
@@ -109,6 +111,13 @@ pub async fn init_rocket(pool: SqlitePool) -> Rocket<Build> {
 
     rocket::build()
         .manage(pool)
+        .mount("/api", routes![api_login, api_me, api_me_unauthorized])
+        .mount("/ui", routes![serve_spa_index])
+        .mount("/ui", FileServer::new(relative!("./frontend/dist")).rank(2))
+        .mount(
+            "/ui/assets",
+            FileServer::new(relative!("./frontend/dist/assets")),
+        )
         .mount(
             "/",
             routes![

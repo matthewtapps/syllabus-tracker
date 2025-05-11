@@ -8,6 +8,7 @@ function App() {
     <ThemeProvider defaultTheme='dark' storageKey='vite-ui-theme'>
       <Router>
         <Routes>
+          <Route path="/ui" element={<LoginPage />} />
           <Route path="/ui/login" element={<LoginPage />} />
         </Routes>
       </Router>
