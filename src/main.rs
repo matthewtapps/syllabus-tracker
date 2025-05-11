@@ -7,11 +7,13 @@ mod error;
 mod models;
 mod routes;
 mod telemetry;
+mod test;
 
 use auth::{Permission, Role};
 use auth::{forbidden, login, logout, process_login, process_register, register, unauthorized};
 use error::{AppError, internal_server_error};
 use rocket::fs::FileServer;
+use rocket::{Build, Rocket};
 use rocket_dyn_templates::Template;
 use rocket_dyn_templates::handlebars::Context;
 use rocket_dyn_templates::handlebars::Handlebars;
@@ -67,6 +69,10 @@ async fn rocket() -> _ {
         .await
         .expect("Failed to connect to SQLite database");
 
+    init_rocket(pool).await
+}
+
+pub async fn init_rocket(pool: SqlitePool) -> Rocket<Build> {
     info!("Starting syllabus tracker");
 
     rocket::build()

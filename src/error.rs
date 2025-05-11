@@ -117,6 +117,12 @@ impl From<rocket::Error> for AppError {
     }
 }
 
+impl From<sqlx::migrate::MigrateError> for AppError {
+    fn from(error: sqlx::migrate::MigrateError) -> Self {
+        AppError::Internal(format!("Migration error: {}", error))
+    }
+}
+
 impl From<AppError> for Status {
     fn from(err: AppError) -> Self {
         err.to_status_with_log("Error conversion into Status")
