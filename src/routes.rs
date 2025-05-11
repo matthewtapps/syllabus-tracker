@@ -280,6 +280,7 @@ pub async fn update_name<'r>(
 }
 
 #[derive(FromForm)]
+#[allow(dead_code)]
 pub struct UpdatePasswordForm<'r> {
     current_password: &'r str,
     #[field(validate = len(5..).or_else(msg!("Password must be at least 5 characters long")))]
@@ -542,4 +543,9 @@ pub async fn admin_archive_user(
     };
 
     Ok(Redirect::to(uri!(admin_users(Some(message)))))
+}
+
+#[get("/health")]
+pub fn health() -> &'static str {
+    "OK"
 }

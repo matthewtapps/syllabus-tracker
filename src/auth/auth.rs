@@ -1,3 +1,4 @@
+use chrono::Utc;
 use rocket::form::{Contextual, Form};
 use rocket::http::{Cookie, CookieJar, SameSite, Status};
 use rocket::request::{FromRequest, Outcome};
@@ -7,7 +8,11 @@ use rocket_dyn_templates::{Template, context};
 use sqlx::{Pool, Sqlite, SqlitePool};
 use tracing::info;
 
-use crate::db::{authenticate_user, create_user, get_user_by_username};
+use crate::auth::UserSession;
+use crate::db::{
+    authenticate_user, create_user, create_user_session, get_session_by_token, get_user,
+    get_user_by_username, invalidate_session,
+};
 use crate::error::AppError;
 
 use super::{Permission, User};
@@ -22,10 +27,51 @@ impl<'r> FromRequest<'r> for User {
 
         let cookies = request.cookies();
 
+        let token = cookies
+            .get_private("session_token")
+            .map(|c| c.value().to_string());
+
+        if let Some(token) = token {
+            let db = match request.rocket().state::<SqlitePool>() {
+                Some(pool) => pool,
+                _ => {
+                    tracing::error!("Database pool not found in managed state");
+                    return Outcome::Error((Status::InternalServerError, ()));
+                }
+            };
+
+            // Try to get session from token
+            match get_session_by_token(db, &token).await {
+                Ok(session) => {
+                    if !session.is_valid() {
+                        tracing::warn!(token = %token, "Session token expired");
+                        return Outcome::Forward(Status::Unauthorized);
+                    }
+
+                    // Fetch the associated user
+                    match get_user(db, session.user_id).await {
+                        Ok(user) => {
+                            tracing::info!(username = %user.username, role = %user.role.as_str(), "User authenticated via session token");
+                            return Outcome::Success(user);
+                        }
+                        Err(err) => {
+                            tracing::error!(user_id = %session.user_id, error = ?err, "Failed to fetch user for valid session");
+                            return Outcome::Error((Status::InternalServerError, ()));
+                        }
+                    }
+                }
+                Err(err) => {
+                    tracing::warn!(token = %token, error = ?err, "Invalid session token");
+                    return Outcome::Forward(Status::Unauthorized);
+                }
+            }
+        }
+
+        // Legacy method (to be deprecated) - try using username cookie
         let username = match cookies.get_private("logged_in") {
             Some(cookie) => cookie.value().to_string(),
             _ => {
-                tracing::info!("No logged_in cookie found");
+                tracing::info!("No authentication credentials found");
                 return Outcome::Forward(Status::Unauthorized);
             }
         };
@@ -38,6 +84,7 @@ impl<'r> FromRequest<'r> for User {
             }
         };
 
+        // Legacy session timestamp check
         if let Some(timestamp_cookie) = cookies.get_private("session_timestamp") {
             if let Ok(timestamp) = timestamp_cookie.value().parse::<i64>() {
                 use rocket::time::{Duration, OffsetDateTime};
@@ -53,6 +100,8 @@ impl<'r> FromRequest<'r> for User {
             }
         }
 
+        // Get user by username (legacy method)
+        tracing::warn!(username = %username, "Using legacy authentication method");
         match get_user_by_username(db, &username).await {
             Ok(user) => {
                 tracing::info!(username = %username, role = %user.role.as_str(), "User authenticated");
@@ -122,10 +171,34 @@ pub async fn process_login<'r>(
         Ok(true) => {
             info!(username = %form_value.username, "Authentication successful");
 
-            let cookie = Cookie::build(("logged_in", form_value.username.to_string()))
+            let user = get_user_by_username(db, form_value.username)
+                .await
+                .map_err(|e| e.status_code())?;
+
+            let token = UserSession::generate_token();
+            let expires_at = Utc::now() + chrono::Duration::hours(1);
+
+            create_user_session(db, user.id, &token, expires_at.naive_utc())
+                .await
+                .map_err(|e| e.status_code())?;
+
+            let cookie = Cookie::build(("session_token", token))
                 .same_site(SameSite::Lax)
+                .http_only(true)
                 .max_age(rocket::time::Duration::hours(1));
             cookies.add_private(cookie);
+
+            cookies.add_private(
+                Cookie::build(("user_id", user.id.to_string()))
+                    .same_site(SameSite::Lax)
+                    .http_only(true)
+                    .max_age(rocket::time::Duration::hours(1)),
+            );
+
+            let legacy_cookie = Cookie::build(("logged_in", form_value.username.to_string()))
+                .same_site(SameSite::Lax)
+                .max_age(rocket::time::Duration::hours(1));
+            cookies.add_private(legacy_cookie);
 
             let current_timestamp = rocket::time::OffsetDateTime::now_utc()
                 .unix_timestamp()
@@ -139,11 +212,6 @@ pub async fn process_login<'r>(
             if let Ok(user) = get_user_by_username(db, form_value.username).await {
                 cookies.add_private(
                     Cookie::build(("user_role", user.role.to_string()))
-                        .same_site(SameSite::Lax)
-                        .max_age(rocket::time::Duration::hours(1)),
-                );
-                cookies.add_private(
-                    Cookie::build(("user_id", user.id.to_string()))
                         .same_site(SameSite::Lax)
                         .max_age(rocket::time::Duration::hours(1)),
                 );
@@ -163,12 +231,24 @@ pub async fn process_login<'r>(
 }
 
 #[get("/logout")]
-pub fn logout(cookies: &CookieJar<'_>) -> Redirect {
+pub async fn logout(
+    cookies: &CookieJar<'_>,
+    _user: Option<User>,
+    db: &State<Pool<Sqlite>>,
+) -> Redirect {
+    if let Some(token_cookie) = cookies.get_private("session_token") {
+        let token = token_cookie.value();
+
+        let _ = invalidate_session(db, token).await;
+    }
+
+    cookies.remove_private(Cookie::build("session_token"));
+    cookies.remove_private(Cookie::build("user_id"));
     cookies.remove_private(Cookie::build("logged_in"));
     cookies.remove_private(Cookie::build("user_role"));
-    cookies.remove_private(Cookie::build("user_id"));
     cookies.remove_private(Cookie::build("session_timestamp"));
     cookies.remove_private(Cookie::build("otel_session_id"));
+
     Redirect::to("/login")
 }
 
@@ -188,6 +268,7 @@ pub fn register(user: User, err: Option<String>) -> Result<Template, Status> {
 }
 
 #[derive(FromForm)]
+#[allow(dead_code)]
 pub struct RegisterForm<'r> {
     #[field(validate = len(3..30).or_else(msg!("Username must be between 3 and 30 characters")))]
     #[field(validate = omits(' ').or_else(msg!("Username cannot contain spaces")))]

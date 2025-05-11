@@ -1,11 +1,11 @@
 #[cfg(test)]
-mod routes_tests {
+mod tests {
     use crate::db::get_student_technique;
     use crate::init_rocket;
     use crate::models::StudentTechnique;
     use crate::test::test_db::{TestDb, TestDbBuilder};
     use rocket::http::{ContentType, Cookie, SameSite, Status};
-    use rocket::local::asynchronous::Client;
+    use rocket::local::asynchronous::{Client, LocalResponse};
 
     fn auth_cookie(username: &str) -> Cookie<'static> {
         Cookie::build(("logged_in", username.to_string()))
@@ -170,5 +170,66 @@ mod routes_tests {
         assert_eq!(updated_technique.status, "green");
         assert_eq!(updated_technique.coach_notes, "Improved technique");
         assert_eq!(updated_technique.student_notes, "Feeling more confident");
+    }
+
+    #[rocket::async_test]
+    async fn test_session_token_security() {
+        let test_db = TestDbBuilder::new()
+            .student("student_one", Some("Student One"))
+            .student("student_two", Some("Student Two"))
+            .technique("Armbar", "Description of armbar", None)
+            .assign_technique(
+                Some("Armbar"),
+                Some("student_one"),
+                "red",
+                "Student notes",
+                "",
+            )
+            .build()
+            .await
+            .expect("Failed to build test database");
+
+        let (client, test_db): (Client, TestDb) = setup_test_client(test_db).await;
+
+        let student_one_id = test_db
+            .user_id("student_one")
+            .expect("Student one not found");
+
+        let forged_cookie = Cookie::build(("session_token", "fake_token_for_student_one")).build();
+        let logged_in_cookie = Cookie::build(("logged_in", "student_one")).build();
+
+        // This should fail because the token doesn't exist in the database
+        let response: LocalResponse = client
+            .get(format!("/student/{}", student_one_id))
+            .private_cookie(forged_cookie)
+            .private_cookie(logged_in_cookie)
+            .dispatch()
+            .await;
+
+        assert_eq!(response.status(), Status::SeeOther);
+
+        let login_response: LocalResponse = client
+            .post("/login")
+            .header(ContentType::Form)
+            .body("username=student_one&password=password123")
+            .dispatch()
+            .await;
+
+        assert_eq!(login_response.status(), Status::SeeOther);
+
+        let session_cookies: Vec<_> = login_response.cookies().iter().cloned().collect::<Vec<_>>();
+
+        assert!(
+            !session_cookies.is_empty(),
+            "No session token cookie found after login"
+        );
+
+        let response = client
+            .get(format!("/student/{}", student_one_id))
+            .cookies(session_cookies)
+            .dispatch()
+            .await;
+
+        assert_eq!(response.status(), Status::Ok);
     }
 }

@@ -311,23 +311,52 @@ jobs:
         echo " registry_credentials_configured=true" >> $BUILDEVENT_FILE
         buildevents step $TRACE_ID $STEP_ID $STEP_START $STEP_ID
     
-    - name: Deploy with Docker
+    - name: Deploy with Docker Compose
       run: |
         STEP_ID=deploy_docker
         STEP_START=$(date +%s)
+
+        NEW_IMAGE="${{ steps.get_image.outputs.image_name }}"
         
-        IMAGE_NAME="${{ steps.get_image.outputs.image_name }}"
+        echo "Deploying image: $NEW_IMAGE..."
         
         ssh ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} "cd ~/syllabus-tracker && \
-          export APP_IMAGE=${IMAGE_NAME} && \
+          export APP_IMAGE=${NEW_IMAGE} && \
           docker compose -f docker-compose.prod.yml pull && \
-          docker compose -f docker-compose.prod.yml up -d --force-recreate"
+          docker compose -f docker-compose.prod.yml up -d"
         
-        # Clean up old images after successful deployment
+        echo "Monitoring deployment for 30 seconds..."
+        sleep 30
+        
+        CONTAINER_STATUS=$(ssh ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} \
+          "docker ps --filter name=syllabus-tracker-app --format '{{.Status}}' | grep -o '(healthy)\\|(unhealthy)' || echo 'not found'")
+        
+        echo "Container status: $CONTAINER_STATUS"
+        
+        if [[ "$CONTAINER_STATUS" != *"healthy"* ]]; then
+          echo "Warning: Container is not healthy. Deployment may have failed."
+          echo " deployment_status=unhealthy" >> $BUILDEVENT_FILE
+          echo " deploy_completed=false" >> $BUILDEVENT_FILE
+          buildevents step $TRACE_ID $STEP_ID $STEP_START $STEP_ID
+          exit 1
+        fi
+        
+        MIGRATION_FAILURE=$(ssh ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} \
+          "docker logs --since 1m syllabus-tracker-app-1 2>&1 | grep -i 'failed to run migrations' || echo ''")
+        
+        if [ -n "$MIGRATION_FAILURE" ]; then
+          echo "Warning: Migration failure detected in logs: $MIGRATION_FAILURE"
+          echo " deployment_status=migration_failed" >> $BUILDEVENT_FILE
+          echo " deploy_completed=false" >> $BUILDEVENT_FILE
+          buildevents step $TRACE_ID $STEP_ID $STEP_START $STEP_ID
+          exit 1
+        fi
+        
         ssh ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} "docker image prune -f"
         
+        echo " deployment_status=success" >> $BUILDEVENT_FILE
         echo " deploy_completed=true" >> $BUILDEVENT_FILE
-        echo " deployed_image=${IMAGE_NAME}" >> $BUILDEVENT_FILE
+        echo " deployed_image=${NEW_IMAGE}" >> $BUILDEVENT_FILE
         buildevents step $TRACE_ID $STEP_ID $STEP_START $STEP_ID
     
     - name: Create Honeycomb deployment marker

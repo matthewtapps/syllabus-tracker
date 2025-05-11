@@ -1,3 +1,5 @@
+use chrono::{NaiveDateTime, Utc};
+use rand::{Rng, distr::Alphanumeric, rng};
 use rocket::http::Status;
 use serde::Serialize;
 
@@ -79,5 +81,55 @@ impl User {
             );
             Err(Status::Forbidden)
         }
+    }
+}
+
+#[derive(Debug, Clone)]
+#[allow(dead_code)]
+pub struct UserSession {
+    pub id: i64,
+    pub user_id: i64,
+    pub token: String,
+    pub created_at: Option<NaiveDateTime>,
+    pub expires_at: NaiveDateTime,
+}
+
+#[derive(Debug, sqlx::FromRow, Clone)]
+pub struct DbUserSession {
+    pub id: Option<i64>,
+    pub user_id: Option<i64>,
+    pub token: Option<String>,
+    pub created_at: Option<NaiveDateTime>,
+    pub expires_at: Option<NaiveDateTime>,
+}
+
+impl From<DbUserSession> for UserSession {
+    fn from(db_session: DbUserSession) -> Self {
+        Self {
+            id: db_session.id.unwrap_or_default(),
+            user_id: db_session.user_id.unwrap_or_default(),
+            token: db_session.token.unwrap_or_default(),
+            created_at: db_session.created_at,
+            expires_at: db_session
+                .expires_at
+                .unwrap_or_else(|| Utc::now().naive_utc()),
+        }
+    }
+}
+
+impl UserSession {
+    pub fn is_valid(&self) -> bool {
+        let now = Utc::now().naive_utc();
+        self.expires_at > now
+    }
+
+    pub fn generate_token() -> String {
+        let mut rng = rng();
+        let token: String = std::iter::repeat(())
+            .map(|()| rng.sample(Alphanumeric))
+            .map(char::from)
+            .take(32)
+            .collect();
+        token
     }
 }

@@ -7,13 +7,15 @@ mod error;
 mod models;
 mod routes;
 mod telemetry;
+#[cfg(test)]
 mod test;
 
 use auth::{Permission, Role};
 use auth::{forbidden, login, logout, process_login, process_register, register, unauthorized};
+use db::clean_expired_sessions;
 use error::{AppError, internal_server_error};
 use rocket::fs::FileServer;
-use rocket::{Build, Rocket};
+use rocket::{Build, Rocket, tokio};
 use rocket_dyn_templates::Template;
 use rocket_dyn_templates::handlebars::Context;
 use rocket_dyn_templates::handlebars::Handlebars;
@@ -29,7 +31,7 @@ use thiserror::Error;
 use routes::{
     add_multiple_techniques_to_student, add_technique_to_student, admin_archive_user,
     admin_edit_user, admin_process_edit_user, admin_users, create_and_assign_technique_route,
-    index, index_anon, profile, student_techniques, update_name, update_password,
+    health, index, index_anon, profile, student_techniques, update_name, update_password,
     update_student_technique_route, update_username_route,
 };
 use sqlx::SqlitePool;
@@ -69,6 +71,36 @@ async fn rocket() -> _ {
         .await
         .expect("Failed to connect to SQLite database");
 
+    let pool_clone = pool.clone();
+
+    tokio::spawn(async move {
+        tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+
+        loop {
+            match clean_expired_sessions(&pool_clone).await {
+                Ok(count) => {
+                    if count > 0 {
+                        info!("Cleaned up {} expired sessions", count);
+                    }
+                }
+                Err(e) => {
+                    error!("Failed to clean expired sessions: {}", e);
+                }
+            }
+
+            tokio::time::sleep(tokio::time::Duration::from_secs(3600)).await;
+        }
+    });
+
+    info!("Running database migrations...");
+    match sqlx::migrate!("./migrations").run(&pool).await {
+        Ok(_) => info!("Migrations completed successfully"),
+        Err(e) => {
+            error!("Failed to run migrations: {}", e);
+            panic!("Database migration failed: {}", e);
+        }
+    }
+
     init_rocket(pool).await
 }
 
@@ -100,6 +132,7 @@ pub async fn init_rocket(pool: SqlitePool) -> Rocket<Build> {
                 admin_edit_user,
                 admin_process_edit_user,
                 admin_archive_user,
+                health,
             ],
         )
         .mount("/static", FileServer::new("static"))

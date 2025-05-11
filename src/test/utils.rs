@@ -20,6 +20,7 @@ pub mod test_db {
         student_techniques: Vec<TestStudentTechnique>,
     }
 
+    #[allow(dead_code)]
     pub struct TestUser {
         pub username: String,
         pub display_name: Option<String>,
@@ -75,7 +76,7 @@ pub mod test_db {
             });
             self
         }
-
+        #[allow(dead_code)]
         pub fn user_with_password(
             mut self,
             username: &str,
@@ -268,7 +269,7 @@ pub mod test_db {
 
             Ok(result.id)
         }
-
+        #[allow(dead_code)]
         pub async fn student_technique_ids(
             &self,
             student_username: &str,
@@ -286,7 +287,7 @@ pub mod test_db {
 
             Ok(results.into_iter().map(|row| row.id).collect())
         }
-
+        #[allow(dead_code)]
         pub async fn first_student_technique_id(
             &self,
             student_username: &str,
@@ -304,7 +305,7 @@ pub mod test_db {
 
             Ok(result.id)
         }
-
+        #[allow(dead_code)]
         pub async fn get_student_technique(
             &self,
             id: i64,
