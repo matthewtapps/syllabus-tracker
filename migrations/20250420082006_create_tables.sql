@@ -27,26 +27,3 @@ CREATE TABLE IF NOT EXISTS student_techniques (
     FOREIGN KEY (technique_id) REFERENCES techniques (id),
     FOREIGN KEY (student_id) REFERENCES users (id)
 );
-
-INSERT OR IGNORE INTO users (username, role)
-SELECT
-    'coach1',
-    'coach'
-WHERE NOT EXISTS (
-    SELECT 1 FROM users
-    WHERE role = 'coach'
-);
-
-
-INSERT OR IGNORE INTO users (username, role)
-SELECT
-    'student1',
-    'student'
-WHERE NOT EXISTS (
-    SELECT 1 FROM users
-    WHERE role = 'student'
-);
-
-
-INSERT INTO techniques (name, description, coach_id, coach_name)
-VALUES ('test technique', 'practice', 1, 'coach1');
