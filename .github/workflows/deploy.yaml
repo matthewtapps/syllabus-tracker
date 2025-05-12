@@ -126,6 +126,9 @@ jobs:
             target
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
 
+      - name: Create frontend dist directory for tests
+        run: mkdir -p frontend/dist/assets
+
       - name: Set test start time
         id: test-start
         run: |
@@ -162,9 +165,75 @@ jobs:
 
           buildevents step $TRACE_ID $STEP_ID $STEP_START $STEP_ID
 
+  build-frontend:
+    needs: check-changes
+    runs-on: ubuntu-latest
+    if: needs.check-changes.outputs.code_changed == 'true'
+
+    steps:
+      - uses: honeycombio/gha-buildevents@v2
+        with:
+          apikey: ${{ secrets.HONEYCOMB_API_KEY }}
+          dataset: syllabus-tracker-build-events
+
+      - name: Set build start timestamp
+        id: build-frontend
+        run: |
+          echo "STEP_START=$(date +%s)" >> $GITHUB_OUTPUT
+          echo "STEP_ID=build-frontend" >> $GITHUB_OUTPUT
+
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: 10
+          run_install: false
+
+      - name: Get pnpm store directory
+        id: pnpm-cache
+        run: |
+          echo "pnpm_cache_dir=$(pnpm store path)" >> $GITHUB_OUTPUT
+
+      - name: Cache pnpm modules
+        uses: actions/cache@v3
+        with:
+          path: ${{ steps.pnpm-cache.outputs.pnpm_cache_dir }}
+          key: ${{ runner.os }}-pnpm-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-
+
+      - name: Install dependencies
+        working-directory: ./frontend
+        run: pnpm install
+
+      - name: Build frontend
+        working-directory: ./frontend
+        run: pnpm run build
+
+      - name: Upload frontend dist
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-dist
+          path: frontend/dist
+
+      - name: Log build details to telemetry
+        run: |
+          echo " frontend_build_successful=true" >> $BUILDEVENT_FILE
+
+      - name: End build event
+        run: |
+          STEP_ID=$(echo "${{ steps.build-frontend.outputs.STEP_ID }}")
+          STEP_START=$(echo "${{ steps.build-frontend.outputs.STEP_START }}")
+          buildevents step $TRACE_ID $STEP_ID $STEP_START $STEP_ID
+
   build:
-    needs:
-      - check-changes
+    needs: [check-changes, build-frontend]
     if: needs.check-changes.outputs.code_changed == 'true'
     runs-on: ubuntu-latest
     permissions:
@@ -208,6 +277,12 @@ jobs:
             type=ref,event=branch
             latest
 
+      - name: Download frontend dist
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-dist
+          path: frontend/dist
+
       - name: Build and push Docker image
         uses: docker/build-push-action@v6
         with:
@@ -237,11 +312,11 @@ jobs:
           buildevents step $TRACE_ID $STEP_ID $STEP_START $STEP_ID
 
   deploy:
-    needs: [check-changes, build, test]
+    needs: [check-changes, build, test, build-frontend]
     if: |
       always() &&
       (needs.check-changes.outputs.code_changed != 'true' ||
-      needs.build.result == 'success') &&
+      (needs.build.result == 'success' && needs.build-frontend.result == 'success')) &&
       (needs.test.result == 'success' || needs.test.result == 'skipped')
     runs-on: ubuntu-latest
     permissions:
@@ -262,7 +337,7 @@ jobs:
           trace-start: ${{ needs.check-changes.outputs.trace_start }}
 
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Set up SSH
         run: |
@@ -311,6 +386,9 @@ jobs:
             --include="nginx/***" \
             --include="static/***" \
             --include="migrations/***" \
+            --include="frontend/" \
+            --include="frontend/dist/" \
+            --include="frontend/dist/***" \
             --exclude="*" \
             ./ ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }}:~/syllabus-tracker/ > $RSYNC_OUTPUT
 

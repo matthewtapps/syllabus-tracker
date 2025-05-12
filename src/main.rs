@@ -1,6 +1,7 @@
 #[macro_use]
 extern crate rocket;
 
+mod api;
 mod auth;
 mod db;
 mod error;
@@ -10,11 +11,16 @@ mod telemetry;
 #[cfg(test)]
 mod test;
 
+use api::{
+    api_assign_techniques, api_create_and_assign_technique, api_get_student_techniques,
+    api_get_students, api_get_unassigned_techniques, api_login, api_logout, api_me,
+    api_me_unauthorized, api_update_student_technique, serve_spa_fallback, serve_spa_fallback_2,
+};
 use auth::{Permission, Role};
 use auth::{forbidden, login, logout, process_login, process_register, register, unauthorized};
 use db::clean_expired_sessions;
 use error::{AppError, internal_server_error};
-use rocket::fs::FileServer;
+use rocket::fs::{FileServer, relative};
 use rocket::{Build, Rocket, tokio};
 use rocket_dyn_templates::Template;
 use rocket_dyn_templates::handlebars::Context;
@@ -110,6 +116,28 @@ pub async fn init_rocket(pool: SqlitePool) -> Rocket<Build> {
     rocket::build()
         .manage(pool)
         .mount(
+            "/api",
+            routes![
+                api_login,
+                api_me,
+                api_me_unauthorized,
+                api_update_student_technique,
+                api_get_student_techniques,
+                api_logout,
+                api_get_students,
+                api_get_unassigned_techniques,
+                api_assign_techniques,
+                api_create_and_assign_technique
+            ],
+        )
+        .mount("/ui", FileServer::new(relative!("/frontend/dist")).rank(1))
+        .mount("/ui", routes![serve_spa_fallback])
+        .mount("/ui/assets", FileServer::new("frontend/dist/assets"))
+        // .mount(
+        //     "/ui/assets",
+        //     FileServer::new(relative!("frontend/dist/assets")),
+        // )
+        .mount(
             "/",
             routes![
                 index,
@@ -133,6 +161,7 @@ pub async fn init_rocket(pool: SqlitePool) -> Rocket<Build> {
                 admin_process_edit_user,
                 admin_archive_user,
                 health,
+                serve_spa_fallback_2
             ],
         )
         .mount("/static", FileServer::new("static"))

@@ -4,14 +4,14 @@ mod tests {
     use crate::init_rocket;
     use crate::models::StudentTechnique;
     use crate::test::test_db::{TestDb, TestDbBuilder};
-    use rocket::http::{ContentType, Cookie, SameSite, Status};
+    use rocket::http::{ContentType, Cookie, Status};
     use rocket::local::asynchronous::{Client, LocalResponse};
 
-    fn auth_cookie(username: &str) -> Cookie<'static> {
-        Cookie::build(("logged_in", username.to_string()))
-            .same_site(SameSite::Lax)
-            .build()
-    }
+    // fn auth_cookie(username: &str) -> Cookie<'static> {
+    //     Cookie::build(("logged_in", username.to_string()))
+    //         .same_site(SameSite::Lax)
+    //         .build()
+    // }
 
     async fn setup_test_client(test_db: TestDb) -> (Client, TestDb) {
         let rocket = init_rocket(test_db.pool.clone()).await;
@@ -63,9 +63,16 @@ mod tests {
 
         let (client, _) = setup_test_client(test_db).await;
 
-        let cookie = auth_cookie("coach_user");
+        let login_response: LocalResponse = client
+            .post("/login")
+            .header(ContentType::Form)
+            .body("username=coach_user&password=password123")
+            .dispatch()
+            .await;
 
-        let response = client.get("/").private_cookie(cookie).dispatch().await;
+        let session_cookies: Vec<_> = login_response.cookies().iter().cloned().collect::<Vec<_>>();
+
+        let response = client.get("/").cookies(session_cookies).dispatch().await;
 
         assert_eq!(response.status(), Status::Ok);
 
@@ -85,11 +92,18 @@ mod tests {
 
         let student_id = test_db.user_id("student_user").expect("Student not found");
 
-        let cookie = auth_cookie("coach_user");
+        let login_response: LocalResponse = client
+            .post("/login")
+            .header(ContentType::Form)
+            .body("username=student_user&password=password123")
+            .dispatch()
+            .await;
+
+        let session_cookies: Vec<_> = login_response.cookies().iter().cloned().collect::<Vec<_>>();
 
         let response = client
             .get(format!("/student/{}", student_id))
-            .private_cookie(cookie)
+            .cookies(session_cookies)
             .dispatch()
             .await;
 
@@ -107,11 +121,18 @@ mod tests {
         let test_db = create_standard_test_db().await;
         let (client, _) = setup_test_client(test_db).await;
 
-        let cookie = auth_cookie("student_user");
+        let login_response: LocalResponse = client
+            .post("/login")
+            .header(ContentType::Form)
+            .body("username=student_user&password=password123")
+            .dispatch()
+            .await;
+
+        let session_cookies: Vec<_> = login_response.cookies().iter().cloned().collect::<Vec<_>>();
 
         let response = client
             .get("/profile")
-            .private_cookie(cookie)
+            .cookies(session_cookies)
             .dispatch()
             .await;
 
@@ -150,11 +171,18 @@ mod tests {
             urlencoding::encode("Description of armbar")
         );
 
-        let cookie = auth_cookie("coach_user");
+        let login_response: LocalResponse = client
+            .post("/login")
+            .header(ContentType::Form)
+            .body("username=coach_user&password=password123")
+            .dispatch()
+            .await;
+
+        let session_cookies: Vec<_> = login_response.cookies().iter().cloned().collect::<Vec<_>>();
 
         let response = client
             .post(format!("/student_technique/{}", student_technique_id))
-            .private_cookie(cookie)
+            .cookies(session_cookies)
             .header(ContentType::Form)
             .body(form_string)
             .dispatch()

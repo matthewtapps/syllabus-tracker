@@ -67,55 +67,7 @@ impl<'r> FromRequest<'r> for User {
             }
         }
 
-        // Legacy method (to be deprecated) - try using username cookie
-        let username = match cookies.get_private("logged_in") {
-            Some(cookie) => cookie.value().to_string(),
-            _ => {
-                tracing::info!("No authentication credentials found");
-                return Outcome::Forward(Status::Unauthorized);
-            }
-        };
-
-        let db = match request.rocket().state::<SqlitePool>() {
-            Some(pool) => pool,
-            _ => {
-                tracing::error!("Database pool not found in managed state");
-                return Outcome::Error((Status::InternalServerError, ()));
-            }
-        };
-
-        // Legacy session timestamp check
-        if let Some(timestamp_cookie) = cookies.get_private("session_timestamp") {
-            if let Ok(timestamp) = timestamp_cookie.value().parse::<i64>() {
-                use rocket::time::{Duration, OffsetDateTime};
-                if let Ok(session_time) = OffsetDateTime::from_unix_timestamp(timestamp) {
-                    let current_time = OffsetDateTime::now_utc();
-                    let elapsed = current_time - session_time;
-
-                    if elapsed > Duration::hours(1) {
-                        tracing::warn!(username = %username, "Session expired");
-                        return Outcome::Forward(Status::Unauthorized);
-                    }
-                }
-            }
-        }
-
-        // Get user by username (legacy method)
-        tracing::warn!(username = %username, "Using legacy authentication method");
-        match get_user_by_username(db, &username).await {
-            Ok(user) => {
-                tracing::info!(username = %username, role = %user.role.as_str(), "User authenticated");
-                Outcome::Success(user)
-            }
-            Err(err) => {
-                tracing::error!(username = %username, error = ?err, "Failed to fetch user");
-
-                match err {
-                    AppError::NotFound(_) => Outcome::Forward(Status::Unauthorized),
-                    _ => Outcome::Error((Status::InternalServerError, ())),
-                }
-            }
-        }
+        return Outcome::Error((Status::Unauthorized, ()));
     }
 }
 
