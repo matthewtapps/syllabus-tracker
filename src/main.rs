@@ -13,7 +13,7 @@ mod test;
 
 use api::{
     api_get_student_techniques, api_get_students, api_login, api_logout, api_me,
-    api_me_unauthorized, api_update_student_technique, serve_spa_index,
+    api_me_unauthorized, api_update_student_technique, serve_spa_fallback, serve_spa_fallback_2,
 };
 use auth::{Permission, Role};
 use auth::{forbidden, login, logout, process_login, process_register, register, unauthorized};
@@ -123,15 +123,15 @@ pub async fn init_rocket(pool: SqlitePool) -> Rocket<Build> {
                 api_update_student_technique,
                 api_get_student_techniques,
                 api_logout,
-                api_get_students
+                api_get_students,
             ],
         )
-        .mount("/ui", routes![serve_spa_index])
-        .mount("/ui", FileServer::new(relative!("frontend/dist")).rank(2))
-        .mount(
-            "/ui/assets",
-            FileServer::new(relative!("frontend/dist/assets")),
-        )
+        .mount("/ui", FileServer::new(relative!("/frontend/dist")).rank(1))
+        .mount("/ui", routes![serve_spa_fallback])
+        // .mount(
+        //     "/ui/assets",
+        //     FileServer::new(relative!("frontend/dist/assets")),
+        // )
         .mount(
             "/",
             routes![
@@ -156,6 +156,7 @@ pub async fn init_rocket(pool: SqlitePool) -> Rocket<Build> {
                 admin_process_edit_user,
                 admin_archive_user,
                 health,
+                serve_spa_fallback_2
             ],
         )
         .mount("/static", FileServer::new("static"))

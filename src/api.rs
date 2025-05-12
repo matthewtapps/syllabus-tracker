@@ -1,13 +1,14 @@
 use rocket::State;
 use rocket::fs::NamedFile;
 use rocket::http::Status;
+use rocket::response::Redirect;
 use rocket::serde::{Deserialize, Serialize, json::Json};
 use sqlx::{Pool, Sqlite};
 
 use crate::auth::{Permission, User};
 use crate::db::{
     authenticate_user, create_user_session, get_student_technique, get_student_techniques,
-    get_user, get_user_by_username, get_users_by_role, update_student_notes,
+    get_user, get_user_by_username, get_users_by_role, invalidate_session, update_student_notes,
     update_student_technique, update_technique,
 };
 
@@ -310,15 +311,21 @@ pub async fn api_me_unauthorized() -> Status {
     Status::Unauthorized
 }
 
-#[get("/")]
-pub async fn serve_spa_index() -> Option<NamedFile> {
+#[get("/<_..>", rank = 2)]
+pub async fn serve_spa_fallback() -> Option<NamedFile> {
     NamedFile::open("./frontend/dist/index.html").await.ok()
 }
 
-use crate::db::invalidate_session;
+#[get("/ui")]
+pub async fn serve_spa_fallback_2() -> Option<NamedFile> {
+    NamedFile::open("./frontend/dist/index.html").await.ok()
+}
 
-#[post("/api/logout")]
-pub async fn api_logout(cookies: &rocket::http::CookieJar<'_>, db: &State<Pool<Sqlite>>) -> Status {
+#[post("/logout")]
+pub async fn api_logout(
+    cookies: &rocket::http::CookieJar<'_>,
+    db: &State<Pool<Sqlite>>,
+) -> Redirect {
     let token = cookies
         .get_private("session_token")
         .map(|cookie| cookie.value().to_string());
@@ -333,5 +340,5 @@ pub async fn api_logout(cookies: &rocket::http::CookieJar<'_>, db: &State<Pool<S
     cookies.remove_private(rocket::http::Cookie::build("session_timestamp"));
     cookies.remove_private(rocket::http::Cookie::build("user_role"));
 
-    Status::Ok
+    Redirect::to("/ui/")
 }
