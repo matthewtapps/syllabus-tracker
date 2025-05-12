@@ -12,7 +12,8 @@ mod telemetry;
 mod test;
 
 use api::{
-    api_get_student_techniques, api_get_students, api_login, api_logout, api_me,
+    api_assign_techniques, api_create_and_assign_technique, api_get_student_techniques,
+    api_get_students, api_get_unassigned_techniques, api_login, api_logout, api_me,
     api_me_unauthorized, api_update_student_technique, serve_spa_fallback, serve_spa_fallback_2,
 };
 use auth::{Permission, Role};
@@ -124,6 +125,9 @@ pub async fn init_rocket(pool: SqlitePool) -> Rocket<Build> {
                 api_get_student_techniques,
                 api_logout,
                 api_get_students,
+                api_get_unassigned_techniques,
+                api_assign_techniques,
+                api_create_and_assign_technique
             ],
         )
         .mount("/ui", FileServer::new(relative!("/frontend/dist")).rank(1))

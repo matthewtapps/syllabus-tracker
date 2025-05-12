@@ -19,7 +19,7 @@ export default function Dashboard({ user }: DashboardProps) {
   const isStudent = user.role === 'student' || user.role === 'Student';
 
   return (
-    <div className="container mx-auto py-8">
+    <div className="container mx-auto py-6 px-4 sm:px-6 md:py-8">
       <h1 className="text-3xl font-bold mb-6">Dashboard</h1>
 
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">

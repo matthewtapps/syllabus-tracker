@@ -55,7 +55,7 @@ function App() {
             />
             <Route
               path="/student/:id"
-              element={user ? <StudentTechniques /> : <Navigate to="/login" replace />}
+              element={user ? <StudentTechniques user={user} /> : <Navigate to="/login" replace />}
             />
             <Route
               path="/students"

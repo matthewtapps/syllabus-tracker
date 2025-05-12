@@ -1,32 +1,27 @@
 import { useState } from 'react';
 import type { Technique, TechniqueUpdate } from '@/lib/api';
 import { Button } from '@/components/ui/button';
-import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel } from '@/components/ui/form';
+import { Form, FormControl, FormField, FormItem, FormLabel } from '@/components/ui/form';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useForm } from 'react-hook-form';
-import { Card, CardContent } from './ui/card';
 
 interface TechniqueEditFormProps {
   technique: Technique;
   canEditAll: boolean;
-  currentUserId: number;
-  studentId: number;
   onSubmit: (updates: TechniqueUpdate) => void;
+  onCancel: () => void;
 }
 
 export default function TechniqueEditForm({
   technique,
   canEditAll,
   onSubmit,
-  currentUserId,
-  studentId,
+  onCancel
 }: TechniqueEditFormProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [nameChanged, setNameChanged] = useState(false);
   const [descriptionChanged, setDescriptionChanged] = useState(false);
-  const isOwnTechnique = currentUserId === studentId;
-  const canEditStudentNotes = isOwnTechnique; // Only students edit their own notes
 
   const form = useForm<TechniqueUpdate>({
     defaultValues: {
@@ -41,31 +36,15 @@ export default function TechniqueEditForm({
   const handleSubmit = async (values: TechniqueUpdate) => {
     setIsSubmitting(true);
     try {
-      if (!canEditStudentNotes) {
-        const { student_notes, ...coachUpdates } = values;
-        onSubmit(coachUpdates);
-      } else {
-        onSubmit(values);
-      }
+      onSubmit(values);
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  const ReadOnlyField = ({ label, value }: { label: string; value: string }) => (
-    <div className="space-y-2 mb-4">
-      <div className="font-medium text-sm">{label}</div>
-      <Card>
-        <CardContent className="p-3 bg-muted/40">
-          <p className="text-sm whitespace-pre-wrap text-muted-foreground">{value || "No content"}</p>
-        </CardContent>
-      </Card>
-    </div>
-  );
-
   return (
     <Form {...form}>
-      <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4 sm:space-y-6 mt-4 sm:mt-6">
+      <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-6 mt-6">
         {canEditAll && (
           <>
             <FormField
@@ -102,7 +81,8 @@ export default function TechniqueEditForm({
                   <FormControl>
                     <Textarea
                       {...field}
-                      className="min-h-[60px]"
+                      className="min-h-[120px] max-h-[300px] overflow-y-auto"
+                      style={{ height: 'auto' }}
                       onChange={(e) => {
                         field.onChange(e);
                         setNameChanged(e.target.value !== technique.technique_name);
@@ -110,9 +90,9 @@ export default function TechniqueEditForm({
                     />
                   </FormControl>
                   {nameChanged && (
-                    <FormDescription className="text-amber-500">
+                    <div className="text-amber-500 text-sm mt-1">
                       Warning: This will update the technique name globally for all students.
-                    </FormDescription>
+                    </div>
                   )}
                 </FormItem>
               )}
@@ -127,7 +107,8 @@ export default function TechniqueEditForm({
                   <FormControl>
                     <Textarea
                       {...field}
-                      className="min-h-[120px] max-h-[300px]"
+                      className="min-h-[120px] max-h-[300px] overflow-y-auto"
+                      style={{ height: 'auto' }}
                       onChange={(e) => {
                         field.onChange(e);
                         setDescriptionChanged(e.target.value !== technique.technique_description);
@@ -135,9 +116,9 @@ export default function TechniqueEditForm({
                     />
                   </FormControl>
                   {descriptionChanged && (
-                    <FormDescription className="text-amber-500">
+                    <div className="text-amber-500 text-sm mt-1">
                       Warning: This will update the technique description globally for all students.
-                    </FormDescription>
+                    </div>
                   )}
                 </FormItem>
               )}
@@ -145,33 +126,24 @@ export default function TechniqueEditForm({
           </>
         )}
 
-        {/* Student Notes - either editable or read-only */}
-        {canEditStudentNotes ? (
-          <FormField
-            control={form.control}
-            name="student_notes"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>Student Notes</FormLabel>
-                <FormControl>
-                  <Textarea
-                    {...field}
-                    className="min-h-[120px] max-h-[300px]"
-                  />
-                </FormControl>
-              </FormItem>
-            )}
-          />
-        ) : (
-          // Read-only view of student notes for coaches
-          <ReadOnlyField
-            label="Student Notes (Read Only)"
-            value={technique.student_notes}
-          />
-        )}
+        <FormField
+          control={form.control}
+          name="student_notes"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>Student Notes</FormLabel>
+              <FormControl>
+                <Textarea
+                  {...field}
+                  className="min-h-[120px] max-h-[300px] overflow-y-auto"
+                  style={{ height: 'auto' }}
+                />
+              </FormControl>
+            </FormItem>
+          )}
+        />
 
-        {/* Coach Notes - either editable or read-only */}
-        {canEditAll ? (
+        {canEditAll && (
           <FormField
             control={form.control}
             name="coach_notes"
@@ -181,21 +153,19 @@ export default function TechniqueEditForm({
                 <FormControl>
                   <Textarea
                     {...field}
-                    className="min-h-[120px] max-h-[300px]"
+                    className="min-h-[120px] max-h-[300px] overflow-y-auto"
+                    style={{ height: 'auto' }}
                   />
                 </FormControl>
               </FormItem>
             )}
           />
-        ) : (
-          // Read-only view of coach notes for students
-          <ReadOnlyField
-            label="Coach Notes (Read Only)"
-            value={technique.coach_notes}
-          />
         )}
 
         <div className="flex justify-end gap-2 mt-6">
+          <Button type="button" variant="outline" onClick={onCancel}>
+            Cancel
+          </Button>
           <Button type="submit" disabled={isSubmitting}>
             {isSubmitting ? "Saving..." : "Save Changes"}
           </Button>

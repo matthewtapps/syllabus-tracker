@@ -7,10 +7,12 @@ use sqlx::{Pool, Sqlite};
 
 use crate::auth::{Permission, User};
 use crate::db::{
-    authenticate_user, create_user_session, get_student_technique, get_student_techniques,
-    get_user, get_user_by_username, get_users_by_role, invalidate_session, update_student_notes,
+    add_techniques_to_student, authenticate_user, create_and_assign_technique, create_user_session,
+    get_student_technique, get_student_techniques, get_unassigned_techniques, get_user,
+    get_user_by_username, get_users_by_role, invalidate_session, update_student_notes,
     update_student_technique, update_technique,
 };
+use crate::models::Technique;
 
 #[derive(Deserialize)]
 pub struct LoginRequest {
@@ -72,15 +74,6 @@ pub struct StudentTechniquesResponse {
     can_edit_all_techniques: bool,
     can_assign_techniques: bool,
     can_create_techniques: bool,
-}
-
-#[derive(Deserialize)]
-pub struct TechniqueUpdateRequest {
-    status: Option<String>,
-    student_notes: Option<String>,
-    coach_notes: Option<String>,
-    technique_name: Option<String>,
-    technique_description: Option<String>,
 }
 
 #[post("/login", data = "<login>")]
@@ -217,6 +210,15 @@ pub async fn api_get_student_techniques(
     }))
 }
 
+#[derive(Deserialize)]
+pub struct TechniqueUpdateRequest {
+    status: Option<String>,
+    student_notes: Option<String>,
+    coach_notes: Option<String>,
+    technique_name: Option<String>,
+    technique_description: Option<String>,
+}
+
 #[put("/student_technique/<id>", data = "<technique>")]
 pub async fn api_update_student_technique(
     id: i64,
@@ -234,11 +236,10 @@ pub async fn api_update_student_technique(
     }
 
     if is_own_technique && !can_edit_all {
-        if let Some(ref notes) = technique.student_notes {
-            update_student_notes(db, id, notes).await?;
+        if let Some(notes) = &technique.student_notes {
+            update_student_notes(db, id, &notes).await?;
         }
     } else if can_edit_all {
-        // Coach with edit permissions can update everything
         let status = technique.status.clone().unwrap_or(student_technique.status);
         let student_notes = technique
             .student_notes
@@ -271,7 +272,7 @@ pub async fn api_update_student_technique(
             .await?;
         }
 
-        result
+        return Ok(Status::Ok);
     }
 
     Err(Status::BadRequest)
@@ -299,6 +300,59 @@ pub async fn api_get_students(
         .collect();
 
     Ok(Json(student_responses))
+}
+
+#[get("/student/<id>/unassigned_techniques")]
+pub async fn api_get_unassigned_techniques(
+    id: i64,
+    user: User,
+    db: &State<Pool<Sqlite>>,
+) -> Result<Json<Vec<Technique>>, Status> {
+    user.require_permission(Permission::AssignTechniques)?;
+
+    let techniques = get_unassigned_techniques(db, id).await?;
+
+    Ok(Json(techniques))
+}
+
+#[derive(Deserialize)]
+pub struct AssignTechniquesRequest {
+    technique_ids: Vec<i64>,
+}
+
+#[post("/student/<student_id>/add_techniques", data = "<request>")]
+pub async fn api_assign_techniques(
+    student_id: i64,
+    request: Json<AssignTechniquesRequest>,
+    user: User,
+    db: &State<Pool<Sqlite>>,
+) -> Result<Status, Status> {
+    user.require_permission(Permission::AssignTechniques)?;
+
+    add_techniques_to_student(db, student_id, request.technique_ids.clone()).await?;
+
+    Ok(Status::Ok)
+}
+
+#[derive(Deserialize)]
+pub struct CreateTechniqueRequest {
+    name: String,
+    description: String,
+}
+
+#[post("/student/<student_id>/create_technique", data = "<request>")]
+pub async fn api_create_and_assign_technique(
+    student_id: i64,
+    request: Json<CreateTechniqueRequest>,
+    user: User,
+    db: &State<Pool<Sqlite>>,
+) -> Result<Status, Status> {
+    user.require_all_permissions(&[Permission::CreateTechniques, Permission::AssignTechniques])?;
+
+    create_and_assign_technique(db, user.id, student_id, &request.name, &request.description)
+        .await?;
+
+    Ok(Status::Ok)
 }
 
 #[get("/me")]

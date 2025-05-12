@@ -138,7 +138,6 @@ export async function assignTechniquesToStudent(
   }
 }
 
-// Create and assign a new technique
 export async function createAndAssignTechnique(
   studentId: number,
   name: string,
@@ -177,7 +176,7 @@ export async function updateTechnique(
   updates: TechniqueUpdate,
 ): Promise<void> {
   const response = await fetch(`/api/student_technique/${techniqueId}`, {
-    method: "PUT",
+    method: "POST",
     headers: {
       "Content-Type": "application/json",
     },

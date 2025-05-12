@@ -1,4 +1,3 @@
-// frontend/src/components/login-form.tsx
 import { useState } from "react"
 import { useNavigate } from "react-router-dom";
 import { login } from "@/lib/api"
@@ -65,7 +64,6 @@ export function LoginForm({
                 <Input
                   id="username"
                   type="text"
-                  placeholder="Enter your username"
                   required
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
