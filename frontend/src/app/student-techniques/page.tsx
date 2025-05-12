@@ -27,6 +27,8 @@ export default function StudentTechniques({ user }: StudentTechniquesProps) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [editingTechnique, setEditingTechnique] = useState<Technique | null>(null);
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+  const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   useEffect(() => {
     async function loadTechniques() {
       try {
@@ -61,20 +63,15 @@ export default function StudentTechniques({ user }: StudentTechniquesProps) {
         });
       }
 
-      toast(
-        "Your changes have been saved successfully",
-      );
+      toast("Your changes have been saved successfully");
 
-      // Close edit form
       setEditingTechnique(null);
+      setIsEditDialogOpen(false);
     } catch (err) {
-      toast(
-        "There was a problem updating the technique",
-      );
+      toast("There was a problem updating the technique");
     }
   };
 
-  // UI for each status color
   const getStatusStyles = (status: string) => {
     switch (status) {
       case 'red':
@@ -117,7 +114,7 @@ export default function StudentTechniques({ user }: StudentTechniquesProps) {
                       <CardTitle className="text-base sm:text-lg">{technique.technique_name}</CardTitle>
                     </AccordionTrigger>
 
-                    <Dialog >
+                    <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
                       <DialogTrigger asChild>
                         <Button
                           variant="outline"
@@ -126,6 +123,7 @@ export default function StudentTechniques({ user }: StudentTechniquesProps) {
                           onClick={(e) => {
                             e.stopPropagation();
                             setEditingTechnique(technique);
+                            setIsEditDialogOpen(true);
                           }}
                         >
                           Edit
@@ -180,9 +178,11 @@ export default function StudentTechniques({ user }: StudentTechniquesProps) {
       {data.can_assign_techniques && (
         <div className="mt-8">
           <h2 className="text-2xl font-bold mb-4">Add Techniques</h2>
-          <Dialog>
+          <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
             <DialogTrigger asChild>
-              <Button>Add Techniques</Button>
+              <Button onClick={() => setIsAddDialogOpen(true)}>
+                Add Techniques
+              </Button>
             </DialogTrigger>
             <DialogContent className="w-[95vw] max-w-[600px] max-h-[80vh] overflow-y-auto p-4 sm:p-6">
               <DialogHeader>
@@ -197,6 +197,7 @@ export default function StudentTechniques({ user }: StudentTechniquesProps) {
                 onAssignComplete={() => {
                   getStudentTechniques(parseInt(id || '0', 10)).then(result => {
                     setData(result);
+                    setIsAddDialogOpen(false); // Close the dialog after success
                   });
                 }}
               />

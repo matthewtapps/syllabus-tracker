@@ -176,7 +176,7 @@ export async function updateTechnique(
   updates: TechniqueUpdate,
 ): Promise<void> {
   const response = await fetch(`/api/student_technique/${techniqueId}`, {
-    method: "POST",
+    method: "PUT",
     headers: {
       "Content-Type": "application/json",
     },

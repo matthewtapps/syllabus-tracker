@@ -8,7 +8,7 @@ import {
   SheetContent,
   SheetTrigger,
 } from "@/components/ui/sheet";
-import { Menu } from "lucide-react";
+import { BusFrontIcon, Menu } from "lucide-react";
 import { ModeToggle } from "./theme/mode-toggle";
 
 interface NavBarProps {
@@ -64,10 +64,13 @@ export function NavBar({ user, onLogout }: NavBarProps) {
       <div className="container mx-auto px-4 flex h-14 items-center justify-between">
         <div className="flex items-center gap-2">
           <button
-            className="font-bold text-lg"
+            className="flex items-center font-bold text-lg"
             onClick={() => navigate(user ? "/dashboard" : "/login")}
           >
-            Jiu Jitsu Syllabus
+            <BusFrontIcon className="size-6 mx-2" />
+            <div>
+              Silly Bus
+            </div>
           </button>
 
           {/* Desktop Navigation */}

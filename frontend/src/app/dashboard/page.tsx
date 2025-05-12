@@ -53,18 +53,18 @@ export default function Dashboard({ user }: DashboardProps) {
               </CardFooter>
             </Card>
 
-            <Card>
-              <CardHeader>
-                <CardTitle>Techniques</CardTitle>
-                <CardDescription>Manage all techniques</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <p>Create, edit and organize the technique library.</p>
-              </CardContent>
-              <CardFooter>
-                <Button onClick={() => navigate('/techniques')}>Manage Techniques</Button>
-              </CardFooter>
-            </Card>
+            {/* <Card> */}
+            {/*   <CardHeader> */}
+            {/*     <CardTitle>Techniques</CardTitle> */}
+            {/*     <CardDescription>Manage all techniques</CardDescription> */}
+            {/*   </CardHeader> */}
+            {/*   <CardContent> */}
+            {/*     <p>Create, edit and organize the technique library.</p> */}
+            {/*   </CardContent> */}
+            {/*   <CardFooter> */}
+            {/*     <Button onClick={() => navigate('/techniques')}>Manage Techniques</Button> */}
+            {/*   </CardFooter> */}
+            {/* </Card> */}
           </>
         )}
 
