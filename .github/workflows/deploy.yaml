@@ -162,6 +162,50 @@ jobs:
 
           buildevents step $TRACE_ID $STEP_ID $STEP_START $STEP_ID
 
+build-frontend:
+  needs: check-changes
+  runs-on: ubuntu-latest
+  if: needs.check-changes.outputs.code_changed == 'true'
+
+  steps:
+    - uses: honeycombio/gha-buildevents@v2
+      with:
+        apikey: ${{ secrets.HONEYCOMB_API_KEY }}
+        dataset: syllabus-tracker-build-events
+
+    - name: Set build start timestamp
+      id: build-frontend
+      run: |
+        echo "STEP_START=$(date +%s)" >> $GITHUB_OUTPUT
+        echo "STEP_ID=build-frontend" >> $GITHUB_OUTPUT
+
+    - uses: actions/checkout@v4
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: "20"
+        cache: "npm"
+        cache-dependency-path: "frontend/package-lock.json"
+
+    - name: Install dependencies
+      working-directory: ./frontend
+      run: npm ci
+
+    - name: Build frontend
+      working-directory: ./frontend
+      run: npm run build
+
+    - name: Log build details to telemetry
+      run: |
+        echo " frontend_build_successful=true" >> $BUILDEVENT_FILE
+
+    - name: End build event
+      run: |
+        STEP_ID=$(echo "${{ steps.build-frontend.outputs.STEP_ID }}")
+        STEP_START=$(echo "${{ steps.build-frontend.outputs.STEP_START }}")
+        buildevents step $TRACE_ID $STEP_ID $STEP_START $STEP_ID
+
   build:
     needs:
       - check-changes
@@ -237,11 +281,11 @@ jobs:
           buildevents step $TRACE_ID $STEP_ID $STEP_START $STEP_ID
 
   deploy:
-    needs: [check-changes, build, test]
+    needs: [check-changes, build, test, build-frontend]
     if: |
       always() &&
       (needs.check-changes.outputs.code_changed != 'true' ||
-      needs.build.result == 'success') &&
+      (needs.build.result == 'success' && needs.build-frontend.result == 'success')) &&
       (needs.test.result == 'success' || needs.test.result == 'skipped')
     runs-on: ubuntu-latest
     permissions:
@@ -311,6 +355,7 @@ jobs:
             --include="nginx/***" \
             --include="static/***" \
             --include="migrations/***" \
+            --include="frontend/dist/***" \
             --exclude="*" \
             ./ ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }}:~/syllabus-tracker/ > $RSYNC_OUTPUT
 

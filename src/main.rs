@@ -132,6 +132,7 @@ pub async fn init_rocket(pool: SqlitePool) -> Rocket<Build> {
         )
         .mount("/ui", FileServer::new(relative!("/frontend/dist")).rank(1))
         .mount("/ui", routes![serve_spa_fallback])
+        .mount("/ui/assets", FileServer::new("frontend/dist/assets"))
         // .mount(
         //     "/ui/assets",
         //     FileServer::new(relative!("frontend/dist/assets")),
