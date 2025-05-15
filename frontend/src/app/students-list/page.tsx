@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { getStudents, type User } from '@/lib/api';
-import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
+import { ChevronRightIcon } from 'lucide-react';
 
 export default function StudentsList() {
   const [students, setStudents] = useState<User[]>([]);
@@ -55,28 +55,27 @@ export default function StudentsList() {
         />
       </div>
 
-      <div className="grid gap-4">
+      <div className="border rounded-lg overflow-hidden">
         {filteredStudents.length > 0 ? (
-          filteredStudents.map(student => (
-            <Card key={student.id} className="hover:shadow-md transition-shadow cursor-pointer" onClick={() => navigate(`/student/${student.id}`)}>
-              <CardContent className="p-4">
-                <div className="flex justify-between items-center">
-                  <div>
-                    <div className="font-medium">{student.display_name || student.username}</div>
-                    {student.display_name && <div className="text-sm text-muted-foreground">{student.username}</div>}
-                  </div>
-                  <Button variant="outline" size="sm" onClick={(e) => {
-                    e.stopPropagation();
-                    navigate(`/student/${student.id}`);
-                  }}>
-                    View Techniques
-                  </Button>
+          <div className="divide-y">
+            {filteredStudents.map(student => (
+              <div
+                key={student.id}
+                className="flex items-center justify-between p-4 hover:bg-muted/50 transition-colors cursor-pointer"
+                onClick={() => navigate(`/student/${student.id}`)}
+              >
+                <div className="flex flex-col gap-1">
+                  <div className="font-medium">{student.display_name || student.username}</div>
+                  {student.display_name && <div className="text-sm text-muted-foreground">{student.username}</div>}
                 </div>
-              </CardContent>
-            </Card>
-          ))
+                <Button variant="ghost" size="icon" className="text-muted-foreground">
+                  <ChevronRightIcon className="h-5 w-5" />
+                </Button>
+              </div>
+            ))}
+          </div>
         ) : (
-          <div className="text-center text-muted-foreground">No students found</div>
+          <div className="text-center text-muted-foreground p-8">No students found</div>
         )}
       </div>
     </div>
