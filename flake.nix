@@ -47,7 +47,7 @@
             docker-buildx
 
             rustc
-            rust-analyzer-unwrapped
+            rust-analyzer
             rustfmt
             clippy
             cargo
