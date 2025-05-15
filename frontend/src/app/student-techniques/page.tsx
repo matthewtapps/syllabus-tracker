@@ -1,10 +1,9 @@
-import { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { getStudentTechniques, updateTechnique } from '@/lib/api';
 import type { Technique, StudentTechniques, TechniqueUpdate, User } from "@/lib/api";
-import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { toast } from 'sonner';
 import TechniqueEditForm from '@/components/technique-edit-form';
 import {
@@ -16,6 +15,15 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import AssignTechniques from '@/components/assign-techniques';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow
+} from '@/components/ui/table';
+import { ChevronDownIcon, ChevronUpIcon } from 'lucide-react';
 
 interface StudentTechniquesProps {
   user: User
@@ -29,6 +37,17 @@ export default function StudentTechniques({ user }: StudentTechniquesProps) {
   const [editingTechnique, setEditingTechnique] = useState<Technique | null>(null);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
+  const [expandedRows, setExpandedRows] = useState<number[]>([]);
+
+  // Function to toggle row expansion
+  const toggleRow = (techniqueId: number) => {
+    if (expandedRows.includes(techniqueId)) {
+      setExpandedRows(expandedRows.filter(id => id !== techniqueId));
+    } else {
+      setExpandedRows([...expandedRows, techniqueId]);
+    }
+  };
+
   useEffect(() => {
     async function loadTechniques() {
       try {
@@ -72,16 +91,44 @@ export default function StudentTechniques({ user }: StudentTechniquesProps) {
     }
   };
 
-  const getStatusStyles = (status: string) => {
+  const getStatusBgStyles = (status: string) => {
     switch (status) {
       case 'red':
-        return 'border-t-4 border-t-red-600 bg-red-50 dark:bg-red-950/30';
+        return ''; // No background for 'red' status
       case 'amber':
-        return 'border-t-4 border-t-amber-500 bg-amber-50 dark:bg-amber-950/30';
+        return 'bg-amber-50 dark:bg-amber-950/30';
       case 'green':
-        return 'border-t-4 border-t-green-600 bg-green-50 dark:bg-green-950/30';
+        return 'bg-green-50 dark:bg-green-950/30';
       default:
         return '';
+    }
+  };
+
+  // Get border color based on status
+  const getStatusBorderColor = (status: string) => {
+    switch (status) {
+      case 'red':
+        return '!border-l-muted-foreground/20';
+      case 'amber':
+        return '!border-l-amber-500';
+      case 'green':
+        return '!border-l-green-600';
+      default:
+        return '!border-l-muted-foreground/20';
+    }
+  };
+
+  // Format date to a more readable format
+  const formatDate = (dateString: string) => {
+    try {
+      const date = new Date(dateString);
+      return new Intl.DateTimeFormat('en-US', {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric'
+      }).format(date);
+    } catch (e) {
+      return dateString;
     }
   };
 
@@ -103,77 +150,109 @@ export default function StudentTechniques({ user }: StudentTechniquesProps) {
         {data.student.display_name || data.student.username}'s Techniques
       </h1>
 
-      <div className="grid gap-4 sm:gap-6">
-        {data.techniques.map((technique: Technique) => (
-          <Card key={technique.id} className={`overflow-hidden ${getStatusStyles(technique.status)} mb-4`}>
-            <Accordion type="single" collapsible className="w-full">
-              <AccordionItem value={`technique-${technique.id}`} className="border-none">
-                <CardHeader className="px-3 py-3 sm:p-4 pb-0">
-                  <div className="flex justify-between items-center">
-                    <AccordionTrigger className="hover:no-underline py-0">
-                      <CardTitle className="text-base sm:text-lg">{technique.technique_name}</CardTitle>
-                    </AccordionTrigger>
-
-                    <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
-                      <DialogTrigger asChild>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="text-xs sm:text-sm px-2 py-1 sm:px-3 sm:py-1.5"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setEditingTechnique(technique);
-                            setIsEditDialogOpen(true);
-                          }}
-                        >
-                          Edit
-                        </Button>
-                      </DialogTrigger>
-                      <DialogContent className="w-[95vw] max-w-[600px] max-h-[80vh] overflow-y-auto p-4 sm:p-6">
-                        <DialogHeader>
-                          <DialogTitle>Edit Technique</DialogTitle>
-                          <DialogDescription>
-                            Make changes to the technique below
-                          </DialogDescription>
-                        </DialogHeader>
-
-                        {editingTechnique && (
-                          <TechniqueEditForm
-                            technique={editingTechnique}
-                            canEditAll={data.can_edit_all_techniques}
-                            currentUserId={user?.id || 0}
-                            studentId={data.student.id}
-                            onSubmit={(updates: TechniqueUpdate) => handleUpdate(editingTechnique, updates)}
-                          />
+      <Card className="overflow-hidden p-0">
+        <CardContent className="p-0">
+          <Table>
+            <TableHeader>
+              <TableRow className="bg-muted/30">
+                <TableHead className="w-3/4 py-5 text-base font-medium">Technique Name</TableHead>
+                <TableHead className="w-1/4 text-right py-5 text-base font-medium">Last Updated</TableHead>
+                <TableHead className="w-10 py-5"></TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {data.techniques.map((technique: Technique) => (
+                <React.Fragment key={technique.id}>
+                  <TableRow
+                    className={`hover:cursor-pointer [&>*]:transition-all [&>*]:duration-500 ${expandedRows.includes(technique.id) ? "bg-muted/20" : ""
+                      } ${getStatusBgStyles(technique.status)} !border-l-4 ${getStatusBorderColor(technique.status)}`}
+                    onClick={() => toggleRow(technique.id)}
+                  >
+                    <TableCell className="py-4 font-medium">{technique.technique_name}</TableCell>
+                    <TableCell className="py-4 text-right text-sm text-muted-foreground">
+                      {formatDate(technique.updated_at)}
+                    </TableCell>
+                    <TableCell className="w-10 p-0 pr-4">
+                      <Button variant="ghost" size="icon" onClick={(e) => {
+                        e.stopPropagation();
+                        toggleRow(technique.id);
+                      }}>
+                        {expandedRows.includes(technique.id) ? (
+                          <ChevronUpIcon className="h-4 w-4" />
+                        ) : (
+                          <ChevronDownIcon className="h-4 w-4" />
                         )}
-                      </DialogContent>
-                    </Dialog>
-                  </div>
-                </CardHeader>
+                      </Button>
+                    </TableCell>
+                  </TableRow>
 
-                <AccordionContent>
-                  <CardContent className="px-3 py-2 sm:p-4 sm:pt-2">
-                    <div className="mb-4">
-                      <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400">Description</h3>
-                      <p className="mt-1 whitespace-pre-wrap">{technique.technique_description}</p>
-                    </div>
+                  {expandedRows.includes(technique.id) && (
+                    <TableRow
+                      className={`!border-l-4 ${getStatusBorderColor(technique.status)}`}
+                    >
+                      <TableCell
+                        colSpan={3}
+                        className={`p-6 animate-in slide-in-from-top-2 duration-500`}
+                      >
+                        <div className="mb-6">
+                          <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-2">Description</h3>
+                          <p className="whitespace-pre-wrap">{technique.technique_description}</p>
+                        </div>
 
-                    <div className="mb-4">
-                      <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400">Student Notes</h3>
-                      <p className="mt-1 whitespace-pre-wrap">{technique.student_notes || "No notes yet"}</p>
-                    </div>
+                        <div className="mb-6">
+                          <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-2">Student Notes</h3>
+                          <p className="whitespace-pre-wrap">{technique.student_notes || "No notes yet"}</p>
+                        </div>
 
-                    <div>
-                      <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400">Coach Notes</h3>
-                      <p className="mt-1 whitespace-pre-wrap">{technique.coach_notes || "No notes yet"}</p>
-                    </div>
-                  </CardContent>
-                </AccordionContent>
-              </AccordionItem>
-            </Accordion>
-          </Card>
-        ))}
-      </div>
+                        <div className="mb-6">
+                          <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-2">Coach Notes</h3>
+                          <p className="whitespace-pre-wrap">{technique.coach_notes || "No notes yet"}</p>
+                        </div>
+
+                        <div className="mt-4">
+                          <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
+                            <DialogTrigger asChild>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setEditingTechnique(technique);
+                                  setIsEditDialogOpen(true);
+                                }}
+                              >
+                                Edit Technique
+                              </Button>
+                            </DialogTrigger>
+                            <DialogContent className="w-[95vw] max-w-[600px] max-h-[80vh] overflow-y-auto p-4 sm:p-6">
+                              <DialogHeader>
+                                <DialogTitle>Edit Technique</DialogTitle>
+                                <DialogDescription>
+                                  Make changes to the technique below
+                                </DialogDescription>
+                              </DialogHeader>
+
+                              {editingTechnique && (
+                                <TechniqueEditForm
+                                  technique={editingTechnique}
+                                  canEditAll={data.can_edit_all_techniques}
+                                  currentUserId={user?.id || 0}
+                                  studentId={data.student.id}
+                                  onSubmit={(updates: TechniqueUpdate) => handleUpdate(editingTechnique, updates)}
+                                />
+                              )}
+                            </DialogContent>
+                          </Dialog>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </React.Fragment>
+              ))}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
 
       {data.can_assign_techniques && (
         <div className="mt-8">
