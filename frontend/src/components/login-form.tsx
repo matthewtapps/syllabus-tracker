@@ -55,9 +55,21 @@ export function LoginForm({
 
   return (
     <div className={cn("flex flex-col gap-6", className)} {...props}>
-      <Card>
-        <CardContent className="pt-6">
-          <form onSubmit={handleSubmit}>
+      <Card className="overflow-hidden">
+        <CardContent className="p-0 flex flex-col md:grid md:grid-cols-2">
+          {/* Image section - appears at top on mobile, left side on desktop */}
+          <div className="relative bg-muted aspect-square md:flex items-center justify-center">
+            <div className="absolute inset-0">
+              <img
+                src="/static/msb.jpg"
+                alt="Login"
+                className="h-full w-full object-cover"
+              />
+            </div>
+          </div>
+
+          {/* Form section */}
+          <form onSubmit={handleSubmit} className="p-6">
             <div className="flex flex-col gap-6">
               <div className="grid gap-3">
                 <Label htmlFor="username">Username</Label>
