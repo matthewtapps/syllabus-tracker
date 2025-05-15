@@ -1,3 +1,4 @@
+// In frontend/src/app/students-list/page.tsx
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { getStudents, type User } from '@/lib/api';
@@ -31,6 +32,7 @@ export default function StudentsList() {
   }, []);
 
   const filteredStudents = students.filter(student =>
+    !student.archived &&
     (student.display_name?.toLowerCase() || student.username.toLowerCase()).includes(filter.toLowerCase())
   );
 

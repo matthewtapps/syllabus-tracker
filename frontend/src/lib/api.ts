@@ -3,46 +3,11 @@ export interface LoginCredentials {
   password: string;
 }
 
-export interface User {
-  id: number;
-  username: string;
-  display_name: string;
-  role: string;
-}
-
 export interface LoginResponse {
   success: boolean;
   user?: User;
   error?: string;
   redirect_url?: string;
-}
-
-export interface Technique {
-  id: number;
-  technique_id: number;
-  technique_name: string;
-  technique_description: string;
-  status: "red" | "amber" | "green";
-  student_notes: string;
-  coach_notes: string;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface StudentTechniques {
-  student: User;
-  techniques: Technique[];
-  can_edit_all_techniques: boolean;
-  can_assign_techniques: boolean;
-  can_create_techniques: boolean;
-}
-
-export interface TechniqueUpdate {
-  status?: "red" | "amber" | "green";
-  student_notes?: string;
-  coach_notes?: string;
-  technique_name?: string;
-  technique_description?: string;
 }
 
 export async function login(
@@ -81,6 +46,15 @@ export async function logout(): Promise<void | null> {
   } catch (error) {
     return null;
   }
+}
+
+export interface User {
+  id: number;
+  username: string;
+  display_name: string;
+  role: string;
+  last_update?: string;
+  archived: boolean;
 }
 
 export async function getCurrentUser(): Promise<User | null> {
@@ -157,6 +131,26 @@ export async function createAndAssignTechnique(
   }
 }
 
+export interface Technique {
+  id: number;
+  technique_id: number;
+  technique_name: string;
+  technique_description: string;
+  status: "red" | "amber" | "green";
+  student_notes: string;
+  coach_notes: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface StudentTechniques {
+  student: User;
+  techniques: Technique[];
+  can_edit_all_techniques: boolean;
+  can_assign_techniques: boolean;
+  can_create_techniques: boolean;
+}
+
 export async function getStudentTechniques(
   studentId: number,
 ): Promise<StudentTechniques> {
@@ -169,6 +163,14 @@ export async function getStudentTechniques(
   }
 
   return await response.json();
+}
+
+export interface TechniqueUpdate {
+  status?: "red" | "amber" | "green";
+  student_notes?: string;
+  coach_notes?: string;
+  technique_name?: string;
+  technique_description?: string;
 }
 
 export async function updateTechnique(
@@ -189,8 +191,23 @@ export async function updateTechnique(
   }
 }
 
-export async function getStudents(): Promise<User[]> {
-  const response = await fetch("/api/students", {
+export async function getStudents(
+  sortBy?: string,
+  includeArchived: boolean = false,
+): Promise<User[]> {
+  let url = "/api/students?";
+
+  const params = new URLSearchParams();
+  if (sortBy) {
+    params.append("sort_by", sortBy);
+  }
+  if (includeArchived) {
+    params.append("include_archived", "true");
+  }
+
+  url += params.toString();
+
+  const response = await fetch(url, {
     credentials: "include",
   });
 
@@ -199,4 +216,92 @@ export async function getStudents(): Promise<User[]> {
   }
 
   return await response.json();
+}
+
+export interface ProfileUpdateData {
+  display_name: string;
+}
+
+export async function updateUserProfile(
+  data: ProfileUpdateData,
+): Promise<void> {
+  const response = await fetch("/api/profile", {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(data),
+    credentials: "include",
+  });
+
+  if (!response.ok) {
+    throw new Error("Failed to update profile");
+  }
+}
+
+export interface PasswordUpdateData {
+  current_password: string;
+  new_password: string;
+}
+
+export async function updatePassword(data: PasswordUpdateData): Promise<void> {
+  const response = await fetch("/api/change-password", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(data),
+    credentials: "include",
+  });
+
+  if (!response.ok) {
+    throw new Error("Failed to change password");
+  }
+}
+
+export interface UserRegistrationData {
+  username: string;
+  display_name: string;
+  password: string;
+  role: string;
+}
+
+export async function registerUser(data: UserRegistrationData): Promise<void> {
+  const response = await fetch("/api/register", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(data),
+    credentials: "include",
+  });
+
+  if (!response.ok) {
+    throw new Error("Failed to register user");
+  }
+}
+
+export interface UserUpdateData {
+  username?: string;
+  display_name?: string;
+  password?: string;
+  archived?: boolean;
+}
+
+export async function updateUser(
+  userId: number,
+  data: UserUpdateData,
+): Promise<void> {
+  const response = await fetch(`/api/admin/users/${userId}`, {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(data),
+    credentials: "include",
+  });
+
+  if (!response.ok) {
+    throw new Error("Failed to update user");
+  }
 }

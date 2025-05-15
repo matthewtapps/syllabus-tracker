@@ -1,5 +1,5 @@
 use crate::{
-    auth::{DbUser, DbUserSession, User, UserSession},
+    auth::{DbUser, DbUserSession, Role, User, UserSession},
     error::AppError,
 };
 use chrono::{NaiveDateTime, Utc};
@@ -592,4 +592,59 @@ pub async fn clean_expired_sessions(pool: &Pool<Sqlite>) -> Result<u64, AppError
         .await?;
 
     Ok(result.rows_affected())
+}
+
+#[derive(sqlx::FromRow)]
+pub struct UserWithActivityDto {
+    pub id: Option<i64>,
+    pub username: Option<String>,
+    pub role: Option<String>,
+    pub display_name: Option<String>,
+    pub archived: Option<bool>,
+    pub last_update: Option<String>,
+}
+
+#[instrument(skip(pool))]
+pub async fn get_students_by_recent_updates(
+    pool: &Pool<Sqlite>,
+    include_archived: bool,
+) -> Result<Vec<User>, AppError> {
+    let dtos = sqlx::query_as!(
+        UserWithActivityDto,
+        r#"
+        SELECT 
+            u.id, 
+            u.username, 
+            u.display_name, 
+            u.role, 
+            u.archived, 
+            MAX(st.updated_at) as last_update
+        FROM users u
+        LEFT JOIN student_techniques st ON u.id = st.student_id
+        WHERE u.role = 'student'
+        GROUP BY u.id
+        ORDER BY last_update DESC NULLS LAST
+        "#
+    )
+    .fetch_all(pool)
+    .await?;
+
+    // First collect into a Vec<User>
+    let users: Vec<User> = dtos
+        .into_iter()
+        .map(|dto| User {
+            id: dto.id.unwrap_or_default(),
+            username: dto.username.unwrap_or_default(),
+            role: Role::from_str(&dto.role.unwrap_or_default()).unwrap(),
+            display_name: dto.display_name.unwrap_or_default(),
+            archived: dto.archived.unwrap_or_default(),
+            last_update: dto.last_update,
+        })
+        .collect();
+
+    if include_archived {
+        Ok(users)
+    } else {
+        Ok(users.into_iter().filter(|user| !user.archived).collect())
+    }
 }

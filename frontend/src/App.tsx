@@ -9,6 +9,9 @@ import StudentsList from './app/students-list/page';
 import Dashboard from './app/dashboard/page';
 import { getCurrentUser } from './lib/api';
 import type { User } from './lib/api';
+import ProfilePage from './app/profile/page';
+import RegisterUserPage from './app/registration/page';
+import AdminPage from './app/admin/page';
 
 function App() {
   const [user, setUser] = useState<User | null>(null);
@@ -69,7 +72,30 @@ function App() {
               path="/dashboard"
               element={user ? <Dashboard user={user} /> : <Navigate to="/login" replace />}
             />
+            <Route
+              path="/profile"
+              element={user ? <ProfilePage /> : <Navigate to="/login" replace />}
+            />
+            <Route
+              path="/register-user"
+              element={
+                user && (user.role === 'coach' || user.role === 'Coach' || user.role === 'admin' || user.role === 'Admin')
+                  ? <RegisterUserPage />
+                  : <Navigate to="/login" replace />
+              }
+            />
+
+
+            <Route
+              path="/admin"
+              element={
+                user && (user.role === 'admin')
+                  ? <AdminPage />
+                  : <Navigate to="/login" replace />
+              }
+            />
             <Route path="/" element={<Navigate to={user ? "/dashboard" : "/login"} replace />} />
+
           </Routes>
         </Layout>
         <Toaster />

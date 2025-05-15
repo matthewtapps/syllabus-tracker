@@ -1,0 +1,50 @@
+{
+  "db_name": "SQLite",
+  "query": "\n        SELECT \n            u.id, \n            u.username, \n            u.display_name, \n            u.role, \n            u.archived, \n            MAX(st.updated_at) as last_update\n        FROM users u\n        LEFT JOIN student_techniques st ON u.id = st.student_id\n        WHERE u.role = 'student'\n        GROUP BY u.id\n        ORDER BY last_update DESC NULLS LAST\n        ",
+  "describe": {
+    "columns": [
+      {
+        "name": "id",
+        "ordinal": 0,
+        "type_info": "Integer"
+      },
+      {
+        "name": "username",
+        "ordinal": 1,
+        "type_info": "Text"
+      },
+      {
+        "name": "display_name",
+        "ordinal": 2,
+        "type_info": "Text"
+      },
+      {
+        "name": "role",
+        "ordinal": 3,
+        "type_info": "Text"
+      },
+      {
+        "name": "archived",
+        "ordinal": 4,
+        "type_info": "Bool"
+      },
+      {
+        "name": "last_update",
+        "ordinal": 5,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      true,
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "004f2f7c0d7d5b2a7d5b2c1847debf3bdb4ad1056999fe738ca0a4d05f01aba9"
+}

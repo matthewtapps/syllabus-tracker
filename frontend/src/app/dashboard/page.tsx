@@ -92,7 +92,7 @@ export default function Dashboard({ user }: DashboardProps) {
             <p>Update your display name, password, and other settings.</p>
           </CardContent>
           <CardFooter>
-            <Button variant="outline" onClick={() => navigate('/profile')}>Edit Profile</Button>
+            <Button onClick={() => navigate('/profile')}>Edit Profile</Button>
           </CardFooter>
         </Card>
       </div>

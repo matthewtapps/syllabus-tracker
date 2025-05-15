@@ -1,3 +1,4 @@
+use rocket::FromForm;
 use rocket::State;
 use rocket::fs::NamedFile;
 use rocket::http::Status;
@@ -6,11 +7,16 @@ use rocket::serde::{Deserialize, Serialize, json::Json};
 use sqlx::{Pool, Sqlite};
 
 use crate::auth::{Permission, User};
+use crate::db::create_user;
+use crate::db::set_user_archived;
+use crate::db::update_user_display_name;
+use crate::db::update_user_password;
+use crate::db::update_username;
 use crate::db::{
     add_techniques_to_student, authenticate_user, create_and_assign_technique, create_user_session,
-    get_student_technique, get_student_techniques, get_unassigned_techniques, get_user,
-    get_user_by_username, get_users_by_role, invalidate_session, update_student_notes,
-    update_student_technique, update_technique,
+    get_student_technique, get_student_techniques, get_students_by_recent_updates,
+    get_unassigned_techniques, get_user, get_user_by_username, get_users_by_role,
+    invalidate_session, update_student_notes, update_student_technique, update_technique,
 };
 use crate::models::Technique;
 
@@ -34,6 +40,8 @@ pub struct UserData {
     username: String,
     display_name: String,
     role: String,
+    last_update: Option<String>,
+    archived: bool,
 }
 
 impl From<User> for UserData {
@@ -43,6 +51,8 @@ impl From<User> for UserData {
             username: user.username.clone(),
             display_name: user.display_name.clone(),
             role: user.role.to_string(),
+            last_update: user.last_update.clone(),
+            archived: user.archived,
         }
     }
 }
@@ -139,6 +149,8 @@ pub async fn api_login(
                                 username: user.username.clone(),
                                 display_name: user.display_name.clone(),
                                 role: user.role.to_string(),
+                                last_update: None,
+                                archived: false,
                             }),
                             error: None,
                             redirect_url: Some(redirect_url),
@@ -277,16 +289,26 @@ pub async fn api_update_student_technique(
     Err(Status::BadRequest)
 }
 
-#[get("/students")]
+#[derive(FromForm)]
+pub struct StudentsQueryParams {
+    sort_by: Option<String>,
+    include_archived: Option<bool>,
+}
+
+#[get("/students?<params..>")]
 pub async fn api_get_students(
+    params: StudentsQueryParams,
     user: User,
     db: &State<Pool<Sqlite>>,
 ) -> Result<Json<Vec<UserData>>, Status> {
-    if !user.has_permission(Permission::ViewAllStudents) {
-        return Err(Status::Forbidden);
-    }
+    user.require_permission(Permission::ViewAllStudents)?;
 
-    let students = get_users_by_role(db, "student", false).await?;
+    let include_archived = params.include_archived.unwrap_or(false);
+
+    let students = match params.sort_by.as_deref() {
+        Some("recent_update") => get_students_by_recent_updates(db, include_archived).await?,
+        _ => get_users_by_role(db, "student", include_archived).await?,
+    };
 
     let student_responses: Vec<UserData> = students
         .iter()
@@ -295,6 +317,8 @@ pub async fn api_get_students(
             username: s.username.clone(),
             display_name: s.display_name.clone(),
             role: s.role.to_string(),
+            last_update: s.last_update.clone(),
+            archived: s.archived,
         })
         .collect();
 
@@ -394,4 +418,105 @@ pub async fn api_logout(
     cookies.remove_private(rocket::http::Cookie::build("user_role"));
 
     Redirect::to("/ui/")
+}
+
+#[derive(Deserialize)]
+pub struct ProfileUpdateRequest {
+    display_name: String,
+}
+
+#[derive(Deserialize)]
+pub struct PasswordChangeRequest {
+    current_password: String,
+    new_password: String,
+}
+
+#[derive(Deserialize)]
+pub struct UserRegistrationRequest {
+    username: String,
+    display_name: String,
+    password: String,
+}
+
+#[put("/profile", data = "<profile>")]
+pub async fn api_update_profile(
+    profile: Json<ProfileUpdateRequest>,
+    user: User,
+    db: &State<Pool<Sqlite>>,
+) -> Result<Status, Status> {
+    update_user_display_name(db, user.id, &profile.display_name).await?;
+
+    Ok(Status::Ok)
+}
+
+#[post("/change-password", data = "<password>")]
+pub async fn api_change_password(
+    password: Json<PasswordChangeRequest>,
+    user: User,
+    db: &State<Pool<Sqlite>>,
+) -> Result<Status, Status> {
+    let is_valid = authenticate_user(db, &user.username, &password.current_password).await?;
+
+    if !is_valid {
+        return Err(Status::Unauthorized);
+    }
+
+    update_user_password(db, user.id, &password.new_password).await?;
+
+    Ok(Status::Ok)
+}
+
+#[post("/register", data = "<registration>")]
+pub async fn api_register_user(
+    registration: Json<UserRegistrationRequest>,
+    user: User,
+    db: &State<Pool<Sqlite>>,
+) -> Result<Status, Status> {
+    user.require_permission(Permission::RegisterUsers)?;
+
+    create_user(
+        db,
+        &registration.username,
+        &registration.password,
+        &registration.display_name,
+    )
+    .await?;
+
+    Ok(Status::Created)
+}
+
+#[derive(Deserialize)]
+pub struct UserUpdateRequest {
+    username: Option<String>,
+    display_name: Option<String>,
+    password: Option<String>,
+    archived: Option<bool>,
+}
+
+#[put("/admin/users/<id>", data = "<update>")]
+pub async fn api_update_user(
+    id: i64,
+    update: Json<UserUpdateRequest>,
+    user: User,
+    db: &State<Pool<Sqlite>>,
+) -> Result<Status, Status> {
+    user.require_permission(Permission::EditUserCredentials)?;
+
+    if let Some(username) = &update.username {
+        update_username(db, id, username).await?;
+    }
+
+    if let Some(display_name) = &update.display_name {
+        update_user_display_name(db, id, display_name).await?;
+    }
+
+    if let Some(password) = &update.password {
+        update_user_password(db, id, password).await?;
+    }
+
+    if let Some(archived) = update.archived {
+        set_user_archived(db, id, archived).await?;
+    }
+
+    Ok(Status::Ok)
 }

@@ -12,9 +12,10 @@ mod telemetry;
 mod test;
 
 use api::{
-    api_assign_techniques, api_create_and_assign_technique, api_get_student_techniques,
-    api_get_students, api_get_unassigned_techniques, api_login, api_logout, api_me,
-    api_me_unauthorized, api_update_student_technique, serve_spa_fallback, serve_spa_fallback_2,
+    api_assign_techniques, api_change_password, api_create_and_assign_technique,
+    api_get_student_techniques, api_get_students, api_get_unassigned_techniques, api_login,
+    api_logout, api_me, api_me_unauthorized, api_register_user, api_update_profile,
+    api_update_student_technique, api_update_user, serve_spa_fallback, serve_spa_fallback_2,
 };
 use auth::{Permission, Role};
 use auth::{forbidden, login, logout, process_login, process_register, register, unauthorized};
@@ -127,16 +128,16 @@ pub async fn init_rocket(pool: SqlitePool) -> Rocket<Build> {
                 api_get_students,
                 api_get_unassigned_techniques,
                 api_assign_techniques,
-                api_create_and_assign_technique
+                api_create_and_assign_technique,
+                api_register_user,
+                api_change_password,
+                api_update_profile,
+                api_update_user
             ],
         )
         .mount("/ui", FileServer::new(relative!("/frontend/dist")).rank(1))
         .mount("/ui", routes![serve_spa_fallback])
         .mount("/ui/assets", FileServer::new("frontend/dist/assets"))
-        // .mount(
-        //     "/ui/assets",
-        //     FileServer::new(relative!("frontend/dist/assets")),
-        // )
         .mount(
             "/",
             routes![

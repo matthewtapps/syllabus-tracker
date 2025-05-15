@@ -69,6 +69,10 @@ export function NavBar({ user, onLogout }: NavBarProps) {
                   <NavItem to="/students" label="Students" />
                 )}
 
+                {(isCoach || isAdmin) && (
+                  <NavItem to="/register-user" label="New User" />
+                )}
+
                 {isAdmin && (
                   <NavItem to="/admin" label="Admin" />
                 )}
@@ -131,6 +135,10 @@ export function NavBar({ user, onLogout }: NavBarProps) {
 
                       {(isCoach || isAdmin) && (
                         <NavItem to="/students" label="Students" />
+                      )}
+
+                      {(isCoach || isAdmin) && (
+                        <NavItem to="/register-user" label="New User" />
                       )}
 
                       {isAdmin && (
