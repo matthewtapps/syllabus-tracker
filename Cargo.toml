@@ -26,7 +26,6 @@ bcrypt = "0.15.0"  # For password hashing
 opentelemetry_sdk = { version = "0.29.0", features = ["logs", "trace", "rt-tokio"] }
 tracing = { version = "0.1.41", features = ["std", "attributes"] }
 tracing-subscriber = { version = "0.3.19", features = ["env-filter", "registry", "std", "fmt"] }
-opentelemetry-stdout = { version = "0.29.0", features = ["logs", "trace"] }
 opentelemetry-otlp = { version = "0.29.0", features = ["metrics", "trace", "grpc-tonic", "tls", "tls-roots", "tls-webpki-roots"] }
 opentelemetry = { version = "0.29.1", features = ["trace"] }
 opentelemetry-semantic-conventions = { version = "0.29.0", features = ["semconv_experimental"] }
@@ -40,4 +39,3 @@ either = "1.15.0"
 env_logger = "0.11.8"
 rand = "0.9.1"
 uuid = { version = "1.16.0", features = ["v4"] }
-parse_datetime = "0.9.0"

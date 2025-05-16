@@ -23,15 +23,16 @@
             allowUnfree = true;
           };
         };
-        toolchain = pkgs.rust-bin.beta.latest.minimal.override {
-          targets = [
-            "x86_64-unknown-linux-gnu"
+        rust = pkgs.rust-bin.stable.latest.default.override {
+          extensions = [
+            "rust-analyzer"
           ];
+          targets = [ "x86_64-unknown-linux-gnu" ];
         };
       in
       with pkgs;
       {
-        devShells.default = pkgs.mkShell {
+        devShells.default = mkShell {
           buildInputs = [
             python313Packages.sqlfmt
             sqlfluff
@@ -46,11 +47,7 @@
             sqlite
             docker-buildx
 
-            rustc
-            rust-analyzer
-            rustfmt
-            clippy
-            cargo
+            rust
 
             openssl
             pkg-config
@@ -69,8 +66,6 @@
         NIX_LD = lib.fileContents "${stdenv.cc}/nix-support/dynamic-linker";
 
         COMPOSE_BAKE = true;
-
-        RUST_SRC_PATH = "${toolchain}/lib/rustlib/src/rust/library";
 
       }
     );
