@@ -95,76 +95,6 @@ jobs:
 
           buildevents step $TRACE_ID $STEP_ID $STEP_START $STEP_ID
 
-  test:
-    needs: check-changes
-    runs-on: ubuntu-latest
-
-    steps:
-      - uses: honeycombio/gha-buildevents@v2
-        with:
-          apikey: ${{ secrets.HONEYCOMB_API_KEY }}
-          dataset: syllabus-tracker-build-events
-
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Set up Rust
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-          override: true
-          components: rustfmt, clippy
-
-      - name: Cache dependencies
-        uses: actions/cache@v3
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-
-      - name: Create frontend dist directory for tests
-        run: mkdir -p frontend/dist/assets
-
-      - name: Set test start time
-        id: test-start
-        run: |
-          echo "STEP_START=$(date +%s)" >> $GITHUB_OUTPUT
-          echo "STEP_ID=run_tests" >> $GITHUB_OUTPUT
-
-      - name: Run cargo fmt check
-        run: |
-          cargo fmt --all -- --check
-          echo " fmt_passed=true" >> $BUILDEVENT_FILE
-
-      - name: Run cargo clippy
-        run: |
-          cargo clippy -- -D warnings
-          echo " clippy_passed=true" >> $BUILDEVENT_FILE
-        env:
-          SQLX_OFFLINE: "true"
-
-      - name: Run tests
-        run: |
-          echo "Contents of .sqlx directory:"
-          find .sqlx -type f | sort
-          echo "Number of query files: $(find .sqlx -type f | wc -l)"
-
-          cargo test
-          echo " tests_passed=true" >> $BUILDEVENT_FILE
-        env:
-          SQLX_OFFLINE: "true"
-
-      - name: Log test results to telemetry
-        run: |
-          STEP_ID=$(echo "${{ steps.test-start.outputs.STEP_ID }}")
-          STEP_START=$(echo "${{ steps.test-start.outputs.STEP_START }}")
-
-          buildevents step $TRACE_ID $STEP_ID $STEP_START $STEP_ID
-
   build-frontend:
     needs: check-changes
     runs-on: ubuntu-latest
@@ -230,6 +160,79 @@ jobs:
         run: |
           STEP_ID=$(echo "${{ steps.build-frontend.outputs.STEP_ID }}")
           STEP_START=$(echo "${{ steps.build-frontend.outputs.STEP_START }}")
+          buildevents step $TRACE_ID $STEP_ID $STEP_START $STEP_ID
+
+  test:
+    needs: [ check-changes, build-frontend ]
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: honeycombio/gha-buildevents@v2
+        with:
+          apikey: ${{ secrets.HONEYCOMB_API_KEY }}
+          dataset: syllabus-tracker-build-events
+
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+          components: rustfmt, clippy
+
+      - name: Cache dependencies
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Download frontend dist
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-dist
+          path: frontend/dist
+
+      - name: Set test start time
+        id: test-start
+        run: |
+          echo "STEP_START=$(date +%s)" >> $GITHUB_OUTPUT
+          echo "STEP_ID=run_tests" >> $GITHUB_OUTPUT
+
+      - name: Run cargo fmt check
+        run: |
+          cargo fmt --all -- --check
+          echo " fmt_passed=true" >> $BUILDEVENT_FILE
+
+      - name: Run cargo clippy
+        run: |
+          cargo clippy -- -D warnings
+          echo " clippy_passed=true" >> $BUILDEVENT_FILE
+        env:
+          SQLX_OFFLINE: "true"
+
+      - name: Run tests
+        run: |
+          echo "Contents of .sqlx directory:"
+          find .sqlx -type f | sort
+          echo "Number of query files: $(find .sqlx -type f | wc -l)"
+
+          cargo test
+          echo " tests_passed=true" >> $BUILDEVENT_FILE
+        env:
+          SQLX_OFFLINE: "true"
+
+      - name: Log test results to telemetry
+        run: |
+          STEP_ID=$(echo "${{ steps.test-start.outputs.STEP_ID }}")
+          STEP_START=$(echo "${{ steps.test-start.outputs.STEP_START }}")
+
           buildevents step $TRACE_ID $STEP_ID $STEP_START $STEP_ID
 
   build:

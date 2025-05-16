@@ -11,7 +11,6 @@ export default defineConfig({
       "@": path.resolve(__dirname, "./src"),
     },
   },
-  base: "/ui", // This ensures assets are loaded from the correct path
   build: {
     outDir: "dist",
     manifest: true,

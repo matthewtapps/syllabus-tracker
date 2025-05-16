@@ -26,22 +26,22 @@ pub struct LoginRequest {
     password: String,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 pub struct LoginResponse {
-    success: bool,
-    user: Option<UserData>,
-    error: Option<String>,
-    redirect_url: Option<String>,
+    pub success: bool,
+    pub user: Option<UserData>,
+    pub error: Option<String>,
+    pub redirect_url: Option<String>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct UserData {
-    id: i64,
-    username: String,
-    display_name: String,
-    role: String,
-    last_update: Option<String>,
-    archived: bool,
+    pub id: i64,
+    pub username: String,
+    pub display_name: String,
+    pub role: String,
+    pub last_update: Option<String>,
+    pub archived: bool,
 }
 
 impl From<User> for UserData {
@@ -57,33 +57,33 @@ impl From<User> for UserData {
     }
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 pub struct TechniqueResponse {
-    id: i64,
-    technique_id: i64,
-    technique_name: String,
-    technique_description: String,
-    status: String,
-    student_notes: String,
-    coach_notes: String,
-    created_at: String,
-    updated_at: String,
+    pub id: i64,
+    pub technique_id: i64,
+    pub technique_name: String,
+    pub technique_description: String,
+    pub status: String,
+    pub student_notes: String,
+    pub coach_notes: String,
+    pub created_at: String,
+    pub updated_at: String,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 pub struct StudentResponse {
-    id: i64,
-    username: String,
-    display_name: String,
+    pub id: i64,
+    pub username: String,
+    pub display_name: String,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 pub struct StudentTechniquesResponse {
-    student: StudentResponse,
-    techniques: Vec<TechniqueResponse>,
-    can_edit_all_techniques: bool,
-    can_assign_techniques: bool,
-    can_create_techniques: bool,
+    pub student: StudentResponse,
+    pub techniques: Vec<TechniqueResponse>,
+    pub can_edit_all_techniques: bool,
+    pub can_assign_techniques: bool,
+    pub can_create_techniques: bool,
 }
 
 #[post("/login", data = "<login>")]
@@ -388,13 +388,8 @@ pub async fn api_me_unauthorized() -> Status {
     Status::Unauthorized
 }
 
-#[get("/<_..>", rank = 2)]
+#[get("/<_..>", rank = 1000)]
 pub async fn serve_spa_fallback() -> Option<NamedFile> {
-    NamedFile::open("./frontend/dist/index.html").await.ok()
-}
-
-#[get("/ui")]
-pub async fn serve_spa_fallback_2() -> Option<NamedFile> {
     NamedFile::open("./frontend/dist/index.html").await.ok()
 }
 
@@ -478,7 +473,8 @@ pub async fn api_register_user(
         db,
         &registration.username,
         &registration.password,
-        &registration.display_name,
+        user.role.as_str(),
+        Some(&registration.display_name),
     )
     .await?;
 
@@ -519,4 +515,9 @@ pub async fn api_update_user(
     }
 
     Ok(Status::Ok)
+}
+
+#[get("/health")]
+pub fn health() -> &'static str {
+    "OK"
 }

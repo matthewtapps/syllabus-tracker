@@ -6,7 +6,6 @@ mod auth;
 mod db;
 mod error;
 mod models;
-mod routes;
 mod telemetry;
 #[cfg(test)]
 mod test;
@@ -15,32 +14,17 @@ use api::{
     api_assign_techniques, api_change_password, api_create_and_assign_technique,
     api_get_student_techniques, api_get_students, api_get_unassigned_techniques, api_login,
     api_logout, api_me, api_me_unauthorized, api_register_user, api_update_profile,
-    api_update_student_technique, api_update_user, serve_spa_fallback, serve_spa_fallback_2,
+    api_update_student_technique, api_update_user, health, serve_spa_fallback,
 };
-use auth::{Permission, Role};
-use auth::{forbidden, login, logout, process_login, process_register, register, unauthorized};
+use auth::{forbidden, unauthorized, unauthorized_api};
 use db::clean_expired_sessions;
 use error::{AppError, internal_server_error};
 use rocket::fs::{FileServer, relative};
 use rocket::{Build, Rocket, tokio};
-use rocket_dyn_templates::Template;
-use rocket_dyn_templates::handlebars::Context;
-use rocket_dyn_templates::handlebars::Handlebars;
-use rocket_dyn_templates::handlebars::Helper;
-use rocket_dyn_templates::handlebars::HelperResult;
-use rocket_dyn_templates::handlebars::Output;
-use rocket_dyn_templates::handlebars::RenderContext;
-use rocket_dyn_templates::handlebars::RenderErrorReason;
 use telemetry::TelemetryFairing;
 use telemetry::init_tracing;
 use thiserror::Error;
 
-use routes::{
-    add_multiple_techniques_to_student, add_technique_to_student, admin_archive_user,
-    admin_edit_user, admin_process_edit_user, admin_users, create_and_assign_technique_route,
-    health, index, index_anon, profile, student_techniques, update_name, update_password,
-    update_student_technique_route, update_username_route,
-};
 use sqlx::SqlitePool;
 use tracing::info;
 
@@ -135,144 +119,15 @@ pub async fn init_rocket(pool: SqlitePool) -> Rocket<Build> {
                 api_update_user
             ],
         )
-        .mount("/ui", FileServer::new(relative!("/frontend/dist")).rank(1))
-        .mount("/ui", routes![serve_spa_fallback])
-        .mount("/ui/assets", FileServer::new("frontend/dist/assets"))
-        .mount(
-            "/",
-            routes![
-                index,
-                index_anon,
-                student_techniques,
-                update_student_technique_route,
-                add_technique_to_student,
-                add_multiple_techniques_to_student,
-                create_and_assign_technique_route,
-                login,
-                process_login,
-                logout,
-                register,
-                process_register,
-                profile,
-                update_name,
-                update_password,
-                update_username_route,
-                admin_users,
-                admin_edit_user,
-                admin_process_edit_user,
-                admin_archive_user,
-                health,
-                serve_spa_fallback_2
-            ],
-        )
+        .register("/api", catchers![unauthorized_api])
         .mount("/static", FileServer::new("static"))
+        .mount("/assets", FileServer::new("frontend/dist/assets"))
+        .mount("/", FileServer::new(relative!("/frontend/dist")).rank(100))
+        .mount("/", routes![health])
+        .mount("/", routes![serve_spa_fallback])
         .register(
             "/",
-            catchers![unauthorized, forbidden, internal_server_error],
+            catchers![forbidden, unauthorized, internal_server_error],
         )
         .attach(TelemetryFairing)
-        .attach(Template::custom(|engines| {
-            let honeycomb_api_key = std::env::var("HONEYCOMB_API_KEY").unwrap_or_default();
-
-            engines.handlebars.register_helper(
-                "honeycomb_api_key",
-                Box::new(
-                    move |_h: &Helper,
-                          _: &Handlebars,
-                          _: &Context,
-                          _: &mut RenderContext,
-                          out: &mut dyn Output| {
-                        out.write(&honeycomb_api_key)?;
-                        Ok(())
-                    },
-                ),
-            );
-
-            engines.handlebars.register_helper(
-                "has_permission",
-                Box::new(
-                    |h: &Helper,
-                     _: &Handlebars,
-                     _ctx: &Context,
-                     _: &mut RenderContext,
-                     out: &mut dyn Output|
-                     -> HelperResult {
-                        let user =
-                            h.param(0)
-                                .and_then(|v| v.value().as_object())
-                                .ok_or_else(|| {
-                                    RenderErrorReason::ParamNotFoundForName(
-                                        "has_permission",
-                                        "user".to_string(),
-                                    )
-                                })?;
-
-                        let permission_str =
-                            h.param(1).and_then(|v| v.value().as_str()).ok_or_else(|| {
-                                RenderErrorReason::ParamNotFoundForName(
-                                    "has_permission",
-                                    "permission".to_string(),
-                                )
-                            })?;
-
-                        let permission = match permission_str {
-                            "RegisterUsers" => Permission::RegisterUsers,
-                            "ViewAllStudents" => Permission::ViewAllStudents,
-                            "EditAllTechniques" => Permission::EditAllTechniques,
-                            "AssignTechniques" => Permission::AssignTechniques,
-                            "CreateTechniques" => Permission::CreateTechniques,
-                            _ => return Ok(()), // Unknown permission, return false
-                        };
-
-                        let role_str = user
-                            .get("role")
-                            .and_then(|v| match v {
-                                serde_json::Value::String(s) => Some(s.as_str()),
-                                serde_json::Value::Object(o) => {
-                                    o.get("type").and_then(|t| t.as_str())
-                                }
-                                _ => None,
-                            })
-                            .unwrap_or("student");
-
-                        let role = match role_str {
-                            "Coach" => Role::Coach,
-                            "Admin" => Role::Admin,
-                            _ => Role::Student,
-                        };
-
-                        if role.has_permission(permission) {
-                            out.write("true")?;
-                        }
-
-                        Ok(())
-                    },
-                ),
-            );
-
-            engines.handlebars.register_helper(
-                "and",
-                Box::new(
-                    |h: &Helper,
-                     _: &Handlebars,
-                     _: &Context,
-                     _: &mut RenderContext,
-                     out: &mut dyn Output|
-                     -> HelperResult {
-                        let params = h.params();
-                        let all_true = params.iter().all(|param| match param.value() {
-                            serde_json::Value::Bool(b) => *b,
-                            serde_json::Value::String(s) => s == "true",
-                            _ => false,
-                        });
-
-                        if all_true {
-                            out.write("true")?;
-                        }
-
-                        Ok(())
-                    },
-                ),
-            );
-        }))
 }

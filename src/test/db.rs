@@ -27,9 +27,10 @@ mod tests {
 
         let username = "test_user";
         let password = "password123";
+        let display_name = "Test User";
         let role = "student";
 
-        create_user(&pool, username, password, role)
+        create_user(&pool, username, password, role, Some(display_name))
             .await
             .expect("Failed to create test user");
 
