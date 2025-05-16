@@ -21,7 +21,7 @@ use crate::error::AppError;
 use crate::models::{StudentTechnique, Technique};
 
 pub enum IndexResponse {
-    Template(Template),
+    Template(Box<Template>),
     Redirect(Box<Redirect>),
     Error(Status),
 }
@@ -49,7 +49,7 @@ pub async fn index(user: User, db: &State<Pool<Sqlite>>) -> IndexResponse {
             }
 
             match get_users_by_role(db, "student", false).await {
-                Ok(students) => IndexResponse::Template(Template::render(
+                Ok(students) => IndexResponse::Template(Box::new(Template::render(
                     "index",
                     context! {
                         title: "Jiu Jitsu Syllabus Tracker",
@@ -57,7 +57,7 @@ pub async fn index(user: User, db: &State<Pool<Sqlite>>) -> IndexResponse {
                         current_user: user,
                         current_route: "home",
                     },
-                )),
+                ))),
                 Err(err) => {
                     err.log_and_record("Index page");
                     IndexResponse::Error(err.status_code())
