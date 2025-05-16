@@ -44,20 +44,7 @@ jobs:
             migrations/**
             .sqlx/**
             static/**
-            templates/**
-          files_ignore: |
-            **/*.md
-            .github/**
-            docker-compose*.yml
-            config/**
-            scripts/**
-            .envrc
-            .gitignore
-            nginx/**
-            **/*.png
-            **/*.ico
-            **/*.html
-            **/*.hbs
+            frontend/**
 
       - name: Log changed files information
         id: log-changed-files
@@ -65,18 +52,12 @@ jobs:
           STEP_ID=analyze_changed_files
           STEP_START=$(date +%s)
 
-          echo "Code changed: ${{ steps.changed-files.outputs.any_changed }}"
-
-          # Add patterns that were checked to telemetry
           echo " any_code_changed=${{ steps.changed-files.outputs.any_changed }}" >> $BUILDEVENT_FILE
 
-          # Add a count of changed files
-          FILE_COUNT=$(echo "${{ steps.changed-files.outputs.all_changed_files }}" | wc -w)
+          FILE_COUNT="${{ steps.changed-files.outputs.all_changed_files_count }}"
           echo " changed_files_count=${FILE_COUNT}" >> $BUILDEVENT_FILE
 
-          # Add the files that were detected as changed
           if [[ -n "${{ steps.changed-files.outputs.all_changed_files }}" ]]; then
-            # All changed files
             echo " changed_files=${{ steps.changed-files.outputs.all_changed_files }}" >> $BUILDEVENT_FILE
             
             # Add file types to help analyze what kind of changes
@@ -98,7 +79,6 @@ jobs:
   build-frontend:
     needs: check-changes
     runs-on: ubuntu-latest
-    if: needs.check-changes.outputs.code_changed == 'true'
 
     steps:
       - uses: honeycombio/gha-buildevents@v2
@@ -163,7 +143,7 @@ jobs:
           buildevents step $TRACE_ID $STEP_ID $STEP_START $STEP_ID
 
   test:
-    needs: [ check-changes, build-frontend ]
+    needs: [check-changes, build-frontend]
     runs-on: ubuntu-latest
 
     steps:
