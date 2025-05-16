@@ -251,6 +251,8 @@ pub async fn api_update_student_technique(
         if let Some(notes) = &technique.student_notes {
             update_student_notes(db, id, notes).await?;
         }
+
+        return Ok(Status::Ok);
     } else if can_edit_all {
         let status = technique.status.clone().unwrap_or(student_technique.status);
         let student_notes = technique
