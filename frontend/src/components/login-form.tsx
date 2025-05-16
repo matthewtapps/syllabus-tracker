@@ -54,25 +54,24 @@ export function LoginForm({
   }
 
   return (
-    <div className={cn("flex flex-col gap-6", className)} {...props}>
-      <Card className="overflow-hidden">
-        <CardContent className="p-0 flex flex-col md:grid md:grid-cols-2">
-          {/* Image section - appears at top on mobile, left side on desktop */}
+    <div className={cn("flex flex-col", className)} {...props}>
+      <Card className="overflow-hidden p-0">
+        <CardContent className="flex flex-col md:grid md:grid-cols-2 p-0">
           <div className="relative bg-muted aspect-square md:flex items-center justify-center">
-            <div className="absolute inset-0">
+            <div className="absolute">
               <img
                 src="/static/msb.jpg"
                 alt="Login"
-                className="h-full w-full object-cover"
+                className="h-full w-full"
               />
             </div>
           </div>
 
           {/* Form section */}
-          <form onSubmit={handleSubmit} className="p-6">
-            <div className="flex flex-col gap-6">
-              <div className="grid gap-3">
-                <Label htmlFor="username">Username</Label>
+          <form onSubmit={handleSubmit} className="md:aspect-square">
+            <div className="flex flex-col justify-center h-full p-6 space-y-4">
+              <div>
+                <Label className="mb-2 block" htmlFor="username">Username</Label>
                 <Input
                   id="username"
                   type="text"
@@ -81,10 +80,8 @@ export function LoginForm({
                   onChange={(e) => setUsername(e.target.value)}
                 />
               </div>
-              <div className="grid gap-3">
-                <div className="flex items-center">
-                  <Label htmlFor="password">Password</Label>
-                </div>
+              <div>
+                <Label htmlFor="password" className="mb-2 block">Password</Label>
                 <Input
                   id="password"
                   type="password"
@@ -100,11 +97,9 @@ export function LoginForm({
                 </div>
               )}
 
-              <div className="flex flex-col gap-3">
-                <Button type="submit" className="w-full" disabled={isLoading}>
-                  {isLoading ? "Logging in..." : "Login"}
-                </Button>
-              </div>
+              <Button type="submit" className="w-full" disabled={isLoading}>
+                {isLoading ? "Logging in..." : "Login"}
+              </Button>
             </div>
           </form>
         </CardContent>
