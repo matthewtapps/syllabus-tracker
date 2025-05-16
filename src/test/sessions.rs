@@ -5,7 +5,7 @@ mod tests {
             clean_expired_sessions, create_user_session, get_session_by_token, invalidate_session,
         },
         error::AppError,
-        test::test_db::TestDbBuilder,
+        test::test_utils::TestDbBuilder,
     };
     use chrono::{Duration, NaiveDateTime, Utc};
     use rocket::tokio;

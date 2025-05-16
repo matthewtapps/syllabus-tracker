@@ -385,6 +385,7 @@ pub async fn create_user(
     username: &str,
     password: &str,
     role: &str,
+    display_name: Option<&str>,
 ) -> Result<i64, AppError> {
     info!("Creating new user");
 
@@ -402,8 +403,9 @@ pub async fn create_user(
     let hashed_password = bcrypt::hash(password, bcrypt::DEFAULT_COST)?;
 
     let res = sqlx::query!(
-        "INSERT INTO users (username, password, role) VALUES (?, ?, ?)",
+        "INSERT INTO users (username, display_name, password, role) VALUES (?, ?, ?, ?)",
         username,
+        display_name,
         hashed_password,
         role
     )

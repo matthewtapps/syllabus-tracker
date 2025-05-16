@@ -1,12 +1,16 @@
 #[cfg(test)]
-pub mod test_db {
+pub mod test_utils {
     use crate::auth::Role;
     use crate::db::{
         assign_technique_to_student, create_technique, create_user, get_student_technique,
         update_student_technique,
     };
     use crate::error::AppError;
+    use crate::init_rocket;
     use crate::models::StudentTechnique;
+    use rocket::http::{ContentType, Cookie};
+    use rocket::local::asynchronous::Client;
+    use serde_json::json;
     use sqlx::{Pool, Sqlite, SqlitePool};
     use std::collections::HashMap;
     use std::sync::Once;
@@ -16,16 +20,16 @@ pub mod test_db {
     static STANDARD_PASSWORD: &str = "password123";
 
     #[derive(Default)]
-    pub struct TestDbBuilder {
-        users: Vec<TestUser>,
+    pub struct TestDbBuilder<'a> {
+        users: Vec<TestUser<'a>>,
         techniques: Vec<TestTechnique>,
         student_techniques: Vec<TestStudentTechnique>,
     }
 
     #[allow(dead_code)]
-    pub struct TestUser {
+    pub struct TestUser<'a> {
         pub username: String,
-        pub display_name: Option<String>,
+        pub display_name: Option<&'a str>,
         pub role: Role,
         pub password: String,
     }
@@ -44,35 +48,35 @@ pub mod test_db {
         pub coach_notes: String,
     }
 
-    impl TestDbBuilder {
+    impl<'a> TestDbBuilder<'a> {
         pub fn new() -> Self {
             Self::default()
         }
 
-        pub fn student(mut self, username: &str, display_name: Option<&str>) -> Self {
+        pub fn student(mut self, username: &str, display_name: Option<&'a str>) -> Self {
             self.users.push(TestUser {
                 username: username.to_string(),
-                display_name: display_name.map(String::from),
+                display_name,
                 role: Role::Student,
                 password: STANDARD_PASSWORD.to_string(),
             });
             self
         }
 
-        pub fn coach(mut self, username: &str, display_name: Option<&str>) -> Self {
+        pub fn coach(mut self, username: &str, display_name: Option<&'a str>) -> Self {
             self.users.push(TestUser {
                 username: username.to_string(),
-                display_name: display_name.map(String::from),
+                display_name,
                 role: Role::Coach,
                 password: STANDARD_PASSWORD.to_string(),
             });
             self
         }
 
-        pub fn admin(mut self, username: &str, display_name: Option<&str>) -> Self {
+        pub fn admin(mut self, username: &str, display_name: Option<&'a str>) -> Self {
             self.users.push(TestUser {
                 username: username.to_string(),
-                display_name: display_name.map(String::from),
+                display_name,
                 role: Role::Admin,
                 password: STANDARD_PASSWORD.to_string(),
             });
@@ -82,13 +86,13 @@ pub mod test_db {
         pub fn user_with_password(
             mut self,
             username: &str,
-            display_name: Option<&str>,
+            display_name: Option<&'a str>,
             role: Role,
             password: &str,
         ) -> Self {
             self.users.push(TestUser {
                 username: username.to_string(),
-                display_name: display_name.map(String::from),
+                display_name,
                 role,
                 password: password.to_string(),
             });
@@ -143,13 +147,14 @@ pub mod test_db {
             let mut technique_id_map: HashMap<String, i64> = HashMap::new();
 
             for user in &self.users {
-                let role_str = match user.role {
-                    Role::Student => "student",
-                    Role::Coach => "coach",
-                    Role::Admin => "admin",
-                };
-
-                let user_id = create_user(&pool, &user.username, &user.password, role_str).await?;
+                let user_id = create_user(
+                    &pool,
+                    &user.username,
+                    &user.password,
+                    user.role.as_str(),
+                    user.display_name,
+                )
+                .await?;
 
                 user_id_map.insert(user.username.clone(), user_id);
             }
@@ -319,5 +324,55 @@ pub mod test_db {
         pub async fn get_student_technique(&self, id: i64) -> Result<StudentTechnique, AppError> {
             get_student_technique(&self.pool, id).await
         }
+    }
+
+    pub async fn login_test_user(
+        client: &Client,
+        username: &str,
+        password: &str,
+    ) -> Vec<Cookie<'static>> {
+        let response = client
+            .post("/api/login")
+            .header(ContentType::JSON)
+            .body(
+                json!({
+                    "username": username,
+                    "password": password
+                })
+                .to_string(),
+            )
+            .dispatch()
+            .await;
+
+        response.cookies().iter().cloned().collect::<Vec<_>>()
+    }
+
+    pub async fn setup_test_client(test_db: TestDb) -> (Client, TestDb) {
+        let rocket = init_rocket(test_db.pool.clone()).await;
+
+        let client = Client::tracked(rocket)
+            .await
+            .expect("Failed to create Rocket test client");
+
+        (client, test_db)
+    }
+
+    pub async fn create_standard_test_db() -> TestDb {
+        TestDbBuilder::new()
+            .admin("admin_user", Some("Admin User"))
+            .coach("coach_user", Some("Coach User"))
+            .student("student_user", Some("Student User"))
+            .technique("Armbar", "Description of armbar", Some("coach_user"))
+            .technique("Triangle", "Description of triangle", Some("coach_user"))
+            .assign_technique(
+                Some("Armbar"),
+                Some("student_user"),
+                "red",
+                "Student notes",
+                "Coach notes",
+            )
+            .build()
+            .await
+            .expect("Failed to build test database")
     }
 }

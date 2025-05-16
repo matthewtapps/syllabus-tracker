@@ -6,7 +6,6 @@ mod auth;
 mod db;
 mod error;
 mod models;
-mod routes;
 mod telemetry;
 #[cfg(test)]
 mod test;
@@ -15,10 +14,10 @@ use api::{
     api_assign_techniques, api_change_password, api_create_and_assign_technique,
     api_get_student_techniques, api_get_students, api_get_unassigned_techniques, api_login,
     api_logout, api_me, api_me_unauthorized, api_register_user, api_update_profile,
-    api_update_student_technique, api_update_user, serve_spa_fallback, serve_spa_fallback_2,
+    api_update_student_technique, api_update_user, health, serve_spa_fallback,
 };
 use auth::{Permission, Role};
-use auth::{forbidden, login, logout, process_login, process_register, register, unauthorized};
+use auth::{forbidden, unauthorized};
 use db::clean_expired_sessions;
 use error::{AppError, internal_server_error};
 use rocket::fs::{FileServer, relative};
@@ -35,12 +34,6 @@ use telemetry::TelemetryFairing;
 use telemetry::init_tracing;
 use thiserror::Error;
 
-use routes::{
-    add_multiple_techniques_to_student, add_technique_to_student, admin_archive_user,
-    admin_edit_user, admin_process_edit_user, admin_users, create_and_assign_technique_route,
-    health, index, index_anon, profile, student_techniques, update_name, update_password,
-    update_student_technique_route, update_username_route,
-};
 use sqlx::SqlitePool;
 use tracing::info;
 
@@ -135,37 +128,37 @@ pub async fn init_rocket(pool: SqlitePool) -> Rocket<Build> {
                 api_update_user
             ],
         )
-        .mount("/ui", FileServer::new(relative!("/frontend/dist")).rank(1))
-        .mount("/ui", routes![serve_spa_fallback])
-        .mount("/ui/assets", FileServer::new("frontend/dist/assets"))
+        .mount("/", FileServer::new(relative!("/frontend/dist")).rank(1))
+        .mount("/static", FileServer::new("static").rank(2))
+        .mount("/", routes![serve_spa_fallback])
+        .mount("/assets", FileServer::new("frontend/dist/assets"))
         .mount(
             "/",
             routes![
-                index,
-                index_anon,
-                student_techniques,
-                update_student_technique_route,
-                add_technique_to_student,
-                add_multiple_techniques_to_student,
-                create_and_assign_technique_route,
-                login,
-                process_login,
-                logout,
-                register,
-                process_register,
-                profile,
-                update_name,
-                update_password,
-                update_username_route,
-                admin_users,
-                admin_edit_user,
-                admin_process_edit_user,
-                admin_archive_user,
+                // index,
+                // index_anon,
+                // student_techniques,
+                // update_student_technique_route,
+                // add_technique_to_student,
+                // add_multiple_techniques_to_student,
+                // create_and_assign_technique_route,
+                // login,
+                // process_login,
+                // logout,
+                // register,
+                // process_register,
+                // profile,
+                // update_name,
+                // update_password,
+                // update_username_route,
+                // admin_users,
+                // admin_edit_user,
+                // admin_process_edit_user,
+                // admin_archive_user,
                 health,
-                serve_spa_fallback_2
+                // serve_spa_fallback_2
             ],
         )
-        .mount("/static", FileServer::new("static"))
         .register(
             "/",
             catchers![unauthorized, forbidden, internal_server_error],

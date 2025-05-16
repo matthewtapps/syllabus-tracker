@@ -34,7 +34,6 @@ tracing-opentelemetry = "0.30.0"
 tonic = { version = "0.12.3", features = ["transport", "tls", "tls-roots", "tls-webpki-roots"] }
 once_cell = "1.21.3"
 opentelemetry-http = "0.29.0"
-urlencoding = "2.1.3"
 either = "1.15.0"
 env_logger = "0.11.8"
 rand = "0.9.1"

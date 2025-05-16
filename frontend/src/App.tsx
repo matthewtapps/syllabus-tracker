@@ -39,7 +39,7 @@ function App() {
       credentials: 'include'
     }).then(() => {
       setUser(null);
-      window.location.href = '/ui';
+      window.location.href = '/';
     });
   };
 
@@ -49,7 +49,7 @@ function App() {
 
   return (
     <ThemeProvider defaultTheme="dark" storageKey="vite-ui-theme">
-      <Router basename="/ui">
+      <Router>
         <Layout user={user} onLogout={handleLogout}>
           <Routes>
             <Route
