@@ -23,7 +23,8 @@ import {
   TableHeader,
   TableRow
 } from '@/components/ui/table';
-import { ChevronDownIcon, ChevronUpIcon } from 'lucide-react';
+import { ChevronDownIcon, ChevronUpIcon, PencilIcon } from 'lucide-react';
+import { Textarea } from '@/components/ui/textarea';
 
 interface StudentTechniquesProps {
   user: User
@@ -38,8 +39,11 @@ export default function StudentTechniques({ user }: StudentTechniquesProps) {
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [expandedRows, setExpandedRows] = useState<number[]>([]);
+  const [editingStudentNotes, setEditingStudentNotes] = useState<number | null>(null);
+  const [editingCoachNotes, setEditingCoachNotes] = useState<number | null>(null);
+  const [tempStudentNotes, setTempStudentNotes] = useState("");
+  const [tempCoachNotes, setTempCoachNotes] = useState("");
 
-  // Function to toggle row expansion
   const toggleRow = (techniqueId: number) => {
     if (expandedRows.includes(techniqueId)) {
       setExpandedRows(expandedRows.filter(id => id !== techniqueId));
@@ -94,7 +98,7 @@ export default function StudentTechniques({ user }: StudentTechniquesProps) {
   const getStatusBgStyles = (status: string) => {
     switch (status) {
       case 'red':
-        return ''; // No background for 'red' status
+        return '';
       case 'amber':
         return 'bg-amber-50 dark:bg-amber-950/30';
       case 'green':
@@ -104,7 +108,6 @@ export default function StudentTechniques({ user }: StudentTechniquesProps) {
     }
   };
 
-  // Get border color based on status
   const getStatusBorderColor = (status: string) => {
     switch (status) {
       case 'red':
@@ -118,7 +121,6 @@ export default function StudentTechniques({ user }: StudentTechniquesProps) {
     }
   };
 
-  // Format date to a more readable format
   const formatDate = (dateString: string) => {
     try {
       const date = new Date(dateString);
@@ -151,7 +153,7 @@ export default function StudentTechniques({ user }: StudentTechniquesProps) {
       </h1>
 
       <Card className="overflow-hidden p-0">
-        <CardContent className="p-0">
+        <CardContent className="p-0 overflow-hidden">
           <Table>
             <TableHeader>
               <TableRow className="bg-muted/30">
@@ -164,7 +166,7 @@ export default function StudentTechniques({ user }: StudentTechniquesProps) {
               {data.techniques.map((technique: Technique) => (
                 <React.Fragment key={technique.id}>
                   <TableRow
-                    className={`hover:cursor-pointer [&>*]:transition-all [&>*]:duration-500 ${expandedRows.includes(technique.id) ? "bg-muted/20" : ""
+                    className={`[&>*]:transition-all [&>*]:duration-300 ${expandedRows.includes(technique.id) ? "bg-muted/20 [&>*]:py-4" : "[&>*]:py-2"
                       } ${getStatusBgStyles(technique.status)} !border-l-4 ${getStatusBorderColor(technique.status)}`}
                     onClick={() => toggleRow(technique.id)}
                   >
@@ -187,26 +189,161 @@ export default function StudentTechniques({ user }: StudentTechniquesProps) {
                   </TableRow>
 
                   {expandedRows.includes(technique.id) && (
-                    <TableRow
-                      className={`!border-l-4 ${getStatusBorderColor(technique.status)}`}
-                    >
-                      <TableCell
-                        colSpan={3}
-                        className={`p-6 animate-in slide-in-from-top-2 duration-500`}
-                      >
+                    <TableRow className={`!border-l-4 ${getStatusBorderColor(technique.status)}`} >
+                      <TableCell colSpan={3} >
                         <div className="mb-6">
                           <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-2">Description</h3>
                           <p className="whitespace-pre-wrap">{technique.technique_description}</p>
                         </div>
 
                         <div className="mb-6">
-                          <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-2">Student Notes</h3>
-                          <p className="whitespace-pre-wrap">{technique.student_notes || "No notes yet"}</p>
+                          <div className="flex justify-between items-center mb-2">
+                            <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400">Student Notes</h3>
+                            {(user?.id === data.student.id || data.can_edit_all_techniques) && (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-6 w-6"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  if (editingStudentNotes !== technique.id) {
+                                    setEditingStudentNotes(technique.id);
+                                    setTempStudentNotes(technique.student_notes);
+                                  }
+                                }}
+                              >
+                                <PencilIcon className="h-4 w-4" />
+                                <span className="sr-only">Edit student notes</span>
+                              </Button>
+                            )}
+                          </div>
+
+                          {editingStudentNotes === technique.id ? (
+                            <div className="space-y-2">
+                              <Textarea
+                                value={tempStudentNotes}
+                                onChange={(e) => setTempStudentNotes(e.target.value)}
+                                className="min-h-[100px]"
+                                onClick={(e) => e.stopPropagation()}
+                              />
+                              <div className="flex justify-end gap-2">
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setEditingStudentNotes(null);
+                                  }}
+                                >
+                                  Cancel
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  onClick={async (e) => {
+                                    e.stopPropagation();
+                                    try {
+                                      await updateTechnique(technique.id, { student_notes: tempStudentNotes });
+
+                                      if (data) {
+                                        const updatedTechniques = data.techniques.map((t: Technique) =>
+                                          t.id === technique.id ? { ...t, student_notes: tempStudentNotes } : t
+                                        );
+                                        setData({
+                                          ...data,
+                                          techniques: updatedTechniques
+                                        });
+                                      }
+
+                                      toast.success("Student notes updated");
+                                      setEditingStudentNotes(null);
+                                    } catch (err) {
+                                      toast.error("Failed to update notes");
+                                      console.error(err);
+                                    }
+                                  }}
+                                >
+                                  Save
+                                </Button>
+                              </div>
+                            </div>
+                          ) : (
+                            <p className="whitespace-pre-wrap">{technique.student_notes || "No notes yet"}</p>
+                          )}
                         </div>
 
                         <div className="mb-6">
-                          <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-2">Coach Notes</h3>
-                          <p className="whitespace-pre-wrap">{technique.coach_notes || "No notes yet"}</p>
+                          <div className="flex justify-between items-center mb-2">
+                            <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400">Coach Notes</h3>
+                            {data.can_edit_all_techniques && (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-6 w-6"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  if (editingCoachNotes !== technique.id) {
+                                    setEditingCoachNotes(technique.id);
+                                    setTempCoachNotes(technique.coach_notes);
+                                  }
+                                }}
+                              >
+                                <PencilIcon className="h-4 w-4" />
+                                <span className="sr-only">Edit coach notes</span>
+                              </Button>
+                            )}
+                          </div>
+
+                          {editingCoachNotes === technique.id ? (
+                            <div className="space-y-2">
+                              <Textarea
+                                value={tempCoachNotes}
+                                onChange={(e) => setTempCoachNotes(e.target.value)}
+                                className="min-h-[100px]"
+                                onClick={(e) => e.stopPropagation()}
+                              />
+                              <div className="flex justify-end gap-2">
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setEditingCoachNotes(null);
+                                  }}
+                                >
+                                  Cancel
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  onClick={async (e) => {
+                                    e.stopPropagation();
+                                    try {
+                                      await updateTechnique(technique.id, { coach_notes: tempCoachNotes });
+
+                                      if (data) {
+                                        const updatedTechniques = data.techniques.map((t: Technique) =>
+                                          t.id === technique.id ? { ...t, coach_notes: tempCoachNotes } : t
+                                        );
+                                        setData({
+                                          ...data,
+                                          techniques: updatedTechniques
+                                        });
+                                      }
+
+                                      toast.success("Coach notes updated");
+                                      setEditingCoachNotes(null);
+                                    } catch (err) {
+                                      toast.error("Failed to update notes");
+                                      console.error(err);
+                                    }
+                                  }}
+                                >
+                                  Save
+                                </Button>
+                              </div>
+                            </div>
+                          ) : (
+                            <p className="whitespace-pre-wrap">{technique.coach_notes || "No notes yet"}</p>
+                          )}
                         </div>
 
                         <div className="mt-4">
@@ -276,7 +413,7 @@ export default function StudentTechniques({ user }: StudentTechniquesProps) {
                 onAssignComplete={() => {
                   getStudentTechniques(parseInt(id || '0', 10)).then(result => {
                     setData(result);
-                    setIsAddDialogOpen(false); // Close the dialog after success
+                    setIsAddDialogOpen(false);
                   });
                 }}
               />
