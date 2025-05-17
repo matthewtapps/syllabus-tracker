@@ -236,10 +236,8 @@ jobs:
         with:
           apikey: ${{ secrets.HONEYCOMB_API_KEY }}
           dataset: syllabus-tracker-build-events
-          # Provide status in the final job to end the trace properly
           status: ${{ env.WORKFLOW_CONCLUSION }}
-          # Reference the trace-start from the first job
-          trace-start: ${{ needs.check-changes.outputs.trace_start }}
+          trace-start: ${{ needs.build-frontend.outputs.trace_start }}
 
       - name: Checkout code
         uses: actions/checkout@v4
