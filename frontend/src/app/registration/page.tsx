@@ -7,6 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { toast } from 'sonner';
 import { registerUser } from '@/lib/api';
 import { useNavigate } from 'react-router-dom';
+import { TracedForm } from '@/components/traced-form';
 
 export default function RegisterUserPage() {
   const [username, setUsername] = useState('');
@@ -58,7 +59,7 @@ export default function RegisterUserPage() {
             <CardTitle>Create Account</CardTitle>
             <CardDescription>Add a new user to the system</CardDescription>
           </CardHeader>
-          <form onSubmit={handleSubmit}>
+          <TracedForm id="register_user" onSubmit={handleSubmit}>
             <CardContent className="space-y-6">
               <div className="space-y-2">
                 <Label htmlFor="username">Username</Label>
@@ -119,7 +120,7 @@ export default function RegisterUserPage() {
                 {isSubmitting ? 'Registering...' : 'Register User'}
               </Button>
             </CardFooter>
-          </form>
+          </TracedForm>
         </Card>
       </div>
     </div>

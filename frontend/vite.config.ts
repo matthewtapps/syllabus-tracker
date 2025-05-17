@@ -15,4 +15,12 @@ export default defineConfig({
     outDir: "dist",
     manifest: true,
   },
+  server: {
+    proxy: {
+      "/api": {
+        target: "http://app:8000",
+        changeOrigin: true,
+      },
+    },
+  },
 });

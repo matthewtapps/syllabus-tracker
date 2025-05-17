@@ -5,6 +5,7 @@ import { Form, FormControl, FormField, FormItem, FormLabel } from '@/components/
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useForm } from 'react-hook-form';
+import { TracedForm } from './traced-form';
 
 interface TechniqueEditFormProps {
   technique: Technique;
@@ -44,7 +45,7 @@ export default function TechniqueEditForm({
 
   return (
     <Form {...form}>
-      <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-6 mt-6">
+      <TracedForm id="add_techniques" onSubmit={form.handleSubmit(handleSubmit)} className="space-y-6 mt-6">
         {canEditAll && (
           <>
             <FormField
@@ -170,7 +171,7 @@ export default function TechniqueEditForm({
             {isSubmitting ? "Saving..." : "Save Changes"}
           </Button>
         </div>
-      </form>
+      </TracedForm>
     </Form>
   );
 }

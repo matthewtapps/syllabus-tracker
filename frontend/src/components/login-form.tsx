@@ -69,7 +69,7 @@ export function LoginForm({
           </div>
 
           {/* Form section */}
-          <TracedForm onSubmit={handleSubmit} className="md:aspect-square">
+          <TracedForm onSubmit={handleSubmit} className="md:aspect-square" id="login">
             <div className="flex flex-col justify-center h-full p-6 space-y-4">
               <div>
                 <Label className="mb-2 block" htmlFor="username">Username</Label>

@@ -24,7 +24,7 @@ use rocket::{
     request::{FromRequest, Outcome},
 };
 use std::collections::HashMap;
-use tracing::{Span, info_span};
+use tracing::{Span, field};
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 use tracing_subscriber::{Registry, layer::SubscriberExt};
 
@@ -73,7 +73,6 @@ impl Fairing for TelemetryFairing {
 
     async fn on_request(&self, request: &mut Request<'_>, _: &mut Data<'_>) {
         let mut headers = HashMap::new();
-
         let trace_headers = ["traceparent", "tracestate", "baggage"];
 
         for &header_name in &trace_headers {
@@ -101,27 +100,22 @@ impl Fairing for TelemetryFairing {
 
         let _ = REQUEST_CONTEXT.set(parent_context.clone());
 
-        let span_name = format!("{} {}", request.method(), request.uri().path());
+        let span = tracing::Span::current();
 
-        let span = info_span!(
-            // info_span! requires a static string, not a dynamic string;
-            // otel.name does not have the same constraint, and overwrites
-            // the name field
-            "",
-            otel.name = %span_name,
-            { HTTP_REQUEST_METHOD } = %request.method(),
-            { HTTP_URL } = %request.uri().path(),
-            { HTTP_USER_AGENT } = %request.headers().get_one("User-Agent").unwrap_or(""),
-            { HTTP_RESPONSE_STATUS_CODE } = tracing::field::Empty,
-            { SESSION_ID } = session_id,
-            { USER_ID } = user_id
+        let span_name = format!("{} {}", request.method(), request.uri().path());
+        span.record("otel.name", field::display(span_name));
+        span.record(HTTP_REQUEST_METHOD, field::display(request.method()));
+        span.record(HTTP_URL, field::display(request.uri().path()));
+        span.record(
+            HTTP_USER_AGENT,
+            field::display(request.headers().get_one("User-Agent").unwrap_or("")),
         );
+        span.record(SESSION_ID, field::display(session_id));
+        span.record(USER_ID, field::display(user_id));
 
         span.set_parent(parent_context);
 
         request.local_cache(|| TracingSpan::<Option<Span>>(Some(span.clone())));
-
-        let _guard = span.entered();
     }
 
     async fn on_response<'r>(&self, request: &'r Request<'_>, response: &mut Response<'r>) {
@@ -130,10 +124,20 @@ impl Fairing for TelemetryFairing {
             .0
             .to_owned()
         {
-            let entered_span = span.entered();
-            entered_span.record(HTTP_RESPONSE_STATUS_CODE, response.status().code);
+            span.record(
+                HTTP_RESPONSE_STATUS_CODE,
+                field::display(response.status().code),
+            );
 
-            drop(entered_span);
+            // Check for error status and add error attributes if needed
+            if response.status().code >= 500 {
+                span.record(
+                    "error",
+                    field::display(format!("HTTP Error: {}", response.status().code)),
+                );
+                span.record("error.kind", field::display("server_error"));
+                span.record("otel.status_code", field::display("ERROR"));
+            }
         }
     }
 }

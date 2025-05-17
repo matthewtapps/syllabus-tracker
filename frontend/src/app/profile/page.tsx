@@ -6,6 +6,7 @@ import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
 import { getCurrentUser, updateUserProfile, updatePassword } from '@/lib/api';
 import type { User } from '@/lib/api';
+import { TracedForm } from '@/components/traced-form';
 
 export default function ProfilePage() {
   const [user, setUser] = useState<User | null>(null);
@@ -110,7 +111,7 @@ export default function ProfilePage() {
             <CardTitle>Profile Information</CardTitle>
             <CardDescription>Update your display name and account details</CardDescription>
           </CardHeader>
-          <form onSubmit={handleUpdateProfile}>
+          <TracedForm id="update_profile" onSubmit={handleUpdateProfile}>
             <CardContent className="space-y-4">
               <div className="space-y-2">
                 <Label htmlFor="username">Username</Label>
@@ -139,7 +140,7 @@ export default function ProfilePage() {
                 {updating ? 'Updating...' : 'Update Profile'}
               </Button>
             </CardFooter>
-          </form>
+          </TracedForm>
         </Card>
 
         {/* Change Password Card */}
@@ -148,7 +149,7 @@ export default function ProfilePage() {
             <CardTitle>Change Password</CardTitle>
             <CardDescription>Update your account password</CardDescription>
           </CardHeader>
-          <form onSubmit={handleChangePassword}>
+          <TracedForm id="change_password" onSubmit={handleChangePassword}>
             <CardContent className="space-y-4">
               <div className="space-y-2">
                 <Label htmlFor="current-password">Current Password</Label>
@@ -192,7 +193,7 @@ export default function ProfilePage() {
                 {changingPassword ? 'Changing Password...' : 'Change Password'}
               </Button>
             </CardFooter>
-          </form>
+          </TracedForm>
         </Card>
       </div>
     </div>

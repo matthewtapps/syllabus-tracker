@@ -20,6 +20,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { MoreHorizontalIcon, EditIcon, KeyIcon } from 'lucide-react';
+import { TracedForm } from '@/components/traced-form';
 
 interface AdminUser extends User {
   archived: boolean;
@@ -265,7 +266,7 @@ export default function AdminPage() {
             </DialogDescription>
           </DialogHeader>
 
-          <form onSubmit={handleEditUser} className="space-y-4 py-4">
+          <TracedForm id="edit_user" onSubmit={handleEditUser} className="space-y-4 py-4">
             <div className="space-y-2">
               <Label htmlFor="edit-username">Username</Label>
               <Input
@@ -294,7 +295,7 @@ export default function AdminPage() {
                 {isSubmitting ? 'Saving...' : 'Save Changes'}
               </Button>
             </DialogFooter>
-          </form>
+          </TracedForm>
         </DialogContent>
       </Dialog>
 
@@ -307,7 +308,7 @@ export default function AdminPage() {
             </DialogDescription>
           </DialogHeader>
 
-          <form onSubmit={handleChangePassword} className="space-y-4 py-4">
+          <TracedForm id="change_password" onSubmit={handleChangePassword} className="space-y-4 py-4">
             <div className="space-y-2">
               <Label htmlFor="new-password">New Password</Label>
               <Input
@@ -338,7 +339,7 @@ export default function AdminPage() {
                 {isSubmitting ? 'Changing...' : 'Change Password'}
               </Button>
             </DialogFooter>
-          </form>
+          </TracedForm>
         </DialogContent>
       </Dialog>
     </div>
