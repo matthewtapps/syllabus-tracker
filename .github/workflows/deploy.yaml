@@ -9,12 +9,11 @@ env:
   BUILDEVENT_FILE: "/tmp/buildevent-attrs"
 
 jobs:
-  start-build-and-test-span:
+  start-build:
     runs-on: ubuntu-latest
     outputs:
       trace_id: ${{ steps.start_trace.outputs.trace_id }}
-      build_span_id: ${{ steps.start_build_span.outputs.span_id }}
-      build_span_start: ${{ steps.start_build_span.outputs.start_time }}
+      build_id: ${{ github.run_id }}
 
     steps:
       - uses: honeycombio/gha-buildevents@v2
@@ -22,31 +21,27 @@ jobs:
           apikey: ${{ secrets.HONEYCOMB_API_KEY }}
           dataset: syllabus-tracker-build-events
 
-      - name: Start trace
+      - name: Start build trace
         id: start_trace
         run: |
+          # Save trace ID and build ID for other jobs
           echo "trace_id=$TRACE_ID" >> $GITHUB_OUTPUT
 
-      - name: Start build parent span
-        id: start_build_span
-        run: |
+          # Start the build trace
+          BUILD_ID=${{ github.run_id }}
+          BUILD_NAME="Build ${{ github.repository }} ${{ github.ref }}"
           START_TIME=$(date +%s)
-          SPAN_ID="build-and-test-span"
-
-          echo "span_id=$SPAN_ID" >> $GITHUB_OUTPUT
-          echo "start_time=$START_TIME" >> $GITHUB_OUTPUT
-
-          buildevents span $TRACE_ID $SPAN_ID $START_TIME "Build and Test" &
 
   test:
     runs-on: ubuntu-latest
-    needs: [start-build-and-test-span]
+    needs: [start-build]
 
     steps:
       - uses: honeycombio/gha-buildevents@v2
         with:
           apikey: ${{ secrets.HONEYCOMB_API_KEY }}
           dataset: syllabus-tracker-build-events
+          trace_id: ${{ needs.start-build.outputs.trace_id }}
 
       - name: Checkout code
         uses: actions/checkout@v4
@@ -69,42 +64,38 @@ jobs:
             target
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
 
-      - name: Set test start time
+      - name: Record test step start
         id: test-start
         run: |
-          echo "STEP_START=$(date +%s)" >> $GITHUB_OUTPUT
-          echo "STEP_ID=run_tests" >> $GITHUB_OUTPUT
-          echo "TRACE_PARENT=${{ needs.start-build-and-test-span.outputs.build_span_id }}" >> $GITHUB_OUTPUT
+          echo "STEP_START=$(date +%s)" >> $GITHUB_ENV
+          echo "STEP_ID=run_tests" >> $GITHUB_ENV
 
       - name: Run cargo fmt check
         run: |
-          cargo fmt --all -- --check
-          echo " fmt_passed=true" >> $BUILDEVENT_FILE
+          buildevents cmd $TRACE_ID $STEP_ID cargo_fmt -- \
+            cargo fmt --all -- --check
 
       - name: Run cargo clippy
         run: |
-          cargo clippy -- -D warnings
-          echo " clippy_passed=true" >> $BUILDEVENT_FILE
+          buildevents cmd $TRACE_ID $STEP_ID cargo_clippy -- \
+            cargo clippy -- -D warnings
         env:
           SQLX_OFFLINE: "true"
 
       - name: Run Rust tests
         run: |
-          cargo test --all
-          echo " tests_passed=true" >> $BUILDEVENT_FILE
+          buildevents cmd $TRACE_ID $STEP_ID cargo_test -- \
+            cargo test --all
         env:
           SQLX_OFFLINE: "true"
 
-      - name: Log test results to telemetry
+      - name: Complete test step
         run: |
-          STEP_ID=$(echo "${{ steps.test-start.outputs.STEP_ID }}")
-          STEP_START=$(echo "${{ steps.test-start.outputs.STEP_START }}")
-          PARENT_ID=$(echo "${{ steps.test-start.outputs.TRACE_PARENT }}")
-          buildevents child $TRACE_ID $PARENT_ID $STEP_ID $STEP_START "Run Tests"
+          buildevents step $TRACE_ID $STEP_ID $STEP_START "Run Tests"
 
   build-backend:
     runs-on: ubuntu-latest
-    needs: [start-build-and-test-span]
+    needs: [start-build]
     permissions:
       contents: read
       packages: write
@@ -116,13 +107,12 @@ jobs:
         with:
           apikey: ${{ secrets.HONEYCOMB_API_KEY }}
           dataset: syllabus-tracker-build-events
+          trace_id: ${{ needs.start-build.outputs.trace_id }}
 
-      - name: Set build start timestamp
-        id: build-backend-image
+      - name: Record backend build start
         run: |
-          echo "STEP_START=$(date +%s)" >> $GITHUB_OUTPUT
-          echo "STEP_ID=build-backend-image" >> $GITHUB_OUTPUT
-          echo "TRACE_PARENT=${{ needs.start-build-and-test-span.outputs.build_span_id }}" >> $GITHUB_OUTPUT
+          echo "STEP_START=$(date +%s)" >> $GITHUB_ENV
+          echo "STEP_ID=build-backend-image" >> $GITHUB_ENV
 
       - name: Checkout code
         uses: actions/checkout@v4
@@ -158,17 +148,13 @@ jobs:
           echo " backend_image_tag=app:${{ steps.get_short_sha.outputs.short_sha }}" >> $BUILDEVENT_FILE
           echo " backend_build_successful=true" >> $BUILDEVENT_FILE
 
-      - name: End build event
-        id: end-build
+      - name: Complete backend build step
         run: |
-          STEP_ID=$(echo "${{ steps.build-backend-image.outputs.STEP_ID }}")
-          STEP_START=$(echo "${{ steps.build-backend-image.outputs.STEP_START }}")
-          PARENT_ID=$(echo "${{ steps.build-backend-image.outputs.TRACE_PARENT }}")
-          buildevents child $TRACE_ID $PARENT_ID $STEP_ID $STEP_START "Build Backend Image"
+          buildevents step $TRACE_ID $STEP_ID $STEP_START "Build Backend Image"
 
   build-frontend:
     runs-on: ubuntu-latest
-    needs: [start-build-and-test-span]
+    needs: [start-build]
     permissions:
       contents: read
       packages: write
@@ -180,13 +166,12 @@ jobs:
         with:
           apikey: ${{ secrets.HONEYCOMB_API_KEY }}
           dataset: syllabus-tracker-build-events
+          trace_id: ${{ needs.start-build.outputs.trace_id }}
 
-      - name: Set build start timestamp
-        id: build-frontend-image
+      - name: Record frontend build start
         run: |
-          echo "STEP_START=$(date +%s)" >> $GITHUB_OUTPUT
-          echo "STEP_ID=build-frontend-image" >> $GITHUB_OUTPUT
-          echo "TRACE_PARENT=${{ needs.start-build-and-test-span.outputs.build_span_id }}" >> $GITHUB_OUTPUT
+          echo "STEP_START=$(date +%s)" >> $GITHUB_ENV
+          echo "STEP_ID=build-frontend-image" >> $GITHUB_ENV
 
       - name: Checkout code
         uses: actions/checkout@v4
@@ -223,41 +208,9 @@ jobs:
           echo " frontend_image_tag=frontend:${{ steps.get_short_sha.outputs.short_sha }}" >> $BUILDEVENT_FILE
           echo " frontend_build_successful=true" >> $BUILDEVENT_FILE
 
-      - name: End build event
-        id: end-build
+      - name: Complete frontend build step
         run: |
-          STEP_ID=$(echo "${{ steps.build-frontend-image.outputs.STEP_ID }}")
-          STEP_START=$(echo "${{ steps.build-frontend-image.outputs.STEP_START }}")
-          PARENT_ID=$(echo "${{ steps.build-frontend-image.outputs.TRACE_PARENT }}")
-          buildevents child $TRACE_ID $PARENT_ID $STEP_ID $STEP_START "Build Frontend Image"
-
-  close-build-span:
-    needs: [start-build-and-test-span, build-backend, build-frontend, test]
-    runs-on: ubuntu-latest
-    steps:
-      - uses: honeycombio/gha-buildevents@v2
-        with:
-          apikey: ${{ secrets.HONEYCOMB_API_KEY }}
-          dataset: syllabus-tracker-build-events
-          trace_id: ${{ needs.start-build-and-test-span.outputs.trace_id }}
-
-      - name: Close build parent span
-        run: |
-          TRACE_ID=${{ needs.start-build-and-test-span.outputs.trace_id }}
-          SPAN_ID=${{ needs.start-build-and-test-span.outputs.build_span_id }}
-          START_TIME=${{ needs.start-build-and-test-span.outputs.build_span_start }}
-
-          END_TIME=$(date +%s)
-          DURATION=$((END_TIME - START_TIME))
-
-          # Add any metadata to the parent span
-          echo "backend_image=app:${{ needs.build-backend.outputs.image_tag }}" >> $BUILDEVENT_FILE
-          echo "frontend_image=frontend:${{ needs.build-frontend.outputs.image_tag }}" >> $BUILDEVENT_FILE
-          echo "build_duration_seconds=$DURATION" >> $BUILDEVENT_FILE
-          echo "all_steps_passed=true" >> $BUILDEVENT_FILE
-
-          # Close the parent span
-          buildevents span $TRACE_ID $SPAN_ID $START_TIME "Build and Test"
+          buildevents step $TRACE_ID $STEP_ID $STEP_START "Build Frontend Image"
 
   deploy:
     needs: [build-backend, build-frontend, test]
@@ -274,6 +227,7 @@ jobs:
         with:
           apikey: ${{ secrets.HONEYCOMB_API_KEY }}
           dataset: syllabus-tracker-build-events
+          trace_id: ${{ needs.start-build.outputs.trace_id }}
           status: ${{ env.WORKFLOW_CONCLUSION }}
 
       - name: Checkout code (minimal for config files)
@@ -293,7 +247,7 @@ jobs:
           echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
           ssh-keyscan -H ${{ secrets.SERVER_IP }} >> ~/.ssh/known_hosts
-          buildevents step $TRACE_ID $STEP_ID $STEP_START $STEP_ID
+          buildevents step $TRACE_ID $STEP_ID $STEP_START "Set up SSH"
 
       - name: Transfer essential files to server
         run: |
@@ -302,7 +256,7 @@ jobs:
 
           ssh ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} "mkdir -p ~/syllabus-tracker/config ~/syllabus-tracker/scripts ~/syllabus-tracker/nginx"
 
-          # Only transfer essential files
+          buildevents cmd $TRACE_ID $STEP_ID rsync -- \
           rsync -avzi --include="docker-compose.prod.yml" \
             --include="config/***" \
             --include="scripts/***" \
@@ -312,7 +266,7 @@ jobs:
 
           ssh ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} "chmod +x ~/syllabus-tracker/scripts/*.sh"
 
-          buildevents step $TRACE_ID $STEP_ID $STEP_START $STEP_ID
+          buildevents step $TRACE_ID $STEP_ID $STEP_START "Transfer Files"
 
       - name: Generate secrets file
         run: |
@@ -325,7 +279,7 @@ jobs:
 
           scp .secrets.env ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }}:~/syllabus-tracker/
 
-          buildevents step $TRACE_ID $STEP_ID $STEP_START $STEP_ID
+          buildevents step $TRACE_ID $STEP_ID $STEP_START "Generate Secrets"
 
       - name: Set up GitHub Container Registry credentials on server
         run: |
@@ -346,15 +300,15 @@ jobs:
           ssh ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} "mkdir -p ~/.docker"
           scp docker_config.json ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }}:~/.docker/config.json
 
-          buildevents step $TRACE_ID $STEP_ID $STEP_START $STEP_ID
+          buildevents step $TRACE_ID $STEP_ID $STEP_START "Setup Registry Credentials"
 
       - name: Deploy with Docker Compose
         run: |
           STEP_ID=deploy_docker
           STEP_START=$(date +%s)
 
-          APP_IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/app:${{ needs.build.outputs.image_tag }}"
-          FRONTEND_IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/frontend:${{ needs.build.outputs.image_tag }}"
+          APP_IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/app:${{ needs.build-backend.outputs.image_tag }}"
+          FRONTEND_IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/frontend:${{ needs.build-frontend.outputs.image_tag }}"
           GITHUB_REPOSITORY="${{ github.repository }}"
 
           ssh ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} "cd ~/syllabus-tracker && \
@@ -374,7 +328,7 @@ jobs:
             echo "Warning: Container is not healthy. Deployment may have failed."
             echo " deployment_status=unhealthy" >> $BUILDEVENT_FILE
             echo " deploy_completed=false" >> $BUILDEVENT_FILE
-            buildevents step $TRACE_ID $STEP_ID $STEP_START $STEP_ID
+            buildevents step $TRACE_ID $STEP_ID $STEP_START "Deploy Docker (Failed)"
             exit 1
           fi
 
@@ -383,7 +337,7 @@ jobs:
 
           echo " deployed_app_image=${APP_IMAGE}" >> $BUILDEVENT_FILE
           echo " deployed_frontend_image=${FRONTEND_IMAGE}" >> $BUILDEVENT_FILE
-          buildevents step $TRACE_ID $STEP_ID $STEP_START $STEP_ID
+          buildevents step $TRACE_ID $STEP_ID $STEP_START "Deploy Docker"
 
       - name: Create Honeycomb deployment marker
         run: |
@@ -411,6 +365,12 @@ jobs:
               }
             }"
 
-          buildevents step $TRACE_ID $STEP_ID $STEP_START $STEP_ID
+          buildevents step $TRACE_ID $STEP_ID $STEP_START "Create Marker"
         env:
           HONEYCOMB_API_KEY: ${{ secrets.HONEYCOMB_API_KEY }}
+
+      - name: Finish build trace
+        if: always()
+        run: |
+          END_TIME=$(date +%s)
+          buildevents build $TRACE_ID $END_TIME
