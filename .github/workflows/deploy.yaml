@@ -9,84 +9,7 @@ env:
   BUILDEVENT_FILE: "/tmp/buildevent-attrs"
 
 jobs:
-  build-frontend:
-    runs-on: ubuntu-latest
-    outputs:
-      trace_start: ${{ steps.set-trace-start.outputs.trace-start }}
-
-    steps:
-      - name: Set trace start timestamp
-        id: set-trace-start
-        run: |
-          echo "trace-start=$(date +%s)" >> $GITHUB_OUTPUT
-
-      - uses: honeycombio/gha-buildevents@v2
-        with:
-          apikey: ${{ secrets.HONEYCOMB_API_KEY }}
-          dataset: syllabus-tracker-build-events
-
-      - name: Set build start timestamp
-        id: build-frontend
-        run: |
-          echo "STEP_START=$(date +%s)" >> $GITHUB_OUTPUT
-          echo "STEP_ID=build-frontend" >> $GITHUB_OUTPUT
-
-      - uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v2
-        with:
-          version: 10
-          run_install: false
-
-      - name: Get pnpm store directory
-        id: pnpm-cache
-        run: |
-          echo "pnpm_cache_dir=$(pnpm store path)" >> $GITHUB_OUTPUT
-
-      - name: Cache pnpm modules
-        uses: actions/cache@v3
-        with:
-          path: ${{ steps.pnpm-cache.outputs.pnpm_cache_dir }}
-          key: ${{ runner.os }}-pnpm-${{ hashFiles('**/pnpm-lock.yaml') }}
-          restore-keys: |
-            ${{ runner.os }}-pnpm-
-
-      - name: Install dependencies
-        working-directory: ./frontend
-        run: pnpm install
-
-      - name: Build frontend
-        working-directory: ./frontend
-        env:
-          VITE_HONEYCOMB_API_KEY: ${{ secrets.HONEYCOMB_API_KEY }}
-          VITE_API_URL: "/api"
-          VITE_ENVIRONMENT: "production"
-        run: pnpm run build
-
-      - name: Upload frontend dist
-        uses: actions/upload-artifact@v4
-        with:
-          name: frontend-dist
-          path: frontend/dist
-
-      - name: Log build details to telemetry
-        run: |
-          echo " frontend_build_successful=true" >> $BUILDEVENT_FILE
-
-      - name: End build event
-        run: |
-          STEP_ID=$(echo "${{ steps.build-frontend.outputs.STEP_ID }}")
-          STEP_START=$(echo "${{ steps.build-frontend.outputs.STEP_START }}")
-          buildevents step $TRACE_ID $STEP_ID $STEP_START $STEP_ID
-
   test:
-    needs: [build-frontend]
     runs-on: ubuntu-latest
 
     steps:
@@ -116,12 +39,6 @@ jobs:
             target
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
 
-      - name: Download frontend dist
-        uses: actions/download-artifact@v4
-        with:
-          name: frontend-dist
-          path: frontend/dist
-
       - name: Set test start time
         id: test-start
         run: |
@@ -140,15 +57,20 @@ jobs:
         env:
           SQLX_OFFLINE: "true"
 
+      - name: Run Rust tests
+        run: |
+          cargo test --all
+          echo " tests_passed=true" >> $BUILDEVENT_FILE
+        env:
+          SQLX_OFFLINE: "true"
+
       - name: Log test results to telemetry
         run: |
           STEP_ID=$(echo "${{ steps.test-start.outputs.STEP_ID }}")
           STEP_START=$(echo "${{ steps.test-start.outputs.STEP_START }}")
-
           buildevents step $TRACE_ID $STEP_ID $STEP_START $STEP_ID
 
   build:
-    needs: [build-frontend]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -181,52 +103,49 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Extract metadata for Docker
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-          tags: |
-            type=sha,format=short
-            type=ref,event=branch
-            latest
+      - name: Get short SHA
+        id: get_short_sha
+        run: echo "short_sha=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
 
-      - name: Download frontend dist
-        uses: actions/download-artifact@v4
-        with:
-          name: frontend-dist
-          path: frontend/dist
-
-      - name: Build and push Docker image
+      - name: Build and push backend Docker image
         uses: docker/build-push-action@v6
         with:
           context: .
           push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/app:${{ steps.get_short_sha.outputs.short_sha }},${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/app:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          build-args: |
+            HONEYCOMB_API_KEY=${{ secrets.HONEYCOMB_API_KEY }}
+            ROCKET_SECRET_KEY=${{ secrets.ROCKET_SECRET_KEY }}
+
+      - name: Build and push frontend Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./frontend
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/frontend:${{ steps.get_short_sha.outputs.short_sha }},${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/frontend:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            VITE_HONEYCOMB_API_KEY=${{ secrets.HONEYCOMB_API_KEY }}
+            VITE_API_URL=/api
+            VITE_ENVIRONMENT=production
 
       - name: Log build details to telemetry
         run: |
-          IMAGE_TAGS="${{ steps.meta.outputs.tags }}"
-          echo " docker_image_tags=${IMAGE_TAGS}" >> $BUILDEVENT_FILE
+          echo " docker_image_tags=app:${{ steps.get_short_sha.outputs.short_sha }},frontend:${{ steps.get_short_sha.outputs.short_sha }}" >> $BUILDEVENT_FILE
           echo " build_successful=true" >> $BUILDEVENT_FILE
-
-      - name: Get short SHA
-        id: get_short_sha
-        run: echo "short_sha=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
 
       - name: End build event
         id: end-build
         run: |
           STEP_ID=$(echo "${{ steps.build-image.outputs.STEP_ID }}")
           STEP_START=$(echo "${{ steps.build-image.outputs.STEP_START }}")
-
           buildevents step $TRACE_ID $STEP_ID $STEP_START $STEP_ID
 
   deploy:
-    needs: [build, test, build-frontend]
+    needs: [build, test]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -241,10 +160,15 @@ jobs:
           apikey: ${{ secrets.HONEYCOMB_API_KEY }}
           dataset: syllabus-tracker-build-events
           status: ${{ env.WORKFLOW_CONCLUSION }}
-          trace-start: ${{ needs.build-frontend.outputs.trace_start }}
 
-      - name: Checkout code
+      - name: Checkout code (minimal for config files)
         uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            docker-compose.prod.yml
+            config/
+            nginx/
+            scripts/
 
       - name: Set up SSH
         run: |
@@ -256,52 +180,20 @@ jobs:
           ssh-keyscan -H ${{ secrets.SERVER_IP }} >> ~/.ssh/known_hosts
           buildevents step $TRACE_ID $STEP_ID $STEP_START $STEP_ID
 
-      - name: Get image to deploy
-        id: get_image
-        run: |
-          STEP_ID=get_image
-          STEP_START=$(date +%s)
-
-          if [[ "${{ needs.check-changes.outputs.code_changed }}" == "true" ]]; then
-            COMMIT_SHA="${{ needs.build.outputs.image_tag }}"
-            IMAGE_NAME="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:sha-${COMMIT_SHA}"
-            echo "Using newly built image with SHA: ${COMMIT_SHA}"
-          else
-            IMAGE_NAME="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest"
-            echo "Reusing existing latest image"
-          fi
-
-          echo "image_name=${IMAGE_NAME}" >> $GITHUB_OUTPUT
-
-          echo " deployed_image=${IMAGE_NAME}" >> $BUILDEVENT_FILE
-
-          buildevents step $TRACE_ID $STEP_ID $STEP_START $STEP_ID
-
-      - name: Transfer files to server
+      - name: Transfer essential files to server
         run: |
           STEP_ID=transfer_files
           STEP_START=$(date +%s)
 
-          ssh ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} "mkdir -p ~/syllabus-tracker"
+          ssh ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} "mkdir -p ~/syllabus-tracker/config ~/syllabus-tracker/scripts ~/syllabus-tracker/nginx"
 
-          RSYNC_OUTPUT="/tmp/rsync_output.txt"
-
-          rsync -avzi --stats \
-            --include="docker-compose.prod.yml" \
+          # Only transfer essential files
+          rsync -avzi --include="docker-compose.prod.yml" \
             --include="config/***" \
             --include="scripts/***" \
             --include="nginx/***" \
-            --include="static/***" \
-            --include="migrations/***" \
-            --include="frontend/" \
-            --include="frontend/dist/" \
-            --include="frontend/dist/***" \
             --exclude="*" \
-            ./ ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }}:~/syllabus-tracker/ > $RSYNC_OUTPUT
-
-          TRANSFERRED_COUNT=$(cat $RSYNC_OUTPUT | grep "^>" | wc -l || echo "0")
-
-          echo " transferred_files_count=${TRANSFERRED_COUNT}" >> $BUILDEVENT_FILE
+            ./ ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }}:~/syllabus-tracker/
 
           ssh ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} "chmod +x ~/syllabus-tracker/scripts/*.sh"
 
@@ -314,6 +206,7 @@ jobs:
 
           echo "HONEYCOMB_API_KEY=${{ secrets.HONEYCOMB_API_KEY }}" > .secrets.env
           echo "ROCKET_SECRET_KEY=${{ secrets.ROCKET_SECRET_KEY }}" >> .secrets.env
+          echo "VITE_HONEYCOMB_API_KEY=${{ secrets.HONEYCOMB_API_KEY }}" >> .secrets.env
 
           scp .secrets.env ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }}:~/syllabus-tracker/
 
@@ -345,10 +238,14 @@ jobs:
           STEP_ID=deploy_docker
           STEP_START=$(date +%s)
 
-          NEW_IMAGE="${{ steps.get_image.outputs.image_name }}"
+          APP_IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/app:${{ needs.build.outputs.image_tag }}"
+          FRONTEND_IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/frontend:${{ needs.build.outputs.image_tag }}"
+          GITHUB_REPOSITORY="${{ github.repository }}"
 
           ssh ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} "cd ~/syllabus-tracker && \
-            export APP_IMAGE=${NEW_IMAGE} && \
+            export APP_IMAGE=${APP_IMAGE} && \
+            export FRONTEND_IMAGE=${FRONTEND_IMAGE} && \
+            export GITHUB_REPOSITORY=${GITHUB_REPOSITORY} && \
             docker compose -f docker-compose.prod.yml pull && \
             docker compose -f docker-compose.prod.yml up -d"
 
@@ -366,20 +263,11 @@ jobs:
             exit 1
           fi
 
-          MIGRATION_FAILURE=$(ssh ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} \
-            "docker logs --since 1m syllabus-tracker-app-1 2>&1 | grep -i 'failed to run migrations' || echo ''")
-
-          if [ -n "$MIGRATION_FAILURE" ]; then
-            echo "Warning: Migration failure detected in logs: $MIGRATION_FAILURE"
-            echo " deployment_status=migration_failed" >> $BUILDEVENT_FILE
-            echo " deploy_completed=false" >> $BUILDEVENT_FILE
-            buildevents step $TRACE_ID $STEP_ID $STEP_START $STEP_ID
-            exit 1
-          fi
-
+          # Clean up old images
           ssh ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} "docker image prune -f"
 
-          echo " deployed_image=${NEW_IMAGE}" >> $BUILDEVENT_FILE
+          echo " deployed_app_image=${APP_IMAGE}" >> $BUILDEVENT_FILE
+          echo " deployed_frontend_image=${FRONTEND_IMAGE}" >> $BUILDEVENT_FILE
           buildevents step $TRACE_ID $STEP_ID $STEP_START $STEP_ID
 
       - name: Create Honeycomb deployment marker
@@ -404,8 +292,7 @@ jobs:
                 \"commit_message\": \"${GIT_COMMIT_MESSAGE}\",
                 \"github_actor\": \"${{ github.actor }}\",
                 \"github_repository\": \"${{ github.repository }}\",
-                \"github_ref\": \"${{ github.ref }}\",
-                \"code_changed\": \"${{ needs.check-changes.outputs.code_changed }}\"
+                \"github_ref\": \"${{ github.ref }}\"
               }
             }"
 

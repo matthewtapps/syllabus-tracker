@@ -1,5 +1,4 @@
-use rocket::{Request, http::Status};
-use rocket_dyn_templates::{Template, context};
+use rocket::http::Status;
 use thiserror::Error;
 use tracing::{Span, error, warn};
 
@@ -127,18 +126,4 @@ impl From<AppError> for Status {
     fn from(err: AppError) -> Self {
         err.to_status_with_log("Error conversion into Status")
     }
-}
-
-#[catch(500)]
-pub fn internal_server_error(_req: &Request) -> Template {
-    error!("Unhandled internal server error occurred");
-
-    Template::render(
-        "error",
-        context! {
-            title: "Server Error - Jiu Jitsu Syllabus Tracker",
-            error_code: 500,
-            error_message: "An unexpected error occurred. Please try again later."
-        },
-    )
 }

@@ -42,9 +42,7 @@ FROM base AS production
 WORKDIR /app
 
 COPY --from=builder /app/target/release/syllabus-tracker /app/
-COPY --from=builder /app/static /app/static
 COPY --from=builder /app/config /app/config
-COPY frontend/dist /app/frontend/dist
 
 RUN mkdir -p /app/data
 

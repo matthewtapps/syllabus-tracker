@@ -1,6 +1,5 @@
 use rocket::FromForm;
 use rocket::State;
-use rocket::fs::NamedFile;
 use rocket::http::Status;
 use rocket::response::Redirect;
 use rocket::serde::{Deserialize, Serialize, json::Json};
@@ -388,11 +387,6 @@ pub async fn api_me(user: User) -> Json<UserData> {
 #[get("/me", rank = 2)]
 pub async fn api_me_unauthorized() -> Status {
     Status::Unauthorized
-}
-
-#[get("/<_..>", rank = 1000)]
-pub async fn serve_spa_fallback() -> Option<NamedFile> {
-    NamedFile::open("./frontend/dist/index.html").await.ok()
 }
 
 #[post("/logout")]

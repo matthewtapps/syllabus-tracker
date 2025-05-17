@@ -14,12 +14,11 @@ use api::{
     api_assign_techniques, api_change_password, api_create_and_assign_technique,
     api_get_student_techniques, api_get_students, api_get_unassigned_techniques, api_login,
     api_logout, api_me, api_me_unauthorized, api_register_user, api_update_profile,
-    api_update_student_technique, api_update_user, health, serve_spa_fallback,
+    api_update_student_technique, api_update_user, health,
 };
-use auth::{forbidden, unauthorized, unauthorized_api};
+use auth::unauthorized_api;
 use db::clean_expired_sessions;
-use error::{AppError, internal_server_error};
-use rocket::fs::{FileServer, relative};
+use error::AppError;
 use rocket::{Build, Rocket, tokio};
 use telemetry::TelemetryFairing;
 use telemetry::init_tracing;
@@ -120,14 +119,6 @@ pub async fn init_rocket(pool: SqlitePool) -> Rocket<Build> {
             ],
         )
         .register("/api", catchers![unauthorized_api])
-        // .mount("/static", FileServer::new("static"))
-        // .mount("/assets", FileServer::new("frontend/dist/assets"))
-        // .mount("/", FileServer::new(relative!("/frontend/dist")).rank(100))
-        .mount("/", routes![health])
-        // .mount("/", routes![serve_spa_fallback])
-        .register(
-            "/",
-            catchers![forbidden, unauthorized, internal_server_error],
-        )
+        .mount("/api", routes![health])
         .attach(TelemetryFairing)
 }

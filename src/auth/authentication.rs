@@ -66,12 +66,6 @@ impl<'r> FromRequest<'r> for User {
 }
 
 #[catch(401)]
-pub fn unauthorized(_req: &Request) -> Redirect {
-    warn!("Unauthorized access attempt");
-    Redirect::to(uri!("/login"))
-}
-
-#[catch(401)]
 pub fn unauthorized_api(_req: &Request) -> Result<Redirect, Custom<Json<Value>>> {
     let error_json = json!({
         "error": "Unauthorized",
@@ -79,10 +73,4 @@ pub fn unauthorized_api(_req: &Request) -> Result<Redirect, Custom<Json<Value>>>
     });
 
     Err(Custom(Status::Unauthorized, Json(error_json)))
-}
-
-#[catch(403)]
-pub fn forbidden(_req: &Request) -> Redirect {
-    warn!("Forbidden access attempt");
-    Redirect::to(uri!("/login"))
 }
