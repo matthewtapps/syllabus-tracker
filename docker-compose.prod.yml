@@ -85,7 +85,7 @@ services:
       - "80:80"
       - "443:443"
     volumes:
-      - ./nginx/default.conf:/etc/nginx/conf.d/ssl.conf.template
+      - ./nginx/default.conf:/etc/nginx/ssl.conf.template
       - ./scripts/nginx-entrypoint.sh:/entrypoint.sh
       - ./nginx/ssl:/etc/letsencrypt
       - ./nginx/www:/var/www
@@ -141,7 +141,6 @@ services:
 
 networks:
   internal:
-    internal: false
   external:
 
 volumes:

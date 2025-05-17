@@ -62,11 +62,11 @@ EOF
 
   # Now use the real config
   echo "Applying final nginx configuration..."
-  cp /etc/nginx/conf.d/ssl.conf.template /etc/nginx/conf.d/default.conf
+  cp /etc/nginx/ssl.conf.template /etc/nginx/conf.d/default.conf
 else
   echo "SSL certificate exists, using existing certificate"
   # Copy the SSL config to the default.conf location
-  cp /etc/nginx/conf.d/ssl.conf.template /etc/nginx/conf.d/default.conf
+  cp /etc/nginx/ssl.conf.template /etc/nginx/conf.d/default.conf
 fi
 
 # Start nginx with the final config
