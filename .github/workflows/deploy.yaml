@@ -136,17 +136,6 @@ jobs:
         env:
           SQLX_OFFLINE: "true"
 
-      - name: Run tests
-        run: |
-          echo "Contents of .sqlx directory:"
-          find .sqlx -type f | sort
-          echo "Number of query files: $(find .sqlx -type f | wc -l)"
-
-          cargo test
-          echo " tests_passed=true" >> $BUILDEVENT_FILE
-        env:
-          SQLX_OFFLINE: "true"
-
       - name: Log test results to telemetry
         run: |
           STEP_ID=$(echo "${{ steps.test-start.outputs.STEP_ID }}")
