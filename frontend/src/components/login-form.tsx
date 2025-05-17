@@ -9,6 +9,7 @@ import {
 } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { TracedForm } from "./traced-form";
 
 interface LoginFormProps extends React.ComponentProps<"div"> {
   onSuccess: () => void;
@@ -68,7 +69,7 @@ export function LoginForm({
           </div>
 
           {/* Form section */}
-          <form onSubmit={handleSubmit} className="md:aspect-square">
+          <TracedForm onSubmit={handleSubmit} className="md:aspect-square">
             <div className="flex flex-col justify-center h-full p-6 space-y-4">
               <div>
                 <Label className="mb-2 block" htmlFor="username">Username</Label>
@@ -101,7 +102,7 @@ export function LoginForm({
                 {isLoading ? "Logging in..." : "Login"}
               </Button>
             </div>
-          </form>
+          </TracedForm>
         </CardContent>
       </Card>
     </div>

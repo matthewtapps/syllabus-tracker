@@ -1,3 +1,5 @@
+import { tracedFetch } from "./telemetry";
+
 export interface LoginCredentials {
   username: string;
   password: string;
@@ -14,7 +16,7 @@ export async function login(
   credentials: LoginCredentials,
 ): Promise<LoginResponse> {
   try {
-    const response = await fetch("/api/login", {
+    const response = await tracedFetch("/api/login", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -34,7 +36,7 @@ export async function login(
 
 export async function logout(): Promise<void | null> {
   try {
-    const response = await fetch("/api/logout", {
+    const response = await tracedFetch("/api/logout", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -59,7 +61,7 @@ export interface User {
 
 export async function getCurrentUser(): Promise<User | null> {
   try {
-    const response = await fetch("/api/me", {
+    const response = await tracedFetch("/api/me", {
       credentials: "include",
     });
 
@@ -77,7 +79,7 @@ export async function getCurrentUser(): Promise<User | null> {
 export async function getTechniquesForAssignment(
   studentId: number,
 ): Promise<any[]> {
-  const response = await fetch(
+  const response = await tracedFetch(
     `/api/student/${studentId}/unassigned_techniques`,
     {
       credentials: "include",
@@ -98,14 +100,17 @@ export async function assignTechniquesToStudent(
   studentId: number,
   techniqueIds: number[],
 ): Promise<void> {
-  const response = await fetch(`/api/student/${studentId}/add_techniques`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
+  const response = await tracedFetch(
+    `/api/student/${studentId}/add_techniques`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ technique_ids: techniqueIds }),
+      credentials: "include",
     },
-    body: JSON.stringify({ technique_ids: techniqueIds }),
-    credentials: "include",
-  });
+  );
 
   if (!response.ok) {
     throw new Error(`Failed to assign techniques: ${response.statusText}`);
@@ -117,14 +122,17 @@ export async function createAndAssignTechnique(
   name: string,
   description: string,
 ): Promise<void> {
-  const response = await fetch(`/api/student/${studentId}/create_technique`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
+  const response = await tracedFetch(
+    `/api/student/${studentId}/create_technique`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ name, description }),
+      credentials: "include",
     },
-    body: JSON.stringify({ name, description }),
-    credentials: "include",
-  });
+  );
 
   if (!response.ok) {
     throw new Error(`Failed to create technique: ${response.statusText}`);
@@ -154,7 +162,7 @@ export interface StudentTechniques {
 export async function getStudentTechniques(
   studentId: number,
 ): Promise<StudentTechniques> {
-  const response = await fetch(`/api/student/${studentId}/techniques`, {
+  const response = await tracedFetch(`/api/student/${studentId}/techniques`, {
     credentials: "include",
   });
 
@@ -177,7 +185,7 @@ export async function updateTechnique(
   techniqueId: number,
   updates: TechniqueUpdate,
 ): Promise<void> {
-  const response = await fetch(`/api/student_technique/${techniqueId}`, {
+  const response = await tracedFetch(`/api/student_technique/${techniqueId}`, {
     method: "PUT",
     headers: {
       "Content-Type": "application/json",
@@ -207,7 +215,7 @@ export async function getStudents(
 
   url += params.toString();
 
-  const response = await fetch(url, {
+  const response = await tracedFetch(url, {
     credentials: "include",
   });
 
@@ -225,7 +233,7 @@ export interface ProfileUpdateData {
 export async function updateUserProfile(
   data: ProfileUpdateData,
 ): Promise<void> {
-  const response = await fetch("/api/profile", {
+  const response = await tracedFetch("/api/profile", {
     method: "PUT",
     headers: {
       "Content-Type": "application/json",
@@ -245,7 +253,7 @@ export interface PasswordUpdateData {
 }
 
 export async function updatePassword(data: PasswordUpdateData): Promise<void> {
-  const response = await fetch("/api/change-password", {
+  const response = await tracedFetch("/api/change-password", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -267,7 +275,7 @@ export interface UserRegistrationData {
 }
 
 export async function registerUser(data: UserRegistrationData): Promise<void> {
-  const response = await fetch("/api/register", {
+  const response = await tracedFetch("/api/register", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -292,7 +300,7 @@ export async function updateUser(
   userId: number,
   data: UserUpdateData,
 ): Promise<void> {
-  const response = await fetch(`/api/admin/users/${userId}`, {
+  const response = await tracedFetch(`/api/admin/users/${userId}`, {
     method: "PUT",
     headers: {
       "Content-Type": "application/json",

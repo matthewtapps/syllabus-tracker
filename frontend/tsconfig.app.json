@@ -28,5 +28,5 @@
     }
     // ...
   },
-  "include": ["src", "public/favicon.ico"]
+  "include": ["src", "public/favicon/favicon.ico"]
 }

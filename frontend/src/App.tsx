@@ -12,6 +12,7 @@ import type { User } from './lib/api';
 import ProfilePage from './app/profile/page';
 import RegisterUserPage from './app/registration/page';
 import AdminPage from './app/admin/page';
+import { TelemetryProvider } from './context/telemetry';
 
 function App() {
   const [user, setUser] = useState<User | null>(null);
@@ -50,57 +51,59 @@ function App() {
   return (
     <ThemeProvider defaultTheme="dark" storageKey="vite-ui-theme">
       <Router>
-        <Layout user={user} onLogout={handleLogout}>
-          <Routes>
-            <Route
-              path="/login"
-              element={user ? <Navigate to="/dashboard" replace /> : <LoginPage onLoginSuccess={loadUser} />}
-            />
-            <Route
-              path="/student/:id"
-              element={user ? <StudentTechniques user={user} /> : <Navigate to="/login" replace />}
-            />
-            <Route
-              path="/students"
-              element={
-                user && (user.role === 'coach' || user.role === 'Coach' || user.role === 'admin' || user.role === 'Admin')
-                  ? <StudentsList />
-                  : <Navigate to="/login" replace />
-              }
-            />
-            <Route
-              path="/dashboard"
-              element={user ? <Dashboard user={user} /> : <Navigate to="/login" replace />}
-            />
-            <Route
-              path="/profile"
-              element={user ? <ProfilePage /> : <Navigate to="/login" replace />}
-            />
-            <Route
-              path="/register-user"
-              element={
-                user && (user.role === 'coach' || user.role === 'Coach' || user.role === 'admin' || user.role === 'Admin')
-                  ? <RegisterUserPage />
-                  : <Navigate to="/login" replace />
-              }
-            />
+        <TelemetryProvider>
+          <Layout user={user} onLogout={handleLogout}>
+            <Routes>
+              <Route
+                path="/login"
+                element={user ? <Navigate to="/dashboard" replace /> : <LoginPage onLoginSuccess={loadUser} />}
+              />
+              <Route
+                path="/student/:id"
+                element={user ? <StudentTechniques user={user} /> : <Navigate to="/login" replace />}
+              />
+              <Route
+                path="/students"
+                element={
+                  user && (user.role === 'coach' || user.role === 'Coach' || user.role === 'admin' || user.role === 'Admin')
+                    ? <StudentsList />
+                    : <Navigate to="/login" replace />
+                }
+              />
+              <Route
+                path="/dashboard"
+                element={user ? <Dashboard user={user} /> : <Navigate to="/login" replace />}
+              />
+              <Route
+                path="/profile"
+                element={user ? <ProfilePage /> : <Navigate to="/login" replace />}
+              />
+              <Route
+                path="/register-user"
+                element={
+                  user && (user.role === 'coach' || user.role === 'Coach' || user.role === 'admin' || user.role === 'Admin')
+                    ? <RegisterUserPage />
+                    : <Navigate to="/login" replace />
+                }
+              />
 
 
-            <Route
-              path="/admin"
-              element={
-                user && (user.role === 'admin')
-                  ? <AdminPage />
-                  : <Navigate to="/login" replace />
-              }
-            />
-            <Route path="/" element={<Navigate to={user ? "/dashboard" : "/login"} replace />} />
+              <Route
+                path="/admin"
+                element={
+                  user && (user.role === 'admin')
+                    ? <AdminPage />
+                    : <Navigate to="/login" replace />
+                }
+              />
+              <Route path="/" element={<Navigate to={user ? "/dashboard" : "/login"} replace />} />
 
-          </Routes>
-        </Layout>
-        <Toaster />
+            </Routes>
+          </Layout>
+          <Toaster />
+        </TelemetryProvider>
       </Router>
-    </ThemeProvider>
+    </ThemeProvider >
   );
 }
 
