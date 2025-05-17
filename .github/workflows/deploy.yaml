@@ -2,18 +2,6 @@ name: Build and Deploy to Production
 on:
   push:
     branches: [main]
-  workflow_dispatch:
-    inputs:
-      force_backend_build:
-        description: "Force backend build"
-        required: false
-        default: false
-        type: boolean
-      force_frontend_build:
-        description: "Force frontend build"
-        required: false
-        default: false
-        type: boolean
 
 env:
   REGISTRY: ghcr.io
@@ -21,11 +9,9 @@ env:
   BUILDEVENT_FILE: "/tmp/buildevent-attrs"
 
 jobs:
-  check-changes:
+  build-frontend:
     runs-on: ubuntu-latest
     outputs:
-      code_changed: ${{ steps.changed-files.outputs.any_changed }}
-      all_changed_files: ${{ steps.changed-files.outputs.all_changed_files }}
       trace_start: ${{ steps.set-trace-start.outputs.trace-start }}
 
     steps:
@@ -34,93 +20,6 @@ jobs:
         run: |
           echo "trace-start=$(date +%s)" >> $GITHUB_OUTPUT
 
-      - uses: honeycombio/gha-buildevents@v2
-        with:
-          apikey: ${{ secrets.HONEYCOMB_API_KEY }}
-          dataset: syllabus-tracker-build-events
-
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Check backend changed files
-        id: check-backend
-        uses: tj-actions/changed-files@ed68ef82c095e0d48ec87eccea555d944a631a4c # v46
-        with:
-          files: |
-            **/*.rs
-            Cargo.toml
-            Cargo.lock
-            rust-toolchain.toml
-            Dockerfile
-            migrations/**
-            .sqlx/**
-            static/**
-
-      - name: Check frontend changed files
-        id: check-frontend
-        uses: tj-actions/changed-files@ed68ef82c095e0d48ec87eccea555d944a631a4c # v46
-        with:
-          files: |
-            frontend/**
-
-      - name: Log changed files information
-        id: log-changed-files
-        run: |
-          STEP_ID=analyze_changed_files
-          STEP_START=$(date +%s)
-
-          echo " any_code_changed=${{ steps.changed-files.outputs.any_changed }}" >> $BUILDEVENT_FILE
-          echo " backend_changed=${{ steps.check-backend.outputs.any_changed }}" >> $BUILDEVENT_FILE
-          echo " frontend_changed=${{ steps.check-frontend.outputs.any_changed }}" >> $BUILDEVENT_FILE
-
-          FILE_COUNT="${{ steps.changed-files.outputs.all_changed_files_count }}"
-          echo " changed_files_count=${FILE_COUNT}" >> $BUILDEVENT_FILE
-
-          if [[ -n "${{ steps.changed-files.outputs.all_changed_files }}" ]]; then
-            echo " changed_files=${{ steps.changed-files.outputs.all_changed_files }}" >> $BUILDEVENT_FILE
-            
-            RS_COUNT=$(echo "${{ steps.changed-files.outputs.all_changed_files }}" | grep -c "\.rs$" || echo "0")
-            TOML_COUNT=$(echo "${{ steps.changed-files.outputs.all_changed_files }}" | grep -c "\.toml$" || echo "0")
-            SQL_COUNT=$(echo "${{ steps.changed-files.outputs.all_changed_files }}" | grep -c "\.sql$" || echo "0")
-            TEMPLATE_COUNT=$(echo "${{ steps.changed-files.outputs.all_changed_files }}" | grep -c "\.html\.hbs$" || echo "0")
-            
-            TS_COUNT=$(echo "${{ steps.changed-files.outputs.all_changed_files }}" | grep -c "\.ts$" || echo "0")
-            TSX_COUNT=$(echo "${{ steps.changed-files.outputs.all_changed_files }}" | grep -c "\.tsx$" || echo "0")
-            CSS_COUNT=$(echo "${{ steps.changed-files.outputs.all_changed_files }}" | grep -c "\.css$" || echo "0")
-            HTML_COUNT=$(echo "${{ steps.changed-files.outputs.all_changed_files }}" | grep -c "\.html$" || echo "0")
-            
-            echo " rs_files_changed=${RS_COUNT}" >> $BUILDEVENT_FILE
-            echo " toml_files_changed=${TOML_COUNT}" >> $BUILDEVENT_FILE
-            echo " sql_files_changed=${SQL_COUNT}" >> $BUILDEVENT_FILE
-            echo " template_files_changed=${TEMPLATE_COUNT}" >> $BUILDEVENT_FILE
-            echo " ts_files_changed=${TS_COUNT}" >> $BUILDEVENT_FILE
-            echo " tsx_files_changed=${TSX_COUNT}" >> $BUILDEVENT_FILE
-            echo " css_files_changed=${CSS_COUNT}" >> $BUILDEVENT_FILE
-            echo " html_files_changed=${HTML_COUNT}" >> $BUILDEVENT_FILE
-            
-            BACKEND_COUNT=$((RS_COUNT + TOML_COUNT + SQL_COUNT + TEMPLATE_COUNT))
-            FRONTEND_COUNT=$((TS_COUNT + TSX_COUNT + CSS_COUNT + HTML_COUNT))
-            echo " backend_files_count=${BACKEND_COUNT}" >> $BUILDEVENT_FILE
-            echo " frontend_files_count=${FRONTEND_COUNT}" >> $BUILDEVENT_FILE
-            
-            echo " force_backend_build=${FORCE_BACKEND:-false}" >> $BUILDEVENT_FILE
-            echo " force_frontend_build=${FORCE_FRONTEND:-false}" >> $BUILDEVENT_FILE
-          else
-            echo " changed_files=none" >> $BUILDEVENT_FILE
-          fi
-
-          buildevents step $TRACE_ID $STEP_ID $STEP_START $STEP_ID
-        env:
-          FORCE_BACKEND: ${{ github.event.inputs.force_backend_build || 'false' }}
-          FORCE_FRONTEND: ${{ github.event.inputs.force_frontend_build || 'false' }}
-
-  build-frontend:
-    needs: check-changes
-    if: needs.check-changes.outputs.frontend_changed == 'true' || github.event.inputs.force_frontend_build == 'true'
-    runs-on: ubuntu-latest
-
-    steps:
       - uses: honeycombio/gha-buildevents@v2
         with:
           apikey: ${{ secrets.HONEYCOMB_API_KEY }}
@@ -183,7 +82,7 @@ jobs:
           buildevents step $TRACE_ID $STEP_ID $STEP_START $STEP_ID
 
   test:
-    needs: [check-changes, build-frontend]
+    needs: [build-frontend]
     runs-on: ubuntu-latest
 
     steps:
@@ -256,11 +155,7 @@ jobs:
           buildevents step $TRACE_ID $STEP_ID $STEP_START $STEP_ID
 
   build:
-    needs: [check-changes, build-frontend]
-    if: |
-      needs.check-changes.outputs.backend_changed == 'true' || 
-      needs.check-changes.outputs.frontend_changed == 'true' || 
-      github.event.inputs.force_backend_build == 'true'
+    needs: [build-frontend]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -338,14 +233,7 @@ jobs:
           buildevents step $TRACE_ID $STEP_ID $STEP_START $STEP_ID
 
   deploy:
-    needs: [check-changes, build, test, build-frontend]
-    if: |
-      always() &&
-      (needs.check-changes.outputs.backend_changed != 'true' && needs.check-changes.outputs.frontend_changed != 'true' ||
-      (needs.build.result == 'success' && needs.build-frontend.result == 'success')) &&
-      (needs.test.result == 'success' || needs.test.result == 'skipped') &&
-      (github.event.inputs.force_backend_build != 'true' || needs.build.result == 'success') &&
-      (github.event.inputs.force_frontend_build != 'true' || needs.build-frontend.result == 'success')
+    needs: [build, test, build-frontend]
     runs-on: ubuntu-latest
     permissions:
       contents: read
