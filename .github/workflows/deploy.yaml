@@ -14,6 +14,7 @@ jobs:
     outputs:
       trace_id: ${{ steps.start_trace.outputs.trace_id }}
       build_id: ${{ github.run_id }}
+      trace_start: ${{ steps.set-trace-start.outputs.trace_start }}
 
     steps:
       - uses: honeycombio/gha-buildevents@v2
@@ -31,6 +32,8 @@ jobs:
           BUILD_ID=${{ github.run_id }}
           BUILD_NAME="Build ${{ github.repository }} ${{ github.ref }}"
           START_TIME=$(date +%s)
+
+          echo "trace_start=$START_TIME" >> $GITHUB_OUTPUT
 
   test:
     runs-on: ubuntu-latest
@@ -220,14 +223,12 @@ jobs:
       packages: write
 
     steps:
-      - name: Get workflow conclusion
-        uses: technote-space/workflow-conclusion-action@v3
-
       - uses: honeycombio/gha-buildevents@v2
         with:
           apikey: ${{ secrets.HONEYCOMB_API_KEY }}
           dataset: syllabus-tracker-build-events
           trace_id: ${{ needs.start-build.outputs.trace_id }}
+          start_time: ${{ needs.start-build.outputs.start_time }}
           status: ${{ env.WORKFLOW_CONCLUSION }}
 
       - name: Checkout code (minimal for config files)
@@ -369,8 +370,17 @@ jobs:
         env:
           HONEYCOMB_API_KEY: ${{ secrets.HONEYCOMB_API_KEY }}
 
-      - name: Finish build trace
-        if: always()
-        run: |
-          END_TIME=$(date +%s)
-          buildevents build $TRACE_ID $END_TIME
+  end-trace:
+    runs-on: ubuntu-latest
+    needs: [start-build, deploy]
+    if: ${{ always() }}
+    permissions:
+      actions: read
+    steps:
+      - uses: technote-space/workflow-conclusion-action@v3
+      - uses: honeycombio/gha-buildevents@v2
+        with:
+          apikey: ${{ secrets.HONEYCOMB_API_KEY }}
+          dataset: syllabus-tracker-build-events
+          status: ${{ env.WORKFLOW_CONCLUSION }}
+          trace-start: ${{ needs.start-build.outputs.trace_start}}
