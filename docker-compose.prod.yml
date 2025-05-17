@@ -94,8 +94,8 @@ services:
     env_file:
       - config/prod.env
     depends_on:
-      - app
-      - frontend
+      app:
+        condition: service_healthy
     networks:
       - internal
       - external
