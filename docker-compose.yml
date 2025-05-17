@@ -21,6 +21,23 @@ services:
     networks:
       - syllabus-net
 
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      target: dev
+    ports:
+      - "5173:5173"
+    env_file:
+      - config/common.env
+      - config/dev.env
+      - .secrets.env
+    volumes:
+      - ./frontend:/app
+      - node-modules:/app/node_modules
+    networks:
+      - syllabus-net
+
   otel-collector:
     image: otel/opentelemetry-collector-contrib:latest
     command: ["--config=/etc/otel-collector-config.yaml"]
@@ -43,3 +60,4 @@ volumes:
   cargo-cache:
   target-cache:
   sccache-data:
+  node-modules:

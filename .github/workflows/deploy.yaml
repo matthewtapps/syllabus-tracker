@@ -63,6 +63,10 @@ jobs:
 
       - name: Build frontend
         working-directory: ./frontend
+        env:
+          VITE_HONEYCOMB_API_KEY: ${{ secrets.HONEYCOMB_API_KEY }}
+          VITE_API_URL: "/api"
+          VITE_ENVIRONMENT: "production"
         run: pnpm run build
 
       - name: Upload frontend dist

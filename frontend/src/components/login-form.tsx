@@ -60,7 +60,7 @@ export function LoginForm({
           <div className="relative bg-muted aspect-square md:flex items-center justify-center">
             <div className="absolute">
               <img
-                src="/static/msb.jpg"
+                src="/img/msb.jpg"
                 alt="Login"
                 className="h-full w-full"
               />

@@ -120,11 +120,11 @@ pub async fn init_rocket(pool: SqlitePool) -> Rocket<Build> {
             ],
         )
         .register("/api", catchers![unauthorized_api])
-        .mount("/static", FileServer::new("static"))
-        .mount("/assets", FileServer::new("frontend/dist/assets"))
-        .mount("/", FileServer::new(relative!("/frontend/dist")).rank(100))
+        // .mount("/static", FileServer::new("static"))
+        // .mount("/assets", FileServer::new("frontend/dist/assets"))
+        // .mount("/", FileServer::new(relative!("/frontend/dist")).rank(100))
         .mount("/", routes![health])
-        .mount("/", routes![serve_spa_fallback])
+        // .mount("/", routes![serve_spa_fallback])
         .register(
             "/",
             catchers![forbidden, unauthorized, internal_server_error],
