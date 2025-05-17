@@ -65,6 +65,7 @@ services:
     env_file:
       - config/common.env
       - config/prod.env
+      - .secrets.env
     restart: always
     networks:
       - internal
@@ -110,6 +111,7 @@ services:
     env_file:
       - config/prod.env
       - config/backup-service.env
+      - .secrets.env
     command: |
       /bin/sh -c '
       apk add --no-cache sqlite findutils tzdata curl go bc
