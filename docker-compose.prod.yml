@@ -86,7 +86,7 @@ services:
       - "80:80"
       - "443:443"
     volumes:
-      - ./nginx/default.conf:/etc/nginx/ssl.conf.template
+      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf
       - ./scripts/nginx-entrypoint.sh:/entrypoint.sh
       - ./nginx/ssl:/etc/letsencrypt
       - ./nginx/www:/var/www
@@ -99,8 +99,6 @@ services:
     networks:
       - internal
       - external
-    entrypoint:
-      - /entrypoint.sh
 
   backup:
     image: alpine:latest
