@@ -1,0 +1,242 @@
+name: Build and Deploy Full Application to NixOS
+
+on:
+  # push:
+  #   branches: [main] # Or your deployment branch
+  workflow_dispatch: # Allow manual trigger
+    inputs:
+      nixos_config_branch:
+        description: "Branch/commit of NixOS config (if different from app code)"
+        required: false
+        default: "" # Defaults to the branch triggering the workflow
+      force_rebuild_options:
+        description: "Extra options for nixos-rebuild (e.g., --fast, --upgrade)"
+        required: false
+        default: ""
+
+env:
+  REGISTRY: ghcr.io
+
+jobs:
+  build-backend:
+    name: Build Backend Docker Image
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write # To push to GHCR
+    outputs:
+      image_tag: ${{ steps.get_short_sha.outputs.short_sha }}
+      image_name: ${{ env.REGISTRY }}/${{ github.repository }}/app
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Get short SHA for image tag
+        id: get_short_sha
+        run: echo "short_sha=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+
+      - name: Build and push backend Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: . # Assuming Dockerfile for backend is in root
+          file: ./Dockerfile # Specify if not named Dockerfile
+          target: production # Assuming your Dockerfile has a 'production' stage
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ github.repository }}/app:${{ steps.get_short_sha.outputs.short_sha }}
+            ${{ env.REGISTRY }}/${{ github.repository }}/app:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          # build-args: from your old deploy.yaml if needed for backend
+          #   HONEYCOMB_API_KEY=${{ secrets.HONEYCOMB_API_KEY }}
+          #   ROCKET_SECRET_KEY=${{ secrets.ROCKET_SECRET_KEY }}
+          # These secrets are now better handled on the server or via sops-nix for the running app
+
+  build-frontend:
+    name: Build Frontend Docker Image
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image_tag: ${{ steps.get_short_sha.outputs.short_sha }}
+      image_name: ${{ env.REGISTRY }}/${{ github.repository }}/frontend
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Get short SHA for image tag
+        id: get_short_sha
+        run: echo "short_sha=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+
+      - name: Build and push frontend Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./frontend # Context is the frontend directory
+          file: ./frontend/Dockerfile # Path to frontend Dockerfile
+          target: production # Assuming frontend Dockerfile has 'production' stage
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ github.repository }}/frontend:${{ steps.get_short_sha.outputs.short_sha }}
+            ${{ env.REGISTRY }}/${{ github.repository }}/frontend:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: | # These are build-time args for Vite, good to keep here
+            VITE_HONEYCOMB_API_KEY=${{ secrets.HONEYCOMB_API_KEY }}
+            VITE_API_URL=/api # This should be correct for when proxied by NixOS Nginx
+            VITE_ENVIRONMENT=production
+
+  deploy_to_nixos:
+    name: Deploy System and Application to NixOS
+    runs-on: ubuntu-latest
+    needs: [build-backend, build-frontend] # Depends on image builds
+    if: github.repository == 'matthewtapps/syllabus-tracker'
+
+    env:
+      NIXOS_SERVER_IP: ${{ secrets.NIXOS_TEST_SERVER_IP }}
+      NIXOS_SERVER_USER: ${{ secrets.NIXOS_TEST_SERVER_USER }}
+      NIXOS_CONFIG_REPO_PATH: "nixos"
+      SERVER_TARGET_CONFIG_PATH: "/etc/nixos"
+      SERVER_TEMP_CONFIG_PATH: "/home/${{ secrets.NIXOS_TEST_SERVER_USER }}/nixos_config_staging"
+      APP_DEPLOY_PATH: "/srv/syllabus-tracker" # Where docker-compose and app configs go
+
+    steps:
+      - name: Checkout Code (NixOS config, Docker Compose, app configs)
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.nixos_config_branch || github.ref }} # Use input or current ref
+          # Checkout the full repo this time as we need compose file and app configs
+          # sparse-checkout can be used if these are also in a sub-directory
+
+      - name: Verify checkout includes necessary files
+        run: |
+          ls -la $GITHUB_WORKSPACE
+          ls -la "${GITHUB_WORKSPACE}/${NIXOS_CONFIG_REPO_PATH}"
+          test -f "${GITHUB_WORKSPACE}/${NIXOS_CONFIG_REPO_PATH}/configuration.nix" || (echo "NixOS configuration.nix not found" && exit 1)
+          test -f "${GITHUB_WORKSPACE}/docker-compose.nixos.yml" || (echo "docker-compose.nixos.yml not found" && exit 1)
+          test -d "${GITHUB_WORKSPACE}/config" || (echo "Application config directory not found" && exit 1)
+
+      - name: Set up SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.NIXOS_TEST_SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H "${NIXOS_SERVER_IP}" >> ~/.ssh/known_hosts
+
+      - name: Deploy System Config and Application Services
+        env:
+          # Docker registry credentials for server-side pull
+          GHCR_USERNAME_SECRET: ${{ github.actor }}
+          GHCR_TOKEN_SECRET: ${{ secrets.GITHUB_TOKEN }} # GITHUB_TOKEN has permissions to pull from repo's GHCR
+          # Image details from build jobs
+          BACKEND_IMAGE_NAME: ${{ needs.build-backend.outputs.image_name }}
+          BACKEND_IMAGE_TAG: ${{ needs.build-backend.outputs.image_tag }}
+          FRONTEND_IMAGE_NAME: ${{ needs.build-frontend.outputs.image_name }}
+          FRONTEND_IMAGE_TAG: ${{ needs.build-frontend.outputs.image_tag }}
+          # Secrets for .secrets.env on the server
+          SECRET_HONEYCOMB_API_KEY: ${{ secrets.HONEYCOMB_API_KEY }}
+          SECRET_ROCKET_SECRET_KEY: ${{ secrets.ROCKET_SECRET_KEY }}
+          # Other env vars for compose
+          REGISTRY_ENV: ${{ env.REGISTRY }} # from job env
+          IMAGE_NAME_ENV: ${{ github.repository }} # from job env
+        run: |
+          echo "Staging NixOS files from '${GITHUB_WORKSPACE}/${NIXOS_CONFIG_REPO_PATH}/' to remote '${SERVER_TEMP_CONFIG_PATH}/'"
+          ssh -i ~/.ssh/id_rsa \
+            "${NIXOS_SERVER_USER}@${NIXOS_SERVER_IP}" \
+            "mkdir -p ${SERVER_TEMP_CONFIG_PATH} && mkdir -p ${APP_DEPLOY_PATH}/config && mkdir -p ${APP_DEPLOY_PATH}/scripts"
+
+          rsync -avz --delete -e "ssh -i ~/.ssh/id_rsa" \
+            "${GITHUB_WORKSPACE}/${NIXOS_CONFIG_REPO_PATH}/" \
+            "${NIXOS_SERVER_USER}@${NIXOS_SERVER_IP}:${SERVER_TEMP_CONFIG_PATH}/"
+
+          echo "Copying application deployment files (Docker Compose, configs, scripts) to server..."
+          rsync -avz --delete -e "ssh -i ~/.ssh/id_rsa" \
+            "${GITHUB_WORKSPACE}/docker-compose.nixos.yml" \
+            "${GITHUB_WORKSPACE}/config/" \
+            "${GITHUB_WORKSPACE}/scripts/backup.sh" \
+            "${NIXOS_SERVER_USER}@${NIXOS_SERVER_IP}:${APP_DEPLOY_PATH}/"
+
+          echo "Creating .secrets.env file on server for Docker Compose..."
+          ssh -i ~/.ssh/id_rsa \
+            "${NIXOS_SERVER_USER}@${NIXOS_SERVER_IP}" \
+            "echo 'HONEYCOMB_API_KEY=${SECRET_HONEYCOMB_API_KEY}' > ${APP_DEPLOY_PATH}/.secrets.env && \
+             echo 'ROCKET_SECRET_KEY=${SECRET_ROCKET_SECRET_KEY}' >> ${APP_DEPLOY_PATH}/.secrets.env && \
+             echo 'VITE_HONEYCOMB_API_KEY=${SECRET_HONEYCOMB_API_KEY}' >> ${APP_DEPLOY_PATH}/.secrets.env"
+
+          echo "Applying NixOS configuration and deploying application on server..."
+          ssh -i ~/.ssh/id_rsa \
+            "${NIXOS_SERVER_USER}@${NIXOS_SERVER_IP}" \
+            "bash -s" <<EOF
+              set -ex 
+
+              echo "Copying NixOS configuration from staging to ${SERVER_TARGET_CONFIG_PATH}..."
+              sudo cp "${SERVER_TEMP_CONFIG_PATH}/configuration.nix" "${SERVER_TARGET_CONFIG_PATH}/configuration.nix"
+              sudo cp "${SERVER_TEMP_CONFIG_PATH}/hardware-configuration.nix" "${SERVER_TARGET_CONFIG_PATH}/hardware-configuration.nix"
+
+              echo "Running nixos-rebuild switch ${{ github.event.inputs.force_rebuild_options }}..."
+              sudo nixos-rebuild switch ${{ github.event.inputs.force_rebuild_options }}
+              echo "NixOS configuration applied."
+
+              echo "Logging into Docker registry (${REGISTRY_ENV})..."
+              echo "${GHCR_TOKEN_SECRET}" | docker login ${REGISTRY_ENV} -u "${GHCR_USERNAME_SECRET}" --password-stdin
+
+              echo "Navigating to application deployment path: ${APP_DEPLOY_PATH}"
+              cd "${APP_DEPLOY_PATH}"
+
+              echo "Pulling latest application images (app:${BACKEND_IMAGE_TAG}, frontend:${FRONTEND_IMAGE_TAG})..."
+              export APP_IMAGE_TAG="${BACKEND_IMAGE_TAG}"
+              export FRONTEND_IMAGE_TAG="${FRONTEND_IMAGE_TAG}"
+              # These are now directly in the docker-compose.nixos.yml file using GHA env syntax
+              # export REGISTRY="${REGISTRY_ENV}"
+              # export IMAGE_NAME="${IMAGE_NAME_ENV}" 
+
+              docker compose -f docker-compose.nixos.yml pull app frontend otel-collector backup
+
+              echo "Starting application services with Docker Compose..."
+              # Pass image tags again just in case, though compose should use the ones from pull
+              docker compose -f docker-compose.nixos.yml up -d --remove-orphans --force-recreate
+
+              echo "Cleaning up unused Docker images..."
+              docker image prune -af # -a to remove all unused, not just dangling
+
+              echo "Application deployment complete."
+          EOF
+
+      - name: Final Health Check (Application)
+        if: always()
+        env:
+          FULL_APP_DOMAIN: "syllabustracker-nixos.matthewtapps.com"
+        run: |
+          echo "Attempting health check on https://${FULL_APP_DOMAIN}/api/health"
+          sleep 30 # Give services more time to fully start
+          curl --verbose --fail --location "https://${FULL_APP_DOMAIN}/api/health" || \
+            (echo "ERROR: Application health check to https://${FULL_APP_DOMAIN}/api/health failed." && exit 1)
+          echo "Application health check successful."
+
+      # Your existing Honeycomb marker step can be added here
+      # - name: Create Honeycomb deployment marker
+      #   if: success() # Only on successful deployment
+      #   run: |
+      #     # ... (copy from your old deploy.yaml) ...
