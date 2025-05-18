@@ -1,0 +1,71 @@
+# docker-compose.nixos.yml
+name: syllabus-tracker-services
+
+services:
+  app:
+    image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/app:${APP_IMAGE_TAG:-latest}
+    restart: unless-stopped
+    env_file:
+      - ./config/common.env
+      - ./config/prod.env
+      - ./.secrets.env
+    volumes:
+      - app-data:/app/data
+    networks:
+      - syllabus_internal
+    ports:
+      - "127.0.0.1:8001:8000"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      interval: 60s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+  frontend:
+    image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/frontend:${FRONTEND_IMAGE_TAG:-latest}
+    restart: unless-stopped
+    networks:
+      - syllabus_internal
+    ports:
+      - "127.0.0.1:3001:80"
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:latest
+    command: ["--config=/etc/otel-collector-config.yaml"]
+    volumes:
+      - ./config/otel-collector-config.prod.yaml:/etc/otel-collector-config.yaml
+      - /var/run/docker.sock:/var/run/docker.sock
+    env_file:
+      - ./config/common.env
+      - ./config/prod.env
+      - ./.secrets.env
+    restart: unless-stopped
+    networks:
+      - syllabus_internal
+
+  backup:
+    image: alpine:latest
+    volumes:
+      - app-data:/app/data
+      - syllabus_backups:/data/backups
+      - ./scripts/backup.sh:/scripts/backup.sh
+    entrypoint: /scripts/backup.sh
+    env_file:
+      - ./config/prod.env
+      - ./config/backup-service.env
+      - ./.secrets.env
+    restart: unless-stopped
+    networks:
+      - syllabus_internal
+    depends_on:
+      app:
+        condition: service_healthy
+
+volumes:
+  app-data:
+  syllabus_backups:
+
+networks:
+  syllabus_internal:
+    driver: bridge
