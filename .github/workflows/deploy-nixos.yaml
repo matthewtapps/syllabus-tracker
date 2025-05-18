@@ -174,9 +174,9 @@ jobs:
           echo "Copying application deployment files (Docker Compose, configs, scripts) to server..."
           rsync -avz --delete -e "ssh -i ~/.ssh/id_rsa" \
             "${GITHUB_WORKSPACE}/docker-compose.nixos.yml" \
-            "${GITHUB_WORKSPACE}/config/" \
-            "${GITHUB_WORKSPACE}/scripts/backup.sh" \
-            "${NIXOS_SERVER_USER}@${NIXOS_SERVER_IP}:${APP_DEPLOY_PATH}/"
+            "${GITHUB_WORKSPACE}/config" \
+            "${GITHUB_WORKSPACE}/scripts" \
+            "${NIXOS_SERVER_USER}@${NIXOS_SERVER_IP}:${APP_DEPLOY_PATH}"
 
           echo "Creating .secrets.env file on server for Docker Compose..."
           ssh -i ~/.ssh/id_rsa \
