@@ -115,11 +115,11 @@ jobs:
     if: github.repository == 'matthewtapps/syllabus-tracker'
 
     env:
-      NIXOS_SERVER_IP: ${{ secrets.NIXOS_TEST_SERVER_IP }}
-      NIXOS_SERVER_USER: ${{ secrets.NIXOS_TEST_SERVER_USER }}
+      NIXOS_SERVER_IP: ${{ secrets.NIXOS_SERVER_IP }}
+      NIXOS_SERVER_USER: ${{ secrets.NIXOS_SERVER_USER }}
       NIXOS_CONFIG_REPO_PATH: "nixos"
       SERVER_TARGET_CONFIG_PATH: "/etc/nixos"
-      SERVER_TEMP_CONFIG_PATH: "/home/${{ secrets.NIXOS_TEST_SERVER_USER }}/nixos_config_staging"
+      SERVER_TEMP_CONFIG_PATH: "/home/${{ secrets.NIXOS_SERVER_USER }}/nixos_config_staging"
       APP_DEPLOY_PATH: "/srv/syllabus-tracker" # Where docker-compose and app configs go
 
     steps:
@@ -141,7 +141,7 @@ jobs:
       - name: Set up SSH
         run: |
           mkdir -p ~/.ssh
-          echo "${{ secrets.NIXOS_TEST_SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
           ssh-keyscan -H "${NIXOS_SERVER_IP}" >> ~/.ssh/known_hosts
 
