@@ -1,9 +1,8 @@
-# docker-compose.nixos.yml
 name: syllabus-tracker-services
 
 services:
   app:
-    image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/app:${APP_IMAGE_TAG:-latest}
+    image: ${REGISTRY}/${IMAGE_NAME}/app:${APP_IMAGE_TAG:-latest}
     restart: unless-stopped
     env_file:
       - ./config/common.env
@@ -23,7 +22,7 @@ services:
       start_period: 30s
 
   frontend:
-    image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/frontend:${FRONTEND_IMAGE_TAG:-latest}
+    image: ${REGISTRY}/${IMAGE_NAME}/frontend:${FRONTEND_IMAGE_TAG:-latest}
     restart: unless-stopped
     networks:
       - syllabus_internal
@@ -33,6 +32,8 @@ services:
   otel-collector:
     image: otel/opentelemetry-collector-contrib:latest
     command: ["--config=/etc/otel-collector-config.yaml"]
+    group_add:
+      - "131"
     volumes:
       - ./config/otel-collector-config.prod.yaml:/etc/otel-collector-config.yaml
       - /var/run/docker.sock:/var/run/docker.sock

@@ -8,9 +8,10 @@ let
   domain = "syllabustracker-nixos.matthewtapps.com";
   acmeEmail = "mail@matthewtapps.com";
 
-  adminSshKey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPh++awEjCHnVU2eGPSADBgrBzr1h4lGqbSG0ZRotT/W matt@Matt-DESKTOP-NIXOS";
-
+  adminSshKey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEQG/SNksegRf+4EUWzyInTY09rKR3xOwrX91ZjqIbKe matt@Matt-DESKTOP-NIXOS";
   adminUser = "syllabusadmin";
+
+  devSshKey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPh++awEjCHnVU2eGPSADBgrBzr1h4lGqbSG0ZRotT/W matt@Matt-DESKTOP-NIXOS";
 
   publicIPv4 = "170.64.159.153";
   publicIPv4Prefix = 19;
@@ -21,6 +22,9 @@ let
 
   privateIPv4_eth1 = "10.126.0.3";
   privateIPv4Prefix_eth1 = 20;
+
+  serverTempConfigPath = "/home/${adminUser}/nixos_config_staging";
+  serverTargetConfigPath = "/etc/nixos";
 in
 {
   imports = [
@@ -90,12 +94,40 @@ in
       "wheel"
       "docker"
     ];
-    openssh.authorizedKeys.keys = [ adminSshKey ];
+    openssh.authorizedKeys.keys = [
+      adminSshKey
+      devSshKey
+    ];
   };
+
   # No passwordless sudo for the admin user for better security on a server. They'll need to type their password.
   security.sudo.wheelNeedsPassword = true;
 
-  # Disable root login via SSH once your admin user is confirmed working
+  security.sudo.extraRules = [
+    {
+      users = [ adminUser ];
+      commands = [
+        {
+          # Allow running nixos-rebuild with any arguments (switch, boot, --fast, --upgrade, etc.)
+          command = "/run/current-system/sw/bin/nixos-rebuild *";
+          options = [ "NOPASSWD" ]; # Allow this specific command pattern without a password
+        }
+        {
+          command = "/run/current-system/sw/bin/cp ${serverTempConfigPath}/configuration.nix ${serverTargetConfigPath}/configuration.nix";
+          options = [ "NOPASSWD" ];
+        }
+        {
+          command = "/run/current-system/sw/bin/cp ${serverTempConfigPath}/hardware-configuration.nix ${serverTargetConfigPath}/hardware-configuration.nix";
+          options = [ "NOPASSWD" ];
+        }
+      ];
+    }
+  ];
+
+  security.sudo.extraConfig = ''
+    Defaults:${adminUser} !requiretty
+  '';
+
   services.openssh.settings.PermitRootLogin = "no";
 
   environment.systemPackages = with pkgs; [
@@ -142,7 +174,7 @@ in
       enableACME = true;
       # Proxy requests to application containers
       locations."/" = {
-        proxyPass = "http://frontend:80"; # Docker Compose DNS will resolve 'frontend'
+        proxyPass = "http://127.0.0.1:3001";
         extraConfig = ''
           proxy_set_header Host $host;
           proxy_set_header X-Real-IP $remote_addr;
@@ -151,7 +183,7 @@ in
         '';
       };
       locations."/api/" = {
-        proxyPass = "http://app:8000/api/"; # Docker Compose DNS will resolve 'app'
+        proxyPass = "http://127.0.0.1:8001/api/";
         proxyWebsockets = true;
         extraConfig = ''
           proxy_set_header Host $host;
@@ -170,9 +202,18 @@ in
 
   # Persistent storage directories for application
   systemd.tmpfiles.rules = [
-    "d /var/lib/syllabus-tracker/app-data 0755 ${adminUser} users -"
-    "d /var/lib/syllabus-tracker/backups 0750 ${adminUser} users -"
-    # Nginx related paths like /var/lib/acme and /var/www for challenges are managed by NixOS.
+    # For Docker persistent data
+    "d /var/lib/syllabus-tracker/app-data 0755 ${adminUser} users -" # Owned by adminUser
+    "d /var/lib/syllabus-tracker/backups 0750 ${adminUser} users -" # Owned by adminUser
+
+    # For Application Deployment Path (Docker Compose files, scripts, configs)
+    "d /srv/syllabus-tracker 0755 ${adminUser} users -" # Main app deployment dir, owned by adminUser
+    "d /srv/syllabus-tracker/config 0755 ${adminUser} users -" # Subdirectory for app configs, owned by adminUser
+    "d /srv/syllabus-tracker/scripts 0755 ${adminUser} users -" # Subdirectory for scripts, owned by adminUser
+
+    # Nginx placeholder
+    "d /var/www/${domain}/placeholder 0755 root root -" # Nginx usually runs as its own user, but root can create
+    "f /var/www/${domain}/placeholder/index.html 0644 root root - \"ACME Initial Setup - OK\""
   ];
 
   # System state version
