@@ -174,6 +174,20 @@ jobs:
             "${GITHUB_WORKSPACE}/${NIXOS_CONFIG_REPO_PATH}/" \
             "${NIXOS_SERVER_USER}@${NIXOS_SERVER_IP}:${SERVER_TEMP_CONFIG_PATH}/"
 
+          echo "Setting up Container Registry credentials on server"
+          cat > docker_config.json << EOF
+          {
+            "auths": {
+              "${{ env.REGISTRY }}": {
+                "auth": "$(echo -n ${{ github.actor }}:${{ secrets.GITHUB_TOKEN }} | base64)"
+              }
+            }
+          }
+          EOF
+
+          ssh ${{ secrets.NIXOS_SERVER_USER }}@${{ secrets.NIXOS_SERVER_IP }} "mkdir -p ~/.docker"
+          scp docker_config.json ${{ secrets.NIXOS_SERVER_USER }}@${{ secrets.NIXOS_SERVER_IP }}:~/.docker/config.json
+
           echo "Copying application deployment files (Docker Compose, configs, scripts) to server..."
           rsync -avz --delete -e "ssh -i ~/.ssh/id_rsa" \
             "${GITHUB_WORKSPACE}/docker-compose.nixos.yml" \
@@ -201,9 +215,6 @@ jobs:
               echo "Running nixos-rebuild switch ${{ github.event.inputs.force_rebuild_options }}..."
               sudo nixos-rebuild switch ${{ github.event.inputs.force_rebuild_options }}
               echo "NixOS configuration applied."
-
-              echo "Logging into Docker registry (${REGISTRY_ENV})..."
-              echo "${GHCR_TOKEN}" | docker login ${REGISTRY_ENV} -u "${GHCR_USERNAME}" --password-stdin
 
               echo "Navigating to application deployment path: ${APP_DEPLOY_PATH}"
               cd "${APP_DEPLOY_PATH}"
