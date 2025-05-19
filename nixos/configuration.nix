@@ -174,7 +174,7 @@ in
       enableACME = true;
       # Proxy requests to application containers
       locations."/" = {
-        proxyPass = "http://127.0.0.1:3001";
+        proxyPass = "http://127.0.0.1:3001/";
         extraConfig = ''
           proxy_set_header Host $host;
           proxy_set_header X-Real-IP $remote_addr;
