@@ -148,19 +148,22 @@ jobs:
       - name: Deploy System Config and Application Services
         env:
           # Docker registry credentials for server-side pull
-          GHCR_USERNAME_SECRET: ${{ github.actor }}
-          GHCR_TOKEN_SECRET: ${{ secrets.GITHUB_TOKEN }} # GITHUB_TOKEN has permissions to pull from repo's GHCR
+          GHCR_USERNAME: ${{ github.actor }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
           # Image details from build jobs
           BACKEND_IMAGE_NAME: ${{ needs.build-backend.outputs.image_name }}
           BACKEND_IMAGE_TAG: ${{ needs.build-backend.outputs.image_tag }}
           FRONTEND_IMAGE_NAME: ${{ needs.build-frontend.outputs.image_name }}
           FRONTEND_IMAGE_TAG: ${{ needs.build-frontend.outputs.image_tag }}
+
           # Secrets for .secrets.env on the server
           SECRET_HONEYCOMB_API_KEY: ${{ secrets.HONEYCOMB_API_KEY }}
           SECRET_ROCKET_SECRET_KEY: ${{ secrets.ROCKET_SECRET_KEY }}
+
           # Other env vars for compose
-          REGISTRY_ENV: ${{ env.REGISTRY }} # from job env
-          IMAGE_NAME_ENV: ${{ github.repository }} # from job env
+          REGISTRY: ${{ env.REGISTRY }} # from job env
+          IMAGE_NAME: ${{ github.repository }} # from job env
         run: |
           echo "Staging NixOS files from '${GITHUB_WORKSPACE}/${NIXOS_CONFIG_REPO_PATH}/' to remote '${SERVER_TEMP_CONFIG_PATH}/'"
           ssh -i ~/.ssh/id_rsa \
@@ -200,7 +203,7 @@ jobs:
               echo "NixOS configuration applied."
 
               echo "Logging into Docker registry (${REGISTRY_ENV})..."
-              echo "${GHCR_TOKEN_SECRET}" | docker login ${REGISTRY_ENV} -u "${GHCR_USERNAME_SECRET}" --password-stdin
+              echo "${GHCR_TOKEN}" | docker login ${REGISTRY_ENV} -u "${GHCR_USERNAME}" --password-stdin
 
               echo "Navigating to application deployment path: ${APP_DEPLOY_PATH}"
               cd "${APP_DEPLOY_PATH}"
@@ -208,14 +211,12 @@ jobs:
               echo "Pulling latest application images (app:${BACKEND_IMAGE_TAG}, frontend:${FRONTEND_IMAGE_TAG})..."
               export APP_IMAGE_TAG="${BACKEND_IMAGE_TAG}"
               export FRONTEND_IMAGE_TAG="${FRONTEND_IMAGE_TAG}"
-              # These are now directly in the docker-compose.nixos.yml file using GHA env syntax
-              # export REGISTRY="${REGISTRY_ENV}"
-              # export IMAGE_NAME="${IMAGE_NAME_ENV}" 
+              export REGISTRY="${REGISTRY}"
+              export IMAGE_NAME="${IMAGE_NAME}"
 
               docker compose -f docker-compose.nixos.yml pull app frontend otel-collector backup
 
               echo "Starting application services with Docker Compose..."
-              # Pass image tags again just in case, though compose should use the ones from pull
               docker compose -f docker-compose.nixos.yml up -d --remove-orphans --force-recreate
 
               echo "Cleaning up unused Docker images..."
