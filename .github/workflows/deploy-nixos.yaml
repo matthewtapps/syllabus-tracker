@@ -193,6 +193,7 @@ jobs:
             "${GITHUB_WORKSPACE}/docker-compose.nixos.yml" \
             "${GITHUB_WORKSPACE}/config" \
             "${GITHUB_WORKSPACE}/scripts" \
+            "${GITHUB_WORKSPACE}/nginx" \
             "${NIXOS_SERVER_USER}@${NIXOS_SERVER_IP}:${APP_DEPLOY_PATH}"
 
           echo "Creating .secrets.env file on server for Docker Compose..."

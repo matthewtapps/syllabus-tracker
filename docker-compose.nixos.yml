@@ -1,6 +1,20 @@
 name: syllabus-tracker-services
 
 services:
+  nginx:
+    image: nginx:alpine
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8080:80"
+    volumes:
+      - ./nginx/nixos-default.conf:/etc/nginx/conf.d
+      - frontend-dist:/usr/share/nginx/html:ro
+    depends_on:
+      - app
+      - frontend
+    networks:
+      - syllabus_internal
+
   app:
     image: ${REGISTRY}/${IMAGE_NAME}/app:${APP_IMAGE_TAG:-latest}
     restart: unless-stopped
@@ -12,8 +26,8 @@ services:
       - app-data:/app/data
     networks:
       - syllabus_internal
-    ports:
-      - "127.0.0.1:8001:8000"
+    expose:
+      - "8000"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
       interval: 60s
@@ -26,8 +40,8 @@ services:
     restart: unless-stopped
     networks:
       - syllabus_internal
-    ports:
-      - "127.0.0.1:3001:80"
+    expose:
+      - "80"
 
   otel-collector:
     image: otel/opentelemetry-collector-contrib:latest
