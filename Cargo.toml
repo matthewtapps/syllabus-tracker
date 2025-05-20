@@ -10,9 +10,6 @@ sqlx = { version = "0.8.5", features = ["runtime-async-std", "sqlite", "chrono" 
 
 # web framework
 rocket = { git = "https://github.com/rwf2/Rocket", branch = "master", features = ["trace", "json", "secrets", "tls"] }
-rocket_dyn_templates = { git = "https://github.com/rwf2/Rocket", branch = "master", features = ["handlebars"] }
-
-# templating
 serde = { version = "1.0.219", features = ["derive"] }
 chrono = { version = "0.4.40", features = ["serde"] }
 serde_json = "1.0.140"

@@ -154,8 +154,13 @@ jobs:
           context: .
           push: true
           tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/app:${{ steps.get_short_sha.outputs.short_sha }},${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/app:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: |
+            type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/app:latest
+            type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/app:cache
+            type=gha,scope=backend-build
+          cache-to: |
+            type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/app:cache,mode=max
+            type=gha,scope=backend-build,mode=max
           build-args: |
             HONEYCOMB_API_KEY=${{ secrets.HONEYCOMB_API_KEY }}
             ROCKET_SECRET_KEY=${{ secrets.ROCKET_SECRET_KEY }}
