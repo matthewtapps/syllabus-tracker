@@ -11,7 +11,9 @@ declare global {
   }
 }
 
-const apiKey = import.meta.env.VITE_HONEYCOMB_API_KEY || "";
+const apiKey =
+  import.meta.env.VITE_HONEYCOMB_API_KEY ||
+  "hcaik_01jvp2z2gwqffmtv456vvej5ta606mb1beakaetx2kqg6shdakch8333an";
 window.apiKey = apiKey;
 
 import { initTelemetry } from "./lib/telemetry";
