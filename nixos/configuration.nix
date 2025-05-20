@@ -5,7 +5,7 @@
 }:
 
 let
-  domain = "syllabustracker-nixos.matthewtapps.com";
+  domain = "syllabustracker.matthewtapps.com";
   acmeEmail = "mail@matthewtapps.com";
 
   adminSshKey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEQG/SNksegRf+4EUWzyInTY09rKR3xOwrX91ZjqIbKe matt@Matt-DESKTOP-NIXOS";
