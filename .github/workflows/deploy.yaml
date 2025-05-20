@@ -37,14 +37,14 @@ jobs:
         id: start_trace
         run: |
           # Save trace ID and build ID for other jobs
-          echo "trace_id=$TRACE_ID" >> $GITHUB_OUTPUT
+          echo "trace_id=$TRACE_ID" >> "$GITHUB_OUTPUT"
 
           # Start the build trace
           BUILD_ID=${{ github.run_id }}
           BUILD_NAME="Build ${{ github.repository }} ${{ github.ref }}"
           START_TIME=$(date +%s)
 
-          echo "trace_start=$START_TIME" >> $GITHUB_OUTPUT
+          echo "trace_start=$START_TIME" >> "$GITHUB_OUTPUT"
 
   test:
     runs-on: ubuntu-latest
@@ -55,7 +55,8 @@ jobs:
         with:
           apikey: ${{ secrets.HONEYCOMB_API_KEY }}
           dataset: syllabus-tracker-build-events
-          trace_id: ${{ needs.start-build.outputs.trace_id }}
+        env:
+          TRACE_ID: ${{ needs.start-build.outputs.trace_id }}
 
       - name: Checkout code
         uses: actions/checkout@v4
@@ -122,7 +123,8 @@ jobs:
         with:
           apikey: ${{ secrets.HONEYCOMB_API_KEY }}
           dataset: syllabus-tracker-build-events
-          trace_id: ${{ needs.start-build.outputs.trace_id }}
+        env:
+          TRACE_ID: ${{ needs.start-build.outputs.trace_id }}
 
       - name: Record backend build start
         run: |
@@ -144,7 +146,7 @@ jobs:
 
       - name: Get short SHA
         id: get_short_sha
-        run: echo "short_sha=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+        run: echo "short_sha=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
 
       - name: Build and push backend Docker image
         uses: docker/build-push-action@v6
@@ -182,7 +184,8 @@ jobs:
         with:
           apikey: ${{ secrets.HONEYCOMB_API_KEY }}
           dataset: syllabus-tracker-build-events
-          trace_id: ${{ needs.start-build.outputs.trace_id }}
+        env:
+          TRACE_ID: ${{ needs.start-build.outputs.trace_id }}
 
       - name: Record frontend build start
         run: |
@@ -204,7 +207,7 @@ jobs:
 
       - name: Get short SHA
         id: get_short_sha
-        run: echo "short_sha=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+        run: echo "short_sha=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
 
       - name: Build and push frontend Docker image
         uses: docker/build-push-action@v6
@@ -245,7 +248,8 @@ jobs:
         with:
           apikey: ${{ secrets.HONEYCOMB_API_KEY }}
           dataset: syllabus-tracker-build-events
-          trace_id: ${{ needs.start-build.outputs.trace_id }}
+        env:
+          TRACE_ID: ${{ needs.start-build.outputs.trace_id }}
 
       - name: Record NixOS deploy start
         run: |
@@ -311,7 +315,8 @@ jobs:
         with:
           apikey: ${{ secrets.HONEYCOMB_API_KEY }}
           dataset: syllabus-tracker-build-events
-          trace_id: ${{ needs.start-build.outputs.trace_id }}
+        env:
+          TRACE_ID: ${{ needs.start-build.outputs.trace_id }}
 
       - name: Record app deploy start
         run: |
@@ -415,7 +420,8 @@ jobs:
         with:
           apikey: ${{ secrets.HONEYCOMB_API_KEY }}
           dataset: syllabus-tracker-build-events
-          trace_id: ${{ needs.start-build.outputs.trace_id }}
+        env:
+          TRACE_ID: ${{ needs.start-build.outputs.trace_id }}
 
       - name: Record verification start
         run: |
