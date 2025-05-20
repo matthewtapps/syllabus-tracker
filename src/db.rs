@@ -920,3 +920,17 @@ pub async fn get_techniques_by_tag(
 
     Ok(rows.into_iter().map(Technique::from).collect())
 }
+
+#[instrument]
+pub async fn update_user_role(
+    pool: &Pool<Sqlite>,
+    user_id: i64,
+    role: &str,
+) -> Result<(), AppError> {
+    info!("Updating user role");
+    sqlx::query!("UPDATE users SET role = ? WHERE id = ?", role, user_id)
+        .execute(pool)
+        .await?;
+
+    Ok(())
+}

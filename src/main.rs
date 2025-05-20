@@ -10,6 +10,7 @@ mod telemetry;
 #[cfg(test)]
 mod test;
 
+use api::api_get_all_users;
 use api::{
     api_add_tag_to_technique, api_assign_techniques, api_change_password,
     api_create_and_assign_technique, api_create_tag, api_delete_tag, api_get_all_tags,
@@ -124,6 +125,7 @@ pub async fn init_rocket(pool: SqlitePool) -> Rocket<Build> {
                 api_add_tag_to_technique,
                 api_remove_tag_from_technique,
                 api_get_technique_tags,
+                api_get_all_users,
             ],
         )
         .register("/api", catchers![unauthorized_api])

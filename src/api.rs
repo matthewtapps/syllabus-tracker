@@ -11,11 +11,13 @@ use crate::db::create_tag;
 use crate::db::create_user;
 use crate::db::delete_tag;
 use crate::db::get_all_tags;
+use crate::db::get_all_users;
 use crate::db::get_tags_for_technique;
 use crate::db::remove_tag_from_technique;
 use crate::db::set_user_archived;
 use crate::db::update_user_display_name;
 use crate::db::update_user_password;
+use crate::db::update_user_role;
 use crate::db::update_username;
 use crate::db::{
     add_techniques_to_student, authenticate_user, create_and_assign_technique, create_user_session,
@@ -500,6 +502,8 @@ pub struct UserUpdateRequest {
     display_name: Option<String>,
     password: Option<String>,
     archived: Option<bool>,
+
+    role: Option<String>, // Add role field
 }
 
 #[put("/admin/users/<id>", data = "<update>")]
@@ -510,6 +514,11 @@ pub async fn api_update_user(
     db: &State<Pool<Sqlite>>,
 ) -> Result<Status, Status> {
     user.require_permission(Permission::EditUserCredentials)?;
+
+    // For role changes, require EditUserRoles permission
+    if update.role.is_some() {
+        user.require_permission(Permission::EditUserRoles)?;
+    }
 
     if let Some(username) = &update.username {
         update_username(db, id, username).await?;
@@ -525,6 +534,11 @@ pub async fn api_update_user(
 
     if let Some(archived) = update.archived {
         set_user_archived(db, id, archived).await?;
+    }
+
+    // Add role update
+    if let Some(role) = &update.role {
+        update_user_role(db, id, role).await?;
     }
 
     Ok(Status::Ok)
@@ -632,4 +646,29 @@ pub async fn api_get_technique_tags(
     // Everyone can view tags
     let tags = get_tags_for_technique(db, id).await?;
     Ok(Json(TagsResponse { tags }))
+}
+
+#[get("/admin/users")]
+pub async fn api_get_all_users(
+    user: User,
+    db: &State<Pool<Sqlite>>,
+) -> Result<Json<Vec<UserData>>, Status> {
+    // Only admin can access this endpoint
+    user.require_permission(Permission::EditUserRoles)?;
+
+    let users = get_all_users(db).await?;
+
+    let user_responses: Vec<UserData> = users
+        .iter()
+        .map(|u| UserData {
+            id: u.id,
+            username: u.username.clone(),
+            display_name: u.display_name.clone(),
+            role: u.role.to_string(),
+            last_update: u.last_update.clone(),
+            archived: u.archived,
+        })
+        .collect();
+
+    Ok(Json(user_responses))
 }

@@ -301,6 +301,7 @@ export interface UserUpdateData {
   display_name?: string;
   password?: string;
   archived?: boolean;
+  role?: string;
 }
 
 export async function updateUser(
@@ -411,4 +412,16 @@ export async function removeTagFromTechnique(
       `Failed to remove tag from technique: ${response.statusText}`,
     );
   }
+}
+
+export async function getAllUsers(): Promise<User[]> {
+  const response = await tracedFetch("/api/admin/users", {
+    credentials: "include",
+  });
+
+  if (!response.ok) {
+    throw new Error("Failed to fetch users");
+  }
+
+  return await response.json();
 }

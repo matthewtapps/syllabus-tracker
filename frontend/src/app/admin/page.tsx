@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { getStudents, updateUser, type User } from '@/lib/api';
+import { getAllUsers, getStudents, updateUser, type User } from '@/lib/api';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
@@ -21,6 +21,8 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { MoreHorizontalIcon, EditIcon, KeyIcon } from 'lucide-react';
 import { TracedForm } from '@/components/traced-form';
+import { Select, SelectContent, SelectItem, SelectValue } from '@/components/ui/select';
+import { SelectTrigger } from '@radix-ui/react-select';
 
 interface AdminUser extends User {
   archived: boolean;
@@ -43,6 +45,12 @@ export default function AdminPage() {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  const [roleFilter, setRoleFilter] = useState<string>("all");
+  const [userRole, setUserRole] = useState("");
+
+
+
+
   useEffect(() => {
     loadUsers();
   }, []);
@@ -50,7 +58,7 @@ export default function AdminPage() {
   async function loadUsers() {
     try {
       setLoading(true);
-      const data = await getStudents(undefined, true);
+      const data = await getAllUsers();
       setUsers(data);
       setError(null);
     } catch (err) {
@@ -69,7 +77,11 @@ export default function AdminPage() {
 
     const matchesArchive = showArchived || !user.archived;
 
-    return matchesText && matchesArchive;
+    // Add role filtering
+    const matchesRole = roleFilter === "all" ||
+      user.role.toLowerCase() === roleFilter.toLowerCase();
+
+    return matchesText && matchesArchive && matchesRole;
   });
 
   const handleToggleArchive = async (user: AdminUser) => {
@@ -94,6 +106,8 @@ export default function AdminPage() {
     setUsername(user.username);
     setDisplayName(user.display_name);
     setIsEditDialogOpen(true);
+
+    setUserRole(user.role.toLowerCase());
   };
 
   const openPasswordDialog = (user: AdminUser) => {
@@ -113,12 +127,18 @@ export default function AdminPage() {
       await updateUser(selectedUser.id, {
         username,
         display_name: displayName,
+        role: userRole,  // Include the role in the update
       });
 
       setUsers(prevUsers =>
         prevUsers.map(u =>
           u.id === selectedUser.id
-            ? { ...u, username, display_name: displayName }
+            ? {
+              ...u,
+              username,
+              display_name: displayName,
+              role: userRole  // Update local state with new role
+            }
             : u
         )
       );
@@ -179,13 +199,27 @@ export default function AdminPage() {
           className="max-w-md"
         />
 
-        <div className="flex items-center space-x-2">
-          <Checkbox
-            id="show-archived"
-            checked={showArchived}
-            onCheckedChange={(checked) => setShowArchived(checked === true)}
-          />
-          <Label htmlFor="show-archived">Show archived users</Label>
+        <div className="flex gap-4 items-center">
+          <Select value={roleFilter} onValueChange={setRoleFilter}>
+            <SelectTrigger className="w-[150px]">
+              <SelectValue placeholder="Filter by role" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All roles</SelectItem>
+              <SelectItem value="student">Students</SelectItem>
+              <SelectItem value="coach">Coaches</SelectItem>
+              <SelectItem value="admin">Admins</SelectItem>
+            </SelectContent>
+          </Select>
+
+          <div className="flex items-center space-x-2">
+            <Checkbox
+              id="show-archived"
+              checked={showArchived}
+              onCheckedChange={(checked) => setShowArchived(checked === true)}
+            />
+            <Label htmlFor="show-archived">Show archived users</Label>
+          </div>
         </div>
       </div>
 
@@ -267,6 +301,24 @@ export default function AdminPage() {
           </DialogHeader>
 
           <TracedForm id="edit_user" onSubmit={handleEditUser} className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="edit-role">Role</Label>
+              <Select
+                value={userRole}
+                onValueChange={setUserRole}
+              >
+                <SelectTrigger id="edit-role">
+                  <SelectValue placeholder="Select a role" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="student">Student</SelectItem>
+                  <SelectItem value="coach">Coach</SelectItem>
+                  <SelectItem value="admin">Admin</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+
             <div className="space-y-2">
               <Label htmlFor="edit-username">Username</Label>
               <Input
