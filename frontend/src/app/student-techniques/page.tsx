@@ -53,6 +53,8 @@ export default function StudentTechniques({ user }: StudentTechniquesProps) {
   const [availableTags, setAvailableTags] = useState<string[]>([]);
   const [allTags, setAllTags] = useState<Tag[]>([]);
   const [isAddingTag, setIsAddingTag] = useState<number | null>(null);
+  const [tagToRemove, setTagToRemove] = useState<{ technique: Technique, tag: Tag } | null>(null);
+  const [isRemoveTagDialogOpen, setIsRemoveTagDialogOpen] = useState(false);
 
   const toggleRow = (techniqueId: number) => {
     if (expandedRows.includes(techniqueId)) {
@@ -269,6 +271,24 @@ export default function StudentTechniques({ user }: StudentTechniquesProps) {
     }
   };
 
+  const confirmTagRemoval = (technique: Technique, tag: Tag, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setTagToRemove({ technique, tag });
+    setIsRemoveTagDialogOpen(true);
+  };
+
+  // Execute the actual removal when confirmed
+  const executeTagRemoval = async () => {
+    if (!tagToRemove) return;
+
+    try {
+      await handleRemoveTag(tagToRemove.technique, tagToRemove.tag);
+    } finally {
+      setIsRemoveTagDialogOpen(false);
+      setTagToRemove(null);
+    }
+  };
+
   const getStatusBgStyles = (status: string) => {
     switch (status) {
       case 'red':
@@ -389,7 +409,24 @@ export default function StudentTechniques({ user }: StudentTechniquesProps) {
                       onClick={() => toggleRow(technique.id)}
                     >
                       <TableCell className="py-4 font-medium">
-                        <span>{technique.technique_name}</span>
+                        <div className="flex flex-col">
+                          <span>{technique.technique_name}</span>
+                          {/* Only show tags in the collapsed row if the row isn't expanded */}
+                          {technique.tags.length > 0 && !expandedRows.includes(technique.id) && (
+                            <div className="flex gap-1 flex-wrap mt-2">
+                              {technique.tags.slice(0, 3).map(tag => (
+                                <Badge key={tag.id} className="text-xs" variant={tagFilter.includes(tag.name) ? "default" : "outline"}>
+                                  {tag.name}
+                                </Badge>
+                              ))}
+                              {technique.tags.length > 3 && (
+                                <Badge className="text-xs" variant='outline' >
+                                  +{technique.tags.length - 3}
+                                </Badge>
+                              )}
+                            </div>
+                          )}
+                        </div>
                       </TableCell>
                       <TableCell className="py-4 text-right text-sm text-muted-foreground">
                         {formatDate(technique.updated_at)}
@@ -420,7 +457,6 @@ export default function StudentTechniques({ user }: StudentTechniquesProps) {
                             <div className="flex flex-wrap gap-1.5">
                               {technique.tags.map(tag => (
                                 <Badge
-                                  variant='outline'
                                   key={tag.id}
                                   className="text-xs flex items-center gap-1"
                                 >
@@ -431,10 +467,7 @@ export default function StudentTechniques({ user }: StudentTechniquesProps) {
                                       variant="ghost"
                                       size="icon"
                                       className="h-3 w-3 p-0 rounded-full opacity-70 hover:opacity-100"
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        handleRemoveTag(technique, tag);
-                                      }}
+                                      onClick={(e) => confirmTagRemoval(technique, tag, e)}
                                     >
                                       <XIcon className="h-2 w-2" />
                                       <span className="sr-only">Remove tag</span>
@@ -799,6 +832,31 @@ export default function StudentTechniques({ user }: StudentTechniquesProps) {
           </Dialog>
         </div>
       )}
+
+      <Dialog open={isRemoveTagDialogOpen} onOpenChange={setIsRemoveTagDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Remove Tag</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to remove the tag "{tagToRemove?.tag.name}" from this technique?
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex justify-end gap-2 mt-4">
+            <Button
+              variant="outline"
+              onClick={() => setIsRemoveTagDialogOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={executeTagRemoval}
+            >
+              Remove Tag
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
