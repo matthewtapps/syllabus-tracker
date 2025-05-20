@@ -41,6 +41,22 @@ export function TracedForm({
     // Create form submission span
     formSpanRef.current = recordFormSubmission(formId, formAction, formMethod);
 
+    // Add form fields to telemetry (excluding passwords)
+    const formData = new FormData(form);
+    const formFields: Record<string, string> = {};
+
+    formData.forEach((value, key) => {
+      // Skip password fields
+      if (!key.toLowerCase().includes('password')) {
+        formFields[key] = typeof value === 'string' ? value : 'binary data';
+      } else {
+        formFields[key] = '[REDACTED]';
+      }
+    });
+
+    // Add form fields to span
+    formSpanRef.current?.setAttribute('form.fields', JSON.stringify(formFields));
+
     try {
       // Call the provided onSubmit handler if it exists
       if (onSubmit) {

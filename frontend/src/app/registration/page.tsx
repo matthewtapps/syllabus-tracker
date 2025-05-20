@@ -5,17 +5,19 @@ import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
-import { registerUser } from '@/lib/api';
+import { registerUser, type User } from '@/lib/api';
 import { useNavigate } from 'react-router-dom';
 import { TracedForm } from '@/components/traced-form';
 
-export default function RegisterUserPage() {
+export default function RegisterUserPage(user: User) {
   const [username, setUsername] = useState('');
   const [displayName, setDisplayName] = useState('');
   const [password, setPassword] = useState('');
   const [role, setRole] = useState('student');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const navigate = useNavigate();
+
+  const isAdmin = user?.role === 'admin' || user?.role === 'Admin';
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -106,7 +108,7 @@ export default function RegisterUserPage() {
                   <SelectContent>
                     <SelectItem value="student">Student</SelectItem>
                     <SelectItem value="coach">Coach</SelectItem>
-                    <SelectItem value="admin">Admin</SelectItem>
+                    {isAdmin && <SelectItem value="admin">Admin</SelectItem>}
                   </SelectContent>
                 </Select>
               </div>

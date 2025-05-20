@@ -438,6 +438,7 @@ pub struct UserRegistrationRequest {
     username: String,
     display_name: String,
     password: String,
+    role: String,
 }
 
 #[put("/profile", data = "<profile>")]
@@ -474,13 +475,18 @@ pub async fn api_register_user(
     user: User,
     db: &State<Pool<Sqlite>>,
 ) -> Result<Status, Status> {
-    user.require_permission(Permission::RegisterUsers)?;
+    match registration.role.as_str() {
+        "admin" => {
+            user.require_all_permissions(&[Permission::EditUserRoles, Permission::RegisterUsers])?
+        }
+        _ => user.require_permission(Permission::RegisterUsers)?,
+    };
 
     create_user(
         db,
         &registration.username,
         &registration.password,
-        user.role.as_str(),
+        &registration.role,
         Some(&registration.display_name),
     )
     .await?;

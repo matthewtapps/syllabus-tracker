@@ -49,7 +49,7 @@ pub async fn update_user_display_name(
     Ok(())
 }
 
-#[instrument(skip_all, fields(user_id))]
+#[instrument(skip(pool, new_password))]
 pub async fn update_user_password(
     pool: &Pool<Sqlite>,
     user_id: i64,
@@ -505,7 +505,7 @@ pub async fn create_and_assign_technique(
     Ok(())
 }
 
-#[instrument(skip_all, fields(username))]
+#[instrument(skip(pool, password))]
 pub async fn authenticate_user(
     pool: &Pool<Sqlite>,
     username: &str,
@@ -531,7 +531,7 @@ pub async fn authenticate_user(
     }
 }
 
-#[instrument(skip_all, fields(username, role))]
+#[instrument(skip(pool, password))]
 pub async fn create_user(
     pool: &Pool<Sqlite>,
     username: &str,
