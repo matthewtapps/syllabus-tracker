@@ -63,7 +63,7 @@ services:
     image: alpine:latest
     volumes:
       - app-data:/app/data
-      - syllabus_backups:/data/backups
+      - syllabus-backups:/data/backups
       - ./scripts/backup.sh:/scripts/backup.sh
     entrypoint: /scripts/backup.sh
     env_file:
@@ -79,7 +79,8 @@ services:
 
 volumes:
   app-data:
-  syllabus_backups:
+  syllabus-backups:
+  frontend-dist:
 
 networks:
   syllabus_internal:
