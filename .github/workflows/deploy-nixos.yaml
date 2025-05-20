@@ -1,14 +1,14 @@
-name: Build and Deploy Full Application to NixOS
+name: Build, Test, and Deploy to NixOS
 
 on:
-  # push:
-  #   branches: [main] # Or your deployment branch
-  workflow_dispatch: # Allow manual trigger
+  push:
+    branches: [main]
+  workflow_dispatch:
     inputs:
       nixos_config_branch:
         description: "Branch/commit of NixOS config (if different from app code)"
         required: false
-        default: "" # Defaults to the branch triggering the workflow
+        default: ""
       force_rebuild_options:
         description: "Extra options for nixos-rebuild (e.g., --fast, --upgrade)"
         required: false
@@ -16,56 +16,160 @@ on:
 
 env:
   REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+  BUILDEVENT_FILE: "/tmp/buildevent-attrs"
 
 jobs:
-  build-backend:
-    name: Build Backend Docker Image
+  start-build:
     runs-on: ubuntu-latest
+    outputs:
+      trace_id: ${{ steps.start_trace.outputs.trace_id }}
+      build_id: ${{ github.run_id }}
+      trace_start: ${{ steps.set-trace-start.outputs.trace_start }}
+
+    steps:
+      - uses: honeycombio/gha-buildevents@v2
+        with:
+          apikey: ${{ secrets.HONEYCOMB_API_KEY }}
+          dataset: syllabus-tracker-build-events
+
+      - name: Start build trace
+        id: start_trace
+        run: |
+          # Save trace ID and build ID for other jobs
+          echo "trace_id=$TRACE_ID" >> $GITHUB_OUTPUT
+
+          # Start the build trace
+          BUILD_ID=${{ github.run_id }}
+          BUILD_NAME="Build ${{ github.repository }} ${{ github.ref }}"
+          START_TIME=$(date +%s)
+
+          echo "trace_start=$START_TIME" >> $GITHUB_OUTPUT
+
+  test:
+    runs-on: ubuntu-latest
+    needs: [start-build]
+
+    steps:
+      - uses: honeycombio/gha-buildevents@v2
+        with:
+          apikey: ${{ secrets.HONEYCOMB_API_KEY }}
+          dataset: syllabus-tracker-build-events
+          trace_id: ${{ needs.start-build.outputs.trace_id }}
+
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+          components: rustfmt, clippy
+
+      - name: Cache dependencies
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Record test step start
+        id: test-start
+        run: |
+          echo "STEP_START=$(date +%s)" >> $GITHUB_ENV
+          echo "STEP_ID=run_tests" >> $GITHUB_ENV
+
+      - name: Run cargo fmt check
+        run: |
+          buildevents cmd $TRACE_ID $STEP_ID cargo_fmt -- \
+            cargo fmt --all -- --check
+
+      - name: Run cargo clippy
+        run: |
+          buildevents cmd $TRACE_ID $STEP_ID cargo_clippy -- \
+            cargo clippy -- -D warnings
+        env:
+          SQLX_OFFLINE: "true"
+
+      - name: Run Rust tests
+        run: |
+          buildevents cmd $TRACE_ID $STEP_ID cargo_test -- \
+            cargo test --all
+        env:
+          SQLX_OFFLINE: "true"
+
+      - name: Complete test step
+        run: |
+          buildevents step $TRACE_ID $STEP_ID $STEP_START "Run Tests"
+
+  build-backend:
+    runs-on: ubuntu-latest
+    needs: [start-build, test]
     permissions:
       contents: read
-      packages: write # To push to GHCR
+      packages: write
     outputs:
       image_tag: ${{ steps.get_short_sha.outputs.short_sha }}
       image_name: ${{ env.REGISTRY }}/${{ github.repository }}/app
 
     steps:
+      - uses: honeycombio/gha-buildevents@v2
+        with:
+          apikey: ${{ secrets.HONEYCOMB_API_KEY }}
+          dataset: syllabus-tracker-build-events
+          trace_id: ${{ needs.start-build.outputs.trace_id }}
+
+      - name: Record backend build start
+        run: |
+          echo "STEP_START=$(date +%s)" >> $GITHUB_ENV
+          echo "STEP_ID=build-backend-image" >> $GITHUB_ENV
+
       - name: Checkout code
         uses: actions/checkout@v4
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Log in to GitHub Container Registry
+      - name: Log in to the Container registry
         uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Get short SHA for image tag
+      - name: Get short SHA
         id: get_short_sha
         run: echo "short_sha=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
 
       - name: Build and push backend Docker image
         uses: docker/build-push-action@v6
         with:
-          context: . # Assuming Dockerfile for backend is in root
-          file: ./Dockerfile # Specify if not named Dockerfile
-          target: production # Assuming your Dockerfile has a 'production' stage
+          context: .
           push: true
-          tags: |
-            ${{ env.REGISTRY }}/${{ github.repository }}/app:${{ steps.get_short_sha.outputs.short_sha }}
-            ${{ env.REGISTRY }}/${{ github.repository }}/app:latest
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/app:${{ steps.get_short_sha.outputs.short_sha }},${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/app:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          # build-args: from your old deploy.yaml if needed for backend
-          #   HONEYCOMB_API_KEY=${{ secrets.HONEYCOMB_API_KEY }}
-          #   ROCKET_SECRET_KEY=${{ secrets.ROCKET_SECRET_KEY }}
-          # These secrets are now better handled on the server or via sops-nix for the running app
+          build-args: |
+            HONEYCOMB_API_KEY=${{ secrets.HONEYCOMB_API_KEY }}
+            ROCKET_SECRET_KEY=${{ secrets.ROCKET_SECRET_KEY }}
+
+      - name: Log build details to telemetry
+        run: |
+          echo " backend_image_tag=app:${{ steps.get_short_sha.outputs.short_sha }}" >> $BUILDEVENT_FILE
+          echo " backend_build_successful=true" >> $BUILDEVENT_FILE
+
+      - name: Complete backend build step
+        run: |
+          buildevents step $TRACE_ID $STEP_ID $STEP_START "Build Backend Image"
 
   build-frontend:
-    name: Build Frontend Docker Image
     runs-on: ubuntu-latest
+    needs: [start-build, test]
     permissions:
       contents: read
       packages: write
@@ -74,44 +178,59 @@ jobs:
       image_name: ${{ env.REGISTRY }}/${{ github.repository }}/frontend
 
     steps:
+      - uses: honeycombio/gha-buildevents@v2
+        with:
+          apikey: ${{ secrets.HONEYCOMB_API_KEY }}
+          dataset: syllabus-tracker-build-events
+          trace_id: ${{ needs.start-build.outputs.trace_id }}
+
+      - name: Record frontend build start
+        run: |
+          echo "STEP_START=$(date +%s)" >> $GITHUB_ENV
+          echo "STEP_ID=build-frontend-image" >> $GITHUB_ENV
+
       - name: Checkout code
         uses: actions/checkout@v4
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Log in to GitHub Container Registry
+      - name: Log in to the Container registry
         uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Get short SHA for image tag
+      - name: Get short SHA
         id: get_short_sha
         run: echo "short_sha=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
 
       - name: Build and push frontend Docker image
         uses: docker/build-push-action@v6
         with:
-          context: ./frontend # Context is the frontend directory
-          file: ./frontend/Dockerfile # Path to frontend Dockerfile
-          target: production # Assuming frontend Dockerfile has 'production' stage
+          context: ./frontend
           push: true
-          tags: |
-            ${{ env.REGISTRY }}/${{ github.repository }}/frontend:${{ steps.get_short_sha.outputs.short_sha }}
-            ${{ env.REGISTRY }}/${{ github.repository }}/frontend:latest
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/frontend:${{ steps.get_short_sha.outputs.short_sha }},${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/frontend:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          build-args: | # These are build-time args for Vite, good to keep here
+          build-args: |
             VITE_HONEYCOMB_API_KEY=${{ secrets.HONEYCOMB_API_KEY }}
-            VITE_API_URL=/api # This should be correct for when proxied by NixOS Nginx
+            VITE_API_URL=/api
             VITE_ENVIRONMENT=production
 
-  deploy_to_nixos:
-    name: Deploy System and Application to NixOS
+      - name: Log build details to telemetry
+        run: |
+          echo " frontend_image_tag=frontend:${{ steps.get_short_sha.outputs.short_sha }}" >> $BUILDEVENT_FILE
+          echo " frontend_build_successful=true" >> $BUILDEVENT_FILE
+
+      - name: Complete frontend build step
+        run: |
+          buildevents step $TRACE_ID $STEP_ID $STEP_START "Build Frontend Image"
+
+  deploy_nixos_config:
+    needs: [build-backend, build-frontend]
     runs-on: ubuntu-latest
-    needs: [build-backend, build-frontend] # Depends on image builds
     if: github.repository == 'matthewtapps/syllabus-tracker'
 
     env:
@@ -120,23 +239,23 @@ jobs:
       NIXOS_CONFIG_REPO_PATH: "nixos"
       SERVER_TARGET_CONFIG_PATH: "/etc/nixos"
       SERVER_TEMP_CONFIG_PATH: "/home/${{ secrets.NIXOS_SERVER_USER }}/nixos_config_staging"
-      APP_DEPLOY_PATH: "/srv/syllabus-tracker" # Where docker-compose and app configs go
 
     steps:
-      - name: Checkout Code (NixOS config, Docker Compose, app configs)
+      - uses: honeycombio/gha-buildevents@v2
+        with:
+          apikey: ${{ secrets.HONEYCOMB_API_KEY }}
+          dataset: syllabus-tracker-build-events
+          trace_id: ${{ needs.start-build.outputs.trace_id }}
+
+      - name: Record NixOS deploy start
+        run: |
+          echo "STEP_START=$(date +%s)" >> $GITHUB_ENV
+          echo "STEP_ID=deploy_nixos_config" >> $GITHUB_ENV
+
+      - name: Checkout code
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.inputs.nixos_config_branch || github.ref }} # Use input or current ref
-          # Checkout the full repo this time as we need compose file and app configs
-          # sparse-checkout can be used if these are also in a sub-directory
-
-      - name: Verify checkout includes necessary files
-        run: |
-          ls -la $GITHUB_WORKSPACE
-          ls -la "${GITHUB_WORKSPACE}/${NIXOS_CONFIG_REPO_PATH}"
-          test -f "${GITHUB_WORKSPACE}/${NIXOS_CONFIG_REPO_PATH}/configuration.nix" || (echo "NixOS configuration.nix not found" && exit 1)
-          test -f "${GITHUB_WORKSPACE}/docker-compose.nixos.yml" || (echo "docker-compose.nixos.yml not found" && exit 1)
-          test -d "${GITHUB_WORKSPACE}/config" || (echo "Application config directory not found" && exit 1)
+          ref: ${{ github.event.inputs.nixos_config_branch || github.ref }}
 
       - name: Set up SSH
         run: |
@@ -145,36 +264,81 @@ jobs:
           chmod 600 ~/.ssh/id_rsa
           ssh-keyscan -H "${NIXOS_SERVER_IP}" >> ~/.ssh/known_hosts
 
-      - name: Deploy System Config and Application Services
-        env:
-          # Docker registry credentials for server-side pull
-          GHCR_USERNAME: ${{ github.actor }}
-          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-          # Image details from build jobs
-          BACKEND_IMAGE_NAME: ${{ needs.build-backend.outputs.image_name }}
-          BACKEND_IMAGE_TAG: ${{ needs.build-backend.outputs.image_tag }}
-          FRONTEND_IMAGE_NAME: ${{ needs.build-frontend.outputs.image_name }}
-          FRONTEND_IMAGE_TAG: ${{ needs.build-frontend.outputs.image_tag }}
-
-          # Secrets for .secrets.env on the server
-          SECRET_HONEYCOMB_API_KEY: ${{ secrets.HONEYCOMB_API_KEY }}
-          SECRET_ROCKET_SECRET_KEY: ${{ secrets.ROCKET_SECRET_KEY }}
-
-          # Other env vars for compose
-          REGISTRY: ${{ env.REGISTRY }} # from job env
-          IMAGE_NAME: ${{ github.repository }} # from job env
+      - name: Copy NixOS configuration to server
         run: |
           echo "Staging NixOS files from '${GITHUB_WORKSPACE}/${NIXOS_CONFIG_REPO_PATH}/' to remote '${SERVER_TEMP_CONFIG_PATH}/'"
           ssh -i ~/.ssh/id_rsa \
             "${NIXOS_SERVER_USER}@${NIXOS_SERVER_IP}" \
-            "mkdir -p ${SERVER_TEMP_CONFIG_PATH} && mkdir -p ${APP_DEPLOY_PATH}/config && mkdir -p ${APP_DEPLOY_PATH}/scripts"
+            "mkdir -p ${SERVER_TEMP_CONFIG_PATH}"
 
           rsync -avz --delete -e "ssh -i ~/.ssh/id_rsa" \
             "${GITHUB_WORKSPACE}/${NIXOS_CONFIG_REPO_PATH}/" \
             "${NIXOS_SERVER_USER}@${NIXOS_SERVER_IP}:${SERVER_TEMP_CONFIG_PATH}/"
 
-          echo "Setting up Container Registry credentials on server"
+      - name: Apply NixOS configuration
+        run: |
+          ssh -i ~/.ssh/id_rsa \
+            "${NIXOS_SERVER_USER}@${NIXOS_SERVER_IP}" \
+            "bash -s" <<EOF
+              set -ex
+              
+              echo "Copying NixOS configuration from staging to ${SERVER_TARGET_CONFIG_PATH}..."
+              sudo cp "${SERVER_TEMP_CONFIG_PATH}/configuration.nix" "${SERVER_TARGET_CONFIG_PATH}/configuration.nix"
+              sudo cp "${SERVER_TEMP_CONFIG_PATH}/hardware-configuration.nix" "${SERVER_TARGET_CONFIG_PATH}/hardware-configuration.nix"
+              
+              echo "Running nixos-rebuild switch ${{ github.event.inputs.force_rebuild_options }}..."
+              sudo nixos-rebuild switch ${{ github.event.inputs.force_rebuild_options }}
+              echo "NixOS configuration applied."
+          EOF
+
+      - name: Complete NixOS deploy step
+        run: |
+          buildevents step $TRACE_ID $STEP_ID $STEP_START "Deploy NixOS Configuration"
+          echo " nixos_config_updated=true" >> $BUILDEVENT_FILE
+
+  deploy_application:
+    needs: [deploy_nixos_config]
+    runs-on: ubuntu-latest
+    if: github.repository == 'matthewtapps/syllabus-tracker'
+
+    env:
+      NIXOS_SERVER_IP: ${{ secrets.NIXOS_SERVER_IP }}
+      NIXOS_SERVER_USER: ${{ secrets.NIXOS_SERVER_USER }}
+      APP_DEPLOY_PATH: "/srv/syllabus-tracker"
+
+    steps:
+      - uses: honeycombio/gha-buildevents@v2
+        with:
+          apikey: ${{ secrets.HONEYCOMB_API_KEY }}
+          dataset: syllabus-tracker-build-events
+          trace_id: ${{ needs.start-build.outputs.trace_id }}
+
+      - name: Record app deploy start
+        run: |
+          echo "STEP_START=$(date +%s)" >> $GITHUB_ENV
+          echo "STEP_ID=deploy_application" >> $GITHUB_ENV
+
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H "${NIXOS_SERVER_IP}" >> ~/.ssh/known_hosts
+
+      - name: Copy application files and set up docker environment
+        env:
+          GHCR_USERNAME: ${{ github.actor }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BACKEND_IMAGE_NAME: ${{ needs.build-backend.outputs.image_name }}
+          BACKEND_IMAGE_TAG: ${{ needs.build-backend.outputs.image_tag }}
+          FRONTEND_IMAGE_NAME: ${{ needs.build-frontend.outputs.image_name }}
+          FRONTEND_IMAGE_TAG: ${{ needs.build-frontend.outputs.image_tag }}
+          SECRET_HONEYCOMB_API_KEY: ${{ secrets.HONEYCOMB_API_KEY }}
+          SECRET_ROCKET_SECRET_KEY: ${{ secrets.ROCKET_SECRET_KEY }}
+        run: |
           cat > docker_config.json << EOF
           {
             "auths": {
@@ -185,10 +349,14 @@ jobs:
           }
           EOF
 
-          ssh ${{ secrets.NIXOS_SERVER_USER }}@${{ secrets.NIXOS_SERVER_IP }} "mkdir -p ~/.docker"
-          scp docker_config.json ${{ secrets.NIXOS_SERVER_USER }}@${{ secrets.NIXOS_SERVER_IP }}:~/.docker/config.json
+          ssh "${NIXOS_SERVER_USER}@${NIXOS_SERVER_IP}" "mkdir -p ~/.docker"
+          scp docker_config.json "${NIXOS_SERVER_USER}@${NIXOS_SERVER_IP}:~/.docker/config.json"
 
-          echo "Copying application deployment files (Docker Compose, configs, scripts) to server..."
+          # Ensure application directories exist
+          ssh "${NIXOS_SERVER_USER}@${NIXOS_SERVER_IP}" \
+            "mkdir -p ${APP_DEPLOY_PATH}/config && mkdir -p ${APP_DEPLOY_PATH}/scripts && mkdir -p ${APP_DEPLOY_PATH}/nginx"
+
+          # Copy application files
           rsync -avz --delete -e "ssh -i ~/.ssh/id_rsa" \
             "${GITHUB_WORKSPACE}/docker-compose.nixos.yml" \
             "${GITHUB_WORKSPACE}/config" \
@@ -196,60 +364,120 @@ jobs:
             "${GITHUB_WORKSPACE}/nginx" \
             "${NIXOS_SERVER_USER}@${NIXOS_SERVER_IP}:${APP_DEPLOY_PATH}"
 
-          echo "Creating .secrets.env file on server for Docker Compose..."
+          # Create secrets file
           ssh -i ~/.ssh/id_rsa \
             "${NIXOS_SERVER_USER}@${NIXOS_SERVER_IP}" \
             "echo 'HONEYCOMB_API_KEY=${SECRET_HONEYCOMB_API_KEY}' > ${APP_DEPLOY_PATH}/.secrets.env && \
              echo 'ROCKET_SECRET_KEY=${SECRET_ROCKET_SECRET_KEY}' >> ${APP_DEPLOY_PATH}/.secrets.env && \
              echo 'VITE_HONEYCOMB_API_KEY=${SECRET_HONEYCOMB_API_KEY}' >> ${APP_DEPLOY_PATH}/.secrets.env"
 
-          echo "Applying NixOS configuration and deploying application on server..."
+      - name: Deploy application with Docker Compose
+        env:
+          BACKEND_IMAGE_TAG: ${{ needs.build-backend.outputs.image_tag }}
+          FRONTEND_IMAGE_TAG: ${{ needs.build-frontend.outputs.image_tag }}
+        run: |
           ssh -i ~/.ssh/id_rsa \
             "${NIXOS_SERVER_USER}@${NIXOS_SERVER_IP}" \
             "bash -s" <<EOF
-              set -ex 
-
-              echo "Copying NixOS configuration from staging to ${SERVER_TARGET_CONFIG_PATH}..."
-              sudo cp "${SERVER_TEMP_CONFIG_PATH}/configuration.nix" "${SERVER_TARGET_CONFIG_PATH}/configuration.nix"
-              sudo cp "${SERVER_TEMP_CONFIG_PATH}/hardware-configuration.nix" "${SERVER_TARGET_CONFIG_PATH}/hardware-configuration.nix"
-
-              echo "Running nixos-rebuild switch ${{ github.event.inputs.force_rebuild_options }}..."
-              sudo nixos-rebuild switch ${{ github.event.inputs.force_rebuild_options }}
-              echo "NixOS configuration applied."
-
-              echo "Navigating to application deployment path: ${APP_DEPLOY_PATH}"
+              set -ex
               cd "${APP_DEPLOY_PATH}"
-
-              echo "Pulling latest application images (app:${BACKEND_IMAGE_TAG}, frontend:${FRONTEND_IMAGE_TAG})..."
+              
+              echo "Pulling latest application images..."
               export APP_IMAGE_TAG="${BACKEND_IMAGE_TAG}"
               export FRONTEND_IMAGE_TAG="${FRONTEND_IMAGE_TAG}"
               export REGISTRY="${REGISTRY}"
               export IMAGE_NAME="${IMAGE_NAME}"
-
+              
               docker compose -f docker-compose.nixos.yml pull app frontend otel-collector backup
-
+              
               echo "Starting application services with Docker Compose..."
               docker compose -f docker-compose.nixos.yml up -d --remove-orphans --force-recreate
-
+              
               echo "Cleaning up unused Docker images..."
-              docker image prune -af # -a to remove all unused, not just dangling
-
+              docker image prune -af
+              
               echo "Application deployment complete."
           EOF
 
-      - name: Final Health Check (Application)
-        if: always()
+      - name: Complete application deploy step
+        run: |
+          buildevents step $TRACE_ID $STEP_ID $STEP_START "Deploy Application Services"
+          echo " deployed_app_image=${{ needs.build-backend.outputs.image_name }}:${{ needs.build-backend.outputs.image_tag }}" >> $BUILDEVENT_FILE
+          echo " deployed_frontend_image=${{ needs.build-frontend.outputs.image_name }}:${{ needs.build-frontend.outputs.image_tag }}" >> $BUILDEVENT_FILE
+
+  verify_deployment:
+    needs: [start-build, deploy_application]
+    runs-on: ubuntu-latest
+    if: github.repository == 'matthewtapps/syllabus-tracker' && success()
+
+    steps:
+      - uses: honeycombio/gha-buildevents@v2
+        with:
+          apikey: ${{ secrets.HONEYCOMB_API_KEY }}
+          dataset: syllabus-tracker-build-events
+          trace_id: ${{ needs.start-build.outputs.trace_id }}
+
+      - name: Record verification start
+        run: |
+          echo "STEP_START=$(date +%s)" >> $GITHUB_ENV
+          echo "STEP_ID=verify_deployment" >> $GITHUB_ENV
+
+      - name: Checkout code for commit info
+        uses: actions/checkout@v4
+
+      - name: Health check
         env:
           FULL_APP_DOMAIN: "syllabustracker-nixos.matthewtapps.com"
         run: |
-          echo "Attempting health check on https://${FULL_APP_DOMAIN}/api/health"
-          sleep 30 # Give services more time to fully start
-          curl --verbose --fail --location "https://${FULL_APP_DOMAIN}/api/health" || \
-            (echo "ERROR: Application health check to https://${FULL_APP_DOMAIN}/api/health failed." && exit 1)
-          echo "Application health check successful."
+          echo "Waiting for services to start..."
+          sleep 30
 
-      # Your existing Honeycomb marker step can be added here
-      # - name: Create Honeycomb deployment marker
-      #   if: success() # Only on successful deployment
-      #   run: |
-      #     # ... (copy from your old deploy.yaml) ...
+          echo "Attempting health check on https://${FULL_APP_DOMAIN}/api/health"
+          curl --verbose --fail --location "https://${FULL_APP_DOMAIN}/api/health" || \
+            (echo "ERROR: Application health check failed." && exit 1)
+
+          echo "Application health check successful."
+          echo " deployment_health_check=passed" >> $BUILDEVENT_FILE
+
+      - name: Create Honeycomb deployment marker
+        run: |
+          DEPLOY_TIME=$(date +%s)
+          GIT_COMMIT_HASH=$(git rev-parse HEAD)
+          GIT_COMMIT_MESSAGE=$(git log -1 --pretty=%B | tr -d '\n')
+
+          curl -X POST "https://api.honeycomb.io/1/markers/__all__" \
+            -H "X-Honeycomb-Team: ${{ secrets.HONEYCOMB_MARKER_KEY }}" \
+            -H "Content-Type: application/json" \
+            -d "{
+              \"message\": \"Deployed to NixOS VM: ${GIT_COMMIT_HASH}\",
+              \"type\": \"deploy\",
+              \"start_time\": ${DEPLOY_TIME},
+              \"url\": \"https://github.com/${{ github.repository }}/commit/${{ github.sha }}\",
+              \"metadata\": {
+                \"commit_hash\": \"${GIT_COMMIT_HASH}\",
+                \"commit_message\": \"${GIT_COMMIT_MESSAGE}\",
+                \"github_actor\": \"${{ github.actor }}\",
+                \"github_repository\": \"${{ github.repository }}\",
+                \"github_ref\": \"${{ github.ref }}\"
+              }
+            }"
+
+      - name: Complete verification step
+        run: |
+          buildevents step $TRACE_ID $STEP_ID $STEP_START "Verify Deployment"
+
+  end-trace:
+    runs-on: ubuntu-latest
+    needs: [start-build, verify_deployment]
+    if: ${{ always() }}
+    permissions:
+      actions: read
+
+    steps:
+      - uses: technote-space/workflow-conclusion-action@v3
+      - uses: honeycombio/gha-buildevents@v2
+        with:
+          apikey: ${{ secrets.HONEYCOMB_API_KEY }}
+          dataset: syllabus-tracker-build-events
+          status: ${{ env.WORKFLOW_CONCLUSION }}
+          trace-start: ${{ needs.start-build.outputs.trace_start}}
