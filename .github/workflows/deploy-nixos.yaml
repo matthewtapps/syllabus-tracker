@@ -388,10 +388,10 @@ jobs:
               export REGISTRY="${REGISTRY}"
               export IMAGE_NAME="${IMAGE_NAME}"
               
-              docker compose -f docker-compose.nixos.yml pull app frontend otel-collector backup
+              docker compose -f docker-compose.nixos.yml pull app frontend otel-collector backup nginx
               
               echo "Starting application services with Docker Compose..."
-              docker compose -f docker-compose.nixos.yml up -d --remove-orphans --force-recreate
+              docker compose -f docker-compose.nixos.yml up -d --remove-orphans
               
               echo "Cleaning up unused Docker images..."
               docker image prune -af
