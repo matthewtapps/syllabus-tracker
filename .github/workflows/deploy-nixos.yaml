@@ -109,7 +109,7 @@ jobs:
 
   build-backend:
     runs-on: ubuntu-latest
-    needs: [start-build, test]
+    needs: [start-build]
     permissions:
       contents: read
       packages: write
@@ -169,7 +169,7 @@ jobs:
 
   build-frontend:
     runs-on: ubuntu-latest
-    needs: [start-build, test]
+    needs: [start-build]
     permissions:
       contents: read
       packages: write
@@ -229,7 +229,7 @@ jobs:
           buildevents step $TRACE_ID $STEP_ID $STEP_START "Build Frontend Image"
 
   deploy_nixos_config:
-    needs: [build-backend, build-frontend]
+    needs: [build-backend, build-frontend, test]
     runs-on: ubuntu-latest
     if: github.repository == 'matthewtapps/syllabus-tracker'
 
