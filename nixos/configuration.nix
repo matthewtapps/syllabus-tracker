@@ -205,5 +205,5 @@ in
   ];
 
   # System state version
-  system.stateVersion = "23.11"; # Or "24.05" if you used that for nixos-infect
+  system.stateVersion = "23.11";
 }
