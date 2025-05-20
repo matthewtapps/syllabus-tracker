@@ -13,7 +13,8 @@ services:
       - app
       - frontend
     networks:
-      - syllabus_internal
+      - internal
+      - host
 
   app:
     image: ${REGISTRY}/${IMAGE_NAME}/app:${APP_IMAGE_TAG:-latest}
@@ -25,7 +26,7 @@ services:
     volumes:
       - app-data:/app/data
     networks:
-      - syllabus_internal
+      - internal
     expose:
       - "8000"
     healthcheck:
@@ -39,7 +40,7 @@ services:
     image: ${REGISTRY}/${IMAGE_NAME}/frontend:${FRONTEND_IMAGE_TAG:-latest}
     restart: unless-stopped
     networks:
-      - syllabus_internal
+      - internal
     expose:
       - "80"
 
@@ -57,7 +58,7 @@ services:
       - ./.secrets.env
     restart: unless-stopped
     networks:
-      - syllabus_internal
+      - internal
 
   backup:
     image: alpine:latest
@@ -72,7 +73,7 @@ services:
       - ./.secrets.env
     restart: unless-stopped
     networks:
-      - syllabus_internal
+      - internal
     depends_on:
       app:
         condition: service_healthy
@@ -83,5 +84,6 @@ volumes:
   frontend-dist:
 
 networks:
-  syllabus_internal:
+  internal:
+  host:
     driver: bridge
