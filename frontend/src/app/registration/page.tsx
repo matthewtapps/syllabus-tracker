@@ -9,7 +9,11 @@ import { registerUser, type User } from '@/lib/api';
 import { useNavigate } from 'react-router-dom';
 import { TracedForm } from '@/components/traced-form';
 
-export default function RegisterUserPage(user: User) {
+interface RegisterUserPageProps {
+  user: User
+};
+
+export default function RegisterUserPage({ user }: RegisterUserPageProps) {
   const [username, setUsername] = useState('');
   const [displayName, setDisplayName] = useState('');
   const [password, setPassword] = useState('');

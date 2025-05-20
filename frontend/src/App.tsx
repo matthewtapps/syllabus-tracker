@@ -82,7 +82,7 @@ function App() {
                 path="/register-user"
                 element={
                   user && (user.role === 'coach' || user.role === 'Coach' || user.role === 'admin' || user.role === 'Admin')
-                    ? <RegisterUserPage />
+                    ? <RegisterUserPage user={user} />
                     : <Navigate to="/login" replace />
                 }
               />
