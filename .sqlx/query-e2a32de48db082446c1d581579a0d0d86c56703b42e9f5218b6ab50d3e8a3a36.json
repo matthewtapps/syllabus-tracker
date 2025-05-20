@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT * FROM student_techniques\n         WHERE student_id = ?\n        ORDER BY updated_at DESC\n",
+  "query": "\n        SELECT st.id, st.technique_id, st.technique_name, st.technique_description,\n               st.student_id, st.status, st.student_notes, st.coach_notes, \n               st.created_at, st.updated_at,\n               tag.id as tag_id, tag.name as tag_name\n        FROM student_techniques st\n        LEFT JOIN technique_tags tt ON st.technique_id = tt.technique_id\n        LEFT JOIN tags tag ON tt.tag_id = tag.id\n        WHERE st.student_id = ?\n        ORDER BY st.updated_at DESC\n        ",
   "describe": {
     "columns": [
       {
@@ -52,6 +52,16 @@
         "name": "updated_at",
         "ordinal": 9,
         "type_info": "Datetime"
+      },
+      {
+        "name": "tag_id",
+        "ordinal": 10,
+        "type_info": "Integer"
+      },
+      {
+        "name": "tag_name",
+        "ordinal": 11,
+        "type_info": "Text"
       }
     ],
     "parameters": {
@@ -67,8 +77,10 @@
       true,
       true,
       true,
+      true,
+      false,
       true
     ]
   },
-  "hash": "625d56d4eca28aa1cfe23ade783fe765d9d028e71c94b8aa373c1d35b827b7c0"
+  "hash": "e2a32de48db082446c1d581579a0d0d86c56703b42e9f5218b6ab50d3e8a3a36"
 }

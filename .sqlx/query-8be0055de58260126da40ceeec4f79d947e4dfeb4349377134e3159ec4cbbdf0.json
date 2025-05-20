@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT t.* FROM techniques t\n         WHERE t.id NOT IN (\n             SELECT technique_id FROM student_techniques \n             WHERE student_id = ?\n         )",
+  "query": "SELECT t.* \n         FROM techniques t\n         JOIN technique_tags tt ON t.id = tt.technique_id\n         WHERE tt.tag_id = ?\n         ORDER BY t.name",
   "describe": {
     "columns": [
       {
@@ -40,5 +40,5 @@
       true
     ]
   },
-  "hash": "fea0ee427678dbc024f4106d3c8cc583a72681686876804f35d0299009d6edb5"
+  "hash": "8be0055de58260126da40ceeec4f79d947e4dfeb4349377134e3159ec4cbbdf0"
 }

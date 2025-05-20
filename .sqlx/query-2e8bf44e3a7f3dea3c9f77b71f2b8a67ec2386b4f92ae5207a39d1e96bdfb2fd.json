@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "DELETE FROM technique_tags WHERE technique_id = ? AND tag_id = ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "2e8bf44e3a7f3dea3c9f77b71f2b8a67ec2386b4f92ae5207a39d1e96bdfb2fd"
+}

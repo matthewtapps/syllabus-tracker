@@ -1,0 +1,56 @@
+{
+  "db_name": "SQLite",
+  "query": "\n        SELECT t.id, t.name, t.description, t.coach_id, t.coach_name,\n               tag.id as tag_id, tag.name as tag_name\n        FROM techniques t\n        LEFT JOIN technique_tags tt ON t.id = tt.technique_id\n        LEFT JOIN tags tag ON tt.tag_id = tag.id\n        WHERE t.id NOT IN (\n            SELECT technique_id FROM student_techniques \n            WHERE student_id = ?\n        )\n        ORDER BY t.name\n        ",
+  "describe": {
+    "columns": [
+      {
+        "name": "id",
+        "ordinal": 0,
+        "type_info": "Integer"
+      },
+      {
+        "name": "name",
+        "ordinal": 1,
+        "type_info": "Text"
+      },
+      {
+        "name": "description",
+        "ordinal": 2,
+        "type_info": "Text"
+      },
+      {
+        "name": "coach_id",
+        "ordinal": 3,
+        "type_info": "Integer"
+      },
+      {
+        "name": "coach_name",
+        "ordinal": 4,
+        "type_info": "Text"
+      },
+      {
+        "name": "tag_id",
+        "ordinal": 5,
+        "type_info": "Integer"
+      },
+      {
+        "name": "tag_name",
+        "ordinal": 6,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      true,
+      true,
+      false,
+      true
+    ]
+  },
+  "hash": "f97648db329367e55d705ad706b2d0b91d1149b1f149f981314de0ecc85fe225"
+}

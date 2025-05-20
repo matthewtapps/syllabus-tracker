@@ -1,0 +1,26 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT t.id, t.name \n         FROM tags t\n         JOIN technique_tags tt ON t.id = tt.tag_id\n         WHERE tt.technique_id = ?\n         ORDER BY t.name",
+  "describe": {
+    "columns": [
+      {
+        "name": "id",
+        "ordinal": 0,
+        "type_info": "Integer"
+      },
+      {
+        "name": "name",
+        "ordinal": 1,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      true,
+      false
+    ]
+  },
+  "hash": "331d3c26ce050d955b12fb5feee0ed8edb530e4e516ef1ab29d851d45edf320d"
+}

@@ -237,6 +237,7 @@ pub mod test_utils {
         }
     }
 
+    #[derive(Debug)]
     pub struct TestDb {
         pub pool: Pool<Sqlite>,
         pub user_id_map: HashMap<String, i64>,

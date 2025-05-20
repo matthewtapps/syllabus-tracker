@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT * FROM student_techniques\n         WHERE id = ?",
+  "query": "SELECT * FROM student_techniques WHERE id = ?",
   "describe": {
     "columns": [
       {
@@ -70,5 +70,5 @@
       true
     ]
   },
-  "hash": "e91ef32ac9ca5e4ad89779de9f3df6aba079d86f12c64b02bf914f63ae7fa512"
+  "hash": "9a815dd812e50ee96a94ca4bd98bd76137fec7b9e6c3a5da2869cdb9c32606ff"
 }

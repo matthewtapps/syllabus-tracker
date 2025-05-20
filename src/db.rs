@@ -1,6 +1,9 @@
+use std::collections::{HashMap, hash_map::Entry};
+
 use crate::{
     auth::{DbUser, DbUserSession, Role, User, UserSession},
     error::AppError,
+    models::{DbTag, Tag},
 };
 use chrono::{NaiveDateTime, Utc};
 use sqlx::{Pool, Sqlite};
@@ -99,20 +102,62 @@ pub async fn update_username(
 
 #[instrument]
 pub async fn get_all_techniques(pool: &Pool<Sqlite>) -> Result<Vec<Technique>, AppError> {
-    info!("Getting all techniques");
-    let rows = sqlx::query_as!(
-        DbTechnique,
-        "SELECT *
-         FROM techniques
-         ORDER BY name",
+    info!("Getting all techniques with tags");
+
+    let rows = sqlx::query!(
+        r#"
+        SELECT t.id, t.name, t.description, t.coach_id, t.coach_name,
+               tag.id as tag_id, tag.name as tag_name
+        FROM techniques t
+        LEFT JOIN technique_tags tt ON t.id = tt.technique_id
+        LEFT JOIN tags tag ON tt.tag_id = tag.id
+        ORDER BY t.name
+        "#
     )
     .fetch_all(pool)
     .await?;
 
-    Ok(rows
-        .iter()
-        .map(|row| Technique::from(row.clone()))
-        .collect())
+    // Group by technique
+    let mut techniques_map: HashMap<i64, Technique> = HashMap::new();
+
+    for row in rows {
+        let technique_id = row.id;
+
+        if let Entry::Vacant(e) = techniques_map.entry(technique_id) {
+            let technique = Technique {
+                id: technique_id,
+                name: row.name,
+                description: row.description.unwrap_or_default(),
+                coach_id: row.coach_id.unwrap_or_default(),
+                coach_name: row.coach_name.unwrap_or_default(),
+                tags: Vec::new(),
+            };
+            e.insert(technique);
+        }
+
+        // Add tag if it exists
+        if let (tag_id, Some(tag_name)) = (row.tag_id, row.tag_name) {
+            let tag = Tag {
+                id: tag_id,
+                name: tag_name,
+            };
+
+            // Avoid duplicate tags
+            let technique = techniques_map.get_mut(&technique_id).unwrap();
+            if !technique.tags.iter().any(|t| t.id == tag_id) {
+                technique.tags.push(tag);
+            }
+        }
+    }
+
+    // Sort tags by name for each technique
+    for technique in techniques_map.values_mut() {
+        technique.tags.sort_by(|a, b| a.name.cmp(&b.name));
+    }
+
+    // Convert map to vector and return
+    let techniques: Vec<Technique> = techniques_map.into_values().collect();
+    Ok(techniques)
 }
 
 #[instrument]
@@ -191,22 +236,73 @@ pub async fn get_student_techniques(
     pool: &Pool<Sqlite>,
     student_id: i64,
 ) -> Result<Vec<StudentTechnique>, AppError> {
-    info!("Getting student techniques");
-    let rows = sqlx::query_as!(
-        DbStudentTechnique,
-        "SELECT * FROM student_techniques
-         WHERE student_id = ?
-        ORDER BY updated_at DESC
-",
+    info!("Getting student techniques with tags");
+
+    let rows = sqlx::query!(
+        r#"
+        SELECT st.id, st.technique_id, st.technique_name, st.technique_description,
+               st.student_id, st.status, st.student_notes, st.coach_notes, 
+               st.created_at, st.updated_at,
+               tag.id as tag_id, tag.name as tag_name
+        FROM student_techniques st
+        LEFT JOIN technique_tags tt ON st.technique_id = tt.technique_id
+        LEFT JOIN tags tag ON tt.tag_id = tag.id
+        WHERE st.student_id = ?
+        ORDER BY st.updated_at DESC
+        "#,
         student_id
     )
     .fetch_all(pool)
     .await?;
 
-    let techniques: Vec<StudentTechnique> = rows
-        .iter()
-        .map(|row| StudentTechnique::from(row.clone()))
-        .collect();
+    let mut techniques_map: HashMap<i64, StudentTechnique> = HashMap::new();
+
+    for row in rows {
+        let technique_id = row.id;
+
+        if let Entry::Vacant(e) = techniques_map.entry(technique_id) {
+            let technique = StudentTechnique {
+                id: technique_id,
+                technique_id: row.technique_id.unwrap_or_default(),
+                student_id: row.student_id.unwrap_or_default(),
+                technique_name: row.technique_name.unwrap_or_default(),
+                technique_description: row.technique_description.unwrap_or_default(),
+                status: row.status.unwrap_or_default(),
+                student_notes: row.student_notes.unwrap_or_default(),
+                coach_notes: row.coach_notes.unwrap_or_default(),
+                created_at: row
+                    .created_at
+                    .map(|dt| chrono::DateTime::<Utc>::from_naive_utc_and_offset(dt, Utc))
+                    .unwrap_or_else(Utc::now),
+                updated_at: row
+                    .updated_at
+                    .map(|dt| chrono::DateTime::<Utc>::from_naive_utc_and_offset(dt, Utc))
+                    .unwrap_or_else(Utc::now),
+                tags: Vec::new(),
+            };
+            e.insert(technique);
+        }
+
+        if let (tag_id, Some(tag_name)) = (row.tag_id, row.tag_name) {
+            let tag = Tag {
+                id: tag_id,
+                name: tag_name,
+            };
+
+            let technique = techniques_map.get_mut(&technique_id).unwrap();
+            if !technique.tags.iter().any(|t| t.id == tag_id) {
+                technique.tags.push(tag);
+            }
+        }
+    }
+
+    for technique in techniques_map.values_mut() {
+        technique.tags.sort_by(|a, b| a.name.cmp(&b.name));
+    }
+
+    let mut techniques: Vec<StudentTechnique> = techniques_map.into_values().collect();
+    techniques.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
+
     Ok(techniques)
 }
 
@@ -215,17 +311,35 @@ pub async fn get_student_technique(
     pool: &Pool<Sqlite>,
     student_technique_id: i64,
 ) -> Result<StudentTechnique, AppError> {
-    info!("Getting student technique");
+    info!("Getting student technique with tags");
+
     let row = sqlx::query_as!(
         DbStudentTechnique,
-        "SELECT * FROM student_techniques
-         WHERE id = ?",
+        "SELECT * FROM student_techniques WHERE id = ?",
         student_technique_id
     )
     .fetch_one(pool)
     .await?;
 
-    Ok(StudentTechnique::from(row))
+    let mut technique = StudentTechnique::from(row.clone());
+
+    if let Some(technique_id) = row.technique_id {
+        let tags = sqlx::query_as!(
+            DbTag,
+            "SELECT t.id, t.name 
+             FROM tags t
+             JOIN technique_tags tt ON t.id = tt.tag_id
+             WHERE tt.technique_id = ?
+             ORDER BY t.name",
+            technique_id
+        )
+        .fetch_all(pool)
+        .await?;
+
+        technique.tags = tags.into_iter().map(Tag::from).collect();
+    }
+
+    Ok(technique)
 }
 
 #[instrument]
@@ -301,24 +415,62 @@ pub async fn get_unassigned_techniques(
     pool: &Pool<Sqlite>,
     student_id: i64,
 ) -> Result<Vec<Technique>, AppError> {
-    info!("Getting unassigned techniques");
-    let rows = sqlx::query_as!(
-        DbTechnique,
-        "SELECT t.* FROM techniques t
-         WHERE t.id NOT IN (
-             SELECT technique_id FROM student_techniques 
-             WHERE student_id = ?
-         )",
+    info!("Getting unassigned techniques with tags");
+
+    let rows = sqlx::query!(
+        r#"
+        SELECT t.id, t.name, t.description, t.coach_id, t.coach_name,
+               tag.id as tag_id, tag.name as tag_name
+        FROM techniques t
+        LEFT JOIN technique_tags tt ON t.id = tt.technique_id
+        LEFT JOIN tags tag ON tt.tag_id = tag.id
+        WHERE t.id NOT IN (
+            SELECT technique_id FROM student_techniques 
+            WHERE student_id = ?
+        )
+        ORDER BY t.name
+        "#,
         student_id
     )
     .fetch_all(pool)
     .await?;
 
-    // No error thrown if there are no techniques found
-    let techniques: Vec<Technique> = rows
-        .iter()
-        .map(|row| Technique::from(row.clone()))
-        .collect();
+    let mut techniques_map: HashMap<i64, Technique> = HashMap::new();
+
+    for row in rows {
+        let technique_id = row.id;
+
+        if let std::collections::hash_map::Entry::Vacant(e) = techniques_map.entry(technique_id) {
+            let technique = Technique {
+                id: technique_id,
+                name: row.name,
+                description: row.description.unwrap_or_default(),
+                coach_id: row.coach_id.unwrap_or_default(),
+                coach_name: row.coach_name.unwrap_or_default(),
+                tags: Vec::new(),
+            };
+            e.insert(technique);
+        }
+
+        if let (tag_id, Some(tag_name)) = (row.tag_id, row.tag_name) {
+            let tag = Tag {
+                id: tag_id,
+                name: tag_name,
+            };
+
+            let technique = techniques_map.get_mut(&technique_id).unwrap();
+            if !technique.tags.iter().any(|t| t.id == tag_id) {
+                technique.tags.push(tag);
+            }
+        }
+    }
+
+    for technique in techniques_map.values_mut() {
+        technique.tags.sort_by(|a, b| a.name.cmp(&b.name));
+    }
+
+    // Convert map to vector and return
+    let techniques: Vec<Technique> = techniques_map.into_values().collect();
     Ok(techniques)
 }
 
@@ -649,4 +801,122 @@ pub async fn get_students_by_recent_updates(
     } else {
         Ok(users.into_iter().filter(|user| !user.archived).collect())
     }
+}
+
+#[instrument]
+pub async fn create_tag(pool: &Pool<Sqlite>, name: &str) -> Result<i64, AppError> {
+    info!("Creating tag");
+    let res = sqlx::query!("INSERT INTO tags (name) VALUES (?)", name)
+        .execute(pool)
+        .await?;
+    Ok(res.last_insert_rowid())
+}
+
+#[instrument]
+pub async fn get_all_tags(pool: &Pool<Sqlite>) -> Result<Vec<Tag>, AppError> {
+    info!("Getting all tags");
+    let rows = sqlx::query_as!(DbTag, "SELECT id, name FROM tags ORDER BY name")
+        .fetch_all(pool)
+        .await?;
+
+    Ok(rows.into_iter().map(Tag::from).collect())
+}
+
+#[instrument]
+pub async fn get_tags_for_technique(
+    pool: &Pool<Sqlite>,
+    technique_id: i64,
+) -> Result<Vec<Tag>, AppError> {
+    info!("Getting tags for technique");
+    let rows = sqlx::query_as!(
+        DbTag,
+        "SELECT t.id, t.name 
+         FROM tags t
+         JOIN technique_tags tt ON t.id = tt.tag_id
+         WHERE tt.technique_id = ?
+         ORDER BY t.name",
+        technique_id
+    )
+    .fetch_all(pool)
+    .await?;
+
+    Ok(rows.into_iter().map(Tag::from).collect())
+}
+
+#[instrument]
+pub async fn add_tag_to_technique(
+    pool: &Pool<Sqlite>,
+    technique_id: i64,
+    tag_id: i64,
+) -> Result<(), AppError> {
+    info!("Adding tag to technique");
+    sqlx::query!(
+        "INSERT OR IGNORE INTO technique_tags (technique_id, tag_id) VALUES (?, ?)",
+        technique_id,
+        tag_id
+    )
+    .execute(pool)
+    .await?;
+
+    Ok(())
+}
+
+#[instrument]
+pub async fn remove_tag_from_technique(
+    pool: &Pool<Sqlite>,
+    technique_id: i64,
+    tag_id: i64,
+) -> Result<(), AppError> {
+    info!("Removing tag from technique");
+    sqlx::query!(
+        "DELETE FROM technique_tags WHERE technique_id = ? AND tag_id = ?",
+        technique_id,
+        tag_id
+    )
+    .execute(pool)
+    .await?;
+
+    Ok(())
+}
+
+#[instrument]
+pub async fn delete_tag(pool: &Pool<Sqlite>, tag_id: i64) -> Result<(), AppError> {
+    info!("Deleting tag");
+    // The technique_tags relationships will be automatically deleted due to the ON DELETE CASCADE constraint
+    sqlx::query!("DELETE FROM tags WHERE id = ?", tag_id)
+        .execute(pool)
+        .await?;
+
+    Ok(())
+}
+
+#[instrument]
+pub async fn get_tag_by_name(pool: &Pool<Sqlite>, name: &str) -> Result<Option<Tag>, AppError> {
+    info!("Getting tag by name");
+    let row = sqlx::query_as!(DbTag, "SELECT id, name FROM tags WHERE name = ?", name)
+        .fetch_optional(pool)
+        .await?;
+
+    Ok(row.map(Tag::from))
+}
+
+#[instrument]
+pub async fn get_techniques_by_tag(
+    pool: &Pool<Sqlite>,
+    tag_id: i64,
+) -> Result<Vec<Technique>, AppError> {
+    info!("Getting techniques by tag");
+    let rows = sqlx::query_as!(
+        DbTechnique,
+        "SELECT t.* 
+         FROM techniques t
+         JOIN technique_tags tt ON t.id = tt.technique_id
+         WHERE tt.tag_id = ?
+         ORDER BY t.name",
+        tag_id
+    )
+    .fetch_all(pool)
+    .await?;
+
+    Ok(rows.into_iter().map(Technique::from).collect())
 }

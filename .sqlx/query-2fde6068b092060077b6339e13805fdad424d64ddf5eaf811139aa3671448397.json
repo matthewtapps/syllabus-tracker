@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT *\n         FROM techniques\n         ORDER BY name",
+  "query": "\n        SELECT t.id, t.name, t.description, t.coach_id, t.coach_name,\n               tag.id as tag_id, tag.name as tag_name\n        FROM techniques t\n        LEFT JOIN technique_tags tt ON t.id = tt.technique_id\n        LEFT JOIN tags tag ON tt.tag_id = tag.id\n        ORDER BY t.name\n        ",
   "describe": {
     "columns": [
       {
@@ -27,6 +27,16 @@
         "name": "coach_name",
         "ordinal": 4,
         "type_info": "Text"
+      },
+      {
+        "name": "tag_id",
+        "ordinal": 5,
+        "type_info": "Integer"
+      },
+      {
+        "name": "tag_name",
+        "ordinal": 6,
+        "type_info": "Text"
       }
     ],
     "parameters": {
@@ -37,8 +47,10 @@
       false,
       true,
       true,
+      true,
+      false,
       true
     ]
   },
-  "hash": "da5dfa7e40abf6727e312066095c619a64d1a030828ce8af713180cd14579ee5"
+  "hash": "2fde6068b092060077b6339e13805fdad424d64ddf5eaf811139aa3671448397"
 }

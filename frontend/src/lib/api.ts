@@ -12,6 +12,11 @@ export interface LoginResponse {
   redirect_url?: string;
 }
 
+export interface Tag {
+  id: number;
+  name: string;
+}
+
 export async function login(
   credentials: LoginCredentials,
 ): Promise<LoginResponse> {
@@ -149,6 +154,7 @@ export interface Technique {
   coach_notes: string;
   created_at: string;
   updated_at: string;
+  tags: Tag[];
 }
 
 export interface StudentTechniques {
@@ -157,6 +163,7 @@ export interface StudentTechniques {
   can_edit_all_techniques: boolean;
   can_assign_techniques: boolean;
   can_create_techniques: boolean;
+  can_manage_tags: boolean;
 }
 
 export async function getStudentTechniques(
@@ -311,5 +318,97 @@ export async function updateUser(
 
   if (!response.ok) {
     throw new Error("Failed to update user");
+  }
+}
+
+export async function getAllTags(): Promise<Tag[]> {
+  const response = await tracedFetch("/api/tags", {
+    credentials: "include",
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch tags: ${response.statusText}`);
+  }
+
+  const data = await response.json();
+  return data.tags;
+}
+
+// Create a new tag
+export async function createTag(name: string): Promise<number> {
+  const response = await tracedFetch("/api/tags", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ name }),
+    credentials: "include",
+  });
+
+  if (!response.ok) {
+    if (response.status === 409) {
+      throw new Error("Tag with this name already exists");
+    }
+    throw new Error(`Failed to create tag: ${response.statusText}`);
+  }
+
+  // Return the new tag's ID if available
+  const location = response.headers.get("Location");
+  if (location) {
+    const parts = location.split("/");
+    return parseInt(parts[parts.length - 1], 10);
+  }
+
+  return 0; // Return 0 if we couldn't get the ID
+}
+
+// Delete a tag
+export async function deleteTag(tagId: number): Promise<void> {
+  const response = await tracedFetch(`/api/tags/${tagId}`, {
+    method: "DELETE",
+    credentials: "include",
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to delete tag: ${response.statusText}`);
+  }
+}
+
+// Add tag to technique
+export async function addTagToTechnique(
+  techniqueId: number,
+  tagId: number,
+): Promise<void> {
+  const response = await tracedFetch("/api/technique/tag", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ technique_id: techniqueId, tag_id: tagId }),
+    credentials: "include",
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to add tag to technique: ${response.statusText}`);
+  }
+}
+
+// Remove tag from technique
+export async function removeTagFromTechnique(
+  techniqueId: number,
+  tagId: number,
+): Promise<void> {
+  const response = await tracedFetch(
+    `/api/technique/${techniqueId}/tag/${tagId}`,
+    {
+      method: "DELETE",
+      credentials: "include",
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(
+      `Failed to remove tag from technique: ${response.statusText}`,
+    );
   }
 }

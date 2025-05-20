@@ -1,5 +1,5 @@
 use chrono::{DateTime, NaiveDateTime, Utc};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 #[derive(Serialize)]
 pub struct Technique {
@@ -8,6 +8,7 @@ pub struct Technique {
     pub description: String,
     pub coach_id: i64,
     pub coach_name: String, // Denormalized for convenience
+    pub tags: Vec<Tag>,
 }
 
 #[derive(sqlx::FromRow, Clone)]
@@ -27,6 +28,7 @@ impl From<DbTechnique> for Technique {
             description: technique.description.unwrap_or_default(),
             coach_id: technique.coach_id.unwrap_or_default(),
             coach_name: technique.coach_name.unwrap_or_default(),
+            tags: Vec::new(),
         }
     }
 }
@@ -43,6 +45,7 @@ pub struct StudentTechnique {
     pub coach_notes: String,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+    pub tags: Vec<Tag>,
 }
 
 #[derive(sqlx::FromRow, Clone, Default)]
@@ -82,6 +85,28 @@ impl From<DbStudentTechnique> for StudentTechnique {
                     chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(dt, chrono::Utc)
                 })
                 .unwrap_or_else(chrono::Utc::now),
+            tags: Vec::new(),
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct Tag {
+    pub id: i64,
+    pub name: String,
+}
+
+#[derive(sqlx::FromRow, Clone, Default)]
+pub struct DbTag {
+    pub id: Option<i64>,
+    pub name: Option<String>,
+}
+
+impl From<DbTag> for Tag {
+    fn from(tag: DbTag) -> Self {
+        Self {
+            id: tag.id.unwrap_or_default(),
+            name: tag.name.unwrap_or_default(),
         }
     }
 }

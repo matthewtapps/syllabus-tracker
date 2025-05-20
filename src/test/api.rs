@@ -1,3 +1,11 @@
+use rocket::http::{ContentType, Status};
+use serde_json::json;
+
+use crate::{
+    api::TagsResponse,
+    test::test_utils::{create_standard_test_db, login_test_user, setup_test_client},
+};
+
 #[cfg(test)]
 mod tests {
     use crate::api::{LoginResponse, StudentTechniquesResponse, UserData};
@@ -285,4 +293,123 @@ mod tests {
 
         assert!(has_triangle, "Triangle technique was not assigned");
     }
+}
+
+#[rocket::async_test]
+async fn test_tag_apis() {
+    let test_db = create_standard_test_db().await;
+    let (client, test_db) = setup_test_client(test_db).await;
+
+    let cookies = login_test_user(&client, "coach_user", "password123").await;
+
+    // Test create tag
+    let create_response = client
+        .post("/api/tags")
+        .cookies(cookies.clone())
+        .header(ContentType::JSON)
+        .body(
+            json!({
+                "name": "Test Tag"
+            })
+            .to_string(),
+        )
+        .dispatch()
+        .await;
+
+    assert_eq!(create_response.status(), Status::Ok);
+
+    // Test get all tags
+    let get_tags_response = client
+        .get("/api/tags")
+        .cookies(cookies.clone())
+        .dispatch()
+        .await;
+
+    assert_eq!(get_tags_response.status(), Status::Ok);
+
+    let tags_json = get_tags_response.into_string().await.unwrap();
+    let tags_response: TagsResponse = serde_json::from_str(&tags_json).unwrap();
+    assert!(tags_response.tags.iter().any(|t| t.name == "Test Tag"));
+
+    // Get the tag id
+    let tag_id = tags_response
+        .tags
+        .iter()
+        .find(|t| t.name == "Test Tag")
+        .unwrap()
+        .id;
+
+    // Get a technique to tag
+    let technique_id = test_db.technique_id("Armbar").expect("Technique not found");
+
+    // Test add tag to technique
+    let tag_technique_response = client
+        .post("/api/technique/tag")
+        .cookies(cookies.clone())
+        .header(ContentType::JSON)
+        .body(
+            json!({
+                "technique_id": technique_id,
+                "tag_id": tag_id
+            })
+            .to_string(),
+        )
+        .dispatch()
+        .await;
+
+    assert_eq!(tag_technique_response.status(), Status::Ok);
+
+    // Test get technique tags
+    let technique_tags_response = client
+        .get(format!("/api/technique/{}/tags", technique_id))
+        .cookies(cookies.clone())
+        .dispatch()
+        .await;
+
+    assert_eq!(technique_tags_response.status(), Status::Ok);
+
+    let tags_json = technique_tags_response.into_string().await.unwrap();
+    let tags_response: TagsResponse = serde_json::from_str(&tags_json).unwrap();
+    assert_eq!(tags_response.tags.len(), 1);
+    assert_eq!(tags_response.tags[0].name, "Test Tag");
+
+    // Test remove tag from technique
+    let remove_tag_response = client
+        .delete(format!("/api/technique/{}/tag/{}", technique_id, tag_id))
+        .cookies(cookies.clone())
+        .dispatch()
+        .await;
+
+    assert_eq!(remove_tag_response.status(), Status::Ok);
+
+    // Verify tag was removed
+    let technique_tags_response = client
+        .get(format!("/api/technique/{}/tags", technique_id))
+        .cookies(cookies.clone())
+        .dispatch()
+        .await;
+
+    let tags_json = technique_tags_response.into_string().await.unwrap();
+    let tags_response: TagsResponse = serde_json::from_str(&tags_json).unwrap();
+    assert_eq!(tags_response.tags.len(), 0);
+
+    // Test delete tag
+    let delete_tag_response = client
+        .delete(format!("/api/tags/{}", tag_id))
+        .cookies(cookies.clone())
+        .dispatch()
+        .await;
+
+    assert_eq!(delete_tag_response.status(), Status::Ok);
+
+    // Verify tag was deleted
+    let get_tags_response = client
+        .get("/api/tags")
+        .cookies(cookies.clone())
+        .dispatch()
+        .await;
+
+    let tags_json = get_tags_response.into_string().await.unwrap();
+    let tags_response: TagsResponse = serde_json::from_str(&tags_json).unwrap();
+    assert!(!tags_response.tags.iter().any(|t| t.name == "Test Tag"));
 }

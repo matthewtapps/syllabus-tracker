@@ -6,7 +6,13 @@ use rocket::serde::{Deserialize, Serialize, json::Json};
 use sqlx::{Pool, Sqlite};
 
 use crate::auth::{Permission, User};
+use crate::db::add_tag_to_technique;
+use crate::db::create_tag;
 use crate::db::create_user;
+use crate::db::delete_tag;
+use crate::db::get_all_tags;
+use crate::db::get_tags_for_technique;
+use crate::db::remove_tag_from_technique;
 use crate::db::set_user_archived;
 use crate::db::update_user_display_name;
 use crate::db::update_user_password;
@@ -17,6 +23,7 @@ use crate::db::{
     get_unassigned_techniques, get_user, get_user_by_username, get_users_by_role,
     invalidate_session, update_student_notes, update_student_technique, update_technique,
 };
+use crate::models::Tag;
 use crate::models::Technique;
 
 #[derive(Deserialize)]
@@ -67,6 +74,7 @@ pub struct TechniqueResponse {
     pub coach_notes: String,
     pub created_at: String,
     pub updated_at: String,
+    pub tags: Vec<TagResponse>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -83,6 +91,7 @@ pub struct StudentTechniquesResponse {
     pub can_edit_all_techniques: bool,
     pub can_assign_techniques: bool,
     pub can_create_techniques: bool,
+    pub can_manage_tags: bool,
 }
 
 #[post("/login", data = "<login>")]
@@ -205,6 +214,7 @@ pub async fn api_get_student_techniques(
             coach_notes: t.coach_notes,
             created_at: t.created_at.to_rfc3339(),
             updated_at: t.updated_at.to_rfc3339(),
+            tags: t.tags.into_iter().map(TagResponse::from).collect(), // Convert tags to TagResponse
         })
         .collect();
 
@@ -218,6 +228,7 @@ pub async fn api_get_student_techniques(
         can_edit_all_techniques: user.has_permission(Permission::EditAllTechniques),
         can_assign_techniques: user.has_permission(Permission::AssignTechniques),
         can_create_techniques: user.has_permission(Permission::CreateTechniques),
+        can_manage_tags: user.has_permission(Permission::ManageTags),
     }))
 }
 
@@ -516,4 +527,103 @@ pub async fn api_update_user(
 #[get("/health")]
 pub fn health() -> &'static str {
     "OK"
+}
+
+#[derive(Deserialize)]
+pub struct CreateTagRequest {
+    name: String,
+}
+
+#[derive(Deserialize)]
+pub struct TagTechniqueRequest {
+    technique_id: i64,
+    tag_id: i64,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct TagsResponse {
+    pub tags: Vec<Tag>,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct TagResponse {
+    pub id: i64,
+    pub name: String,
+}
+
+impl From<Tag> for TagResponse {
+    fn from(tag: Tag) -> Self {
+        Self {
+            id: tag.id,
+            name: tag.name,
+        }
+    }
+}
+
+#[get("/tags")]
+pub async fn api_get_all_tags(
+    _user: User,
+    db: &State<Pool<Sqlite>>,
+) -> Result<Json<TagsResponse>, Status> {
+    let tags = get_all_tags(db).await?;
+    Ok(Json(TagsResponse { tags }))
+}
+
+#[post("/tags", data = "<tag>")]
+pub async fn api_create_tag(
+    tag: Json<CreateTagRequest>,
+    user: User,
+    db: &State<Pool<Sqlite>>,
+) -> Result<Status, Status> {
+    // Only users with ManageTags permission can create tags
+    user.require_permission(Permission::ManageTags)?;
+
+    create_tag(db, &tag.name).await?;
+
+    Ok(Status::Ok)
+}
+
+#[delete("/tags/<id>")]
+pub async fn api_delete_tag(
+    id: i64,
+    user: User,
+    db: &State<Pool<Sqlite>>,
+) -> Result<Status, Status> {
+    user.require_permission(Permission::ManageTags)?;
+    delete_tag(db, id).await?;
+    Ok(Status::Ok)
+}
+
+#[post("/technique/tag", data = "<request>")]
+pub async fn api_add_tag_to_technique(
+    request: Json<TagTechniqueRequest>,
+    user: User,
+    db: &State<Pool<Sqlite>>,
+) -> Result<Status, Status> {
+    user.require_permission(Permission::ManageTags)?;
+    add_tag_to_technique(db, request.technique_id, request.tag_id).await?;
+    Ok(Status::Ok)
+}
+
+#[delete("/technique/<technique_id>/tag/<tag_id>")]
+pub async fn api_remove_tag_from_technique(
+    technique_id: i64,
+    tag_id: i64,
+    user: User,
+    db: &State<Pool<Sqlite>>,
+) -> Result<Status, Status> {
+    user.require_permission(Permission::ManageTags)?;
+    remove_tag_from_technique(db, technique_id, tag_id).await?;
+    Ok(Status::Ok)
+}
+
+#[get("/technique/<id>/tags")]
+pub async fn api_get_technique_tags(
+    id: i64,
+    _user: User,
+    db: &State<Pool<Sqlite>>,
+) -> Result<Json<TagsResponse>, Status> {
+    // Everyone can view tags
+    let tags = get_tags_for_technique(db, id).await?;
+    Ok(Json(TagsResponse { tags }))
 }
