@@ -42,6 +42,10 @@ services:
       - internal
     expose:
       - "80"
+    env_file:
+      - config/common.env
+      - config/prod.env
+      - .secrets.env
 
   otel-collector:
     image: otel/opentelemetry-collector-contrib:latest
