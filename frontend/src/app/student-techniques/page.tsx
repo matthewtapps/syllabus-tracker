@@ -448,146 +448,83 @@ export default function StudentTechniques({ user }: StudentTechniquesProps) {
                     {expandedRows.includes(technique.id) && (
                       <TableRow className={`!border-l-4 ${getStatusBorderColor(technique.status)}`} >
                         <TableCell colSpan={3} >
-                          {/* Tags Section - Now first */}
-                          <div className="mb-6">
-                            <div className="flex justify-between items-center mb-2">
-                              <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400">Tags</h3>
-                            </div>
-
-                            <div className="flex flex-wrap gap-1.5">
-                              {technique.tags.map(tag => (
-                                <Badge
-                                  key={tag.id}
-                                  className="text-xs flex items-center gap-1"
-                                >
-                                  {tag.name}
-                                  {(data.can_edit_all_techniques || data.can_manage_tags) && (
-                                    <Button
-                                      type="button"
-                                      variant="ghost"
-                                      size="icon"
-                                      className="h-3 w-3 p-0 rounded-full opacity-70 hover:opacity-100"
-                                      onClick={(e) => confirmTagRemoval(technique, tag, e)}
-                                    >
-                                      <XIcon className="h-2 w-2" />
-                                      <span className="sr-only">Remove tag</span>
-                                    </Button>
-                                  )}
-                                </Badge>
-                              ))}
-
-                              {/* "+" Tag for adding new tags */}
-                              {(data.can_edit_all_techniques || data.can_manage_tags) && (
-                                isAddingTag === technique.id ? (
-                                  <div className="relative flex items-center">
-                                    <Input
-                                      value={newTagInput}
-                                      onChange={(e) => setNewTagInput(e.target.value)}
-                                      placeholder="Tag name"
-                                      className="text-xs h-7 px-2 py-1 w-40"
-                                      autoFocus
-                                      onKeyDown={(e) => {
-                                        if (e.key === "Enter") {
-                                          e.preventDefault();
-                                          // Find matching tag from allTags or create new one
-                                          const existingTag = allTags.find(
-                                            t => t.name.toLowerCase() === newTagInput.toLowerCase()
-                                          );
-                                          if (existingTag) {
-                                            handleAddTag(technique, existingTag.id);
-                                          } else if (newTagInput.trim()) {
-                                            handleCreateTag(newTagInput.trim(), technique.id);
-                                          }
-                                          setIsAddingTag(null);
-                                          setNewTagInput("");
-                                        } else if (e.key === "Escape") {
-                                          setIsAddingTag(null);
-                                          setNewTagInput("");
-                                        }
-                                      }}
-                                      onClick={(e) => e.stopPropagation()}
-                                    />
-                                    <div className="absolute right-1 flex items-center gap-1">
-                                      <Button
-                                        type="button"
-                                        variant="ghost"
-                                        size="icon"
-                                        className="h-4 w-4 p-0"
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          if (newTagInput.trim()) {
-                                            const existingTag = allTags.find(
-                                              t => t.name.toLowerCase() === newTagInput.toLowerCase()
-                                            );
-                                            if (existingTag) {
-                                              handleAddTag(technique, existingTag.id);
-                                            } else {
-                                              handleCreateTag(newTagInput.trim(), technique.id);
-                                            }
-                                          }
-                                          setIsAddingTag(null);
-                                          setNewTagInput("");
-                                        }}
-                                      >
-                                        <CheckIcon className="h-3 w-3" />
-                                      </Button>
-                                      <Button
-                                        type="button"
-                                        variant="ghost"
-                                        size="icon"
-                                        className="h-4 w-4 p-0"
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          setIsAddingTag(null);
-                                          setNewTagInput("");
-                                        }}
-                                      >
-                                        <XIcon className="h-3 w-3" />
-                                      </Button>
-                                    </div>
-
-                                    {/* Tag suggestions - without "Press Enter" hint */}
-                                    {newTagInput.trim() && (
-                                      <div className="absolute left-0 top-full mt-1 w-full bg-popover rounded-md border shadow-md z-50 max-h-32 overflow-y-auto">
-                                        {allTags
-                                          .filter(tag =>
-                                            tag.name.toLowerCase().includes(newTagInput.toLowerCase()) &&
-                                            !technique.tags.some(t => t.id === tag.id)
-                                          )
-                                          .map(tag => (
-                                            <div
-                                              key={tag.id}
-                                              className="px-2 py-1 text-xs hover:bg-muted cursor-pointer"
-                                              onClick={(e) => {
-                                                e.stopPropagation();
-                                                handleAddTag(technique, tag.id);
-                                                setIsAddingTag(null);
-                                                setNewTagInput("");
-                                              }}
-                                            >
-                                              {tag.name}
-                                            </div>
-                                          ))}
-                                        {/* Removed the "Press Enter to create" hint */}
-                                      </div>
-                                    )}
-                                  </div>
-                                ) : (
-                                  <Badge
-                                    variant='outline'
-                                    className="text-xs cursor-pointer flex items-center gap-1"
-                                    onClick={(e) => {
+                          {(data.can_edit_all_techniques) && (
+                            <div className="mb-6">
+                              <div className="flex justify-between items-center mb-2">
+                                <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400">Status</h3>
+                                <div className="flex items-center gap-2">
+                                  <Button
+                                    variant={technique.status === 'red' ? 'default' : 'outline'}
+                                    size="sm"
+                                    onClick={async (e) => {
                                       e.stopPropagation();
-                                      setIsAddingTag(technique.id);
+                                      if (technique.status !== 'red') {
+                                        await updateTechnique(technique.id, { status: 'red' });
+                                        if (data) {
+                                          const updatedTechniques = data.techniques.map((t) =>
+                                            t.id === technique.id ? { ...t, status: 'red' as const } : t
+                                          );
+                                          setData({
+                                            ...data,
+                                            techniques: updatedTechniques
+                                          });
+                                        }
+                                        toast.success("Status updated to Not Started");
+                                      }
                                     }}
                                   >
-                                    <PlusIcon className="h-3 w-3" />
-                                    <span>Add</span>
-                                  </Badge>
-                                )
-                              )}
+                                    Not Started
+                                  </Button>
+                                  <Button
+                                    variant={technique.status === 'amber' ? 'default' : 'outline'}
+                                    size="sm"
+                                    className="bg-amber-500 hover:bg-amber-600 data-[state=outline]:bg-transparent data-[state=outline]:text-amber-500 data-[state=outline]:hover:bg-amber-50 dark:data-[state=outline]:hover:bg-amber-950/20"
+                                    onClick={async (e) => {
+                                      e.stopPropagation();
+                                      if (technique.status !== 'amber') {
+                                        await updateTechnique(technique.id, { status: 'amber' });
+                                        if (data) {
+                                          const updatedTechniques = data.techniques.map((t) =>
+                                            t.id === technique.id ? { ...t, status: 'amber' as const } : t
+                                          );
+                                          setData({
+                                            ...data,
+                                            techniques: updatedTechniques
+                                          });
+                                        }
+                                        toast.success("Status updated to In Progress");
+                                      }
+                                    }}
+                                  >
+                                    In Progress
+                                  </Button>
+                                  <Button
+                                    variant={technique.status === 'green' ? 'default' : 'outline'}
+                                    size="sm"
+                                    className="bg-green-500 hover:bg-green-600 data-[state=outline]:bg-transparent data-[state=outline]:text-green-500 data-[state=outline]:hover:bg-green-50 dark:data-[state=outline]:hover:bg-green-950/20"
+                                    onClick={async (e) => {
+                                      e.stopPropagation();
+                                      if (technique.status !== 'green') {
+                                        await updateTechnique(technique.id, { status: 'green' });
+                                        if (data) {
+                                          const updatedTechniques = data.techniques.map((t) =>
+                                            t.id === technique.id ? { ...t, status: 'green' as const } : t
+                                          );
+                                          setData({
+                                            ...data,
+                                            techniques: updatedTechniques
+                                          });
+                                        }
+                                        toast.success("Status updated to Completed");
+                                      }
+                                    }}
+                                  >
+                                    Completed
+                                  </Button>
+                                </div>
+                              </div>
                             </div>
-                          </div>
+                          )}
 
                           {/* Coach Notes Section */}
                           <div className="mb-6">
@@ -745,6 +682,146 @@ export default function StudentTechniques({ user }: StudentTechniquesProps) {
                           <div className="mb-6">
                             <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-2">Description</h3>
                             <p className="whitespace-pre-wrap">{technique.technique_description}</p>
+                          </div>
+
+                          <div className="mb-6">
+                            <div className="flex justify-between items-center mb-2">
+                              <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400">Tags</h3>
+                            </div>
+
+                            <div className="flex flex-wrap gap-1.5">
+                              {technique.tags.map(tag => (
+                                <Badge
+                                  key={tag.id}
+                                  className="text-xs flex items-center gap-1"
+                                >
+                                  {tag.name}
+                                  {(data.can_edit_all_techniques || data.can_manage_tags) && (
+                                    <Button
+                                      type="button"
+                                      variant="ghost"
+                                      size="icon"
+                                      className="h-3 w-3 p-0 rounded-full opacity-70 hover:opacity-100"
+                                      onClick={(e) => confirmTagRemoval(technique, tag, e)}
+                                    >
+                                      <XIcon className="h-2 w-2" />
+                                      <span className="sr-only">Remove tag</span>
+                                    </Button>
+                                  )}
+                                </Badge>
+                              ))}
+
+                              {/* "+" Tag for adding new tags */}
+                              {(data.can_edit_all_techniques || data.can_manage_tags) && (
+                                isAddingTag === technique.id ? (
+                                  <div className="relative flex items-center">
+                                    <Input
+                                      value={newTagInput}
+                                      onChange={(e) => setNewTagInput(e.target.value)}
+                                      placeholder="Tag name"
+                                      className="text-xs h-7 px-2 py-1 w-40"
+                                      autoFocus
+                                      onKeyDown={(e) => {
+                                        if (e.key === "Enter") {
+                                          e.preventDefault();
+                                          // Find matching tag from allTags or create new one
+                                          const existingTag = allTags.find(
+                                            t => t.name.toLowerCase() === newTagInput.toLowerCase()
+                                          );
+                                          if (existingTag) {
+                                            handleAddTag(technique, existingTag.id);
+                                          } else if (newTagInput.trim()) {
+                                            handleCreateTag(newTagInput.trim(), technique.id);
+                                          }
+                                          setIsAddingTag(null);
+                                          setNewTagInput("");
+                                        } else if (e.key === "Escape") {
+                                          setIsAddingTag(null);
+                                          setNewTagInput("");
+                                        }
+                                      }}
+                                      onClick={(e) => e.stopPropagation()}
+                                    />
+                                    <div className="absolute right-1 flex items-center gap-1">
+                                      <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="icon"
+                                        className="h-4 w-4 p-0"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          if (newTagInput.trim()) {
+                                            const existingTag = allTags.find(
+                                              t => t.name.toLowerCase() === newTagInput.toLowerCase()
+                                            );
+                                            if (existingTag) {
+                                              handleAddTag(technique, existingTag.id);
+                                            } else {
+                                              handleCreateTag(newTagInput.trim(), technique.id);
+                                            }
+                                          }
+                                          setIsAddingTag(null);
+                                          setNewTagInput("");
+                                        }}
+                                      >
+                                        <CheckIcon className="h-3 w-3" />
+                                      </Button>
+                                      <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="icon"
+                                        className="h-4 w-4 p-0"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setIsAddingTag(null);
+                                          setNewTagInput("");
+                                        }}
+                                      >
+                                        <XIcon className="h-3 w-3" />
+                                      </Button>
+                                    </div>
+
+                                    {/* Tag suggestions - without "Press Enter" hint */}
+                                    {newTagInput.trim() && (
+                                      <div className="absolute left-0 top-full mt-1 w-full bg-popover rounded-md border shadow-md z-50 max-h-32 overflow-y-auto">
+                                        {allTags
+                                          .filter(tag =>
+                                            tag.name.toLowerCase().includes(newTagInput.toLowerCase()) &&
+                                            !technique.tags.some(t => t.id === tag.id)
+                                          )
+                                          .map(tag => (
+                                            <div
+                                              key={tag.id}
+                                              className="px-2 py-1 text-xs hover:bg-muted cursor-pointer"
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                handleAddTag(technique, tag.id);
+                                                setIsAddingTag(null);
+                                                setNewTagInput("");
+                                              }}
+                                            >
+                                              {tag.name}
+                                            </div>
+                                          ))}
+                                        {/* Removed the "Press Enter to create" hint */}
+                                      </div>
+                                    )}
+                                  </div>
+                                ) : (
+                                  <Badge
+                                    variant='outline'
+                                    className="text-xs cursor-pointer flex items-center gap-1"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setIsAddingTag(technique.id);
+                                    }}
+                                  >
+                                    <PlusIcon className="h-3 w-3" />
+                                    <span>Add</span>
+                                  </Badge>
+                                )
+                              )}
+                            </div>
                           </div>
 
                           {/* Edit Technique Button */}

@@ -194,16 +194,14 @@ export default function AssignTechniques({
                 )}
 
                 {/* Select/Deselect buttons */}
-                <div className="flex justify-between items-center">
-                  <div className="text-sm text-muted-foreground">
-                    {filteredTechniques.length} of {unassignedTechniques.length} techniques
-                  </div>
+                <div className="flex flex-col gap-2">
                   <div className="flex gap-2">
                     <Button
                       variant="outline"
                       size="sm"
                       onClick={selectAllVisible}
                       disabled={filteredTechniques.length === 0}
+                      className="flex-1"
                     >
                       Select All Visible
                     </Button>
@@ -213,9 +211,13 @@ export default function AssignTechniques({
                       onClick={deselectAllVisible}
                       disabled={filteredTechniques.length === 0 ||
                         !filteredTechniques.some(t => selectedTechniques.includes(t.id))}
+                      className="flex-1"
                     >
                       Deselect All Visible
                     </Button>
+                  </div>
+                  <div className="text-sm text-muted-foreground">
+                    {filteredTechniques.length} of {unassignedTechniques.length} techniques
                   </div>
                 </div>
               </div>
