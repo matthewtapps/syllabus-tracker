@@ -14,6 +14,11 @@ services:
     networks:
       - internal
       - host
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://app:8000/api/health"]
+      interval: 60s
+      timeout: 5s
+      retries: 3
 
   app:
     image: ${REGISTRY}/${IMAGE_NAME}/app:${APP_IMAGE_TAG:-latest}
@@ -56,6 +61,13 @@ services:
     restart: unless-stopped
     networks:
       - internal
+    depends_on:
+      app:
+        condition: service_started
+      frontend:
+        condition: service_started
+      nginx:
+        condition: service_healthy
 
   backup:
     image: alpine:latest
@@ -71,6 +83,13 @@ services:
     restart: unless-stopped
     networks:
       - internal
+    depends_on:
+      app:
+        condition: service_started
+      frontend:
+        condition: service_started
+      nginx:
+        condition: service_healthy
 
 volumes:
   app-data:
