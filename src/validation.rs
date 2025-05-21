@@ -4,6 +4,7 @@ use rocket::response::status::Custom;
 use rocket::serde::json::Json;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use tracing::instrument;
 use validator::Validate;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -32,6 +33,7 @@ pub trait ToValidationResponse {
 }
 
 impl ToValidationResponse for AppError {
+    #[instrument]
     fn to_validation_response(self) -> Custom<Json<ValidationResponse>> {
         self.log_and_record("API Validation Error");
         let status = self.status_code();
@@ -57,6 +59,7 @@ impl ToValidationResponse for AppError {
 }
 
 impl ToValidationResponse for Status {
+    #[instrument]
     fn to_validation_response(self) -> Custom<Json<ValidationResponse>> {
         let (field, message) = match self {
             Status::Forbidden => (
@@ -77,10 +80,12 @@ impl ToValidationResponse for Status {
     }
 }
 
+#[derive(Debug)]
 pub struct ValidationErrorWrapper(pub validator::ValidationErrors);
 pub struct AppErrorWrapper(pub AppError);
 
 impl From<ValidationErrorWrapper> for Custom<Json<ValidationResponse>> {
+    #[instrument]
     fn from(wrapper: ValidationErrorWrapper) -> Self {
         let errors = wrapper.0;
         let mut error_map = HashMap::new();
