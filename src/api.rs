@@ -2,14 +2,18 @@ use rocket::FromForm;
 use rocket::State;
 use rocket::http::Status;
 use rocket::response::Redirect;
+use rocket::response::status::Custom;
 use rocket::serde::{Deserialize, Serialize, json::Json};
 use sqlx::{Pool, Sqlite};
+use validator::Validate;
 
+use crate::auth::UserSession;
 use crate::auth::{Permission, User};
 use crate::db::add_tag_to_technique;
 use crate::db::create_tag;
 use crate::db::create_user;
 use crate::db::delete_tag;
+use crate::db::find_user_by_username;
 use crate::db::get_all_tags;
 use crate::db::get_all_users;
 use crate::db::get_tags_for_technique;
@@ -22,13 +26,17 @@ use crate::db::update_username;
 use crate::db::{
     add_techniques_to_student, authenticate_user, create_and_assign_technique, create_user_session,
     get_student_technique, get_student_techniques, get_students_by_recent_updates,
-    get_unassigned_techniques, get_user, get_user_by_username, get_users_by_role,
-    invalidate_session, update_student_notes, update_student_technique, update_technique,
+    get_unassigned_techniques, get_user, get_users_by_role, invalidate_session,
+    update_student_notes, update_student_technique, update_technique,
 };
 use crate::models::Tag;
 use crate::models::Technique;
+use crate::validation::AppErrorExt;
+use crate::validation::JsonValidateExt;
+use crate::validation::PermissionCheckExt;
+use crate::validation::ValidationResponse;
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Validate)]
 pub struct LoginRequest {
     username: String,
     password: String,
@@ -101,92 +109,78 @@ pub async fn api_login(
     login: Json<LoginRequest>,
     cookies: &rocket::http::CookieJar<'_>,
     db: &State<Pool<Sqlite>>,
-) -> Json<LoginResponse> {
+) -> Result<Json<LoginResponse>, Custom<Json<ValidationResponse>>> {
     use chrono::Utc;
     use rocket::http::{Cookie, SameSite};
 
-    match authenticate_user(db, &login.username, &login.password).await {
-        Ok(true) => match get_user_by_username(db, &login.username).await {
-            Ok(user) => {
-                let token = crate::auth::UserSession::generate_token();
-                let expires_at = Utc::now() + chrono::Duration::hours(1);
+    let validated = login.validate_custom()?;
 
-                match create_user_session(db, user.id, &token, expires_at.naive_utc()).await {
-                    Ok(_) => {
-                        let cookie = Cookie::build(("session_token", token))
-                            .same_site(SameSite::Lax)
-                            .http_only(true)
-                            .max_age(rocket::time::Duration::hours(1));
-                        cookies.add_private(cookie);
+    match authenticate_user(db, &validated.username, &validated.password)
+        .await
+        .validate_custom()?
+    {
+        Some(user) => {
+            // Create session token
+            let token = UserSession::generate_token();
+            let expires_at = Utc::now() + chrono::Duration::hours(1);
 
-                        cookies.add_private(
-                            Cookie::build(("user_id", user.id.to_string()))
-                                .same_site(SameSite::Lax)
-                                .http_only(true)
-                                .max_age(rocket::time::Duration::hours(1)),
-                        );
+            create_user_session(db, user.id, &token, expires_at.naive_utc())
+                .await
+                .validate_custom()?;
 
-                        cookies.add_private(
-                            Cookie::build(("logged_in", login.username.clone()))
-                                .same_site(SameSite::Lax)
-                                .max_age(rocket::time::Duration::hours(1)),
-                        );
+            // Set cookies
+            let cookie = Cookie::build(("session_token", token))
+                .same_site(SameSite::Lax)
+                .http_only(true)
+                .max_age(rocket::time::Duration::hours(1));
+            cookies.add_private(cookie);
 
-                        let current_timestamp = rocket::time::OffsetDateTime::now_utc()
-                            .unix_timestamp()
-                            .to_string();
-                        cookies.add_private(
-                            Cookie::build(("session_timestamp", current_timestamp))
-                                .same_site(SameSite::Lax)
-                                .max_age(rocket::time::Duration::hours(1)),
-                        );
+            cookies.add_private(
+                Cookie::build(("user_id", user.id.to_string()))
+                    .same_site(SameSite::Lax)
+                    .http_only(true)
+                    .max_age(rocket::time::Duration::hours(1)),
+            );
 
-                        cookies.add_private(
-                            Cookie::build(("user_role", user.role.to_string()))
-                                .same_site(SameSite::Lax)
-                                .max_age(rocket::time::Duration::hours(1)),
-                        );
+            cookies.add_private(
+                Cookie::build(("logged_in", validated.username))
+                    .same_site(SameSite::Lax)
+                    .max_age(rocket::time::Duration::hours(1)),
+            );
 
-                        let redirect_url = match user.role.as_str() {
-                            "student" => format!("/ui/student/{}", user.id),
-                            _ => "/ui/dashboard".to_string(),
-                        };
+            let current_timestamp = rocket::time::OffsetDateTime::now_utc()
+                .unix_timestamp()
+                .to_string();
+            cookies.add_private(
+                Cookie::build(("session_timestamp", current_timestamp))
+                    .same_site(SameSite::Lax)
+                    .max_age(rocket::time::Duration::hours(1)),
+            );
 
-                        Json(LoginResponse {
-                            success: true,
-                            user: Some(UserData {
-                                id: user.id,
-                                username: user.username.clone(),
-                                display_name: user.display_name.clone(),
-                                role: user.role.to_string(),
-                                last_update: None,
-                                archived: false,
-                            }),
-                            error: None,
-                            redirect_url: Some(redirect_url),
-                        })
-                    }
-                    Err(_) => Json(LoginResponse {
-                        success: false,
-                        user: None,
-                        error: Some("Failed to create session".to_string()),
-                        redirect_url: None,
-                    }),
-                }
-            }
-            Err(_) => Json(LoginResponse {
-                success: false,
-                user: None,
-                error: Some("User not found".to_string()),
-                redirect_url: None,
-            }),
-        },
-        _ => Json(LoginResponse {
+            cookies.add_private(
+                Cookie::build(("user_role", user.role.to_string()))
+                    .same_site(SameSite::Lax)
+                    .max_age(rocket::time::Duration::hours(1)),
+            );
+
+            let redirect_url = match user.role.as_str() {
+                "student" => format!("/ui/student/{}", user.id),
+                _ => "/ui/dashboard".to_string(),
+            };
+
+            Ok(Json(LoginResponse {
+                success: true,
+                user: Some(UserData::from(user)),
+                error: None,
+                redirect_url: Some(redirect_url),
+            }))
+        }
+        None => Ok(Json(LoginResponse {
             success: false,
             user: None,
             error: Some("Invalid username or password".to_string()),
             redirect_url: None,
-        }),
+        })),
     }
 }
 
@@ -424,23 +418,9 @@ pub async fn api_logout(
     Redirect::to("/ui/")
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Validate, Clone)]
 pub struct ProfileUpdateRequest {
     display_name: String,
-}
-
-#[derive(Deserialize)]
-pub struct PasswordChangeRequest {
-    current_password: String,
-    new_password: String,
-}
-
-#[derive(Deserialize)]
-pub struct UserRegistrationRequest {
-    username: String,
-    display_name: String,
-    password: String,
-    role: String,
 }
 
 #[put("/profile", data = "<profile>")]
@@ -448,10 +428,20 @@ pub async fn api_update_profile(
     profile: Json<ProfileUpdateRequest>,
     user: User,
     db: &State<Pool<Sqlite>>,
-) -> Result<Status, Status> {
-    update_user_display_name(db, user.id, &profile.display_name).await?;
+) -> Result<Status, Custom<Json<ValidationResponse>>> {
+    profile.clone().validate_custom()?;
+
+    update_user_display_name(db, user.id, &profile.display_name)
+        .await
+        .validate_custom()?;
 
     Ok(Status::Ok)
+}
+
+#[derive(Deserialize, Validate)]
+pub struct PasswordChangeRequest {
+    current_password: String,
+    new_password: String,
 }
 
 #[post("/change-password", data = "<password>")]
@@ -459,16 +449,37 @@ pub async fn api_change_password(
     password: Json<PasswordChangeRequest>,
     user: User,
     db: &State<Pool<Sqlite>>,
-) -> Result<Status, Status> {
-    let is_valid = authenticate_user(db, &user.username, &password.current_password).await?;
+) -> Result<Status, Custom<Json<ValidationResponse>>> {
+    let validated = password.validate_custom()?;
 
-    if !is_valid {
-        return Err(Status::Unauthorized);
+    let is_valid = authenticate_user(db, &user.username, &validated.current_password)
+        .await
+        .validate_custom()?;
+
+    match is_valid {
+        Some(_) => {
+            update_user_password(db, user.id, &validated.new_password)
+                .await
+                .validate_custom()?;
+
+            Ok(Status::Ok)
+        }
+        _ => Err(Custom(
+            Status::Unauthorized,
+            Json(ValidationResponse::with_error(
+                "current_password",
+                "Current password is incorrect",
+            )),
+        )),
     }
+}
 
-    update_user_password(db, user.id, &password.new_password).await?;
-
-    Ok(Status::Ok)
+#[derive(Deserialize, Validate, Clone)]
+pub struct UserRegistrationRequest {
+    username: String,
+    display_name: String,
+    password: String,
+    role: String,
 }
 
 #[post("/register", data = "<registration>")]
@@ -476,22 +487,41 @@ pub async fn api_register_user(
     registration: Json<UserRegistrationRequest>,
     user: User,
     db: &State<Pool<Sqlite>>,
-) -> Result<Status, Status> {
-    match registration.role.as_str() {
-        "admin" => {
-            user.require_all_permissions(&[Permission::EditUserRoles, Permission::RegisterUsers])?
-        }
-        _ => user.require_permission(Permission::RegisterUsers)?,
+) -> Result<Status, Custom<Json<ValidationResponse>>> {
+    let validated = registration.clone().validate_custom()?;
+
+    let existing_user = find_user_by_username(db, &registration.username)
+        .await
+        .validate_custom()?;
+
+    if existing_user.is_some() {
+        return Err(Custom(
+            Status::Conflict,
+            Json(ValidationResponse::with_error(
+                "username",
+                "Username already exists",
+            )),
+        ));
+    }
+
+    match validated.role.as_str() {
+        "admin" => user
+            .require_all_permissions(&[Permission::EditUserRoles, Permission::RegisterUsers])
+            .validate_custom()?,
+        _ => user
+            .require_permission(Permission::RegisterUsers)
+            .validate_custom()?,
     };
 
     create_user(
         db,
-        &registration.username,
-        &registration.password,
-        &registration.role,
-        Some(&registration.display_name),
+        &validated.username,
+        &validated.password,
+        &validated.role,
+        Some(&validated.display_name),
     )
-    .await?;
+    .await
+    .validate_custom()?;
 
     Ok(Status::Created)
 }
@@ -502,8 +532,7 @@ pub struct UserUpdateRequest {
     display_name: Option<String>,
     password: Option<String>,
     archived: Option<bool>,
-
-    role: Option<String>, // Add role field
+    role: Option<String>,
 }
 
 #[put("/admin/users/<id>", data = "<update>")]
@@ -536,7 +565,6 @@ pub async fn api_update_user(
         set_user_archived(db, id, archived).await?;
     }
 
-    // Add role update
     if let Some(role) = &update.role {
         update_user_role(db, id, role).await?;
     }
@@ -595,7 +623,6 @@ pub async fn api_create_tag(
     user: User,
     db: &State<Pool<Sqlite>>,
 ) -> Result<Status, Status> {
-    // Only users with ManageTags permission can create tags
     user.require_permission(Permission::ManageTags)?;
 
     create_tag(db, &tag.name).await?;
@@ -653,7 +680,6 @@ pub async fn api_get_all_users(
     user: User,
     db: &State<Pool<Sqlite>>,
 ) -> Result<Json<Vec<UserData>>, Status> {
-    // Only admin can access this endpoint
     user.require_permission(Permission::EditUserRoles)?;
 
     let users = get_all_users(db).await?;

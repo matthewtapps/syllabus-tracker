@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod tests {
-    use crate::auth::Role;
-    use crate::db::{create_user, get_user_by_username};
+    use crate::db::create_user;
+    use crate::{auth::Role, db::find_user_by_username};
 
     use rocket::tokio;
     use sqlx::{Pool, Sqlite, sqlite::SqlitePoolOptions};
@@ -34,11 +34,16 @@ mod tests {
             .await
             .expect("Failed to create test user");
 
-        let user = get_user_by_username(&pool, username)
+        let user = find_user_by_username(&pool, username)
             .await
             .expect("Failed to get user");
 
-        assert_eq!(user.username, username);
-        assert_eq!(user.role, Role::Student);
+        match user {
+            Some(user) => {
+                assert_eq!(user.username, username);
+                assert_eq!(user.role, Role::Student);
+            }
+            _ => panic!("User wasn't defined somehow"),
+        }
     }
 }

@@ -1,4 +1,3 @@
-use opentelemetry_semantic_conventions::{attribute::OTEL_STATUS_CODE, trace::ERROR_TYPE};
 use rocket::http::Status;
 use thiserror::Error;
 use tracing::{Span, error, warn};
@@ -17,12 +16,6 @@ pub enum AppError {
     #[error("Not found: {0}")]
     NotFound(String),
 
-    #[error("Validation error: {0}")]
-    Validation(String),
-
-    #[error("Redirect error: {0}")]
-    Redirect(String),
-
     #[error("External service error: {0}")]
     ExternalService(String),
 
@@ -30,7 +23,6 @@ pub enum AppError {
     Internal(String),
 }
 
-// Enhance AppError in src/error.rs
 impl AppError {
     pub fn log_and_record(&self, ctx: &str) {
         let current_span = Span::current();
@@ -54,14 +46,6 @@ impl AppError {
                 warn!(message = %msg, context = %ctx, "Not found error");
                 "not_found_error"
             }
-            AppError::Validation(msg) => {
-                warn!(message = %msg, context = %ctx, "Validation error");
-                "validation_error"
-            }
-            AppError::Redirect(msg) => {
-                error!(message = %msg, context = %ctx, "Redirect error");
-                "redirect_error"
-            }
             AppError::ExternalService(msg) => {
                 error!(message = %msg, context = %ctx, "External service error");
                 "external_service_error"
@@ -74,28 +58,20 @@ impl AppError {
 
         if is_valid_span {
             current_span.record("error", tracing::field::display(true));
-            current_span.record(ERROR_TYPE, tracing::field::display(error_kind));
+            current_span.record("error.kind", tracing::field::display(error_kind));
             current_span.record("error.message", tracing::field::display(&message));
-
-            match self {
-                AppError::Database(_) | AppError::Internal(_) | AppError::ExternalService(_) => {
-                    current_span.record(OTEL_STATUS_CODE, tracing::field::display("ERROR"));
-                }
-                _ => {}
-            }
+            current_span.record("otel.status_code", tracing::field::display("ERROR"));
         }
     }
 
     pub fn status_code(&self) -> Status {
         match self {
-            AppError::Database(_) => rocket::http::Status::InternalServerError,
-            AppError::Authentication(_) => rocket::http::Status::Unauthorized,
-            AppError::Authorization(_) => rocket::http::Status::Forbidden,
-            AppError::NotFound(_) => rocket::http::Status::NotFound,
-            AppError::Validation(_) => rocket::http::Status::BadRequest,
-            AppError::Redirect(_) => rocket::http::Status::InternalServerError,
-            AppError::ExternalService(_) => rocket::http::Status::ServiceUnavailable,
-            AppError::Internal(_) => rocket::http::Status::InternalServerError,
+            AppError::Database(_) => Status::InternalServerError,
+            AppError::Authentication(_) => Status::Unauthorized,
+            AppError::Authorization(_) => Status::Forbidden,
+            AppError::NotFound(_) => Status::NotFound,
+            AppError::ExternalService(_) => Status::ServiceUnavailable,
+            AppError::Internal(_) => Status::InternalServerError,
         }
     }
 
@@ -118,12 +94,6 @@ impl From<bcrypt::BcryptError> for AppError {
     }
 }
 
-impl From<rocket::Error> for AppError {
-    fn from(error: rocket::Error) -> Self {
-        AppError::Redirect(format!("Rocket error: {}", error))
-    }
-}
-
 impl From<sqlx::migrate::MigrateError> for AppError {
     fn from(error: sqlx::migrate::MigrateError) -> Self {
         AppError::Internal(format!("Migration error: {}", error))
@@ -133,5 +103,11 @@ impl From<sqlx::migrate::MigrateError> for AppError {
 impl From<AppError> for Status {
     fn from(err: AppError) -> Self {
         err.to_status_with_log("Error conversion into Status")
+    }
+}
+
+impl From<anyhow::Error> for AppError {
+    fn from(error: anyhow::Error) -> Self {
+        AppError::Internal(format!("Internal error: {}", error))
     }
 }

@@ -9,6 +9,7 @@ mod models;
 mod telemetry;
 #[cfg(test)]
 mod test;
+mod validation;
 
 use api::api_get_all_users;
 use api::{

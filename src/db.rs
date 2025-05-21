@@ -77,7 +77,7 @@ pub async fn update_username(
     new_username: &str,
 ) -> Result<(), AppError> {
     info!("Updating user username");
-    let existing = sqlx::query!(
+    let existing_user = sqlx::query!(
         "SELECT id FROM users WHERE username = ? AND id != ?",
         new_username,
         user_id
@@ -85,8 +85,10 @@ pub async fn update_username(
     .fetch_optional(pool)
     .await?;
 
-    if existing.is_some() {
-        return Err(AppError::Validation("Username already exists".to_string())); // Using this as a stand-in for "username taken" error
+    if existing_user.is_some() {
+        return Err(AppError::Internal(
+            "Uncaught username validation error".to_string(),
+        ));
     }
 
     sqlx::query!(
@@ -510,24 +512,30 @@ pub async fn authenticate_user(
     pool: &Pool<Sqlite>,
     username: &str,
     password: &str,
-) -> Result<bool, AppError> {
-    info!("Authenticating user");
-    let user = sqlx::query!(
-        "SELECT id, username, password, role FROM users WHERE username = ?",
+) -> Result<Option<User>, AppError> {
+    let user_auth = sqlx::query!(
+        "SELECT id, username, password, role, display_name, archived FROM users WHERE username = ?",
         username
     )
     .fetch_optional(pool)
     .await?;
 
-    match user {
+    match user_auth {
         Some(user) => {
-            // Verify the password using bcrypt
-            match bcrypt::verify(password, &user.password) {
-                Ok(valid) => Ok(valid),
-                Err(_) => Ok(false),
+            if bcrypt::verify(password, &user.password)? {
+                Ok(Some(User {
+                    id: user.id.unwrap(),
+                    username: user.username.clone(),
+                    role: Role::from_str(&user.role)?,
+                    display_name: user.display_name.unwrap_or_default(),
+                    archived: user.archived,
+                    last_update: None,
+                }))
+            } else {
+                Ok(None) // Password doesn't match
             }
         }
-        _ => Ok(false),
+        None => Ok(None), // User not found
     }
 }
 
@@ -546,10 +554,9 @@ pub async fn create_user(
         .await?;
 
     if existing_user.is_some() {
-        return Err(AppError::Validation(format!(
-            "Username '{}' already exists",
-            username
-        )));
+        return Err(AppError::Internal(
+            "Uncaught username validation error".to_string(),
+        ));
     }
 
     let hashed_password = bcrypt::hash(password, bcrypt::DEFAULT_COST)?;
@@ -567,9 +574,10 @@ pub async fn create_user(
     Ok(res.last_insert_rowid())
 }
 
-#[instrument]
-pub async fn get_user_by_username(pool: &Pool<Sqlite>, username: &str) -> Result<User, AppError> {
-    info!("Getting user by username");
+pub async fn find_user_by_username(
+    pool: &Pool<Sqlite>,
+    username: &str,
+) -> Result<Option<User>, AppError> {
     let row = sqlx::query_as!(
         DbUser,
         "SELECT id, username, role, display_name, archived FROM users WHERE username = ?",
@@ -578,13 +586,7 @@ pub async fn get_user_by_username(pool: &Pool<Sqlite>, username: &str) -> Result
     .fetch_optional(pool)
     .await?;
 
-    match row {
-        Some(db_user) => Ok(User::from(db_user)),
-        _ => Err(AppError::NotFound(format!(
-            "User with username {} not found in database",
-            username
-        ))),
-    }
+    Ok(row.map(User::from))
 }
 
 #[instrument]
@@ -636,7 +638,7 @@ pub async fn update_user_admin(
 ) -> Result<(), AppError> {
     info!("Admin updating user");
 
-    let existing = sqlx::query!(
+    let existing_user = sqlx::query!(
         "SELECT id FROM users WHERE username = ? AND id != ?",
         username,
         user_id
@@ -644,8 +646,10 @@ pub async fn update_user_admin(
     .fetch_optional(pool)
     .await?;
 
-    if existing.is_some() {
-        return Err(AppError::Validation("Username already exists".to_string()));
+    if existing_user.is_some() {
+        return Err(AppError::Internal(
+            "Uncaught username validation error".to_string(),
+        ));
     }
 
     sqlx::query!(

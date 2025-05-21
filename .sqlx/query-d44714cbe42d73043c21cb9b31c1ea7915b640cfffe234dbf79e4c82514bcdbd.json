@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT id, username, password, role FROM users WHERE username = ?",
+  "query": "SELECT id, username, password, role, display_name, archived FROM users WHERE username = ?",
   "describe": {
     "columns": [
       {
@@ -22,6 +22,16 @@
         "name": "role",
         "ordinal": 3,
         "type_info": "Text"
+      },
+      {
+        "name": "display_name",
+        "ordinal": 4,
+        "type_info": "Text"
+      },
+      {
+        "name": "archived",
+        "ordinal": 5,
+        "type_info": "Bool"
       }
     ],
     "parameters": {
@@ -31,8 +41,10 @@
       true,
       false,
       false,
+      false,
+      true,
       false
     ]
   },
-  "hash": "724d6a2f638dc3fa8bd522cd871562a456c24e937148623aaadbb78b79935e12"
+  "hash": "d44714cbe42d73043c21cb9b31c1ea7915b640cfffe234dbf79e4c82514bcdbd"
 }
