@@ -129,6 +129,16 @@ jobs:
         with:
           components: rustfmt, clippy
 
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
       - name: Record lint and test step start
         run: |
           echo "STEP_START=$(date +%s)" >> $GITHUB_ENV
