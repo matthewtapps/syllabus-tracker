@@ -112,7 +112,7 @@ jobs:
         run: |
           buildevents step $TRACE_ID $STEP_ID $STEP_START "Build Backend Image"
 
-  lint-and-test:
+  lint:
     runs-on: ubuntu-latest
     needs: [start-build]
     steps:
@@ -139,23 +139,54 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-
 
-      - name: Record lint and test step start
+      - name: Record lint step start
         run: |
           echo "STEP_START=$(date +%s)" >> $GITHUB_ENV
-          echo "STEP_ID=lint_and_test" >> $GITHUB_ENV
+          echo "STEP_ID=lint" >> $GITHUB_ENV
 
       - name: Run clippy
         run: buildevents cmd $TRACE_ID $STEP_ID clippy -- cargo clippy --all-targets -- -D warnings
         env:
           SQLX_OFFLINE: "true"
 
+      - name: Complete lint step
+        run: buildevents step $TRACE_ID $STEP_ID $STEP_START "Run lints"
+
+  test:
+    runs-on: ubuntu-latest
+    needs: [start-build]
+    steps:
+      - uses: honeycombio/gha-buildevents@v2
+        with:
+          apikey: ${{ secrets.HONEYCOMB_API_KEY }}
+          dataset: syllabus-tracker-build-events
+        env:
+          TRACE_ID: ${{ needs.start-build.outputs.trace_id }}
+
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Record test step start
+        run: |
+          echo "STEP_START=$(date +%s)" >> $GITHUB_ENV
+          echo "STEP_ID=test" >> $GITHUB_ENV
+
       - name: Run cargo test
         run: buildevents cmd $TRACE_ID $STEP_ID cargo-test -- cargo test --all-features
         env:
           SQLX_OFFLINE: "true"
 
-      - name: Complete lint and test step
-        run: buildevents step $TRACE_ID $STEP_ID $STEP_START "Run Lints and Tests"
+      - name: Complete test step
+        run: buildevents step $TRACE_ID $STEP_ID $STEP_START "Run tests"
 
   build-frontend:
     runs-on: ubuntu-latest
@@ -220,7 +251,7 @@ jobs:
           buildevents step $TRACE_ID $STEP_ID $STEP_START "Build Frontend Image"
 
   deploy_nixos_config:
-    needs: [build-backend, build-frontend, lint-and-test]
+    needs: [build-backend, build-frontend, lint, test]
     runs-on: ubuntu-latest
     if: github.repository == 'matthewtapps/syllabus-tracker'
 
