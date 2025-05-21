@@ -1,3 +1,4 @@
+use opentelemetry_semantic_conventions::{attribute::OTEL_STATUS_CODE, trace::ERROR_TYPE};
 use rocket::http::Status;
 use thiserror::Error;
 use tracing::{Span, error, warn};
@@ -29,6 +30,7 @@ pub enum AppError {
     Internal(String),
 }
 
+// Enhance AppError in src/error.rs
 impl AppError {
     pub fn log_and_record(&self, ctx: &str) {
         let current_span = Span::current();
@@ -36,8 +38,8 @@ impl AppError {
 
         let message = self.to_string();
         let error_kind = match self {
-            AppError::Database(_) => {
-                error!(error = %message, context = %ctx, "Database error");
+            AppError::Database(err) => {
+                error!(error = %message, context = %ctx, db_error = %err, "Database error");
                 "database_error"
             }
             AppError::Authentication(msg) => {
@@ -71,10 +73,16 @@ impl AppError {
         };
 
         if is_valid_span {
-            current_span.record("error", tracing::field::display(&message));
-            current_span.record("error.kind", tracing::field::display(error_kind));
+            current_span.record("error", tracing::field::display(true));
+            current_span.record(ERROR_TYPE, tracing::field::display(error_kind));
             current_span.record("error.message", tracing::field::display(&message));
-            current_span.record("otel.status_code", tracing::field::display("ERROR"));
+
+            match self {
+                AppError::Database(_) | AppError::Internal(_) | AppError::ExternalService(_) => {
+                    current_span.record(OTEL_STATUS_CODE, tracing::field::display("ERROR"));
+                }
+                _ => {}
+            }
         }
     }
 

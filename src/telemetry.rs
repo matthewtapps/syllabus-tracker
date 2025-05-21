@@ -102,7 +102,11 @@ impl Fairing for TelemetryFairing {
 
         let span = tracing::Span::current();
 
-        let span_name = format!("{} {}", request.method(), request.uri().path());
+        let route_path = request.uri().path().to_string();
+
+        let route_name = request.route().map(|route| route.name.clone().unwrap());
+        let span_name = format!("{} {} - {:?}", request.method(), route_path, route_name);
+
         span.record("otel.name", field::display(span_name));
         span.record(HTTP_REQUEST_METHOD, field::display(request.method()));
         span.record(HTTP_URL, field::display(request.uri().path()));
@@ -129,14 +133,42 @@ impl Fairing for TelemetryFairing {
                 field::display(response.status().code),
             );
 
-            // Check for error status and add error attributes if needed
-            if response.status().code >= 500 {
-                span.record(
-                    "error",
-                    field::display(format!("HTTP Error: {}", response.status().code)),
-                );
-                span.record("error.kind", field::display("server_error"));
-                span.record("otel.status_code", field::display("ERROR"));
+            if response.status().code >= 400 {
+                let error_category = if response.status().code >= 500 {
+                    "server_error"
+                } else {
+                    "client_error"
+                };
+
+                let error_type = match response.status().code {
+                    401 => "unauthorized",
+                    403 => "forbidden",
+                    404 => "not_found",
+                    409 => "conflict",
+                    422 => "validation_error",
+                    429 => "rate_limited",
+                    500 => "internal_server_error",
+                    503 => "service_unavailable",
+                    _ => error_category,
+                };
+
+                span.record("error", field::display(true));
+                span.record("error.kind", field::display(error_type));
+                span.record("error.status_code", field::display(response.status().code));
+
+                if let Some(route) = request.route() {
+                    if let Some(name) = &route.name {
+                        span.record("route.handler", field::display(name));
+                    }
+                }
+
+                if let Some(err_msg) = request.local_cache(|| Option::<String>::None) {
+                    span.record("error.message", field::display(err_msg));
+                }
+
+                if response.status().code >= 500 {
+                    span.record("otel.status_code", field::display("ERROR"));
+                }
             }
         }
     }

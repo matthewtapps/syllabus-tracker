@@ -38,10 +38,8 @@ export function TracedForm({
     const formAction = form.action || window.location.href;
     const formMethod = form.method || 'get';
 
-    // Create form submission span
     formSpanRef.current = recordFormSubmission(formId, formAction, formMethod);
 
-    // Add form fields to telemetry (excluding passwords)
     const formData = new FormData(form);
     const formFields: Record<string, string> = {};
 
@@ -54,7 +52,6 @@ export function TracedForm({
       }
     });
 
-    // Add form fields to span
     formSpanRef.current?.setAttribute('form.fields', JSON.stringify(formFields));
 
     try {

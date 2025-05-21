@@ -105,9 +105,17 @@ export async function tracedFetch(
 ): Promise<Response> {
   const url = input instanceof Request ? input.url : input.toString();
 
-  return createSpan("fetch", async (span) => {
+  const method = init?.method || "GET";
+
+  return createSpan(`fetch ${method} ${url}`, async (span) => {
     span.setAttribute("http.url", url);
-    span.setAttribute("http.method", init?.method || "GET");
+    span.setAttribute("http.method", method);
+
+    let operationType = "query";
+    if (method === "POST") operationType = "create";
+    else if (method === "PUT") operationType = "update";
+    else if (method === "DELETE") operationType = "delete";
+    span.setAttribute("operation.type", operationType);
 
     const headers = new Headers(init?.headers || {});
     const propagationContext = { traceparent: "" };
@@ -130,9 +138,64 @@ export async function tracedFetch(
     span.setAttribute("http.status_text", response.statusText);
 
     if (!response.ok) {
+      let errorType = "unknown_error";
+      let errorMessage = `HTTP ${response.status}: ${response.statusText}`;
+
+      try {
+        // Try to parse error details from response
+        const contentType = response.headers.get("content-type");
+        if (contentType && contentType.includes("application/json")) {
+          const errorData = await response.clone().json();
+
+          if (errorData.error || errorData.message) {
+            errorMessage = errorData.error || errorData.message;
+
+            // Categorize client vs. server errors
+            if (response.status >= 400 && response.status < 500) {
+              // Client errors - categorize by error message content
+              if (/already exists|taken|duplicate/i.test(errorMessage)) {
+                errorType = "duplicate_resource";
+              } else if (
+                /not found|missing|doesn't exist/i.test(errorMessage)
+              ) {
+                errorType = "resource_not_found";
+              } else if (/invalid|validation/i.test(errorMessage)) {
+                errorType = "validation_error";
+              } else if (
+                /unauthorized|forbidden|permission|access denied/i.test(
+                  errorMessage,
+                )
+              ) {
+                errorType = "authentication_error";
+              } else {
+                errorType = "client_error";
+              }
+            } else {
+              // Server errors
+              errorType = "server_error";
+            }
+          }
+        }
+      } catch (e) {
+        // If parsing JSON fails, use generic error categorization by status code
+        if (response.status === 401) errorType = "unauthorized";
+        else if (response.status === 403) errorType = "forbidden";
+        else if (response.status === 404) errorType = "not_found";
+        else if (response.status === 409) errorType = "conflict";
+        else if (response.status === 422) errorType = "validation_error";
+        else if (response.status >= 500) errorType = "server_error";
+        else errorType = "client_error";
+      }
+
+      // Record error attributes
+      span.setAttribute("error", true);
+      span.setAttribute("error.type", errorType);
+      span.setAttribute("error.message", errorMessage);
+
+      // Set span status based on error category
       span.setStatus({
         code: SpanStatusCode.ERROR,
-        message: `HTTP ${response.status}: ${response.statusText}`,
+        message: errorMessage,
       });
     }
 
