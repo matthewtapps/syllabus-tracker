@@ -1,4 +1,4 @@
-FROM lukemathwalker/cargo-chef:latest-rust-1.86-slim-bullseye AS chef
+FROM lukemathwalker/cargo-chef:latest-rust-1.86-alpine AS chef
 WORKDIR /app
 
 FROM chef AS planner
@@ -12,7 +12,8 @@ FROM chef AS builder-deps
 WORKDIR /app
 COPY --from=planner /app/recipe.json recipe.json
 ENV SQLX_OFFLINE=true
-RUN cargo chef cook --release
+RUN rustup target add x86_64-unknown-linux-musl
+RUN cargo chef cook --release --target x86_64-unknown-linux-musl
 
 FROM chef AS dev-builder
 WORKDIR /app
@@ -38,12 +39,12 @@ COPY migrations ./migrations
 COPY .sqlx ./.sqlx
 COPY config ./config
 ENV SQLX_OFFLINE=true
-RUN cargo build --release
-RUN mv target/release/syllabus-tracker /app/syllabus-tracker
+RUN cargo build --release --target x86_64-unknown-linux-musl
+RUN cp target/x86_64-unknown-linux-musl/release/syllabus-tracker /app/syllabus-tracker
 
-FROM scratch AS production-scratch
+FROM scratch AS production
 WORKDIR /app
-COPY --from=builder /app/syllabus-tracker /app/
+COPY --from=builder /app/syllabus-tracker /app/syllabus-tracker
 COPY --from=builder /app/config /app/config
 VOLUME /app/data
 EXPOSE 8000

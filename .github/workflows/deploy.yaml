@@ -70,7 +70,7 @@ jobs:
           override: true
           components: rustfmt, clippy
 
-      - name: Cache dependencies
+      - name: Cache cargo dependencies
         uses: actions/cache@v3
         with:
           path: |
@@ -78,6 +78,8 @@ jobs:
             ~/.cargo/git
             target
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
 
       - name: Record test step start
         id: test-start
