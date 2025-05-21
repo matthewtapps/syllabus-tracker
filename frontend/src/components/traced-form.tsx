@@ -2,12 +2,15 @@ import React, { type FormEvent, type ReactNode, useRef, useState } from 'react';
 import { recordFormSubmission } from '@/lib/telemetry';
 import { useTelemetry } from '@/context/telemetry';
 import { type Span } from '@opentelemetry/api';
+import { toast } from 'sonner';
+import { isValidationErrorResponse } from '@/lib/types';
 
 interface TracedFormProps extends React.FormHTMLAttributes<HTMLFormElement> {
   children: ReactNode;
   onSubmit?: (event: FormEvent<HTMLFormElement>) => void | Promise<void>;
   onSubmitSuccess?: () => void;
   onSubmitError?: (error: unknown) => void;
+  setFieldErrors?: (errors: Record<string, string[]>) => void;
 }
 
 /**
@@ -18,6 +21,7 @@ export function TracedForm({
   onSubmit,
   onSubmitSuccess,
   onSubmitError,
+  setFieldErrors,
   ...props
 }: TracedFormProps) {
   const { fetch } = useTelemetry();
@@ -85,8 +89,49 @@ export function TracedForm({
       formSpanRef.current?.addEvent('form_submit_error', {
         'error.message': error instanceof Error ? error.message : String(error),
       });
+
+      let errorData: unknown = null;
+
+      // Extract data from error responses
+      if (error instanceof Response) {
+        try {
+          errorData = await error.json();
+        } catch (e) {
+          // Not JSON
+        }
+      } else if (error && typeof error === 'object' && 'response' in error) {
+        const errorResponse = (error as { response?: Response }).response;
+        if (errorResponse instanceof Response) {
+          try {
+            errorData = await errorResponse.json();
+          } catch (e) {
+            // Not JSON
+          }
+        }
+      }
+
+      // Process validation errors
+      if (isValidationErrorResponse(errorData)) {
+        // Set field errors if callback provided
+        if (setFieldErrors) {
+          setFieldErrors(errorData.errors);
+        }
+
+        // Show validation errors as toasts
+        Object.entries(errorData.errors).forEach(([field, messages]) => {
+          messages.forEach(message => {
+            toast.error(`${field}: ${message}`);
+          });
+        });
+
+        // Log to telemetry
+        formSpanRef.current?.setAttribute('validation_errors', JSON.stringify(errorData.errors));
+      } else {
+        // Generic error toast
+        toast.error(error instanceof Error ? error.message : "An unexpected error occurred");
+      }
+
       onSubmitError?.(error);
-      console.error('Form submission error:', error);
     } finally {
       setIsSubmitting(false);
       formSpanRef.current?.end();

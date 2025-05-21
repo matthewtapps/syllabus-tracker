@@ -10,49 +10,46 @@ import {
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { TracedForm } from "./traced-form";
+import { useFormWithValidation } from "./hooks/useFormErrors";
 
 interface LoginFormProps extends React.ComponentProps<"div"> {
   onSuccess: () => void;
 }
 
-export function LoginForm({
-  className,
-  onSuccess,
-  ...props
-}: LoginFormProps) {
-  const [username, setUsername] = useState("")
-  const [password, setPassword] = useState("")
-  const [error, setError] = useState<string | null>(null)
-  const [isLoading, setIsLoading] = useState(false)
+export function LoginForm({ onSuccess, className, ...props }: LoginFormProps) {
   const navigate = useNavigate();
+  const [isLoading, setIsLoading] = useState(false);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setError(null)
-    setIsLoading(true)
+  interface LoginFormValues {
+    username: string;
+    password: string;
+  }
 
+  const form = useFormWithValidation<LoginFormValues>({
+    defaultValues: {
+      username: "",
+      password: ""
+    }
+  });
+
+  const handleSubmit = async (data: { username: string; password: string }) => {
+    setIsLoading(true);
     try {
-      const response = await login({ username, password })
-
+      const response = await login(data);
       if (response.success) {
         onSuccess();
-
-        // Navigate based on user role
         if (response.user?.role === 'student' || response.user?.role === 'Student') {
           navigate(`/student/${response.user.id}`);
         } else {
           navigate('/dashboard');
         }
       } else {
-        setError(response.error || "Login failed. Please try again.")
+        throw new Error(response.error || "Login failed");
       }
-    } catch (err) {
-      setError("An unexpected error occurred. Please try again.")
-      console.error(err)
     } finally {
-      setIsLoading(false)
+      setIsLoading(false);
     }
-  }
+  };
 
   return (
     <div className={cn("flex flex-col", className)} {...props}>
@@ -69,7 +66,9 @@ export function LoginForm({
           </div>
 
           {/* Form section */}
-          <TracedForm onSubmit={handleSubmit} className="md:aspect-square" id="login">
+          <TracedForm onSubmit={form.handleSubmit(handleSubmit)} className="md:aspect-square" id="login"
+            setFieldErrors={form.setFieldErrors}
+          >
             <div className="flex flex-col justify-center h-full p-6 space-y-4">
               <div>
                 <Label className="mb-2 block" htmlFor="username">Username</Label>
@@ -77,9 +76,14 @@ export function LoginForm({
                   id="username"
                   type="text"
                   required
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
+                  {...form.register("username")}
+                  aria-invalid={!!form.formState.errors.username}
                 />
+                {form.formState.errors.username && (
+                  <p className="text-sm text-destructive mt-1">
+                    {String(form.formState.errors.username.message || "Invalid username")}
+                  </p>
+                )}
               </div>
               <div>
                 <Label htmlFor="password" className="mb-2 block">Password</Label>
@@ -87,16 +91,15 @@ export function LoginForm({
                   id="password"
                   type="password"
                   required
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
+                  {...form.register("password")}
+                  aria-invalid={!!form.formState.errors.password}
                 />
+                {form.formState.errors.password && (
+                  <p className="text-sm text-destructive mt-1">
+                    {String(form.formState.errors.password.message || "Invalid password")}
+                  </p>
+                )}
               </div>
-
-              {error && (
-                <div className="p-3 text-sm font-medium text-destructive bg-destructive/10 rounded-md">
-                  {error}
-                </div>
-              )}
 
               <Button type="submit" className="w-full" disabled={isLoading}>
                 {isLoading ? "Logging in..." : "Login"}

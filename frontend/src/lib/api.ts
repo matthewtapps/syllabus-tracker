@@ -278,11 +278,14 @@ export interface UserRegistrationData {
   username: string;
   display_name: string;
   password: string;
+  confirm_password: string;
   role: string;
 }
 
-export async function registerUser(data: UserRegistrationData): Promise<void> {
-  const response = await tracedFetch("/api/register", {
+export async function registerUser(
+  data: UserRegistrationData,
+): Promise<Response> {
+  return await tracedFetch("/api/register", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -290,10 +293,6 @@ export async function registerUser(data: UserRegistrationData): Promise<void> {
     body: JSON.stringify(data),
     credentials: "include",
   });
-
-  if (!response.ok) {
-    throw new Error("Failed to register user");
-  }
 }
 
 export interface UserUpdateData {
@@ -307,8 +306,8 @@ export interface UserUpdateData {
 export async function updateUser(
   userId: number,
   data: UserUpdateData,
-): Promise<void> {
-  const response = await tracedFetch(`/api/admin/users/${userId}`, {
+): Promise<Response> {
+  return await tracedFetch(`/api/admin/users/${userId}`, {
     method: "PUT",
     headers: {
       "Content-Type": "application/json",
@@ -316,10 +315,6 @@ export async function updateUser(
     body: JSON.stringify(data),
     credentials: "include",
   });
-
-  if (!response.ok) {
-    throw new Error("Failed to update user");
-  }
 }
 
 export async function getAllTags(): Promise<Tag[]> {
@@ -394,7 +389,6 @@ export async function addTagToTechnique(
   }
 }
 
-// Remove tag from technique
 export async function removeTagFromTechnique(
   techniqueId: number,
   tagId: number,
@@ -418,10 +412,6 @@ export async function getAllUsers(): Promise<User[]> {
   const response = await tracedFetch("/api/admin/users", {
     credentials: "include",
   });
-
-  if (!response.ok) {
-    throw new Error("Failed to fetch users");
-  }
 
   return await response.json();
 }

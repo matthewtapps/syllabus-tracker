@@ -34,21 +34,8 @@ use crate::models::Technique;
 use crate::validation::AppErrorExt;
 use crate::validation::JsonValidateExt;
 use crate::validation::PermissionCheckExt;
+use crate::validation::ToValidationResponse;
 use crate::validation::ValidationResponse;
-
-#[derive(Deserialize, Validate)]
-pub struct LoginRequest {
-    username: String,
-    password: String,
-}
-
-#[derive(Serialize, Deserialize)]
-pub struct LoginResponse {
-    pub success: bool,
-    pub user: Option<UserData>,
-    pub error: Option<String>,
-    pub redirect_url: Option<String>,
-}
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct UserData {
@@ -74,34 +61,19 @@ impl From<User> for UserData {
 }
 
 #[derive(Serialize, Deserialize)]
-pub struct TechniqueResponse {
-    pub id: i64,
-    pub technique_id: i64,
-    pub technique_name: String,
-    pub technique_description: String,
-    pub status: String,
-    pub student_notes: String,
-    pub coach_notes: String,
-    pub created_at: String,
-    pub updated_at: String,
-    pub tags: Vec<TagResponse>,
+pub struct LoginResponse {
+    pub success: bool,
+    pub user: Option<UserData>,
+    pub error: Option<String>,
+    pub redirect_url: Option<String>,
 }
 
-#[derive(Serialize, Deserialize)]
-pub struct StudentResponse {
-    pub id: i64,
-    pub username: String,
-    pub display_name: String,
-}
-
-#[derive(Serialize, Deserialize)]
-pub struct StudentTechniquesResponse {
-    pub student: StudentResponse,
-    pub techniques: Vec<TechniqueResponse>,
-    pub can_edit_all_techniques: bool,
-    pub can_assign_techniques: bool,
-    pub can_create_techniques: bool,
-    pub can_manage_tags: bool,
+#[derive(Deserialize, Validate)]
+pub struct LoginRequest {
+    #[validate(length(min = 1, message = "Username cannot be empty"))]
+    username: String,
+    #[validate(length(min = 1, message = "Password cannot be empty"))]
+    password: String,
 }
 
 #[post("/login", data = "<login>")]
@@ -184,6 +156,37 @@ pub async fn api_login(
     }
 }
 
+#[derive(Serialize, Deserialize)]
+pub struct TechniqueResponse {
+    pub id: i64,
+    pub technique_id: i64,
+    pub technique_name: String,
+    pub technique_description: String,
+    pub status: String,
+    pub student_notes: String,
+    pub coach_notes: String,
+    pub created_at: String,
+    pub updated_at: String,
+    pub tags: Vec<TagResponse>,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct StudentResponse {
+    pub id: i64,
+    pub username: String,
+    pub display_name: String,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct StudentTechniquesResponse {
+    pub student: StudentResponse,
+    pub techniques: Vec<TechniqueResponse>,
+    pub can_edit_all_techniques: bool,
+    pub can_assign_techniques: bool,
+    pub can_create_techniques: bool,
+    pub can_manage_tags: bool,
+}
+
 #[get("/student/<id>/techniques")]
 pub async fn api_get_student_techniques(
     id: i64,
@@ -228,11 +231,16 @@ pub async fn api_get_student_techniques(
     }))
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Validate, Clone)]
 pub struct TechniqueUpdateRequest {
     status: Option<String>,
     student_notes: Option<String>,
     coach_notes: Option<String>,
+    #[validate(length(
+        min = 1,
+        max = 100,
+        message = "Technique name must be between 1 and 100 characters"
+    ))]
     technique_name: Option<String>,
     technique_description: Option<String>,
 }
@@ -243,19 +251,23 @@ pub async fn api_update_student_technique(
     technique: Json<TechniqueUpdateRequest>,
     user: User,
     db: &State<Pool<Sqlite>>,
-) -> Result<Status, Status> {
-    let student_technique = get_student_technique(db, id).await?;
+) -> Result<Status, Custom<Json<ValidationResponse>>> {
+    technique.clone().validate_custom()?;
+
+    let student_technique = get_student_technique(db, id).await.validate_custom()?;
 
     let is_own_technique = user.id == student_technique.student_id;
     let can_edit_all = user.has_permission(Permission::EditAllTechniques);
 
     if !is_own_technique && !can_edit_all {
-        return Err(Status::Forbidden);
+        return Err(Status::Forbidden.to_validation_response());
     }
 
     if is_own_technique && !can_edit_all {
         if let Some(notes) = &technique.student_notes {
-            update_student_notes(db, id, notes).await?;
+            update_student_notes(db, id, notes)
+                .await
+                .validate_custom()?;
         }
 
         return Ok(Status::Ok);
@@ -270,7 +282,9 @@ pub async fn api_update_student_technique(
             .clone()
             .unwrap_or(student_technique.coach_notes);
 
-        update_student_technique(db, id, &status, &student_notes, &coach_notes).await?;
+        update_student_technique(db, id, &status, &student_notes, &coach_notes)
+            .await
+            .validate_custom()?;
 
         if technique.technique_name.is_some() || technique.technique_description.is_some() {
             let technique_name = technique
@@ -288,13 +302,14 @@ pub async fn api_update_student_technique(
                 &technique_name,
                 &technique_description,
             )
-            .await?;
+            .await
+            .validate_custom()?;
         }
 
         return Ok(Status::Ok);
     }
 
-    Err(Status::BadRequest)
+    Err(Status::BadRequest.to_validation_response())
 }
 
 #[derive(FromForm)]
@@ -338,16 +353,18 @@ pub async fn api_get_unassigned_techniques(
     id: i64,
     user: User,
     db: &State<Pool<Sqlite>>,
-) -> Result<Json<Vec<Technique>>, Status> {
-    user.require_permission(Permission::AssignTechniques)?;
+) -> Result<Json<Vec<Technique>>, Custom<Json<ValidationResponse>>> {
+    user.require_permission(Permission::AssignTechniques)
+        .validate_custom()?;
 
-    let techniques = get_unassigned_techniques(db, id).await?;
+    let techniques = get_unassigned_techniques(db, id).await.validate_custom()?;
 
     Ok(Json(techniques))
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Validate, Clone)]
 pub struct AssignTechniquesRequest {
+    #[validate(length(min = 1, message = "At least one technique must be selected"))]
     technique_ids: Vec<i64>,
 }
 
@@ -357,17 +374,28 @@ pub async fn api_assign_techniques(
     request: Json<AssignTechniquesRequest>,
     user: User,
     db: &State<Pool<Sqlite>>,
-) -> Result<Status, Status> {
-    user.require_permission(Permission::AssignTechniques)?;
+) -> Result<Status, Custom<Json<ValidationResponse>>> {
+    request.clone().validate_custom()?;
 
-    add_techniques_to_student(db, student_id, request.technique_ids.clone()).await?;
+    user.require_permission(Permission::AssignTechniques)
+        .validate_custom()?;
+
+    add_techniques_to_student(db, student_id, request.technique_ids.clone())
+        .await
+        .validate_custom()?;
 
     Ok(Status::Ok)
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Validate, Clone)]
 pub struct CreateTechniqueRequest {
+    #[validate(length(
+        min = 1,
+        max = 100,
+        message = "Technique name must be between 1 and 100 characters"
+    ))]
     name: String,
+    #[validate(length(min = 1, message = "Description cannot be empty"))]
     description: String,
 }
 
@@ -377,11 +405,14 @@ pub async fn api_create_and_assign_technique(
     request: Json<CreateTechniqueRequest>,
     user: User,
     db: &State<Pool<Sqlite>>,
-) -> Result<Status, Status> {
-    user.require_all_permissions(&[Permission::CreateTechniques, Permission::AssignTechniques])?;
+) -> Result<Status, Custom<Json<ValidationResponse>>> {
+    request.clone().validate_custom()?;
+    user.require_all_permissions(&[Permission::CreateTechniques, Permission::AssignTechniques])
+        .validate_custom()?;
 
     create_and_assign_technique(db, user.id, student_id, &request.name, &request.description)
-        .await?;
+        .await
+        .validate_custom()?;
 
     Ok(Status::Ok)
 }
@@ -420,6 +451,7 @@ pub async fn api_logout(
 
 #[derive(Deserialize, Validate, Clone)]
 pub struct ProfileUpdateRequest {
+    #[validate(length(max = 100, message = "Display name must be under 100 characters"))]
     display_name: String,
 }
 
@@ -440,7 +472,9 @@ pub async fn api_update_profile(
 
 #[derive(Deserialize, Validate)]
 pub struct PasswordChangeRequest {
+    #[validate(length(min = 1, message = "Current password cannot be empty"))]
     current_password: String,
+    #[validate(length(min = 5, message = "New password must be at least 5 characters long"))]
     new_password: String,
 }
 
@@ -476,9 +510,18 @@ pub async fn api_change_password(
 
 #[derive(Deserialize, Validate, Clone)]
 pub struct UserRegistrationRequest {
+    #[validate(length(
+        min = 3,
+        max = 50,
+        message = "Username must be between 3 and 50 characters"
+    ))]
     username: String,
+    #[validate(length(max = 100, message = "Display name must be under 100 characters"))]
     display_name: String,
+    #[validate(length(min = 5, message = "Password must be at least 5 characters long"))]
     password: String,
+    #[validate(must_match(other = "password", message = "Passwords must match"))]
+    confirm_password: String,
     role: String,
 }
 
@@ -526,10 +569,17 @@ pub async fn api_register_user(
     Ok(Status::Created)
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Validate, Clone)]
 pub struct UserUpdateRequest {
+    #[validate(length(
+        min = 3,
+        max = 50,
+        message = "Username must be between 3 and 50 characters"
+    ))]
     username: Option<String>,
+    #[validate(length(max = 100, message = "Display name must be under 100 characters"))]
     display_name: Option<String>,
+    #[validate(length(min = 5, message = "Password must be at least 5 characters long"))]
     password: Option<String>,
     archived: Option<bool>,
     role: Option<String>,
@@ -541,32 +591,41 @@ pub async fn api_update_user(
     update: Json<UserUpdateRequest>,
     user: User,
     db: &State<Pool<Sqlite>>,
-) -> Result<Status, Status> {
-    user.require_permission(Permission::EditUserCredentials)?;
+) -> Result<Status, Custom<Json<ValidationResponse>>> {
+    update.clone().validate_custom()?;
+    user.require_permission(Permission::EditUserCredentials)
+        .validate_custom()?;
 
     // For role changes, require EditUserRoles permission
     if update.role.is_some() {
-        user.require_permission(Permission::EditUserRoles)?;
+        user.require_permission(Permission::EditUserRoles)
+            .validate_custom()?;
     }
 
     if let Some(username) = &update.username {
-        update_username(db, id, username).await?;
+        update_username(db, id, username).await.validate_custom()?;
     }
 
     if let Some(display_name) = &update.display_name {
-        update_user_display_name(db, id, display_name).await?;
+        update_user_display_name(db, id, display_name)
+            .await
+            .validate_custom()?;
     }
 
     if let Some(password) = &update.password {
-        update_user_password(db, id, password).await?;
+        update_user_password(db, id, password)
+            .await
+            .validate_custom()?;
     }
 
     if let Some(archived) = update.archived {
-        set_user_archived(db, id, archived).await?;
+        set_user_archived(db, id, archived)
+            .await
+            .validate_custom()?;
     }
 
     if let Some(role) = &update.role {
-        update_user_role(db, id, role).await?;
+        update_user_role(db, id, role).await.validate_custom()?;
     }
 
     Ok(Status::Ok)
@@ -576,18 +635,6 @@ pub async fn api_update_user(
 pub fn health() -> &'static str {
     "OK"
 }
-
-#[derive(Deserialize)]
-pub struct CreateTagRequest {
-    name: String,
-}
-
-#[derive(Deserialize)]
-pub struct TagTechniqueRequest {
-    technique_id: i64,
-    tag_id: i64,
-}
-
 #[derive(Serialize, Deserialize)]
 pub struct TagsResponse {
     pub tags: Vec<Tag>,
@@ -617,6 +664,26 @@ pub async fn api_get_all_tags(
     Ok(Json(TagsResponse { tags }))
 }
 
+#[get("/technique/<id>/tags")]
+pub async fn api_get_technique_tags(
+    id: i64,
+    _user: User,
+    db: &State<Pool<Sqlite>>,
+) -> Result<Json<TagsResponse>, Status> {
+    let tags = get_tags_for_technique(db, id).await?;
+    Ok(Json(TagsResponse { tags }))
+}
+
+#[derive(Deserialize, Validate)]
+pub struct CreateTagRequest {
+    #[validate(length(
+        min = 1,
+        max = 50,
+        message = "Tag name must be between 1 and 50 characters"
+    ))]
+    name: String,
+}
+
 #[post("/tags", data = "<tag>")]
 pub async fn api_create_tag(
     tag: Json<CreateTagRequest>,
@@ -641,6 +708,12 @@ pub async fn api_delete_tag(
     Ok(Status::Ok)
 }
 
+#[derive(Deserialize)]
+pub struct TagTechniqueRequest {
+    technique_id: i64,
+    tag_id: i64,
+}
+
 #[post("/technique/tag", data = "<request>")]
 pub async fn api_add_tag_to_technique(
     request: Json<TagTechniqueRequest>,
@@ -662,17 +735,6 @@ pub async fn api_remove_tag_from_technique(
     user.require_permission(Permission::ManageTags)?;
     remove_tag_from_technique(db, technique_id, tag_id).await?;
     Ok(Status::Ok)
-}
-
-#[get("/technique/<id>/tags")]
-pub async fn api_get_technique_tags(
-    id: i64,
-    _user: User,
-    db: &State<Pool<Sqlite>>,
-) -> Result<Json<TagsResponse>, Status> {
-    // Everyone can view tags
-    let tags = get_tags_for_technique(db, id).await?;
-    Ok(Json(TagsResponse { tags }))
 }
 
 #[get("/admin/users")]

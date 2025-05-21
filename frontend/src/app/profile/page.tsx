@@ -7,18 +7,21 @@ import { toast } from 'sonner';
 import { getCurrentUser, updateUserProfile, updatePassword } from '@/lib/api';
 import type { User } from '@/lib/api';
 import { TracedForm } from '@/components/traced-form';
+import { useFormWithValidation } from '@/components/hooks/useFormErrors';
+
+interface ProfileFormValues {
+  display_name: string;
+}
+
+interface PasswordFormValues {
+  current_password: string;
+  new_password: string;
+  confirm_password: string;
+}
 
 export default function ProfilePage() {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
-  const [displayName, setDisplayName] = useState('');
-  const [updating, setUpdating] = useState(false);
-
-  // Password change state
-  const [currentPassword, setCurrentPassword] = useState('');
-  const [newPassword, setNewPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
-  const [changingPassword, setChangingPassword] = useState(false);
 
   useEffect(() => {
     async function loadUser() {
@@ -26,7 +29,6 @@ export default function ProfilePage() {
         setLoading(true);
         const userData = await getCurrentUser();
         setUser(userData);
-        setDisplayName(userData?.display_name || '');
       } catch (err) {
         console.error('Failed to load user profile', err);
         toast.error('Failed to load profile');
@@ -38,55 +40,61 @@ export default function ProfilePage() {
     loadUser();
   }, []);
 
-  const handleUpdateProfile = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const profileForm = useFormWithValidation<ProfileFormValues>({
+    defaultValues: {
+      display_name: user?.display_name || '',
+    }
+  });
 
-    if (!user) return;
+  const passwordForm = useFormWithValidation<PasswordFormValues>({
+    defaultValues: {
+      current_password: '',
+      new_password: '',
+      confirm_password: ''
+    }
+  });
 
+  const handleUpdateProfile = async (data: ProfileFormValues) => {
     try {
-      setUpdating(true);
-      await updateUserProfile({ display_name: displayName });
+      await updateUserProfile(data);
       toast.success('Profile updated successfully');
 
-      // Update the user state with the new display name
-      setUser({
-        ...user,
-        display_name: displayName
-      });
+      // Update the user state
+      if (user) {
+        setUser({
+          ...user,
+          display_name: data.display_name
+        });
+      }
     } catch (err) {
       console.error('Failed to update profile', err);
-      toast.error('Failed to update profile');
-    } finally {
-      setUpdating(false);
     }
   };
 
-  const handleChangePassword = async (e: React.FormEvent) => {
-    e.preventDefault();
-
-    if (newPassword !== confirmPassword) {
-      toast.error('Passwords do not match');
+  const handleChangePassword = async (data: PasswordFormValues) => {
+    if (data.new_password !== data.confirm_password) {
+      passwordForm.setError('confirm_password', {
+        type: 'manual',
+        message: 'Passwords do not match'
+      });
       return;
     }
 
     try {
-      setChangingPassword(true);
       await updatePassword({
-        current_password: currentPassword,
-        new_password: newPassword
+        current_password: data.current_password,
+        new_password: data.new_password
       });
 
       toast.success('Password changed successfully');
 
-      // Clear password fields
-      setCurrentPassword('');
-      setNewPassword('');
-      setConfirmPassword('');
+      passwordForm.reset({
+        current_password: '',
+        new_password: '',
+        confirm_password: ''
+      });
     } catch (err) {
       console.error('Failed to change password', err);
-      toast.error('Failed to change password');
-    } finally {
-      setChangingPassword(false);
     }
   };
 
@@ -111,7 +119,7 @@ export default function ProfilePage() {
             <CardTitle>Profile Information</CardTitle>
             <CardDescription>Update your display name and account details</CardDescription>
           </CardHeader>
-          <TracedForm id="update_profile" onSubmit={handleUpdateProfile}>
+          <TracedForm id="update_profile" onSubmit={profileForm.handleSubmit(handleUpdateProfile)} setFieldErrors={profileForm.setFieldErrors}>
             <CardContent className="space-y-4">
               <div className="space-y-2">
                 <Label htmlFor="username">Username</Label>
@@ -128,16 +136,20 @@ export default function ProfilePage() {
                 <Label htmlFor="display-name">Display Name</Label>
                 <Input
                   id="display-name"
-                  value={displayName}
-                  onChange={(e) => setDisplayName(e.target.value)}
+                  {...profileForm.register("display_name")}
                   placeholder="Enter your display name"
+                  aria-invalid={!!profileForm.formState.errors.display_name}
                 />
-                <p className="text-sm text-muted-foreground">This is how your name will appear to others</p>
+                {profileForm.formState.errors.display_name && (
+                  <p className="text-sm text-destructive mt-1">
+                    {String(profileForm.formState.errors.display_name.message || "Invalid display name")}
+                  </p>
+                )}
               </div>
             </CardContent>
             <CardFooter>
-              <Button type="submit" disabled={updating} className='my-4'>
-                {updating ? 'Updating...' : 'Update Profile'}
+              <Button type="submit" disabled={profileForm.formState.isSubmitting} className='my-4'>
+                {profileForm.formState.isSubmitting ? 'Updating...' : 'Update Profile'}
               </Button>
             </CardFooter>
           </TracedForm>
@@ -149,17 +161,21 @@ export default function ProfilePage() {
             <CardTitle>Change Password</CardTitle>
             <CardDescription>Update your account password</CardDescription>
           </CardHeader>
-          <TracedForm id="change_password" onSubmit={handleChangePassword}>
+          <TracedForm id="change_password" onSubmit={passwordForm.handleSubmit(handleChangePassword)} setFieldErrors={passwordForm.setFieldErrors}>
             <CardContent className="space-y-4">
               <div className="space-y-2">
                 <Label htmlFor="current-password">Current Password</Label>
                 <Input
                   id="current-password"
                   type="password"
-                  value={currentPassword}
-                  onChange={(e) => setCurrentPassword(e.target.value)}
-                  required
+                  {...passwordForm.register("current_password")}
+                  aria-invalid={!!passwordForm.formState.errors.current_password}
                 />
+                {passwordForm.formState.errors.current_password && (
+                  <p className="text-sm text-destructive mt-1">
+                    {String(passwordForm.formState.errors.current_password.message || "Current password is required")}
+                  </p>
+                )}
               </div>
 
               <div className="space-y-2">
@@ -167,10 +183,14 @@ export default function ProfilePage() {
                 <Input
                   id="new-password"
                   type="password"
-                  value={newPassword}
-                  onChange={(e) => setNewPassword(e.target.value)}
-                  required
+                  {...passwordForm.register("new_password")}
+                  aria-invalid={!!passwordForm.formState.errors.new_password}
                 />
+                {passwordForm.formState.errors.new_password && (
+                  <p className="text-sm text-destructive mt-1">
+                    {String(passwordForm.formState.errors.new_password.message || "New password is required")}
+                  </p>
+                )}
               </div>
 
               <div className="space-y-2">
@@ -178,19 +198,23 @@ export default function ProfilePage() {
                 <Input
                   id="confirm-password"
                   type="password"
-                  value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
-                  required
+                  {...passwordForm.register("confirm_password")}
+                  aria-invalid={!!passwordForm.formState.errors.confirm_password}
                 />
+                {passwordForm.formState.errors.confirm_password && (
+                  <p className="text-sm text-destructive mt-1">
+                    {String(passwordForm.formState.errors.confirm_password.message || "Passwords must match")}
+                  </p>
+                )}
               </div>
             </CardContent>
             <CardFooter>
               <Button
                 type="submit"
-                disabled={changingPassword}
+                disabled={passwordForm.formState.isSubmitting}
                 className='my-4'
               >
-                {changingPassword ? 'Changing Password...' : 'Change Password'}
+                {passwordForm.formState.isSubmitting ? 'Changing Password...' : 'Change Password'}
               </Button>
             </CardFooter>
           </TracedForm>

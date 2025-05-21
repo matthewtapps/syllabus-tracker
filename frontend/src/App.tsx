@@ -100,7 +100,25 @@ function App() {
 
             </Routes>
           </Layout>
-          <Toaster />
+          <Toaster
+            toastOptions={{
+              classNames: {
+                // Base toast styles
+                toast: "group toast group-[.toast-group]:bg-background group-[.toast-group]:text-foreground group-[.toast-group]:border-border group-[.toast-group]:shadow-lg",
+                title: "text-sm font-semibold",
+                description: "text-sm opacity-90",
+                actionButton: "bg-primary text-primary-foreground",
+                cancelButton: "bg-muted text-muted-foreground",
+
+                // Status-specific styles using theme variables
+                error: "!bg-destructive/15 !border-destructive/30 !text-destructive",
+                success: "!bg-accent/15 !border-accent/30 !text-accent-foreground",
+                warning: "!bg-secondary/20 !border-secondary/30 !text-secondary-foreground",
+                info: "!bg-primary/15 !border-primary/30 !text-primary-foreground",
+              },
+            }}
+
+          />
         </TelemetryProvider>
       </Router>
     </ThemeProvider >
