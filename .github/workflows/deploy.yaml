@@ -442,9 +442,6 @@ jobs:
         env:
           FULL_APP_DOMAIN: "syllabustracker.matthewtapps.com"
         run: |
-          echo "Waiting for services to start..."
-          sleep 30
-
           echo "Attempting health check on https://${FULL_APP_DOMAIN}/api/health"
           curl --verbose --fail --location "https://${FULL_APP_DOMAIN}/api/health" || \
             (echo "ERROR: Application health check failed." && exit 1)
