@@ -28,12 +28,6 @@ services:
       - internal
     expose:
       - "8000"
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/api/health"]
-      interval: 60s
-      timeout: 5s
-      retries: 3
-      start_period: 30s
 
   frontend:
     image: ${REGISTRY}/${IMAGE_NAME}/frontend:${FRONTEND_IMAGE_TAG:-latest}
@@ -77,9 +71,6 @@ services:
     restart: unless-stopped
     networks:
       - internal
-    depends_on:
-      app:
-        condition: service_healthy
 
 volumes:
   app-data:
