@@ -114,7 +114,7 @@ jobs:
 
   lint-and-test:
     runs-on: ubuntu-latest
-    needs: [start-build, build-backend]
+    needs: [start-build]
     steps:
       - uses: honeycombio/gha-buildevents@v2
         with:
