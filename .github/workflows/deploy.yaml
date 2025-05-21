@@ -46,52 +46,6 @@ jobs:
 
           echo "trace_start=$START_TIME" >> "$GITHUB_OUTPUT"
 
-  lint:
-    runs-on: ubuntu-latest
-    needs: [start-build]
-
-    steps:
-      - uses: honeycombio/gha-buildevents@v2
-        with:
-          apikey: ${{ secrets.HONEYCOMB_API_KEY }}
-          dataset: syllabus-tracker-build-events
-        env:
-          TRACE_ID: ${{ needs.start-build.outputs.trace_id }}
-
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Set up Rust
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-          override: true
-          components: rustfmt, clippy
-
-      - name: Record lint step start
-        id: lint-start
-        run: |
-          echo "STEP_START=$(date +%s)" >> $GITHUB_ENV
-          echo "STEP_ID=run_lints" >> $GITHUB_ENV
-
-      - name: Run cargo fmt check
-        run: |
-          buildevents cmd $TRACE_ID $STEP_ID cargo_fmt -- \
-            cargo fmt --all -- --check
-
-      - name: Run cargo clippy
-        run: |
-          buildevents cmd $TRACE_ID $STEP_ID cargo_clippy -- \
-            cargo clippy -- -D warnings
-        env:
-          SQLX_OFFLINE: "true"
-
-      - name: Complete lint step
-        run: |
-          buildevents step $TRACE_ID $STEP_ID $STEP_START "Run Lints"
-
   build-backend:
     runs-on: ubuntu-latest
     needs: [start-build]
@@ -158,7 +112,7 @@ jobs:
         run: |
           buildevents step $TRACE_ID $STEP_ID $STEP_START "Build Backend Image"
 
-  test:
+  lint-and-test:
     runs-on: ubuntu-latest
     needs: [start-build, build-backend]
 
@@ -172,37 +126,44 @@ jobs:
 
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Rust
         uses: actions-rs/toolchain@v1
         with:
           toolchain: stable
           override: true
+          components: rustfmt, clippy
 
-      # Pull the builder image to extract the cache
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Log in to the Container registry
-        uses: docker/login-action@v3
+      - name: Cache cargo dependencies
+        uses: actions/cache@v3
         with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
 
-      - name: Record test step start
-        id: test-start
+      - name: Record lint and test step start
+        id: lint-test-start
         run: |
           echo "STEP_START=$(date +%s)" >> $GITHUB_ENV
-          echo "STEP_ID=run_tests" >> $GITHUB_ENV
+          echo "STEP_ID=run_lint_and_tests" >> $GITHUB_ENV
 
-      - name: Pull builder image to extract cache
+      - name: Run cargo fmt check
         run: |
-          docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/app:cache || true
-          mkdir -p target
-          docker create --name builder ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/app:cache
-          docker cp builder:/app/target ./
-          docker rm builder
+          buildevents cmd $TRACE_ID $STEP_ID cargo_fmt -- \
+            cargo fmt --all -- --check
+
+      - name: Run cargo clippy
+        run: |
+          buildevents cmd $TRACE_ID $STEP_ID cargo_clippy -- \
+            cargo clippy -- -D warnings
+        env:
+          SQLX_OFFLINE: "true"
 
       - name: Run Rust tests
         run: |
@@ -211,9 +172,9 @@ jobs:
         env:
           SQLX_OFFLINE: "true"
 
-      - name: Complete test step
+      - name: Complete lint and test step
         run: |
-          buildevents step $TRACE_ID $STEP_ID $STEP_START "Run Tests"
+          buildevents step $TRACE_ID $STEP_ID $STEP_START "Run Lints and Tests"
 
   build-frontend:
     runs-on: ubuntu-latest
@@ -278,7 +239,7 @@ jobs:
           buildevents step $TRACE_ID $STEP_ID $STEP_START "Build Frontend Image"
 
   deploy_nixos_config:
-    needs: [build-backend, build-frontend, lint, test]
+    needs: [build-backend, build-frontend, lint-and-test]
     runs-on: ubuntu-latest
     if: github.repository == 'matthewtapps/syllabus-tracker'
 
