@@ -558,11 +558,14 @@ pub async fn api_change_password(
 
 #[derive(Deserialize, Validate, Clone)]
 pub struct UserRegistrationRequest {
-    #[validate(length(
-        min = 3,
-        max = 50,
-        message = "Username must be between 3 and 50 characters"
-    ))]
+    #[validate(
+        length(
+            min = 3,
+            max = 50,
+            message = "Username must be between 3 and 50 characters"
+        ),
+        does_not_contain(pattern = " ", message = "Username cannot contain spaces")
+    )]
     username: String,
     #[validate(length(max = 100, message = "Display name must be under 100 characters"))]
     display_name: String,
@@ -610,11 +613,14 @@ pub async fn api_register_user(
 
 #[derive(Deserialize, Validate, Clone)]
 pub struct UserUpdateRequest {
-    #[validate(length(
-        min = 3,
-        max = 50,
-        message = "Username must be between 3 and 50 characters"
-    ))]
+    #[validate(
+        length(
+            min = 3,
+            max = 50,
+            message = "Username must be between 3 and 50 characters"
+        ),
+        does_not_contain(pattern = " ", message = "Username cannot contain spaces")
+    )]
     username: Option<String>,
     #[validate(length(max = 100, message = "Display name must be under 100 characters"))]
     display_name: Option<String>,
