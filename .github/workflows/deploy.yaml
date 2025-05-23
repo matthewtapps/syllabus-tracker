@@ -13,7 +13,7 @@ on:
         description: "Extra options for nixos-rebuild (e.g., --fast, --upgrade)"
         required: false
         default: ""
-      allow_destructuve_migrations:
+      allow_destructive_migrations:
         description: "Will fail deployments with destructive migrations unless set to true"
         required: false
         default: "false"
@@ -257,7 +257,8 @@ jobs:
   check_destructive_migrations:
     needs: [build-backend, build-frontend, lint, test]
     runs-on: ubuntu-latest
-    if: github.event.inputs.allow_destructuve_migrations == 'true'
+    env:
+      ALLOW_DESTRUCTIVE_MIGRATIONS: ${{ github.event.inputs.allow_destructive_migrations }}
 
     steps:
       - uses: honeycombio/gha-buildevents@v2
@@ -286,7 +287,8 @@ jobs:
 
       - name: Check for destructive migrations
         run: |
-          buildevents cmd $TRACE_ID $STEP_ID if cargo run --bin migration-check --dry-run | grep "destructive"; then
+          DESTRUCTIVE_MIGRATIONS=$(buildevents cmd $TRACE_ID $STEP_ID $(cargo run --bin get_destructive_migrations | grep "destructive"))
+          if [[ $DESTRUCTIVE_MIGRATIONS && !$ALLOW_DESTRUCTIVE_MIGRATIONS='true' ]] then
             echo "⚠️  Destructive migrations detected. Manual approval required."
             echo "Re-run this workflow with ALLOW_DESTRUCTIVE_MIGRATIONS=true"
             exit 1
