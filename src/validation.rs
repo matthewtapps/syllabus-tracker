@@ -1,8 +1,9 @@
 use crate::error::AppError;
-use rocket::http::Status;
 use rocket::response::status::Custom;
 use rocket::serde::json::Json;
+use rocket::{State, http::Status};
 use serde::{Deserialize, Serialize};
+use sqlx::{Pool, Sqlite};
 use std::collections::HashMap;
 use tracing::instrument;
 
@@ -115,4 +116,8 @@ impl From<AppErrorWrapper> for Custom<Json<ValidationResponse>> {
     fn from(wrapper: AppErrorWrapper) -> Self {
         wrapper.0.to_validation_response()
     }
+}
+
+pub struct ValidationContext<'a> {
+    pub db: &'a State<Pool<Sqlite>>,
 }

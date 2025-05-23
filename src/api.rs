@@ -10,6 +10,7 @@ use rocket::response::status::Custom;
 use rocket::serde::{Deserialize, Serialize, json::Json};
 use sqlx::{Pool, Sqlite};
 use validator::Validate;
+use validator::ValidationError;
 use validator::ValidationErrors;
 
 use crate::auth::UserSession;
@@ -38,6 +39,7 @@ use crate::error::AppError;
 use crate::models::Tag;
 use crate::models::Technique;
 use crate::validation::ToValidationResponse;
+use crate::validation::ValidationContext;
 use crate::validation::ValidationResponse;
 
 #[derive(Debug)]
@@ -557,12 +559,12 @@ pub async fn api_change_password(
 }
 
 #[derive(Deserialize, Validate, Clone)]
+#[validate(context = "ValidationContext<'v_a>")]
 pub struct UserRegistrationRequest {
-    #[validate(length(
-        min = 3,
-        max = 50,
-        message = "Username must be between 3 and 50 characters"
-    ))]
+    #[validate(
+        length( min = 3, max = 50, message = "Username must be between 3 and 50 characters"), 
+        custom( function = validate_unique_username, use_context),
+    )]
     username: String,
     #[validate(length(max = 100, message = "Display name must be under 100 characters"))]
     display_name: String,
@@ -573,29 +575,32 @@ pub struct UserRegistrationRequest {
     role: String,
 }
 
+async fn validate_unique_username<'v_a>(
+    username: &str,
+    context: &'v_a ValidationContext<'v_a>,
+) -> Result<(), ValidationError> {
+    let existing_user = find_user_by_username(context.db, username).await;
+    if existing_user?.is_some() {
+        return Err(
+            ApiError::AppError(AppError::Internal("Username already exists".to_string())).into(),
+        );
+    }
+    Ok(())
+}
+
 #[post("/register", data = "<registration>")]
 pub async fn api_register_user(
     registration: Json<UserRegistrationRequest>,
     user: User,
     db: &State<Pool<Sqlite>>,
 ) -> ApiResult<Status> {
-    registration.validate()?;
-
-    let existing_user = find_user_by_username(db, &registration.username).await?;
-
-    if existing_user.is_some() {
-        return Err(ApiError::AppError(AppError::Internal(
-            "Username already exists".to_string(),
-        )));
-    }
-
+    registration.validate_with_args(db)?;
     match registration.role.as_str() {
         "admin" => {
             user.require_all_permissions(&[Permission::EditUserRoles, Permission::RegisterUsers])?
         }
         _ => user.require_permission(Permission::RegisterUsers)?,
     };
-
     create_user(
         db,
         &registration.username,
@@ -604,7 +609,6 @@ pub async fn api_register_user(
         Some(&registration.display_name),
     )
     .await?;
-
     Ok(Status::Created)
 }
 
