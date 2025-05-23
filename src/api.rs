@@ -1,11 +1,16 @@
+use std::collections::HashMap;
+
 use rocket::FromForm;
+use rocket::Request;
 use rocket::State;
 use rocket::http::Status;
 use rocket::response::Redirect;
+use rocket::response::Responder;
 use rocket::response::status::Custom;
 use rocket::serde::{Deserialize, Serialize, json::Json};
 use sqlx::{Pool, Sqlite};
 use validator::Validate;
+use validator::ValidationErrors;
 
 use crate::auth::UserSession;
 use crate::auth::{Permission, User};
@@ -29,13 +34,84 @@ use crate::db::{
     get_unassigned_techniques, get_user, get_users_by_role, invalidate_session,
     update_student_notes, update_student_technique, update_technique,
 };
+use crate::error::AppError;
 use crate::models::Tag;
 use crate::models::Technique;
-use crate::validation::AppErrorExt;
-use crate::validation::JsonValidateExt;
-use crate::validation::PermissionCheckExt;
 use crate::validation::ToValidationResponse;
 use crate::validation::ValidationResponse;
+
+#[derive(Debug)]
+pub enum ApiError {
+    Validation(ValidationErrors),
+    AppError(AppError),
+    Status(Status),
+}
+
+impl From<ValidationErrors> for ApiError {
+    fn from(errors: ValidationErrors) -> Self {
+        ApiError::Validation(errors)
+    }
+}
+
+impl From<AppError> for ApiError {
+    fn from(error: AppError) -> Self {
+        ApiError::AppError(error)
+    }
+}
+
+impl From<Status> for ApiError {
+    fn from(status: Status) -> Self {
+        ApiError::Status(status)
+    }
+}
+
+impl From<ApiError> for Status {
+    fn from(error: ApiError) -> Self {
+        match error {
+            ApiError::Validation(_) => Status::UnprocessableEntity,
+            ApiError::AppError(ref app_error) => app_error.status_code(),
+            ApiError::Status(status) => status,
+        }
+    }
+}
+
+impl From<ApiError> for Custom<Json<ValidationResponse>> {
+    fn from(error: ApiError) -> Self {
+        match error {
+            ApiError::Validation(errors) => {
+                let mut error_map = HashMap::new();
+                for (field, field_errors) in errors.field_errors() {
+                    let error_messages: Vec<String> = field_errors
+                        .iter()
+                        .map(|error| {
+                            error
+                                .message
+                                .clone()
+                                .unwrap_or_else(|| "Invalid value".into())
+                                .to_string()
+                        })
+                        .collect();
+                    error_map.insert(field.to_string(), error_messages);
+                }
+                Custom(
+                    Status::UnprocessableEntity,
+                    Json(ValidationResponse::new(error_map)),
+                )
+            }
+            ApiError::AppError(app_error) => app_error.to_validation_response(),
+            ApiError::Status(status) => status.to_validation_response(),
+        }
+    }
+}
+
+pub type ApiResult<T> = Result<T, ApiError>;
+
+impl<'r> Responder<'r, 'static> for ApiError {
+    fn respond_to(self, req: &'r Request<'_>) -> rocket::response::Result<'static> {
+        let custom_response: Custom<Json<ValidationResponse>> = self.into();
+        custom_response.respond_to(req)
+    }
+}
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct UserData {
@@ -81,26 +157,19 @@ pub async fn api_login(
     login: Json<LoginRequest>,
     cookies: &rocket::http::CookieJar<'_>,
     db: &State<Pool<Sqlite>>,
-) -> Result<Json<LoginResponse>, Custom<Json<ValidationResponse>>> {
+) -> ApiResult<Json<LoginResponse>> {
     use chrono::Utc;
     use rocket::http::{Cookie, SameSite};
 
-    let validated = login.validate_custom()?;
+    login.validate()?;
 
-    match authenticate_user(db, &validated.username, &validated.password)
-        .await
-        .validate_custom()?
-    {
+    match authenticate_user(db, &login.username, &login.password).await? {
         Some(user) => {
-            // Create session token
             let token = UserSession::generate_token();
             let expires_at = Utc::now() + chrono::Duration::hours(1);
 
-            create_user_session(db, user.id, &token, expires_at.naive_utc())
-                .await
-                .validate_custom()?;
+            create_user_session(db, user.id, &token, expires_at.naive_utc()).await?;
 
-            // Set cookies
             let cookie = Cookie::build(("session_token", token))
                 .same_site(SameSite::Lax)
                 .http_only(true)
@@ -115,7 +184,7 @@ pub async fn api_login(
             );
 
             cookies.add_private(
-                Cookie::build(("logged_in", validated.username))
+                Cookie::build(("logged_in", login.username.clone()))
                     .same_site(SameSite::Lax)
                     .max_age(rocket::time::Duration::hours(1)),
             );
@@ -192,9 +261,9 @@ pub async fn api_get_student_techniques(
     id: i64,
     user: User,
     db: &State<Pool<Sqlite>>,
-) -> Result<Json<StudentTechniquesResponse>, Status> {
+) -> ApiResult<Json<StudentTechniquesResponse>> {
     if user.id != id && !user.has_permission(Permission::ViewAllStudents) {
-        return Err(Status::Forbidden);
+        return Err(Status::Forbidden.into());
     }
 
     let student = get_user(db, id).await?;
@@ -251,23 +320,21 @@ pub async fn api_update_student_technique(
     technique: Json<TechniqueUpdateRequest>,
     user: User,
     db: &State<Pool<Sqlite>>,
-) -> Result<Status, Custom<Json<ValidationResponse>>> {
-    technique.clone().validate_custom()?;
+) -> ApiResult<Status> {
+    technique.validate()?;
 
-    let student_technique = get_student_technique(db, id).await.validate_custom()?;
+    let student_technique = get_student_technique(db, id).await?;
 
     let is_own_technique = user.id == student_technique.student_id;
     let can_edit_all = user.has_permission(Permission::EditAllTechniques);
 
     if !is_own_technique && !can_edit_all {
-        return Err(Status::Forbidden.to_validation_response());
+        return Err(Status::Forbidden.into());
     }
 
     if is_own_technique && !can_edit_all {
         if let Some(notes) = &technique.student_notes {
-            update_student_notes(db, id, notes)
-                .await
-                .validate_custom()?;
+            update_student_notes(db, id, notes).await?;
         }
 
         return Ok(Status::Ok);
@@ -282,9 +349,7 @@ pub async fn api_update_student_technique(
             .clone()
             .unwrap_or(student_technique.coach_notes);
 
-        update_student_technique(db, id, &status, &student_notes, &coach_notes)
-            .await
-            .validate_custom()?;
+        update_student_technique(db, id, &status, &student_notes, &coach_notes).await?;
 
         if technique.technique_name.is_some() || technique.technique_description.is_some() {
             let technique_name = technique
@@ -302,14 +367,13 @@ pub async fn api_update_student_technique(
                 &technique_name,
                 &technique_description,
             )
-            .await
-            .validate_custom()?;
+            .await?;
         }
 
         return Ok(Status::Ok);
     }
 
-    Err(Status::BadRequest.to_validation_response())
+    Err(Status::BadRequest.into())
 }
 
 #[derive(FromForm)]
@@ -323,7 +387,7 @@ pub async fn api_get_students(
     params: StudentsQueryParams,
     user: User,
     db: &State<Pool<Sqlite>>,
-) -> Result<Json<Vec<UserData>>, Status> {
+) -> ApiResult<Json<Vec<UserData>>> {
     user.require_permission(Permission::ViewAllStudents)?;
 
     let include_archived = params.include_archived.unwrap_or(false);
@@ -353,11 +417,10 @@ pub async fn api_get_unassigned_techniques(
     id: i64,
     user: User,
     db: &State<Pool<Sqlite>>,
-) -> Result<Json<Vec<Technique>>, Custom<Json<ValidationResponse>>> {
-    user.require_permission(Permission::AssignTechniques)
-        .validate_custom()?;
+) -> ApiResult<Json<Vec<Technique>>> {
+    user.require_permission(Permission::AssignTechniques)?;
 
-    let techniques = get_unassigned_techniques(db, id).await.validate_custom()?;
+    let techniques = get_unassigned_techniques(db, id).await?;
 
     Ok(Json(techniques))
 }
@@ -374,15 +437,12 @@ pub async fn api_assign_techniques(
     request: Json<AssignTechniquesRequest>,
     user: User,
     db: &State<Pool<Sqlite>>,
-) -> Result<Status, Custom<Json<ValidationResponse>>> {
-    request.clone().validate_custom()?;
+) -> ApiResult<Status> {
+    request.validate()?;
 
-    user.require_permission(Permission::AssignTechniques)
-        .validate_custom()?;
+    user.require_permission(Permission::AssignTechniques)?;
 
-    add_techniques_to_student(db, student_id, request.technique_ids.clone())
-        .await
-        .validate_custom()?;
+    add_techniques_to_student(db, student_id, request.technique_ids.clone()).await?;
 
     Ok(Status::Ok)
 }
@@ -405,14 +465,12 @@ pub async fn api_create_and_assign_technique(
     request: Json<CreateTechniqueRequest>,
     user: User,
     db: &State<Pool<Sqlite>>,
-) -> Result<Status, Custom<Json<ValidationResponse>>> {
-    request.clone().validate_custom()?;
-    user.require_all_permissions(&[Permission::CreateTechniques, Permission::AssignTechniques])
-        .validate_custom()?;
+) -> ApiResult<Status> {
+    request.validate()?;
+    user.require_all_permissions(&[Permission::CreateTechniques, Permission::AssignTechniques])?;
 
     create_and_assign_technique(db, user.id, student_id, &request.name, &request.description)
-        .await
-        .validate_custom()?;
+        .await?;
 
     Ok(Status::Ok)
 }
@@ -460,12 +518,10 @@ pub async fn api_update_profile(
     profile: Json<ProfileUpdateRequest>,
     user: User,
     db: &State<Pool<Sqlite>>,
-) -> Result<Status, Custom<Json<ValidationResponse>>> {
-    profile.clone().validate_custom()?;
+) -> ApiResult<Status> {
+    profile.validate()?;
 
-    update_user_display_name(db, user.id, &profile.display_name)
-        .await
-        .validate_custom()?;
+    update_user_display_name(db, user.id, &profile.display_name).await?;
 
     Ok(Status::Ok)
 }
@@ -483,28 +539,20 @@ pub async fn api_change_password(
     password: Json<PasswordChangeRequest>,
     user: User,
     db: &State<Pool<Sqlite>>,
-) -> Result<Status, Custom<Json<ValidationResponse>>> {
-    let validated = password.validate_custom()?;
+) -> ApiResult<Status> {
+    password.validate()?;
 
-    let is_valid = authenticate_user(db, &user.username, &validated.current_password)
-        .await
-        .validate_custom()?;
+    let is_valid = authenticate_user(db, &user.username, &password.current_password).await?;
 
     match is_valid {
         Some(_) => {
-            update_user_password(db, user.id, &validated.new_password)
-                .await
-                .validate_custom()?;
+            update_user_password(db, user.id, &password.new_password).await?;
 
             Ok(Status::Ok)
         }
-        _ => Err(Custom(
-            Status::Unauthorized,
-            Json(ValidationResponse::with_error(
-                "current_password",
-                "Current password is incorrect",
-            )),
-        )),
+        _ => Err(ApiError::AppError(AppError::Authentication(
+            "Current password is incorrect".to_string(),
+        ))),
     }
 }
 
@@ -530,41 +578,32 @@ pub async fn api_register_user(
     registration: Json<UserRegistrationRequest>,
     user: User,
     db: &State<Pool<Sqlite>>,
-) -> Result<Status, Custom<Json<ValidationResponse>>> {
-    let validated = registration.clone().validate_custom()?;
+) -> ApiResult<Status> {
+    registration.validate()?;
 
-    let existing_user = find_user_by_username(db, &registration.username)
-        .await
-        .validate_custom()?;
+    let existing_user = find_user_by_username(db, &registration.username).await?;
 
     if existing_user.is_some() {
-        return Err(Custom(
-            Status::Conflict,
-            Json(ValidationResponse::with_error(
-                "username",
-                "Username already exists",
-            )),
-        ));
+        return Err(ApiError::AppError(AppError::Internal(
+            "Username already exists".to_string(),
+        )));
     }
 
-    match validated.role.as_str() {
-        "admin" => user
-            .require_all_permissions(&[Permission::EditUserRoles, Permission::RegisterUsers])
-            .validate_custom()?,
-        _ => user
-            .require_permission(Permission::RegisterUsers)
-            .validate_custom()?,
+    match registration.role.as_str() {
+        "admin" => {
+            user.require_all_permissions(&[Permission::EditUserRoles, Permission::RegisterUsers])?
+        }
+        _ => user.require_permission(Permission::RegisterUsers)?,
     };
 
     create_user(
         db,
-        &validated.username,
-        &validated.password,
-        &validated.role,
-        Some(&validated.display_name),
+        &registration.username,
+        &registration.password,
+        &registration.role,
+        Some(&registration.display_name),
     )
-    .await
-    .validate_custom()?;
+    .await?;
 
     Ok(Status::Created)
 }
@@ -591,41 +630,32 @@ pub async fn api_update_user(
     update: Json<UserUpdateRequest>,
     user: User,
     db: &State<Pool<Sqlite>>,
-) -> Result<Status, Custom<Json<ValidationResponse>>> {
-    update.clone().validate_custom()?;
-    user.require_permission(Permission::EditUserCredentials)
-        .validate_custom()?;
+) -> ApiResult<Status> {
+    update.clone().validate()?;
+    user.require_permission(Permission::EditUserCredentials)?;
 
-    // For role changes, require EditUserRoles permission
     if update.role.is_some() {
-        user.require_permission(Permission::EditUserRoles)
-            .validate_custom()?;
+        user.require_permission(Permission::EditUserRoles)?;
     }
 
     if let Some(username) = &update.username {
-        update_username(db, id, username).await.validate_custom()?;
+        update_username(db, id, username).await?;
     }
 
     if let Some(display_name) = &update.display_name {
-        update_user_display_name(db, id, display_name)
-            .await
-            .validate_custom()?;
+        update_user_display_name(db, id, display_name).await?;
     }
 
     if let Some(password) = &update.password {
-        update_user_password(db, id, password)
-            .await
-            .validate_custom()?;
+        update_user_password(db, id, password).await?;
     }
 
     if let Some(archived) = update.archived {
-        set_user_archived(db, id, archived)
-            .await
-            .validate_custom()?;
+        set_user_archived(db, id, archived).await?;
     }
 
     if let Some(role) = &update.role {
-        update_user_role(db, id, role).await.validate_custom()?;
+        update_user_role(db, id, role).await?;
     }
 
     Ok(Status::Ok)
@@ -659,7 +689,7 @@ impl From<Tag> for TagResponse {
 pub async fn api_get_all_tags(
     _user: User,
     db: &State<Pool<Sqlite>>,
-) -> Result<Json<TagsResponse>, Status> {
+) -> ApiResult<Json<TagsResponse>> {
     let tags = get_all_tags(db).await?;
     Ok(Json(TagsResponse { tags }))
 }
@@ -669,7 +699,7 @@ pub async fn api_get_technique_tags(
     id: i64,
     _user: User,
     db: &State<Pool<Sqlite>>,
-) -> Result<Json<TagsResponse>, Status> {
+) -> ApiResult<Json<TagsResponse>> {
     let tags = get_tags_for_technique(db, id).await?;
     Ok(Json(TagsResponse { tags }))
 }
@@ -689,7 +719,7 @@ pub async fn api_create_tag(
     tag: Json<CreateTagRequest>,
     user: User,
     db: &State<Pool<Sqlite>>,
-) -> Result<Status, Status> {
+) -> ApiResult<Status> {
     user.require_permission(Permission::ManageTags)?;
 
     create_tag(db, &tag.name).await?;
@@ -698,11 +728,7 @@ pub async fn api_create_tag(
 }
 
 #[delete("/tags/<id>")]
-pub async fn api_delete_tag(
-    id: i64,
-    user: User,
-    db: &State<Pool<Sqlite>>,
-) -> Result<Status, Status> {
+pub async fn api_delete_tag(id: i64, user: User, db: &State<Pool<Sqlite>>) -> ApiResult<Status> {
     user.require_permission(Permission::ManageTags)?;
     delete_tag(db, id).await?;
     Ok(Status::Ok)
@@ -719,7 +745,7 @@ pub async fn api_add_tag_to_technique(
     request: Json<TagTechniqueRequest>,
     user: User,
     db: &State<Pool<Sqlite>>,
-) -> Result<Status, Status> {
+) -> ApiResult<Status> {
     user.require_permission(Permission::ManageTags)?;
     add_tag_to_technique(db, request.technique_id, request.tag_id).await?;
     Ok(Status::Ok)
@@ -731,7 +757,7 @@ pub async fn api_remove_tag_from_technique(
     tag_id: i64,
     user: User,
     db: &State<Pool<Sqlite>>,
-) -> Result<Status, Status> {
+) -> ApiResult<Status> {
     user.require_permission(Permission::ManageTags)?;
     remove_tag_from_technique(db, technique_id, tag_id).await?;
     Ok(Status::Ok)
@@ -741,7 +767,7 @@ pub async fn api_remove_tag_from_technique(
 pub async fn api_get_all_users(
     user: User,
     db: &State<Pool<Sqlite>>,
-) -> Result<Json<Vec<UserData>>, Status> {
+) -> ApiResult<Json<Vec<UserData>>> {
     user.require_permission(Permission::EditUserRoles)?;
 
     let users = get_all_users(db).await?;

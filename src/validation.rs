@@ -5,7 +5,6 @@ use rocket::serde::json::Json;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use tracing::instrument;
-use validator::Validate;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ValidationResponse {
@@ -115,38 +114,5 @@ impl From<ValidationErrorWrapper> for Custom<Json<ValidationResponse>> {
 impl From<AppErrorWrapper> for Custom<Json<ValidationResponse>> {
     fn from(wrapper: AppErrorWrapper) -> Self {
         wrapper.0.to_validation_response()
-    }
-}
-
-pub trait JsonValidateExt<T: Validate> {
-    fn validate_custom(self) -> Result<T, Custom<Json<ValidationResponse>>>;
-}
-
-impl<T: Validate> JsonValidateExt<T> for Json<T> {
-    fn validate_custom(self) -> Result<T, Custom<Json<ValidationResponse>>> {
-        match self.0.validate() {
-            Ok(_) => Ok(self.0),
-            Err(errors) => Err(ValidationErrorWrapper(errors).into()),
-        }
-    }
-}
-
-pub trait AppErrorExt<T> {
-    fn validate_custom(self) -> Result<T, Custom<Json<ValidationResponse>>>;
-}
-
-impl<T> AppErrorExt<T> for Result<T, AppError> {
-    fn validate_custom(self) -> Result<T, Custom<Json<ValidationResponse>>> {
-        self.map_err(|e| AppErrorWrapper(e).into())
-    }
-}
-
-pub trait PermissionCheckExt {
-    fn validate_custom(self) -> Result<(), Custom<Json<ValidationResponse>>>;
-}
-
-impl PermissionCheckExt for Result<(), Status> {
-    fn validate_custom(self) -> Result<(), Custom<Json<ValidationResponse>>> {
-        self.map_err(|status| status.to_validation_response())
     }
 }
