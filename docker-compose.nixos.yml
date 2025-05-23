@@ -31,22 +31,10 @@ services:
       - ALLOW_DESTRUCTIVE_MIGRATIONS={ALLOW_DESTRUCTIVE_MIGRATIONS:-false}
     volumes:
       - app-data:/app/data
-    depends_on:
-      - destructive-migrations-checker
     networks:
       - internal
     expose:
       - "8000"
-
-  destructive-migrations-checker:
-    image: ${REGISTRY}/${IMAGE_NAME}/migration-checker:latest
-    restart: never
-    env_file:
-      - ./config/common.env
-      - ./config/prod.env
-      - ./.secrets.env
-    volumes:
-      - app-data:/app/data
 
   frontend:
     image: ${REGISTRY}/${IMAGE_NAME}/frontend:${FRONTEND_IMAGE_TAG:-latest}

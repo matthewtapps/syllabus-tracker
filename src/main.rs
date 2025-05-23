@@ -28,7 +28,7 @@ use db::clean_expired_sessions;
 use error::AppError;
 use rocket::{Build, Rocket, tokio};
 use syllabus_tracker::lib::migrations::{
-    migrate_database_declaratively, read_schema_file_to_string,
+    get_schema_changes, migrate_database_declaratively, read_schema_file_to_string,
 };
 use telemetry::TelemetryFairing;
 use telemetry::init_tracing;
@@ -101,17 +101,66 @@ async fn rocket() -> _ {
 
     let schema = get_schema_string();
 
-    match migrate_database_declaratively(pool.clone(), &schema).await {
-        Ok(changes_made) => {
-            if changes_made {
-                info!("Database migration completed with changes");
-            } else {
-                info!("Database schema is already up to date");
+    match get_schema_changes(pool.clone(), &schema).await {
+        Ok(changes) => {
+            let has_destructive_changes = !changes.removed_tables.is_empty()
+                || !changes.removed_indices.is_empty()
+                || changes
+                    .modified_tables
+                    .iter()
+                    .any(|t| !t.removed_columns.is_empty());
+
+            if has_destructive_changes {
+                let allow_destructive = dotenvy::var("ALLOW_DESTRUCTIVE_MIGRATIONS")
+                    .unwrap_or_else(|_| "false".to_string())
+                    .parse::<bool>()
+                    .unwrap_or(false);
+
+                if !allow_destructive {
+                    error!("Destructive database changes detected but not allowed:");
+
+                    if !changes.removed_tables.is_empty() {
+                        error!("  Tables to be removed: {:?}", changes.removed_tables);
+                    }
+
+                    if !changes.removed_indices.is_empty() {
+                        error!("  Indices to be removed: {:?}", changes.removed_indices);
+                    }
+
+                    for table in &changes.modified_tables {
+                        if !table.removed_columns.is_empty() {
+                            error!(
+                                "  Columns to be removed from {}: {:?}",
+                                table.name, table.removed_columns
+                            );
+                        }
+                    }
+
+                    error!("Set ALLOW_DESTRUCTIVE_MIGRATIONS=true to allow these changes");
+                    panic!("Deployment cancelled due to destructive database changes");
+                } else {
+                    warn!("Proceeding with destructive database changes (explicitly allowed)");
+                }
+            }
+
+            info!("Running declarative database migration...");
+            match migrate_database_declaratively(pool.clone(), &schema).await {
+                Ok(changes_made) => {
+                    if changes_made {
+                        info!("Database migration completed with changes");
+                    } else {
+                        info!("Database schema is already up to date");
+                    }
+                }
+                Err(e) => {
+                    error!("Failed to migrate database: {:?}", e);
+                    panic!("Database migration failed: {:?}", e);
+                }
             }
         }
         Err(e) => {
-            error!("Failed to migrate database: {:?}", e);
-            panic!("Database migration failed: {:?}", e);
+            error!("Failed to analyze database changes: {:?}", e);
+            panic!("Database analysis failed: {:?}", e);
         }
     }
 

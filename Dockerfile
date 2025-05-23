@@ -28,32 +28,6 @@ ENV ROCKET_PORT=8000
 EXPOSE 8000
 CMD ["cargo", "watch", "-x", "run"]
 
-FROM chef AS migration-check-builder-deps
-WORKDIR /app
-COPY --from=planner /app/recipe.json recipe.json
-ENV SQLX_OFFLINE=true
-RUN rustup target add x86_64-unknown-linux-musl
-RUN cargo chef cook --release --target x86_64-unknown-linux-musl --bin get_destructive_migrations
-
-FROM chef AS migration-check-builder
-WORKDIR /app
-COPY --from=migration-check-builder-deps /app/target target
-COPY --from=migration-check-builder-deps /usr/local/cargo /usr/local/cargo
-COPY Cargo.toml Cargo.lock ./
-COPY src ./src
-COPY .sqlx ./.sqlx
-COPY config ./config
-ENV SQLX_OFFLINE=true
-RUN cargo build --release --target x86_64-unknown-linux-musl --bin get_destructive_migrations
-RUN cp target/x86_64-unknown-linux-musl/release/get_destructive_migrations /app/get_destructive_migrations
-
-FROM scratch AS migration-check
-WORKDIR /app
-COPY --from=migration-check-builder /app/get_destructive_migrations /app/get_destructive_migrations
-COPY --from=migration-check-builder /app/config /app/config
-VOLUME /app/data
-CMD ["/app/get_destructive_migrations"]
-
 FROM chef AS builder
 WORKDIR /app
 COPY --from=builder-deps /app/target target
