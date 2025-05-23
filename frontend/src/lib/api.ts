@@ -100,11 +100,10 @@ export async function getTechniquesForAssignment(
   return await response.json();
 }
 
-// Assign multiple techniques to a student
 export async function assignTechniquesToStudent(
   studentId: number,
   techniqueIds: number[],
-): Promise<void> {
+): Promise<Response> {
   const response = await tracedFetch(
     `/api/student/${studentId}/add_techniques`,
     {
@@ -117,16 +116,14 @@ export async function assignTechniquesToStudent(
     },
   );
 
-  if (!response.ok) {
-    throw new Error(`Failed to assign techniques: ${response.statusText}`);
-  }
+  return response; // Return raw response
 }
 
 export async function createAndAssignTechnique(
   studentId: number,
   name: string,
   description: string,
-): Promise<void> {
+): Promise<Response> {
   const response = await tracedFetch(
     `/api/student/${studentId}/create_technique`,
     {
@@ -139,9 +136,7 @@ export async function createAndAssignTechnique(
     },
   );
 
-  if (!response.ok) {
-    throw new Error(`Failed to create technique: ${response.statusText}`);
-  }
+  return response;
 }
 
 export interface Technique {
@@ -191,7 +186,7 @@ export interface TechniqueUpdate {
 export async function updateTechnique(
   techniqueId: number,
   updates: TechniqueUpdate,
-): Promise<void> {
+): Promise<Response> {
   const response = await tracedFetch(`/api/student_technique/${techniqueId}`, {
     method: "PUT",
     headers: {
@@ -201,9 +196,7 @@ export async function updateTechnique(
     credentials: "include",
   });
 
-  if (!response.ok) {
-    throw new Error(`Failed to update technique: ${response.statusText}`);
-  }
+  return response; // Return raw response instead of throwing
 }
 
 export async function getStudents(
@@ -239,7 +232,7 @@ export interface ProfileUpdateData {
 
 export async function updateUserProfile(
   data: ProfileUpdateData,
-): Promise<void> {
+): Promise<Response> {
   const response = await tracedFetch("/api/profile", {
     method: "PUT",
     headers: {
@@ -249,9 +242,7 @@ export async function updateUserProfile(
     credentials: "include",
   });
 
-  if (!response.ok) {
-    throw new Error("Failed to update profile");
-  }
+  return response; // Return raw response
 }
 
 export interface PasswordUpdateData {
@@ -259,7 +250,9 @@ export interface PasswordUpdateData {
   new_password: string;
 }
 
-export async function updatePassword(data: PasswordUpdateData): Promise<void> {
+export async function updatePassword(
+  data: PasswordUpdateData,
+): Promise<Response> {
   const response = await tracedFetch("/api/change-password", {
     method: "POST",
     headers: {
@@ -269,9 +262,7 @@ export async function updatePassword(data: PasswordUpdateData): Promise<void> {
     credentials: "include",
   });
 
-  if (!response.ok) {
-    throw new Error("Failed to change password");
-  }
+  return response; // Return raw response
 }
 
 export interface UserRegistrationData {
@@ -330,8 +321,7 @@ export async function getAllTags(): Promise<Tag[]> {
   return data.tags;
 }
 
-// Create a new tag
-export async function createTag(name: string): Promise<number> {
+export async function createTag(name: string): Promise<Response> {
   const response = await tracedFetch("/api/tags", {
     method: "POST",
     headers: {
@@ -341,40 +331,22 @@ export async function createTag(name: string): Promise<number> {
     credentials: "include",
   });
 
-  if (!response.ok) {
-    if (response.status === 409) {
-      throw new Error("Tag with this name already exists");
-    }
-    throw new Error(`Failed to create tag: ${response.statusText}`);
-  }
-
-  // Return the new tag's ID if available
-  const location = response.headers.get("Location");
-  if (location) {
-    const parts = location.split("/");
-    return parseInt(parts[parts.length - 1], 10);
-  }
-
-  return 0; // Return 0 if we couldn't get the ID
+  return response;
 }
 
-// Delete a tag
-export async function deleteTag(tagId: number): Promise<void> {
+export async function deleteTag(tagId: number): Promise<Response> {
   const response = await tracedFetch(`/api/tags/${tagId}`, {
     method: "DELETE",
     credentials: "include",
   });
 
-  if (!response.ok) {
-    throw new Error(`Failed to delete tag: ${response.statusText}`);
-  }
+  return response;
 }
 
-// Add tag to technique
 export async function addTagToTechnique(
   techniqueId: number,
   tagId: number,
-): Promise<void> {
+): Promise<Response> {
   const response = await tracedFetch("/api/technique/tag", {
     method: "POST",
     headers: {
@@ -384,15 +356,13 @@ export async function addTagToTechnique(
     credentials: "include",
   });
 
-  if (!response.ok) {
-    throw new Error(`Failed to add tag to technique: ${response.statusText}`);
-  }
+  return response;
 }
 
 export async function removeTagFromTechnique(
   techniqueId: number,
   tagId: number,
-): Promise<void> {
+): Promise<Response> {
   const response = await tracedFetch(
     `/api/technique/${techniqueId}/tag/${tagId}`,
     {
@@ -401,11 +371,7 @@ export async function removeTagFromTechnique(
     },
   );
 
-  if (!response.ok) {
-    throw new Error(
-      `Failed to remove tag from technique: ${response.statusText}`,
-    );
-  }
+  return response;
 }
 
 export async function getAllUsers(): Promise<User[]> {

@@ -1,10 +1,10 @@
 import { useState } from 'react';
-import type { Technique, TechniqueUpdate } from '@/lib/api';
+import { updateTechnique, type Technique, type TechniqueUpdate } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel } from '@/components/ui/form';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { useForm } from 'react-hook-form';
+import { useFormWithValidation } from './hooks/useFormErrors';
 import { Card, CardContent } from './ui/card';
 import { TracedForm } from './traced-form';
 
@@ -29,7 +29,7 @@ export default function TechniqueEditForm({
   const isOwnTechnique = currentUserId === studentId;
   const canEditStudentNotes = isOwnTechnique; // Only students edit their own notes
 
-  const form = useForm<TechniqueUpdate>({
+  const form = useFormWithValidation<TechniqueUpdate>({
     defaultValues: {
       status: technique.status,
       student_notes: technique.student_notes,
@@ -42,14 +42,21 @@ export default function TechniqueEditForm({
   const handleSubmit = async (values: TechniqueUpdate) => {
     setIsSubmitting(true);
     try {
-      if (!canEditStudentNotes) {
-        const { student_notes, ...coachUpdates } = values;
-        onSubmit(coachUpdates);
-      } else {
-        onSubmit(values);
+      const updates = !canEditStudentNotes
+        ? (({ student_notes, ...rest }) => rest)(values)
+        : values;
+
+      const response = await updateTechnique(technique.id, updates);
+
+      if (!response.ok) {
+        throw response;
       }
+
+      onSubmit(updates);
+    } catch (error) {
+      throw error;
     } finally {
-      setIsSubmitting(false);
+      setIsSubmitting(false)
     }
   };
 
@@ -66,7 +73,9 @@ export default function TechniqueEditForm({
 
   return (
     <Form {...form}>
-      <TracedForm id="technique_edit" onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4 sm:space-y-6 mt-4 sm:mt-6">
+      <TracedForm id="technique_edit" onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4 sm:space-y-6 mt-4 sm:mt-6"
+        setFieldErrors={form.setFieldErrors}
+      >
         {canEditAll && (
           <>
             <FormField

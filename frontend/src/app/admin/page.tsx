@@ -23,9 +23,21 @@ import { MoreHorizontalIcon, EditIcon, KeyIcon } from 'lucide-react';
 import { TracedForm } from '@/components/traced-form';
 import { Select, SelectContent, SelectItem, SelectValue } from '@/components/ui/select';
 import { SelectTrigger } from '@radix-ui/react-select';
+import { useFormWithValidation } from '@/components/hooks/useFormErrors';
 
 interface AdminUser extends User {
   archived: boolean;
+}
+
+interface EditUserFormValues {
+  username: string;
+  display_name: string;
+  role: string;
+}
+
+interface PasswordFormValues {
+  new_password: string;
+  confirm_password: string;
 }
 
 export default function AdminPage() {
@@ -37,19 +49,22 @@ export default function AdminPage() {
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [isPasswordDialogOpen, setIsPasswordDialogOpen] = useState(false);
   const [selectedUser, setSelectedUser] = useState<AdminUser | null>(null);
-
-  // Edit form state
-  const [username, setUsername] = useState('');
-  const [displayName, setDisplayName] = useState('');
-  const [newPassword, setNewPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
-  const [isSubmitting, setIsSubmitting] = useState(false);
-
   const [roleFilter, setRoleFilter] = useState<string>("all");
-  const [userRole, setUserRole] = useState("");
 
+  const editForm = useFormWithValidation<EditUserFormValues>({
+    defaultValues: {
+      username: '',
+      display_name: '',
+      role: ''
+    }
+  });
 
-
+  const passwordForm = useFormWithValidation<PasswordFormValues>({
+    defaultValues: {
+      new_password: '',
+      confirm_password: ''
+    }
+  });
 
   useEffect(() => {
     loadUsers();
@@ -103,80 +118,74 @@ export default function AdminPage() {
 
   const openEditDialog = (user: AdminUser) => {
     setSelectedUser(user);
-    setUsername(user.username);
-    setDisplayName(user.display_name);
+    editForm.reset({
+      username: user.username,
+      display_name: user.display_name,
+      role: user.role.toLowerCase()
+    });
     setIsEditDialogOpen(true);
-
-    setUserRole(user.role.toLowerCase());
   };
 
   const openPasswordDialog = (user: AdminUser) => {
     setSelectedUser(user);
-    setNewPassword('');
-    setConfirmPassword('');
+    passwordForm.reset({
+      new_password: '',
+      confirm_password: ''
+    });
     setIsPasswordDialogOpen(true);
   };
 
-  const handleEditUser = async (e: React.FormEvent) => {
-    e.preventDefault();
-
+  const handleEditUser = async (data: EditUserFormValues) => {
     if (!selectedUser) return;
 
-    try {
-      setIsSubmitting(true);
-      await updateUser(selectedUser.id, {
-        username,
-        display_name: displayName,
-        role: userRole,  // Include the role in the update
-      });
+    const response = await updateUser(selectedUser.id, {
+      username: data.username,
+      display_name: data.display_name,
+      role: data.role,
+    });
 
-      setUsers(prevUsers =>
-        prevUsers.map(u =>
-          u.id === selectedUser.id
-            ? {
-              ...u,
-              username,
-              display_name: displayName,
-              role: userRole  // Update local state with new role
-            }
-            : u
-        )
-      );
-
-      toast.success('User updated successfully');
-      setIsEditDialogOpen(false);
-    } catch (err) {
-      console.error('Failed to update user', err);
-      toast.error('Failed to update user');
-    } finally {
-      setIsSubmitting(false);
+    if (!response.ok) {
+      throw response;
     }
+
+    setUsers(prevUsers =>
+      prevUsers.map(u =>
+        u.id === selectedUser.id
+          ? {
+            ...u,
+            username: data.username,
+            display_name: data.display_name,
+            role: data.role
+          }
+          : u
+      )
+    );
+
+    toast.success('User updated successfully');
+    setIsEditDialogOpen(false);
   };
 
-  const handleChangePassword = async (e: React.FormEvent) => {
-    e.preventDefault();
-
+  const handleChangePassword = async (data: PasswordFormValues) => {
     if (!selectedUser) return;
 
-    if (newPassword !== confirmPassword) {
-      toast.error('Passwords do not match');
+    if (data.new_password !== data.confirm_password) {
+      passwordForm.setError('confirm_password', {
+        type: 'manual',
+        message: 'Passwords do not match'
+      });
       return;
     }
 
-    try {
-      setIsSubmitting(true);
-      await updateUser(selectedUser.id, {
-        password: newPassword,
-      });
+    const response = await updateUser(selectedUser.id, {
+      password: data.new_password,
+    });
 
-      toast.success('Password changed successfully');
-      setIsPasswordDialogOpen(false);
-    } catch (err) {
-      console.error('Failed to change password', err);
-      toast.error('Failed to change password');
-    } finally {
-      setIsSubmitting(false);
+    if (!response.ok) {
+      throw response;
     }
+
+    toast.success('Password changed successfully');
+    setIsPasswordDialogOpen(false);
   };
 
   if (loading) {
@@ -290,7 +299,6 @@ export default function AdminPage() {
         )}
       </div>
 
-      {/* Dialogs remain the same */}
       <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
@@ -300,12 +308,17 @@ export default function AdminPage() {
             </DialogDescription>
           </DialogHeader>
 
-          <TracedForm id="edit_user" onSubmit={handleEditUser} className="space-y-4 py-4">
+          <TracedForm
+            id="edit_user"
+            onSubmit={editForm.handleSubmit(handleEditUser)}
+            setFieldErrors={editForm.setFieldErrors}
+            className="space-y-4 py-4"
+          >
             <div className="space-y-2">
               <Label htmlFor="edit-role">Role</Label>
               <Select
-                value={userRole}
-                onValueChange={setUserRole}
+                value={editForm.watch("role")}
+                onValueChange={(value) => editForm.setValue("role", value)}
               >
                 <SelectTrigger id="edit-role">
                   <SelectValue placeholder="Select a role" />
@@ -316,35 +329,49 @@ export default function AdminPage() {
                   <SelectItem value="admin">Admin</SelectItem>
                 </SelectContent>
               </Select>
+              {editForm.formState.errors.role && (
+                <p className="text-sm text-destructive mt-1">
+                  {String(editForm.formState.errors.role.message || "Invalid role")}
+                </p>
+              )}
             </div>
-
 
             <div className="space-y-2">
               <Label htmlFor="edit-username">Username</Label>
               <Input
                 id="edit-username"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
+                {...editForm.register("username")}
                 required
+                aria-invalid={!!editForm.formState.errors.username}
               />
+              {editForm.formState.errors.username && (
+                <p className="text-sm text-destructive mt-1">
+                  {String(editForm.formState.errors.username.message || "Invalid username")}
+                </p>
+              )}
             </div>
 
             <div className="space-y-2">
               <Label htmlFor="edit-display-name">Display Name</Label>
               <Input
                 id="edit-display-name"
-                value={displayName}
-                onChange={(e) => setDisplayName(e.target.value)}
+                {...editForm.register("display_name")}
                 placeholder="Enter display name"
+                aria-invalid={!!editForm.formState.errors.display_name}
               />
+              {editForm.formState.errors.display_name && (
+                <p className="text-sm text-destructive mt-1">
+                  {String(editForm.formState.errors.display_name.message || "Invalid display name")}
+                </p>
+              )}
             </div>
 
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setIsEditDialogOpen(false)}>
                 Cancel
               </Button>
-              <Button type="submit" disabled={isSubmitting}>
-                {isSubmitting ? 'Saving...' : 'Save Changes'}
+              <Button type="submit" disabled={editForm.formState.isSubmitting}>
+                {editForm.formState.isSubmitting ? 'Saving...' : 'Save Changes'}
               </Button>
             </DialogFooter>
           </TracedForm>
@@ -360,16 +387,26 @@ export default function AdminPage() {
             </DialogDescription>
           </DialogHeader>
 
-          <TracedForm id="change_password" onSubmit={handleChangePassword} className="space-y-4 py-4">
+          <TracedForm
+            id="change_password"
+            onSubmit={passwordForm.handleSubmit(handleChangePassword)}
+            setFieldErrors={passwordForm.setFieldErrors}
+            className="space-y-4 py-4"
+          >
             <div className="space-y-2">
               <Label htmlFor="new-password">New Password</Label>
               <Input
                 id="new-password"
                 type="password"
-                value={newPassword}
-                onChange={(e) => setNewPassword(e.target.value)}
+                {...passwordForm.register("new_password")}
                 required
+                aria-invalid={!!passwordForm.formState.errors.new_password}
               />
+              {passwordForm.formState.errors.new_password && (
+                <p className="text-sm text-destructive mt-1">
+                  {String(passwordForm.formState.errors.new_password.message || "New password is required")}
+                </p>
+              )}
             </div>
 
             <div className="space-y-2">
@@ -377,18 +414,23 @@ export default function AdminPage() {
               <Input
                 id="confirm-password"
                 type="password"
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
+                {...passwordForm.register("confirm_password")}
                 required
+                aria-invalid={!!passwordForm.formState.errors.confirm_password}
               />
+              {passwordForm.formState.errors.confirm_password && (
+                <p className="text-sm text-destructive mt-1">
+                  {String(passwordForm.formState.errors.confirm_password.message || "Passwords must match")}
+                </p>
+              )}
             </div>
 
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setIsPasswordDialogOpen(false)}>
                 Cancel
               </Button>
-              <Button type="submit" disabled={isSubmitting}>
-                {isSubmitting ? 'Changing...' : 'Change Password'}
+              <Button type="submit" disabled={passwordForm.formState.isSubmitting}>
+                {passwordForm.formState.isSubmitting ? 'Changing...' : 'Change Password'}
               </Button>
             </DialogFooter>
           </TracedForm>

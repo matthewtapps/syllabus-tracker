@@ -1,17 +1,28 @@
 import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
 import { getTechniquesForAssignment, assignTechniquesToStudent, createAndAssignTechnique } from '@/lib/api';
+import { useFormWithValidation } from './hooks/useFormErrors';
+import { TracedForm } from './traced-form';
 
 interface AssignTechniquesProps {
   studentId: number;
   canCreateTechniques: boolean;
   onAssignComplete: () => void;
+}
+
+interface CreateTechniqueFormValues {
+  name: string;
+  description: string;
+}
+
+interface AssignTechniquesFormValues {
+  selected_technique_ids: number[];
 }
 
 export default function AssignTechniques({
@@ -22,15 +33,25 @@ export default function AssignTechniques({
   const [unassignedTechniques, setUnassignedTechniques] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [selectedTechniques, setSelectedTechniques] = useState<number[]>([]);
   const [showCreateForm, setShowCreateForm] = useState(false);
-  const [newTechniqueName, setNewTechniqueName] = useState('');
-  const [newTechniqueDescription, setNewTechniqueDescription] = useState('');
   const [filterText, setFilterText] = useState('');
 
   // Add these new states for tag filtering
   const [tagFilter, setTagFilter] = useState<string[]>([]);
   const [availableTags, setAvailableTags] = useState<string[]>([]);
+
+  const createTechniqueForm = useFormWithValidation<CreateTechniqueFormValues>({
+    defaultValues: {
+      name: '',
+      description: ''
+    }
+  });
+
+  const assignForm = useFormWithValidation<AssignTechniquesFormValues>({
+    defaultValues: {
+      selected_technique_ids: []
+    }
+  });
 
   useEffect(() => {
     async function loadTechniques() {
@@ -39,7 +60,6 @@ export default function AssignTechniques({
         const techniques = await getTechniquesForAssignment(studentId);
         setUnassignedTechniques(techniques);
 
-        // Extract all unique tags
         const uniqueTags = new Set<string>();
         techniques.forEach((technique: any) => {
           if (technique.tags) {
@@ -61,47 +81,45 @@ export default function AssignTechniques({
   }, [studentId]);
 
   const handleCheck = (id: number) => {
-    setSelectedTechniques(prev =>
-      prev.includes(id)
-        ? prev.filter(t => t !== id)
-        : [...prev, id]
+    const currentSelected = assignForm.watch("selected_technique_ids");
+    const newSelected = currentSelected.includes(id)
+      ? currentSelected.filter(t => t !== id)
+      : [...currentSelected, id];
+
+    assignForm.setValue("selected_technique_ids", newSelected);
+  };
+
+  const handleAssignTechniques = async (data: AssignTechniquesFormValues) => {
+    if (data.selected_technique_ids.length === 0) return;
+
+    const response = await assignTechniquesToStudent(studentId, data.selected_technique_ids);
+
+    if (!response.ok) {
+      throw response;
+    }
+
+    assignForm.reset();
+    onAssignComplete();
+  };
+
+  const handleCreateTechnique = async (data: CreateTechniqueFormValues) => {
+    if (!data.name.trim() || !data.description.trim()) return;
+
+    const response = await createAndAssignTechnique(
+      studentId,
+      data.name,
+      data.description
     );
-  };
 
-  const handleAssignTechniques = async () => {
-    try {
-      if (selectedTechniques.length === 0) return;
-
-      await assignTechniquesToStudent(studentId, selectedTechniques);
-      setSelectedTechniques([]);
-      onAssignComplete();
-    } catch (err) {
-      setError('Failed to assign techniques.');
-      console.error(err);
+    if (!response.ok) {
+      throw response;
     }
+
+    createTechniqueForm.reset();
+    setShowCreateForm(false);
+    onAssignComplete();
   };
 
-  const handleCreateTechnique = async () => {
-    try {
-      if (!newTechniqueName.trim() || !newTechniqueDescription.trim()) return;
-
-      await createAndAssignTechnique(
-        studentId,
-        newTechniqueName,
-        newTechniqueDescription
-      );
-
-      setNewTechniqueName('');
-      setNewTechniqueDescription('');
-      setShowCreateForm(false);
-      onAssignComplete();
-    } catch (err) {
-      setError('Failed to create technique.');
-      console.error(err);
-    }
-  };
-
-  // Add function to toggle tags in filter
   const toggleTagFilter = (tagName: string) => {
     setTagFilter(prev =>
       prev.includes(tagName)
@@ -110,28 +128,21 @@ export default function AssignTechniques({
     );
   };
 
-  // Add function to select/deselect all visible techniques
   const selectAllVisible = () => {
     const visibleIds = filteredTechniques.map(t => t.id);
-    setSelectedTechniques(prev => {
-      const newSelection = [...prev];
-      visibleIds.forEach(id => {
-        if (!newSelection.includes(id)) {
-          newSelection.push(id);
-        }
-      });
-      return newSelection;
-    });
+    const currentSelected = assignForm.watch("selected_technique_ids");
+    const newSelection = [...new Set([...currentSelected, ...visibleIds])];
+    assignForm.setValue("selected_technique_ids", newSelection);
   };
 
   const deselectAllVisible = () => {
     const visibleIds = filteredTechniques.map(t => t.id);
-    setSelectedTechniques(prev => prev.filter(id => !visibleIds.includes(id)));
+    const currentSelected = assignForm.watch("selected_technique_ids");
+    const newSelection = currentSelected.filter(id => !visibleIds.includes(id));
+    assignForm.setValue("selected_technique_ids", newSelection);
   };
 
-  // Update filtering logic
   const filteredTechniques = unassignedTechniques.filter(technique => {
-    // Filter by search text
     const matchesText =
       !filterText ||
       technique.name.toLowerCase().includes(filterText.toLowerCase()) ||
@@ -166,7 +177,12 @@ export default function AssignTechniques({
         </CardHeader>
         <CardContent>
           {unassignedTechniques.length > 0 ? (
-            <>
+            <TracedForm
+              id="assign_techniques"
+              onSubmit={assignForm.handleSubmit(handleAssignTechniques)}
+              setFieldErrors={assignForm.setFieldErrors}
+              className="space-y-4"
+            >
               <div className="mb-4 space-y-3">
                 <Input
                   placeholder="Filter techniques..."
@@ -197,6 +213,7 @@ export default function AssignTechniques({
                 <div className="flex flex-col gap-2">
                   <div className="flex gap-2">
                     <Button
+                      type="button"
                       variant="outline"
                       size="sm"
                       onClick={selectAllVisible}
@@ -206,11 +223,12 @@ export default function AssignTechniques({
                       Select All Visible
                     </Button>
                     <Button
+                      type="button"
                       variant="outline"
                       size="sm"
                       onClick={deselectAllVisible}
                       disabled={filteredTechniques.length === 0 ||
-                        !filteredTechniques.some(t => selectedTechniques.includes(t.id))}
+                        !filteredTechniques.some(t => assignForm.getValues('selected_technique_ids').includes(t.id))}
                       className="flex-1"
                     >
                       Deselect All Visible
@@ -227,7 +245,7 @@ export default function AssignTechniques({
                   <div key={technique.id} className="flex items-center space-x-2 p-2 border rounded">
                     <Checkbox
                       id={`technique-${technique.id}`}
-                      checked={selectedTechniques.includes(technique.id)}
+                      checked={assignForm.getValues('selected_technique_ids').includes(technique.id)}
                       onCheckedChange={() => handleCheck(technique.id)}
                     />
                     <div>
@@ -256,22 +274,22 @@ export default function AssignTechniques({
                   </div>
                 ))}
               </div>
-            </>
+
+              {/* Submit button */}
+              <div className="flex justify-end pt-4">
+                <Button
+                  type="submit"
+                  disabled={assignForm.getValues('selected_technique_ids').length === 0 || assignForm.formState.isSubmitting}
+                >
+                  {assignForm.formState.isSubmitting ? "Assigning..." : "Assign Selected Techniques"}
+                  {assignForm.getValues('selected_technique_ids').length > 0 && ` (${assignForm.getValues('selected_technique_ids').length})`}
+                </Button>
+              </div>
+            </TracedForm>
           ) : (
             <p>No unassigned techniques available.</p>
           )}
         </CardContent>
-        {unassignedTechniques.length > 0 && (
-          <CardFooter>
-            <Button
-              onClick={handleAssignTechniques}
-              disabled={selectedTechniques.length === 0}
-            >
-              Assign Selected Techniques
-              {selectedTechniques.length > 0 && ` (${selectedTechniques.length})`}
-            </Button>
-          </CardFooter>
-        )}
       </Card>
 
       {canCreateTechniques && (
@@ -285,34 +303,56 @@ export default function AssignTechniques({
                 Create New Technique
               </Button>
             ) : (
-              <div className="space-y-4">
+              <TracedForm
+                id="create_technique"
+                onSubmit={createTechniqueForm.handleSubmit(handleCreateTechnique)}
+                setFieldErrors={createTechniqueForm.setFieldErrors}
+                className="space-y-4"
+              >
                 <div>
                   <Label htmlFor="new-technique-name" className="mb-2">Technique Name</Label>
                   <Input
                     id="new-technique-name"
-                    value={newTechniqueName}
-                    onChange={(e) => setNewTechniqueName(e.target.value)}
+                    {...createTechniqueForm.register("name")}
                     placeholder="Enter technique name"
+                    aria-invalid={!!createTechniqueForm.formState.errors.name}
                   />
+                  {createTechniqueForm.formState.errors.name && (
+                    <p className="text-sm text-destructive mt-1">
+                      {String(createTechniqueForm.formState.errors.name.message || "Technique name is required")}
+                    </p>
+                  )}
                 </div>
                 <div>
                   <Label htmlFor="new-technique-description" className="mb-2">Description</Label>
                   <Textarea
                     id="new-technique-description"
-                    value={newTechniqueDescription}
-                    onChange={(e) => setNewTechniqueDescription(e.target.value)}
+                    {...createTechniqueForm.register("description")}
                     placeholder="Enter technique description"
+                    aria-invalid={!!createTechniqueForm.formState.errors.description}
                   />
+                  {createTechniqueForm.formState.errors.description && (
+                    <p className="text-sm text-destructive mt-1">
+                      {String(createTechniqueForm.formState.errors.description.message || "Description is required")}
+                    </p>
+                  )}
                 </div>
                 <div className="flex items-center space-x-2">
-                  <Button onClick={handleCreateTechnique}>
-                    Create & Assign
+                  <Button
+                    type="submit"
+                    disabled={createTechniqueForm.formState.isSubmitting}
+                  >
+                    {createTechniqueForm.formState.isSubmitting ? "Creating..." : "Create & Assign"}
                   </Button>
-                  <Button variant="outline" onClick={() => setShowCreateForm(false)}>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setShowCreateForm(false)}
+                  >
                     Cancel
                   </Button>
                 </div>
-              </div>
+              </TracedForm>
             )}
           </CardContent>
         </Card>

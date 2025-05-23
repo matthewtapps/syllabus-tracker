@@ -27,10 +27,248 @@ import { CheckIcon, ChevronDownIcon, ChevronUpIcon, PencilIcon, PlusIcon, XIcon 
 import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
+import { useFormWithValidation } from '@/components/hooks/useFormErrors';
+import { TracedForm } from '@/components/traced-form';
+
+interface StudentNotesEditorProps {
+  techniqueId: number;
+  initialNotes: string;
+  onSave: (notes: string) => void;
+  onCancel: () => void;
+}
+
+function StudentNotesEditor({ techniqueId, initialNotes, onSave, onCancel }: StudentNotesEditorProps) {
+  const form = useFormWithValidation<{ student_notes: string }>({
+    defaultValues: { student_notes: initialNotes }
+  });
+
+  const handleSubmit = async (data: { student_notes: string }) => {
+    const response = await updateTechnique(techniqueId, { student_notes: data.student_notes });
+
+    if (!response.ok) {
+      throw response;
+    }
+
+    onSave(data.student_notes);
+  };
+
+  return (
+    <TracedForm
+      id={`student_notes_${techniqueId}`}
+      onSubmit={form.handleSubmit(handleSubmit)}
+      setFieldErrors={form.setFieldErrors}
+      className="space-y-2"
+    >
+      <Textarea
+        {...form.register("student_notes")}
+        className="min-h-[100px]"
+        onClick={(e) => e.stopPropagation()}
+        aria-invalid={!!form.formState.errors.student_notes}
+      />
+      {form.formState.errors.student_notes && (
+        <p className="text-sm text-destructive mt-1">
+          {String(form.formState.errors.student_notes.message || "Invalid notes")}
+        </p>
+      )}
+      <div className="flex justify-end gap-2">
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={(e) => {
+            e.stopPropagation();
+            onCancel();
+          }}
+        >
+          Cancel
+        </Button>
+        <Button
+          type="submit"
+          size="sm"
+          disabled={form.formState.isSubmitting}
+        >
+          {form.formState.isSubmitting ? "Saving..." : "Save"}
+        </Button>
+      </div>
+    </TracedForm>
+  );
+}
+
+interface CoachNotesEditorProps {
+  techniqueId: number;
+  initialNotes: string;
+  onSave: (notes: string) => void;
+  onCancel: () => void;
+}
+
+function CoachNotesEditor({ techniqueId, initialNotes, onSave, onCancel }: CoachNotesEditorProps) {
+  const form = useFormWithValidation<{ coach_notes: string }>({
+    defaultValues: { coach_notes: initialNotes }
+  });
+
+  const handleSubmit = async (data: { coach_notes: string }) => {
+    try {
+      const response = await updateTechnique(techniqueId, { coach_notes: data.coach_notes });
+
+      if (!response.ok) {
+        throw response;
+      }
+
+      onSave(data.coach_notes);
+    } catch (error) {
+      throw error;
+    }
+  };
+
+  return (
+    <TracedForm
+      id={`coach_notes_${techniqueId}`}
+      onSubmit={form.handleSubmit(handleSubmit)}
+      setFieldErrors={form.setFieldErrors}
+      className="space-y-2"
+    >
+      <Textarea
+        {...form.register("coach_notes")}
+        className="min-h-[100px]"
+        onClick={(e) => e.stopPropagation()}
+        aria-invalid={!!form.formState.errors.coach_notes}
+      />
+      {form.formState.errors.coach_notes && (
+        <p className="text-sm text-destructive mt-1">
+          {String(form.formState.errors.coach_notes.message || "Invalid notes")}
+        </p>
+      )}
+      <div className="flex justify-end gap-2">
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={(e) => {
+            e.stopPropagation();
+            onCancel();
+          }}
+        >
+          Cancel
+        </Button>
+        <Button
+          type="submit"
+          size="sm"
+          disabled={form.formState.isSubmitting}
+        >
+          {form.formState.isSubmitting ? "Saving..." : "Save"}
+        </Button>
+      </div>
+    </TracedForm>
+  );
+}
+
+interface TagEditorProps {
+  techniqueId: number;
+  allTags: Tag[];
+  onTagAdded: (tag: Tag) => void;
+  onCancel: () => void;
+}
+
+function TagEditor({ techniqueId, allTags, onTagAdded, onCancel }: TagEditorProps) {
+  const form = useFormWithValidation<{ tag_name: string }>({
+    defaultValues: { tag_name: '' }
+  });
+
+  const handleSubmit = async (data: { tag_name: string }) => {
+    const existingTag = allTags.find(
+      t => t.name.toLowerCase() === data.tag_name.toLowerCase()
+    );
+
+    if (existingTag) {
+      const response = await addTagToTechnique(techniqueId, existingTag.id);
+      if (!response.ok) throw response;
+      onTagAdded(existingTag);
+    } else if (data.tag_name.trim()) {
+      const createResponse = await createTag(data.tag_name.trim());
+      if (!createResponse.ok) throw createResponse;
+
+      const updatedTags = await getAllTags();
+      const newTag = updatedTags.find(t => t.name.toLowerCase() === data.tag_name.toLowerCase());
+      if (newTag) {
+        const addResponse = await addTagToTechnique(techniqueId, newTag.id);
+        if (!addResponse.ok) throw addResponse;
+        onTagAdded(newTag);
+      }
+    }
+  };
+
+  const watchedValue = form.watch("tag_name");
+
+  return (
+    <div className="relative flex items-center">
+      <TracedForm
+        id={`add_tag_${techniqueId}`}
+        onSubmit={form.handleSubmit(handleSubmit)}
+        setFieldErrors={form.setFieldErrors}
+        className="flex items-center gap-1"
+      >
+        <Input
+          {...form.register("tag_name")}
+          placeholder="Tag name"
+          className="text-xs h-7 px-2 py-1 w-40"
+          autoFocus
+          onClick={(e) => e.stopPropagation()}
+          aria-invalid={!!form.formState.errors.tag_name}
+        />
+        <Button
+          type="submit"
+          variant="ghost"
+          size="icon"
+          className="h-4 w-4 p-0"
+          disabled={form.formState.isSubmitting}
+        >
+          <CheckIcon className="h-3 w-3" />
+        </Button>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="h-4 w-4 p-0"
+          onClick={(e) => {
+            e.stopPropagation();
+            onCancel();
+          }}
+        >
+          <XIcon className="h-3 w-3" />
+        </Button>
+      </TracedForm>
+
+      {/* Tag suggestions */}
+      {watchedValue.trim() && (
+        <div className="absolute left-0 top-full mt-1 w-full bg-popover rounded-md border shadow-md z-50 max-h-32 overflow-y-auto">
+          {allTags
+            .filter(tag =>
+              tag.name.toLowerCase().includes(watchedValue.toLowerCase())
+            )
+            .map(tag => (
+              <div
+                key={tag.id}
+                className="px-2 py-1 text-xs hover:bg-muted cursor-pointer"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  form.setValue("tag_name", tag.name);
+                  form.handleSubmit(handleSubmit)();
+                }}
+              >
+                {tag.name}
+              </div>
+            ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 interface StudentTechniquesProps {
   user: User
 }
+
+
 
 export default function StudentTechniques({ user }: StudentTechniquesProps) {
   const { id } = useParams<{ id: string }>();
@@ -41,18 +279,15 @@ export default function StudentTechniques({ user }: StudentTechniquesProps) {
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [expandedRows, setExpandedRows] = useState<number[]>([]);
+
   const [editingStudentNotes, setEditingStudentNotes] = useState<number | null>(null);
   const [editingCoachNotes, setEditingCoachNotes] = useState<number | null>(null);
-  const [tempStudentNotes, setTempStudentNotes] = useState("");
-  const [tempCoachNotes, setTempCoachNotes] = useState("");
-  const [newTagInput, setNewTagInput] = useState("");
+  const [isAddingTag, setIsAddingTag] = useState<number | null>(null);
 
-  // Add these new states for tag functionality
   const [filterText, setFilterText] = useState("");
   const [tagFilter, setTagFilter] = useState<string[]>([]);
   const [availableTags, setAvailableTags] = useState<string[]>([]);
   const [allTags, setAllTags] = useState<Tag[]>([]);
-  const [isAddingTag, setIsAddingTag] = useState<number | null>(null);
   const [tagToRemove, setTagToRemove] = useState<{ technique: Technique, tag: Tag } | null>(null);
   const [isRemoveTagDialogOpen, setIsRemoveTagDialogOpen] = useState(false);
 
@@ -72,14 +307,12 @@ export default function StudentTechniques({ user }: StudentTechniquesProps) {
         const result = await getStudentTechniques(studentId);
         setData(result);
 
-        // Extract all unique tags for filtering
         const uniqueTags = new Set<string>();
         result.techniques.forEach(technique => {
           technique.tags.forEach(tag => uniqueTags.add(tag.name));
         });
         setAvailableTags(Array.from(uniqueTags).sort());
 
-        // Also load all possible tags for adding to techniques
         const tagsResult = await getAllTags();
         setAllTags(tagsResult);
 
@@ -119,7 +352,53 @@ export default function StudentTechniques({ user }: StudentTechniquesProps) {
     }
   };
 
-  // Add function to toggle tags in filter
+  const handleNotesUpdate = (techniqueId: number, field: 'student_notes' | 'coach_notes', newNotes: string) => {
+    if (data) {
+      const updatedTechniques = data.techniques.map((t: Technique) =>
+        t.id === techniqueId ? { ...t, [field]: newNotes } : t
+      );
+
+      setData({
+        ...data,
+        techniques: updatedTechniques
+      });
+    }
+
+    toast.success("Notes updated successfully");
+
+    if (field === 'student_notes') {
+      setEditingStudentNotes(null);
+    } else {
+      setEditingCoachNotes(null);
+    }
+  };
+
+  const handleTagAdded = (techniqueId: number, tag: Tag) => {
+    if (data) {
+      const updatedTechniques = data.techniques.map(t => {
+        if (t.id === techniqueId) {
+          const updatedTags = [...t.tags, tag].sort((a, b) =>
+            a.name.localeCompare(b.name)
+          );
+          return { ...t, tags: updatedTags };
+        }
+        return t;
+      });
+
+      setData({
+        ...data,
+        techniques: updatedTechniques
+      });
+
+      if (!availableTags.includes(tag.name)) {
+        setAvailableTags(prev => [...prev, tag.name].sort());
+      }
+    }
+
+    setIsAddingTag(null);
+    toast.success(`Added tag "${tag.name}" to technique`);
+  };
+
   const toggleTagFilter = (tagName: string) => {
     setTagFilter(prev =>
       prev.includes(tagName)
@@ -128,58 +407,10 @@ export default function StudentTechniques({ user }: StudentTechniquesProps) {
     );
   };
 
-  // Add function to add a tag to a technique
-  const handleAddTag = async (technique: Technique, tagId: number) => {
-    try {
-      // Find the tag from allTags
-      const tagToAdd = allTags.find(t => t.id === tagId);
-      if (!tagToAdd) return;
-
-      // Check if technique already has this tag
-      if (technique.tags.some(t => t.id === tagId)) {
-        toast("This tag is already applied to this technique");
-        return;
-      }
-
-      await addTagToTechnique(technique.technique_id, tagId);
-
-      // Update local state
-      if (data) {
-        const updatedTechniques = data.techniques.map(t => {
-          if (t.id === technique.id) {
-            const updatedTags = [...t.tags, tagToAdd].sort((a, b) =>
-              a.name.localeCompare(b.name)
-            );
-            return { ...t, tags: updatedTags };
-          }
-          return t;
-        });
-
-        setData({
-          ...data,
-          techniques: updatedTechniques
-        });
-
-        // Update available tags if needed
-        if (!availableTags.includes(tagToAdd.name)) {
-          setAvailableTags(prev => [...prev, tagToAdd.name].sort());
-        }
-      }
-
-      setIsAddingTag(null);
-      toast.success(`Added tag "${tagToAdd.name}" to technique`);
-    } catch (err) {
-      console.error('Failed to add tag', err);
-      toast.error('Failed to add tag to technique');
-    }
-  };
-
-  // Add function to remove a tag from a technique
   const handleRemoveTag = async (technique: Technique, tag: Tag) => {
     try {
       await removeTagFromTechnique(technique.technique_id, tag.id);
 
-      // Update local state
       if (data) {
         const updatedTechniques = data.techniques.map(t => {
           if (t.id === technique.id) {
@@ -196,7 +427,6 @@ export default function StudentTechniques({ user }: StudentTechniquesProps) {
           techniques: updatedTechniques
         });
 
-        // Check if this was the last instance of this tag
         const tagStillExists = updatedTechniques.some(t =>
           t.tags.some(t => t.name === tag.name)
         );
@@ -214,70 +444,12 @@ export default function StudentTechniques({ user }: StudentTechniquesProps) {
     }
   };
 
-  const handleCreateTag = async (tagName: string, techniqueId: number) => {
-    try {
-      const existingTags = await getAllTags();
-      const existingTag = existingTags.find(
-        t => t.name.toLowerCase() === tagName.toLowerCase()
-      );
-
-      if (existingTag) {
-        await handleAddTag(
-          data?.techniques.find(t => t.id === techniqueId)!,
-          existingTag.id
-        );
-        return;
-      }
-
-      await createTag(tagName);
-
-      const updatedTags = await getAllTags();
-      setAllTags(updatedTags);
-
-      const newTag = updatedTags.find(t => t.name.toLowerCase() === tagName.toLowerCase());
-
-      if (newTag) {
-        const technique = data?.techniques.find(t => t.id === techniqueId);
-        if (!technique) return;
-
-        await addTagToTechnique(technique.technique_id, newTag.id);
-
-        setData(prevData => {
-          if (!prevData) return null;
-
-          return {
-            ...prevData,
-            techniques: prevData.techniques.map(t => {
-              if (t.id === techniqueId) {
-                const updatedTags = [...t.tags, newTag].sort((a, b) =>
-                  a.name.localeCompare(b.name)
-                );
-                return { ...t, tags: updatedTags };
-              }
-              return t;
-            })
-          };
-        });
-
-        if (!availableTags.includes(newTag.name)) {
-          setAvailableTags(prev => [...prev, newTag.name].sort());
-        }
-
-        toast.success(`Added tag "${newTag.name}" to technique`);
-      }
-    } catch (err) {
-      console.error('Failed to create and add tag', err);
-      toast.error('Failed to create tag');
-    }
-  };
-
   const confirmTagRemoval = (technique: Technique, tag: Tag, e: React.MouseEvent) => {
     e.stopPropagation();
     setTagToRemove({ technique, tag });
     setIsRemoveTagDialogOpen(true);
   };
 
-  // Execute the actual removal when confirmed
   const executeTagRemoval = async () => {
     if (!tagToRemove) return;
 
@@ -328,15 +500,12 @@ export default function StudentTechniques({ user }: StudentTechniquesProps) {
     }
   };
 
-  // Add function to filter techniques
   const filteredTechniques = data?.techniques.filter(technique => {
-    // Filter by text (name, description, or tag)
     const matchesText = filterText === "" ||
       technique.technique_name.toLowerCase().includes(filterText.toLowerCase()) ||
       technique.technique_description.toLowerCase().includes(filterText.toLowerCase()) ||
       technique.tags.some(tag => tag.name.toLowerCase().includes(filterText.toLowerCase()));
 
-    // Filter by tags
     const matchesTags = tagFilter.length === 0 ||
       tagFilter.every(tag => technique.tags.some(t => t.name === tag));
 
@@ -537,10 +706,7 @@ export default function StudentTechniques({ user }: StudentTechniquesProps) {
                                   className="h-6 w-6"
                                   onClick={(e) => {
                                     e.stopPropagation();
-                                    if (editingCoachNotes !== technique.id) {
-                                      setEditingCoachNotes(technique.id);
-                                      setTempCoachNotes(technique.coach_notes);
-                                    }
+                                    setEditingCoachNotes(technique.id);
                                   }}
                                 >
                                   <PencilIcon className="h-4 w-4" />
@@ -550,53 +716,12 @@ export default function StudentTechniques({ user }: StudentTechniquesProps) {
                             </div>
 
                             {editingCoachNotes === technique.id ? (
-                              <div className="space-y-2">
-                                <Textarea
-                                  value={tempCoachNotes}
-                                  onChange={(e) => setTempCoachNotes(e.target.value)}
-                                  className="min-h-[100px]"
-                                  onClick={(e) => e.stopPropagation()}
-                                />
-                                <div className="flex justify-end gap-2">
-                                  <Button
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      setEditingCoachNotes(null);
-                                    }}
-                                  >
-                                    Cancel
-                                  </Button>
-                                  <Button
-                                    size="sm"
-                                    onClick={async (e) => {
-                                      e.stopPropagation();
-                                      try {
-                                        await updateTechnique(technique.id, { coach_notes: tempCoachNotes });
-
-                                        if (data) {
-                                          const updatedTechniques = data.techniques.map((t: Technique) =>
-                                            t.id === technique.id ? { ...t, coach_notes: tempCoachNotes } : t
-                                          );
-                                          setData({
-                                            ...data,
-                                            techniques: updatedTechniques
-                                          });
-                                        }
-
-                                        toast.success("Coach notes updated");
-                                        setEditingCoachNotes(null);
-                                      } catch (err) {
-                                        toast.error("Failed to update notes");
-                                        console.error(err);
-                                      }
-                                    }}
-                                  >
-                                    Save
-                                  </Button>
-                                </div>
-                              </div>
+                              <CoachNotesEditor
+                                techniqueId={technique.id}
+                                initialNotes={technique.coach_notes}
+                                onSave={(notes) => handleNotesUpdate(technique.id, 'coach_notes', notes)}
+                                onCancel={() => setEditingCoachNotes(null)}
+                              />
                             ) : (
                               <p className="whitespace-pre-wrap">{technique.coach_notes || "No notes yet"}</p>
                             )}
@@ -613,10 +738,7 @@ export default function StudentTechniques({ user }: StudentTechniquesProps) {
                                   className="h-6 w-6"
                                   onClick={(e) => {
                                     e.stopPropagation();
-                                    if (editingStudentNotes !== technique.id) {
-                                      setEditingStudentNotes(technique.id);
-                                      setTempStudentNotes(technique.student_notes);
-                                    }
+                                    setEditingStudentNotes(technique.id);
                                   }}
                                 >
                                   <PencilIcon className="h-4 w-4" />
@@ -626,53 +748,12 @@ export default function StudentTechniques({ user }: StudentTechniquesProps) {
                             </div>
 
                             {editingStudentNotes === technique.id ? (
-                              <div className="space-y-2">
-                                <Textarea
-                                  value={tempStudentNotes}
-                                  onChange={(e) => setTempStudentNotes(e.target.value)}
-                                  className="min-h-[100px]"
-                                  onClick={(e) => e.stopPropagation()}
-                                />
-                                <div className="flex justify-end gap-2">
-                                  <Button
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      setEditingStudentNotes(null);
-                                    }}
-                                  >
-                                    Cancel
-                                  </Button>
-                                  <Button
-                                    size="sm"
-                                    onClick={async (e) => {
-                                      e.stopPropagation();
-                                      try {
-                                        await updateTechnique(technique.id, { student_notes: tempStudentNotes });
-
-                                        if (data) {
-                                          const updatedTechniques = data.techniques.map((t: Technique) =>
-                                            t.id === technique.id ? { ...t, student_notes: tempStudentNotes } : t
-                                          );
-                                          setData({
-                                            ...data,
-                                            techniques: updatedTechniques
-                                          });
-                                        }
-
-                                        toast.success("Student notes updated");
-                                        setEditingStudentNotes(null);
-                                      } catch (err) {
-                                        toast.error("Failed to update notes");
-                                        console.error(err);
-                                      }
-                                    }}
-                                  >
-                                    Save
-                                  </Button>
-                                </div>
-                              </div>
+                              <StudentNotesEditor
+                                techniqueId={technique.id}
+                                initialNotes={technique.student_notes}
+                                onSave={(notes) => handleNotesUpdate(technique.id, 'student_notes', notes)}
+                                onCancel={() => setEditingStudentNotes(null)}
+                              />
                             ) : (
                               <p className="whitespace-pre-wrap">{technique.student_notes || "No notes yet"}</p>
                             )}
@@ -714,99 +795,12 @@ export default function StudentTechniques({ user }: StudentTechniquesProps) {
                               {/* "+" Tag for adding new tags */}
                               {(data.can_edit_all_techniques || data.can_manage_tags) && (
                                 isAddingTag === technique.id ? (
-                                  <div className="relative flex items-center">
-                                    <Input
-                                      value={newTagInput}
-                                      onChange={(e) => setNewTagInput(e.target.value)}
-                                      placeholder="Tag name"
-                                      className="text-xs h-7 px-2 py-1 w-40"
-                                      autoFocus
-                                      onKeyDown={(e) => {
-                                        if (e.key === "Enter") {
-                                          e.preventDefault();
-                                          // Find matching tag from allTags or create new one
-                                          const existingTag = allTags.find(
-                                            t => t.name.toLowerCase() === newTagInput.toLowerCase()
-                                          );
-                                          if (existingTag) {
-                                            handleAddTag(technique, existingTag.id);
-                                          } else if (newTagInput.trim()) {
-                                            handleCreateTag(newTagInput.trim(), technique.id);
-                                          }
-                                          setIsAddingTag(null);
-                                          setNewTagInput("");
-                                        } else if (e.key === "Escape") {
-                                          setIsAddingTag(null);
-                                          setNewTagInput("");
-                                        }
-                                      }}
-                                      onClick={(e) => e.stopPropagation()}
-                                    />
-                                    <div className="absolute right-1 flex items-center gap-1">
-                                      <Button
-                                        type="button"
-                                        variant="ghost"
-                                        size="icon"
-                                        className="h-4 w-4 p-0"
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          if (newTagInput.trim()) {
-                                            const existingTag = allTags.find(
-                                              t => t.name.toLowerCase() === newTagInput.toLowerCase()
-                                            );
-                                            if (existingTag) {
-                                              handleAddTag(technique, existingTag.id);
-                                            } else {
-                                              handleCreateTag(newTagInput.trim(), technique.id);
-                                            }
-                                          }
-                                          setIsAddingTag(null);
-                                          setNewTagInput("");
-                                        }}
-                                      >
-                                        <CheckIcon className="h-3 w-3" />
-                                      </Button>
-                                      <Button
-                                        type="button"
-                                        variant="ghost"
-                                        size="icon"
-                                        className="h-4 w-4 p-0"
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          setIsAddingTag(null);
-                                          setNewTagInput("");
-                                        }}
-                                      >
-                                        <XIcon className="h-3 w-3" />
-                                      </Button>
-                                    </div>
-
-                                    {/* Tag suggestions - without "Press Enter" hint */}
-                                    {newTagInput.trim() && (
-                                      <div className="absolute left-0 top-full mt-1 w-full bg-popover rounded-md border shadow-md z-50 max-h-32 overflow-y-auto">
-                                        {allTags
-                                          .filter(tag =>
-                                            tag.name.toLowerCase().includes(newTagInput.toLowerCase()) &&
-                                            !technique.tags.some(t => t.id === tag.id)
-                                          )
-                                          .map(tag => (
-                                            <div
-                                              key={tag.id}
-                                              className="px-2 py-1 text-xs hover:bg-muted cursor-pointer"
-                                              onClick={(e) => {
-                                                e.stopPropagation();
-                                                handleAddTag(technique, tag.id);
-                                                setIsAddingTag(null);
-                                                setNewTagInput("");
-                                              }}
-                                            >
-                                              {tag.name}
-                                            </div>
-                                          ))}
-                                        {/* Removed the "Press Enter to create" hint */}
-                                      </div>
-                                    )}
-                                  </div>
+                                  <TagEditor
+                                    techniqueId={technique.technique_id}
+                                    allTags={allTags}
+                                    onTagAdded={(tag) => handleTagAdded(technique.id, tag)}
+                                    onCancel={() => setIsAddingTag(null)}
+                                  />
                                 ) : (
                                   <Badge
                                     variant='outline'
