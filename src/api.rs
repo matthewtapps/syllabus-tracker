@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use rocket::FromForm;
 use rocket::Request;
 use rocket::State;
+use rocket::http::CookieJar;
 use rocket::http::Status;
 use rocket::response::Redirect;
 use rocket::response::Responder;
@@ -486,10 +487,7 @@ pub async fn api_me_unauthorized() -> Status {
 }
 
 #[post("/logout")]
-pub async fn api_logout(
-    cookies: &rocket::http::CookieJar<'_>,
-    db: &State<Pool<Sqlite>>,
-) -> Redirect {
+pub async fn api_logout(cookies: &CookieJar<'_>, db: &State<Pool<Sqlite>>) -> Redirect {
     let token = cookies
         .get_private("session_token")
         .map(|cookie| cookie.value().to_string());
@@ -504,7 +502,7 @@ pub async fn api_logout(
     cookies.remove_private(rocket::http::Cookie::build("session_timestamp"));
     cookies.remove_private(rocket::http::Cookie::build("user_role"));
 
-    Redirect::to("/ui/")
+    Redirect::to("/")
 }
 
 #[derive(Deserialize, Validate, Clone)]
