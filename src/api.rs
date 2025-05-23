@@ -15,25 +15,15 @@ use validator::ValidationErrors;
 
 use crate::auth::UserSession;
 use crate::auth::{Permission, User};
-use crate::db::add_tag_to_technique;
-use crate::db::create_tag;
-use crate::db::create_user;
-use crate::db::delete_tag;
-use crate::db::find_user_by_username;
-use crate::db::get_all_tags;
-use crate::db::get_all_users;
-use crate::db::get_tags_for_technique;
-use crate::db::remove_tag_from_technique;
-use crate::db::set_user_archived;
-use crate::db::update_user_display_name;
-use crate::db::update_user_password;
-use crate::db::update_user_role;
-use crate::db::update_username;
-use crate::db::{
-    add_techniques_to_student, authenticate_user, create_and_assign_technique, create_user_session,
-    get_student_technique, get_student_techniques, get_students_by_recent_updates,
+use crate::database::{
+    add_tag_to_technique, add_techniques_to_student, authenticate_user,
+    create_and_assign_technique, create_tag, create_user, create_user_session, delete_tag,
+    find_user_by_username, get_all_tags, get_all_users, get_student_technique,
+    get_student_techniques, get_students_by_recent_updates, get_tags_for_technique,
     get_unassigned_techniques, get_user, get_users_by_role, invalidate_session,
-    update_student_notes, update_student_technique, update_technique,
+    remove_tag_from_technique, set_user_archived, update_student_notes, update_student_technique,
+    update_technique, update_user_display_name, update_user_password, update_user_role,
+    update_username,
 };
 use crate::error::AppError;
 use crate::models::Tag;

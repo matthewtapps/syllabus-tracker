@@ -1,8 +1,9 @@
 #[cfg(test)]
 mod tests {
     use crate::{
-        db::{
-            clean_expired_sessions, create_user_session, get_session_by_token, invalidate_session,
+        database::{
+            CURRENT_SCHEMA, clean_expired_sessions, create_user_session, get_session_by_token,
+            invalidate_session, migrate_database_declaratively,
         },
         error::AppError,
         test::test_utils::TestDbBuilder,
@@ -61,10 +62,7 @@ mod tests {
             .await
             .expect("Failed to create in-memory database");
 
-        sqlx::migrate!("./migrations")
-            .run(&pool)
-            .await
-            .expect("Failed to run migrations");
+        let _ = migrate_database_declaratively(pool.clone(), CURRENT_SCHEMA, true).await;
 
         let result = get_session_by_token(&pool, "nonexistent_token").await;
 

@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod tests {
-    use crate::db::create_user;
-    use crate::{auth::Role, db::find_user_by_username};
+    use crate::database::{CURRENT_SCHEMA, create_user, migrate_database_declaratively};
+    use crate::{auth::Role, database::find_user_by_username};
 
     use rocket::tokio;
     use sqlx::{Pool, Sqlite, sqlite::SqlitePoolOptions};
@@ -13,10 +13,7 @@ mod tests {
             .await
             .expect("Failed to create in-memory database");
 
-        sqlx::migrate!("./migrations")
-            .run(&pool)
-            .await
-            .expect("Failed to run migrations");
+        let _ = migrate_database_declaratively(pool.clone(), CURRENT_SCHEMA, true).await;
 
         pool
     }

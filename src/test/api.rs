@@ -9,7 +9,7 @@ use crate::{
 #[cfg(test)]
 mod tests {
     use crate::api::{LoginResponse, StudentTechniquesResponse, UserData};
-    use crate::db::get_student_technique;
+    use crate::database::get_student_technique;
     use crate::test::test_utils::{
         TestDbBuilder, create_standard_test_db, login_test_user, setup_test_client,
     };

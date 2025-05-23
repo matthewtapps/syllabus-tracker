@@ -1,9 +1,9 @@
 #[cfg(test)]
 pub mod test_utils {
     use crate::auth::Role;
-    use crate::db::{
-        assign_technique_to_student, create_technique, create_user, get_student_technique,
-        update_student_technique,
+    use crate::database::{
+        CURRENT_SCHEMA, assign_technique_to_student, create_technique, create_user,
+        get_student_technique, migrate_database_declaratively, update_student_technique,
     };
     use crate::error::AppError;
     use crate::init_rocket;
@@ -141,7 +141,7 @@ pub mod test_utils {
 
             let pool = SqlitePool::connect("sqlite::memory:").await?;
 
-            sqlx::migrate!("./migrations").run(&pool).await?;
+            migrate_database_declaratively(pool.clone(), CURRENT_SCHEMA, true).await?;
 
             let mut user_id_map: HashMap<String, i64> = HashMap::new();
             let mut technique_id_map: HashMap<String, i64> = HashMap::new();

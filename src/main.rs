@@ -3,7 +3,7 @@ extern crate rocket;
 
 mod api;
 mod auth;
-mod db;
+mod database;
 mod error;
 mod models;
 mod telemetry;
@@ -21,7 +21,7 @@ use api::{
     api_update_student_technique, api_update_user, health,
 };
 use auth::unauthorized_api;
-use db::clean_expired_sessions;
+use database::{CURRENT_SCHEMA, clean_expired_sessions, migrate_database_declaratively};
 use error::AppError;
 use rocket::{Build, Rocket, tokio};
 use telemetry::TelemetryFairing;
@@ -86,11 +86,17 @@ async fn rocket() -> _ {
         }
     });
 
-    info!("Running database migrations...");
-    match sqlx::migrate!("./migrations").run(&pool).await {
-        Ok(_) => info!("Migrations completed successfully"),
+    info!("Running declarative database migration...");
+    match migrate_database_declaratively(pool.clone(), CURRENT_SCHEMA, false).await {
+        Ok(changes_made) => {
+            if changes_made {
+                info!("Database migration completed with changes");
+            } else {
+                info!("Database schema is already up to date");
+            }
+        }
         Err(e) => {
-            error!("Failed to run migrations: {}", e);
+            error!("Failed to migrate database: {}", e);
             panic!("Database migration failed: {}", e);
         }
     }

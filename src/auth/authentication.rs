@@ -7,7 +7,7 @@ use rocket::serde::json::Json;
 use serde_json::{Value, json};
 use sqlx::SqlitePool;
 
-use crate::db::{get_session_by_token, get_user};
+use crate::database::{get_session_by_token, get_user};
 
 use super::User;
 
