@@ -11,29 +11,29 @@ async fn main() {
         .await
         .expect("Failed to check for destructive changes");
 
-    let no_destructive_changes = destructive_changes.tables_removed.len() == 0
-        && destructive_changes.indexes_removed.len() == 0
-        && destructive_changes.columns_removed.len() == 0;
+    let no_destructive_changes = destructive_changes.tables_removed.is_empty()
+        && destructive_changes.indexes_removed.is_empty()
+        && destructive_changes.columns_removed.is_empty();
 
     if no_destructive_changes {
         println!("Changes passed the check ✓");
     } else {
         println!("Destructive changes detected:");
-        if destructive_changes.tables_removed.len() > 0 {
+        if !destructive_changes.tables_removed.is_empty() {
             print_string_vec(
                 destructive_changes.tables_removed,
-                Some(&"    Table removed:"),
+                Some("    Table removed:"),
             );
         }
 
-        if destructive_changes.indexes_removed.len() > 0 {
+        if !destructive_changes.indexes_removed.is_empty() {
             print_string_vec(
                 destructive_changes.indexes_removed,
-                Some(&"    Index removed:"),
+                Some("    Index removed:"),
             );
         }
 
-        if destructive_changes.columns_removed.len() > 0 {
+        if !destructive_changes.columns_removed.is_empty() {
             for table in destructive_changes.columns_removed {
                 let table_prefix = format!("    Column removed from table {}:", table.table_name);
                 print_string_vec(table.columns_removed, Some(&table_prefix));
@@ -62,12 +62,12 @@ struct ColumnDestructiveChanges {
 
 async fn get_destructive_changes() -> Result<DestructiveChanges, MigrationError> {
     let schema_var =
-        std::env::var("SCHEMA_PATH").expect("Failed to find schema path from environment variable");
+        dotenvy::var("SCHEMA_PATH").expect("Failed to find schema path from environment variable");
     let schema_path = Path::new(&schema_var);
 
     let schema = read_schema_file_to_string(schema_path)?;
 
-    let database_url = std::env::var("DATABASE_URL").expect("Failed to find database url");
+    let database_url = dotenvy::var("DATABASE_URL").expect("Failed to find database url");
 
     let pool = SqlitePool::connect(&database_url)
         .await

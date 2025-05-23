@@ -134,6 +134,10 @@ pub mod test_utils {
 
         pub async fn build(self) -> Result<TestDb, AppError> {
             INIT.call_once(|| {
+                if let Err(e) = crate::env::load_test_environment() {
+                    eprintln!("Failed to load test environment: {}", e);
+                }
+
                 let _ = env_logger::builder()
                     .filter_level(LevelFilter::Debug)
                     .is_test(true)

@@ -4,7 +4,6 @@ WORKDIR /app
 FROM chef AS planner
 COPY Cargo.toml Cargo.lock ./
 COPY src ./src
-COPY migrations ./migrations
 COPY .sqlx ./.sqlx
 RUN cargo chef prepare --recipe-path recipe.json
 
@@ -35,7 +34,6 @@ COPY --from=builder-deps /app/target target
 COPY --from=builder-deps /usr/local/cargo /usr/local/cargo
 COPY Cargo.toml Cargo.lock ./
 COPY src ./src
-COPY migrations ./migrations
 COPY .sqlx ./.sqlx
 COPY config ./config
 ENV SQLX_OFFLINE=true

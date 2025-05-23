@@ -4,6 +4,7 @@ extern crate rocket;
 mod api;
 mod auth;
 mod db;
+mod env;
 mod error;
 mod models;
 mod telemetry;
@@ -64,7 +65,12 @@ impl From<rocket::figment::Error> for Error {
 async fn rocket() -> _ {
     init_tracing();
 
-    let database_url = std::env::var("DATABASE_URL").unwrap_or_default();
+    if let Err(e) = env::load_environment() {
+        eprintln!("Failed to load environment variables: {}", e);
+    }
+
+    let database_url =
+        dotenvy::var("DATABASE_URL").expect("Failed to get database url from environment");
 
     let pool = SqlitePool::connect(&database_url)
         .await
@@ -150,7 +156,7 @@ pub async fn init_rocket(pool: SqlitePool) -> Rocket<Build> {
 
 pub fn get_schema_string() -> String {
     let schema_var =
-        std::env::var("SCHEMA_PATH").expect("Failed to find schema path from environment variable");
+        dotenvy::var("SCHEMA_PATH").expect("Failed to find schema path from environment variable");
     let schema_path = Path::new(&schema_var);
 
     read_schema_file_to_string(schema_path).expect("Failed to read schema file to string")

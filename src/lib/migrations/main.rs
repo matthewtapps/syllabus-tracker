@@ -80,7 +80,7 @@ impl DeclarativeMigrator {
 
         let mut tx = self.pool.begin().await?;
 
-        Ok(self.analyze_changes(&mut tx, &pristine_pool).await?)
+        self.analyze_changes(&mut tx, &pristine_pool).await
     }
 
     #[instrument(skip(self))]
@@ -611,12 +611,12 @@ pub fn normalize_sql(sql: &str) -> String {
     sql.trim().to_string()
 }
 
-#[instrument(skip(pool))]
+#[instrument(skip_all)]
 pub async fn migrate_database_declaratively(
     pool: Pool<Sqlite>,
     target_schema: &str,
 ) -> Result<bool, MigrationError> {
-    let allow_deletions = std::env::var("ALLOW_DESTRUCTIVE_MIGRATIONS")
+    let allow_deletions = dotenvy::var("ALLOW_DESTRUCTIVE_MIGRATIONS")
         .unwrap_or_else(|_| "false".to_string())
         .parse::<bool>()
         .unwrap_or(false);
@@ -625,13 +625,13 @@ pub async fn migrate_database_declaratively(
     migrator.migrate().await
 }
 
-#[instrument(skip(pool))]
+#[instrument(skip_all)]
 pub async fn get_schema_changes(
     pool: Pool<Sqlite>,
     target_schema: &str,
 ) -> Result<ChangesNeeded, MigrationError> {
     let migrator = DeclarativeMigrator::new(pool, target_schema, false);
-    Ok(migrator.get_changes().await?)
+    migrator.get_changes().await
 }
 
 #[derive(Default, Debug)]

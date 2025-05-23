@@ -1,7 +1,10 @@
 #[cfg(test)]
 mod tests {
-    use crate::database::{migrate_database_declaratively, normalize_sql};
+    use serial_test::serial;
     use sqlx::{Row, SqlitePool};
+    use temp_env::async_with_vars;
+
+    use crate::lib::migrations::{migrate_database_declaratively, normalize_sql};
 
     const EMPTY_SCHEMA: &str = "";
 
@@ -91,6 +94,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial]
     async fn test_brand_new_db_pragma() {
         let pool = SqlitePool::connect("sqlite::memory:")
             .await
@@ -110,6 +114,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial]
     async fn test_empty_to_empty_no_changes() {
         let pool = create_test_db().await;
 
@@ -124,6 +129,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial]
     async fn test_create_first_table() {
         let pool = create_test_db().await;
 
@@ -147,6 +153,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial]
     async fn test_add_second_table() {
         let pool = create_test_db().await;
 
@@ -166,6 +173,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial]
     async fn test_modify_existing_table() {
         let pool = create_test_db().await;
 
@@ -194,6 +202,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial]
     async fn test_remove_table_requires_permission() {
         let pool = create_test_db().await;
 
@@ -211,8 +220,11 @@ mod tests {
         let tables = get_table_names(&pool).await;
         assert_eq!(tables, vec!["posts", "users"]);
 
-        // Should succeed with permission
-        let result = migrate_database_declaratively(pool.clone(), SINGLE_TABLE_SCHEMA).await;
+        let result = async_with_vars([("ALLOW_DESTRUCTIVE_MIGRATIONS", Some("true"))], async {
+            migrate_database_declaratively(pool.clone(), SINGLE_TABLE_SCHEMA).await
+        })
+        .await;
+
         assert!(result.is_ok());
         assert!(result.unwrap(), "Should report changes when deleting table");
 
@@ -221,6 +233,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial]
     async fn test_data_preservation() {
         let pool = create_test_db().await;
 
@@ -251,6 +264,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial]
     async fn test_normalize_sql_function() {
         assert_eq!(
             normalize_sql("CREATE TABLE test( -- comment\n  id INTEGER )"),
@@ -264,6 +278,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial]
     async fn test_column_deletion_forbidden() {
         let pool = create_test_db().await;
 
@@ -306,6 +321,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial]
     async fn test_column_deletion_allowed() {
         let pool = create_test_db().await;
 
@@ -315,8 +331,11 @@ mod tests {
             .await
             .unwrap();
 
-        // Remove username column with permission
-        let result = migrate_database_declaratively(pool.clone(), COLUMN_REMOVAL_SCHEMA).await;
+        let result = async_with_vars([("ALLOW_DESTRUCTIVE_MIGRATIONS", Some("true"))], async {
+            migrate_database_declaratively(pool.clone(), COLUMN_REMOVAL_SCHEMA).await
+        })
+        .await;
+
         assert!(result.is_ok(), "Should succeed when deletions are allowed");
         assert!(result.unwrap(), "Should report changes made");
 
@@ -340,6 +359,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial]
     async fn test_table_deletion_forbidden() {
         let pool = create_test_db().await;
 
@@ -372,6 +392,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial]
     async fn test_index_deletion_forbidden() {
         let pool = create_test_db().await;
 
@@ -405,6 +426,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial]
     async fn test_index_deletion_allowed() {
         let pool = create_test_db().await;
 
@@ -415,7 +437,11 @@ mod tests {
             .unwrap();
 
         // Remove index with permission
-        let result = migrate_database_declaratively(pool.clone(), WITHOUT_INDEX_SCHEMA).await;
+        let result = async_with_vars([("ALLOW_DESTRUCTIVE_MIGRATIONS", Some("true"))], async {
+            migrate_database_declaratively(pool.clone(), WITHOUT_INDEX_SCHEMA).await
+        })
+        .await;
+
         assert!(result.is_ok(), "Should succeed when deletions are allowed");
         assert!(result.unwrap(), "Should report changes made");
 
@@ -430,6 +456,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial]
     async fn test_multiple_deletions_forbidden() {
         let pool = create_test_db().await;
 
@@ -483,6 +510,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial]
     async fn test_data_preservation_during_column_removal() {
         let pool = create_test_db().await;
 
@@ -507,8 +535,12 @@ mod tests {
             .await
             .unwrap();
 
-        // Remove email column (with permission)
-        let result = migrate_database_declaratively(pool.clone(), SINGLE_TABLE_SCHEMA).await;
+        // Remove email column
+        let result = async_with_vars([("ALLOW_DESTRUCTIVE_MIGRATIONS", Some("true"))], async {
+            migrate_database_declaratively(pool.clone(), SINGLE_TABLE_SCHEMA).await
+        })
+        .await;
+
         assert!(result.is_ok(), "Should succeed with deletions allowed");
 
         // Check data is preserved for remaining columns

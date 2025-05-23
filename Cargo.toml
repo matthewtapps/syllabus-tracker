@@ -42,3 +42,8 @@ rand = "0.9.1"
 uuid = { version = "1.16.0", features = ["v4"] }
 regex = "1.11.1"
 tokio = "1.45.0"
+dotenvy = "0.15.7"
+
+[dev-dependencies]
+temp-env = { version = "0.3.6", features = ["async_closure"] }
+serial_test = "3.2.0"

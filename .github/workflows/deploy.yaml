@@ -257,7 +257,7 @@ jobs:
   check_destructive_migrations:
     needs: [build-backend, build-frontend, lint, test]
     runs-on: ubuntu-latest
-    if: github.event.inputs.allow_destructuve_migrations == "true"
+    if: github.event.inputs.allow_destructuve_migrations == 'true'
 
     steps:
       - uses: honeycombio/gha-buildevents@v2
