@@ -1,7 +1,10 @@
-use crate::error::AppError;
 use regex::Regex;
 use sqlx::{Pool, Row, Sqlite, SqlitePool};
-use std::collections::{HashMap, HashSet};
+use std::{
+    collections::{HashMap, HashSet},
+    fmt, fs,
+    path::Path,
+};
 use tracing::{info, instrument};
 
 #[derive(Debug)]
@@ -26,6 +29,34 @@ pub struct DeclarativeMigrator {
     schema_changes_made: u32,
 }
 
+#[allow(dead_code)]
+#[derive(Debug)]
+pub struct MigrationError {
+    message: String,
+}
+
+impl From<sqlx::migrate::MigrateError> for MigrationError {
+    fn from(error: sqlx::migrate::MigrateError) -> Self {
+        MigrationError {
+            message: format!("Migration error: {}", error),
+        }
+    }
+}
+
+impl From<sqlx::Error> for MigrationError {
+    fn from(error: sqlx::Error) -> Self {
+        MigrationError {
+            message: format!("Migration error: {}", error),
+        }
+    }
+}
+
+impl fmt::Display for MigrationError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.message)
+    }
+}
+
 impl DeclarativeMigrator {
     pub fn new(pool: Pool<Sqlite>, target_schema: &str, allow_deletions: bool) -> Self {
         Self {
@@ -36,8 +67,24 @@ impl DeclarativeMigrator {
         }
     }
 
+    pub async fn get_changes(self) -> Result<ChangesNeeded, MigrationError> {
+        let pristine_pool = SqlitePool::connect("sqlite::memory:").await?;
+        if !self.target_schema.trim().is_empty() {
+            sqlx::raw_sql(&self.target_schema)
+                .execute(&pristine_pool)
+                .await
+                .map_err(|e| MigrationError {
+                    message: format!("Failed to create pristine schema: {}", e),
+                })?;
+        }
+
+        let mut tx = self.pool.begin().await?;
+
+        Ok(self.analyze_changes(&mut tx, &pristine_pool).await?)
+    }
+
     #[instrument(skip(self))]
-    pub async fn migrate(&mut self) -> Result<bool, AppError> {
+    pub async fn migrate(&mut self) -> Result<bool, MigrationError> {
         info!("Starting declarative database migration");
 
         // Create pristine database with target schema
@@ -46,8 +93,8 @@ impl DeclarativeMigrator {
             sqlx::raw_sql(&self.target_schema)
                 .execute(&pristine_pool)
                 .await
-                .map_err(|e| {
-                    AppError::Internal(format!("Failed to create pristine schema: {}", e))
+                .map_err(|e| MigrationError {
+                    message: format!("Failed to create pristine schema: {}", e),
                 })?;
         }
 
@@ -101,7 +148,7 @@ impl DeclarativeMigrator {
         tx: &mut sqlx::Transaction<'_, Sqlite>,
         pristine_pool: &SqlitePool,
         changes: ChangesNeeded,
-    ) -> Result<(), AppError> {
+    ) -> Result<(), MigrationError> {
         // Apply table changes first (new tables, then modifications, then deletions)
 
         // Create new tables
@@ -118,11 +165,11 @@ impl DeclarativeMigrator {
         }
 
         // Modify existing tables - error if removal is requested but not allowed
-        for table_name in &changes.modified_tables {
+        for table in &changes.modified_tables {
             if !self.allow_deletions {
-                let current_columns = self.get_table_columns(&mut **tx, table_name).await?;
+                let current_columns = self.get_table_columns(&mut **tx, &table.name).await?;
                 let target_columns = self
-                    .get_table_columns_from_pool(pristine_pool, table_name)
+                    .get_table_columns_from_pool(pristine_pool, &table.name)
                     .await?;
 
                 let current_col_names: HashSet<_> =
@@ -132,15 +179,17 @@ impl DeclarativeMigrator {
                 let removed_columns: Vec<_> =
                     current_col_names.difference(&target_col_names).collect();
                 if !removed_columns.is_empty() {
-                    return Err(AppError::Internal(format!(
-                        "Migration requires deleting columns {:?} from table {}, but allow_deletions=false. Set allow_deletions=true to permit this.",
-                        removed_columns, table_name
-                    )));
+                    return Err(MigrationError {
+                        message: format!(
+                            "Migration requires deleting columns {:?} from table {}, but allow_deletions=false. Set allow_deletions=true to permit this.",
+                            removed_columns, &table.name
+                        ),
+                    });
                 }
             }
 
-            if let Some(target_table) = target_tables.get(table_name) {
-                self.migrate_table(tx, table_name, target_table, pristine_pool)
+            if let Some(target_table) = target_tables.get(&table.name) {
+                self.migrate_table(tx, &table.name, target_table, pristine_pool)
                     .await?;
             }
         }
@@ -148,10 +197,12 @@ impl DeclarativeMigrator {
         // Remove tables - error if removal is requested but not allowed
         if !changes.removed_tables.is_empty() {
             if !self.allow_deletions {
-                return Err(AppError::Internal(format!(
-                    "Migration requires deleting tables {:?}, but allow_deletions=false. Set allow_deletions=true to permit this.",
-                    changes.removed_tables
-                )));
+                return Err(MigrationError {
+                    message: format!(
+                        "Migration requires deleting tables {:?}, but allow_deletions=false. Set allow_deletions=true to permit this.",
+                        changes.removed_tables
+                    ),
+                });
             }
 
             for table_name in &changes.removed_tables {
@@ -175,10 +226,12 @@ impl DeclarativeMigrator {
 
         // Error if removal is requested but not allowed
         if !indices_to_remove.is_empty() && !self.allow_deletions {
-            return Err(AppError::Internal(format!(
-                "Migration requires deleting indices {:?}, but allow_deletions=false. Set allow_deletions=true to permit this.",
-                indices_to_remove
-            )));
+            return Err(MigrationError {
+                message: format!(
+                    "Migration requires deleting indices {:?}, but allow_deletions=false. Set allow_deletions=true to permit this.",
+                    indices_to_remove
+                ),
+            });
         }
 
         // Apply index changes
@@ -213,7 +266,7 @@ impl DeclarativeMigrator {
         table_name: &str,
         target_table: &TableInfo,
         pristine_pool: &SqlitePool,
-    ) -> Result<(), AppError> {
+    ) -> Result<(), MigrationError> {
         info!("Migrating table: {}", table_name);
 
         // Create temporary table with new schema
@@ -243,10 +296,12 @@ impl DeclarativeMigrator {
 
         // Error if removals requested but not allowed
         if !removed_columns.is_empty() && !self.allow_deletions {
-            return Err(AppError::Internal(format!(
-                "Refusing to remove columns {:?} from table {}. Set allow_deletions=true to permit this.",
-                removed_columns, table_name
-            )));
+            return Err(MigrationError {
+                message: format!(
+                    "Refusing to remove columns {:?} from table {}. Set allow_deletions=true to permit this.",
+                    removed_columns, table_name
+                ),
+            });
         }
 
         // Copy data from old table to new table
@@ -296,7 +351,7 @@ impl DeclarativeMigrator {
         tx: &mut sqlx::Transaction<'_, Sqlite>,
         current_indices: &HashMap<String, IndexInfo>,
         target_indices: &HashMap<String, IndexInfo>,
-    ) -> Result<(), AppError> {
+    ) -> Result<(), MigrationError> {
         // Drop removed indices
         for index_name in current_indices.keys() {
             if !target_indices.contains_key(index_name) {
@@ -351,7 +406,7 @@ impl DeclarativeMigrator {
         description: &str,
         sql: &str,
         executor: impl sqlx::Executor<'_, Database = Sqlite>,
-    ) -> Result<(), AppError> {
+    ) -> Result<(), MigrationError> {
         info!("Database migration: {} with SQL:\n{}", description, sql);
         sqlx::query(sql).execute(executor).await?;
         self.schema_changes_made += 1;
@@ -362,7 +417,7 @@ impl DeclarativeMigrator {
     async fn get_tables(
         &self,
         executor: impl sqlx::Executor<'_, Database = Sqlite>,
-    ) -> Result<HashMap<String, TableInfo>, AppError> {
+    ) -> Result<HashMap<String, TableInfo>, MigrationError> {
         let rows = sqlx::query(
             "SELECT name, sql FROM sqlite_master WHERE type = 'table' AND name != 'sqlite_sequence'"
         ).fetch_all(executor).await?;
@@ -380,7 +435,7 @@ impl DeclarativeMigrator {
     async fn get_tables_from_pool(
         &self,
         pool: &SqlitePool,
-    ) -> Result<HashMap<String, TableInfo>, AppError> {
+    ) -> Result<HashMap<String, TableInfo>, MigrationError> {
         self.get_tables(pool).await
     }
 
@@ -388,7 +443,7 @@ impl DeclarativeMigrator {
     async fn get_indices(
         &self,
         executor: impl sqlx::Executor<'_, Database = Sqlite>,
-    ) -> Result<HashMap<String, IndexInfo>, AppError> {
+    ) -> Result<HashMap<String, IndexInfo>, MigrationError> {
         let rows = sqlx::query(
             "SELECT name, sql FROM sqlite_master WHERE type = 'index' AND sql IS NOT NULL",
         )
@@ -408,7 +463,7 @@ impl DeclarativeMigrator {
     async fn get_indices_from_pool(
         &self,
         pool: &SqlitePool,
-    ) -> Result<HashMap<String, IndexInfo>, AppError> {
+    ) -> Result<HashMap<String, IndexInfo>, MigrationError> {
         self.get_indices(pool).await
     }
 
@@ -417,7 +472,7 @@ impl DeclarativeMigrator {
         &self,
         executor: impl sqlx::Executor<'_, Database = Sqlite>,
         table_name: &str,
-    ) -> Result<Vec<ColumnInfo>, AppError> {
+    ) -> Result<Vec<ColumnInfo>, MigrationError> {
         let rows = sqlx::query(&format!("PRAGMA table_info({})", table_name))
             .fetch_all(executor)
             .await?;
@@ -434,7 +489,7 @@ impl DeclarativeMigrator {
         &self,
         pool: &SqlitePool,
         table_name: &str,
-    ) -> Result<Vec<ColumnInfo>, AppError> {
+    ) -> Result<Vec<ColumnInfo>, MigrationError> {
         self.get_table_columns(pool, table_name).await
     }
 
@@ -443,7 +498,7 @@ impl DeclarativeMigrator {
         &self,
         tx: &mut sqlx::Transaction<'_, Sqlite>,
         pristine_pool: &SqlitePool,
-    ) -> Result<ChangesNeeded, AppError> {
+    ) -> Result<ChangesNeeded, MigrationError> {
         let mut changes = ChangesNeeded::default();
 
         // Analyze table changes
@@ -467,7 +522,30 @@ impl DeclarativeMigrator {
             let current_sql = normalize_sql(&current_tables[*table_name].sql);
             let target_sql = normalize_sql(&target_tables[*table_name].sql);
             if current_sql != target_sql {
-                changes.modified_tables.push(table_name.to_string());
+                let current_columns = self.get_table_columns(&mut **tx, table_name).await?;
+                let target_columns = self
+                    .get_table_columns_from_pool(pristine_pool, table_name)
+                    .await?;
+
+                let current_col_names: HashSet<_> =
+                    current_columns.iter().map(|c| &c.name).collect();
+                let target_col_names: HashSet<_> = target_columns.iter().map(|c| &c.name).collect();
+
+                let removed_columns: Vec<String> = current_col_names
+                    .difference(&target_col_names)
+                    .map(|c| c.to_string())
+                    .collect();
+
+                let new_columns: Vec<String> = target_col_names
+                    .difference(&current_col_names)
+                    .map(|c| c.to_string())
+                    .collect();
+
+                changes.modified_tables.push(ModifiedTable {
+                    name: table_name.to_string(),
+                    removed_columns,
+                    new_columns,
+                });
             }
         }
 
@@ -508,39 +586,6 @@ impl DeclarativeMigrator {
 
         changes.pragma_changes = current_user_version != target_user_version;
 
-        // Check for forbidden deletions
-        if (!changes.removed_tables.is_empty() || !changes.modified_tables.is_empty())
-            && !self.allow_deletions
-        {
-            // Check if modifications would remove columns
-            for table_name in &changes.modified_tables {
-                let current_columns = self.get_table_columns(&mut **tx, table_name).await?;
-                let target_columns = self
-                    .get_table_columns_from_pool(pristine_pool, table_name)
-                    .await?;
-
-                let current_col_names: HashSet<_> =
-                    current_columns.iter().map(|c| &c.name).collect();
-                let target_col_names: HashSet<_> = target_columns.iter().map(|c| &c.name).collect();
-
-                let removed_columns: Vec<_> =
-                    current_col_names.difference(&target_col_names).collect();
-                if !removed_columns.is_empty() {
-                    return Err(AppError::Internal(format!(
-                        "Refusing to remove columns {:?} from table {}. Set allow_deletions=true to permit this.",
-                        removed_columns, table_name
-                    )));
-                }
-            }
-
-            if !changes.removed_tables.is_empty() {
-                return Err(AppError::Internal(format!(
-                    "Refusing to delete tables: {:?}. Set allow_deletions=true to permit this.",
-                    changes.removed_tables
-                )));
-            }
-        }
-
         Ok(changes)
     }
 }
@@ -570,21 +615,41 @@ pub fn normalize_sql(sql: &str) -> String {
 pub async fn migrate_database_declaratively(
     pool: Pool<Sqlite>,
     target_schema: &str,
-    allow_deletions: bool,
-) -> Result<bool, AppError> {
+) -> Result<bool, MigrationError> {
+    let allow_deletions = std::env::var("ALLOW_DESTRUCTIVE_MIGRATIONS")
+        .unwrap_or_else(|_| "false".to_string())
+        .parse::<bool>()
+        .unwrap_or(false);
+
     let mut migrator = DeclarativeMigrator::new(pool, target_schema, allow_deletions);
     migrator.migrate().await
 }
 
+#[instrument(skip(pool))]
+pub async fn get_schema_changes(
+    pool: Pool<Sqlite>,
+    target_schema: &str,
+) -> Result<ChangesNeeded, MigrationError> {
+    let migrator = DeclarativeMigrator::new(pool, target_schema, false);
+    Ok(migrator.get_changes().await?)
+}
+
 #[derive(Default, Debug)]
-struct ChangesNeeded {
-    new_tables: Vec<String>,
-    removed_tables: Vec<String>,
-    modified_tables: Vec<String>,
-    new_indices: Vec<String>,
-    removed_indices: Vec<String>,
-    modified_indices: Vec<String>,
-    pragma_changes: bool,
+pub struct ChangesNeeded {
+    pub new_tables: Vec<String>,
+    pub removed_tables: Vec<String>,
+    pub modified_tables: Vec<ModifiedTable>,
+    pub new_indices: Vec<String>,
+    pub removed_indices: Vec<String>,
+    pub modified_indices: Vec<String>,
+    pub pragma_changes: bool,
+}
+
+#[derive(Default, Debug, Hash, Eq, PartialEq)]
+pub struct ModifiedTable {
+    pub name: String,
+    pub removed_columns: Vec<String>,
+    pub new_columns: Vec<String>,
 }
 
 impl ChangesNeeded {
@@ -596,5 +661,18 @@ impl ChangesNeeded {
             || !self.removed_indices.is_empty()
             || !self.modified_indices.is_empty()
             || self.pragma_changes
+    }
+}
+
+pub fn read_schema_file_to_string(path: &Path) -> Result<String, MigrationError> {
+    let schema = fs::read_to_string(path)?;
+    Ok(schema)
+}
+
+impl From<std::io::Error> for MigrationError {
+    fn from(error: std::io::Error) -> Self {
+        MigrationError {
+            message: format!("Migration error: {}", error),
+        }
     }
 }

@@ -1,4 +1,5 @@
 use rocket::http::Status;
+use syllabus_tracker::lib::migrations::MigrationError;
 use thiserror::Error;
 use tracing::{Span, error, warn};
 
@@ -94,12 +95,6 @@ impl From<bcrypt::BcryptError> for AppError {
     }
 }
 
-impl From<sqlx::migrate::MigrateError> for AppError {
-    fn from(error: sqlx::migrate::MigrateError) -> Self {
-        AppError::Internal(format!("Migration error: {}", error))
-    }
-}
-
 impl From<AppError> for Status {
     fn from(err: AppError) -> Self {
         err.to_status_with_log("Error conversion into Status")
@@ -109,5 +104,11 @@ impl From<AppError> for Status {
 impl From<anyhow::Error> for AppError {
     fn from(error: anyhow::Error) -> Self {
         AppError::Internal(format!("Internal error: {}", error))
+    }
+}
+
+impl From<MigrationError> for AppError {
+    fn from(error: MigrationError) -> Self {
+        AppError::Internal(format!("Migration error: {}", error))
     }
 }

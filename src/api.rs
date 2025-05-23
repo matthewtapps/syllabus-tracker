@@ -15,7 +15,7 @@ use validator::ValidationErrors;
 
 use crate::auth::UserSession;
 use crate::auth::{Permission, User};
-use crate::database::{
+use crate::db::{
     add_tag_to_technique, add_techniques_to_student, authenticate_user,
     create_and_assign_technique, create_tag, create_user, create_user_session, delete_tag,
     find_user_by_username, get_all_tags, get_all_users, get_student_technique,

@@ -13,6 +13,10 @@ on:
         description: "Extra options for nixos-rebuild (e.g., --fast, --upgrade)"
         required: false
         default: ""
+      allow_destructuve_migrations:
+        description: "Will fail deployments with destructive migrations unless set to true"
+        required: false
+        default: "false"
 
 env:
   REGISTRY: ghcr.io
@@ -250,8 +254,50 @@ jobs:
         run: |
           buildevents step $TRACE_ID $STEP_ID $STEP_START "Build Frontend Image"
 
-  deploy_nixos_config:
+  check_destructive_migrations:
     needs: [build-backend, build-frontend, lint, test]
+    runs-on: ubuntu-latest
+    if: github.event.inputs.allow_destructuve_migrations == "true"
+
+    steps:
+      - uses: honeycombio/gha-buildevents@v2
+        with:
+          apikey: ${{ secrets.HONEYCOMB_API_KEY }}
+          dataset: syllabus-tracker-build-events
+        env:
+          TRACE_ID: ${{ needs.start-build.outputs.trace_id }}
+
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Record destructive migration check start
+        run: |
+          echo "STEP_START=$(date +%s)" >> $GITHUB_ENV
+          echo "STEP_ID=destructive_migration_check" >> $GITHUB_ENV
+
+      - name: Check for destructive migrations
+        run: |
+          buildevents cmd $TRACE_ID $STEP_ID if cargo run --bin migration-check --dry-run | grep "destructive"; then
+            echo "⚠️  Destructive migrations detected. Manual approval required."
+            echo "Re-run this workflow with ALLOW_DESTRUCTIVE_MIGRATIONS=true"
+            exit 1
+          fi
+
+      - name: Complete destructive migrations check step
+        run: |
+          buildevents step $TRACE_ID $STEP_ID $STEP_START "Build Frontend Image"
+
+  deploy_nixos_config:
+    needs: [check_destructive_migrations]
     runs-on: ubuntu-latest
     if: github.repository == 'matthewtapps/syllabus-tracker'
 

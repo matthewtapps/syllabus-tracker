@@ -113,7 +113,7 @@ mod tests {
     async fn test_empty_to_empty_no_changes() {
         let pool = create_test_db().await;
 
-        let result = migrate_database_declaratively(pool.clone(), EMPTY_SCHEMA, false).await;
+        let result = migrate_database_declaratively(pool.clone(), EMPTY_SCHEMA).await;
         assert!(result.is_ok());
         assert!(!result.unwrap(), "Empty to empty should report no changes");
 
@@ -127,7 +127,7 @@ mod tests {
     async fn test_create_first_table() {
         let pool = create_test_db().await;
 
-        let result = migrate_database_declaratively(pool.clone(), SINGLE_TABLE_SCHEMA, false).await;
+        let result = migrate_database_declaratively(pool.clone(), SINGLE_TABLE_SCHEMA).await;
         assert!(result.is_ok());
         assert!(
             result.unwrap(),
@@ -138,7 +138,7 @@ mod tests {
         assert_eq!(tables, vec!["users"]);
 
         // Re-running should be no-op
-        let result = migrate_database_declaratively(pool.clone(), SINGLE_TABLE_SCHEMA, false).await;
+        let result = migrate_database_declaratively(pool.clone(), SINGLE_TABLE_SCHEMA).await;
         assert!(result.is_ok());
         assert!(
             !result.unwrap(),
@@ -157,7 +157,7 @@ mod tests {
             .unwrap();
 
         // Add second table
-        let result = migrate_database_declaratively(pool.clone(), TWO_TABLE_SCHEMA, false).await;
+        let result = migrate_database_declaratively(pool.clone(), TWO_TABLE_SCHEMA).await;
         assert!(result.is_ok());
         assert!(result.unwrap(), "Adding second table should report changes");
 
@@ -176,8 +176,7 @@ mod tests {
             .unwrap();
 
         // Modify users table to add email column
-        let result =
-            migrate_database_declaratively(pool.clone(), MODIFIED_TABLE_SCHEMA, false).await;
+        let result = migrate_database_declaratively(pool.clone(), MODIFIED_TABLE_SCHEMA).await;
         assert!(result.is_ok());
         assert!(result.unwrap(), "Modifying table should report changes");
 
@@ -205,7 +204,7 @@ mod tests {
             .unwrap();
 
         // Try to remove posts table without permission
-        let result = migrate_database_declaratively(pool.clone(), SINGLE_TABLE_SCHEMA, false).await;
+        let result = migrate_database_declaratively(pool.clone(), SINGLE_TABLE_SCHEMA).await;
         assert!(result.is_err(), "Should fail without allow_deletions");
 
         // Tables should be unchanged
@@ -213,7 +212,7 @@ mod tests {
         assert_eq!(tables, vec!["posts", "users"]);
 
         // Should succeed with permission
-        let result = migrate_database_declaratively(pool.clone(), SINGLE_TABLE_SCHEMA, true).await;
+        let result = migrate_database_declaratively(pool.clone(), SINGLE_TABLE_SCHEMA).await;
         assert!(result.is_ok());
         assert!(result.unwrap(), "Should report changes when deleting table");
 
@@ -237,8 +236,7 @@ mod tests {
             .unwrap();
 
         // Migrate to modified schema (adds email column)
-        let result =
-            migrate_database_declaratively(pool.clone(), MODIFIED_TABLE_SCHEMA, false).await;
+        let result = migrate_database_declaratively(pool.clone(), MODIFIED_TABLE_SCHEMA).await;
         assert!(result.is_ok());
 
         // Check data is preserved
@@ -276,8 +274,7 @@ mod tests {
             .unwrap();
 
         // Try to remove username column without permission
-        let result =
-            migrate_database_declaratively(pool.clone(), COLUMN_REMOVAL_SCHEMA, false).await;
+        let result = migrate_database_declaratively(pool.clone(), COLUMN_REMOVAL_SCHEMA).await;
         assert!(
             result.is_err(),
             "Should fail when trying to remove column without permission"
@@ -319,8 +316,7 @@ mod tests {
             .unwrap();
 
         // Remove username column with permission
-        let result =
-            migrate_database_declaratively(pool.clone(), COLUMN_REMOVAL_SCHEMA, true).await;
+        let result = migrate_database_declaratively(pool.clone(), COLUMN_REMOVAL_SCHEMA).await;
         assert!(result.is_ok(), "Should succeed when deletions are allowed");
         assert!(result.unwrap(), "Should report changes made");
 
@@ -354,7 +350,7 @@ mod tests {
             .unwrap();
 
         // Try to remove posts table without permission
-        let result = migrate_database_declaratively(pool.clone(), SINGLE_TABLE_SCHEMA, false).await;
+        let result = migrate_database_declaratively(pool.clone(), SINGLE_TABLE_SCHEMA).await;
         assert!(
             result.is_err(),
             "Should fail when trying to remove table without permission"
@@ -386,8 +382,7 @@ mod tests {
             .unwrap();
 
         // Try to remove index without permission
-        let result =
-            migrate_database_declaratively(pool.clone(), WITHOUT_INDEX_SCHEMA, false).await;
+        let result = migrate_database_declaratively(pool.clone(), WITHOUT_INDEX_SCHEMA).await;
         assert!(
             result.is_err(),
             "Should fail when trying to remove index without permission"
@@ -420,7 +415,7 @@ mod tests {
             .unwrap();
 
         // Remove index with permission
-        let result = migrate_database_declaratively(pool.clone(), WITHOUT_INDEX_SCHEMA, true).await;
+        let result = migrate_database_declaratively(pool.clone(), WITHOUT_INDEX_SCHEMA).await;
         assert!(result.is_ok(), "Should succeed when deletions are allowed");
         assert!(result.unwrap(), "Should report changes made");
 
@@ -471,7 +466,6 @@ mod tests {
         );
         -- removed posts table and index
     "#,
-            false,
         )
         .await;
 
@@ -514,7 +508,7 @@ mod tests {
             .unwrap();
 
         // Remove email column (with permission)
-        let result = migrate_database_declaratively(pool.clone(), SINGLE_TABLE_SCHEMA, true).await;
+        let result = migrate_database_declaratively(pool.clone(), SINGLE_TABLE_SCHEMA).await;
         assert!(result.is_ok(), "Should succeed with deletions allowed");
 
         // Check data is preserved for remaining columns

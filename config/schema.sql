@@ -1,6 +1,3 @@
-pub const CURRENT_SCHEMA: &str = r#"
-PRAGMA foreign_keys = 1;
-
 CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY,
     username TEXT NOT NULL UNIQUE,
@@ -55,4 +52,3 @@ CREATE TABLE IF NOT EXISTS technique_tags (
     FOREIGN KEY (technique_id) REFERENCES techniques (id) ON DELETE CASCADE,
     FOREIGN KEY (tag_id) REFERENCES tags (id) ON DELETE CASCADE
 );
-"#;

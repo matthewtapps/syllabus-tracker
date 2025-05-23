@@ -3,13 +3,15 @@ extern crate rocket;
 
 mod api;
 mod auth;
-mod database;
+mod db;
 mod error;
 mod models;
 mod telemetry;
 #[cfg(test)]
 mod test;
 mod validation;
+
+use std::path::Path;
 
 use api::api_get_all_users;
 use api::{
@@ -21,9 +23,12 @@ use api::{
     api_update_student_technique, api_update_user, health,
 };
 use auth::unauthorized_api;
-use database::{CURRENT_SCHEMA, clean_expired_sessions, migrate_database_declaratively};
+use db::clean_expired_sessions;
 use error::AppError;
 use rocket::{Build, Rocket, tokio};
+use syllabus_tracker::lib::migrations::{
+    migrate_database_declaratively, read_schema_file_to_string,
+};
 use telemetry::TelemetryFairing;
 use telemetry::init_tracing;
 use thiserror::Error;
@@ -87,7 +92,10 @@ async fn rocket() -> _ {
     });
 
     info!("Running declarative database migration...");
-    match migrate_database_declaratively(pool.clone(), CURRENT_SCHEMA, false).await {
+
+    let schema = get_schema_string();
+
+    match migrate_database_declaratively(pool.clone(), &schema).await {
         Ok(changes_made) => {
             if changes_made {
                 info!("Database migration completed with changes");
@@ -96,8 +104,8 @@ async fn rocket() -> _ {
             }
         }
         Err(e) => {
-            error!("Failed to migrate database: {}", e);
-            panic!("Database migration failed: {}", e);
+            error!("Failed to migrate database: {:?}", e);
+            panic!("Database migration failed: {:?}", e);
         }
     }
 
@@ -138,4 +146,12 @@ pub async fn init_rocket(pool: SqlitePool) -> Rocket<Build> {
         .register("/api", catchers![unauthorized_api])
         .mount("/api", routes![health])
         .attach(TelemetryFairing)
+}
+
+pub fn get_schema_string() -> String {
+    let schema_var =
+        std::env::var("SCHEMA_PATH").expect("Failed to find schema path from environment variable");
+    let schema_path = Path::new(&schema_var);
+
+    read_schema_file_to_string(schema_path).expect("Failed to read schema file to string")
 }

@@ -1,19 +1,20 @@
 #[cfg(test)]
 pub mod test_utils {
     use crate::auth::Role;
-    use crate::database::{
-        CURRENT_SCHEMA, assign_technique_to_student, create_technique, create_user,
-        get_student_technique, migrate_database_declaratively, update_student_technique,
+    use crate::db::{
+        assign_technique_to_student, create_technique, create_user, get_student_technique,
+        update_student_technique,
     };
     use crate::error::AppError;
-    use crate::init_rocket;
     use crate::models::StudentTechnique;
+    use crate::{get_schema_string, init_rocket};
     use rocket::http::{ContentType, Cookie};
     use rocket::local::asynchronous::Client;
     use serde_json::json;
     use sqlx::{Pool, Sqlite, SqlitePool};
     use std::collections::HashMap;
     use std::sync::Once;
+    use syllabus_tracker::lib::migrations::migrate_database_declaratively;
     use tracing::log::LevelFilter;
 
     static INIT: Once = Once::new();
@@ -141,7 +142,9 @@ pub mod test_utils {
 
             let pool = SqlitePool::connect("sqlite::memory:").await?;
 
-            migrate_database_declaratively(pool.clone(), CURRENT_SCHEMA, true).await?;
+            let schema = get_schema_string();
+
+            migrate_database_declaratively(pool.clone(), &schema).await?;
 
             let mut user_id_map: HashMap<String, i64> = HashMap::new();
             let mut technique_id_map: HashMap<String, i64> = HashMap::new();

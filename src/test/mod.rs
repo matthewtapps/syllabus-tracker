@@ -1,6 +1,5 @@
 pub mod api;
 pub mod db;
-pub mod migrations;
 pub mod sessions;
 pub mod tags;
 pub mod utils;

@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod tests {
     use crate::{
-        database::{
+        db::{
             add_tag_to_technique, create_tag, delete_tag, get_all_tags, get_tags_for_technique,
             remove_tag_from_technique,
         },

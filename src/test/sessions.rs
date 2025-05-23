@@ -1,16 +1,17 @@
 #[cfg(test)]
 mod tests {
     use crate::{
-        database::{
-            CURRENT_SCHEMA, clean_expired_sessions, create_user_session, get_session_by_token,
-            invalidate_session, migrate_database_declaratively,
+        db::{
+            clean_expired_sessions, create_user_session, get_session_by_token, invalidate_session,
         },
         error::AppError,
+        get_schema_string,
         test::test_utils::TestDbBuilder,
     };
     use chrono::{Duration, NaiveDateTime, Utc};
     use rocket::tokio;
     use sqlx::{Pool, Sqlite, SqlitePool};
+    use syllabus_tracker::lib::migrations::migrate_database_declaratively;
     use uuid::Uuid;
 
     async fn create_test_session() -> (i64, String, NaiveDateTime, Pool<Sqlite>) {
@@ -62,7 +63,9 @@ mod tests {
             .await
             .expect("Failed to create in-memory database");
 
-        let _ = migrate_database_declaratively(pool.clone(), CURRENT_SCHEMA, true).await;
+        let schema = get_schema_string();
+
+        let _ = migrate_database_declaratively(pool.clone(), &schema).await;
 
         let result = get_session_by_token(&pool, "nonexistent_token").await;
 

@@ -1,10 +1,12 @@
 #[cfg(test)]
 mod tests {
-    use crate::database::{CURRENT_SCHEMA, create_user, migrate_database_declaratively};
-    use crate::{auth::Role, database::find_user_by_username};
+    use crate::auth::Role;
+    use crate::db::{create_user, find_user_by_username};
+    use crate::get_schema_string;
 
     use rocket::tokio;
     use sqlx::{Pool, Sqlite, sqlite::SqlitePoolOptions};
+    use syllabus_tracker::lib::migrations::migrate_database_declaratively;
 
     async fn setup_test_db() -> Pool<Sqlite> {
         let pool = SqlitePoolOptions::new()
@@ -13,7 +15,9 @@ mod tests {
             .await
             .expect("Failed to create in-memory database");
 
-        let _ = migrate_database_declaratively(pool.clone(), CURRENT_SCHEMA, true).await;
+        let schema = get_schema_string();
+
+        let _ = migrate_database_declaratively(pool.clone(), &schema).await;
 
         pool
     }
