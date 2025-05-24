@@ -9,8 +9,10 @@ services:
     volumes:
       - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
     depends_on:
-      - app
-      - frontend
+      app:
+        condition: service_started
+      frontend:
+        condition: service_started
     networks:
       - internal
       - host
@@ -28,7 +30,7 @@ services:
       - ./config/prod.env
       - ./.secrets.env
     environment:
-      - ALLOW_DESTRUCTIVE_MIGRATIONS={ALLOW_DESTRUCTIVE_MIGRATIONS:-false}
+      - ALLOW_DESTRUCTIVE_MIGRATIONS=${ALLOW_DESTRUCTIVE_MIGRATIONS:-false}
     volumes:
       - app-data:/app/data
     networks:
@@ -47,6 +49,9 @@ services:
       - config/common.env
       - config/prod.env
       - .secrets.env
+    depends_on:
+      app:
+        condition: service_started
 
   otel-collector:
     image: otel/opentelemetry-collector-contrib:latest
