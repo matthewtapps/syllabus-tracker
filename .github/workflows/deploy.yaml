@@ -380,13 +380,9 @@ jobs:
           ssh "${NIXOS_SERVER_USER}@${NIXOS_SERVER_IP}" "mkdir -p ~/.docker"
           scp docker_config.json "${NIXOS_SERVER_USER}@${NIXOS_SERVER_IP}:~/.docker/config.json"
 
-          # Ensure application directories exist
-          ssh "${NIXOS_SERVER_USER}@${NIXOS_SERVER_IP}" \
-            "mkdir -p ${APP_DEPLOY_PATH}/config && mkdir -p ${APP_DEPLOY_PATH}/scripts && mkdir -p ${APP_DEPLOY_PATH}/nginx"
-
           # Copy application files
           rsync -avz --delete -e "ssh -i ~/.ssh/id_rsa" \
-            "${GITHUB_WORKSPACE}/docker-compose.nixos.yml" \
+            "${GITHUB_WORKSPACE}/docker-stack.yml" \
             "${GITHUB_WORKSPACE}/config" \
             "${GITHUB_WORKSPACE}/scripts" \
             "${GITHUB_WORKSPACE}/nginx" \
@@ -399,7 +395,7 @@ jobs:
              echo 'ROCKET_SECRET_KEY=${SECRET_ROCKET_SECRET_KEY}' >> ${APP_DEPLOY_PATH}/.secrets.env && \
              echo 'VITE_HONEYCOMB_API_KEY=${SECRET_HONEYCOMB_API_KEY}' >> ${APP_DEPLOY_PATH}/.secrets.env"
 
-      - name: Deploy application with Docker Compose
+      - name: Deploy application with Docker Stack
         env:
           BACKEND_IMAGE_TAG: ${{ needs.build-backend.outputs.image_tag }}
           FRONTEND_IMAGE_TAG: ${{ needs.build-frontend.outputs.image_tag }}
@@ -408,25 +404,17 @@ jobs:
           ssh -i ~/.ssh/id_rsa \
             "${NIXOS_SERVER_USER}@${NIXOS_SERVER_IP}" \
             "bash -s" <<EOF
-              set -ex
+              set -e
               cd "${APP_DEPLOY_PATH}"
               
-              echo "Pulling latest application images..."
+              # Set environment for stack deployment
               export APP_IMAGE_TAG="${BACKEND_IMAGE_TAG}"
               export FRONTEND_IMAGE_TAG="${FRONTEND_IMAGE_TAG}"
               export REGISTRY="${REGISTRY}"
-              export ALLOW_DESTRUCTIVE_MIGRATIONS="${ALLOW_DESTRUCTIVE_MIGRATIONS}"
               export IMAGE_NAME="${IMAGE_NAME}"
+              export ALLOW_DESTRUCTIVE_MIGRATIONS="${ALLOW_DESTRUCTIVE_MIGRATIONS:-false}"
               
-              docker compose -f docker-compose.nixos.yml pull app frontend otel-collector backup nginx
-              
-              echo "Starting application services with Docker Compose..."
-              docker compose -f docker-compose.nixos.yml up -d --remove-orphans
-              
-              echo "Cleaning up unused Docker images..."
-              docker image prune -af
-              
-              echo "Application deployment complete."
+              docker stack deploy -c docker-stack.yml syllabus-tracker --with-registry-auth --resolve-image always
           EOF
 
       - name: Complete application deploy step

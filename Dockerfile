@@ -44,6 +44,7 @@ FROM scratch AS production
 WORKDIR /app
 COPY --from=builder /app/syllabus-tracker /app/syllabus-tracker
 COPY --from=builder /app/config /app/config
+COPY --from=ghcr.io/tarampampam/curl:8.6.0 /bin/curl /bin/curl
 VOLUME /app/data
 EXPOSE 8000
 ENV ROCKET_ADDRESS=0.0.0.0

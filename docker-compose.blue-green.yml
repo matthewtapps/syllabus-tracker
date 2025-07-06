@@ -1,0 +1,133 @@
+name: syllabus-tracker-services
+
+services:
+  # Blue environment (current production)
+  nginx-blue:
+    image: nginx:alpine
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8080:80"
+    volumes:
+      - ./nginx/blue.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - app-blue
+      - frontend-blue
+    networks:
+      - internal
+      - host
+    profiles:
+      - blue
+
+  app-blue:
+    image: ${REGISTRY}/${IMAGE_NAME}/app:${CURRENT_TAG}
+    restart: unless-stopped
+    env_file:
+      - ./config/common.env
+      - ./config/prod.env
+      - ./.secrets.env
+    environment:
+      - ALLOW_DESTRUCTIVE_MIGRATIONS=false
+    volumes:
+      - app-data:/app/data
+    networks:
+      - internal
+    expose:
+      - "8000"
+    profiles:
+      - blue
+
+  frontend-blue:
+    image: ${REGISTRY}/${IMAGE_NAME}/frontend:${CURRENT_TAG}
+    restart: unless-stopped
+    networks:
+      - internal
+    expose:
+      - "80"
+    profiles:
+      - blue
+
+  # Green environment (new deployment)
+  nginx-green:
+    image: nginx:alpine
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8081:80" # Different port for testing
+    volumes:
+      - ./nginx/green.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - app-green
+      - frontend-green
+    networks:
+      - internal
+      - host
+    profiles:
+      - green
+
+  app-green:
+    image: ${REGISTRY}/${IMAGE_NAME}/app:${NEW_TAG}
+    restart: unless-stopped
+    env_file:
+      - ./config/common.env
+      - ./config/prod.env
+      - ./.secrets.env
+    environment:
+      - ALLOW_DESTRUCTIVE_MIGRATIONS=${ALLOW_DESTRUCTIVE_MIGRATIONS:-false}
+    volumes:
+      - app-data:/app/data # Same data volume
+    networks:
+      - internal
+    expose:
+      - "8000"
+    profiles:
+      - green
+
+  frontend-green:
+    image: ${REGISTRY}/${IMAGE_NAME}/frontend:${NEW_TAG}
+    restart: unless-stopped
+    networks:
+      - internal
+    expose:
+      - "80"
+    profiles:
+      - green
+
+  # Shared services
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:latest
+    command: ["--config=/etc/otel-collector-config.yaml"]
+    group_add:
+      - "131"
+    volumes:
+      - ./config/otel-collector-config.prod.yaml:/etc/otel-collector-config.yaml
+      - /var/run/docker.sock:/var/run/docker.sock
+    env_file:
+      - ./config/common.env
+      - ./config/prod.env
+      - ./.secrets.env
+    restart: unless-stopped
+    networks:
+      - internal
+
+  backup:
+    image: alpine:latest
+    volumes:
+      - app-data:/app/data
+      - syllabus-backups:/data/backups
+      - ./scripts/backup.sh:/scripts/backup.sh
+    entrypoint: /scripts/backup.sh
+    env_file:
+      - ./config/prod.env
+      - ./config/backup-service.env
+      - ./.secrets.env
+    restart: unless-stopped
+    networks:
+      - internal
+
+volumes:
+  app-data:
+  syllabus-backups:
+
+networks:
+  internal:
+  host:
+    driver: bridge

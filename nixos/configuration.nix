@@ -161,6 +161,7 @@ in
   # Docker
   virtualisation.docker = {
     enable = true;
+    liveRestore = false;
   };
 
   # Nginx and ACME (Let's Encrypt) for SSL
