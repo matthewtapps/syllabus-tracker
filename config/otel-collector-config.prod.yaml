@@ -29,11 +29,11 @@ processors:
         value: "${OTEL_ENVIRONMENT}"
   tail_sampling:
     decision_wait: 10s
-    num_traces: 100
+    num_traces: 1
     policies:
       [
         {
-          name: and,
+          name: health-check-sampler-and,
           type: and,
           and:
             {
