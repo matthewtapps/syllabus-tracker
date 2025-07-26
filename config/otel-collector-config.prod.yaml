@@ -45,8 +45,8 @@ processors:
                     string_attribute:
                       {
                         key: uri,
-                        values: ["/api/health"],
-                        enabled_regex_matching: false,
+                        values: [".*\/health.*"],
+                        enabled_regex_matching: true,
                       },
                   },
                   {
