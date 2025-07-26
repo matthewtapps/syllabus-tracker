@@ -35,7 +35,7 @@ use telemetry::init_tracing;
 use thiserror::Error;
 
 use sqlx::SqlitePool;
-use tracing::info;
+use tracing::{error, info};
 
 #[derive(Debug, Error)]
 pub enum Error {
