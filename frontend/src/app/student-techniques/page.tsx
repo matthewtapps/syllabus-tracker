@@ -579,7 +579,7 @@ export default function StudentTechniques({ user }: StudentTechniquesProps) {
                     >
                       <TableCell className="py-4 font-medium">
                         <div className="flex flex-col">
-                          <span>{technique.technique_name}</span>
+                          <span className="text-wrap">{technique.technique_name}</span>
                           {/* Only show tags in the collapsed row if the row isn't expanded */}
                           {technique.tags.length > 0 && !expandedRows.includes(technique.id) && (
                             <div className="flex gap-1 flex-wrap mt-2">
@@ -621,7 +621,7 @@ export default function StudentTechniques({ user }: StudentTechniquesProps) {
                             <div className="mb-6">
                               <div className="flex justify-between items-center mb-2">
                                 <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400">Status</h3>
-                                <div className="flex items-center gap-2">
+                                <div className="flex items-center gap-1">
                                   <Button
                                     variant={technique.status === 'red' ? 'default' : 'outline'}
                                     size="sm"
@@ -642,7 +642,7 @@ export default function StudentTechniques({ user }: StudentTechniquesProps) {
                                       }
                                     }}
                                   >
-                                    Not Started
+                                    New
                                   </Button>
                                   <Button
                                     variant={technique.status === 'amber' ? 'default' : 'outline'}
@@ -665,7 +665,7 @@ export default function StudentTechniques({ user }: StudentTechniquesProps) {
                                       }
                                     }}
                                   >
-                                    In Progress
+                                    Doing
                                   </Button>
                                   <Button
                                     variant={technique.status === 'green' ? 'default' : 'outline'}
@@ -688,7 +688,7 @@ export default function StudentTechniques({ user }: StudentTechniquesProps) {
                                       }
                                     }}
                                   >
-                                    Completed
+                                    Done
                                   </Button>
                                 </div>
                               </div>
