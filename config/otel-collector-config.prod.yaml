@@ -33,7 +33,7 @@ processors:
     policies:
       [
         {
-          name: health-check-sampler-and,
+          name: health-check-low-sampling,
           type: and,
           and:
             {
@@ -57,7 +57,27 @@ processors:
                 ],
             },
         },
-        { name: default-policy, type: always_sample },
+        {
+          name: fully-sample-default,
+          type: and,
+          and:
+            {
+              and_sub_policy:
+                [
+                  {
+                    name: not-health-check-endpoint,
+                    type: string_attribute,
+                    string_attribute:
+                      {
+                        key: uri,
+                        values: [".*\/health.*"],
+                        enable_regex_matching: true,
+                        invert_match: true,
+                      },
+                  },
+                ],
+            },
+        },
       ]
 
 exporters:
