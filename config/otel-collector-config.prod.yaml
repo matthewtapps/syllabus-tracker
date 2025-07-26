@@ -46,7 +46,7 @@ processors:
                       {
                         key: uri,
                         values: [.*\/health.*],
-                        enable_regex_matching: true,
+                        enabled_regex_matching: true,
                       },
                   },
                   {
@@ -71,7 +71,7 @@ processors:
                       {
                         key: uri,
                         values: [.*\/health.*],
-                        enable_regex_matching: true,
+                        enabled_regex_matching: true,
                         invert_match: true,
                       },
                   },
