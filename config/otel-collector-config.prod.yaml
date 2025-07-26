@@ -27,6 +27,18 @@ processors:
       - action: insert
         key: deployment.environment
         value: "${OTEL_ENVIRONMENT}"
+  tail_sampling:
+    decision_wait: 10s
+    num_traces: 100
+    policies:
+      [
+        {
+          name: sample-health-checks,
+          type: probabilistic,
+          probabilistic: {sampling_percentage: 2},
+          string_attribute: {key: uri, values: [\/health], enabled_regex_matching: true}
+        }
+      ]
 
 exporters:
   otlp/traces:
@@ -46,7 +58,7 @@ service:
   pipelines:
     traces:
       receivers: [otlp]
-      processors: [batch, resource]
+      processors: [batch, resource, tail_sampling]
       exporters: [otlp/traces]
     metrics:
       receivers: [docker_stats, hostmetrics, otlp]
