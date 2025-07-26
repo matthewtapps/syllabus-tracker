@@ -131,6 +131,7 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
         with:
+          toolchain: 1.86
           components: rustfmt, clippy
 
       - uses: actions/cache@v4
@@ -171,6 +172,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: actions/cache@v4
         with:
+          toolchain: 1.86
           path: |
             ~/.cargo/registry
             ~/.cargo/git
