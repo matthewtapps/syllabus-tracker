@@ -45,8 +45,8 @@ processors:
                     string_attribute:
                       {
                         key: uri,
-                        values: [/health],
-                        enabled_regex_matching: true,
+                        values: ["/api/health"],
+                        enabled_regex_matching: false,
                       },
                   },
                   {
@@ -57,6 +57,7 @@ processors:
                 ],
             },
         },
+        { name: default-policy, type: always_sample },
       ]
 
 exporters:
@@ -77,7 +78,7 @@ service:
   pipelines:
     traces:
       receivers: [otlp]
-      processors: [batch, resource]
+      processors: [batch, resource, tail_sampling]
       exporters: [otlp/traces]
     metrics:
       receivers: [docker_stats, hostmetrics, otlp]
