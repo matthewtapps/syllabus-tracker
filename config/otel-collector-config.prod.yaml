@@ -33,11 +33,30 @@ processors:
     policies:
       [
         {
-          name: sample-health-checks,
-          type: probabilistic,
-          probabilistic: {sampling_percentage: 2},
-          string_attribute: {key: uri, values: [\/health], enabled_regex_matching: true}
-        }
+          name: and,
+          type: and,
+          and:
+            {
+              and_sub_policy:
+                [
+                  {
+                    name: health-check-endpoint-policy,
+                    type: string_attribute,
+                    string_attribute:
+                      {
+                        key: uri,
+                        values: [/health],
+                        enabled_regex_matching: true,
+                      },
+                  },
+                  {
+                    name: sample-health-checks,
+                    type: probabilistic,
+                    probabilistic: { sampling_percentage: 2 },
+                  },
+                ],
+            },
+        },
       ]
 
 exporters:
