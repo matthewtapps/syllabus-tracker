@@ -77,7 +77,7 @@ service:
   pipelines:
     traces:
       receivers: [otlp]
-      processors: [batch, resource, tail_sampling]
+      processors: [batch, resource]
       exporters: [otlp/traces]
     metrics:
       receivers: [docker_stats, hostmetrics, otlp]
