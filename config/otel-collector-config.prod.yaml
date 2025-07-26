@@ -75,6 +75,7 @@ processors:
                         invert_match: true,
                       },
                   },
+                  { name: always-sample, type: always_sample },
                 ],
             },
         },
