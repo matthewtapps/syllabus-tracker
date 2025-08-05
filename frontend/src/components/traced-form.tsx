@@ -1,6 +1,5 @@
 import React, { type FormEvent, type ReactNode, useRef, useState } from 'react';
 import { recordFormSubmission } from '@/lib/telemetry';
-import { useTelemetry } from '@/context/telemetry';
 import { type Span } from '@opentelemetry/api';
 import { toast } from 'sonner';
 import { isValidationErrorResponse } from '@/lib/types';
@@ -24,7 +23,6 @@ export function TracedForm({
   setFieldErrors,
   ...props
 }: TracedFormProps) {
-  const { fetch } = useTelemetry();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const formRef = useRef<HTMLFormElement>(null);
   const formSpanRef = useRef<Span | null>(null);

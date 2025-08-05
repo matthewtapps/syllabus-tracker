@@ -1,13 +1,12 @@
 import { createContext, useContext, type ReactNode, useEffect, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import { type Span } from '@opentelemetry/api';
-import { createSpan, initTelemetry, recordRouteChange, tracedFetch } from '@/lib/telemetry';
+import { createSpan, initTelemetry, recordRouteChange } from '@/lib/telemetry';
 
 interface TelemetryContextType {
   createSpan: <T>(name: string, fn: (span: Span) => T | Promise<T>, options?: {
     attributes?: Record<string, string | number | boolean | string[]>
   }) => Promise<T>;
-  fetch: typeof tracedFetch;
 }
 
 const TelemetryContext = createContext<TelemetryContextType | undefined>(undefined);
@@ -34,7 +33,6 @@ export function TelemetryProvider({ children }: TelemetryProviderProps) {
 
   const value = {
     createSpan,
-    fetch: tracedFetch,
   };
 
   return (

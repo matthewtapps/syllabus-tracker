@@ -1,5 +1,4 @@
 import { useState, useCallback } from "react";
-import { useTelemetry } from "@/context/telemetry";
 
 interface UseFetchOptions<T> {
   onSuccess?: (data: T) => void;
@@ -16,7 +15,6 @@ interface FetchState<T> {
  * Hook for traced fetch requests
  */
 export function useFetch<T>(options: UseFetchOptions<T> = {}) {
-  const { fetch } = useTelemetry();
   const [state, setState] = useState<FetchState<T>>({
     data: null,
     error: null,

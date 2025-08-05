@@ -1,5 +1,3 @@
-import { tracedFetch } from "./telemetry";
-
 export interface LoginCredentials {
   username: string;
   password: string;
@@ -21,7 +19,7 @@ export async function login(
   credentials: LoginCredentials,
 ): Promise<LoginResponse> {
   try {
-    const response = await tracedFetch("/api/login", {
+    const response = await fetch("/api/login", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -41,7 +39,7 @@ export async function login(
 
 export async function logout(): Promise<void | null> {
   try {
-    const response = await tracedFetch("/api/logout", {
+    const response = await fetch("/api/logout", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -66,7 +64,7 @@ export interface User {
 
 export async function getCurrentUser(): Promise<User | null> {
   try {
-    const response = await tracedFetch("/api/me", {
+    const response = await fetch("/api/me", {
       credentials: "include",
     });
 
@@ -84,7 +82,7 @@ export async function getCurrentUser(): Promise<User | null> {
 export async function getTechniquesForAssignment(
   studentId: number,
 ): Promise<any[]> {
-  const response = await tracedFetch(
+  const response = await fetch(
     `/api/student/${studentId}/unassigned_techniques`,
     {
       credentials: "include",
@@ -104,7 +102,7 @@ export async function assignTechniquesToStudent(
   studentId: number,
   techniqueIds: number[],
 ): Promise<Response> {
-  const response = await tracedFetch(
+  const response = await fetch(
     `/api/student/${studentId}/add_techniques`,
     {
       method: "POST",
@@ -124,7 +122,7 @@ export async function createAndAssignTechnique(
   name: string,
   description: string,
 ): Promise<Response> {
-  const response = await tracedFetch(
+  const response = await fetch(
     `/api/student/${studentId}/create_technique`,
     {
       method: "POST",
@@ -164,7 +162,7 @@ export interface StudentTechniques {
 export async function getStudentTechniques(
   studentId: number,
 ): Promise<StudentTechniques> {
-  const response = await tracedFetch(`/api/student/${studentId}/techniques`, {
+  const response = await fetch(`/api/student/${studentId}/techniques`, {
     credentials: "include",
   });
 
@@ -187,7 +185,7 @@ export async function updateTechnique(
   techniqueId: number,
   updates: TechniqueUpdate,
 ): Promise<Response> {
-  const response = await tracedFetch(`/api/student_technique/${techniqueId}`, {
+  const response = await fetch(`/api/student_technique/${techniqueId}`, {
     method: "PUT",
     headers: {
       "Content-Type": "application/json",
@@ -215,7 +213,7 @@ export async function getStudents(
 
   url += params.toString();
 
-  const response = await tracedFetch(url, {
+  const response = await fetch(url, {
     credentials: "include",
   });
 
@@ -233,7 +231,7 @@ export interface ProfileUpdateData {
 export async function updateUserProfile(
   data: ProfileUpdateData,
 ): Promise<Response> {
-  const response = await tracedFetch("/api/profile", {
+  const response = await fetch("/api/profile", {
     method: "PUT",
     headers: {
       "Content-Type": "application/json",
@@ -253,7 +251,7 @@ export interface PasswordUpdateData {
 export async function updatePassword(
   data: PasswordUpdateData,
 ): Promise<Response> {
-  const response = await tracedFetch("/api/change-password", {
+  const response = await fetch("/api/change-password", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -276,7 +274,7 @@ export interface UserRegistrationData {
 export async function registerUser(
   data: UserRegistrationData,
 ): Promise<Response> {
-  return await tracedFetch("/api/register", {
+  return await fetch("/api/register", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -298,7 +296,7 @@ export async function updateUser(
   userId: number,
   data: UserUpdateData,
 ): Promise<Response> {
-  return await tracedFetch(`/api/admin/users/${userId}`, {
+  return await fetch(`/api/admin/users/${userId}`, {
     method: "PUT",
     headers: {
       "Content-Type": "application/json",
@@ -309,7 +307,7 @@ export async function updateUser(
 }
 
 export async function getAllTags(): Promise<Tag[]> {
-  const response = await tracedFetch("/api/tags", {
+  const response = await fetch("/api/tags", {
     credentials: "include",
   });
 
@@ -322,7 +320,7 @@ export async function getAllTags(): Promise<Tag[]> {
 }
 
 export async function createTag(name: string): Promise<Response> {
-  const response = await tracedFetch("/api/tags", {
+  const response = await fetch("/api/tags", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -335,7 +333,7 @@ export async function createTag(name: string): Promise<Response> {
 }
 
 export async function deleteTag(tagId: number): Promise<Response> {
-  const response = await tracedFetch(`/api/tags/${tagId}`, {
+  const response = await fetch(`/api/tags/${tagId}`, {
     method: "DELETE",
     credentials: "include",
   });
@@ -347,7 +345,7 @@ export async function addTagToTechnique(
   techniqueId: number,
   tagId: number,
 ): Promise<Response> {
-  const response = await tracedFetch("/api/technique/tag", {
+  const response = await fetch("/api/technique/tag", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -363,7 +361,7 @@ export async function removeTagFromTechnique(
   techniqueId: number,
   tagId: number,
 ): Promise<Response> {
-  const response = await tracedFetch(
+  const response = await fetch(
     `/api/technique/${techniqueId}/tag/${tagId}`,
     {
       method: "DELETE",
@@ -375,7 +373,7 @@ export async function removeTagFromTechnique(
 }
 
 export async function getAllUsers(): Promise<User[]> {
-  const response = await tracedFetch("/api/admin/users", {
+  const response = await fetch("/api/admin/users", {
     credentials: "include",
   });
 
