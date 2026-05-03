@@ -315,14 +315,11 @@ jobs:
               echo "Copying NixOS configuration from staging to ${SERVER_TARGET_CONFIG_PATH}..."
               sudo cp "${SERVER_TEMP_CONFIG_PATH}/configuration.nix" "${SERVER_TARGET_CONFIG_PATH}/configuration.nix"
               sudo cp "${SERVER_TEMP_CONFIG_PATH}/hardware-configuration.nix" "${SERVER_TARGET_CONFIG_PATH}/hardware-configuration.nix"
-              # Copy flake files to /etc/nixos for manual use — requires sudo rules that
-              # won't exist until after the first flake deploy, so non-fatal here.
-              sudo cp "${SERVER_TEMP_CONFIG_PATH}/flake.nix" "${SERVER_TARGET_CONFIG_PATH}/flake.nix" || true
-              sudo cp "${SERVER_TEMP_CONFIG_PATH}/flake.lock" "${SERVER_TARGET_CONFIG_PATH}/flake.lock" || true
+              sudo cp "${SERVER_TEMP_CONFIG_PATH}/flake.nix" "${SERVER_TARGET_CONFIG_PATH}/flake.nix"
+              sudo cp "${SERVER_TEMP_CONFIG_PATH}/flake.lock" "${SERVER_TARGET_CONFIG_PATH}/flake.lock"
 
               echo "Running nixos-rebuild switch --flake ${{ github.event.inputs.force_rebuild_options }}..."
               sudo nixos-rebuild switch \
-                --option extra-experimental-features "nix-command flakes" \
                 --option max-jobs 1 \
                 --flake "${SERVER_TEMP_CONFIG_PATH}#syllabustracker-nixos" \
                 ${{ github.event.inputs.force_rebuild_options }}

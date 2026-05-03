@@ -130,6 +130,11 @@ in
           command = "/run/current-system/sw/bin/cp ${serverTempConfigPath}/flake.lock ${serverTargetConfigPath}/flake.lock";
           options = [ "NOPASSWD" ];
         }
+        {
+          # Temporary: allow setting own password without sudo password. Remove after password is set.
+          command = "/run/current-system/sw/bin/passwd ${adminUser}";
+          options = [ "NOPASSWD" ];
+        }
       ];
     }
   ];
