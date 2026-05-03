@@ -120,6 +120,14 @@ in
           command = "/run/current-system/sw/bin/cp ${serverTempConfigPath}/hardware-configuration.nix ${serverTargetConfigPath}/hardware-configuration.nix";
           options = [ "NOPASSWD" ];
         }
+        {
+          command = "/run/current-system/sw/bin/cp ${serverTempConfigPath}/flake.nix ${serverTargetConfigPath}/flake.nix";
+          options = [ "NOPASSWD" ];
+        }
+        {
+          command = "/run/current-system/sw/bin/cp ${serverTempConfigPath}/flake.lock ${serverTargetConfigPath}/flake.lock";
+          options = [ "NOPASSWD" ];
+        }
       ];
     }
   ];
@@ -158,9 +166,12 @@ in
     443
   ]; # SSH, HTTP, HTTPS
 
+  nix.settings.experimental-features = [ "nix-command" "flakes" ];
+
   # Docker
   virtualisation.docker = {
     enable = true;
+    package = pkgs.docker; # nixos-24.11 ships Docker 27.x
   };
 
   # Nginx and ACME (Let's Encrypt) for SSL
