@@ -18,9 +18,10 @@ services:
       - host
     healthcheck:
       test: ["CMD", "curl", "-f", "http://app:8000/api/health"]
-      interval: 60s
+      interval: 10s
       timeout: 5s
       retries: 3
+      start_period: 5s
 
   app:
     image: ${REGISTRY}/${IMAGE_NAME}/app:${APP_IMAGE_TAG:-latest}
