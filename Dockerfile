@@ -35,7 +35,6 @@ COPY --from=builder-deps /usr/local/cargo /usr/local/cargo
 COPY Cargo.toml Cargo.lock ./
 COPY src ./src
 COPY .sqlx ./.sqlx
-COPY config ./config
 ENV SQLX_OFFLINE=true
 RUN cargo build --release --target x86_64-unknown-linux-musl
 RUN cp target/x86_64-unknown-linux-musl/release/syllabus-tracker /app/syllabus-tracker
@@ -43,7 +42,7 @@ RUN cp target/x86_64-unknown-linux-musl/release/syllabus-tracker /app/syllabus-t
 FROM scratch AS production
 WORKDIR /app
 COPY --from=builder /app/syllabus-tracker /app/syllabus-tracker
-COPY --from=builder /app/config /app/config
+COPY config /app/config
 VOLUME /app/data
 EXPOSE 8000
 ENV ROCKET_ADDRESS=0.0.0.0
