@@ -7,7 +7,7 @@ receivers:
         endpoint: 0.0.0.0:4318
   docker_stats:
     endpoint: unix:///var/run/docker.sock
-  hostmetrics:
+  host_metrics:
     collection_interval: 60s
     scrapers:
       cpu:
@@ -82,12 +82,12 @@ processors:
       ]
 
 exporters:
-  otlp/traces:
+  otlp_grpc/traces:
     endpoint: "api.honeycomb.io:443"
     headers:
       "x-honeycomb-team": "${HONEYCOMB_API_KEY}"
       "x-honeycomb-dataset": "syllabus-tracker"
-  otlp/metrics:
+  otlp_grpc/metrics:
     endpoint: "api.honeycomb.io:443"
     headers:
       "x-honeycomb-team": "${HONEYCOMB_API_KEY}"
@@ -100,11 +100,11 @@ service:
     traces:
       receivers: [otlp]
       processors: [batch, resource, tail_sampling]
-      exporters: [otlp/traces]
+      exporters: [otlp_grpc/traces]
     metrics:
-      receivers: [docker_stats, hostmetrics, otlp]
+      receivers: [docker_stats, host_metrics, otlp]
       processors: [batch, resource]
-      exporters: [otlp/metrics]
+      exporters: [otlp_grpc/metrics]
 
   # Otel Collector internal telemetry configuration
   telemetry:

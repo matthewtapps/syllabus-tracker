@@ -54,7 +54,7 @@ services:
         condition: service_started
 
   otel-collector:
-    image: otel/opentelemetry-collector-contrib:latest
+    image: otel/opentelemetry-collector-contrib:0.151.0
     command: ["--config=/etc/otel-collector-config.yaml"]
     group_add:
       - "131"

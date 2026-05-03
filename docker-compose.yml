@@ -39,7 +39,7 @@ services:
       - syllabus-net
 
   otel-collector:
-    image: otel/opentelemetry-collector-contrib:latest
+    image: otel/opentelemetry-collector-contrib:0.151.0
     command: ["--config=/etc/otel-collector-config.yaml"]
     volumes:
       - ./config/otel-collector-config.dev.yaml:/etc/otel-collector-config.yaml

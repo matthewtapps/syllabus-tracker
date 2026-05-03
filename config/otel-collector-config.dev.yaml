@@ -20,7 +20,7 @@ processors:
         value: "${OTEL_ENVIRONMENT}"
 
 exporters:
-  otlp/traces:
+  otlp_grpc/traces:
     endpoint: "api.honeycomb.io:443"
     headers:
       "x-honeycomb-team": "${HONEYCOMB_API_KEY}"
@@ -33,4 +33,4 @@ service:
     traces:
       receivers: [otlp]
       processors: [batch, resource]
-      exporters: [otlp/traces]
+      exporters: [otlp_grpc/traces]
