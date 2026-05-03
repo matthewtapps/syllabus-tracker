@@ -323,6 +323,7 @@ jobs:
               echo "Running nixos-rebuild switch --flake ${{ github.event.inputs.force_rebuild_options }}..."
               sudo nixos-rebuild switch \
                 --option extra-experimental-features "nix-command flakes" \
+                --option max-jobs 1 \
                 --flake "${SERVER_TEMP_CONFIG_PATH}#syllabustracker-nixos" \
                 ${{ github.event.inputs.force_rebuild_options }}
               echo "NixOS configuration applied."

@@ -37,6 +37,8 @@ in
   boot.tmp.cleanOnBoot = true;
   zramSwap.enable = true;
 
+  swapDevices = [{ device = "/swapfile"; size = 2048; }];
+
   # Networking Configuration
   networking.hostName = "syllabustracker-nixos";
   networking.domain = lib.strings.removePrefix "syllabustracker." domain;
