@@ -204,13 +204,12 @@ in
   # Persistent storage directories for application
   systemd.tmpfiles.rules = [
     # For Docker persistent data
-    "d /var/lib/syllabus-tracker/app-data 0755 ${adminUser} users -" # Owned by adminUser
-    "d /var/lib/syllabus-tracker/backups 0750 ${adminUser} users -" # Owned by adminUser
+    "d /var/lib/syllabus-tracker/app-data 0755 ${adminUser} users -"
 
     # For Application Deployment Path (Docker Compose files, scripts, configs)
-    "d /srv/syllabus-tracker 0755 ${adminUser} users -" # Main app deployment dir, owned by adminUser
-    "d /srv/syllabus-tracker/config 0755 ${adminUser} users -" # Subdirectory for app configs, owned by adminUser
-    "d /srv/syllabus-tracker/scripts 0755 ${adminUser} users -" # Subdirectory for scripts, owned by adminUser
+    "d /srv/syllabus-tracker 0755 ${adminUser} users -"
+    "d /srv/syllabus-tracker/config 0755 ${adminUser} users -"
+    "d /srv/syllabus-tracker/scripts 0755 ${adminUser} users -"
 
     # Nginx placeholder
     "d /var/www/${domain}/placeholder 0755 root root -" # Nginx usually runs as its own user, but root can create

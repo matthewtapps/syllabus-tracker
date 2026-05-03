@@ -77,31 +77,8 @@ services:
       nginx:
         condition: service_healthy
 
-  backup:
-    image: alpine:3.23
-    volumes:
-      - app-data:/app/data
-      - syllabus-backups:/data/backups
-      - ./scripts/backup.sh:/scripts/backup.sh
-    entrypoint: /scripts/backup.sh
-    env_file:
-      - ./config/prod.env
-      - ./config/backup-service.env
-      - ./.secrets.env
-    restart: unless-stopped
-    networks:
-      - internal
-    depends_on:
-      app:
-        condition: service_started
-      frontend:
-        condition: service_started
-      nginx:
-        condition: service_healthy
-
 volumes:
   app-data:
-  syllabus-backups:
 
 networks:
   internal:
