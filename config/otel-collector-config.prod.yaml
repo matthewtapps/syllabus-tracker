@@ -7,6 +7,7 @@ receivers:
         endpoint: 0.0.0.0:4318
   docker_stats:
     endpoint: unix:///var/run/docker.sock
+    collection_interval: 60s
   host_metrics:
     collection_interval: 60s
     scrapers:
@@ -106,14 +107,6 @@ service:
       processors: [batch, resource]
       exporters: [otlp_grpc/metrics]
 
-  # Otel Collector internal telemetry configuration
   telemetry:
     metrics:
-      level: normal
-      readers:
-        - periodic:
-            exporter:
-              otlp:
-                protocol: http/protobuf
-                # Send to itself, which can then be exported as normal
-                endpoint: http://localhost:4318
+      level: none
