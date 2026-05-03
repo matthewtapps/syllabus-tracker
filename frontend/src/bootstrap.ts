@@ -13,7 +13,7 @@ declare global {
 
 const apiKey =
   import.meta.env.VITE_HONEYCOMB_API_KEY ||
-  "hcaik_01jvp2z2gwqffmtv456vvej5ta606mb1beakaetx2kqg6shdakch8333an";
+  "hcaik_01kqnsdc1zzhhsjg2wtg39zcpbrptm9re8fe4nsbyxqtfvkyrkkanhe5s7";
 window.apiKey = apiKey;
 
 import { initTelemetry } from "./lib/telemetry";
