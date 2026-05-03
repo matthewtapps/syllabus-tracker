@@ -375,13 +375,12 @@ jobs:
 
           # Ensure application directories exist
           ssh "${NIXOS_SERVER_USER}@${NIXOS_SERVER_IP}" \
-            "mkdir -p ${APP_DEPLOY_PATH}/config && mkdir -p ${APP_DEPLOY_PATH}/scripts && mkdir -p ${APP_DEPLOY_PATH}/nginx"
+            "mkdir -p ${APP_DEPLOY_PATH}/config && mkdir -p ${APP_DEPLOY_PATH}/nginx"
 
           # Copy application files
           rsync -avz --delete -e "ssh -i ~/.ssh/id_rsa" \
             "${GITHUB_WORKSPACE}/docker-compose.nixos.yml" \
             "${GITHUB_WORKSPACE}/config" \
-            "${GITHUB_WORKSPACE}/scripts" \
             "${GITHUB_WORKSPACE}/nginx" \
             "${NIXOS_SERVER_USER}@${NIXOS_SERVER_IP}:${APP_DEPLOY_PATH}"
 
@@ -411,7 +410,7 @@ jobs:
               export ALLOW_DESTRUCTIVE_MIGRATIONS="${ALLOW_DESTRUCTIVE_MIGRATIONS}"
               export IMAGE_NAME="${IMAGE_NAME}"
               
-              docker compose -f docker-compose.nixos.yml pull app frontend otel-collector backup nginx
+              docker compose -f docker-compose.nixos.yml pull app frontend otel-collector nginx
               
               echo "Starting application services with Docker Compose..."
               docker compose -f docker-compose.nixos.yml up -d --remove-orphans
