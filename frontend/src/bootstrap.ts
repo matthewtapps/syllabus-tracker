@@ -4,6 +4,7 @@ declare global {
     VITE_API_URL: string;
     VITE_ENVIRONMENT: string;
     VITE_APP_NAME: string;
+    VITE_OTEL_EXPORTER_OTLP_TRACES_ENDPOINT?: string;
   }
 
   interface Window {

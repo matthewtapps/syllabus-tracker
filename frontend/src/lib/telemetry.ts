@@ -35,12 +35,15 @@ function getTracer(name: string): Tracer {
  * Initialize the OpenTelemetry tracer
  */
 export function initTelemetry(): void {
-  const exporter = new OTLPTraceExporter({
-    url: "https://api.honeycomb.io/v1/traces",
-    headers: {
-      "x-honeycomb-team": window.apiKey || "",
-    },
-  });
+  const customEndpoint = import.meta.env.VITE_OTEL_EXPORTER_OTLP_TRACES_ENDPOINT;
+  const exporter = customEndpoint
+    ? new OTLPTraceExporter({ url: customEndpoint })
+    : new OTLPTraceExporter({
+        url: "https://api.honeycomb.io/v1/traces",
+        headers: {
+          "x-honeycomb-team": window.apiKey || "",
+        },
+      });
 
   const provider = new WebTracerProvider({
     spanProcessors: [new BatchSpanProcessor(exporter)],

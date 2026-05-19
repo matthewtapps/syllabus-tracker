@@ -50,6 +50,20 @@ services:
     ports:
       - "4317:4317" # OTLP gRPC
       - "4318:4318" # OTLP HTTP
+    depends_on:
+      - clickstack
+    networks:
+      - syllabus-net
+
+  clickstack:
+    image: clickhouse/clickstack-all-in-one:latest
+    ports:
+      - "8080:8080" # HyperDX UI
+      - "8123:8123" # ClickHouse HTTP
+    volumes:
+      - clickstack-db:/data/db
+      - clickstack-ch-data:/var/lib/clickhouse
+      - clickstack-ch-logs:/var/log/clickhouse-server
     networks:
       - syllabus-net
 
@@ -61,3 +75,6 @@ volumes:
   target-cache:
   sccache-data:
   node-modules:
+  clickstack-db:
+  clickstack-ch-data:
+  clickstack-ch-logs:
