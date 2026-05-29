@@ -280,74 +280,108 @@ export default function AdminPage() {
             }
           />
         ) : (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>User</TableHead>
-                <TableHead>Role</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
+          <>
+            {/* Mobile: card-list */}
+            <div className="divide-y divide-border sm:hidden">
               {filtered.map((u) => (
-                <TableRow
+                <div
                   key={u.id}
-                  className={cn(u.archived && 'text-muted-foreground')}
+                  className={cn(
+                    'flex items-start gap-3 px-4 py-3',
+                    u.archived && 'text-muted-foreground',
+                  )}
                 >
-                  <TableCell>
-                    <div className="flex items-center gap-3">
-                      <Avatar size="sm">
-                        <AvatarFallback>{initials(u)}</AvatarFallback>
-                      </Avatar>
-                      <div className="min-w-0">
-                        <div className="font-medium">{u.username}</div>
-                        {u.display_name && (
-                          <div className="text-xs text-muted-foreground">
-                            {u.display_name}
-                          </div>
-                        )}
-                      </div>
+                  <Avatar size="default">
+                    <AvatarFallback>{initials(u)}</AvatarFallback>
+                  </Avatar>
+                  <div className="min-w-0 flex-1 space-y-1.5">
+                    <div className="flex items-center gap-2">
+                      <span className="truncate font-medium">{u.username}</span>
+                      {u.archived ? (
+                        <Badge variant="outline" className="shrink-0 text-muted-foreground">
+                          Archived
+                        </Badge>
+                      ) : (
+                        <Badge variant="secondary" className="shrink-0">
+                          Active
+                        </Badge>
+                      )}
                     </div>
-                  </TableCell>
-                  <TableCell className="capitalize">{u.role}</TableCell>
-                  <TableCell>
-                    {u.archived ? (
-                      <Badge variant="outline" className="text-muted-foreground">
-                        Archived
-                      </Badge>
-                    ) : (
-                      <Badge variant="secondary">Active</Badge>
+                    {u.display_name && (
+                      <p className="truncate text-xs text-muted-foreground">
+                        {u.display_name}
+                      </p>
                     )}
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="icon">
-                          <MoreHorizontalIcon className="h-5 w-5" aria-hidden />
-                          <span className="sr-only">Actions for {u.username}</span>
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem onClick={() => openEditDialog(u)}>
-                          <EditIcon className="mr-2 h-4 w-4" aria-hidden />
-                          Edit user
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => openPasswordDialog(u)}>
-                          <KeyIcon className="mr-2 h-4 w-4" aria-hidden />
-                          Change password
-                        </DropdownMenuItem>
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem onClick={() => handleToggleArchive(u)}>
-                          {u.archived ? 'Unarchive user' : 'Archive user'}
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </TableCell>
-                </TableRow>
+                    <p className="text-xs capitalize text-muted-foreground">
+                      {u.role}
+                    </p>
+                  </div>
+                  <UserActionsMenu
+                    user={u}
+                    onEdit={() => openEditDialog(u)}
+                    onPassword={() => openPasswordDialog(u)}
+                    onToggleArchive={() => handleToggleArchive(u)}
+                  />
+                </div>
               ))}
-            </TableBody>
-          </Table>
+            </div>
+
+            {/* Desktop: table */}
+            <div className="hidden sm:block">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>User</TableHead>
+                    <TableHead>Role</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filtered.map((u) => (
+                    <TableRow
+                      key={u.id}
+                      className={cn(u.archived && 'text-muted-foreground')}
+                    >
+                      <TableCell>
+                        <div className="flex items-center gap-3">
+                          <Avatar size="sm">
+                            <AvatarFallback>{initials(u)}</AvatarFallback>
+                          </Avatar>
+                          <div className="min-w-0">
+                            <div className="font-medium">{u.username}</div>
+                            {u.display_name && (
+                              <div className="text-xs text-muted-foreground">
+                                {u.display_name}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </TableCell>
+                      <TableCell className="capitalize">{u.role}</TableCell>
+                      <TableCell>
+                        {u.archived ? (
+                          <Badge variant="outline" className="text-muted-foreground">
+                            Archived
+                          </Badge>
+                        ) : (
+                          <Badge variant="secondary">Active</Badge>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <UserActionsMenu
+                          user={u}
+                          onEdit={() => openEditDialog(u)}
+                          onPassword={() => openPasswordDialog(u)}
+                          onToggleArchive={() => handleToggleArchive(u)}
+                        />
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          </>
         )}
       </div>
 
@@ -505,5 +539,44 @@ export default function AdminPage() {
         </DialogContent>
       </Dialog>
     </div>
+  );
+}
+
+interface UserActionsMenuProps {
+  user: User;
+  onEdit: () => void;
+  onPassword: () => void;
+  onToggleArchive: () => void;
+}
+
+function UserActionsMenu({
+  user,
+  onEdit,
+  onPassword,
+  onToggleArchive,
+}: UserActionsMenuProps) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button variant="ghost" size="icon">
+          <MoreHorizontalIcon className="h-5 w-5" aria-hidden />
+          <span className="sr-only">Actions for {user.username}</span>
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        <DropdownMenuItem onClick={onEdit}>
+          <EditIcon className="mr-2 h-4 w-4" aria-hidden />
+          Edit user
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={onPassword}>
+          <KeyIcon className="mr-2 h-4 w-4" aria-hidden />
+          Change password
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem onClick={onToggleArchive}>
+          {user.archived ? 'Unarchive user' : 'Archive user'}
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }

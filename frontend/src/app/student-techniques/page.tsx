@@ -218,20 +218,28 @@ export default function StudentTechniques({ user }: StudentTechniquesProps) {
   }
 
   const studentName = data?.student.display_name || data?.student.username || '';
+  const isOwnView = !!data && user.id === data.student.id;
+  const headerTitle = !data
+    ? 'Techniques'
+    : isOwnView
+      ? 'My techniques'
+      : `${studentName}'s techniques`;
 
   return (
     <div className="container mx-auto py-6 px-4 sm:px-6 md:py-8">
-      <div className="mb-4">
-        <Button asChild variant="ghost" size="sm" className="-ml-3 h-8 gap-1.5 text-muted-foreground">
-          <Link to="/students">
-            <ArrowLeft className="h-4 w-4" aria-hidden />
-            Back to students
-          </Link>
-        </Button>
-      </div>
+      {!isOwnView && (
+        <div className="mb-4">
+          <Button asChild variant="ghost" size="sm" className="-ml-3 h-8 gap-1.5 text-muted-foreground">
+            <Link to="/students">
+              <ArrowLeft className="h-4 w-4" aria-hidden />
+              Back to students
+            </Link>
+          </Button>
+        </div>
+      )}
 
       <PageHeader
-        title={studentName ? `${studentName}'s techniques` : 'Techniques'}
+        title={headerTitle}
         actions={
           data?.can_assign_techniques && (
             <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>

@@ -158,7 +158,7 @@ export function TechniqueRow({
             <NotesEditor
               techniqueId={technique.id}
               field="student_notes"
-              label="Student notes"
+              label={isOwnTechnique ? "My notes" : "Student notes"}
               value={technique.student_notes}
               canEdit={canEditStudentNotes || canEditAll}
               onSave={(v) =>
