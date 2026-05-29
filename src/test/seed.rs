@@ -12,8 +12,9 @@
 mod tests {
     use crate::auth::Role;
     use crate::db::{
-        add_tag_to_technique, assign_technique_to_student, create_tag, create_technique,
-        create_user, find_user_by_username, get_tag_by_name,
+        add_tag_to_technique, add_technique_to_collection, assign_technique_to_student,
+        create_collection, create_tag, create_technique, create_user, find_user_by_username,
+        get_tag_by_name,
     };
     use chrono::{Duration, Utc};
     use sqlx::SqlitePool;
@@ -298,6 +299,36 @@ mod tests {
         }
         println!("  {} techniques ready", technique_ids.len());
 
+        // 3.5 Collection: "Blue Belt Fundamentals" with the first ~12 techniques
+        let blue_belt_id = {
+            let existing: Option<(i64,)> =
+                sqlx::query_as("SELECT id FROM collections WHERE name = ? LIMIT 1")
+                    .bind("Blue Belt Fundamentals")
+                    .fetch_optional(&pool)
+                    .await
+                    .expect("collection lookup");
+            match existing {
+                Some((id,)) => id,
+                None => {
+                    let id = create_collection(
+                        &pool,
+                        "Blue Belt Fundamentals",
+                        "Core syllabus for blue belt students.",
+                        coach_id,
+                    )
+                    .await
+                    .expect("create collection");
+                    for &tid in technique_ids.iter().take(12) {
+                        add_technique_to_collection(&pool, id, tid)
+                            .await
+                            .expect("add to collection");
+                    }
+                    id
+                }
+            }
+        };
+        println!("  Blue Belt Fundamentals collection id = {}", blue_belt_id);
+
         // 4. Students
         let mut student_ids: Vec<i64> = Vec::with_capacity(STUDENT_NAMES.len());
         for (username, display_name) in STUDENT_NAMES {
@@ -324,11 +355,22 @@ mod tests {
                 None
             };
 
+            // First 8 students are subscribed to Blue Belt Fundamentals.
+            let on_blue_belt = i < 8;
+
             for (assigned_n, &tech_idx) in technique_indices.iter().enumerate() {
                 let technique_id = technique_ids[tech_idx];
-                let assignment_id = assign_technique_to_student(&pool, technique_id, student_id)
-                    .await
-                    .expect("assign technique");
+                // Techniques in the Blue Belt collection (indices 0-11) get
+                // filed under it for subscribed students. Others are loose.
+                let collection_id = if on_blue_belt && tech_idx < 12 {
+                    Some(blue_belt_id)
+                } else {
+                    None
+                };
+                let assignment_id =
+                    assign_technique_to_student(&pool, technique_id, student_id, collection_id)
+                        .await
+                        .expect("assign technique");
 
                 // Status distribution
                 let p = (assigned_n as f64) / (count as f64);

@@ -218,7 +218,7 @@ pub mod test_utils {
                 };
 
                 if let (Some(s_id), Some(t_id)) = (student_id, technique_id) {
-                    let assignment_id = assign_technique_to_student(&pool, t_id, s_id).await?;
+                    let assignment_id = assign_technique_to_student(&pool, t_id, s_id, None).await?;
 
                     if st.status != "red"
                         || !st.student_notes.is_empty()

@@ -11,6 +11,8 @@ import type { User } from './lib/api';
 import ProfilePage from './app/profile/page';
 import RegisterUserPage from './app/registration/page';
 import AdminPage from './app/admin/page';
+import CollectionsPage from './app/collections/page';
+import CollectionDetailPage from './app/collections/[id]/page';
 import InvitePage from './app/invite/page';
 import RegisterPage from './app/register/page';
 import PendingApprovalPage from './app/pending/page';
@@ -112,6 +114,22 @@ function App() {
               element={
                 user && (user.role === 'admin')
                   ? <AdminPage />
+                  : <Navigate to="/login" replace />
+              }
+            />
+            <Route
+              path="/collections"
+              element={
+                user && (user.role === 'coach' || user.role === 'Coach' || user.role === 'admin' || user.role === 'Admin')
+                  ? <CollectionsPage />
+                  : <Navigate to="/login" replace />
+              }
+            />
+            <Route
+              path="/collections/:id"
+              element={
+                user && (user.role === 'coach' || user.role === 'Coach' || user.role === 'admin' || user.role === 'Admin')
+                  ? <CollectionDetailPage />
                   : <Navigate to="/login" replace />
               }
             />

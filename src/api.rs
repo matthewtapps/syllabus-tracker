@@ -16,16 +16,18 @@ use validator::ValidationErrors;
 use crate::auth::UserSession;
 use crate::auth::{Permission, User};
 use crate::db::{
-    add_tag_to_technique, add_techniques_to_student, approve_user, authenticate_user,
-    claim_invite, count_techniques, create_and_assign_technique, create_invite_token,
+    add_tag_to_technique, add_technique_to_collection, add_techniques_to_student, approve_user,
+    assign_collection_to_student, authenticate_user, claim_invite, count_techniques,
+    create_and_assign_technique, create_collection, create_invite_token,
     create_self_registered_user, create_tag, create_user, create_user_session, create_user_stub,
-    delete_tag, find_user_by_username, find_valid_invite_token, get_all_tags, get_all_users,
-    get_student_technique, get_student_techniques, get_students_by_recent_updates,
+    delete_collection, delete_tag, find_user_by_username, find_valid_invite_token,
+    get_all_collections, get_all_tags, get_all_users, get_collection, get_student_technique,
+    get_student_techniques, get_students_by_recent_updates, get_students_with_collection,
     get_tags_for_technique, get_unassigned_techniques, get_user, invalidate_session,
-    read_and_bump_last_seen, remove_tag_from_technique, request_password_reset, reset_user_claim,
-    set_user_archived, set_user_graduated, update_student_notes, update_student_technique,
-    update_technique, update_user_display_name, update_user_password, update_user_role,
-    update_username,
+    read_and_bump_last_seen, remove_tag_from_technique, remove_technique_from_collection,
+    request_password_reset, reset_user_claim, set_user_archived, set_user_graduated,
+    update_collection, update_student_notes, update_student_technique, update_technique,
+    update_user_display_name, update_user_password, update_user_role, update_username, Collection,
 };
 use crate::error::AppError;
 use crate::models::Tag;
@@ -466,6 +468,7 @@ pub async fn api_get_unassigned_techniques(
 pub struct AssignTechniquesRequest {
     #[validate(length(min = 1, message = "At least one technique must be selected"))]
     technique_ids: Vec<i64>,
+    collection_id: Option<i64>,
 }
 
 #[post("/student/<student_id>/add_techniques", data = "<request>")]
@@ -479,7 +482,13 @@ pub async fn api_assign_techniques(
 
     user.require_permission(Permission::AssignTechniques)?;
 
-    add_techniques_to_student(db, student_id, request.technique_ids.clone()).await?;
+    add_techniques_to_student(
+        db,
+        student_id,
+        request.technique_ids.clone(),
+        request.collection_id,
+    )
+    .await?;
 
     Ok(Status::Ok)
 }
@@ -494,6 +503,7 @@ pub struct CreateTechniqueRequest {
     name: String,
     #[validate(length(min = 1, message = "Description cannot be empty"))]
     description: String,
+    collection_id: Option<i64>,
 }
 
 #[post("/student/<student_id>/create_technique", data = "<request>")]
@@ -506,8 +516,15 @@ pub async fn api_create_and_assign_technique(
     request.validate()?;
     user.require_all_permissions(&[Permission::CreateTechniques, Permission::AssignTechniques])?;
 
-    create_and_assign_technique(db, user.id, student_id, &request.name, &request.description)
-        .await?;
+    create_and_assign_technique(
+        db,
+        user.id,
+        student_id,
+        &request.name,
+        &request.description,
+        request.collection_id,
+    )
+    .await?;
 
     Ok(Status::Ok)
 }
@@ -1084,4 +1101,181 @@ pub async fn api_reset_user_claim(
         token,
         claim_path,
     }))
+}
+
+// ---- Collections / syllabuses ----
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct CollectionResponse {
+    pub id: i64,
+    pub name: String,
+    pub description: String,
+    pub coach_id: Option<i64>,
+    pub created_at: String,
+    pub technique_count: i64,
+    pub student_count: i64,
+    pub techniques: Vec<TechniqueLibraryResponse>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct TechniqueLibraryResponse {
+    pub id: i64,
+    pub name: String,
+    pub description: String,
+    pub coach_id: i64,
+    pub coach_name: String,
+}
+
+fn collection_to_response(c: Collection) -> CollectionResponse {
+    CollectionResponse {
+        id: c.id,
+        name: c.name,
+        description: c.description,
+        coach_id: c.coach_id,
+        created_at: c.created_at.to_rfc3339(),
+        technique_count: c.technique_count,
+        student_count: c.student_count,
+        techniques: c
+            .techniques
+            .into_iter()
+            .map(|t| TechniqueLibraryResponse {
+                id: t.id,
+                name: t.name,
+                description: t.description,
+                coach_id: t.coach_id,
+                coach_name: t.coach_name,
+            })
+            .collect(),
+    }
+}
+
+#[get("/collections")]
+pub async fn api_get_collections(
+    user: User,
+    db: &State<Pool<Sqlite>>,
+) -> ApiResult<Json<Vec<CollectionResponse>>> {
+    user.require_permission(Permission::AssignTechniques)?;
+    let collections = get_all_collections(db).await?;
+    Ok(Json(
+        collections.into_iter().map(collection_to_response).collect(),
+    ))
+}
+
+#[get("/collections/<id>")]
+pub async fn api_get_collection(
+    id: i64,
+    user: User,
+    db: &State<Pool<Sqlite>>,
+) -> ApiResult<Json<CollectionResponse>> {
+    user.require_permission(Permission::AssignTechniques)?;
+    let collection = get_collection(db, id).await?;
+    Ok(Json(collection_to_response(collection)))
+}
+
+#[derive(Deserialize, Validate, Clone)]
+pub struct CollectionUpsertRequest {
+    #[validate(length(min = 1, max = 100, message = "Name is required"))]
+    name: String,
+    description: Option<String>,
+}
+
+#[post("/collections", data = "<body>")]
+pub async fn api_create_collection(
+    body: Json<CollectionUpsertRequest>,
+    user: User,
+    db: &State<Pool<Sqlite>>,
+) -> ApiResult<Json<CollectionResponse>> {
+    body.validate()?;
+    user.require_permission(Permission::CreateTechniques)?;
+    let id = create_collection(
+        db,
+        &body.name,
+        body.description.as_deref().unwrap_or(""),
+        user.id,
+    )
+    .await?;
+    let collection = get_collection(db, id).await?;
+    Ok(Json(collection_to_response(collection)))
+}
+
+#[put("/collections/<id>", data = "<body>")]
+pub async fn api_update_collection(
+    id: i64,
+    body: Json<CollectionUpsertRequest>,
+    user: User,
+    db: &State<Pool<Sqlite>>,
+) -> ApiResult<Status> {
+    body.validate()?;
+    user.require_permission(Permission::CreateTechniques)?;
+    update_collection(
+        db,
+        id,
+        &body.name,
+        body.description.as_deref().unwrap_or(""),
+    )
+    .await?;
+    Ok(Status::Ok)
+}
+
+#[delete("/collections/<id>")]
+pub async fn api_delete_collection(
+    id: i64,
+    user: User,
+    db: &State<Pool<Sqlite>>,
+) -> ApiResult<Status> {
+    user.require_permission(Permission::CreateTechniques)?;
+    delete_collection(db, id).await?;
+    Ok(Status::Ok)
+}
+
+#[derive(Deserialize, Clone)]
+pub struct AddTechniqueToCollectionRequest {
+    technique_id: i64,
+}
+
+#[post("/collections/<id>/techniques", data = "<body>")]
+pub async fn api_add_technique_to_collection(
+    id: i64,
+    body: Json<AddTechniqueToCollectionRequest>,
+    user: User,
+    db: &State<Pool<Sqlite>>,
+) -> ApiResult<Status> {
+    user.require_permission(Permission::CreateTechniques)?;
+    add_technique_to_collection(db, id, body.technique_id).await?;
+    Ok(Status::Ok)
+}
+
+#[delete("/collections/<id>/techniques/<technique_id>")]
+pub async fn api_remove_technique_from_collection(
+    id: i64,
+    technique_id: i64,
+    user: User,
+    db: &State<Pool<Sqlite>>,
+) -> ApiResult<Status> {
+    user.require_permission(Permission::CreateTechniques)?;
+    remove_technique_from_collection(db, id, technique_id).await?;
+    Ok(Status::Ok)
+}
+
+#[get("/collections/<id>/students")]
+pub async fn api_get_collection_students(
+    id: i64,
+    user: User,
+    db: &State<Pool<Sqlite>>,
+) -> ApiResult<Json<Vec<UserData>>> {
+    user.require_permission(Permission::ViewAllStudents)?;
+    let students = get_students_with_collection(db, id).await?;
+    Ok(Json(students.into_iter().map(UserData::from).collect()))
+}
+
+#[post("/student/<student_id>/assign_collection/<collection_id>")]
+pub async fn api_assign_collection(
+    student_id: i64,
+    collection_id: i64,
+    user: User,
+    db: &State<Pool<Sqlite>>,
+) -> ApiResult<Status> {
+    user.require_permission(Permission::AssignTechniques)?;
+    assign_collection_to_student(db, student_id, collection_id).await?;
+    Ok(Status::Ok)
 }

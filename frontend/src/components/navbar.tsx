@@ -46,6 +46,7 @@ function buildNavLinks(user: User): NavLink[] {
   const links: NavLink[] = [{ to: "/dashboard", label: "Dashboard" }];
   if (isStudent) links.push({ to: `/student/${user.id}`, label: "My techniques" });
   if (isCoach || isAdmin) links.push({ to: "/students", label: "Students" });
+  if (isCoach || isAdmin) links.push({ to: "/collections", label: "Collections" });
   if (isCoach || isAdmin) links.push({ to: "/register-user", label: "New user" });
   if (isAdmin) links.push({ to: "/admin", label: "Admin" });
   return links;

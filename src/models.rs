@@ -1,7 +1,7 @@
 use chrono::{DateTime, NaiveDateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-#[derive(Serialize)]
+#[derive(Debug, Serialize, Clone)]
 pub struct Technique {
     pub id: i64,
     pub name: String,
@@ -51,6 +51,8 @@ pub struct StudentTechnique {
     pub last_student_update_at: Option<DateTime<Utc>>,
     pub last_student_update_by_id: Option<i64>,
     pub last_student_update_by_name: Option<String>,
+    pub collection_id: Option<i64>,
+    pub collection_name: Option<String>,
     pub tags: Vec<Tag>,
 }
 
@@ -70,6 +72,7 @@ pub struct DbStudentTechnique {
     pub last_coach_update_by_id: Option<i64>,
     pub last_student_update_at: Option<NaiveDateTime>,
     pub last_student_update_by_id: Option<i64>,
+    pub collection_id: Option<i64>,
 }
 
 pub fn naive_to_utc(dt: NaiveDateTime) -> DateTime<Utc> {
@@ -95,12 +98,14 @@ impl From<DbStudentTechnique> for StudentTechnique {
             last_student_update_at: db.last_student_update_at.map(naive_to_utc),
             last_student_update_by_id: db.last_student_update_by_id,
             last_student_update_by_name: None,
+            collection_id: db.collection_id,
+            collection_name: None,
             tags: Vec::new(),
         }
     }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Tag {
     pub id: i64,
     pub name: String,

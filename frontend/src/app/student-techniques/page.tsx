@@ -53,6 +53,14 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { Label } from '@/components/ui/label';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { PageHeader } from '@/components/page-header';
 import { EmptyState } from '@/components/empty-state';
 import { SkeletonListRow } from '@/components/skeleton-row';
@@ -88,6 +96,17 @@ export default function StudentTechniques({ user }: StudentTechniquesProps) {
   const [filterText, setFilterText] = useState('');
   const [activeTab, setActiveTab] = useState<FilterTab>('all');
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
+  // 'all' = no collection filter, 'other' = loose assignments only, or a
+  // numeric collection id.
+  const collectionFilter = searchParams.get('collection') ?? 'all';
+  function setCollectionFilter(next: string) {
+    setSearchParams((prev) => {
+      const params = new URLSearchParams(prev);
+      if (next === 'all') params.delete('collection');
+      else params.set('collection', next);
+      return params;
+    }, { replace: true });
+  }
 
   const [editingTechnique, setEditingTechnique] = useState<Technique | null>(null);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
@@ -155,6 +174,35 @@ export default function StudentTechniques({ user }: StudentTechniquesProps) {
     }, { replace: true });
   }, [focusId, data, setSearchParams]);
 
+  // Unique collections the student has assignments in (drives the selector
+  // visibility). "Loose" is added if any technique has no collection.
+  const studentCollections = useMemo(() => {
+    if (!data) return [] as { id: number; name: string }[];
+    const seen = new Map<number, string>();
+    for (const t of data.techniques) {
+      if (t.collection_id && !seen.has(t.collection_id)) {
+        seen.set(t.collection_id, t.collection_name ?? 'Untitled');
+      }
+    }
+    return Array.from(seen.entries()).map(([id, name]) => ({ id, name }));
+  }, [data]);
+
+  const hasLooseAssignments = useMemo(
+    () => !!data && data.techniques.some((t) => !t.collection_id),
+    [data],
+  );
+
+  const showCollectionSelector =
+    studentCollections.length + (hasLooseAssignments ? 1 : 0) >= 2;
+
+  function matchesCollection(t: Technique): boolean {
+    if (collectionFilter === 'all') return true;
+    if (collectionFilter === 'other') return !t.collection_id;
+    const parsed = parseInt(collectionFilter, 10);
+    if (!Number.isFinite(parsed)) return true;
+    return t.collection_id === parsed;
+  }
+
   const availableTags = useMemo(() => {
     if (!data) return [];
     const set = new Set<string>();
@@ -172,17 +220,20 @@ export default function StudentTechniques({ user }: StudentTechniquesProps) {
     };
     if (!data) return base;
     for (const t of data.techniques) {
+      if (!matchesCollection(t)) continue;
       base.all += 1;
       base[t.status as Status] += 1;
       if (t.has_new_student_activity) base.new_activity += 1;
     }
     return base;
-  }, [data]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data, collectionFilter]);
 
   const filteredTechniques = useMemo<Technique[]>(() => {
     if (!data) return [];
     const needle = filterText.trim().toLowerCase();
     return data.techniques.filter((t) => {
+      if (!matchesCollection(t)) return false;
       if (activeTab === 'new_activity' && !t.has_new_student_activity) return false;
       if (activeTab !== 'all' && activeTab !== 'new_activity' && t.status !== activeTab)
         return false;
@@ -198,7 +249,8 @@ export default function StudentTechniques({ user }: StudentTechniquesProps) {
         t.tags.some((tag) => tag.name.toLowerCase().includes(needle))
       );
     });
-  }, [data, filterText, activeTab, selectedTags]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data, filterText, activeTab, selectedTags, collectionFilter]);
 
   function toggleTagFilter(tagName: string) {
     setSelectedTags((prev) =>
@@ -429,6 +481,11 @@ export default function StudentTechniques({ user }: StudentTechniquesProps) {
                     <AssignTechniques
                       studentId={data.student.id}
                       canCreateTechniques={data.can_create_techniques}
+                      defaultCollectionId={
+                        collectionFilter !== 'all' && collectionFilter !== 'other'
+                          ? parseInt(collectionFilter, 10)
+                          : null
+                      }
                       onAssignComplete={reloadAfterAssignment}
                     />
                   </DialogContent>
@@ -440,7 +497,33 @@ export default function StudentTechniques({ user }: StudentTechniquesProps) {
       />
 
       {!loading && !error && data && (
-        <div className="mb-6">
+        <div className="mb-6 space-y-4">
+          {showCollectionSelector && (
+            <div className="flex flex-wrap items-center gap-3">
+              <Label htmlFor="collection-filter" className="text-sm font-medium">
+                Showing
+              </Label>
+              <Select
+                value={collectionFilter}
+                onValueChange={setCollectionFilter}
+              >
+                <SelectTrigger id="collection-filter" className="w-auto min-w-56">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All techniques</SelectItem>
+                  {studentCollections.map((c) => (
+                    <SelectItem key={c.id} value={String(c.id)}>
+                      {c.name}
+                    </SelectItem>
+                  ))}
+                  {hasLooseAssignments && (
+                    <SelectItem value="other">Other (no collection)</SelectItem>
+                  )}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
           <TechniqueFilters
             filterText={filterText}
             onFilterTextChange={setFilterText}
@@ -514,6 +597,7 @@ export default function StudentTechniques({ user }: StudentTechniquesProps) {
                 canManageTags={data.can_manage_tags}
                 isOwnTechnique={user.id === data.student.id}
                 defaultExpanded={technique.id === focusId}
+                showCollectionChip={showCollectionSelector && collectionFilter === 'all'}
                 allTags={allTags}
                 selectedTagFilter={selectedTags}
                 onTechniqueUpdate={updateTechniqueLocally}

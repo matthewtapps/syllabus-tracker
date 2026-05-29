@@ -40,10 +40,27 @@ CREATE TABLE IF NOT EXISTS student_techniques (
     last_coach_update_by_id INTEGER,
     last_student_update_at TIMESTAMP,
     last_student_update_by_id INTEGER,
+    collection_id INTEGER,
     FOREIGN KEY (technique_id) REFERENCES techniques (id),
     FOREIGN KEY (student_id) REFERENCES users (id),
     FOREIGN KEY (last_coach_update_by_id) REFERENCES users (id),
-    FOREIGN KEY (last_student_update_by_id) REFERENCES users (id)
+    FOREIGN KEY (last_student_update_by_id) REFERENCES users (id),
+    FOREIGN KEY (collection_id) REFERENCES collections (id)
+);
+
+CREATE TABLE IF NOT EXISTS collections (
+    id INTEGER PRIMARY KEY,
+    name TEXT NOT NULL,
+    description TEXT,
+    coach_id INTEGER REFERENCES users (id),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS collection_techniques (
+    collection_id INTEGER NOT NULL REFERENCES collections (id) ON DELETE CASCADE,
+    technique_id INTEGER NOT NULL REFERENCES techniques (id) ON DELETE CASCADE,
+    position INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (collection_id, technique_id)
 );
 
 CREATE TABLE IF NOT EXISTS invite_tokens (

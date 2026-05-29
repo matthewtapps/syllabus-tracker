@@ -19,12 +19,14 @@ use api::{
     api_add_tag_to_technique, api_assign_techniques, api_change_password,
     api_create_and_assign_technique, api_create_tag, api_delete_tag, api_get_all_tags,
     api_get_student_techniques, api_get_students, api_get_technique_tags,
-    api_approve_user, api_bump_last_seen, api_claim_invite, api_get_invite,
+    api_add_technique_to_collection, api_approve_user, api_assign_collection,
+    api_bump_last_seen, api_claim_invite, api_create_collection, api_delete_collection,
+    api_get_collection, api_get_collection_students, api_get_collections, api_get_invite,
     api_get_unassigned_techniques, api_invite_user, api_library_stats, api_login, api_logout,
     api_me, api_me_unauthorized, api_register_user, api_remove_tag_from_technique,
-    api_request_password_reset, api_reset_user_claim, api_self_register,
-    api_set_student_graduated, api_update_profile, api_update_student_technique,
-    api_update_user, health,
+    api_remove_technique_from_collection, api_request_password_reset, api_reset_user_claim,
+    api_self_register, api_set_student_graduated, api_update_collection, api_update_profile,
+    api_update_student_technique, api_update_user, health,
 };
 use auth::unauthorized_api;
 use db::clean_expired_sessions;
@@ -218,6 +220,15 @@ pub async fn init_rocket(pool: SqlitePool) -> Rocket<Build> {
                 api_self_register,
                 api_approve_user,
                 api_request_password_reset,
+                api_get_collections,
+                api_get_collection,
+                api_create_collection,
+                api_update_collection,
+                api_delete_collection,
+                api_add_technique_to_collection,
+                api_remove_technique_from_collection,
+                api_get_collection_students,
+                api_assign_collection,
             ],
         )
         .register("/api", catchers![unauthorized_api])

@@ -22,6 +22,7 @@ interface TechniqueRowProps {
   canManageTags: boolean;
   isOwnTechnique: boolean;
   defaultExpanded?: boolean;
+  showCollectionChip?: boolean;
   allTags: Tag[];
   selectedTagFilter: string[];
   onTechniqueUpdate: (technique: Technique) => void;
@@ -36,6 +37,7 @@ export function TechniqueRow({
   canManageTags,
   isOwnTechnique,
   defaultExpanded = false,
+  showCollectionChip = false,
   allTags,
   selectedTagFilter,
   onTechniqueUpdate,
@@ -93,8 +95,13 @@ export function TechniqueRow({
               />
             )}
           </div>
-          {!expanded && technique.tags.length > 0 && (
+          {!expanded && (technique.tags.length > 0 || (showCollectionChip && technique.collection_name)) && (
             <div className="flex flex-wrap gap-1">
+              {showCollectionChip && technique.collection_name && (
+                <Badge variant="secondary" className="text-xs">
+                  {technique.collection_name}
+                </Badge>
+              )}
               {technique.tags.slice(0, 4).map((tag) => (
                 <Badge
                   key={tag.id}

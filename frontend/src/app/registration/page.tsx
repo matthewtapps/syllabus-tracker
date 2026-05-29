@@ -1,9 +1,17 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Link as LinkIcon, QrCode } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
-import { inviteUser, type InviteResponse, type User } from '@/lib/api';
+import { toast } from 'sonner';
+import {
+  assignCollectionToStudent,
+  getCollections,
+  inviteUser,
+  type Collection,
+  type InviteResponse,
+  type User,
+} from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import {
   Accordion,
@@ -37,9 +45,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { PageHeader } from '@/components/page-header';
 import { TracedForm } from '@/components/traced-form';
 import { useFormWithValidation } from '@/components/hooks/useFormErrors';
+
+const NO_COLLECTION = 'none';
 
 const inviteSchema = z.object({
   display_name: z
@@ -47,6 +56,7 @@ const inviteSchema = z.object({
     .min(1, 'Display name is required')
     .max(100, 'Display name is too long'),
   role: z.enum(['student', 'coach', 'admin']),
+  collection_id: z.string().optional(),
 });
 
 type InviteFormValues = z.infer<typeof inviteSchema>;
@@ -60,6 +70,7 @@ export default function AddUserPage({ user }: AddUserPageProps) {
     displayName: string;
     url: string;
   } | null>(null);
+  const [collections, setCollections] = useState<Collection[]>([]);
   const isAdmin = user?.role === 'admin' || user?.role === 'Admin';
 
   const form = useFormWithValidation<InviteFormValues>({
@@ -67,8 +78,28 @@ export default function AddUserPage({ user }: AddUserPageProps) {
     defaultValues: {
       display_name: '',
       role: 'student',
+      collection_id: NO_COLLECTION,
     },
   });
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      try {
+        const cols = await getCollections();
+        if (!cancelled) setCollections(cols);
+      } catch {
+        // Non-fatal: the form still works without the picker.
+      }
+    }
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const watchedRole = form.watch('role');
+  const showCollectionPicker = watchedRole === 'student' && collections.length > 0;
 
   async function handleSubmit(data: InviteFormValues) {
     const response = await inviteUser({
@@ -77,26 +108,48 @@ export default function AddUserPage({ user }: AddUserPageProps) {
     });
     if (!response.ok) throw response;
     const invite: InviteResponse = await response.json();
+
+    // Optional: bulk-assign a collection so the new student lands fully set up.
+    if (
+      data.role === 'student' &&
+      data.collection_id &&
+      data.collection_id !== NO_COLLECTION
+    ) {
+      const parsed = parseInt(data.collection_id, 10);
+      if (Number.isFinite(parsed)) {
+        try {
+          await assignCollectionToStudent(invite.user_id, parsed);
+        } catch {
+          toast.error("Created the user, but couldn't assign the collection");
+        }
+      }
+    }
+
     const url = `${window.location.origin}${invite.claim_path}`;
     setIssued({ displayName: data.display_name, url });
-    form.reset();
+    form.reset({
+      display_name: '',
+      role: data.role,
+      collection_id: data.collection_id ?? NO_COLLECTION,
+    });
   }
 
   return (
-    <div className="container mx-auto px-4 py-6 sm:px-6 md:py-8">
-      <PageHeader
-        title="Add user"
-        subtitle="Create a stub account. Share the link with the user so they can pick a username and password."
-      />
+    <div className="container mx-auto max-w-md px-4 py-4 sm:px-6 sm:py-6 md:py-8">
+      <div className="mb-5 space-y-1 sm:mb-8">
+        <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Add user</h1>
+        <p className="text-sm text-muted-foreground">
+          Create the account, then share the link.
+        </p>
+      </div>
 
-      <div className="mx-auto max-w-md">
-        <Form {...form}>
-          <TracedForm
-            id="invite_user"
-            onSubmit={form.handleSubmit(handleSubmit)}
-            setFieldErrors={form.setFieldErrors}
-            className="space-y-5"
-          >
+      <Form {...form}>
+        <TracedForm
+          id="invite_user"
+          onSubmit={form.handleSubmit(handleSubmit)}
+          setFieldErrors={form.setFieldErrors}
+          className="space-y-4"
+        >
             <FormField
               control={form.control}
               name="display_name"
@@ -106,9 +159,6 @@ export default function AddUserPage({ user }: AddUserPageProps) {
                   <FormControl>
                     <Input {...field} placeholder="e.g. Alex Rivera" />
                   </FormControl>
-                  <FormDescription>
-                    How the user's name appears in the app. You can edit this later.
-                  </FormDescription>
                   <FormMessage />
                 </FormItem>
               )}
@@ -137,6 +187,42 @@ export default function AddUserPage({ user }: AddUserPageProps) {
               )}
             />
 
+            {showCollectionPicker && (
+              <FormField
+                control={form.control}
+                name="collection_id"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Start them on</FormLabel>
+                    <Select
+                      value={field.value ?? NO_COLLECTION}
+                      onValueChange={field.onChange}
+                    >
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Optional" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        <SelectItem value={NO_COLLECTION}>
+                          None (just create the account)
+                        </SelectItem>
+                        {collections.map((c) => (
+                          <SelectItem key={c.id} value={String(c.id)}>
+                            {c.name} ({c.technique_count})
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <FormDescription>
+                      Bulk-assigns the collection's techniques to this new student.
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            )}
+
             <Button
               type="submit"
               className="w-full"
@@ -146,9 +232,8 @@ export default function AddUserPage({ user }: AddUserPageProps) {
             </Button>
           </TracedForm>
         </Form>
-      </div>
 
-      <div className="mx-auto mt-10 max-w-md">
+      <div className="mt-6">
         <Accordion type="single" collapsible>
           <AccordionItem value="qr" className="rounded-lg border border-border bg-card px-4">
             <AccordionTrigger className="text-sm font-medium">
@@ -157,16 +242,15 @@ export default function AddUserPage({ user }: AddUserPageProps) {
                 Or let students sign up themselves
               </span>
             </AccordionTrigger>
-            <AccordionContent className="space-y-4">
+            <AccordionContent className="space-y-3">
               <p className="text-sm text-muted-foreground">
-                Display this QR code at the gym. A student scanning it lands
-                on the sign-up page. Their account waits for your approval on
-                your dashboard before they can do anything.
+                Display this QR at the gym. Students who scan land on the
+                signup page and wait for your approval.
               </p>
-              <div className="flex items-center justify-center rounded-md border border-border bg-background p-6">
+              <div className="flex items-center justify-center rounded-md border border-border bg-background p-4">
                 <QRCodeSVG
                   value={`${window.location.origin}/register`}
-                  size={192}
+                  size={160}
                   bgColor="transparent"
                   fgColor="currentColor"
                   className="text-foreground"

@@ -114,40 +114,35 @@ export async function getTechniquesForAssignment(
 export async function assignTechniquesToStudent(
   studentId: number,
   techniqueIds: number[],
+  collectionId?: number | null,
 ): Promise<Response> {
-  const response = await fetch(
-    `/api/student/${studentId}/add_techniques`,
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ technique_ids: techniqueIds }),
-      credentials: "include",
-    },
-  );
-
-  return response; // Return raw response
+  return await fetch(`/api/student/${studentId}/add_techniques`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      technique_ids: techniqueIds,
+      collection_id: collectionId ?? null,
+    }),
+    credentials: "include",
+  });
 }
 
 export async function createAndAssignTechnique(
   studentId: number,
   name: string,
   description: string,
+  collectionId?: number | null,
 ): Promise<Response> {
-  const response = await fetch(
-    `/api/student/${studentId}/create_technique`,
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ name, description }),
-      credentials: "include",
-    },
-  );
-
-  return response;
+  return await fetch(`/api/student/${studentId}/create_technique`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      name,
+      description,
+      collection_id: collectionId ?? null,
+    }),
+    credentials: "include",
+  });
 }
 
 export interface Technique {
@@ -165,7 +160,121 @@ export interface Technique {
   last_student_update_at: string | null;
   last_student_update_by_name: string | null;
   has_new_student_activity: boolean;
+  collection_id: number | null;
+  collection_name: string | null;
   tags: Tag[];
+}
+
+export interface LibraryTechnique {
+  id: number;
+  name: string;
+  description: string;
+  coach_id: number;
+  coach_name: string;
+}
+
+export interface Collection {
+  id: number;
+  name: string;
+  description: string;
+  coach_id: number | null;
+  created_at: string;
+  technique_count: number;
+  student_count: number;
+  techniques: LibraryTechnique[];
+}
+
+export async function getCollections(): Promise<Collection[]> {
+  const response = await fetch("/api/collections", { credentials: "include" });
+  if (!response.ok) throw new Error("Failed to fetch collections");
+  return await response.json();
+}
+
+export async function getCollection(id: number): Promise<Collection> {
+  const response = await fetch(`/api/collections/${id}`, {
+    credentials: "include",
+  });
+  if (!response.ok) throw new Error("Failed to fetch collection");
+  return await response.json();
+}
+
+export async function createCollection(data: {
+  name: string;
+  description?: string;
+}): Promise<Response> {
+  return await fetch("/api/collections", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+    credentials: "include",
+  });
+}
+
+export async function updateCollection(
+  id: number,
+  data: { name: string; description?: string },
+): Promise<Response> {
+  return await fetch(`/api/collections/${id}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+    credentials: "include",
+  });
+}
+
+export async function deleteCollection(id: number): Promise<Response> {
+  return await fetch(`/api/collections/${id}`, {
+    method: "DELETE",
+    credentials: "include",
+  });
+}
+
+export async function addTechniqueToCollection(
+  collectionId: number,
+  techniqueId: number,
+): Promise<Response> {
+  return await fetch(`/api/collections/${collectionId}/techniques`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ technique_id: techniqueId }),
+    credentials: "include",
+  });
+}
+
+export async function removeTechniqueFromCollection(
+  collectionId: number,
+  techniqueId: number,
+): Promise<Response> {
+  return await fetch(
+    `/api/collections/${collectionId}/techniques/${techniqueId}`,
+    {
+      method: "DELETE",
+      credentials: "include",
+    },
+  );
+}
+
+export async function getCollectionStudents(
+  collectionId: number,
+): Promise<User[]> {
+  const response = await fetch(`/api/collections/${collectionId}/students`, {
+    credentials: "include",
+  });
+  if (!response.ok) throw new Error("Failed to fetch collection students");
+  return await response.json();
+}
+
+export async function assignCollectionToStudent(
+  studentId: number,
+  collectionId: number,
+): Promise<Response> {
+  return await fetch(
+    `/api/student/${studentId}/assign_collection/${collectionId}`,
+    {
+      method: "POST",
+      credentials: "include",
+    },
+  );
 }
 
 export interface StudentTechniques {
