@@ -28,6 +28,7 @@ export default function StudentsList() {
   const [filter, setFilter] = useState('');
   const [sortBy, setSortBy] = useState<SortBy>('recent_update');
   const [showArchived, setShowArchived] = useState(false);
+  const [showGraduated, setShowGraduated] = useState(false);
 
   useEffect(() => {
     loadStudents();
@@ -51,6 +52,7 @@ export default function StudentsList() {
     const needle = filter.trim().toLowerCase();
     let result = students.filter((student) => {
       if (!showArchived && student.archived) return false;
+      if (!showGraduated && student.graduated_at) return false;
       if (!needle) return true;
       const name = student.display_name?.toLowerCase() || '';
       const username = student.username.toLowerCase();
@@ -66,7 +68,7 @@ export default function StudentsList() {
     }
 
     return result;
-  }, [students, filter, sortBy, showArchived]);
+  }, [students, filter, sortBy, showArchived, showGraduated]);
 
   return (
     <div className="container mx-auto py-6 px-4 sm:px-6 md:py-8">
@@ -102,7 +104,17 @@ export default function StudentsList() {
           )}
         </div>
 
-        <div className="flex items-center gap-4">
+        <div className="flex flex-wrap items-center gap-4">
+          <div className="flex items-center gap-2">
+            <Switch
+              id="show-graduated"
+              checked={showGraduated}
+              onCheckedChange={setShowGraduated}
+            />
+            <Label htmlFor="show-graduated" className="text-sm">
+              Show graduated
+            </Label>
+          </div>
           <div className="flex items-center gap-2">
             <Switch
               id="show-archived"

@@ -443,6 +443,86 @@ mod tests {
         assert_eq!(t.last_coach_update_by_name.as_deref(), Some("Coach User"));
         assert_eq!(t.last_student_update_by_name.as_deref(), Some("Student User"));
     }
+
+    #[rocket::async_test]
+    async fn test_graduate_student_keeps_edit_access() {
+        let test_db = TestDbBuilder::new()
+            .coach("coach_user", Some("Coach User"))
+            .student("student_user", Some("Student User"))
+            .technique("Armbar", "Description of armbar", Some("coach_user"))
+            .assign_technique(Some("Armbar"), Some("student_user"), "red", "", "")
+            .build()
+            .await
+            .expect("Failed to build test DB");
+
+        let (client, test_db) = setup_test_client(test_db).await;
+        let student_id = test_db.user_id("student_user").expect("Student not found");
+        let student_technique_id = test_db
+            .student_technique_id("student_user", "Armbar")
+            .await
+            .expect("Failed to get student technique id");
+
+        // Coach graduates the student via the dedicated endpoint.
+        let coach_cookies = login_test_user(&client, "coach_user", "password123").await;
+        let grad_response = client
+            .post(format!("/api/student/{}/graduate", student_id))
+            .cookies(coach_cookies.clone())
+            .header(ContentType::JSON)
+            .body(json!({ "graduated": true }).to_string())
+            .dispatch()
+            .await;
+        assert_eq!(grad_response.status(), Status::Ok);
+
+        // Graduated student can still edit their own notes; graduation is an
+        // organizational marker only.
+        let student_cookies = login_test_user(&client, "student_user", "password123").await;
+        let after_grad = client
+            .put(format!("/api/student_technique/{}", student_technique_id))
+            .cookies(student_cookies.clone())
+            .header(ContentType::JSON)
+            .body(json!({ "student_notes": "post-graduation update" }).to_string())
+            .dispatch()
+            .await;
+        assert_eq!(after_grad.status(), Status::Ok);
+
+        // graduated_at appears on the API response.
+        let students_response = client
+            .get("/api/students?include_archived=false")
+            .cookies(coach_cookies.clone())
+            .dispatch()
+            .await;
+        assert_eq!(students_response.status(), Status::Ok);
+        let body = students_response.into_string().await.unwrap();
+        let students: Vec<UserData> = serde_json::from_str(&body).unwrap();
+        let s = students
+            .iter()
+            .find(|s| s.id == student_id)
+            .expect("graduated student missing from list");
+        assert!(s.graduated_at.is_some(), "graduated_at should be set");
+
+        // Un-graduating clears the timestamp.
+        let ungrad_response = client
+            .post(format!("/api/student/{}/graduate", student_id))
+            .cookies(coach_cookies.clone())
+            .header(ContentType::JSON)
+            .body(json!({ "graduated": false }).to_string())
+            .dispatch()
+            .await;
+        assert_eq!(ungrad_response.status(), Status::Ok);
+
+        let students_after = client
+            .get("/api/students?include_archived=false")
+            .cookies(coach_cookies)
+            .dispatch()
+            .await;
+        let body = students_after.into_string().await.unwrap();
+        let students: Vec<UserData> = serde_json::from_str(&body).unwrap();
+        let s = students
+            .iter()
+            .find(|s| s.id == student_id)
+            .expect("student missing from list");
+        assert!(s.graduated_at.is_none(), "graduated_at should be cleared");
+    }
 }
 
 #[rocket::async_test]

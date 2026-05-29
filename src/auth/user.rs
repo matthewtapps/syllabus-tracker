@@ -12,6 +12,7 @@ pub struct User {
     pub role: Role,
     pub display_name: String,
     pub archived: bool,
+    pub graduated_at: Option<String>,
     pub last_update: Option<String>,
     pub last_coach_update_at: Option<String>,
     pub total_techniques: Option<i64>,
@@ -28,6 +29,7 @@ pub struct DbUser {
     pub role: Option<String>,
     pub display_name: Option<String>,
     pub archived: Option<bool>,
+    pub graduated_at: Option<chrono::NaiveDateTime>,
 }
 
 impl From<DbUser> for User {
@@ -38,6 +40,9 @@ impl From<DbUser> for User {
             role: Role::from_str(&user.role.unwrap_or_default()).unwrap(),
             display_name: user.display_name.unwrap_or_default(),
             archived: user.archived.unwrap_or_default(),
+            graduated_at: user
+                .graduated_at
+                .map(|dt| chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(dt, chrono::Utc).to_rfc3339()),
             last_update: None,
             last_coach_update_at: None,
             total_techniques: None,
@@ -50,6 +55,10 @@ impl From<DbUser> for User {
 }
 
 impl User {
+    pub fn is_graduated(&self) -> bool {
+        self.graduated_at.is_some()
+    }
+
     pub fn has_permission(&self, permission: Permission) -> bool {
         self.role.has_permission(permission)
     }

@@ -1,6 +1,7 @@
 import { Link } from "react-router-dom";
-import { ChevronRight, Clock } from "lucide-react";
+import { ChevronRight, Clock, GraduationCap } from "lucide-react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import type { User } from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -44,7 +45,16 @@ export function StudentRow({ student, href, className }: StudentRowProps) {
       <div className="min-w-0 flex-1 space-y-1.5">
         <div className="flex items-center gap-2">
           <span className="truncate font-medium">{displayName}</span>
-          {student.has_new_student_activity && (
+          {student.graduated_at && (
+            <Badge
+              variant="outline"
+              className="shrink-0 gap-1 border-status-green/40 text-status-green"
+            >
+              <GraduationCap className="h-3 w-3" aria-hidden />
+              Graduated
+            </Badge>
+          )}
+          {student.has_new_student_activity && !student.graduated_at && (
             <span
               className="inline-flex h-2 w-2 shrink-0 rounded-full bg-primary"
               aria-label="New student activity"

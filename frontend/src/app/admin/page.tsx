@@ -47,10 +47,18 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { PageHeader } from '@/components/page-header';
 import { EmptyState } from '@/components/empty-state';
 import { SkeletonTableRow } from '@/components/skeleton-row';
+import { GraduateConfirmDialog } from '@/components/graduate-confirm-dialog';
 import { TracedForm } from '@/components/traced-form';
 import { useFormWithValidation } from '@/components/hooks/useFormErrors';
-import { getAllUsers, updateUser, type User } from '@/lib/api';
-import { EditIcon, KeyIcon, MoreHorizontalIcon, Users, X } from 'lucide-react';
+import { getAllUsers, setStudentGraduated, updateUser, type User } from '@/lib/api';
+import {
+  EditIcon,
+  GraduationCap,
+  KeyIcon,
+  MoreHorizontalIcon,
+  Users,
+  X,
+} from 'lucide-react';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { cn } from '@/lib/utils';
@@ -92,6 +100,7 @@ export default function AdminPage() {
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [isPasswordDialogOpen, setIsPasswordDialogOpen] = useState(false);
+  const [graduateTarget, setGraduateTarget] = useState<User | null>(null);
 
   const editForm = useFormWithValidation<EditValues>({
     resolver: zodResolver(editSchema),
@@ -163,6 +172,31 @@ export default function AdminPage() {
         ),
       );
       toast.success(u.archived ? 'User unarchived' : 'User archived');
+    } catch (err) {
+      console.error(err);
+      toast.error('Failed to update user');
+    }
+  }
+
+  async function handleToggleGraduated(u: User) {
+    const wasGraduated = !!u.graduated_at;
+    try {
+      const response = await setStudentGraduated(u.id, !wasGraduated);
+      if (!response.ok) {
+        toast.error('Failed to update user');
+        return;
+      }
+      setUsers((prev) =>
+        prev.map((existing) =>
+          existing.id === u.id
+            ? {
+                ...existing,
+                graduated_at: wasGraduated ? null : new Date().toISOString(),
+              }
+            : existing,
+        ),
+      );
+      toast.success(wasGraduated ? 'Un-graduated' : 'Graduated 🎓');
     } catch (err) {
       console.error(err);
       toast.error('Failed to update user');
@@ -321,6 +355,7 @@ export default function AdminPage() {
                     onEdit={() => openEditDialog(u)}
                     onPassword={() => openPasswordDialog(u)}
                     onToggleArchive={() => handleToggleArchive(u)}
+                    onToggleGraduated={() => setGraduateTarget(u)}
                   />
                 </div>
               ))}
@@ -374,6 +409,7 @@ export default function AdminPage() {
                           onEdit={() => openEditDialog(u)}
                           onPassword={() => openPasswordDialog(u)}
                           onToggleArchive={() => handleToggleArchive(u)}
+                          onToggleGraduated={() => setGraduateTarget(u)}
                         />
                       </TableCell>
                     </TableRow>
@@ -538,6 +574,22 @@ export default function AdminPage() {
           </Form>
         </DialogContent>
       </Dialog>
+
+      <GraduateConfirmDialog
+        open={!!graduateTarget}
+        onOpenChange={(open) => !open && setGraduateTarget(null)}
+        mode={graduateTarget?.graduated_at ? 'ungraduate' : 'graduate'}
+        studentName={
+          graduateTarget?.display_name || graduateTarget?.username || ''
+        }
+        onConfirm={() => {
+          if (graduateTarget) {
+            const u = graduateTarget;
+            setGraduateTarget(null);
+            handleToggleGraduated(u);
+          }
+        }}
+      />
     </div>
   );
 }
@@ -547,6 +599,7 @@ interface UserActionsMenuProps {
   onEdit: () => void;
   onPassword: () => void;
   onToggleArchive: () => void;
+  onToggleGraduated: () => void;
 }
 
 function UserActionsMenu({
@@ -554,7 +607,10 @@ function UserActionsMenu({
   onEdit,
   onPassword,
   onToggleArchive,
+  onToggleGraduated,
 }: UserActionsMenuProps) {
+  const isStudent = user.role.toLowerCase() === 'student';
+  const isGraduated = !!user.graduated_at;
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -572,6 +628,12 @@ function UserActionsMenu({
           <KeyIcon className="mr-2 h-4 w-4" aria-hidden />
           Change password
         </DropdownMenuItem>
+        {isStudent && (
+          <DropdownMenuItem onClick={onToggleGraduated}>
+            <GraduationCap className="mr-2 h-4 w-4" aria-hidden />
+            {isGraduated ? 'Un-graduate' : 'Graduate'}
+          </DropdownMenuItem>
+        )}
         <DropdownMenuSeparator />
         <DropdownMenuItem onClick={onToggleArchive}>
           {user.archived ? 'Unarchive user' : 'Archive user'}

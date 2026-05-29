@@ -5,6 +5,7 @@ import {
   ArrowRight,
   Bell,
   Clock,
+  GraduationCap,
   History,
   Users,
 } from 'lucide-react';
@@ -269,10 +270,23 @@ function StudentDashboard({ user }: { user: User }) {
   }, [techniques]);
 
   const total = counts.red + counts.amber + counts.green;
+  const isGraduate = !!user.graduated_at;
 
   return (
     <div className="container mx-auto px-4 py-6 sm:px-6 md:py-8">
       <PageHeader title="Dashboard" />
+
+      {isGraduate && (
+        <div className="mb-6 flex items-start gap-3 rounded-lg border border-status-green/30 bg-status-green-bg px-4 py-3 text-sm">
+          <GraduationCap className="mt-0.5 h-4 w-4 shrink-0 text-status-green" aria-hidden />
+          <div className="space-y-0.5">
+            <p className="font-medium text-status-green">Congrats on graduating 🎓</p>
+            <p className="text-muted-foreground">
+              Keep taking notes on your techniques.
+            </p>
+          </div>
+        </div>
+      )}
 
       {loading ? (
         <div className="grid grid-cols-3 gap-3 sm:gap-4">

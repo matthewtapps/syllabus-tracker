@@ -16,7 +16,7 @@ pub async fn get_user(pool: &Pool<Sqlite>, id: i64) -> Result<User, AppError> {
     info!("Fetching user by ID");
     let row = sqlx::query_as!(
         DbUser,
-        "SELECT id, username, role, display_name, archived FROM users WHERE id=?",
+        "SELECT id, username, role, display_name, archived, graduated_at FROM users WHERE id=?",
         id
     )
     .fetch_optional(pool)
@@ -583,7 +583,9 @@ pub async fn authenticate_user(
     password: &str,
 ) -> Result<Option<User>, AppError> {
     let user_auth = sqlx::query!(
-        "SELECT id, username, password, role, display_name, archived FROM users WHERE username = ?",
+        r#"SELECT id, username, password, role, display_name, archived,
+                  CAST(graduated_at AS TEXT) as "graduated_at?: String"
+           FROM users WHERE username = ?"#,
         username
     )
     .fetch_optional(pool)
@@ -598,6 +600,7 @@ pub async fn authenticate_user(
                     role: Role::from_str(&user.role)?,
                     display_name: user.display_name.unwrap_or_default(),
                     archived: user.archived,
+                    graduated_at: user.graduated_at,
                     last_update: None,
                     last_coach_update_at: None,
                     total_techniques: None,
@@ -655,7 +658,7 @@ pub async fn find_user_by_username(
 ) -> Result<Option<User>, AppError> {
     let row = sqlx::query_as!(
         DbUser,
-        "SELECT id, username, role, display_name, archived FROM users WHERE username = ?",
+        "SELECT id, username, role, display_name, archived, graduated_at FROM users WHERE username = ?",
         username
     )
     .fetch_optional(pool)
@@ -673,9 +676,9 @@ pub async fn get_users_by_role(
     info!(role = %role, show_archived = %show_archived, "Getting users by role");
 
     let query = if show_archived {
-        "SELECT id, username, role, display_name, archived FROM users WHERE role = ?"
+        "SELECT id, username, role, display_name, archived, graduated_at FROM users WHERE role = ?"
     } else {
-        "SELECT id, username, role, display_name, archived FROM users WHERE role = ? AND archived IS 0"
+        "SELECT id, username, role, display_name, archived, graduated_at FROM users WHERE role = ? AND archived IS 0"
     };
 
     let rows = sqlx::query_as::<_, DbUser>(query)
@@ -738,6 +741,37 @@ pub async fn update_user_admin(
     .await?;
 
     Ok(())
+}
+
+#[instrument]
+pub async fn set_user_graduated(
+    pool: &Pool<Sqlite>,
+    user_id: i64,
+    graduated: bool,
+    actor_id: Option<i64>,
+) -> Result<bool, AppError> {
+    info!("Setting graduated state");
+
+    if graduated {
+        let now = Utc::now();
+        sqlx::query!(
+            "UPDATE users SET graduated_at = ?, graduated_by_id = ? WHERE id = ?",
+            now,
+            actor_id,
+            user_id
+        )
+        .execute(pool)
+        .await?;
+    } else {
+        sqlx::query!(
+            "UPDATE users SET graduated_at = NULL, graduated_by_id = NULL WHERE id = ?",
+            user_id
+        )
+        .execute(pool)
+        .await?;
+    }
+
+    Ok(graduated)
 }
 
 #[instrument]
@@ -834,6 +868,7 @@ pub struct UserWithActivityDto {
     pub role: Option<String>,
     pub display_name: Option<String>,
     pub archived: Option<bool>,
+    pub graduated_at: Option<String>,
     pub last_update: Option<String>,
     pub last_coach_update_at: Option<String>,
     pub total_techniques: Option<i64>,
@@ -857,8 +892,9 @@ pub async fn get_students_by_recent_updates(
             u.display_name,
             u.role,
             u.archived,
+            CAST(u.graduated_at AS TEXT) as "graduated_at?: String",
             MAX(st.updated_at) as last_update,
-            CAST(MAX(st.last_coach_update_at) AS TEXT) as last_coach_update_at,
+            CAST(MAX(st.last_coach_update_at) AS TEXT) as "last_coach_update_at?: String",
             COUNT(st.id) as total_techniques,
             COALESCE(SUM(CASE WHEN st.status = 'red'   THEN 1 ELSE 0 END), 0) as red_count,
             COALESCE(SUM(CASE WHEN st.status = 'amber' THEN 1 ELSE 0 END), 0) as amber_count,
@@ -890,6 +926,7 @@ pub async fn get_students_by_recent_updates(
             role: Role::from_str(&dto.role.unwrap_or_default()).unwrap(),
             display_name: dto.display_name.unwrap_or_default(),
             archived: dto.archived.unwrap_or_default(),
+            graduated_at: dto.graduated_at,
             last_update: dto.last_update,
             last_coach_update_at: dto.last_coach_update_at,
             total_techniques: dto.total_techniques,

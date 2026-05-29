@@ -236,6 +236,7 @@ pub mod test_utils {
                             role: Role::Coach,
                             display_name: String::new(),
                             archived: false,
+                            graduated_at: None,
                             last_update: None,
                             last_coach_update_at: None,
                             total_techniques: None,

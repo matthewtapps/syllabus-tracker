@@ -21,7 +21,8 @@ use crate::db::{
     find_user_by_username, get_all_tags, get_all_users, get_student_technique,
     get_student_techniques, get_students_by_recent_updates, get_tags_for_technique,
     count_techniques, get_unassigned_techniques, get_user, invalidate_session,
-    remove_tag_from_technique, set_user_archived, update_student_notes, update_student_technique,
+    remove_tag_from_technique, set_user_archived, set_user_graduated, update_student_notes,
+    update_student_technique,
     update_technique, update_user_display_name, update_user_password, update_user_role,
     update_username,
 };
@@ -112,6 +113,7 @@ pub struct UserData {
     pub role: String,
     pub last_update: Option<String>,
     pub archived: bool,
+    pub graduated_at: Option<String>,
     pub last_coach_update_at: Option<String>,
     pub total_techniques: Option<i64>,
     pub red_count: Option<i64>,
@@ -129,6 +131,7 @@ impl From<User> for UserData {
             role: user.role.to_string(),
             last_update: user.last_update.clone(),
             archived: user.archived,
+            graduated_at: user.graduated_at.clone(),
             last_coach_update_at: user.last_coach_update_at.clone(),
             total_techniques: user.total_techniques,
             red_count: user.red_count,
@@ -252,6 +255,8 @@ pub struct StudentResponse {
     pub id: i64,
     pub username: String,
     pub display_name: String,
+    pub archived: bool,
+    pub graduated_at: Option<String>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -312,6 +317,8 @@ pub async fn api_get_student_techniques(
             id: student.id,
             username: student.username,
             display_name: student.display_name,
+            archived: student.archived,
+            graduated_at: student.graduated_at,
         },
         techniques: technique_responses,
         can_edit_all_techniques: user.has_permission(Permission::EditAllTechniques),
@@ -652,6 +659,7 @@ pub struct UserUpdateRequest {
     #[validate(length(min = 5, message = "Password must be at least 5 characters long"))]
     password: Option<String>,
     archived: Option<bool>,
+    graduated: Option<bool>,
     role: Option<String>,
 }
 
@@ -685,10 +693,39 @@ pub async fn api_update_user(
         set_user_archived(db, id, archived).await?;
     }
 
+    if let Some(graduated) = update.graduated {
+        set_user_graduated(db, id, graduated, Some(user.id)).await?;
+    }
+
     if let Some(role) = &update.role {
         update_user_role(db, id, role).await?;
     }
 
+    Ok(Status::Ok)
+}
+
+#[derive(Deserialize, Clone)]
+pub struct GraduateRequest {
+    graduated: bool,
+}
+
+/// Coach-accessible endpoint to graduate / un-graduate a student.
+/// Distinct from `/admin/users/<id>` which is admin-only.
+#[post("/student/<id>/graduate", data = "<body>")]
+pub async fn api_set_student_graduated(
+    id: i64,
+    body: Json<GraduateRequest>,
+    user: User,
+    db: &State<Pool<Sqlite>>,
+) -> ApiResult<Status> {
+    user.require_permission(Permission::ViewAllStudents)?;
+
+    let target = get_user(db, id).await?;
+    if !matches!(target.role, crate::auth::Role::Student) {
+        return Err(Status::BadRequest.into());
+    }
+
+    set_user_graduated(db, id, body.graduated, Some(user.id)).await?;
     Ok(Status::Ok)
 }
 

@@ -60,6 +60,7 @@ export interface User {
   role: string;
   last_update?: string;
   archived: boolean;
+  graduated_at?: string | null;
   last_coach_update_at?: string | null;
   total_techniques?: number | null;
   red_count?: number | null;
@@ -300,6 +301,7 @@ export interface UserUpdateData {
   display_name?: string;
   password?: string;
   archived?: boolean;
+  graduated?: boolean;
   role?: string;
 }
 
@@ -389,6 +391,18 @@ export async function getAllUsers(): Promise<User[]> {
   });
 
   return await response.json();
+}
+
+export async function setStudentGraduated(
+  studentId: number,
+  graduated: boolean,
+): Promise<Response> {
+  return await fetch(`/api/student/${studentId}/graduate`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ graduated }),
+    credentials: "include",
+  });
 }
 
 export interface LibraryStats {

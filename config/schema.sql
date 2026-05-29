@@ -4,7 +4,9 @@ CREATE TABLE IF NOT EXISTS users (
     role TEXT NOT NULL,
     password TEXT NOT NULL DEFAULT '',
     display_name TEXT,
-    archived BOOLEAN NOT NULL DEFAULT FALSE
+    archived BOOLEAN NOT NULL DEFAULT FALSE,
+    graduated_at TIMESTAMP,
+    graduated_by_id INTEGER REFERENCES users(id)
 );
 
 CREATE TABLE IF NOT EXISTS techniques (

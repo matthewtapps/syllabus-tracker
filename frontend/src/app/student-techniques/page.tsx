@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { ArrowLeft, BookOpen, Plus } from 'lucide-react';
+import { ArrowLeft, BookOpen, GraduationCap, Plus } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   getAllTags,
   getStudentTechniques,
   removeTagFromTechnique,
+  setStudentGraduated,
   updateTechnique,
 } from '@/lib/api';
 import type {
@@ -27,6 +28,7 @@ import {
 import { PageHeader } from '@/components/page-header';
 import { EmptyState } from '@/components/empty-state';
 import { SkeletonListRow } from '@/components/skeleton-row';
+import { GraduateConfirmDialog } from '@/components/graduate-confirm-dialog';
 import TechniqueEditForm from '@/components/technique-edit-form';
 import AssignTechniques from '@/components/assign-techniques';
 import { TechniqueRow } from './components/technique-row';
@@ -59,6 +61,7 @@ export default function StudentTechniques({ user }: StudentTechniquesProps) {
     technique: Technique;
     tag: Tag;
   } | null>(null);
+  const [graduateConfirmOpen, setGraduateConfirmOpen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -209,6 +212,33 @@ export default function StudentTechniques({ user }: StudentTechniquesProps) {
     }
   }
 
+  async function handleToggleGraduated() {
+    if (!data) return;
+    const wasGraduated = !!data.student.graduated_at;
+    try {
+      const response = await setStudentGraduated(data.student.id, !wasGraduated);
+      if (!response.ok) {
+        toast.error('Failed to update student');
+        return;
+      }
+      setData((prev) =>
+        prev
+          ? {
+              ...prev,
+              student: {
+                ...prev.student,
+                graduated_at: wasGraduated ? undefined : new Date().toISOString(),
+              },
+            }
+          : prev,
+      );
+      toast.success(wasGraduated ? 'Un-graduated' : 'Graduated 🎓');
+    } catch (err) {
+      console.error(err);
+      toast.error('Failed to update student');
+    }
+  }
+
   async function reloadAfterAssignment() {
     if (!id) return;
     const studentId = parseInt(id, 10);
@@ -219,6 +249,8 @@ export default function StudentTechniques({ user }: StudentTechniquesProps) {
 
   const studentName = data?.student.display_name || data?.student.username || '';
   const isOwnView = !!data && user.id === data.student.id;
+  const studentGraduatedAt = data?.student.graduated_at ?? null;
+  const isGraduate = !!studentGraduatedAt;
   const headerTitle = !data
     ? 'Techniques'
     : isOwnView
@@ -238,32 +270,69 @@ export default function StudentTechniques({ user }: StudentTechniquesProps) {
         </div>
       )}
 
+      {isGraduate && (
+        <div className="mb-4 flex items-start gap-3 rounded-lg border border-status-green/30 bg-status-green-bg px-4 py-3 text-sm">
+          <GraduationCap className="mt-0.5 h-4 w-4 shrink-0 text-status-green" aria-hidden />
+          <div className="space-y-0.5">
+            {isOwnView ? (
+              <>
+                <p className="font-medium text-status-green">Congrats on graduating 🎓</p>
+                <p className="text-muted-foreground">
+                  Keep taking notes on your techniques.
+                </p>
+              </>
+            ) : (
+              <>
+                <p className="font-medium text-status-green">Graduated student</p>
+                <p className="text-muted-foreground">
+                  This student has been marked as graduated.
+                </p>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
       <PageHeader
         title={headerTitle}
         actions={
-          data?.can_assign_techniques && (
-            <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
-              <DialogTrigger asChild>
-                <Button>
-                  <Plus className="mr-2 h-4 w-4" aria-hidden />
-                  Add techniques
+          data && (
+            <div className="flex items-center gap-2">
+              {data.can_edit_all_techniques && !isOwnView && (
+                <Button
+                  variant="outline"
+                  onClick={() => setGraduateConfirmOpen(true)}
+                  className="gap-2"
+                >
+                  <GraduationCap className="h-4 w-4" aria-hidden />
+                  {isGraduate ? 'Un-graduate' : 'Graduate'}
                 </Button>
-              </DialogTrigger>
-              <DialogContent className="max-h-[85vh] w-[calc(100vw-1rem)] max-w-xl overflow-y-auto p-4 sm:p-6">
-                <DialogHeader>
-                  <DialogTitle>Add techniques</DialogTitle>
-                  <DialogDescription>
-                    Assign existing techniques or create new ones for{' '}
-                    {data.student.display_name || data.student.username}.
-                  </DialogDescription>
-                </DialogHeader>
-                <AssignTechniques
-                  studentId={data.student.id}
-                  canCreateTechniques={data.can_create_techniques}
-                  onAssignComplete={reloadAfterAssignment}
-                />
-              </DialogContent>
-            </Dialog>
+              )}
+              {data.can_assign_techniques && (
+                <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
+                  <DialogTrigger asChild>
+                    <Button>
+                      <Plus className="mr-2 h-4 w-4" aria-hidden />
+                      Add techniques
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent className="max-h-[85vh] w-[calc(100vw-1rem)] max-w-xl overflow-y-auto p-4 sm:p-6">
+                    <DialogHeader>
+                      <DialogTitle>Add techniques</DialogTitle>
+                      <DialogDescription>
+                        Assign existing techniques or create new ones for{' '}
+                        {data.student.display_name || data.student.username}.
+                      </DialogDescription>
+                    </DialogHeader>
+                    <AssignTechniques
+                      studentId={data.student.id}
+                      canCreateTechniques={data.can_create_techniques}
+                      onAssignComplete={reloadAfterAssignment}
+                    />
+                  </DialogContent>
+                </Dialog>
+              )}
+            </div>
           )
         }
       />
@@ -383,6 +452,19 @@ export default function StudentTechniques({ user }: StudentTechniquesProps) {
         tagName={tagToRemove?.tag.name ?? null}
         onConfirm={executeTagRemoval}
       />
+
+      {data && (
+        <GraduateConfirmDialog
+          open={graduateConfirmOpen}
+          onOpenChange={setGraduateConfirmOpen}
+          mode={isGraduate ? 'ungraduate' : 'graduate'}
+          studentName={studentName}
+          onConfirm={() => {
+            setGraduateConfirmOpen(false);
+            handleToggleGraduated();
+          }}
+        />
+      )}
     </div>
   );
 }
