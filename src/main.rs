@@ -22,8 +22,9 @@ use api::{
     api_approve_user, api_bump_last_seen, api_claim_invite, api_get_invite,
     api_get_unassigned_techniques, api_invite_user, api_library_stats, api_login, api_logout,
     api_me, api_me_unauthorized, api_register_user, api_remove_tag_from_technique,
-    api_reset_user_claim, api_self_register, api_set_student_graduated, api_update_profile,
-    api_update_student_technique, api_update_user, health,
+    api_request_password_reset, api_reset_user_claim, api_self_register,
+    api_set_student_graduated, api_update_profile, api_update_student_technique,
+    api_update_user, health,
 };
 use auth::unauthorized_api;
 use db::clean_expired_sessions;
@@ -207,6 +208,7 @@ pub async fn init_rocket(pool: SqlitePool) -> Rocket<Build> {
                 api_reset_user_claim,
                 api_self_register,
                 api_approve_user,
+                api_request_password_reset,
             ],
         )
         .register("/api", catchers![unauthorized_api])

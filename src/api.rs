@@ -22,9 +22,10 @@ use crate::db::{
     delete_tag, find_user_by_username, find_valid_invite_token, get_all_tags, get_all_users,
     get_student_technique, get_student_techniques, get_students_by_recent_updates,
     get_tags_for_technique, get_unassigned_techniques, get_user, invalidate_session,
-    read_and_bump_last_seen, remove_tag_from_technique, reset_user_claim, set_user_archived,
-    set_user_graduated, update_student_notes, update_student_technique, update_technique,
-    update_user_display_name, update_user_password, update_user_role, update_username,
+    read_and_bump_last_seen, remove_tag_from_technique, request_password_reset, reset_user_claim,
+    set_user_archived, set_user_graduated, update_student_notes, update_student_technique,
+    update_technique, update_user_display_name, update_user_password, update_user_role,
+    update_username,
 };
 use crate::error::AppError;
 use crate::models::Tag;
@@ -119,6 +120,7 @@ pub struct UserData {
     pub approved_at: Option<String>,
     pub first_name: Option<String>,
     pub last_name: Option<String>,
+    pub reset_requested_at: Option<String>,
     pub last_coach_update_at: Option<String>,
     pub total_techniques: Option<i64>,
     pub red_count: Option<i64>,
@@ -142,6 +144,7 @@ impl From<User> for UserData {
             approved_at: user.approved_at.clone(),
             first_name: user.first_name.clone(),
             last_name: user.last_name.clone(),
+            reset_requested_at: user.reset_requested_at.clone(),
             last_coach_update_at: user.last_coach_update_at.clone(),
             total_techniques: user.total_techniques,
             red_count: user.red_count,
@@ -981,6 +984,27 @@ pub async fn api_claim_invite(
     establish_session(cookies, db, &user).await?;
 
     Ok(Json(UserData::from(user)))
+}
+
+// ---- Forgot password ----
+
+#[derive(Deserialize, Validate, Clone)]
+pub struct ForgotPasswordRequest {
+    #[validate(length(min = 1, message = "Username cannot be empty"))]
+    username: String,
+}
+
+/// Public endpoint. Flags the matching user's account so coaches see a
+/// reset request on their dashboard. Always returns 200 regardless of whether
+/// the username exists, so we don't leak account existence.
+#[post("/forgot_password", data = "<body>")]
+pub async fn api_request_password_reset(
+    body: Json<ForgotPasswordRequest>,
+    db: &State<Pool<Sqlite>>,
+) -> ApiResult<Status> {
+    body.validate()?;
+    request_password_reset(db, &body.username).await?;
+    Ok(Status::Ok)
 }
 
 // ---- Self-register + approval ----

@@ -14,6 +14,7 @@ import AdminPage from './app/admin/page';
 import InvitePage from './app/invite/page';
 import RegisterPage from './app/register/page';
 import PendingApprovalPage from './app/pending/page';
+import ForgotPasswordPage from './app/forgot-password/page';
 import { TelemetryProvider } from './context/telemetry';
 
 function App() {
@@ -73,6 +74,10 @@ function App() {
             <Route
               path="/register"
               element={user ? <Navigate to="/dashboard" replace /> : <RegisterPage onRegisterSuccess={loadUser} />}
+            />
+            <Route
+              path="/forgot-password"
+              element={user ? <Navigate to="/dashboard" replace /> : <ForgotPasswordPage />}
             />
             <Route
               path="/student/:id"

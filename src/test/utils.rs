@@ -242,6 +242,7 @@ pub mod test_utils {
                             approved_at: None,
                             first_name: None,
                             last_name: None,
+                            reset_requested_at: None,
                             last_update: None,
                             last_coach_update_at: None,
                             total_techniques: None,

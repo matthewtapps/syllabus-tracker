@@ -16,7 +16,7 @@ pub async fn get_user(pool: &Pool<Sqlite>, id: i64) -> Result<User, AppError> {
     info!("Fetching user by ID");
     let row = sqlx::query_as!(
         DbUser,
-        "SELECT id, username, role, display_name, archived, graduated_at, email, claimed_at, approved_at, first_name, last_name FROM users WHERE id=?",
+        "SELECT id, username, role, display_name, archived, graduated_at, email, claimed_at, approved_at, first_name, last_name, reset_requested_at FROM users WHERE id=?",
         id
     )
     .fetch_optional(pool)
@@ -587,7 +587,8 @@ pub async fn authenticate_user(
                   email, first_name, last_name,
                   CAST(graduated_at AS TEXT) as "graduated_at?: String",
                   CAST(claimed_at AS TEXT) as "claimed_at?: String",
-                  CAST(approved_at AS TEXT) as "approved_at?: String"
+                  CAST(approved_at AS TEXT) as "approved_at?: String",
+                  CAST(reset_requested_at AS TEXT) as "reset_requested_at?: String"
            FROM users WHERE username = ?"#,
         username
     )
@@ -614,6 +615,7 @@ pub async fn authenticate_user(
                     approved_at: user.approved_at,
                     first_name: user.first_name,
                     last_name: user.last_name,
+                    reset_requested_at: user.reset_requested_at,
                     last_update: None,
                     last_coach_update_at: None,
                     total_techniques: None,
@@ -671,7 +673,7 @@ pub async fn find_user_by_username(
 ) -> Result<Option<User>, AppError> {
     let row = sqlx::query_as!(
         DbUser,
-        "SELECT id, username, role, display_name, archived, graduated_at, email, claimed_at, approved_at, first_name, last_name FROM users WHERE username = ?",
+        "SELECT id, username, role, display_name, archived, graduated_at, email, claimed_at, approved_at, first_name, last_name, reset_requested_at FROM users WHERE username = ?",
         username
     )
     .fetch_optional(pool)
@@ -689,9 +691,9 @@ pub async fn get_users_by_role(
     info!(role = %role, show_archived = %show_archived, "Getting users by role");
 
     let query = if show_archived {
-        "SELECT id, username, role, display_name, archived, graduated_at, email, claimed_at, approved_at, first_name, last_name FROM users WHERE role = ?"
+        "SELECT id, username, role, display_name, archived, graduated_at, email, claimed_at, approved_at, first_name, last_name, reset_requested_at FROM users WHERE role = ?"
     } else {
-        "SELECT id, username, role, display_name, archived, graduated_at, email, claimed_at, approved_at, first_name, last_name FROM users WHERE role = ? AND archived IS 0"
+        "SELECT id, username, role, display_name, archived, graduated_at, email, claimed_at, approved_at, first_name, last_name, reset_requested_at FROM users WHERE role = ? AND archived IS 0"
     };
 
     let rows = sqlx::query_as::<_, DbUser>(query)
@@ -1036,8 +1038,12 @@ pub async fn reset_user_claim(
 ) -> Result<String, AppError> {
     info!("Resetting user claim");
 
+    // Also clear any standing password-reset request so it stops showing
+    // on the coach's dashboard once they've acted on it.
     sqlx::query!(
-        "UPDATE users SET password = '', claimed_at = NULL WHERE id = ?",
+        "UPDATE users
+         SET password = '', claimed_at = NULL, reset_requested_at = NULL
+         WHERE id = ?",
         user_id
     )
     .execute(pool)
@@ -1049,6 +1055,26 @@ pub async fn reset_user_claim(
         .await?;
 
     create_invite_token(pool, user_id).await
+}
+
+/// Flag a user as having requested a password reset. Silently no-ops if the
+/// username doesn't exist (we don't want to leak whether usernames are real
+/// to anonymous callers).
+#[instrument]
+pub async fn request_password_reset(
+    pool: &Pool<Sqlite>,
+    username: &str,
+) -> Result<(), AppError> {
+    info!("Recording password reset request");
+    let now = Utc::now();
+    sqlx::query!(
+        "UPDATE users SET reset_requested_at = ? WHERE username = ?",
+        now,
+        username
+    )
+    .execute(pool)
+    .await?;
+    Ok(())
 }
 
 #[instrument]
@@ -1151,6 +1177,7 @@ pub struct UserWithActivityDto {
     pub approved_at: Option<String>,
     pub first_name: Option<String>,
     pub last_name: Option<String>,
+    pub reset_requested_at: Option<String>,
     pub last_update: Option<String>,
     pub last_coach_update_at: Option<String>,
     pub total_techniques: Option<i64>,
@@ -1180,6 +1207,7 @@ pub async fn get_students_by_recent_updates(
             CAST(u.approved_at AS TEXT) as "approved_at?: String",
             u.first_name,
             u.last_name,
+            CAST(u.reset_requested_at AS TEXT) as "reset_requested_at?: String",
             MAX(st.updated_at) as last_update,
             CAST(MAX(st.last_coach_update_at) AS TEXT) as "last_coach_update_at?: String",
             COUNT(st.id) as total_techniques,
@@ -1219,6 +1247,7 @@ pub async fn get_students_by_recent_updates(
             approved_at: dto.approved_at,
             first_name: dto.first_name,
             last_name: dto.last_name,
+            reset_requested_at: dto.reset_requested_at,
             last_update: dto.last_update,
             last_coach_update_at: dto.last_coach_update_at,
             total_techniques: dto.total_techniques,

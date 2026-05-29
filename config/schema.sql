@@ -12,7 +12,8 @@ CREATE TABLE IF NOT EXISTS users (
     claimed_at TIMESTAMP,
     approved_at TIMESTAMP,
     first_name TEXT,
-    last_name TEXT
+    last_name TEXT,
+    reset_requested_at TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS techniques (

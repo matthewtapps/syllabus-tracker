@@ -13,6 +13,7 @@ export function Layout({ user, onLogout, children }: LayoutProps) {
   const isChromeless =
     location.pathname === '/login' ||
     location.pathname === '/register' ||
+    location.pathname === '/forgot-password' ||
     location.pathname.startsWith('/invite/');
 
   return (

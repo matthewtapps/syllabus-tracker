@@ -66,6 +66,7 @@ export interface User {
   approved_at?: string | null;
   first_name?: string | null;
   last_name?: string | null;
+  reset_requested_at?: string | null;
   last_coach_update_at?: string | null;
   total_techniques?: number | null;
   red_count?: number | null;
@@ -471,6 +472,15 @@ export interface SelfRegisterData {
   password: string;
   first_name?: string;
   last_name?: string;
+}
+
+export async function requestPasswordReset(username: string): Promise<Response> {
+  return await fetch("/api/forgot_password", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ username }),
+    credentials: "include",
+  });
 }
 
 export async function selfRegister(data: SelfRegisterData): Promise<Response> {

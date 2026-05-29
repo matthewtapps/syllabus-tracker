@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT id, username, password, role, display_name, archived,\n                  email, first_name, last_name,\n                  CAST(graduated_at AS TEXT) as \"graduated_at?: String\",\n                  CAST(claimed_at AS TEXT) as \"claimed_at?: String\",\n                  CAST(approved_at AS TEXT) as \"approved_at?: String\"\n           FROM users WHERE username = ?",
+  "query": "SELECT id, username, password, role, display_name, archived,\n                  email, first_name, last_name,\n                  CAST(graduated_at AS TEXT) as \"graduated_at?: String\",\n                  CAST(claimed_at AS TEXT) as \"claimed_at?: String\",\n                  CAST(approved_at AS TEXT) as \"approved_at?: String\",\n                  CAST(reset_requested_at AS TEXT) as \"reset_requested_at?: String\"\n           FROM users WHERE username = ?",
   "describe": {
     "columns": [
       {
@@ -62,6 +62,11 @@
         "name": "approved_at?: String",
         "ordinal": 11,
         "type_info": "Null"
+      },
+      {
+        "name": "reset_requested_at?: String",
+        "ordinal": 12,
+        "type_info": "Null"
       }
     ],
     "parameters": {
@@ -79,8 +84,9 @@
       true,
       null,
       null,
+      null,
       null
     ]
   },
-  "hash": "2a1612aecfd522207f8ad906b1f0612155240903309b5c466872749ef26c3e01"
+  "hash": "81624f7d8037bbfb4ffa99121cad7824a4a46dfbda83d924168b0c9963e566f8"
 }

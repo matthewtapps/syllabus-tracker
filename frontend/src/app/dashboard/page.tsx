@@ -7,8 +7,10 @@ import {
   CheckCircle2,
   ChevronRight,
   Clock,
+  Copy,
   GraduationCap,
   History,
+  KeyRound,
   type LucideIcon,
   PlayCircle,
   Sparkles,
@@ -23,7 +25,18 @@ import {
   getStudentTechniques,
   getStudents,
   markDashboardSeen,
+  resetUserClaim,
+  type InviteResponse,
 } from '@/lib/api';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { ClaimLinkPanel } from '@/components/claim-link-panel';
 import type { Technique } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { formatRelative } from '@/lib/dates';
@@ -128,6 +141,37 @@ function CoachDashboard() {
     () => activeStudents.filter((s) => s.claimed_at && !s.approved_at),
     [activeStudents],
   );
+
+  const resetRequests = useMemo(
+    () => activeStudents.filter((s) => s.reset_requested_at),
+    [activeStudents],
+  );
+
+  const [issuedClaimUrl, setIssuedClaimUrl] = useState<string | null>(null);
+
+  async function handleSendResetLink(studentId: number) {
+    try {
+      const response = await resetUserClaim(studentId);
+      if (!response.ok) {
+        toast.error('Failed to create link');
+        return;
+      }
+      const invite: InviteResponse = await response.json();
+      setIssuedClaimUrl(`${window.location.origin}${invite.claim_path}`);
+      setStudents((prev) =>
+        prev
+          ? prev.map((s) =>
+              s.id === studentId
+                ? { ...s, reset_requested_at: null, claimed_at: null }
+                : s,
+            )
+          : prev,
+      );
+    } catch (err) {
+      console.error(err);
+      toast.error('Failed to create link');
+    }
+  }
 
   async function handleApprove(studentId: number) {
     try {
@@ -236,6 +280,47 @@ function CoachDashboard() {
       <StatusDonut counts={statusCounts} className="mb-8" />
 
       <div className="space-y-6">
+        {resetRequests.length > 0 && (
+          <section className="overflow-hidden rounded-lg border border-status-amber/30 bg-card">
+            <header className="flex items-center gap-2.5 border-b border-status-amber/30 bg-status-amber-bg px-4 py-3">
+              <KeyRound className="h-4 w-4 text-status-amber" aria-hidden />
+              <div>
+                <h2 className="text-sm font-semibold">Password reset requests</h2>
+                <p className="text-xs text-muted-foreground">
+                  Students asking for a fresh sign-in link.
+                </p>
+              </div>
+            </header>
+            <ul className="divide-y divide-border">
+              {resetRequests.map((s) => (
+                <li
+                  key={s.id}
+                  className="flex items-center gap-3 px-4 py-3"
+                >
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium">
+                      {s.display_name || s.username}
+                    </p>
+                    {s.username && s.display_name && (
+                      <p className="truncate text-xs text-muted-foreground">
+                        {s.username}
+                      </p>
+                    )}
+                  </div>
+                  <Button
+                    size="sm"
+                    onClick={() => handleSendResetLink(s.id)}
+                    className="gap-2"
+                  >
+                    <Copy className="h-4 w-4" aria-hidden />
+                    Send link
+                  </Button>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
+
         {pendingApprovals.length > 0 && (
           <section className="overflow-hidden rounded-lg border border-status-amber/30 bg-card">
             <header className="flex items-center gap-2.5 border-b border-status-amber/30 bg-status-amber-bg px-4 py-3">
@@ -306,6 +391,33 @@ function CoachDashboard() {
           />
         )}
       </div>
+
+      <Dialog
+        open={!!issuedClaimUrl}
+        onOpenChange={(next) => {
+          if (!next) setIssuedClaimUrl(null);
+        }}
+      >
+        <DialogContent className="w-[calc(100vw-1rem)] max-w-md p-4 sm:p-6">
+          <DialogHeader>
+            <DialogTitle>Sign-in link ready</DialogTitle>
+            <DialogDescription>
+              Show this QR code to the student or send them the link. Valid
+              for 7 days.
+            </DialogDescription>
+          </DialogHeader>
+          {issuedClaimUrl && <ClaimLinkPanel url={issuedClaimUrl} />}
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setIssuedClaimUrl(null)}
+            >
+              Done
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

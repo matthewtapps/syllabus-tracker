@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "\n        SELECT\n            u.id,\n            u.username,\n            u.display_name,\n            u.role,\n            u.archived,\n            CAST(u.graduated_at AS TEXT) as \"graduated_at?: String\",\n            u.email,\n            CAST(u.claimed_at AS TEXT) as \"claimed_at?: String\",\n            CAST(u.approved_at AS TEXT) as \"approved_at?: String\",\n            u.first_name,\n            u.last_name,\n            MAX(st.updated_at) as last_update,\n            CAST(MAX(st.last_coach_update_at) AS TEXT) as \"last_coach_update_at?: String\",\n            COUNT(st.id) as total_techniques,\n            COALESCE(SUM(CASE WHEN st.status = 'red'   THEN 1 ELSE 0 END), 0) as red_count,\n            COALESCE(SUM(CASE WHEN st.status = 'amber' THEN 1 ELSE 0 END), 0) as amber_count,\n            COALESCE(SUM(CASE WHEN st.status = 'green' THEN 1 ELSE 0 END), 0) as green_count,\n            COALESCE(MAX(\n                CASE\n                    WHEN st.last_student_update_at IS NULL THEN 0\n                    WHEN st.last_coach_update_at IS NULL THEN 1\n                    WHEN st.last_student_update_at > st.last_coach_update_at THEN 1\n                    ELSE 0\n                END\n            ), 0) as has_new_student_activity\n        FROM users u\n        LEFT JOIN student_techniques st ON u.id = st.student_id\n        WHERE u.role = 'student'\n        GROUP BY u.id\n        ORDER BY last_update DESC NULLS LAST\n        ",
+  "query": "\n        SELECT\n            u.id,\n            u.username,\n            u.display_name,\n            u.role,\n            u.archived,\n            CAST(u.graduated_at AS TEXT) as \"graduated_at?: String\",\n            u.email,\n            CAST(u.claimed_at AS TEXT) as \"claimed_at?: String\",\n            CAST(u.approved_at AS TEXT) as \"approved_at?: String\",\n            u.first_name,\n            u.last_name,\n            CAST(u.reset_requested_at AS TEXT) as \"reset_requested_at?: String\",\n            MAX(st.updated_at) as last_update,\n            CAST(MAX(st.last_coach_update_at) AS TEXT) as \"last_coach_update_at?: String\",\n            COUNT(st.id) as total_techniques,\n            COALESCE(SUM(CASE WHEN st.status = 'red'   THEN 1 ELSE 0 END), 0) as red_count,\n            COALESCE(SUM(CASE WHEN st.status = 'amber' THEN 1 ELSE 0 END), 0) as amber_count,\n            COALESCE(SUM(CASE WHEN st.status = 'green' THEN 1 ELSE 0 END), 0) as green_count,\n            COALESCE(MAX(\n                CASE\n                    WHEN st.last_student_update_at IS NULL THEN 0\n                    WHEN st.last_coach_update_at IS NULL THEN 1\n                    WHEN st.last_student_update_at > st.last_coach_update_at THEN 1\n                    ELSE 0\n                END\n            ), 0) as has_new_student_activity\n        FROM users u\n        LEFT JOIN student_techniques st ON u.id = st.student_id\n        WHERE u.role = 'student'\n        GROUP BY u.id\n        ORDER BY last_update DESC NULLS LAST\n        ",
   "describe": {
     "columns": [
       {
@@ -59,38 +59,43 @@
         "type_info": "Text"
       },
       {
-        "name": "last_update",
+        "name": "reset_requested_at?: String",
         "ordinal": 11,
         "type_info": "Text"
       },
       {
-        "name": "last_coach_update_at?: String",
+        "name": "last_update",
         "ordinal": 12,
         "type_info": "Text"
       },
       {
-        "name": "total_techniques",
+        "name": "last_coach_update_at?: String",
         "ordinal": 13,
-        "type_info": "Integer"
+        "type_info": "Text"
       },
       {
-        "name": "red_count",
+        "name": "total_techniques",
         "ordinal": 14,
         "type_info": "Integer"
       },
       {
-        "name": "amber_count",
+        "name": "red_count",
         "ordinal": 15,
         "type_info": "Integer"
       },
       {
-        "name": "green_count",
+        "name": "amber_count",
         "ordinal": 16,
         "type_info": "Integer"
       },
       {
-        "name": "has_new_student_activity",
+        "name": "green_count",
         "ordinal": 17,
+        "type_info": "Integer"
+      },
+      {
+        "name": "has_new_student_activity",
+        "ordinal": 18,
         "type_info": "Integer"
       }
     ],
@@ -111,6 +116,7 @@
       true,
       true,
       true,
+      true,
       false,
       false,
       false,
@@ -118,5 +124,5 @@
       false
     ]
   },
-  "hash": "be9a459a0ecf4f28d4b9576e7d3b1f05b21b09125eacc6fd4ab3bf68e0b2ad3e"
+  "hash": "df22029b40f646ab4a91f4669d4b442f1354b93f098d23c2ffa511688673391a"
 }
