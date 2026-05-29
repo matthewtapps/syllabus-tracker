@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { login } from "@/lib/api";
@@ -118,6 +118,13 @@ export function LoginForm({ onSuccess, className, ...props }: LoginFormProps) {
             <Button type="submit" className="w-full" disabled={isLoading}>
               {isLoading ? "Signing in..." : "Sign in"}
             </Button>
+
+            <p className="text-center text-sm text-muted-foreground">
+              No account yet?{" "}
+              <Link to="/register" className="font-medium text-primary hover:underline">
+                Sign up
+              </Link>
+            </p>
           </TracedForm>
         </Form>
       </div>

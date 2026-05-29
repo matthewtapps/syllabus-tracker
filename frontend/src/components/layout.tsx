@@ -10,12 +10,15 @@ interface LayoutProps extends PropsWithChildren {
 
 export function Layout({ user, onLogout, children }: LayoutProps) {
   const location = useLocation();
-  const isLoginPage = location.pathname === '/login';
+  const isChromeless =
+    location.pathname === '/login' ||
+    location.pathname === '/register' ||
+    location.pathname.startsWith('/invite/');
 
   return (
     <>
-      {!isLoginPage && <NavBar user={user} onLogout={onLogout} />}
-      <main className={`flex-1 ${isLoginPage ? '' : 'pb-8'}`}>{children}</main>
+      {!isChromeless && <NavBar user={user} onLogout={onLogout} />}
+      <main className={`flex-1 ${isChromeless ? '' : 'pb-8'}`}>{children}</main>
     </>
   );
 }

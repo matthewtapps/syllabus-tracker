@@ -1,13 +1,18 @@
 CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY,
-    username TEXT NOT NULL UNIQUE,
+    username TEXT UNIQUE,
     role TEXT NOT NULL,
     password TEXT NOT NULL DEFAULT '',
     display_name TEXT,
     archived BOOLEAN NOT NULL DEFAULT FALSE,
     graduated_at TIMESTAMP,
     graduated_by_id INTEGER REFERENCES users(id),
-    last_seen_at TIMESTAMP
+    last_seen_at TIMESTAMP,
+    email TEXT,
+    claimed_at TIMESTAMP,
+    approved_at TIMESTAMP,
+    first_name TEXT,
+    last_name TEXT
 );
 
 CREATE TABLE IF NOT EXISTS techniques (
@@ -38,6 +43,15 @@ CREATE TABLE IF NOT EXISTS student_techniques (
     FOREIGN KEY (student_id) REFERENCES users (id),
     FOREIGN KEY (last_coach_update_by_id) REFERENCES users (id),
     FOREIGN KEY (last_student_update_by_id) REFERENCES users (id)
+);
+
+CREATE TABLE IF NOT EXISTS invite_tokens (
+    id INTEGER PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    token TEXT NOT NULL UNIQUE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    expires_at TIMESTAMP NOT NULL,
+    used_at TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS user_sessions (

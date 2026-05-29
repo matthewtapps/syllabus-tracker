@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT id, username, role, display_name, archived, graduated_at FROM users WHERE username = ?",
+  "query": "SELECT id, user_id, token, expires_at as \"expires_at: chrono::NaiveDateTime\",\n                  used_at as \"used_at?: chrono::NaiveDateTime\"\n           FROM invite_tokens WHERE token = ?",
   "describe": {
     "columns": [
       {
@@ -9,28 +9,23 @@
         "type_info": "Integer"
       },
       {
-        "name": "username",
+        "name": "user_id",
         "ordinal": 1,
-        "type_info": "Text"
+        "type_info": "Integer"
       },
       {
-        "name": "role",
+        "name": "token",
         "ordinal": 2,
         "type_info": "Text"
       },
       {
-        "name": "display_name",
+        "name": "expires_at: chrono::NaiveDateTime",
         "ordinal": 3,
-        "type_info": "Text"
+        "type_info": "Datetime"
       },
       {
-        "name": "archived",
+        "name": "used_at?: chrono::NaiveDateTime",
         "ordinal": 4,
-        "type_info": "Bool"
-      },
-      {
-        "name": "graduated_at",
-        "ordinal": 5,
         "type_info": "Datetime"
       }
     ],
@@ -41,10 +36,9 @@
       true,
       false,
       false,
-      true,
       false,
       true
     ]
   },
-  "hash": "57a84493f56a2a8d02721c2b7cc51d331709bd6f3e296d2d32d2bd406016275a"
+  "hash": "2a7a5efc4d1b000ece421f750000d8ca12f5892283cb60ba6a6130744a044450"
 }

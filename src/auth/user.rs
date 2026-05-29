@@ -13,6 +13,11 @@ pub struct User {
     pub display_name: String,
     pub archived: bool,
     pub graduated_at: Option<String>,
+    pub email: Option<String>,
+    pub claimed_at: Option<String>,
+    pub approved_at: Option<String>,
+    pub first_name: Option<String>,
+    pub last_name: Option<String>,
     pub last_update: Option<String>,
     pub last_coach_update_at: Option<String>,
     pub total_techniques: Option<i64>,
@@ -30,6 +35,15 @@ pub struct DbUser {
     pub display_name: Option<String>,
     pub archived: Option<bool>,
     pub graduated_at: Option<chrono::NaiveDateTime>,
+    pub email: Option<String>,
+    pub claimed_at: Option<chrono::NaiveDateTime>,
+    pub approved_at: Option<chrono::NaiveDateTime>,
+    pub first_name: Option<String>,
+    pub last_name: Option<String>,
+}
+
+fn naive_to_iso(dt: chrono::NaiveDateTime) -> String {
+    chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(dt, chrono::Utc).to_rfc3339()
 }
 
 impl From<DbUser> for User {
@@ -40,9 +54,12 @@ impl From<DbUser> for User {
             role: Role::from_str(&user.role.unwrap_or_default()).unwrap(),
             display_name: user.display_name.unwrap_or_default(),
             archived: user.archived.unwrap_or_default(),
-            graduated_at: user
-                .graduated_at
-                .map(|dt| chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(dt, chrono::Utc).to_rfc3339()),
+            graduated_at: user.graduated_at.map(naive_to_iso),
+            email: user.email,
+            claimed_at: user.claimed_at.map(naive_to_iso),
+            approved_at: user.approved_at.map(naive_to_iso),
+            first_name: user.first_name,
+            last_name: user.last_name,
             last_update: None,
             last_coach_update_at: None,
             total_techniques: None,

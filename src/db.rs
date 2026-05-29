@@ -16,7 +16,7 @@ pub async fn get_user(pool: &Pool<Sqlite>, id: i64) -> Result<User, AppError> {
     info!("Fetching user by ID");
     let row = sqlx::query_as!(
         DbUser,
-        "SELECT id, username, role, display_name, archived, graduated_at FROM users WHERE id=?",
+        "SELECT id, username, role, display_name, archived, graduated_at, email, claimed_at, approved_at, first_name, last_name FROM users WHERE id=?",
         id
     )
     .fetch_optional(pool)
@@ -584,7 +584,10 @@ pub async fn authenticate_user(
 ) -> Result<Option<User>, AppError> {
     let user_auth = sqlx::query!(
         r#"SELECT id, username, password, role, display_name, archived,
-                  CAST(graduated_at AS TEXT) as "graduated_at?: String"
+                  email, first_name, last_name,
+                  CAST(graduated_at AS TEXT) as "graduated_at?: String",
+                  CAST(claimed_at AS TEXT) as "claimed_at?: String",
+                  CAST(approved_at AS TEXT) as "approved_at?: String"
            FROM users WHERE username = ?"#,
         username
     )
@@ -593,14 +596,24 @@ pub async fn authenticate_user(
 
     match user_auth {
         Some(user) => {
+            // Stub (unclaimed) users have an empty password. bcrypt::verify
+            // would error on a non-hash, so short-circuit cleanly here.
+            if user.password.is_empty() {
+                return Ok(None);
+            }
             if bcrypt::verify(password, &user.password)? {
                 Ok(Some(User {
                     id: user.id.unwrap(),
-                    username: user.username.clone(),
+                    username: user.username.clone().unwrap_or_default(),
                     role: Role::from_str(&user.role)?,
                     display_name: user.display_name.unwrap_or_default(),
                     archived: user.archived,
                     graduated_at: user.graduated_at,
+                    email: user.email,
+                    claimed_at: user.claimed_at,
+                    approved_at: user.approved_at,
+                    first_name: user.first_name,
+                    last_name: user.last_name,
                     last_update: None,
                     last_coach_update_at: None,
                     total_techniques: None,
@@ -658,7 +671,7 @@ pub async fn find_user_by_username(
 ) -> Result<Option<User>, AppError> {
     let row = sqlx::query_as!(
         DbUser,
-        "SELECT id, username, role, display_name, archived, graduated_at FROM users WHERE username = ?",
+        "SELECT id, username, role, display_name, archived, graduated_at, email, claimed_at, approved_at, first_name, last_name FROM users WHERE username = ?",
         username
     )
     .fetch_optional(pool)
@@ -676,9 +689,9 @@ pub async fn get_users_by_role(
     info!(role = %role, show_archived = %show_archived, "Getting users by role");
 
     let query = if show_archived {
-        "SELECT id, username, role, display_name, archived, graduated_at FROM users WHERE role = ?"
+        "SELECT id, username, role, display_name, archived, graduated_at, email, claimed_at, approved_at, first_name, last_name FROM users WHERE role = ?"
     } else {
-        "SELECT id, username, role, display_name, archived, graduated_at FROM users WHERE role = ? AND archived IS 0"
+        "SELECT id, username, role, display_name, archived, graduated_at, email, claimed_at, approved_at, first_name, last_name FROM users WHERE role = ? AND archived IS 0"
     };
 
     let rows = sqlx::query_as::<_, DbUser>(query)
@@ -802,6 +815,248 @@ pub async fn set_user_graduated(
     Ok(graduated)
 }
 
+// ---- Self-registration / approval flow ----
+
+/// Create a self-registered student. Username and password are set;
+/// claimed_at is now; approved_at is NULL until a coach approves.
+#[instrument(skip(pool, password))]
+pub async fn create_self_registered_user(
+    pool: &Pool<Sqlite>,
+    username: &str,
+    password: &str,
+    first_name: Option<&str>,
+    last_name: Option<&str>,
+) -> Result<i64, AppError> {
+    info!("Self-registering user");
+
+    let existing = sqlx::query!("SELECT id FROM users WHERE username = ?", username)
+        .fetch_optional(pool)
+        .await?;
+    if existing.is_some() {
+        return Err(AppError::Internal("Username already taken".to_string()));
+    }
+
+    let hashed = bcrypt::hash(password, bcrypt::DEFAULT_COST)?;
+    let display_name = match (first_name, last_name) {
+        (Some(f), Some(l)) => format!("{} {}", f, l),
+        (Some(f), None) => f.to_string(),
+        (None, Some(l)) => l.to_string(),
+        (None, None) => username.to_string(),
+    };
+    let now = Utc::now();
+
+    let res = sqlx::query!(
+        "INSERT INTO users
+            (username, password, role, display_name, first_name, last_name, claimed_at)
+         VALUES (?, ?, 'student', ?, ?, ?, ?)",
+        username,
+        hashed,
+        display_name,
+        first_name,
+        last_name,
+        now
+    )
+    .execute(pool)
+    .await?;
+
+    Ok(res.last_insert_rowid())
+}
+
+/// Approve a self-registered user. Idempotent.
+#[instrument]
+pub async fn approve_user(
+    pool: &Pool<Sqlite>,
+    user_id: i64,
+) -> Result<(), AppError> {
+    info!("Approving user");
+    let now = Utc::now();
+    sqlx::query!(
+        "UPDATE users SET approved_at = ? WHERE id = ? AND approved_at IS NULL",
+        now,
+        user_id
+    )
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+// ---- Invite / claim flow ----
+
+/// Create a "stub" user: no username, no password, just display name and role.
+/// Coaches use this to pre-populate a student's record before they claim.
+#[instrument]
+pub async fn create_user_stub(
+    pool: &Pool<Sqlite>,
+    display_name: &str,
+    email: Option<&str>,
+    role: &str,
+) -> Result<i64, AppError> {
+    info!("Creating stub user");
+    // Coach-driven creates are implicitly approved.
+    let now = Utc::now();
+    let res = sqlx::query!(
+        "INSERT INTO users (username, password, display_name, role, email, approved_at)
+         VALUES (NULL, '', ?, ?, ?, ?)",
+        display_name,
+        role,
+        email,
+        now
+    )
+    .execute(pool)
+    .await?;
+    Ok(res.last_insert_rowid())
+}
+
+#[derive(Debug, Clone)]
+pub struct InviteToken {
+    pub id: i64,
+    pub user_id: i64,
+    pub token: String,
+    pub expires_at: chrono::NaiveDateTime,
+    pub used_at: Option<chrono::NaiveDateTime>,
+}
+
+/// Create an invite token tied to a user. Token expires in 7 days. The token
+/// value is generated via the same `UserSession::generate_token` used for
+/// session cookies.
+#[instrument]
+pub async fn create_invite_token(
+    pool: &Pool<Sqlite>,
+    user_id: i64,
+) -> Result<String, AppError> {
+    info!("Creating invite token");
+    let token = crate::auth::UserSession::generate_token();
+    let expires_at = (Utc::now() + chrono::Duration::days(7)).naive_utc();
+
+    sqlx::query!(
+        "INSERT INTO invite_tokens (user_id, token, expires_at) VALUES (?, ?, ?)",
+        user_id,
+        token,
+        expires_at
+    )
+    .execute(pool)
+    .await?;
+
+    Ok(token)
+}
+
+/// Look up an invite token. Returns the row only when it's still valid
+/// (not used, not expired). Otherwise returns None.
+#[instrument(skip(token))]
+pub async fn find_valid_invite_token(
+    pool: &Pool<Sqlite>,
+    token: &str,
+) -> Result<Option<InviteToken>, AppError> {
+    let row = sqlx::query!(
+        r#"SELECT id, user_id, token, expires_at as "expires_at: chrono::NaiveDateTime",
+                  used_at as "used_at?: chrono::NaiveDateTime"
+           FROM invite_tokens WHERE token = ?"#,
+        token
+    )
+    .fetch_optional(pool)
+    .await?;
+
+    let row = match row {
+        Some(r) => r,
+        None => return Ok(None),
+    };
+
+    if row.used_at.is_some() {
+        return Ok(None);
+    }
+    let now = Utc::now().naive_utc();
+    if row.expires_at < now {
+        return Ok(None);
+    }
+
+    Ok(Some(InviteToken {
+        id: row.id.unwrap_or_default(),
+        user_id: row.user_id,
+        token: row.token,
+        expires_at: row.expires_at,
+        used_at: row.used_at,
+    }))
+}
+
+/// Atomically claim an invite. Sets the user's username and (bcrypt-hashed)
+/// password, marks claimed_at on the user and used_at on the token.
+/// Returns the user id on success. Errors if the username is taken.
+#[instrument(skip(pool, token, password))]
+pub async fn claim_invite(
+    pool: &Pool<Sqlite>,
+    token: &str,
+    username: &str,
+    password: &str,
+) -> Result<i64, AppError> {
+    info!("Claiming invite");
+
+    let invite = find_valid_invite_token(pool, token)
+        .await?
+        .ok_or_else(|| AppError::NotFound("Invite token not valid".to_string()))?;
+
+    let existing = sqlx::query!(
+        "SELECT id FROM users WHERE username = ? AND id != ?",
+        username,
+        invite.user_id
+    )
+    .fetch_optional(pool)
+    .await?;
+    if existing.is_some() {
+        return Err(AppError::Internal("Username already taken".to_string()));
+    }
+
+    let hashed = bcrypt::hash(password, bcrypt::DEFAULT_COST)?;
+    let now = Utc::now();
+
+    // Apply both updates. SQLite single-connection writes are serialized by the
+    // pool, so this is effectively atomic for our purposes.
+    sqlx::query!(
+        "UPDATE users SET username = ?, password = ?, claimed_at = ? WHERE id = ?",
+        username,
+        hashed,
+        now,
+        invite.user_id
+    )
+    .execute(pool)
+    .await?;
+
+    sqlx::query!(
+        "UPDATE invite_tokens SET used_at = ? WHERE id = ?",
+        now,
+        invite.id
+    )
+    .execute(pool)
+    .await?;
+
+    Ok(invite.user_id)
+}
+
+/// Reset a claimed user back to stub state: clear password, invalidate
+/// existing sessions, return a fresh invite token. Username stays so existing
+/// references are unaffected, but the user can re-claim with a new password
+/// (and optionally change the username again during claim).
+#[instrument]
+pub async fn reset_user_claim(
+    pool: &Pool<Sqlite>,
+    user_id: i64,
+) -> Result<String, AppError> {
+    info!("Resetting user claim");
+
+    sqlx::query!(
+        "UPDATE users SET password = '', claimed_at = NULL WHERE id = ?",
+        user_id
+    )
+    .execute(pool)
+    .await?;
+
+    // Invalidate any existing sessions for this user.
+    sqlx::query!("DELETE FROM user_sessions WHERE user_id = ?", user_id)
+        .execute(pool)
+        .await?;
+
+    create_invite_token(pool, user_id).await
+}
+
 #[instrument]
 pub async fn set_user_archived(
     pool: &Pool<Sqlite>,
@@ -897,6 +1152,11 @@ pub struct UserWithActivityDto {
     pub display_name: Option<String>,
     pub archived: Option<bool>,
     pub graduated_at: Option<String>,
+    pub email: Option<String>,
+    pub claimed_at: Option<String>,
+    pub approved_at: Option<String>,
+    pub first_name: Option<String>,
+    pub last_name: Option<String>,
     pub last_update: Option<String>,
     pub last_coach_update_at: Option<String>,
     pub total_techniques: Option<i64>,
@@ -921,6 +1181,11 @@ pub async fn get_students_by_recent_updates(
             u.role,
             u.archived,
             CAST(u.graduated_at AS TEXT) as "graduated_at?: String",
+            u.email,
+            CAST(u.claimed_at AS TEXT) as "claimed_at?: String",
+            CAST(u.approved_at AS TEXT) as "approved_at?: String",
+            u.first_name,
+            u.last_name,
             MAX(st.updated_at) as last_update,
             CAST(MAX(st.last_coach_update_at) AS TEXT) as "last_coach_update_at?: String",
             COUNT(st.id) as total_techniques,
@@ -955,6 +1220,11 @@ pub async fn get_students_by_recent_updates(
             display_name: dto.display_name.unwrap_or_default(),
             archived: dto.archived.unwrap_or_default(),
             graduated_at: dto.graduated_at,
+            email: dto.email,
+            claimed_at: dto.claimed_at,
+            approved_at: dto.approved_at,
+            first_name: dto.first_name,
+            last_name: dto.last_name,
             last_update: dto.last_update,
             last_coach_update_at: dto.last_coach_update_at,
             total_techniques: dto.total_techniques,

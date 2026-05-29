@@ -1,13 +1,24 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, BookOpen, GraduationCap, Plus } from 'lucide-react';
+import {
+  ArrowLeft,
+  BookOpen,
+  Copy,
+  GraduationCap,
+  KeyRound,
+  MoreVertical,
+  Plus,
+} from 'lucide-react';
+import { ClaimLinkPanel } from '@/components/claim-link-panel';
 import { toast } from 'sonner';
 import {
   getAllTags,
   getStudentTechniques,
   removeTagFromTechnique,
+  resetUserClaim,
   setStudentGraduated,
   updateTechnique,
+  type InviteResponse,
 } from '@/lib/api';
 import type {
   StudentTechniques,
@@ -21,10 +32,27 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { PageHeader } from '@/components/page-header';
 import { EmptyState } from '@/components/empty-state';
 import { SkeletonListRow } from '@/components/skeleton-row';
@@ -69,6 +97,8 @@ export default function StudentTechniques({ user }: StudentTechniquesProps) {
     tag: Tag;
   } | null>(null);
   const [graduateConfirmOpen, setGraduateConfirmOpen] = useState(false);
+  const [issuedClaimUrl, setIssuedClaimUrl] = useState<string | null>(null);
+  const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -246,6 +276,27 @@ export default function StudentTechniques({ user }: StudentTechniquesProps) {
     }
   }
 
+  async function handleIssueClaimLink() {
+    if (!data) return;
+    try {
+      const response = await resetUserClaim(data.student.id);
+      if (!response.ok) {
+        toast.error('Failed to create link');
+        return;
+      }
+      const invite: InviteResponse = await response.json();
+      const url = `${window.location.origin}${invite.claim_path}`;
+      setIssuedClaimUrl(url);
+      // Reflect that the user is back in "unclaimed" state.
+      setData((prev) =>
+        prev ? { ...prev, student: { ...prev.student, claimed_at: undefined } } : prev,
+      );
+    } catch (err) {
+      console.error(err);
+      toast.error('Failed to create link');
+    }
+  }
+
   async function handleToggleGraduated() {
     if (!data) return;
     const wasGraduated = !!data.student.graduated_at;
@@ -333,14 +384,31 @@ export default function StudentTechniques({ user }: StudentTechniquesProps) {
           data && (
             <div className="flex items-center gap-2">
               {data.can_edit_all_techniques && !isOwnView && (
-                <Button
-                  variant="outline"
-                  onClick={() => setGraduateConfirmOpen(true)}
-                  className="gap-2"
-                >
-                  <GraduationCap className="h-4 w-4" aria-hidden />
-                  {isGraduate ? 'Un-graduate' : 'Graduate'}
-                </Button>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="outline" size="icon">
+                      <MoreVertical className="h-4 w-4" aria-hidden />
+                      <span className="sr-only">More actions</span>
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-56">
+                    {data.student.claimed_at ? (
+                      <DropdownMenuItem onClick={() => setResetConfirmOpen(true)}>
+                        <KeyRound className="mr-2 h-4 w-4" aria-hidden />
+                        Reset password
+                      </DropdownMenuItem>
+                    ) : (
+                      <DropdownMenuItem onClick={handleIssueClaimLink}>
+                        <Copy className="mr-2 h-4 w-4" aria-hidden />
+                        Copy invite link
+                      </DropdownMenuItem>
+                    )}
+                    <DropdownMenuItem onClick={() => setGraduateConfirmOpen(true)}>
+                      <GraduationCap className="mr-2 h-4 w-4" aria-hidden />
+                      {isGraduate ? 'Un-graduate' : 'Graduate'}
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
               )}
               {data.can_assign_techniques && (
                 <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
@@ -500,6 +568,58 @@ export default function StudentTechniques({ user }: StudentTechniquesProps) {
           }}
         />
       )}
+
+      <AlertDialog open={resetConfirmOpen} onOpenChange={setResetConfirmOpen}>
+        <AlertDialogContent className="w-[calc(100vw-1rem)] max-w-sm p-4 sm:p-6">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Reset {studentName}'s password?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This signs them out and clears their current password. You'll get a
+              link to share so they can pick a new password.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                setResetConfirmOpen(false);
+                handleIssueClaimLink();
+              }}
+            >
+              Reset password
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <Dialog
+        open={!!issuedClaimUrl}
+        onOpenChange={(next) => {
+          if (!next) setIssuedClaimUrl(null);
+        }}
+      >
+        <DialogContent className="w-[calc(100vw-1rem)] max-w-md p-4 sm:p-6">
+          <DialogHeader>
+            <DialogTitle>Sign-in link ready</DialogTitle>
+            <DialogDescription>
+              Show this QR code to{' '}
+              <span className="font-medium text-foreground">{studentName}</span>{' '}
+              or send them the link. They'll pick a username and password.
+              Valid for 7 days.
+            </DialogDescription>
+          </DialogHeader>
+          {issuedClaimUrl && <ClaimLinkPanel url={issuedClaimUrl} />}
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setIssuedClaimUrl(null)}
+            >
+              Done
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

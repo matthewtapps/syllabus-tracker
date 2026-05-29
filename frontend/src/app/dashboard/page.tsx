@@ -12,10 +12,13 @@ import {
   type LucideIcon,
   PlayCircle,
   Sparkles,
+  UserPlus,
   Users,
 } from 'lucide-react';
 import type { User } from '@/lib/api';
+import { toast } from 'sonner';
 import {
+  approveUser,
   getLibraryStats,
   getStudentTechniques,
   getStudents,
@@ -121,6 +124,34 @@ function CoachDashboard() {
     [activeStudents],
   );
 
+  const pendingApprovals = useMemo(
+    () => activeStudents.filter((s) => s.claimed_at && !s.approved_at),
+    [activeStudents],
+  );
+
+  async function handleApprove(studentId: number) {
+    try {
+      const response = await approveUser(studentId);
+      if (!response.ok) {
+        toast.error('Failed to approve');
+        return;
+      }
+      setStudents((prev) =>
+        prev
+          ? prev.map((s) =>
+              s.id === studentId
+                ? { ...s, approved_at: new Date().toISOString() }
+                : s,
+            )
+          : prev,
+      );
+      toast.success('Approved');
+    } catch (err) {
+      console.error(err);
+      toast.error('Failed to approve');
+    }
+  }
+
   const staleStudents = useMemo(() => {
     const cutoff = Date.now() - STALE_THRESHOLD_DAYS * 86400 * 1000;
     return activeStudents.filter((s) => {
@@ -205,6 +236,43 @@ function CoachDashboard() {
       <StatusDonut counts={statusCounts} className="mb-8" />
 
       <div className="space-y-6">
+        {pendingApprovals.length > 0 && (
+          <section className="overflow-hidden rounded-lg border border-status-amber/30 bg-card">
+            <header className="flex items-center gap-2.5 border-b border-status-amber/30 bg-status-amber-bg px-4 py-3">
+              <UserPlus className="h-4 w-4 text-status-amber" aria-hidden />
+              <div>
+                <h2 className="text-sm font-semibold">Pending approvals</h2>
+                <p className="text-xs text-muted-foreground">
+                  Students who signed up themselves. Approve to start preparing
+                  their card.
+                </p>
+              </div>
+            </header>
+            <ul className="divide-y divide-border">
+              {pendingApprovals.map((s) => (
+                <li
+                  key={s.id}
+                  className="flex items-center gap-3 px-4 py-3"
+                >
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium">
+                      {s.display_name || s.username}
+                    </p>
+                    {s.username && s.display_name && (
+                      <p className="truncate text-xs text-muted-foreground">
+                        {s.username}
+                      </p>
+                    )}
+                  </div>
+                  <Button size="sm" onClick={() => handleApprove(s.id)}>
+                    Approve
+                  </Button>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
+
         {needsAttention.length > 0 && (
           <StudentSection
             title="Taking initiative"

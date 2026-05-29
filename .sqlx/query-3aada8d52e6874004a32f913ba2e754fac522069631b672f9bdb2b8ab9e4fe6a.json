@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE invite_tokens SET used_at = ? WHERE id = ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "3aada8d52e6874004a32f913ba2e754fac522069631b672f9bdb2b8ab9e4fe6a"
+}

@@ -11,6 +11,9 @@ import type { User } from './lib/api';
 import ProfilePage from './app/profile/page';
 import RegisterUserPage from './app/registration/page';
 import AdminPage from './app/admin/page';
+import InvitePage from './app/invite/page';
+import RegisterPage from './app/register/page';
+import PendingApprovalPage from './app/pending/page';
 import { TelemetryProvider } from './context/telemetry';
 
 function App() {
@@ -47,6 +50,13 @@ function App() {
     return <div className="flex items-center justify-center min-h-screen">Loading...</div>;
   }
 
+  // Self-registered students who haven't been approved yet only see the
+  // pending screen; the rest of the app is gated until a coach approves them.
+  const isPending = !!user && !!user.claimed_at && !user.approved_at;
+  if (isPending && user) {
+    return <PendingApprovalPage user={user} onLogout={handleLogout} />;
+  }
+
   return (
     <Router>
       <TelemetryProvider>
@@ -55,6 +65,14 @@ function App() {
             <Route
               path="/login"
               element={user ? <Navigate to="/dashboard" replace /> : <LoginPage onLoginSuccess={loadUser} />}
+            />
+            <Route
+              path="/invite/:token"
+              element={<InvitePage onClaimSuccess={loadUser} />}
+            />
+            <Route
+              path="/register"
+              element={user ? <Navigate to="/dashboard" replace /> : <RegisterPage onRegisterSuccess={loadUser} />}
             />
             <Route
               path="/student/:id"

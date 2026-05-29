@@ -61,6 +61,11 @@ export interface User {
   last_update?: string;
   archived: boolean;
   graduated_at?: string | null;
+  email?: string | null;
+  claimed_at?: string | null;
+  approved_at?: string | null;
+  first_name?: string | null;
+  last_name?: string | null;
   last_coach_update_at?: string | null;
   total_techniques?: number | null;
   red_count?: number | null;
@@ -408,6 +413,87 @@ export async function markDashboardSeen(): Promise<SeenResponse | null> {
   } catch {
     return null;
   }
+}
+
+export interface InviteUserData {
+  display_name: string;
+  role: string;
+}
+
+export interface InviteResponse {
+  user_id: number;
+  token: string;
+  claim_path: string;
+}
+
+export async function inviteUser(
+  data: InviteUserData,
+): Promise<Response> {
+  return await fetch("/api/admin/invite_user", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+    credentials: "include",
+  });
+}
+
+export interface InviteInfo {
+  display_name: string;
+  email: string | null;
+  role: string;
+}
+
+export async function getInvite(token: string): Promise<Response> {
+  return await fetch(`/api/invite/${encodeURIComponent(token)}`, {
+    credentials: "include",
+  });
+}
+
+export interface ClaimInviteData {
+  username: string;
+  password: string;
+}
+
+export async function claimInvite(
+  token: string,
+  data: ClaimInviteData,
+): Promise<Response> {
+  return await fetch(`/api/invite/${encodeURIComponent(token)}/claim`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+    credentials: "include",
+  });
+}
+
+export interface SelfRegisterData {
+  username: string;
+  password: string;
+  first_name?: string;
+  last_name?: string;
+}
+
+export async function selfRegister(data: SelfRegisterData): Promise<Response> {
+  return await fetch("/api/register/self", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+    credentials: "include",
+  });
+}
+
+export async function approveUser(userId: number): Promise<Response> {
+  return await fetch(`/api/admin/users/${userId}/approve`, {
+    method: "POST",
+    credentials: "include",
+  });
+}
+
+export async function resetUserClaim(userId: number): Promise<Response> {
+  return await fetch(`/api/admin/users/${userId}/reset_claim`, {
+    method: "POST",
+    credentials: "include",
+  });
 }
 
 export async function setStudentGraduated(

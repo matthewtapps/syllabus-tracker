@@ -16,16 +16,15 @@ use validator::ValidationErrors;
 use crate::auth::UserSession;
 use crate::auth::{Permission, User};
 use crate::db::{
-    add_tag_to_technique, add_techniques_to_student, authenticate_user,
-    create_and_assign_technique, create_tag, create_user, create_user_session, delete_tag,
-    find_user_by_username, get_all_tags, get_all_users, get_student_technique,
-    get_student_techniques, get_students_by_recent_updates, get_tags_for_technique,
-    count_techniques, get_unassigned_techniques, get_user, invalidate_session,
-    read_and_bump_last_seen,
-    remove_tag_from_technique, set_user_archived, set_user_graduated, update_student_notes,
-    update_student_technique,
-    update_technique, update_user_display_name, update_user_password, update_user_role,
-    update_username,
+    add_tag_to_technique, add_techniques_to_student, approve_user, authenticate_user,
+    claim_invite, count_techniques, create_and_assign_technique, create_invite_token,
+    create_self_registered_user, create_tag, create_user, create_user_session, create_user_stub,
+    delete_tag, find_user_by_username, find_valid_invite_token, get_all_tags, get_all_users,
+    get_student_technique, get_student_techniques, get_students_by_recent_updates,
+    get_tags_for_technique, get_unassigned_techniques, get_user, invalidate_session,
+    read_and_bump_last_seen, remove_tag_from_technique, reset_user_claim, set_user_archived,
+    set_user_graduated, update_student_notes, update_student_technique, update_technique,
+    update_user_display_name, update_user_password, update_user_role, update_username,
 };
 use crate::error::AppError;
 use crate::models::Tag;
@@ -115,6 +114,11 @@ pub struct UserData {
     pub last_update: Option<String>,
     pub archived: bool,
     pub graduated_at: Option<String>,
+    pub email: Option<String>,
+    pub claimed_at: Option<String>,
+    pub approved_at: Option<String>,
+    pub first_name: Option<String>,
+    pub last_name: Option<String>,
     pub last_coach_update_at: Option<String>,
     pub total_techniques: Option<i64>,
     pub red_count: Option<i64>,
@@ -133,6 +137,11 @@ impl From<User> for UserData {
             last_update: user.last_update.clone(),
             archived: user.archived,
             graduated_at: user.graduated_at.clone(),
+            email: user.email.clone(),
+            claimed_at: user.claimed_at.clone(),
+            approved_at: user.approved_at.clone(),
+            first_name: user.first_name.clone(),
+            last_name: user.last_name.clone(),
             last_coach_update_at: user.last_coach_update_at.clone(),
             total_techniques: user.total_techniques,
             red_count: user.red_count,
@@ -159,57 +168,63 @@ pub struct LoginRequest {
     password: String,
 }
 
+/// Establishes the session cookies for a user. Shared by login and invite-claim.
+async fn establish_session(
+    cookies: &rocket::http::CookieJar<'_>,
+    db: &State<Pool<Sqlite>>,
+    user: &User,
+) -> Result<(), AppError> {
+    use chrono::Utc;
+    use rocket::http::{Cookie, SameSite};
+
+    let token = UserSession::generate_token();
+    let expires_at = Utc::now() + chrono::Duration::hours(1);
+    create_user_session(db, user.id, &token, expires_at.naive_utc()).await?;
+
+    cookies.add_private(
+        Cookie::build(("session_token", token))
+            .same_site(SameSite::Lax)
+            .http_only(true)
+            .max_age(rocket::time::Duration::hours(1)),
+    );
+    cookies.add_private(
+        Cookie::build(("user_id", user.id.to_string()))
+            .same_site(SameSite::Lax)
+            .http_only(true)
+            .max_age(rocket::time::Duration::hours(1)),
+    );
+    cookies.add_private(
+        Cookie::build(("logged_in", user.username.clone()))
+            .same_site(SameSite::Lax)
+            .max_age(rocket::time::Duration::hours(1)),
+    );
+    let current_timestamp = rocket::time::OffsetDateTime::now_utc()
+        .unix_timestamp()
+        .to_string();
+    cookies.add_private(
+        Cookie::build(("session_timestamp", current_timestamp))
+            .same_site(SameSite::Lax)
+            .max_age(rocket::time::Duration::hours(1)),
+    );
+    cookies.add_private(
+        Cookie::build(("user_role", user.role.to_string()))
+            .same_site(SameSite::Lax)
+            .max_age(rocket::time::Duration::hours(1)),
+    );
+    Ok(())
+}
+
 #[post("/login", data = "<login>")]
 pub async fn api_login(
     login: Json<LoginRequest>,
     cookies: &rocket::http::CookieJar<'_>,
     db: &State<Pool<Sqlite>>,
 ) -> ApiResult<Json<LoginResponse>> {
-    use chrono::Utc;
-    use rocket::http::{Cookie, SameSite};
-
     login.validate()?;
 
     match authenticate_user(db, &login.username, &login.password).await? {
         Some(user) => {
-            let token = UserSession::generate_token();
-            let expires_at = Utc::now() + chrono::Duration::hours(1);
-
-            create_user_session(db, user.id, &token, expires_at.naive_utc()).await?;
-
-            let cookie = Cookie::build(("session_token", token))
-                .same_site(SameSite::Lax)
-                .http_only(true)
-                .max_age(rocket::time::Duration::hours(1));
-            cookies.add_private(cookie);
-
-            cookies.add_private(
-                Cookie::build(("user_id", user.id.to_string()))
-                    .same_site(SameSite::Lax)
-                    .http_only(true)
-                    .max_age(rocket::time::Duration::hours(1)),
-            );
-
-            cookies.add_private(
-                Cookie::build(("logged_in", login.username.clone()))
-                    .same_site(SameSite::Lax)
-                    .max_age(rocket::time::Duration::hours(1)),
-            );
-
-            let current_timestamp = rocket::time::OffsetDateTime::now_utc()
-                .unix_timestamp()
-                .to_string();
-            cookies.add_private(
-                Cookie::build(("session_timestamp", current_timestamp))
-                    .same_site(SameSite::Lax)
-                    .max_age(rocket::time::Duration::hours(1)),
-            );
-
-            cookies.add_private(
-                Cookie::build(("user_role", user.role.to_string()))
-                    .same_site(SameSite::Lax)
-                    .max_age(rocket::time::Duration::hours(1)),
-            );
+            establish_session(cookies, db, &user).await?;
 
             let redirect_url = match user.role.as_str() {
                 "student" => format!("/ui/student/{}", user.id),
@@ -862,4 +877,187 @@ pub async fn api_get_all_users(
     let user_responses: Vec<UserData> = users.into_iter().map(UserData::from).collect();
 
     Ok(Json(user_responses))
+}
+
+// ---- Invite / claim flow ----
+
+#[derive(Deserialize, Validate, Clone)]
+pub struct InviteUserRequest {
+    #[validate(length(min = 1, max = 100, message = "Display name is required"))]
+    display_name: String,
+    role: String,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct InviteResponse {
+    pub user_id: i64,
+    pub token: String,
+    pub claim_path: String,
+}
+
+/// Create a stub user and an invite token. Coach copies the claim URL and
+/// shares it with the student.
+#[post("/admin/invite_user", data = "<body>")]
+pub async fn api_invite_user(
+    body: Json<InviteUserRequest>,
+    user: User,
+    db: &State<Pool<Sqlite>>,
+) -> ApiResult<Json<InviteResponse>> {
+    body.validate()?;
+    user.require_permission(Permission::RegisterUsers)?;
+
+    if matches!(body.role.as_str(), "admin") {
+        user.require_permission(Permission::EditUserRoles)?;
+    } else if !matches!(body.role.as_str(), "student" | "coach") {
+        return Err(Status::BadRequest.into());
+    }
+
+    let user_id = create_user_stub(db, &body.display_name, None, &body.role).await?;
+    let token = create_invite_token(db, user_id).await?;
+    let claim_path = format!("/invite/{}", token);
+
+    Ok(Json(InviteResponse {
+        user_id,
+        token,
+        claim_path,
+    }))
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct InviteInfoResponse {
+    pub display_name: String,
+    pub email: Option<String>,
+    pub role: String,
+}
+
+/// Public (no auth) endpoint to fetch info about an invite. Returns 410 Gone
+/// if the token has been used, expired, or doesn't exist.
+#[get("/invite/<token>")]
+pub async fn api_get_invite(
+    token: String,
+    db: &State<Pool<Sqlite>>,
+) -> ApiResult<Json<InviteInfoResponse>> {
+    let invite = find_valid_invite_token(db, &token)
+        .await?
+        .ok_or_else(|| ApiError::from(Status { code: 410 }))?;
+    let stub = get_user(db, invite.user_id).await?;
+
+    Ok(Json(InviteInfoResponse {
+        display_name: stub.display_name,
+        email: stub.email,
+        role: stub.role.to_string(),
+    }))
+}
+
+#[derive(Deserialize, Validate, Clone)]
+pub struct ClaimInviteRequest {
+    #[validate(
+        length(
+            min = 3,
+            max = 50,
+            message = "Username must be between 3 and 50 characters"
+        ),
+        does_not_contain(pattern = " ", message = "Username cannot contain spaces")
+    )]
+    username: String,
+    #[validate(length(min = 5, message = "Password must be at least 5 characters"))]
+    password: String,
+}
+
+/// Public endpoint to claim an invite. On success, establishes a session
+/// cookie so the user lands logged in.
+#[post("/invite/<token>/claim", data = "<body>")]
+pub async fn api_claim_invite(
+    token: String,
+    body: Json<ClaimInviteRequest>,
+    cookies: &rocket::http::CookieJar<'_>,
+    db: &State<Pool<Sqlite>>,
+) -> ApiResult<Json<UserData>> {
+    body.validate()?;
+
+    let user_id = claim_invite(db, &token, &body.username, &body.password).await?;
+    let user = get_user(db, user_id).await?;
+
+    establish_session(cookies, db, &user).await?;
+
+    Ok(Json(UserData::from(user)))
+}
+
+// ---- Self-register + approval ----
+
+#[derive(Deserialize, Validate, Clone)]
+pub struct SelfRegisterRequest {
+    #[validate(
+        length(
+            min = 3,
+            max = 50,
+            message = "Username must be between 3 and 50 characters"
+        ),
+        does_not_contain(pattern = " ", message = "Username cannot contain spaces")
+    )]
+    username: String,
+    #[validate(length(min = 5, message = "Password must be at least 5 characters"))]
+    password: String,
+    #[validate(length(max = 50, message = "First name is too long"))]
+    first_name: Option<String>,
+    #[validate(length(max = 50, message = "Last name is too long"))]
+    last_name: Option<String>,
+}
+
+/// Public endpoint for students to self-register. Account is created in
+/// pending state (`approved_at IS NULL`) until a coach approves it.
+#[post("/register/self", data = "<body>")]
+pub async fn api_self_register(
+    body: Json<SelfRegisterRequest>,
+    cookies: &rocket::http::CookieJar<'_>,
+    db: &State<Pool<Sqlite>>,
+) -> ApiResult<Json<UserData>> {
+    body.validate()?;
+
+    let user_id = create_self_registered_user(
+        db,
+        &body.username,
+        &body.password,
+        body.first_name.as_deref(),
+        body.last_name.as_deref(),
+    )
+    .await?;
+    let user = get_user(db, user_id).await?;
+
+    // Log them in immediately. The frontend will route them to the
+    // pending-approval screen since `approved_at` is None.
+    establish_session(cookies, db, &user).await?;
+
+    Ok(Json(UserData::from(user)))
+}
+
+#[post("/admin/users/<id>/approve")]
+pub async fn api_approve_user(
+    id: i64,
+    user: User,
+    db: &State<Pool<Sqlite>>,
+) -> ApiResult<Status> {
+    user.require_permission(Permission::RegisterUsers)?;
+    approve_user(db, id).await?;
+    Ok(Status::Ok)
+}
+
+/// Admin endpoint to invalidate a user's password and generate a fresh invite
+/// token. Existing sessions for the user are terminated.
+#[post("/admin/users/<id>/reset_claim")]
+pub async fn api_reset_user_claim(
+    id: i64,
+    user: User,
+    db: &State<Pool<Sqlite>>,
+) -> ApiResult<Json<InviteResponse>> {
+    user.require_permission(Permission::EditUserCredentials)?;
+
+    let token = reset_user_claim(db, id).await?;
+    let claim_path = format!("/invite/{}", token);
+
+    Ok(Json(InviteResponse {
+        user_id: id,
+        token,
+        claim_path,
+    }))
 }

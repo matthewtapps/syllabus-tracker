@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE users SET approved_at = ? WHERE id = ? AND approved_at IS NULL",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "3cfe52bc6681ce4944198de901aca6f0cbeedc0d3c47ea5e4aad7180dfcb95ff"
+}

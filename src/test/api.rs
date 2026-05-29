@@ -523,6 +523,192 @@ mod tests {
             .expect("student missing from list");
         assert!(s.graduated_at.is_none(), "graduated_at should be cleared");
     }
+
+    // ---- Invite / claim flow ----
+
+    #[rocket::async_test]
+    async fn test_invite_user_and_claim() {
+        use crate::api::{InviteInfoResponse, InviteResponse, UserData};
+
+        let test_db = TestDbBuilder::new()
+            .coach("coach_user", Some("Coach User"))
+            .build()
+            .await
+            .expect("Failed to build test DB");
+        let (client, _test_db) = setup_test_client(test_db).await;
+
+        let coach_cookies = login_test_user(&client, "coach_user", "password123").await;
+
+        // Coach creates a stub student.
+        let invite_response = client
+            .post("/api/admin/invite_user")
+            .cookies(coach_cookies)
+            .header(ContentType::JSON)
+            .body(
+                json!({
+                    "display_name": "New Student",
+                    "email": "new@example.com",
+                    "role": "student"
+                })
+                .to_string(),
+            )
+            .dispatch()
+            .await;
+        assert_eq!(invite_response.status(), Status::Ok);
+        let invite: InviteResponse =
+            serde_json::from_str(&invite_response.into_string().await.unwrap()).unwrap();
+        assert!(invite.claim_path.starts_with("/invite/"));
+
+        // Public GET shows info.
+        let info_response = client
+            .get(format!("/api/invite/{}", invite.token))
+            .dispatch()
+            .await;
+        assert_eq!(info_response.status(), Status::Ok);
+        let info: InviteInfoResponse =
+            serde_json::from_str(&info_response.into_string().await.unwrap()).unwrap();
+        assert_eq!(info.display_name, "New Student");
+        assert_eq!(info.role, "student");
+
+        // Claim with username + password.
+        let claim_response = client
+            .post(format!("/api/invite/{}/claim", invite.token))
+            .header(ContentType::JSON)
+            .body(
+                json!({
+                    "username": "new_student",
+                    "password": "secret123"
+                })
+                .to_string(),
+            )
+            .dispatch()
+            .await;
+        assert_eq!(claim_response.status(), Status::Ok);
+        let user: UserData =
+            serde_json::from_str(&claim_response.into_string().await.unwrap()).unwrap();
+        assert_eq!(user.username, "new_student");
+        assert!(user.claimed_at.is_some());
+
+        // Token can't be used again (gone).
+        let reclaim = client
+            .post(format!("/api/invite/{}/claim", invite.token))
+            .header(ContentType::JSON)
+            .body(json!({ "username": "other", "password": "secret123" }).to_string())
+            .dispatch()
+            .await;
+        assert!(reclaim.status() == Status::Gone || reclaim.status() == Status::NotFound);
+
+        // The new user can log in with their credentials.
+        let login_response = client
+            .post("/api/login")
+            .header(ContentType::JSON)
+            .body(
+                json!({ "username": "new_student", "password": "secret123" })
+                    .to_string(),
+            )
+            .dispatch()
+            .await;
+        assert_eq!(login_response.status(), Status::Ok);
+    }
+
+    #[rocket::async_test]
+    async fn test_stub_user_cannot_log_in() {
+        use crate::api::InviteResponse;
+
+        let test_db = TestDbBuilder::new()
+            .coach("coach_user", Some("Coach User"))
+            .build()
+            .await
+            .expect("Failed to build test DB");
+        let (client, _test_db) = setup_test_client(test_db).await;
+
+        let coach_cookies = login_test_user(&client, "coach_user", "password123").await;
+        let invite_response = client
+            .post("/api/admin/invite_user")
+            .cookies(coach_cookies)
+            .header(ContentType::JSON)
+            .body(
+                json!({
+                    "display_name": "Unclaimed",
+                    "role": "student"
+                })
+                .to_string(),
+            )
+            .dispatch()
+            .await;
+        let _invite: InviteResponse =
+            serde_json::from_str(&invite_response.into_string().await.unwrap()).unwrap();
+
+        // Attempt to log in as the unclaimed user: no credentials exist.
+        let response = client
+            .post("/api/login")
+            .header(ContentType::JSON)
+            .body(json!({ "username": "anything", "password": "anything" }).to_string())
+            .dispatch()
+            .await;
+        // Stub user has username=NULL, so this login attempt finds no user and
+        // returns success=false.
+        assert_eq!(response.status(), Status::Ok);
+        let body = response.into_string().await.unwrap();
+        let login: LoginResponse = serde_json::from_str(&body).unwrap();
+        assert!(!login.success);
+    }
+
+    #[rocket::async_test]
+    async fn test_reset_claim_invalidates_credentials() {
+        use crate::api::InviteResponse;
+
+        let test_db = TestDbBuilder::new()
+            .admin("admin_user", Some("Admin"))
+            .student("student_user", Some("Student"))
+            .build()
+            .await
+            .expect("Failed to build test DB");
+        let (client, test_db) = setup_test_client(test_db).await;
+        let student_id = test_db
+            .user_id("student_user")
+            .expect("student not found");
+
+        // Student can currently log in.
+        let before = client
+            .post("/api/login")
+            .header(ContentType::JSON)
+            .body(
+                json!({ "username": "student_user", "password": "password123" })
+                    .to_string(),
+            )
+            .dispatch()
+            .await;
+        let body = before.into_string().await.unwrap();
+        let login: LoginResponse = serde_json::from_str(&body).unwrap();
+        assert!(login.success);
+
+        // Admin resets the claim.
+        let admin_cookies = login_test_user(&client, "admin_user", "password123").await;
+        let reset_response = client
+            .post(format!("/api/admin/users/{}/reset_claim", student_id))
+            .cookies(admin_cookies)
+            .dispatch()
+            .await;
+        assert_eq!(reset_response.status(), Status::Ok);
+        let invite: InviteResponse =
+            serde_json::from_str(&reset_response.into_string().await.unwrap()).unwrap();
+        assert!(!invite.token.is_empty());
+
+        // Old credentials no longer work.
+        let after = client
+            .post("/api/login")
+            .header(ContentType::JSON)
+            .body(
+                json!({ "username": "student_user", "password": "password123" })
+                    .to_string(),
+            )
+            .dispatch()
+            .await;
+        let body = after.into_string().await.unwrap();
+        let login: LoginResponse = serde_json::from_str(&body).unwrap();
+        assert!(!login.success);
+    }
 }
 
 #[rocket::async_test]

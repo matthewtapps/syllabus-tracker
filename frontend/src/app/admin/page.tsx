@@ -14,6 +14,16 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -48,13 +58,23 @@ import { PageHeader } from '@/components/page-header';
 import { EmptyState } from '@/components/empty-state';
 import { SkeletonTableRow } from '@/components/skeleton-row';
 import { GraduateConfirmDialog } from '@/components/graduate-confirm-dialog';
+import { ClaimLinkPanel } from '@/components/claim-link-panel';
 import { TracedForm } from '@/components/traced-form';
 import { useFormWithValidation } from '@/components/hooks/useFormErrors';
-import { getAllUsers, setStudentGraduated, updateUser, type User } from '@/lib/api';
 import {
+  getAllUsers,
+  resetUserClaim,
+  setStudentGraduated,
+  updateUser,
+  type InviteResponse,
+  type User,
+} from '@/lib/api';
+import {
+  Copy,
   EditIcon,
   GraduationCap,
   KeyIcon,
+  KeyRound,
   MoreHorizontalIcon,
   Users,
   X,
@@ -101,6 +121,8 @@ export default function AdminPage() {
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [isPasswordDialogOpen, setIsPasswordDialogOpen] = useState(false);
   const [graduateTarget, setGraduateTarget] = useState<User | null>(null);
+  const [resetTarget, setResetTarget] = useState<User | null>(null);
+  const [issuedClaimUrl, setIssuedClaimUrl] = useState<string | null>(null);
 
   const editForm = useFormWithValidation<EditValues>({
     resolver: zodResolver(editSchema),
@@ -175,6 +197,27 @@ export default function AdminPage() {
     } catch (err) {
       console.error(err);
       toast.error('Failed to update user');
+    }
+  }
+
+  async function handleIssueClaim(u: User) {
+    try {
+      const response = await resetUserClaim(u.id);
+      if (!response.ok) {
+        toast.error('Failed to create link');
+        return;
+      }
+      const invite: InviteResponse = await response.json();
+      const url = `${window.location.origin}${invite.claim_path}`;
+      setIssuedClaimUrl(url);
+      setUsers((prev) =>
+        prev.map((existing) =>
+          existing.id === u.id ? { ...existing, claimed_at: null } : existing,
+        ),
+      );
+    } catch (err) {
+      console.error(err);
+      toast.error('Failed to create link');
     }
   }
 
@@ -330,7 +373,9 @@ export default function AdminPage() {
                   </Avatar>
                   <div className="min-w-0 flex-1 space-y-1.5">
                     <div className="flex items-center gap-2">
-                      <span className="truncate font-medium">{u.username}</span>
+                      <span className="truncate font-medium">
+                        {u.username || u.display_name || 'Pending user'}
+                      </span>
                       {u.archived ? (
                         <Badge variant="outline" className="shrink-0 text-muted-foreground">
                           Archived
@@ -356,6 +401,8 @@ export default function AdminPage() {
                     onPassword={() => openPasswordDialog(u)}
                     onToggleArchive={() => handleToggleArchive(u)}
                     onToggleGraduated={() => setGraduateTarget(u)}
+                    onIssueClaim={() => handleIssueClaim(u)}
+                    onResetPassword={() => setResetTarget(u)}
                   />
                 </div>
               ))}
@@ -384,8 +431,10 @@ export default function AdminPage() {
                             <AvatarFallback>{initials(u)}</AvatarFallback>
                           </Avatar>
                           <div className="min-w-0">
-                            <div className="font-medium">{u.username}</div>
-                            {u.display_name && (
+                            <div className="font-medium">
+                              {u.username || u.display_name || 'Pending user'}
+                            </div>
+                            {u.display_name && u.username && (
                               <div className="text-xs text-muted-foreground">
                                 {u.display_name}
                               </div>
@@ -410,6 +459,8 @@ export default function AdminPage() {
                           onPassword={() => openPasswordDialog(u)}
                           onToggleArchive={() => handleToggleArchive(u)}
                           onToggleGraduated={() => setGraduateTarget(u)}
+                          onIssueClaim={() => handleIssueClaim(u)}
+                          onResetPassword={() => setResetTarget(u)}
                         />
                       </TableCell>
                     </TableRow>
@@ -590,6 +641,64 @@ export default function AdminPage() {
           }
         }}
       />
+
+      <AlertDialog
+        open={!!resetTarget}
+        onOpenChange={(open) => !open && setResetTarget(null)}
+      >
+        <AlertDialogContent className="w-[calc(100vw-1rem)] max-w-sm p-4 sm:p-6">
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              Reset {resetTarget?.display_name || resetTarget?.username}'s password?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              This signs them out and clears their current password. You'll get a
+              link to share so they can pick a new password.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (resetTarget) {
+                  const u = resetTarget;
+                  setResetTarget(null);
+                  handleIssueClaim(u);
+                }
+              }}
+            >
+              Reset password
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <Dialog
+        open={!!issuedClaimUrl}
+        onOpenChange={(next) => {
+          if (!next) setIssuedClaimUrl(null);
+        }}
+      >
+        <DialogContent className="w-[calc(100vw-1rem)] max-w-md p-4 sm:p-6">
+          <DialogHeader>
+            <DialogTitle>Sign-in link ready</DialogTitle>
+            <DialogDescription>
+              Show this QR code to the user or send them the link. They'll pick
+              a username and password. Valid for 7 days.
+            </DialogDescription>
+          </DialogHeader>
+          {issuedClaimUrl && <ClaimLinkPanel url={issuedClaimUrl} />}
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setIssuedClaimUrl(null)}
+            >
+              Done
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -600,6 +709,8 @@ interface UserActionsMenuProps {
   onPassword: () => void;
   onToggleArchive: () => void;
   onToggleGraduated: () => void;
+  onIssueClaim: () => void;
+  onResetPassword: () => void;
 }
 
 function UserActionsMenu({
@@ -608,15 +719,18 @@ function UserActionsMenu({
   onPassword,
   onToggleArchive,
   onToggleGraduated,
+  onIssueClaim,
+  onResetPassword,
 }: UserActionsMenuProps) {
   const isStudent = user.role.toLowerCase() === 'student';
   const isGraduated = !!user.graduated_at;
+  const isClaimed = !!user.claimed_at;
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button variant="ghost" size="icon">
           <MoreHorizontalIcon className="h-5 w-5" aria-hidden />
-          <span className="sr-only">Actions for {user.username}</span>
+          <span className="sr-only">Actions for {user.username || user.display_name}</span>
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
@@ -624,10 +738,23 @@ function UserActionsMenu({
           <EditIcon className="mr-2 h-4 w-4" aria-hidden />
           Edit user
         </DropdownMenuItem>
-        <DropdownMenuItem onClick={onPassword}>
-          <KeyIcon className="mr-2 h-4 w-4" aria-hidden />
-          Change password
-        </DropdownMenuItem>
+        {isClaimed && (
+          <DropdownMenuItem onClick={onPassword}>
+            <KeyIcon className="mr-2 h-4 w-4" aria-hidden />
+            Change password
+          </DropdownMenuItem>
+        )}
+        {isClaimed ? (
+          <DropdownMenuItem onClick={onResetPassword}>
+            <KeyRound className="mr-2 h-4 w-4" aria-hidden />
+            Reset password
+          </DropdownMenuItem>
+        ) : (
+          <DropdownMenuItem onClick={onIssueClaim}>
+            <Copy className="mr-2 h-4 w-4" aria-hidden />
+            Copy invite link
+          </DropdownMenuItem>
+        )}
         {isStudent && (
           <DropdownMenuItem onClick={onToggleGraduated}>
             <GraduationCap className="mr-2 h-4 w-4" aria-hidden />
