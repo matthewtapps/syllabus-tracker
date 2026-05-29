@@ -60,6 +60,12 @@ export interface User {
   role: string;
   last_update?: string;
   archived: boolean;
+  last_coach_update_at?: string | null;
+  total_techniques?: number | null;
+  red_count?: number | null;
+  amber_count?: number | null;
+  green_count?: number | null;
+  has_new_student_activity?: boolean | null;
 }
 
 export async function getCurrentUser(): Promise<User | null> {

@@ -20,7 +20,7 @@ use crate::db::{
     create_and_assign_technique, create_tag, create_user, create_user_session, delete_tag,
     find_user_by_username, get_all_tags, get_all_users, get_student_technique,
     get_student_techniques, get_students_by_recent_updates, get_tags_for_technique,
-    get_unassigned_techniques, get_user, get_users_by_role, invalidate_session,
+    get_unassigned_techniques, get_user, invalidate_session,
     remove_tag_from_technique, set_user_archived, update_student_notes, update_student_technique,
     update_technique, update_user_display_name, update_user_password, update_user_role,
     update_username,
@@ -112,6 +112,12 @@ pub struct UserData {
     pub role: String,
     pub last_update: Option<String>,
     pub archived: bool,
+    pub last_coach_update_at: Option<String>,
+    pub total_techniques: Option<i64>,
+    pub red_count: Option<i64>,
+    pub amber_count: Option<i64>,
+    pub green_count: Option<i64>,
+    pub has_new_student_activity: Option<bool>,
 }
 
 impl From<User> for UserData {
@@ -123,6 +129,12 @@ impl From<User> for UserData {
             role: user.role.to_string(),
             last_update: user.last_update.clone(),
             archived: user.archived,
+            last_coach_update_at: user.last_coach_update_at.clone(),
+            total_techniques: user.total_techniques,
+            red_count: user.red_count,
+            amber_count: user.amber_count,
+            green_count: user.green_count,
+            has_new_student_activity: user.has_new_student_activity,
         }
     }
 }
@@ -401,22 +413,12 @@ pub async fn api_get_students(
 
     let include_archived = params.include_archived.unwrap_or(false);
 
-    let students = match params.sort_by.as_deref() {
-        Some("recent_update") => get_students_by_recent_updates(db, include_archived).await?,
-        _ => get_users_by_role(db, "student", include_archived).await?,
-    };
+    // Always use the aggregating query so the response carries per-student
+    // counts and activity flags. Sort order is handled client-side.
+    let _ = params.sort_by;
+    let students = get_students_by_recent_updates(db, include_archived).await?;
 
-    let student_responses: Vec<UserData> = students
-        .iter()
-        .map(|s| UserData {
-            id: s.id,
-            username: s.username.clone(),
-            display_name: s.display_name.clone(),
-            role: s.role.to_string(),
-            last_update: s.last_update.clone(),
-            archived: s.archived,
-        })
-        .collect();
+    let student_responses: Vec<UserData> = students.into_iter().map(UserData::from).collect();
 
     Ok(Json(student_responses))
 }
@@ -784,17 +786,7 @@ pub async fn api_get_all_users(
 
     let users = get_all_users(db).await?;
 
-    let user_responses: Vec<UserData> = users
-        .iter()
-        .map(|u| UserData {
-            id: u.id,
-            username: u.username.clone(),
-            display_name: u.display_name.clone(),
-            role: u.role.to_string(),
-            last_update: u.last_update.clone(),
-            archived: u.archived,
-        })
-        .collect();
+    let user_responses: Vec<UserData> = users.into_iter().map(UserData::from).collect();
 
     Ok(Json(user_responses))
 }

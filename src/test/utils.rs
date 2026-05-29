@@ -237,6 +237,12 @@ pub mod test_utils {
                             display_name: String::new(),
                             archived: false,
                             last_update: None,
+                            last_coach_update_at: None,
+                            total_techniques: None,
+                            red_count: None,
+                            amber_count: None,
+                            green_count: None,
+                            has_new_student_activity: None,
                         };
                         update_student_technique(
                             &pool,

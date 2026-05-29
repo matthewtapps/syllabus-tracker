@@ -13,6 +13,12 @@ pub struct User {
     pub display_name: String,
     pub archived: bool,
     pub last_update: Option<String>,
+    pub last_coach_update_at: Option<String>,
+    pub total_techniques: Option<i64>,
+    pub red_count: Option<i64>,
+    pub amber_count: Option<i64>,
+    pub green_count: Option<i64>,
+    pub has_new_student_activity: Option<bool>,
 }
 
 #[derive(sqlx::FromRow, Clone)]
@@ -33,6 +39,12 @@ impl From<DbUser> for User {
             display_name: user.display_name.unwrap_or_default(),
             archived: user.archived.unwrap_or_default(),
             last_update: None,
+            last_coach_update_at: None,
+            total_techniques: None,
+            red_count: None,
+            amber_count: None,
+            green_count: None,
+            has_new_student_activity: None,
         }
     }
 }

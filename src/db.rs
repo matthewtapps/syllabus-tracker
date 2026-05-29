@@ -599,6 +599,12 @@ pub async fn authenticate_user(
                     display_name: user.display_name.unwrap_or_default(),
                     archived: user.archived,
                     last_update: None,
+                    last_coach_update_at: None,
+                    total_techniques: None,
+                    red_count: None,
+                    amber_count: None,
+                    green_count: None,
+                    has_new_student_activity: None,
                 }))
             } else {
                 Ok(None) // Password doesn't match
@@ -829,6 +835,12 @@ pub struct UserWithActivityDto {
     pub display_name: Option<String>,
     pub archived: Option<bool>,
     pub last_update: Option<String>,
+    pub last_coach_update_at: Option<String>,
+    pub total_techniques: Option<i64>,
+    pub red_count: Option<i64>,
+    pub amber_count: Option<i64>,
+    pub green_count: Option<i64>,
+    pub has_new_student_activity: Option<i64>,
 }
 
 #[instrument(skip(pool))]
@@ -839,13 +851,26 @@ pub async fn get_students_by_recent_updates(
     let dtos = sqlx::query_as!(
         UserWithActivityDto,
         r#"
-        SELECT 
-            u.id, 
-            u.username, 
-            u.display_name, 
-            u.role, 
-            u.archived, 
-            MAX(st.updated_at) as last_update
+        SELECT
+            u.id,
+            u.username,
+            u.display_name,
+            u.role,
+            u.archived,
+            MAX(st.updated_at) as last_update,
+            CAST(MAX(st.last_coach_update_at) AS TEXT) as last_coach_update_at,
+            COUNT(st.id) as total_techniques,
+            COALESCE(SUM(CASE WHEN st.status = 'red'   THEN 1 ELSE 0 END), 0) as red_count,
+            COALESCE(SUM(CASE WHEN st.status = 'amber' THEN 1 ELSE 0 END), 0) as amber_count,
+            COALESCE(SUM(CASE WHEN st.status = 'green' THEN 1 ELSE 0 END), 0) as green_count,
+            COALESCE(MAX(
+                CASE
+                    WHEN st.last_student_update_at IS NULL THEN 0
+                    WHEN st.last_coach_update_at IS NULL THEN 1
+                    WHEN st.last_student_update_at > st.last_coach_update_at THEN 1
+                    ELSE 0
+                END
+            ), 0) as has_new_student_activity
         FROM users u
         LEFT JOIN student_techniques st ON u.id = st.student_id
         WHERE u.role = 'student'
@@ -866,6 +891,12 @@ pub async fn get_students_by_recent_updates(
             display_name: dto.display_name.unwrap_or_default(),
             archived: dto.archived.unwrap_or_default(),
             last_update: dto.last_update,
+            last_coach_update_at: dto.last_coach_update_at,
+            total_techniques: dto.total_techniques,
+            red_count: dto.red_count,
+            amber_count: dto.amber_count,
+            green_count: dto.green_count,
+            has_new_student_activity: dto.has_new_student_activity.map(|v| v != 0),
         })
         .collect();
 
