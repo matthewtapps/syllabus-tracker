@@ -911,9 +911,6 @@ pub async fn create_user_stub(
 pub struct InviteToken {
     pub id: i64,
     pub user_id: i64,
-    pub token: String,
-    pub expires_at: chrono::NaiveDateTime,
-    pub used_at: Option<chrono::NaiveDateTime>,
 }
 
 /// Create an invite token tied to a user. Token expires in 7 days. The token
@@ -972,9 +969,6 @@ pub async fn find_valid_invite_token(
     Ok(Some(InviteToken {
         id: row.id.unwrap_or_default(),
         user_id: row.user_id,
-        token: row.token,
-        expires_at: row.expires_at,
-        used_at: row.used_at,
     }))
 }
 
