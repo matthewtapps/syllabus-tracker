@@ -167,6 +167,15 @@ async fn rocket() -> _ {
         }
     }
 
+    // DRY_RUN_MIGRATE=true: succeed-and-exit after the migration runs. Used by
+    // the deploy pipeline to verify the new schema can be applied against a copy
+    // of the production database before swapping containers. The migration panics
+    // above on failure, so reaching this point already implies success.
+    if dotenvy::var("DRY_RUN_MIGRATE").unwrap_or_default() == "true" {
+        info!("DRY_RUN_MIGRATE=true: migration succeeded against this database, exiting");
+        std::process::exit(0);
+    }
+
     init_rocket(pool).await
 }
 

@@ -391,6 +391,58 @@ jobs:
              echo 'ROCKET_SECRET_KEY=${SECRET_ROCKET_SECRET_KEY}' >> ${APP_DEPLOY_PATH}/.secrets.env && \
              echo 'VITE_HONEYCOMB_API_KEY=${SECRET_HONEYCOMB_API_KEY}' >> ${APP_DEPLOY_PATH}/.secrets.env"
 
+      - name: Dry-run migration against copy of prod database
+        env:
+          BACKEND_IMAGE_TAG: ${{ needs.build-backend.outputs.image_tag }}
+          ALLOW_DESTRUCTIVE_MIGRATIONS: ${{ github.event.inputs.allow_destructive_migrations }}
+        run: |
+          ssh -i ~/.ssh/id_rsa \
+            "${NIXOS_SERVER_USER}@${NIXOS_SERVER_IP}" \
+            "bash -s" <<EOF
+              set -e
+              cd "${APP_DEPLOY_PATH}"
+
+              export REGISTRY="${REGISTRY}"
+              export IMAGE_NAME="${IMAGE_NAME}"
+              APP_IMAGE="\${REGISTRY}/\${IMAGE_NAME}/app:${BACKEND_IMAGE_TAG}"
+              SOURCE_VOLUME="syllabus-tracker-services_app-data"
+              DRY_RUN_VOLUME="syllabus-tracker-services_dry-run-data"
+
+              echo "Pulling new app image \${APP_IMAGE}..."
+              docker pull "\${APP_IMAGE}"
+
+              echo "Preparing copy of prod sqlite database for migration dry-run..."
+              docker volume rm -f "\${DRY_RUN_VOLUME}" >/dev/null 2>&1 || true
+              docker volume create "\${DRY_RUN_VOLUME}" >/dev/null
+              docker run --rm \
+                -v "\${SOURCE_VOLUME}:/source:ro" \
+                -v "\${DRY_RUN_VOLUME}:/dest" \
+                alpine:3.23 \
+                sh -c "cp /source/sqlite.db /dest/sqlite.db 2>/dev/null || echo 'no existing sqlite.db (fresh database)'"
+
+              echo "Running migration dry-run against the copy..."
+              set +e
+              docker run --rm \
+                --env-file ./config/common.env \
+                --env-file ./config/prod.env \
+                --env-file ./.secrets.env \
+                -e DRY_RUN_MIGRATE=true \
+                -e ALLOW_DESTRUCTIVE_MIGRATIONS="${ALLOW_DESTRUCTIVE_MIGRATIONS}" \
+                -v "\${DRY_RUN_VOLUME}:/app/data" \
+                "\${APP_IMAGE}"
+              DRY_RUN_EXIT=\$?
+              set -e
+
+              docker volume rm -f "\${DRY_RUN_VOLUME}" >/dev/null 2>&1 || true
+
+              if [ "\${DRY_RUN_EXIT}" -ne 0 ]; then
+                echo "ERROR: migration dry-run failed against a copy of prod data (exit \${DRY_RUN_EXIT}). Aborting deploy before any container swap."
+                exit 1
+              fi
+
+              echo "Migration dry-run succeeded; safe to proceed."
+          EOF
+
       - name: Deploy application with Docker Compose
         env:
           BACKEND_IMAGE_TAG: ${{ needs.build-backend.outputs.image_tag }}
@@ -402,22 +454,22 @@ jobs:
             "bash -s" <<EOF
               set -ex
               cd "${APP_DEPLOY_PATH}"
-              
+
               echo "Pulling latest application images..."
               export APP_IMAGE_TAG="${BACKEND_IMAGE_TAG}"
               export FRONTEND_IMAGE_TAG="${FRONTEND_IMAGE_TAG}"
               export REGISTRY="${REGISTRY}"
               export ALLOW_DESTRUCTIVE_MIGRATIONS="${ALLOW_DESTRUCTIVE_MIGRATIONS}"
               export IMAGE_NAME="${IMAGE_NAME}"
-              
+
               docker compose -f docker-compose.nixos.yml pull app frontend otel-collector nginx
-              
+
               echo "Starting application services with Docker Compose..."
               docker compose -f docker-compose.nixos.yml up -d --remove-orphans
-              
+
               echo "Cleaning up unused Docker images..."
               docker image prune -af
-              
+
               echo "Application deployment complete."
           EOF
 
