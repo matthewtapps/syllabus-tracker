@@ -2,7 +2,15 @@ import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { getCurrentUser, updatePassword, updateUserProfile, type User } from '@/lib/api';
+import {
+  getAttemptHeatmap,
+  getCurrentUser,
+  updatePassword,
+  updateUserProfile,
+  type AttemptBucket,
+  type User,
+} from '@/lib/api';
+import { AttemptHeatmap } from '@/components/attempt-heatmap';
 import { Button } from '@/components/ui/button';
 import {
   Form,
@@ -42,6 +50,7 @@ type PasswordValues = z.infer<typeof passwordSchema>;
 export default function ProfilePage() {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const [heatmap, setHeatmap] = useState<AttemptBucket[] | null>(null);
 
   const profileForm = useFormWithValidation<ProfileValues>({
     resolver: zodResolver(profileSchema),
@@ -66,6 +75,15 @@ export default function ProfilePage() {
         if (cancelled) return;
         setUser(data);
         profileForm.reset({ display_name: data?.display_name ?? '' });
+        if (data) {
+          getAttemptHeatmap(data.id)
+            .then((buckets) => {
+              if (!cancelled) setHeatmap(buckets);
+            })
+            .catch(() => {
+              if (!cancelled) setHeatmap([]);
+            });
+        }
       } catch (err) {
         console.error(err);
         toast.error('Failed to load profile');
@@ -242,6 +260,21 @@ export default function ProfilePage() {
           </TracedForm>
         </Form>
       </section>
+
+      {heatmap && heatmap.length > 0 && (
+        <>
+          <Separator className="my-8" />
+          <section className="space-y-3">
+            <div>
+              <h2 className="text-base font-semibold">Training activity</h2>
+              <p className="text-sm text-muted-foreground">
+                Attempts logged over the last year.
+              </p>
+            </div>
+            <AttemptHeatmap buckets={heatmap} />
+          </section>
+        </>
+      )}
     </div>
   );
 }

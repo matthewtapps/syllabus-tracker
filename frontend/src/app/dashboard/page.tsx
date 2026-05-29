@@ -8,6 +8,7 @@ import {
   ChevronRight,
   Clock,
   Copy,
+  Dumbbell,
   GraduationCap,
   History,
   KeyRound,
@@ -22,11 +23,13 @@ import { toast } from 'sonner';
 import {
   approveUser,
   getLibraryStats,
+  getRecentAttemptsForStudent,
   getStudentTechniques,
   getStudents,
   markDashboardSeen,
   resetUserClaim,
   type InviteResponse,
+  type RecentAttemptItem,
 } from '@/lib/api';
 import {
   Dialog,
@@ -425,6 +428,7 @@ function CoachDashboard() {
 function StudentDashboard({ user }: { user: User }) {
   const [techniques, setTechniques] = useState<Technique[] | null>(null);
   const [previousSeenAt, setPreviousSeenAt] = useState<string | null>(null);
+  const [recentAttempts, setRecentAttempts] = useState<RecentAttemptItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -433,13 +437,15 @@ function StudentDashboard({ user }: { user: User }) {
     async function load() {
       try {
         setLoading(true);
-        const [techResult, seenResult] = await Promise.all([
+        const [techResult, seenResult, recentResult] = await Promise.all([
           getStudentTechniques(user.id),
           markDashboardSeen(),
+          getRecentAttemptsForStudent(user.id, 5).catch(() => []),
         ]);
         if (cancelled) return;
         setTechniques(techResult.techniques);
         setPreviousSeenAt(seenResult?.previous_last_seen_at ?? null);
+        setRecentAttempts(recentResult);
         setError(null);
       } catch (err) {
         if (cancelled) return;
@@ -551,6 +557,13 @@ function StudentDashboard({ user }: { user: User }) {
               />
             )}
 
+            {recentAttempts.length > 0 && (
+              <RecentAttemptsSection
+                attempts={recentAttempts}
+                studentId={user.id}
+              />
+            )}
+
             {currentlyWorking.length > 0 && (
               <TechniqueSection
                 title="Currently working on"
@@ -588,6 +601,52 @@ interface TechniqueSectionProps {
   techniques: Technique[];
   studentId: number;
   showCoachTimestamp?: boolean;
+}
+
+interface RecentAttemptsSectionProps {
+  attempts: RecentAttemptItem[];
+  studentId: number;
+}
+
+function RecentAttemptsSection({
+  attempts,
+  studentId,
+}: RecentAttemptsSectionProps) {
+  return (
+    <section className="overflow-hidden rounded-lg border border-border bg-card">
+      <header className="flex items-center gap-2.5 border-b border-border px-4 py-3">
+        <Dumbbell className="h-4 w-4 text-muted-foreground" aria-hidden />
+        <h2 className="text-sm font-semibold">Recent attempts</h2>
+      </header>
+      <ul className="divide-y divide-border">
+        {attempts.map((a) => {
+          const note = a.student_note ?? a.coach_note ?? null;
+          return (
+            <li key={a.id}>
+              <Link
+                to={`/student/${studentId}?focus=${a.technique_id}`}
+                className="flex items-center gap-3 px-4 py-3 transition-colors hover:bg-muted/40"
+              >
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-medium">
+                    {a.technique_name}
+                  </p>
+                  <p className="truncate text-xs text-muted-foreground">
+                    {formatRelative(a.attempted_at)}
+                    {note && ` · ${note}`}
+                  </p>
+                </div>
+                <ChevronRight
+                  className="h-4 w-4 shrink-0 text-muted-foreground"
+                  aria-hidden
+                />
+              </Link>
+            </li>
+          );
+        })}
+      </ul>
+    </section>
+  );
 }
 
 function TechniqueSection({

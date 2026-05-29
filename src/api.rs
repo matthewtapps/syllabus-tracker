@@ -1421,6 +1421,66 @@ fn parse_optional_datetime(raw: Option<&str>) -> Result<Option<chrono::DateTime<
     }
 }
 
+#[derive(Serialize, Deserialize)]
+pub struct SingleStudentTechniqueResponse {
+    pub technique: TechniqueResponse,
+    pub student: StudentResponse,
+    pub can_edit_all_techniques: bool,
+    pub can_manage_tags: bool,
+}
+
+#[get("/student_technique/<id>")]
+pub async fn api_get_single_student_technique(
+    id: i64,
+    user: User,
+    db: &State<Pool<Sqlite>>,
+) -> ApiResult<Json<SingleStudentTechniqueResponse>> {
+    let st = get_student_technique(db, id).await?;
+    if user.id != st.student_id && !user.has_permission(Permission::ViewAllStudents) {
+        return Err(Status::Forbidden.into());
+    }
+    let student = get_user(db, st.student_id).await?;
+
+    let has_new_student_activity = match (st.last_student_update_at, st.last_coach_update_at) {
+        (Some(student), Some(coach)) => student > coach,
+        (Some(_), None) => true,
+        _ => false,
+    };
+
+    let technique_response = TechniqueResponse {
+        id: st.id,
+        technique_id: st.technique_id,
+        technique_name: st.technique_name,
+        technique_description: st.technique_description,
+        status: st.status,
+        student_notes: st.student_notes,
+        coach_notes: st.coach_notes,
+        created_at: st.created_at.to_rfc3339(),
+        updated_at: st.updated_at.to_rfc3339(),
+        last_coach_update_at: st.last_coach_update_at.map(|d| d.to_rfc3339()),
+        last_coach_update_by_name: st.last_coach_update_by_name,
+        last_student_update_at: st.last_student_update_at.map(|d| d.to_rfc3339()),
+        last_student_update_by_name: st.last_student_update_by_name,
+        has_new_student_activity,
+        tags: st.tags.into_iter().map(TagResponse::from).collect(),
+        attempt_count: st.attempt_count,
+        last_attempt_at: st.last_attempt_at.map(|d| d.to_rfc3339()),
+    };
+
+    Ok(Json(SingleStudentTechniqueResponse {
+        technique: technique_response,
+        student: StudentResponse {
+            id: student.id,
+            username: student.username,
+            display_name: student.display_name,
+            archived: student.archived,
+            graduated_at: student.graduated_at,
+        },
+        can_edit_all_techniques: user.has_permission(Permission::EditAllTechniques),
+        can_manage_tags: user.has_permission(Permission::ManageTags),
+    }))
+}
+
 #[get("/student_technique/<id>/attempts")]
 pub async fn api_list_attempts(
     id: i64,

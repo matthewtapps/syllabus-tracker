@@ -1,7 +1,7 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ChevronDownIcon, ChevronUpIcon, XIcon } from "lucide-react";
-import type { Tag, Technique } from "@/lib/api";
-import { updateTechnique } from "@/lib/api";
+import type { Attempt, Tag, Technique } from "@/lib/api";
+import { listAttempts, updateTechnique } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { StatusPill } from "@/components/status-pill";
@@ -15,12 +15,16 @@ import {
 } from "@/lib/status";
 import { NotesEditor } from "./notes-editor";
 import { TagsEditor } from "./tags-editor";
+import { AttemptButton } from "./attempt-button";
+import { AttemptsPanel } from "./attempts-panel";
 
 interface TechniqueRowProps {
   technique: Technique;
   canEditAll: boolean;
   canManageTags: boolean;
   isOwnTechnique: boolean;
+  studentId: number;
+  currentUserId: number;
   defaultExpanded?: boolean;
   showCollectionChip?: boolean;
   allTags: Tag[];
@@ -36,6 +40,8 @@ export function TechniqueRow({
   canEditAll,
   canManageTags,
   isOwnTechnique,
+  studentId,
+  currentUserId,
   defaultExpanded = false,
   showCollectionChip = false,
   allTags,
@@ -46,9 +52,32 @@ export function TechniqueRow({
   onEditDefinition,
 }: TechniqueRowProps) {
   const [expanded, setExpanded] = useState(defaultExpanded);
+  const [attempts, setAttempts] = useState<Attempt[] | null>(null);
+  const [attemptsError, setAttemptsError] = useState<string | null>(null);
   const status = technique.status as Status;
   const canEditStudentNotes = isOwnTechnique;
   const canManageTagsOnRow = canEditAll || canManageTags;
+  const canLogAttempts = isOwnTechnique || canEditAll;
+
+  // Lazy-load the attempt history the first time the row is expanded. We keep
+  // the list in this component so newly logged attempts (from the inline
+  // button) show up in the panel without a refetch.
+  useEffect(() => {
+    if (!expanded || attempts !== null || attemptsError) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const list = await listAttempts(technique.id);
+        if (!cancelled) setAttempts(list);
+      } catch (err) {
+        console.error(err);
+        if (!cancelled) setAttemptsError("Could not load attempts");
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [expanded, attempts, attemptsError, technique.id]);
 
   async function handleStatusChange(next: Status) {
     if (next === status) return;
@@ -73,10 +102,18 @@ export function TechniqueRow({
         expanded && statusToBorderClass(status),
       )}
     >
-      <button
-        type="button"
+      <div
+        role="button"
+        tabIndex={0}
         onClick={() => setExpanded((v) => !v)}
-        className="flex w-full items-center gap-4 px-4 py-3 text-left focus-visible:outline-none focus-visible:bg-muted/30"
+        onKeyDown={(e) => {
+          if (e.target !== e.currentTarget) return;
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            setExpanded((v) => !v);
+          }
+        }}
+        className="flex w-full items-center gap-3 px-4 py-3 text-left focus-visible:outline-none focus-visible:bg-muted/30 cursor-pointer sm:gap-4"
         aria-expanded={expanded}
       >
         <span
@@ -93,6 +130,12 @@ export function TechniqueRow({
                 aria-label="New student activity"
                 title="Student edited after your last update"
               />
+            )}
+            {!expanded && technique.attempt_count > 0 && (
+              <Badge variant="outline" className="text-[10px] font-normal">
+                {technique.attempt_count}{" "}
+                {technique.attempt_count === 1 ? "attempt" : "attempts"}
+              </Badge>
             )}
           </div>
           {!expanded && (technique.tags.length > 0 || (showCollectionChip && technique.collection_name)) && (
@@ -124,12 +167,34 @@ export function TechniqueRow({
           {formatRelative(technique.updated_at)}
         </div>
 
+        {canLogAttempts && (
+          <AttemptButton
+            studentTechniqueId={technique.id}
+            techniqueStatus={status}
+            onLogged={(result) => {
+              setAttempts((prev) =>
+                prev
+                  ? [result.attempt, ...prev.filter((a) => a.id !== result.attempt.id)]
+                  : prev,
+              );
+              onTechniqueUpdate({
+                ...technique,
+                attempt_count: technique.attempt_count + 1,
+                last_attempt_at: result.attempt.attempted_at,
+              });
+            }}
+            onStatusChange={(next) =>
+              onTechniqueUpdate({ ...technique, status: next })
+            }
+          />
+        )}
+
         {expanded ? (
           <ChevronUpIcon className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
         ) : (
           <ChevronDownIcon className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
         )}
-      </button>
+      </div>
 
       {expanded && (
         <div className="space-y-6 px-4 pb-6 pt-2">
@@ -185,6 +250,31 @@ export function TechniqueRow({
               {technique.technique_description}
             </p>
           </section>
+
+          <AttemptsPanel
+            studentTechniqueId={technique.id}
+            studentId={studentId}
+            currentUserId={currentUserId}
+            isCoachOrAdmin={canEditAll}
+            attempts={attempts}
+            error={attemptsError}
+            onAttemptUpdated={(updated) =>
+              setAttempts((prev) =>
+                prev
+                  ? prev.map((a) => (a.id === updated.id ? updated : a))
+                  : prev,
+              )
+            }
+            onAttemptRemoved={(id) => {
+              setAttempts((prev) =>
+                prev ? prev.filter((a) => a.id !== id) : prev,
+              );
+              onTechniqueUpdate({
+                ...technique,
+                attempt_count: Math.max(0, technique.attempt_count - 1),
+              });
+            }}
+          />
 
           <section className="space-y-2">
             <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">

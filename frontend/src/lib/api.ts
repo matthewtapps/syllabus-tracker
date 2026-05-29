@@ -163,6 +163,8 @@ export interface Technique {
   collection_id: number | null;
   collection_name: string | null;
   tags: Tag[];
+  attempt_count: number;
+  last_attempt_at: string | null;
 }
 
 export interface LibraryTechnique {
@@ -311,6 +313,23 @@ export interface StudentTechniques {
   can_assign_techniques: boolean;
   can_create_techniques: boolean;
   can_manage_tags: boolean;
+}
+
+export interface SingleStudentTechnique {
+  technique: Technique;
+  student: User;
+  can_edit_all_techniques: boolean;
+  can_manage_tags: boolean;
+}
+
+export async function getStudentTechniqueDetail(
+  studentTechniqueId: number,
+): Promise<SingleStudentTechnique> {
+  const response = await fetch(`/api/student_technique/${studentTechniqueId}`, {
+    credentials: "include",
+  });
+  if (!response.ok) throw new Error("Failed to fetch technique");
+  return await response.json();
 }
 
 export async function getStudentTechniques(
@@ -668,4 +687,156 @@ export async function getLibraryStats(): Promise<LibraryStats> {
   }
 
   return await response.json();
+}
+
+// ---- Attempts ----
+
+export interface Attempt {
+  id: number;
+  student_technique_id: number;
+  recorded_by_id: number;
+  recorded_by_name: string | null;
+  attempted_at: string;
+  coach_note: string | null;
+  coach_note_by_id: number | null;
+  coach_note_by_name: string | null;
+  coach_note_at: string | null;
+  student_note: string | null;
+  student_note_at: string | null;
+  created_at: string;
+}
+
+export interface CreateAttemptResult {
+  attempt: Attempt;
+  status_suggestion: "amber" | null;
+}
+
+export interface AttemptSummary {
+  this_week: number;
+  this_month: number;
+  total: number;
+}
+
+export interface AttemptBucket {
+  date: string;
+  count: number;
+}
+
+export interface RecentAttemptItem {
+  id: number;
+  student_technique_id: number;
+  technique_id: number;
+  technique_name: string;
+  attempted_at: string;
+  coach_note: string | null;
+  student_note: string | null;
+}
+
+export async function listAttempts(
+  studentTechniqueId: number,
+): Promise<Attempt[]> {
+  const response = await fetch(
+    `/api/student_technique/${studentTechniqueId}/attempts`,
+    { credentials: "include" },
+  );
+  if (!response.ok) throw new Error("Failed to fetch attempts");
+  const body = await response.json();
+  return body.attempts as Attempt[];
+}
+
+export async function createAttempt(
+  studentTechniqueId: number,
+  data: { note?: string | null; attempted_at?: string | null } = {},
+): Promise<CreateAttemptResult> {
+  const response = await fetch(
+    `/api/student_technique/${studentTechniqueId}/attempts`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        note: data.note ?? null,
+        attempted_at: data.attempted_at ?? null,
+      }),
+      credentials: "include",
+    },
+  );
+  if (!response.ok) throw response;
+  return await response.json();
+}
+
+export async function updateAttempt(
+  attemptId: number,
+  data: {
+    note?: string | null;
+    clear_note?: boolean;
+    attempted_at?: string | null;
+  },
+): Promise<Response> {
+  return await fetch(`/api/attempts/${attemptId}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+    credentials: "include",
+  });
+}
+
+export async function deleteAttempt(attemptId: number): Promise<Response> {
+  return await fetch(`/api/attempts/${attemptId}`, {
+    method: "DELETE",
+    credentials: "include",
+  });
+}
+
+export async function getRecentAttemptsForStudent(
+  studentId: number,
+  limit: number = 5,
+): Promise<RecentAttemptItem[]> {
+  const response = await fetch(
+    `/api/student/${studentId}/attempts/recent?limit=${limit}`,
+    { credentials: "include" },
+  );
+  if (!response.ok) throw new Error("Failed to fetch recent attempts");
+  const body = await response.json();
+  return body.attempts as RecentAttemptItem[];
+}
+
+export async function getAttemptSummary(
+  studentId: number,
+): Promise<AttemptSummary> {
+  const response = await fetch(`/api/student/${studentId}/attempts/summary`, {
+    credentials: "include",
+  });
+  if (!response.ok) throw new Error("Failed to fetch attempt summary");
+  return await response.json();
+}
+
+export async function getAttemptHeatmap(
+  studentId: number,
+  from?: string,
+  to?: string,
+): Promise<AttemptBucket[]> {
+  const params = new URLSearchParams();
+  if (from) params.set("from", from);
+  if (to) params.set("to", to);
+  const qs = params.toString();
+  const url = qs
+    ? `/api/student/${studentId}/attempts/heatmap?${qs}`
+    : `/api/student/${studentId}/attempts/heatmap`;
+  const response = await fetch(url, { credentials: "include" });
+  if (!response.ok) throw new Error("Failed to fetch attempt heatmap");
+  const body = await response.json();
+  return body.buckets as AttemptBucket[];
+}
+
+export async function getAttemptSparkline(
+  studentTechniqueId: number,
+  weeks: number = 12,
+): Promise<AttemptBucket[]> {
+  const response = await fetch(
+    `/api/student_technique/${studentTechniqueId}/attempts/sparkline?weeks=${weeks}`,
+    { credentials: "include" },
+  );
+  if (!response.ok) throw new Error("Failed to fetch sparkline");
+  const body = await response.json();
+  return body.buckets as AttemptBucket[];
 }

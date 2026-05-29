@@ -13,11 +13,13 @@ import { ClaimLinkPanel } from '@/components/claim-link-panel';
 import { toast } from 'sonner';
 import {
   getAllTags,
+  getAttemptSummary,
   getStudentTechniques,
   removeTagFromTechnique,
   resetUserClaim,
   setStudentGraduated,
   updateTechnique,
+  type AttemptSummary,
   type InviteResponse,
 } from '@/lib/api';
 import type {
@@ -92,6 +94,7 @@ export default function StudentTechniques({ user }: StudentTechniquesProps) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [allTags, setAllTags] = useState<Tag[]>([]);
+  const [attemptSummary, setAttemptSummary] = useState<AttemptSummary | null>(null);
 
   const [filterText, setFilterText] = useState('');
   const [activeTab, setActiveTab] = useState<FilterTab>('all');
@@ -125,13 +128,15 @@ export default function StudentTechniques({ user }: StudentTechniquesProps) {
       try {
         setLoading(true);
         const studentId = parseInt(id || '0', 10);
-        const [techniques, tagsResult] = await Promise.all([
+        const [techniques, tagsResult, summaryResult] = await Promise.all([
           getStudentTechniques(studentId),
           getAllTags(),
+          getAttemptSummary(studentId).catch(() => null),
         ]);
         if (cancelled) return;
         setData(techniques);
         setAllTags(tagsResult);
+        setAttemptSummary(summaryResult);
         setError(null);
       } catch (err) {
         if (cancelled) return;
@@ -498,6 +503,23 @@ export default function StudentTechniques({ user }: StudentTechniquesProps) {
         }
       />
 
+      {!loading && !error && data && attemptSummary && attemptSummary.total > 0 && (
+        <div className="-mt-2 mb-4 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+          <span>
+            <span className="font-medium text-foreground">{attemptSummary.this_week}</span>{' '}
+            {attemptSummary.this_week === 1 ? 'attempt' : 'attempts'} this week
+          </span>
+          <span aria-hidden>·</span>
+          <span>
+            <span className="font-medium text-foreground">{attemptSummary.this_month}</span> this month
+          </span>
+          <span aria-hidden>·</span>
+          <span>
+            <span className="font-medium text-foreground">{attemptSummary.total}</span> total
+          </span>
+        </div>
+      )}
+
       {!loading && !error && data && (
         <div className="mb-6 space-y-4">
           {showCollectionSelector && (
@@ -598,6 +620,8 @@ export default function StudentTechniques({ user }: StudentTechniquesProps) {
                 canEditAll={data.can_edit_all_techniques}
                 canManageTags={data.can_manage_tags}
                 isOwnTechnique={user.id === data.student.id}
+                studentId={data.student.id}
+                currentUserId={user.id}
                 defaultExpanded={technique.id === focusId}
                 showCollectionChip={showCollectionSelector && collectionFilter === 'all'}
                 allTags={allTags}

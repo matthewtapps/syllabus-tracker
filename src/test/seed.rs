@@ -428,6 +428,127 @@ mod tests {
             }
         }
 
+        // 6. Attempts. Spread across the last ~90 days so sparkline + heatmap
+        // have something to draw. Skipped for any student_technique that
+        // already has attempts so the seed remains idempotent.
+        let student_notes = [
+            "Felt smooth today.",
+            "Need to drill the timing more.",
+            "Coach said grip earlier next time.",
+            "Hit it in sparring.",
+            "Stalled on the setup, will revisit.",
+            "Linked it to the previous transition.",
+        ];
+        let coach_notes = [
+            "Clean execution.",
+            "Watch the head position.",
+            "Better than last week.",
+            "Stay heavier on the chest.",
+        ];
+
+        let mut total_attempts = 0i64;
+        for &student_id in &student_ids {
+            let rows: Vec<(i64, String)> = sqlx::query_as(
+                "SELECT id, status FROM student_techniques WHERE student_id = ?",
+            )
+            .bind(student_id)
+            .fetch_all(&pool)
+            .await
+            .expect("load student_techniques");
+
+            for (idx, (st_id, status)) in rows.iter().enumerate() {
+                let existing: (i64,) =
+                    sqlx::query_as("SELECT COUNT(*) FROM attempts WHERE student_technique_id = ?")
+                        .bind(st_id)
+                        .fetch_one(&pool)
+                        .await
+                        .expect("count attempts");
+                if existing.0 > 0 {
+                    continue;
+                }
+
+                // Status-driven distribution. The deterministic stride mixed
+                // with the index keeps the spread different per technique.
+                let target = match status.as_str() {
+                    "green" => 4 + ((student_id + *st_id) as usize % 5), // 4..=8
+                    "amber" => 1 + ((student_id + *st_id) as usize % 3), // 1..=3
+                    _ => {
+                        if (student_id as usize + idx) % 6 == 0 {
+                            1
+                        } else {
+                            0
+                        }
+                    }
+                };
+                if target == 0 {
+                    continue;
+                }
+
+                for n in 0..target {
+                    // Spread between roughly today and 90 days back, biased so
+                    // higher n means older.
+                    let days_back = ((n as i64 + 1) * 90 / target as i64).min(89);
+                    let hour_offset = ((*st_id as i64 + n as i64) % 12) - 6;
+                    let attempted_at = now
+                        - Duration::days(days_back)
+                        + Duration::hours(hour_offset);
+
+                    // Alternate the recorder. Even iterations: student logged
+                    // it themselves. Odd: coach logged it for them.
+                    let recorder = if (n + idx) % 2 == 0 {
+                        student_id
+                    } else {
+                        coach_id
+                    };
+
+                    // ~33% of attempts get a note from whichever party logged
+                    // it. Sometimes both parties leave a note on the same
+                    // attempt, to exercise the dual-note display.
+                    let has_my_note = (*st_id as usize + n) % 3 == 0;
+                    let has_cross_note = (*st_id as usize + n) % 7 == 0;
+                    let student_note_text: Option<&str> = if recorder == student_id && has_my_note {
+                        Some(student_notes[(*st_id as usize + n) % student_notes.len()])
+                    } else if recorder == coach_id && has_cross_note {
+                        Some(student_notes[(*st_id as usize + n + 1) % student_notes.len()])
+                    } else {
+                        None
+                    };
+                    let coach_note_text: Option<&str> = if recorder == coach_id && has_my_note {
+                        Some(coach_notes[(*st_id as usize + n) % coach_notes.len()])
+                    } else if recorder == student_id && has_cross_note {
+                        Some(coach_notes[(*st_id as usize + n + 1) % coach_notes.len()])
+                    } else {
+                        None
+                    };
+
+                    let coach_note_by = coach_note_text.map(|_| coach_id);
+                    let coach_note_at = coach_note_text.map(|_| attempted_at);
+                    let student_note_at = student_note_text.map(|_| attempted_at);
+
+                    sqlx::query(
+                        r#"INSERT INTO attempts (
+                              student_technique_id, recorded_by_id, attempted_at,
+                              coach_note, coach_note_by_id, coach_note_at,
+                              student_note, student_note_at
+                           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"#,
+                    )
+                    .bind(st_id)
+                    .bind(recorder)
+                    .bind(attempted_at)
+                    .bind(coach_note_text)
+                    .bind(coach_note_by)
+                    .bind(coach_note_at)
+                    .bind(student_note_text)
+                    .bind(student_note_at)
+                    .execute(&pool)
+                    .await
+                    .expect("insert attempt");
+                    total_attempts += 1;
+                }
+            }
+        }
+        println!("  {} attempts inserted", total_attempts);
+
         println!("Seed complete.");
     }
 }

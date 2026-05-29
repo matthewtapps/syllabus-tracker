@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { Layout } from './components/layout';
 import LoginPage from './app/login/page';
 import StudentTechniques from './app/student-techniques/page';
+import StudentTechniqueDetail from './app/student-techniques/[techniqueId]/page';
 import StudentsList from './app/students-list/page';
 import Dashboard from './app/dashboard/page';
 import { getCurrentUser } from './lib/api';
@@ -84,6 +85,10 @@ function App() {
             <Route
               path="/student/:id"
               element={user ? <StudentTechniques user={user} /> : <Navigate to="/login" replace />}
+            />
+            <Route
+              path="/student/:id/technique/:techniqueId"
+              element={user ? <StudentTechniqueDetail user={user} /> : <Navigate to="/login" replace />}
             />
             <Route
               path="/students"
