@@ -1,11 +1,18 @@
 import { useState } from 'react';
-import { updateTechnique, type Technique, type TechniqueUpdate } from '@/lib/api';
+import type { Technique, TechniqueUpdate } from '@/lib/api';
 import { Button } from '@/components/ui/button';
-import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel } from '@/components/ui/form';
+import {
+  Form,
+  FormControl,
+  FormDescription,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from '@/components/ui/form';
+import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useFormWithValidation } from './hooks/useFormErrors';
-import { Card, CardContent } from './ui/card';
 import { TracedForm } from './traced-form';
 
 interface TechniqueEditFormProps {
@@ -16,198 +23,101 @@ interface TechniqueEditFormProps {
   onSubmit: (updates: TechniqueUpdate) => void;
 }
 
+type FormValues = {
+  technique_name: string;
+  technique_description: string;
+};
+
 export default function TechniqueEditForm({
   technique,
   canEditAll,
   onSubmit,
-  currentUserId,
-  studentId,
 }: TechniqueEditFormProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [nameChanged, setNameChanged] = useState(false);
-  const [descriptionChanged, setDescriptionChanged] = useState(false);
-  const isOwnTechnique = currentUserId === studentId;
-  const canEditStudentNotes = isOwnTechnique; // Only students edit their own notes
 
-  const form = useFormWithValidation<TechniqueUpdate>({
+  const form = useFormWithValidation<FormValues>({
     defaultValues: {
-      status: technique.status,
-      student_notes: technique.student_notes,
-      coach_notes: technique.coach_notes,
       technique_name: technique.technique_name,
       technique_description: technique.technique_description,
     },
   });
 
-  const handleSubmit = async (values: TechniqueUpdate) => {
+  const watchedName = form.watch('technique_name');
+  const watchedDescription = form.watch('technique_description');
+  const nameChanged = watchedName !== technique.technique_name;
+  const descriptionChanged = watchedDescription !== technique.technique_description;
+  const hasChanges = nameChanged || descriptionChanged;
+
+  async function handleSubmit(values: FormValues) {
     setIsSubmitting(true);
     try {
-      const updates = !canEditStudentNotes
-        ? (({ student_notes, ...rest }) => rest)(values)
-        : values;
-
-      const response = await updateTechnique(technique.id, updates);
-
-      if (!response.ok) {
-        throw response;
+      const updates: TechniqueUpdate = {};
+      if (nameChanged) updates.technique_name = values.technique_name;
+      if (descriptionChanged) updates.technique_description = values.technique_description;
+      if (Object.keys(updates).length > 0) {
+        onSubmit(updates);
       }
-
-      onSubmit(updates);
-    } catch (error) {
-      throw error;
     } finally {
-      setIsSubmitting(false)
+      setIsSubmitting(false);
     }
-  };
+  }
 
-  const ReadOnlyField = ({ label, value }: { label: string; value: string }) => (
-    <div className="space-y-2 mb-4">
-      <div className="font-medium text-sm">{label}</div>
-      <Card>
-        <CardContent className="p-3 bg-muted/40">
-          <p className="text-sm whitespace-pre-wrap text-muted-foreground">{value || "No content"}</p>
-        </CardContent>
-      </Card>
-    </div>
-  );
+  if (!canEditAll) {
+    return (
+      <p className="text-sm text-muted-foreground">
+        You do not have permission to edit the technique definition.
+      </p>
+    );
+  }
 
   return (
     <Form {...form}>
-      <TracedForm id="technique_edit" onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4 sm:space-y-6 mt-4 sm:mt-6"
+      <TracedForm
+        id="technique_edit"
+        onSubmit={form.handleSubmit(handleSubmit)}
         setFieldErrors={form.setFieldErrors}
+        className="space-y-4"
       >
-        {canEditAll && (
-          <>
-            <FormField
-              control={form.control}
-              name="status"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Status</FormLabel>
-                  <Select
-                    onValueChange={field.onChange}
-                    defaultValue={field.value}
-                  >
-                    <FormControl>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select a status" />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      <SelectItem value="red">Not Yet Started</SelectItem>
-                      <SelectItem value="amber">In Progress</SelectItem>
-                      <SelectItem value="green">Completed</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </FormItem>
-              )}
-            />
+        <FormField
+          control={form.control}
+          name="technique_name"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>Name</FormLabel>
+              <FormControl>
+                <Input {...field} />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
 
-            <FormField
-              control={form.control}
-              name="technique_name"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Technique Name</FormLabel>
-                  <FormControl>
-                    <Textarea
-                      {...field}
-                      className="min-h-[60px]"
-                      onChange={(e) => {
-                        field.onChange(e);
-                        setNameChanged(e.target.value !== technique.technique_name);
-                      }}
-                    />
-                  </FormControl>
-                  {nameChanged && (
-                    <FormDescription className="text-amber-500">
-                      Warning: This will update the technique name globally for all students.
-                    </FormDescription>
-                  )}
-                </FormItem>
-              )}
-            />
+        <FormField
+          control={form.control}
+          name="technique_description"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>Description</FormLabel>
+              <FormControl>
+                <Textarea {...field} className="min-h-32 max-h-72" />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
 
-            <FormField
-              control={form.control}
-              name="technique_description"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Technique Description</FormLabel>
-                  <FormControl>
-                    <Textarea
-                      {...field}
-                      className="min-h-[120px] max-h-[300px]"
-                      onChange={(e) => {
-                        field.onChange(e);
-                        setDescriptionChanged(e.target.value !== technique.technique_description);
-                      }}
-                    />
-                  </FormControl>
-                  {descriptionChanged && (
-                    <FormDescription className="text-amber-500">
-                      Warning: This will update the technique description globally for all students.
-                    </FormDescription>
-                  )}
-                </FormItem>
-              )}
-            />
-          </>
+        {hasChanges && (
+          <FormDescription className="text-status-amber">
+            Saving will update this technique globally for every student it's assigned to.
+          </FormDescription>
         )}
 
-        {/* Student Notes - either editable or read-only */}
-        {canEditStudentNotes ? (
-          <FormField
-            control={form.control}
-            name="student_notes"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>Student Notes</FormLabel>
-                <FormControl>
-                  <Textarea
-                    {...field}
-                    className="min-h-[120px] max-h-[300px]"
-                  />
-                </FormControl>
-              </FormItem>
-            )}
-          />
-        ) : (
-          // Read-only view of student notes for coaches
-          <ReadOnlyField
-            label="Student Notes (Read Only)"
-            value={technique.student_notes}
-          />
-        )}
-
-        {/* Coach Notes - either editable or read-only */}
-        {canEditAll ? (
-          <FormField
-            control={form.control}
-            name="coach_notes"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>Coach Notes</FormLabel>
-                <FormControl>
-                  <Textarea
-                    {...field}
-                    className="min-h-[120px] max-h-[300px]"
-                  />
-                </FormControl>
-              </FormItem>
-            )}
-          />
-        ) : (
-          // Read-only view of coach notes for students
-          <ReadOnlyField
-            label="Coach Notes (Read Only)"
-            value={technique.coach_notes}
-          />
-        )}
-
-        <div className="flex justify-end gap-2 mt-6">
-          <Button type="submit" disabled={isSubmitting}>
-            {isSubmitting ? "Saving..." : "Save Changes"}
+        <div className="flex justify-end gap-2">
+          <Button
+            type="submit"
+            disabled={isSubmitting || !hasChanges}
+          >
+            {isSubmitting ? 'Saving...' : 'Save changes'}
           </Button>
         </div>
       </TracedForm>

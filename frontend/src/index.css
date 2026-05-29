@@ -67,9 +67,10 @@
   --input: oklch(1 0 0 / 15%);
   --ring: oklch(0.503 0.213 27.8);
 
-  /* Status tokens — red (not started), amber (in progress), green (done). */
-  --status-red: oklch(0.6 0.18 27);
-  --status-red-bg: oklch(0.3 0.1 27 / 25%);
+  /* Status tokens — red (new / not started) reads as muted grey so it doesn't
+   * compete with the gym-red brand colour. Amber / green stay vivid. */
+  --status-red: oklch(0.65 0 0);
+  --status-red-bg: oklch(0.3 0 0 / 25%);
   --status-amber: oklch(0.78 0.16 75);
   --status-amber-bg: oklch(0.4 0.1 75 / 25%);
   --status-green: oklch(0.72 0.17 145);
