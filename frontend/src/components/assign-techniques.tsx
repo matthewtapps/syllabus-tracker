@@ -223,24 +223,30 @@ export default function AssignTechniques({
 
   return (
     <div className="space-y-4">
-      <div className="space-y-2">
-        <Label htmlFor="collection-choice" className="text-sm">
-          File under
-        </Label>
-        <Select value={collectionChoice} onValueChange={setCollectionChoice}>
-          <SelectTrigger id="collection-choice">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value={LOOSE_VALUE}>Loose (no collection)</SelectItem>
-            {collections.map((c) => (
-              <SelectItem key={c.id} value={String(c.id)}>
-                {c.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
+      {tab !== 'collection' && (
+        <div className="space-y-2">
+          <Label htmlFor="collection-choice" className="text-sm">
+            File under
+          </Label>
+          <Select value={collectionChoice} onValueChange={setCollectionChoice}>
+            <SelectTrigger id="collection-choice">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={LOOSE_VALUE}>Loose (no collection)</SelectItem>
+              {collections.map((c) => (
+                <SelectItem key={c.id} value={String(c.id)}>
+                  {c.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <p className="text-xs text-muted-foreground">
+            Files these techniques under a collection on this student's
+            syllabus. Pick "Loose (no collection)" to leave them unfiled.
+          </p>
+        </div>
+      )}
 
       <Tabs
         value={tab}
@@ -448,9 +454,9 @@ export default function AssignTechniques({
                   </SelectContent>
                 </Select>
                 <p className="text-xs text-muted-foreground">
-                  Every technique in this collection will be assigned to the
-                  student under this collection. Techniques they already have
-                  are moved into the collection (their progress is preserved).
+                  Assigns every technique in this collection to the student,
+                  filed under it. Techniques the student already has are moved
+                  into this collection (progress is preserved).
                 </p>
               </div>
               <div className="flex justify-end">

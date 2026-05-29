@@ -476,6 +476,8 @@ export default function StudentTechniques({ user }: StudentTechniquesProps) {
                       <DialogDescription>
                         Assign existing techniques or create new ones for{' '}
                         {data.student.display_name || data.student.username}.
+                        Collections are folders for a student's techniques: a
+                        technique can sit in a collection or stay loose.
                       </DialogDescription>
                     </DialogHeader>
                     <AssignTechniques
