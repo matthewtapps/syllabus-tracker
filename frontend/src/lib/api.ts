@@ -182,6 +182,8 @@ export interface Collection {
   technique_count: number;
   student_count: number;
   techniques: LibraryTechnique[];
+  can_create_techniques: boolean;
+  can_edit_all_techniques: boolean;
 }
 
 export async function getCollections(): Promise<Collection[]> {
@@ -229,14 +231,39 @@ export async function deleteCollection(id: number): Promise<Response> {
   });
 }
 
-export async function addTechniqueToCollection(
+export async function addTechniquesToCollection(
   collectionId: number,
-  techniqueId: number,
+  techniqueIds: number[],
 ): Promise<Response> {
   return await fetch(`/api/collections/${collectionId}/techniques`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ technique_id: techniqueId }),
+    body: JSON.stringify({ technique_ids: techniqueIds }),
+    credentials: "include",
+  });
+}
+
+export async function createTechniqueInCollection(
+  collectionId: number,
+  name: string,
+  description: string,
+): Promise<Response> {
+  return await fetch(`/api/collections/${collectionId}/create_technique`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name, description }),
+    credentials: "include",
+  });
+}
+
+export async function updateLibraryTechnique(
+  techniqueId: number,
+  data: { name: string; description: string },
+): Promise<Response> {
+  return await fetch(`/api/techniques/${techniqueId}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
     credentials: "include",
   });
 }

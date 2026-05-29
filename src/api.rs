@@ -16,18 +16,19 @@ use validator::ValidationErrors;
 use crate::auth::UserSession;
 use crate::auth::{Permission, User};
 use crate::db::{
-    add_tag_to_technique, add_technique_to_collection, add_techniques_to_student, approve_user,
+    add_tag_to_technique, add_techniques_to_collection, add_techniques_to_student, approve_user,
     assign_collection_to_student, authenticate_user, claim_invite, count_techniques,
     create_and_assign_technique, create_collection, create_invite_token,
-    create_self_registered_user, create_tag, create_user, create_user_session, create_user_stub,
-    delete_collection, delete_tag, find_user_by_username, find_valid_invite_token,
-    get_all_collections, get_all_tags, get_all_users, get_collection, get_student_technique,
-    get_student_techniques, get_students_by_recent_updates, get_students_with_collection,
-    get_tags_for_technique, get_unassigned_techniques, get_user, invalidate_session,
-    read_and_bump_last_seen, remove_tag_from_technique, remove_technique_from_collection,
-    request_password_reset, reset_user_claim, set_user_archived, set_user_graduated,
-    update_collection, update_student_notes, update_student_technique, update_technique,
-    update_user_display_name, update_user_password, update_user_role, update_username, Collection,
+    create_self_registered_user, create_tag, create_technique_in_collection, create_user,
+    create_user_session, create_user_stub, delete_collection, delete_tag, find_user_by_username,
+    find_valid_invite_token, get_all_collections, get_all_tags, get_all_users, get_collection,
+    get_student_technique, get_student_techniques, get_students_by_recent_updates,
+    get_students_with_collection, get_tags_for_technique, get_unassigned_techniques, get_user,
+    invalidate_session, read_and_bump_last_seen, remove_tag_from_technique,
+    remove_technique_from_collection, request_password_reset, reset_user_claim, set_user_archived,
+    set_user_graduated, update_collection, update_student_notes, update_student_technique,
+    update_technique, update_user_display_name, update_user_password, update_user_role,
+    update_username, Collection,
 };
 use crate::error::AppError;
 use crate::models::Tag;
@@ -1115,6 +1116,8 @@ pub struct CollectionResponse {
     pub technique_count: i64,
     pub student_count: i64,
     pub techniques: Vec<TechniqueLibraryResponse>,
+    pub can_create_techniques: bool,
+    pub can_edit_all_techniques: bool,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -1126,7 +1129,7 @@ pub struct TechniqueLibraryResponse {
     pub coach_name: String,
 }
 
-fn collection_to_response(c: Collection) -> CollectionResponse {
+fn collection_to_response(c: Collection, user: &User) -> CollectionResponse {
     CollectionResponse {
         id: c.id,
         name: c.name,
@@ -1146,6 +1149,8 @@ fn collection_to_response(c: Collection) -> CollectionResponse {
                 coach_name: t.coach_name,
             })
             .collect(),
+        can_create_techniques: user.has_permission(Permission::CreateTechniques),
+        can_edit_all_techniques: user.has_permission(Permission::EditAllTechniques),
     }
 }
 
@@ -1157,7 +1162,10 @@ pub async fn api_get_collections(
     user.require_permission(Permission::AssignTechniques)?;
     let collections = get_all_collections(db).await?;
     Ok(Json(
-        collections.into_iter().map(collection_to_response).collect(),
+        collections
+            .into_iter()
+            .map(|c| collection_to_response(c, &user))
+            .collect(),
     ))
 }
 
@@ -1169,7 +1177,7 @@ pub async fn api_get_collection(
 ) -> ApiResult<Json<CollectionResponse>> {
     user.require_permission(Permission::AssignTechniques)?;
     let collection = get_collection(db, id).await?;
-    Ok(Json(collection_to_response(collection)))
+    Ok(Json(collection_to_response(collection, &user)))
 }
 
 #[derive(Deserialize, Validate, Clone)]
@@ -1195,7 +1203,7 @@ pub async fn api_create_collection(
     )
     .await?;
     let collection = get_collection(db, id).await?;
-    Ok(Json(collection_to_response(collection)))
+    Ok(Json(collection_to_response(collection, &user)))
 }
 
 #[put("/collections/<id>", data = "<body>")]
@@ -1229,20 +1237,57 @@ pub async fn api_delete_collection(
 }
 
 #[derive(Deserialize, Clone)]
-pub struct AddTechniqueToCollectionRequest {
-    technique_id: i64,
+pub struct AddTechniquesToCollectionRequest {
+    technique_ids: Vec<i64>,
 }
 
 #[post("/collections/<id>/techniques", data = "<body>")]
-pub async fn api_add_technique_to_collection(
+pub async fn api_add_techniques_to_collection(
     id: i64,
-    body: Json<AddTechniqueToCollectionRequest>,
+    body: Json<AddTechniquesToCollectionRequest>,
     user: User,
     db: &State<Pool<Sqlite>>,
 ) -> ApiResult<Status> {
     user.require_permission(Permission::CreateTechniques)?;
-    add_technique_to_collection(db, id, body.technique_id).await?;
+    add_techniques_to_collection(db, id, body.technique_ids.clone()).await?;
     Ok(Status::Ok)
+}
+
+#[derive(Deserialize, Validate, Clone)]
+pub struct CreateTechniqueInCollectionRequest {
+    #[validate(length(
+        min = 1,
+        max = 100,
+        message = "Technique name must be between 1 and 100 characters"
+    ))]
+    name: String,
+    #[validate(length(min = 1, message = "Description cannot be empty"))]
+    description: String,
+}
+
+#[post("/collections/<id>/create_technique", data = "<body>")]
+pub async fn api_create_technique_in_collection(
+    id: i64,
+    body: Json<CreateTechniqueInCollectionRequest>,
+    user: User,
+    db: &State<Pool<Sqlite>>,
+) -> ApiResult<Json<TechniqueLibraryResponse>> {
+    body.validate()?;
+    user.require_permission(Permission::CreateTechniques)?;
+    let technique_id =
+        create_technique_in_collection(db, user.id, id, &body.name, &body.description).await?;
+    let coach_name = if user.display_name.is_empty() {
+        user.username.clone()
+    } else {
+        user.display_name.clone()
+    };
+    Ok(Json(TechniqueLibraryResponse {
+        id: technique_id,
+        name: body.name.clone(),
+        description: body.description.clone(),
+        coach_id: user.id,
+        coach_name,
+    }))
 }
 
 #[delete("/collections/<id>/techniques/<technique_id>")]
@@ -1254,6 +1299,31 @@ pub async fn api_remove_technique_from_collection(
 ) -> ApiResult<Status> {
     user.require_permission(Permission::CreateTechniques)?;
     remove_technique_from_collection(db, id, technique_id).await?;
+    Ok(Status::Ok)
+}
+
+#[derive(Deserialize, Validate, Clone)]
+pub struct UpdateLibraryTechniqueRequest {
+    #[validate(length(
+        min = 1,
+        max = 100,
+        message = "Technique name must be between 1 and 100 characters"
+    ))]
+    name: String,
+    #[validate(length(min = 1, message = "Description cannot be empty"))]
+    description: String,
+}
+
+#[put("/techniques/<id>", data = "<body>")]
+pub async fn api_update_library_technique(
+    id: i64,
+    body: Json<UpdateLibraryTechniqueRequest>,
+    user: User,
+    db: &State<Pool<Sqlite>>,
+) -> ApiResult<Status> {
+    body.validate()?;
+    user.require_permission(Permission::EditAllTechniques)?;
+    update_technique(db, id, &body.name, &body.description).await?;
     Ok(Status::Ok)
 }
 

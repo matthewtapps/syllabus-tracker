@@ -1027,6 +1027,33 @@ pub async fn add_technique_to_collection(
 }
 
 #[instrument]
+pub async fn add_techniques_to_collection(
+    pool: &Pool<Sqlite>,
+    collection_id: i64,
+    technique_ids: Vec<i64>,
+) -> Result<(), AppError> {
+    info!("Adding techniques to collection");
+    for technique_id in technique_ids {
+        add_technique_to_collection(pool, collection_id, technique_id).await?;
+    }
+    Ok(())
+}
+
+#[instrument]
+pub async fn create_technique_in_collection(
+    pool: &Pool<Sqlite>,
+    coach_id: i64,
+    collection_id: i64,
+    name: &str,
+    description: &str,
+) -> Result<i64, AppError> {
+    info!("Creating technique in collection");
+    let technique_id = create_technique(pool, name, description, coach_id).await?;
+    add_technique_to_collection(pool, collection_id, technique_id).await?;
+    Ok(technique_id)
+}
+
+#[instrument]
 pub async fn remove_technique_from_collection(
     pool: &Pool<Sqlite>,
     collection_id: i64,

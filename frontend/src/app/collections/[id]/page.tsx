@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
   ArrowLeft,
   BookOpen,
-  Check,
+  Eye,
   Pencil,
   Plus,
   Trash2,
@@ -12,7 +12,6 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
-  addTechniqueToCollection,
   deleteCollection,
   getCollection,
   getCollectionStudents,
@@ -21,6 +20,7 @@ import {
   updateCollection,
   type Collection,
   type LibraryTechnique,
+  type Tag,
   type User,
 } from '@/lib/api';
 import { Button } from '@/components/ui/button';
@@ -37,25 +37,17 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import {
-  Command,
-  CommandEmpty,
-  CommandGroup,
-  CommandInput,
-  CommandItem,
-  CommandList,
-} from '@/components/ui/command';
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from '@/components/ui/popover';
 import { EmptyState } from '@/components/empty-state';
+import AddTechniquesToCollectionDialog from '@/components/add-techniques-to-collection-dialog';
+import TechniqueDetailsDialog from '@/components/technique-details-dialog';
 
-interface AllLibraryTechnique {
+interface LibraryRow {
   id: number;
   name: string;
   description: string;
+  coach_id: number;
+  coach_name: string;
+  tags: Tag[];
 }
 
 function initials(label: string): string {
@@ -79,9 +71,12 @@ export default function CollectionDetailPage() {
   const [savingMeta, setSavingMeta] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
 
-  const [allTechniques, setAllTechniques] = useState<AllLibraryTechnique[]>([]);
+  const [library, setLibrary] = useState<LibraryRow[]>([]);
   const [addOpen, setAddOpen] = useState(false);
-  const [addSearch, setAddSearch] = useState('');
+  const [detailsTechnique, setDetailsTechnique] = useState<LibraryTechnique | null>(
+    null,
+  );
+  const [detailsMode, setDetailsMode] = useState<'view' | 'edit'>('view');
 
   useEffect(() => {
     load();
@@ -105,26 +100,16 @@ export default function CollectionDetailPage() {
     }
   }
 
-  // Library techniques pool for the "Add technique" combobox. We fetch the
-  // student-unassigned list for student id 0 as a cheap way to get the full
-  // technique library; if that proves wrong, we can add a dedicated endpoint
-  // later. For now, fall back to listing techniques on the collection plus
-  // letting the user add any global techniques.
+  // Library pool. Fetch student id 0 to get the full unassigned list (no real
+  // student has that id, so it returns everything). Used to look up tags for
+  // the details dialog and to drive the picker in the add-techniques dialog.
   useEffect(() => {
     async function loadLibrary() {
       try {
-        // Use student id 0 to get all techniques (none assigned to that
-        // non-existent student, so the unassigned list is the full library).
-        const techs: any[] = await getTechniquesForAssignment(0);
-        setAllTechniques(
-          techs.map((t) => ({
-            id: t.id,
-            name: t.name,
-            description: t.description || '',
-          })),
-        );
+        const techs: LibraryRow[] = await getTechniquesForAssignment(0);
+        setLibrary(techs);
       } catch {
-        // Best-effort; the page still works to remove techniques.
+        // Best-effort; page still works for remove and edit.
       }
     }
     loadLibrary();
@@ -134,10 +119,12 @@ export default function CollectionDetailPage() {
     () => new Set(collection?.techniques.map((t) => t.id) ?? []),
     [collection],
   );
-  const candidates = useMemo(
-    () => allTechniques.filter((t) => !assignedIds.has(t.id)),
-    [allTechniques, assignedIds],
-  );
+
+  const tagsByTechniqueId = useMemo(() => {
+    const map = new Map<number, Tag[]>();
+    library.forEach((t) => map.set(t.id, t.tags ?? []));
+    return map;
+  }, [library]);
 
   async function handleSaveMeta() {
     if (!collection) return;
@@ -159,33 +146,27 @@ export default function CollectionDetailPage() {
     }
   }
 
-  async function handleAddTechnique(tech: AllLibraryTechnique) {
+  function handleTechniquesAdded(added: LibraryTechnique[]) {
+    if (!collection || added.length === 0) return;
+    const existingIds = new Set(collection.techniques.map((t) => t.id));
+    const fresh = added.filter((t) => !existingIds.has(t.id));
+    if (fresh.length === 0) return;
+    setCollection({
+      ...collection,
+      techniques: [...collection.techniques, ...fresh],
+      technique_count: collection.technique_count + fresh.length,
+    });
+  }
+
+  function handleTechniqueSaved(updated: LibraryTechnique) {
     if (!collection) return;
-    try {
-      const response = await addTechniqueToCollection(collection.id, tech.id);
-      if (!response.ok) {
-        toast.error('Failed to add');
-        return;
-      }
-      const lib: LibraryTechnique = {
-        id: tech.id,
-        name: tech.name,
-        description: tech.description,
-        coach_id: 0,
-        coach_name: '',
-      };
-      setCollection({
-        ...collection,
-        techniques: [...collection.techniques, lib],
-        technique_count: collection.technique_count + 1,
-      });
-      setAddOpen(false);
-      setAddSearch('');
-      toast.success('Added to collection');
-    } catch (err) {
-      console.error(err);
-      toast.error('Failed to add');
-    }
+    setCollection({
+      ...collection,
+      techniques: collection.techniques.map((t) =>
+        t.id === updated.id ? { ...t, ...updated } : t,
+      ),
+    });
+    setDetailsTechnique(updated);
   }
 
   async function handleRemoveTechnique(techId: number) {
@@ -330,49 +311,15 @@ export default function CollectionDetailPage() {
               <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
                 Techniques in this collection
               </h2>
-              <Popover open={addOpen} onOpenChange={setAddOpen}>
-                <PopoverTrigger asChild>
-                  <Button variant="outline" size="sm" className="gap-2">
-                    <Plus className="h-4 w-4" aria-hidden />
-                    Add technique
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-72 p-0" align="end">
-                  <Command shouldFilter={false}>
-                    <CommandInput
-                      placeholder="Find a technique..."
-                      value={addSearch}
-                      onValueChange={setAddSearch}
-                    />
-                    <CommandList>
-                      <CommandEmpty>No matching techniques.</CommandEmpty>
-                      <CommandGroup>
-                        {candidates
-                          .filter((t) =>
-                            !addSearch.trim() ||
-                            t.name
-                              .toLowerCase()
-                              .includes(addSearch.toLowerCase()),
-                          )
-                          .slice(0, 30)
-                          .map((t) => (
-                            <CommandItem
-                              key={t.id}
-                              value={t.name}
-                              onSelect={() => handleAddTechnique(t)}
-                            >
-                              <Check
-                                className="mr-2 h-3.5 w-3.5 opacity-0"
-                                aria-hidden
-                              />
-                              {t.name}
-                            </CommandItem>
-                          ))}
-                      </CommandGroup>
-                    </CommandList>
-                  </Command>
-                </PopoverContent>
-              </Popover>
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-2"
+                onClick={() => setAddOpen(true)}
+              >
+                <Plus className="h-4 w-4" aria-hidden />
+                Add techniques
+              </Button>
             </div>
 
             <div className="overflow-hidden rounded-lg border border-border bg-card">
@@ -387,16 +334,49 @@ export default function CollectionDetailPage() {
                   {collection.techniques.map((t) => (
                     <li
                       key={t.id}
-                      className="flex items-center gap-3 px-4 py-3"
+                      className="flex items-center gap-1 px-4 py-3 sm:gap-2"
                     >
-                      <div className="min-w-0 flex-1">
+                      <button
+                        type="button"
+                        className="min-w-0 flex-1 cursor-pointer text-left"
+                        onClick={() => {
+                          setDetailsTechnique(t);
+                          setDetailsMode('view');
+                        }}
+                      >
                         <p className="truncate text-sm font-medium">{t.name}</p>
                         {t.description && (
                           <p className="line-clamp-1 text-xs text-muted-foreground">
                             {t.description}
                           </p>
                         )}
-                      </div>
+                      </button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 text-muted-foreground"
+                        onClick={() => {
+                          setDetailsTechnique(t);
+                          setDetailsMode('view');
+                        }}
+                      >
+                        <Eye className="h-4 w-4" aria-hidden />
+                        <span className="sr-only">View {t.name}</span>
+                      </Button>
+                      {collection.can_edit_all_techniques && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 text-muted-foreground"
+                          onClick={() => {
+                            setDetailsTechnique(t);
+                            setDetailsMode('edit');
+                          }}
+                        >
+                          <Pencil className="h-4 w-4" aria-hidden />
+                          <span className="sr-only">Edit {t.name}</span>
+                        </Button>
+                      )}
                       <Button
                         variant="ghost"
                         size="icon"
@@ -456,6 +436,32 @@ export default function CollectionDetailPage() {
             </div>
           </section>
         </>
+      )}
+
+      {collection && (
+        <AddTechniquesToCollectionDialog
+          open={addOpen}
+          onOpenChange={setAddOpen}
+          collectionId={collection.id}
+          collectionName={collection.name}
+          alreadyAssignedIds={assignedIds}
+          canCreate={collection.can_create_techniques}
+          onAdded={handleTechniquesAdded}
+        />
+      )}
+
+      {collection && detailsTechnique && (
+        <TechniqueDetailsDialog
+          open={!!detailsTechnique}
+          onOpenChange={(o) => {
+            if (!o) setDetailsTechnique(null);
+          }}
+          technique={detailsTechnique}
+          tags={tagsByTechniqueId.get(detailsTechnique.id) ?? []}
+          canEdit={collection.can_edit_all_techniques}
+          initialMode={detailsMode}
+          onSaved={handleTechniqueSaved}
+        />
       )}
 
       <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
