@@ -984,6 +984,14 @@ pub async fn remove_tag_from_technique(
 }
 
 #[instrument]
+pub async fn count_techniques(pool: &Pool<Sqlite>) -> Result<i64, AppError> {
+    let row = sqlx::query!("SELECT COUNT(*) as count FROM techniques")
+        .fetch_one(pool)
+        .await?;
+    Ok(row.count as i64)
+}
+
+#[instrument]
 pub async fn delete_tag(pool: &Pool<Sqlite>, tag_id: i64) -> Result<(), AppError> {
     info!("Deleting tag");
     // The technique_tags relationships will be automatically deleted due to the ON DELETE CASCADE constraint

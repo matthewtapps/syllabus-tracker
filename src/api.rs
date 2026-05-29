@@ -20,7 +20,7 @@ use crate::db::{
     create_and_assign_technique, create_tag, create_user, create_user_session, delete_tag,
     find_user_by_username, get_all_tags, get_all_users, get_student_technique,
     get_student_techniques, get_students_by_recent_updates, get_tags_for_technique,
-    get_unassigned_techniques, get_user, invalidate_session,
+    count_techniques, get_unassigned_techniques, get_user, invalidate_session,
     remove_tag_from_technique, set_user_archived, update_student_notes, update_student_technique,
     update_technique, update_user_display_name, update_user_password, update_user_role,
     update_username,
@@ -489,6 +489,23 @@ pub async fn api_create_and_assign_technique(
 #[get("/me")]
 pub async fn api_me(user: User) -> Json<UserData> {
     Json(UserData::from(user))
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct LibraryStatsResponse {
+    pub total_techniques: i64,
+}
+
+#[get("/library/stats")]
+pub async fn api_library_stats(
+    user: User,
+    db: &State<Pool<Sqlite>>,
+) -> ApiResult<Json<LibraryStatsResponse>> {
+    user.require_permission(Permission::ViewAllStudents)?;
+
+    let total_techniques = count_techniques(db).await?;
+
+    Ok(Json(LibraryStatsResponse { total_techniques }))
 }
 
 #[get("/me", rank = 2)]

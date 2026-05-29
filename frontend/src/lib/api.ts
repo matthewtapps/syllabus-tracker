@@ -390,3 +390,19 @@ export async function getAllUsers(): Promise<User[]> {
 
   return await response.json();
 }
+
+export interface LibraryStats {
+  total_techniques: number;
+}
+
+export async function getLibraryStats(): Promise<LibraryStats> {
+  const response = await fetch("/api/library/stats", {
+    credentials: "include",
+  });
+
+  if (!response.ok) {
+    throw new Error("Failed to fetch library stats");
+  }
+
+  return await response.json();
+}

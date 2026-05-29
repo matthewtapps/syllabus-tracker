@@ -19,8 +19,8 @@ use api::{
     api_add_tag_to_technique, api_assign_techniques, api_change_password,
     api_create_and_assign_technique, api_create_tag, api_delete_tag, api_get_all_tags,
     api_get_student_techniques, api_get_students, api_get_technique_tags,
-    api_get_unassigned_techniques, api_login, api_logout, api_me, api_me_unauthorized,
-    api_register_user, api_remove_tag_from_technique, api_update_profile,
+    api_get_unassigned_techniques, api_library_stats, api_login, api_logout, api_me,
+    api_me_unauthorized, api_register_user, api_remove_tag_from_technique, api_update_profile,
     api_update_student_technique, api_update_user, health,
 };
 use auth::unauthorized_api;
@@ -196,6 +196,7 @@ pub async fn init_rocket(pool: SqlitePool) -> Rocket<Build> {
                 api_remove_tag_from_technique,
                 api_get_technique_tags,
                 api_get_all_users,
+                api_library_stats,
             ],
         )
         .register("/api", catchers![unauthorized_api])
