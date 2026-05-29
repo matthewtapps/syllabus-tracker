@@ -69,6 +69,8 @@
             # New frontend
             pnpm
             nodejs-slim_22
+
+            just
           ];
         };
 
