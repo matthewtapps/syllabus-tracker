@@ -394,6 +394,75 @@ mod tests {
     }
 
     #[rocket::async_test]
+    async fn create_attempt_bumps_student_technique_activity() {
+        let (db, st_id) = standard_setup_red().await;
+        let student = fetch_user(&db.pool, db.user_id("student_user").unwrap()).await;
+        let coach = fetch_user(&db.pool, db.user_id("coach_user").unwrap()).await;
+
+        // Establish baselines: the test seed leaves last_*_update_at NULL for
+        // this assignment, so anything non-null is an improvement.
+        create_attempt(&db.pool, &student, st_id, Utc::now(), None)
+            .await
+            .unwrap();
+        let after_student = db.get_student_technique(st_id).await.unwrap();
+        assert!(after_student.last_student_update_at.is_some());
+        assert_eq!(after_student.last_student_update_by_id, Some(student.id));
+
+        create_attempt(&db.pool, &coach, st_id, Utc::now(), None)
+            .await
+            .unwrap();
+        let after_coach = db.get_student_technique(st_id).await.unwrap();
+        assert!(after_coach.last_coach_update_at.is_some());
+        assert_eq!(after_coach.last_coach_update_by_id, Some(coach.id));
+        // updated_at should advance (or at least be set) on the parent row so
+        // the dashboard query (which orders by updated_at) sees activity.
+        assert!(after_coach.updated_at >= after_student.updated_at);
+    }
+
+    #[rocket::async_test]
+    async fn backdated_attempt_does_not_backdate_activity() {
+        let (db, st_id) = standard_setup_red().await;
+        let student = fetch_user(&db.pool, db.user_id("student_user").unwrap()).await;
+        // Backdate by 10 days; the activity timestamp should still reflect now.
+        let backdate = Utc::now() - chrono::Duration::days(10);
+        create_attempt(&db.pool, &student, st_id, backdate, None)
+            .await
+            .unwrap();
+        let after = db.get_student_technique(st_id).await.unwrap();
+        let stamp = after.last_student_update_at.expect("activity set");
+        let age = Utc::now().signed_duration_since(stamp);
+        assert!(age.num_seconds() < 60, "activity should be recent, was {}s old", age.num_seconds());
+    }
+
+    #[rocket::async_test]
+    async fn update_attempt_note_bumps_activity() {
+        let (db, st_id) = standard_setup_red().await;
+        let student = fetch_user(&db.pool, db.user_id("student_user").unwrap()).await;
+
+        let backdate = Utc::now() - chrono::Duration::days(3);
+        let res = create_attempt(&db.pool, &student, st_id, backdate, None)
+            .await
+            .unwrap();
+        // Snapshot the parent activity timestamp after the (backdated) insert.
+        let baseline = db
+            .get_student_technique(st_id)
+            .await
+            .unwrap()
+            .last_student_update_at
+            .unwrap();
+
+        // Sleep a moment so the post-update stamp is strictly newer in tests
+        // that run on machines with second-resolution timestamps.
+        tokio::time::sleep(std::time::Duration::from_millis(1100)).await;
+
+        update_attempt_note(&db.pool, &student, res.attempt.id, Some("later note"))
+            .await
+            .unwrap();
+        let after = db.get_student_technique(st_id).await.unwrap();
+        assert!(after.last_student_update_at.unwrap() > baseline);
+    }
+
+    #[rocket::async_test]
     async fn get_student_techniques_includes_attempt_count() {
         let (db, st_id) = standard_setup_red().await;
         let student = fetch_user(&db.pool, db.user_id("student_user").unwrap()).await;

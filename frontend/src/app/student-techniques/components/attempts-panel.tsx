@@ -1,9 +1,8 @@
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { MoreVerticalIcon, PencilIcon } from "lucide-react";
+import { ArrowRight, MoreVerticalIcon, PencilIcon } from "lucide-react";
 import {
   type Attempt,
-  type AttemptBucket,
   deleteAttempt,
   updateAttempt,
 } from "@/lib/api";
@@ -19,7 +18,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { formatRelative } from "@/lib/dates";
-import { AttemptSparkline } from "./attempt-sparkline";
 
 interface AttemptsPanelProps {
   studentTechniqueId: number;
@@ -34,6 +32,7 @@ interface AttemptsPanelProps {
 }
 
 const HISTORY_PREVIEW_LIMIT = 5;
+const RECENT_WINDOW_DAYS = 30;
 
 export function AttemptsPanel({
   studentTechniqueId,
@@ -45,23 +44,30 @@ export function AttemptsPanel({
   onAttemptUpdated,
   onAttemptRemoved,
 }: AttemptsPanelProps) {
-  // Derive the sparkline from the same attempt list, so a newly logged attempt
-  // shows up in the chart without a separate fetch.
-  const buckets = useMemo<AttemptBucket[]>(
-    () => deriveWeeklyBuckets(attempts ?? [], 12),
-    [attempts],
-  );
+  const stats = useMemo(() => summariseRecency(attempts), [attempts]);
 
   const previewed = attempts?.slice(0, HISTORY_PREVIEW_LIMIT) ?? [];
   const overflow = (attempts?.length ?? 0) - previewed.length;
+  const detailHref = `/student/${studentId}/technique/${studentTechniqueId}`;
 
   return (
     <section className="space-y-3">
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex items-baseline justify-between gap-3">
         <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
           Attempts
         </h3>
-        <AttemptSparkline buckets={buckets} weeks={12} />
+        {stats && (
+          <p className="text-xs text-muted-foreground">
+            <span className="font-medium text-foreground">{stats.recentCount}</span>{" "}
+            in last {RECENT_WINDOW_DAYS} days
+            {stats.lastLabel && (
+              <>
+                {" "}
+                <span aria-hidden>·</span> last {stats.lastLabel}
+              </>
+            )}
+          </p>
+        )}
       </div>
 
       {error && <p className="text-sm text-destructive">{error}</p>}
@@ -91,17 +97,36 @@ export function AttemptsPanel({
 
       {overflow > 0 && (
         <div className="text-right">
-          <Button asChild variant="link" size="sm" className="h-auto p-0 text-xs">
-            <Link
-              to={`/student/${studentId}/technique/${studentTechniqueId}`}
-            >
+          <Button asChild variant="link" size="sm" className="h-auto gap-1 p-0 text-xs">
+            <Link to={detailHref}>
               View all {attempts?.length} attempts
+              <ArrowRight className="h-3 w-3" aria-hidden />
             </Link>
           </Button>
         </div>
       )}
     </section>
   );
+}
+
+function summariseRecency(
+  attempts: Attempt[] | null,
+): { recentCount: number; lastLabel: string | null } | null {
+  if (!attempts || attempts.length === 0) return null;
+  const now = Date.now();
+  const cutoff = now - RECENT_WINDOW_DAYS * 86_400_000;
+  let recentCount = 0;
+  let mostRecent = 0;
+  for (const a of attempts) {
+    const t = Date.parse(a.attempted_at);
+    if (!Number.isFinite(t)) continue;
+    if (t >= cutoff) recentCount += 1;
+    if (t > mostRecent) mostRecent = t;
+  }
+  return {
+    recentCount,
+    lastLabel: mostRecent > 0 ? formatRelative(new Date(mostRecent).toISOString()) : null,
+  };
 }
 
 interface AttemptRowProps {
@@ -313,31 +338,3 @@ function DateEditor({ attempt, onCancel, onSaved }: DateEditorProps) {
   );
 }
 
-function deriveWeeklyBuckets(attempts: Attempt[], weeks: number): AttemptBucket[] {
-  if (attempts.length === 0) return [];
-  const counts = new Map<string, number>();
-  for (const a of attempts) {
-    const d = new Date(a.attempted_at);
-    const monday = isoWeekMondayUtc(d);
-    const key = monday.toISOString().slice(0, 10);
-    counts.set(key, (counts.get(key) ?? 0) + 1);
-  }
-  // Only keep buckets within the last `weeks` weeks so we don't ship the whole
-  // history to a sparkline that only renders 12 columns.
-  const cutoff = isoWeekMondayUtc(new Date());
-  cutoff.setUTCDate(cutoff.getUTCDate() - (weeks - 1) * 7);
-  const result: AttemptBucket[] = [];
-  for (const [date, count] of counts) {
-    if (new Date(date) >= cutoff) result.push({ date, count });
-  }
-  result.sort((a, b) => a.date.localeCompare(b.date));
-  return result;
-}
-
-function isoWeekMondayUtc(d: Date): Date {
-  const date = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
-  const day = date.getUTCDay();
-  const diff = day === 0 ? -6 : 1 - day;
-  date.setUTCDate(date.getUTCDate() + diff);
-  return date;
-}

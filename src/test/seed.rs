@@ -187,12 +187,33 @@ mod tests {
         role: Role,
         display_name: &str,
     ) -> i64 {
-        if let Some(existing) = find_user_by_username(pool, username).await.expect("lookup") {
-            return existing.id;
-        }
-        create_user(pool, username, password, role.as_str(), Some(display_name))
-            .await
-            .expect("create_user")
+        let id = match find_user_by_username(pool, username).await.expect("lookup") {
+            Some(existing) => existing.id,
+            None => create_user(pool, username, password, role.as_str(), Some(display_name))
+                .await
+                .expect("create_user"),
+        };
+
+        // Backfill credentials so demo accounts are usable end-to-end without
+        // the invite/claim flow. We only overwrite empty fields so a developer
+        // who changed their password won't have it reset on the next seed.
+        let hashed = bcrypt::hash(password, bcrypt::DEFAULT_COST).expect("bcrypt");
+        sqlx::query(
+            r#"UPDATE users
+               SET password = CASE WHEN password = '' THEN ? ELSE password END,
+                   display_name = CASE WHEN COALESCE(display_name, '') = '' THEN ? ELSE display_name END,
+                   claimed_at = COALESCE(claimed_at, CURRENT_TIMESTAMP),
+                   approved_at = COALESCE(approved_at, CURRENT_TIMESTAMP)
+               WHERE id = ?"#,
+        )
+        .bind(hashed)
+        .bind(display_name)
+        .bind(id)
+        .execute(pool)
+        .await
+        .expect("backfill demo credentials");
+
+        id
     }
 
     async fn ensure_tag(pool: &SqlitePool, name: &str) -> i64 {

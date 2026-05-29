@@ -1,5 +1,11 @@
 import { useEffect, useState } from "react";
-import { ChevronDownIcon, ChevronUpIcon, XIcon } from "lucide-react";
+import { Link } from "react-router-dom";
+import {
+  ArrowUpRight,
+  ChevronDownIcon,
+  ChevronUpIcon,
+  XIcon,
+} from "lucide-react";
 import type { Attempt, Tag, Technique } from "@/lib/api";
 import { listAttempts, updateTechnique } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
@@ -198,6 +204,15 @@ export function TechniqueRow({
 
       {expanded && (
         <div className="space-y-6 px-4 pb-6 pt-2">
+          <div className="flex justify-end">
+            <Button asChild variant="link" size="sm" className="h-auto gap-1 p-0 text-xs">
+              <Link to={`/student/${studentId}/technique/${technique.id}`}>
+                Open detail view
+                <ArrowUpRight className="h-3 w-3" aria-hidden />
+              </Link>
+            </Button>
+          </div>
+
           {canEditAll && (
             <section className="space-y-2">
               <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">

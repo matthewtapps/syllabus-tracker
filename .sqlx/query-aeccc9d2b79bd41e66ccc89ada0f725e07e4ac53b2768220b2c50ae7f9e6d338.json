@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE student_techniques\n                 SET updated_at = ?,\n                     last_coach_update_at = ?,\n                     last_coach_update_by_id = ?\n                 WHERE id = ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 4
+    },
+    "nullable": []
+  },
+  "hash": "aeccc9d2b79bd41e66ccc89ada0f725e07e4ac53b2768220b2c50ae7f9e6d338"
+}

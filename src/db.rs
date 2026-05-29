@@ -1835,6 +1835,51 @@ fn prefer_display_name(display: Option<String>, username: Option<String>) -> Opt
     display.filter(|s| !s.is_empty()).or(username)
 }
 
+/// Bump the parent student_technique's activity timestamps to "now" using
+/// the actor's role to pick the right slot. Mirrors how note edits via
+/// `update_student_technique` track activity.
+async fn bump_student_technique_activity(
+    tx: &mut sqlx::Transaction<'_, Sqlite>,
+    student_technique_id: i64,
+    actor: &User,
+) -> Result<(), AppError> {
+    let now = Utc::now().naive_utc();
+    let actor_id = actor.id;
+    match actor.role {
+        Role::Coach | Role::Admin => {
+            sqlx::query!(
+                "UPDATE student_techniques
+                 SET updated_at = ?,
+                     last_coach_update_at = ?,
+                     last_coach_update_by_id = ?
+                 WHERE id = ?",
+                now,
+                now,
+                actor_id,
+                student_technique_id,
+            )
+            .execute(&mut **tx)
+            .await?;
+        }
+        Role::Student => {
+            sqlx::query!(
+                "UPDATE student_techniques
+                 SET updated_at = ?,
+                     last_student_update_at = ?,
+                     last_student_update_by_id = ?
+                 WHERE id = ?",
+                now,
+                now,
+                actor_id,
+                student_technique_id,
+            )
+            .execute(&mut **tx)
+            .await?;
+        }
+    }
+    Ok(())
+}
+
 /// Authorise an actor to read/append attempts for a given student technique.
 /// Coach/admin can act on anyone; a student can only act on their own.
 async fn ensure_can_access_student_technique(
@@ -1944,6 +1989,12 @@ pub async fn create_attempt(
     .await?;
 
     let id = res.last_insert_rowid();
+
+    // Bump the parent student_technique's activity timestamps so this attempt
+    // surfaces in the "recently updated" dashboard sections. The bump reflects
+    // when the attempt was logged (now), not the (possibly backdated)
+    // attempted_at value.
+    bump_student_technique_activity(&mut tx, student_technique_id, actor).await?;
 
     tx.commit().await?;
 
@@ -2144,6 +2195,7 @@ pub async fn update_attempt_note(
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty());
 
+    let mut tx = pool.begin().await?;
     match actor.role {
         Role::Coach | Role::Admin => {
             let stamp = normalised.as_ref().map(|_| now.naive_utc());
@@ -2157,7 +2209,7 @@ pub async fn update_attempt_note(
                 stamp,
                 attempt_id
             )
-            .execute(pool)
+            .execute(&mut *tx)
             .await?;
         }
         Role::Student => {
@@ -2170,10 +2222,15 @@ pub async fn update_attempt_note(
                 stamp,
                 attempt_id
             )
-            .execute(pool)
+            .execute(&mut *tx)
             .await?;
         }
     }
+
+    // Editing or adding a note is meaningful activity on the technique, so
+    // surface it in the dashboard's "recently updated" view too.
+    bump_student_technique_activity(&mut tx, row.student_technique_id, actor).await?;
+    tx.commit().await?;
 
     Ok(())
 }
