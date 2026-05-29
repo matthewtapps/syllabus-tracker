@@ -429,7 +429,7 @@ function TechniqueSection({
           return (
             <li key={t.id}>
               <Link
-                to={`/student/${studentId}`}
+                to={`/student/${studentId}?focus=${t.id}`}
                 className="flex items-center gap-3 px-4 py-3 transition-colors hover:bg-muted/40"
               >
                 <span

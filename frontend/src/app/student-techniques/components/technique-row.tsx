@@ -21,6 +21,7 @@ interface TechniqueRowProps {
   canEditAll: boolean;
   canManageTags: boolean;
   isOwnTechnique: boolean;
+  defaultExpanded?: boolean;
   allTags: Tag[];
   selectedTagFilter: string[];
   onTechniqueUpdate: (technique: Technique) => void;
@@ -34,6 +35,7 @@ export function TechniqueRow({
   canEditAll,
   canManageTags,
   isOwnTechnique,
+  defaultExpanded = false,
   allTags,
   selectedTagFilter,
   onTechniqueUpdate,
@@ -41,7 +43,7 @@ export function TechniqueRow({
   onRequestTagRemoval,
   onEditDefinition,
 }: TechniqueRowProps) {
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(defaultExpanded);
   const status = technique.status as Status;
   const canEditStudentNotes = isOwnTechnique;
   const canManageTagsOnRow = canEditAll || canManageTags;
@@ -62,8 +64,9 @@ export function TechniqueRow({
 
   return (
     <div
+      id={`technique-row-${technique.id}`}
       className={cn(
-        "border-l-4 border-l-transparent transition-colors",
+        "border-l-4 border-l-transparent transition-colors scroll-mt-20",
         expanded ? "bg-muted/20" : "hover:bg-muted/20",
         expanded && statusToBorderClass(status),
       )}

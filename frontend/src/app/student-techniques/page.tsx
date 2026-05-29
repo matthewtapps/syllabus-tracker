@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, BookOpen, GraduationCap, Plus } from 'lucide-react';
 import { toast } from 'sonner';
 import {
@@ -45,6 +45,13 @@ interface StudentTechniquesProps {
 
 export default function StudentTechniques({ user }: StudentTechniquesProps) {
   const { id } = useParams<{ id: string }>();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const focusId = (() => {
+    const raw = searchParams.get('focus');
+    if (!raw) return null;
+    const parsed = parseInt(raw, 10);
+    return Number.isFinite(parsed) ? parsed : null;
+  })();
   const [data, setData] = useState<StudentTechniques | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -90,6 +97,33 @@ export default function StudentTechniques({ user }: StudentTechniquesProps) {
       cancelled = true;
     };
   }, [id]);
+
+  // When landing with ?focus=<id>, clear any filter that would hide the row,
+  // scroll to the row, and consume the param so back/forward navigation behaves.
+  useEffect(() => {
+    if (focusId === null || !data) return;
+    const target = data.techniques.find((t) => t.id === focusId);
+    if (!target) {
+      setSearchParams((prev) => {
+        const next = new URLSearchParams(prev);
+        next.delete('focus');
+        return next;
+      }, { replace: true });
+      return;
+    }
+    setFilterText('');
+    setActiveTab('all');
+    setSelectedTags([]);
+    requestAnimationFrame(() => {
+      const el = document.getElementById(`technique-row-${focusId}`);
+      el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.delete('focus');
+      return next;
+    }, { replace: true });
+  }, [focusId, data, setSearchParams]);
 
   const availableTags = useMemo(() => {
     if (!data) return [];
@@ -411,6 +445,7 @@ export default function StudentTechniques({ user }: StudentTechniquesProps) {
                 canEditAll={data.can_edit_all_techniques}
                 canManageTags={data.can_manage_tags}
                 isOwnTechnique={user.id === data.student.id}
+                defaultExpanded={technique.id === focusId}
                 allTags={allTags}
                 selectedTagFilter={selectedTags}
                 onTechniqueUpdate={updateTechniqueLocally}
