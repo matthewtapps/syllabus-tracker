@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "DELETE FROM collection_techniques WHERE collection_id = ? AND technique_id = ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "bf37b72781a765b36b8babd73fd9fd9ce1ec4e075ab3164460ad518ae6d5f1a9"
+}

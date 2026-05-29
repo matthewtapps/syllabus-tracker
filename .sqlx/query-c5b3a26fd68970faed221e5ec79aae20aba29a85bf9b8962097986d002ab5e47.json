@@ -1,0 +1,44 @@
+{
+  "db_name": "SQLite",
+  "query": "\n        SELECT t.id, t.name, t.description, t.coach_id, t.coach_name\n        FROM collection_techniques ct\n        JOIN techniques t ON t.id = ct.technique_id\n        WHERE ct.collection_id = ?\n        ORDER BY ct.position, t.name\n        ",
+  "describe": {
+    "columns": [
+      {
+        "name": "id",
+        "ordinal": 0,
+        "type_info": "Integer"
+      },
+      {
+        "name": "name",
+        "ordinal": 1,
+        "type_info": "Text"
+      },
+      {
+        "name": "description",
+        "ordinal": 2,
+        "type_info": "Text"
+      },
+      {
+        "name": "coach_id",
+        "ordinal": 3,
+        "type_info": "Integer"
+      },
+      {
+        "name": "coach_name",
+        "ordinal": 4,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      true,
+      false,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "c5b3a26fd68970faed221e5ec79aae20aba29a85bf9b8962097986d002ab5e47"
+}

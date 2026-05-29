@@ -1,0 +1,86 @@
+{
+  "db_name": "SQLite",
+  "query": "\n        SELECT DISTINCT u.id, u.username, u.role, u.display_name, u.archived,\n               u.graduated_at as \"graduated_at: chrono::NaiveDateTime\",\n               u.email,\n               u.claimed_at as \"claimed_at: chrono::NaiveDateTime\",\n               u.approved_at as \"approved_at: chrono::NaiveDateTime\",\n               u.first_name, u.last_name,\n               u.reset_requested_at as \"reset_requested_at: chrono::NaiveDateTime\"\n        FROM users u\n        JOIN student_techniques st ON st.student_id = u.id\n        WHERE st.collection_id = ?\n        ORDER BY u.display_name, u.username\n        ",
+  "describe": {
+    "columns": [
+      {
+        "name": "id",
+        "ordinal": 0,
+        "type_info": "Integer"
+      },
+      {
+        "name": "username",
+        "ordinal": 1,
+        "type_info": "Text"
+      },
+      {
+        "name": "role",
+        "ordinal": 2,
+        "type_info": "Text"
+      },
+      {
+        "name": "display_name",
+        "ordinal": 3,
+        "type_info": "Text"
+      },
+      {
+        "name": "archived",
+        "ordinal": 4,
+        "type_info": "Bool"
+      },
+      {
+        "name": "graduated_at: chrono::NaiveDateTime",
+        "ordinal": 5,
+        "type_info": "Datetime"
+      },
+      {
+        "name": "email",
+        "ordinal": 6,
+        "type_info": "Text"
+      },
+      {
+        "name": "claimed_at: chrono::NaiveDateTime",
+        "ordinal": 7,
+        "type_info": "Datetime"
+      },
+      {
+        "name": "approved_at: chrono::NaiveDateTime",
+        "ordinal": 8,
+        "type_info": "Datetime"
+      },
+      {
+        "name": "first_name",
+        "ordinal": 9,
+        "type_info": "Text"
+      },
+      {
+        "name": "last_name",
+        "ordinal": 10,
+        "type_info": "Text"
+      },
+      {
+        "name": "reset_requested_at: chrono::NaiveDateTime",
+        "ordinal": 11,
+        "type_info": "Datetime"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      true,
+      false,
+      true,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "89c1fecce2ee67bbac5150e346272871195bfb48e39f46154010b975d8ce10b1"
+}

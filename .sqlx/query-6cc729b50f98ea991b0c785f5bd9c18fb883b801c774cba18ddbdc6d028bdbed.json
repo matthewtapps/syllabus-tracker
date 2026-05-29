@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE student_techniques\n         SET collection_id = NULL\n         WHERE collection_id = ? AND technique_id = ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "6cc729b50f98ea991b0c785f5bd9c18fb883b801c774cba18ddbdc6d028bdbed"
+}

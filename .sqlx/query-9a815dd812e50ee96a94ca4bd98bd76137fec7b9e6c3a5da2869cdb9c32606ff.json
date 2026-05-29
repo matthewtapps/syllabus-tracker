@@ -72,6 +72,11 @@
         "name": "last_student_update_by_id",
         "ordinal": 13,
         "type_info": "Integer"
+      },
+      {
+        "name": "collection_id",
+        "ordinal": 14,
+        "type_info": "Integer"
       }
     ],
     "parameters": {
@@ -79,6 +84,7 @@
     },
     "nullable": [
       false,
+      true,
       true,
       true,
       true,

@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT technique_id FROM collection_techniques WHERE collection_id = ? ORDER BY position",
+  "describe": {
+    "columns": [
+      {
+        "name": "technique_id",
+        "ordinal": 0,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "c55a66956ca18fbb87687161d3142f2898faf12a661294535a112cc8b326d773"
+}

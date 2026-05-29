@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT OR IGNORE INTO collection_techniques (collection_id, technique_id, position)\n         VALUES (?, ?,\n            (SELECT COALESCE(MAX(position), -1) + 1 FROM collection_techniques WHERE collection_id = ?))",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": []
+  },
+  "hash": "c2398bf88f2f092edc8b6fc1bcd8ecbc44b67656d3c31e5b444416764775d498"
+}

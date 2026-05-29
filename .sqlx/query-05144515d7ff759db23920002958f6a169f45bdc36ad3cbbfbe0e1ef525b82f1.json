@@ -1,0 +1,56 @@
+{
+  "db_name": "SQLite",
+  "query": "\n        SELECT\n            c.id, c.name, c.description, c.coach_id,\n            c.created_at as \"created_at: chrono::NaiveDateTime\",\n            (SELECT COUNT(*) FROM collection_techniques WHERE collection_id = c.id)\n                as \"technique_count!: i64\",\n            (SELECT COUNT(DISTINCT student_id) FROM student_techniques WHERE collection_id = c.id)\n                as \"student_count!: i64\"\n        FROM collections c\n        ORDER BY c.name\n        ",
+  "describe": {
+    "columns": [
+      {
+        "name": "id",
+        "ordinal": 0,
+        "type_info": "Integer"
+      },
+      {
+        "name": "name",
+        "ordinal": 1,
+        "type_info": "Text"
+      },
+      {
+        "name": "description",
+        "ordinal": 2,
+        "type_info": "Text"
+      },
+      {
+        "name": "coach_id",
+        "ordinal": 3,
+        "type_info": "Integer"
+      },
+      {
+        "name": "created_at: chrono::NaiveDateTime",
+        "ordinal": 4,
+        "type_info": "Datetime"
+      },
+      {
+        "name": "technique_count!: i64",
+        "ordinal": 5,
+        "type_info": "Integer"
+      },
+      {
+        "name": "student_count!: i64",
+        "ordinal": 6,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      true,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "05144515d7ff759db23920002958f6a169f45bdc36ad3cbbfbe0e1ef525b82f1"
+}
