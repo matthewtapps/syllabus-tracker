@@ -1,0 +1,26 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT date(a.attempted_at) as \"date!: String\",\n                  COUNT(*) as \"count!: i64\"\n           FROM attempts a\n           JOIN student_techniques st ON st.id = a.student_technique_id\n           WHERE st.student_id = ?\n             AND date(a.attempted_at) >= ?\n             AND date(a.attempted_at) <= ?\n           GROUP BY date(a.attempted_at)\n           ORDER BY 1",
+  "describe": {
+    "columns": [
+      {
+        "name": "date!: String",
+        "ordinal": 0,
+        "type_info": "Text"
+      },
+      {
+        "name": "count!: i64",
+        "ordinal": 1,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": [
+      true,
+      false
+    ]
+  },
+  "hash": "13f75e2e90ee81f8e0f72494c2f4a6b1fdf0998217705b085e2b1a96bcca8d8a"
+}

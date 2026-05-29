@@ -54,6 +54,8 @@ pub struct StudentTechnique {
     pub collection_id: Option<i64>,
     pub collection_name: Option<String>,
     pub tags: Vec<Tag>,
+    pub attempt_count: i64,
+    pub last_attempt_at: Option<DateTime<Utc>>,
 }
 
 #[derive(sqlx::FromRow, Clone, Default)]
@@ -101,8 +103,26 @@ impl From<DbStudentTechnique> for StudentTechnique {
             collection_id: db.collection_id,
             collection_name: None,
             tags: Vec::new(),
+            attempt_count: 0,
+            last_attempt_at: None,
         }
     }
+}
+
+#[derive(Debug, Serialize, Clone)]
+pub struct Attempt {
+    pub id: i64,
+    pub student_technique_id: i64,
+    pub recorded_by_id: i64,
+    pub recorded_by_name: Option<String>,
+    pub attempted_at: DateTime<Utc>,
+    pub coach_note: Option<String>,
+    pub coach_note_by_id: Option<i64>,
+    pub coach_note_by_name: Option<String>,
+    pub coach_note_at: Option<DateTime<Utc>>,
+    pub student_note: Option<String>,
+    pub student_note_at: Option<DateTime<Utc>>,
+    pub created_at: DateTime<Utc>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]

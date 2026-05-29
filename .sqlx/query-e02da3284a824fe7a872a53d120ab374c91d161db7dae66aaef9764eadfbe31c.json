@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO attempts (\n            student_technique_id, recorded_by_id, attempted_at,\n            coach_note, coach_note_by_id, coach_note_at,\n            student_note, student_note_at\n         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 8
+    },
+    "nullable": []
+  },
+  "hash": "e02da3284a824fe7a872a53d120ab374c91d161db7dae66aaef9764eadfbe31c"
+}

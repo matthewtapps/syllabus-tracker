@@ -1,0 +1,26 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT recorded_by_id, student_technique_id FROM attempts WHERE id = ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "recorded_by_id",
+        "ordinal": 0,
+        "type_info": "Integer"
+      },
+      {
+        "name": "student_technique_id",
+        "ordinal": 1,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "dc697e57ba116843355fd908427f294641b87a64440f6b7ce12f2921bc2c418a"
+}

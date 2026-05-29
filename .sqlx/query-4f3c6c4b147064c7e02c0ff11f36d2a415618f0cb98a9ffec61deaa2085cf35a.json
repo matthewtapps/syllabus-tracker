@@ -1,0 +1,26 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT COUNT(*) as \"count!: i64\",\n                  MAX(attempted_at) as \"last?: NaiveDateTime\"\n           FROM attempts\n           WHERE student_technique_id = ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "count!: i64",
+        "ordinal": 0,
+        "type_info": "Integer"
+      },
+      {
+        "name": "last?: NaiveDateTime",
+        "ordinal": 1,
+        "type_info": "Null"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      true
+    ]
+  },
+  "hash": "4f3c6c4b147064c7e02c0ff11f36d2a415618f0cb98a9ffec61deaa2085cf35a"
+}

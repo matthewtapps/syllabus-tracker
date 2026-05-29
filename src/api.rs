@@ -17,18 +17,20 @@ use crate::auth::UserSession;
 use crate::auth::{Permission, User};
 use crate::db::{
     add_tag_to_technique, add_techniques_to_collection, add_techniques_to_student, approve_user,
-    assign_collection_to_student, authenticate_user, claim_invite, count_techniques,
-    create_and_assign_technique, create_collection, create_invite_token,
+    assign_collection_to_student, attempt_buckets_for_student, attempt_summary_for_student,
+    attempt_weekly_buckets_for_technique, authenticate_user, claim_invite, count_techniques,
+    create_and_assign_technique, create_attempt, create_collection, create_invite_token,
     create_self_registered_user, create_tag, create_technique_in_collection, create_user,
-    create_user_session, create_user_stub, delete_collection, delete_tag, find_user_by_username,
-    find_valid_invite_token, get_all_collections, get_all_tags, get_all_users, get_collection,
-    get_student_technique, get_student_techniques, get_students_by_recent_updates,
-    get_students_with_collection, get_tags_for_technique, get_unassigned_techniques, get_user,
-    invalidate_session, read_and_bump_last_seen, remove_tag_from_technique,
+    create_user_session, create_user_stub, delete_attempt, delete_collection, delete_tag,
+    find_user_by_username, find_valid_invite_token, get_all_collections, get_all_tags,
+    get_all_users, get_collection, get_student_technique, get_student_techniques,
+    get_students_by_recent_updates, get_students_with_collection, get_tags_for_technique,
+    get_unassigned_techniques, get_user, invalidate_session, list_attempts,
+    list_recent_attempts_for_student, read_and_bump_last_seen, remove_tag_from_technique,
     remove_technique_from_collection, request_password_reset, reset_user_claim, set_user_archived,
-    set_user_graduated, update_collection, update_student_notes, update_student_technique,
-    update_technique, update_user_display_name, update_user_password, update_user_role,
-    update_username, Collection,
+    set_user_graduated, update_attempt_note, update_attempt_timestamp, update_collection,
+    update_student_notes, update_student_technique, update_technique, update_user_display_name,
+    update_user_password, update_user_role, update_username, AttemptSuggestion, Collection,
 };
 use crate::error::AppError;
 use crate::models::Tag;
@@ -270,6 +272,8 @@ pub struct TechniqueResponse {
     pub last_student_update_by_name: Option<String>,
     pub has_new_student_activity: bool,
     pub tags: Vec<TagResponse>,
+    pub attempt_count: i64,
+    pub last_attempt_at: Option<String>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -330,6 +334,8 @@ pub async fn api_get_student_techniques(
                 last_student_update_by_name: t.last_student_update_by_name,
                 has_new_student_activity,
                 tags: t.tags.into_iter().map(TagResponse::from).collect(),
+                attempt_count: t.attempt_count,
+                last_attempt_at: t.last_attempt_at.map(|d| d.to_rfc3339()),
             }
         })
         .collect();
@@ -1348,4 +1354,299 @@ pub async fn api_assign_collection(
     user.require_permission(Permission::AssignTechniques)?;
     assign_collection_to_student(db, student_id, collection_id).await?;
     Ok(Status::Ok)
+}
+
+// ---- Attempts ----
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct AttemptResponse {
+    pub id: i64,
+    pub student_technique_id: i64,
+    pub recorded_by_id: i64,
+    pub recorded_by_name: Option<String>,
+    pub attempted_at: String,
+    pub coach_note: Option<String>,
+    pub coach_note_by_id: Option<i64>,
+    pub coach_note_by_name: Option<String>,
+    pub coach_note_at: Option<String>,
+    pub student_note: Option<String>,
+    pub student_note_at: Option<String>,
+    pub created_at: String,
+}
+
+impl From<crate::models::Attempt> for AttemptResponse {
+    fn from(a: crate::models::Attempt) -> Self {
+        Self {
+            id: a.id,
+            student_technique_id: a.student_technique_id,
+            recorded_by_id: a.recorded_by_id,
+            recorded_by_name: a.recorded_by_name,
+            attempted_at: a.attempted_at.to_rfc3339(),
+            coach_note: a.coach_note,
+            coach_note_by_id: a.coach_note_by_id,
+            coach_note_by_name: a.coach_note_by_name,
+            coach_note_at: a.coach_note_at.map(|d| d.to_rfc3339()),
+            student_note: a.student_note,
+            student_note_at: a.student_note_at.map(|d| d.to_rfc3339()),
+            created_at: a.created_at.to_rfc3339(),
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct AttemptListResponse {
+    pub attempts: Vec<AttemptResponse>,
+}
+
+#[derive(Deserialize, Validate, Clone)]
+pub struct CreateAttemptRequest {
+    pub attempted_at: Option<String>,
+    #[validate(length(max = 2000, message = "Note must be under 2000 characters"))]
+    pub note: Option<String>,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct CreateAttemptResponse {
+    pub attempt: AttemptResponse,
+    pub status_suggestion: Option<String>,
+}
+
+fn parse_optional_datetime(raw: Option<&str>) -> Result<Option<chrono::DateTime<chrono::Utc>>, ApiError> {
+    match raw {
+        None => Ok(None),
+        Some(s) => match chrono::DateTime::parse_from_rfc3339(s) {
+            Ok(dt) => Ok(Some(dt.with_timezone(&chrono::Utc))),
+            Err(_) => Err(Status::BadRequest.into()),
+        },
+    }
+}
+
+#[get("/student_technique/<id>/attempts")]
+pub async fn api_list_attempts(
+    id: i64,
+    user: User,
+    db: &State<Pool<Sqlite>>,
+) -> ApiResult<Json<AttemptListResponse>> {
+    let st = get_student_technique(db, id).await?;
+    if user.id != st.student_id && !user.has_permission(Permission::ViewAllStudents) {
+        return Err(Status::Forbidden.into());
+    }
+    let attempts = list_attempts(db, id).await?;
+    Ok(Json(AttemptListResponse {
+        attempts: attempts.into_iter().map(AttemptResponse::from).collect(),
+    }))
+}
+
+#[post("/student_technique/<id>/attempts", data = "<body>")]
+pub async fn api_create_attempt(
+    id: i64,
+    body: Json<CreateAttemptRequest>,
+    user: User,
+    db: &State<Pool<Sqlite>>,
+) -> ApiResult<Json<CreateAttemptResponse>> {
+    body.validate()?;
+    let attempted_at = parse_optional_datetime(body.attempted_at.as_deref())?
+        .unwrap_or_else(chrono::Utc::now);
+    let result = create_attempt(db, &user, id, attempted_at, body.note.as_deref()).await?;
+    let suggestion = match result.suggestion {
+        AttemptSuggestion::Amber => Some("amber".to_string()),
+        AttemptSuggestion::None => None,
+    };
+    Ok(Json(CreateAttemptResponse {
+        attempt: AttemptResponse::from(result.attempt),
+        status_suggestion: suggestion,
+    }))
+}
+
+#[derive(Deserialize, Validate, Clone)]
+pub struct UpdateAttemptRequest {
+    pub attempted_at: Option<String>,
+    #[validate(length(max = 2000, message = "Note must be under 2000 characters"))]
+    pub note: Option<String>,
+    pub clear_note: Option<bool>,
+}
+
+#[put("/attempts/<id>", data = "<body>")]
+pub async fn api_update_attempt(
+    id: i64,
+    body: Json<UpdateAttemptRequest>,
+    user: User,
+    db: &State<Pool<Sqlite>>,
+) -> ApiResult<Status> {
+    body.validate()?;
+    if let Some(raw) = body.attempted_at.as_deref() {
+        let dt = chrono::DateTime::parse_from_rfc3339(raw)
+            .map_err(|_| ApiError::from(Status::BadRequest))?
+            .with_timezone(&chrono::Utc);
+        update_attempt_timestamp(db, &user, id, dt).await?;
+    }
+    if body.clear_note == Some(true) {
+        update_attempt_note(db, &user, id, None).await?;
+    } else if let Some(note) = &body.note {
+        update_attempt_note(db, &user, id, Some(note)).await?;
+    }
+    Ok(Status::Ok)
+}
+
+#[delete("/attempts/<id>")]
+pub async fn api_delete_attempt(
+    id: i64,
+    user: User,
+    db: &State<Pool<Sqlite>>,
+) -> ApiResult<Status> {
+    delete_attempt(db, &user, id).await?;
+    Ok(Status::Ok)
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct RecentAttemptItemResponse {
+    pub id: i64,
+    pub student_technique_id: i64,
+    pub technique_id: i64,
+    pub technique_name: String,
+    pub attempted_at: String,
+    pub coach_note: Option<String>,
+    pub student_note: Option<String>,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct RecentAttemptsResponse {
+    pub attempts: Vec<RecentAttemptItemResponse>,
+}
+
+#[derive(FromForm)]
+pub struct RecentAttemptsQuery {
+    limit: Option<i64>,
+}
+
+#[get("/student/<id>/attempts/recent?<params..>")]
+pub async fn api_recent_attempts(
+    id: i64,
+    params: RecentAttemptsQuery,
+    user: User,
+    db: &State<Pool<Sqlite>>,
+) -> ApiResult<Json<RecentAttemptsResponse>> {
+    if user.id != id && !user.has_permission(Permission::ViewAllStudents) {
+        return Err(Status::Forbidden.into());
+    }
+    let limit = params.limit.unwrap_or(5).clamp(1, 50);
+    let items = list_recent_attempts_for_student(db, id, limit).await?;
+    Ok(Json(RecentAttemptsResponse {
+        attempts: items
+            .into_iter()
+            .map(|item| RecentAttemptItemResponse {
+                id: item.id,
+                student_technique_id: item.student_technique_id,
+                technique_id: item.technique_id,
+                technique_name: item.technique_name,
+                attempted_at: item.attempted_at.to_rfc3339(),
+                coach_note: item.coach_note,
+                student_note: item.student_note,
+            })
+            .collect(),
+    }))
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct AttemptSummaryResponse {
+    pub this_week: i64,
+    pub this_month: i64,
+    pub total: i64,
+}
+
+#[get("/student/<id>/attempts/summary")]
+pub async fn api_attempt_summary(
+    id: i64,
+    user: User,
+    db: &State<Pool<Sqlite>>,
+) -> ApiResult<Json<AttemptSummaryResponse>> {
+    if user.id != id && !user.has_permission(Permission::ViewAllStudents) {
+        return Err(Status::Forbidden.into());
+    }
+    let summary = attempt_summary_for_student(db, id).await?;
+    Ok(Json(AttemptSummaryResponse {
+        this_week: summary.this_week,
+        this_month: summary.this_month,
+        total: summary.total,
+    }))
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct AttemptBucketResponse {
+    pub date: String,
+    pub count: i64,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct AttemptBucketsResponse {
+    pub buckets: Vec<AttemptBucketResponse>,
+}
+
+#[derive(FromForm)]
+pub struct HeatmapQuery {
+    from: Option<String>,
+    to: Option<String>,
+}
+
+#[get("/student/<id>/attempts/heatmap?<params..>")]
+pub async fn api_attempt_heatmap(
+    id: i64,
+    params: HeatmapQuery,
+    user: User,
+    db: &State<Pool<Sqlite>>,
+) -> ApiResult<Json<AttemptBucketsResponse>> {
+    if user.id != id && !user.has_permission(Permission::ViewAllStudents) {
+        return Err(Status::Forbidden.into());
+    }
+    let today = chrono::Utc::now().date_naive();
+    let default_from = today - chrono::Duration::days(365);
+    let from = match params.from.as_deref() {
+        Some(s) => chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d")
+            .map_err(|_| ApiError::from(Status::BadRequest))?,
+        None => default_from,
+    };
+    let to = match params.to.as_deref() {
+        Some(s) => chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d")
+            .map_err(|_| ApiError::from(Status::BadRequest))?,
+        None => today,
+    };
+    let buckets = attempt_buckets_for_student(db, id, from, to).await?;
+    Ok(Json(AttemptBucketsResponse {
+        buckets: buckets
+            .into_iter()
+            .map(|b| AttemptBucketResponse {
+                date: b.date.format("%Y-%m-%d").to_string(),
+                count: b.count,
+            })
+            .collect(),
+    }))
+}
+
+#[derive(FromForm)]
+pub struct SparklineQuery {
+    weeks: Option<i64>,
+}
+
+#[get("/student_technique/<id>/attempts/sparkline?<params..>")]
+pub async fn api_attempt_sparkline(
+    id: i64,
+    params: SparklineQuery,
+    user: User,
+    db: &State<Pool<Sqlite>>,
+) -> ApiResult<Json<AttemptBucketsResponse>> {
+    let st = get_student_technique(db, id).await?;
+    if user.id != st.student_id && !user.has_permission(Permission::ViewAllStudents) {
+        return Err(Status::Forbidden.into());
+    }
+    let weeks = params.weeks.unwrap_or(12).clamp(1, 104);
+    let buckets = attempt_weekly_buckets_for_technique(db, id, weeks).await?;
+    Ok(Json(AttemptBucketsResponse {
+        buckets: buckets
+            .into_iter()
+            .map(|b| AttemptBucketResponse {
+                date: b.date.format("%Y-%m-%d").to_string(),
+                count: b.count,
+            })
+            .collect(),
+    }))
 }

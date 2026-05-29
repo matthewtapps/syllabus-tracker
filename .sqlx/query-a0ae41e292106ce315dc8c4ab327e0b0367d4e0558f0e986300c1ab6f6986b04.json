@@ -1,0 +1,26 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT st.status, COUNT(a.id) as \"attempt_count!: i64\"\n           FROM student_techniques st\n           LEFT JOIN attempts a ON a.student_technique_id = st.id\n           WHERE st.id = ?\n           GROUP BY st.id",
+  "describe": {
+    "columns": [
+      {
+        "name": "status",
+        "ordinal": 0,
+        "type_info": "Text"
+      },
+      {
+        "name": "attempt_count!: i64",
+        "ordinal": 1,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      true,
+      false
+    ]
+  },
+  "hash": "a0ae41e292106ce315dc8c4ab327e0b0367d4e0558f0e986300c1ab6f6986b04"
+}

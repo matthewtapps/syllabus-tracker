@@ -1,0 +1,32 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT\n            COUNT(*) as \"total!: i64\",\n            SUM(CASE WHEN a.attempted_at >= datetime('now', '-7 days') THEN 1 ELSE 0 END) as \"this_week!: i64\",\n            SUM(CASE WHEN a.attempted_at >= datetime('now', '-30 days') THEN 1 ELSE 0 END) as \"this_month!: i64\"\n           FROM attempts a\n           JOIN student_techniques st ON st.id = a.student_technique_id\n           WHERE st.student_id = ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "total!: i64",
+        "ordinal": 0,
+        "type_info": "Integer"
+      },
+      {
+        "name": "this_week!: i64",
+        "ordinal": 1,
+        "type_info": "Integer"
+      },
+      {
+        "name": "this_month!: i64",
+        "ordinal": 2,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      true,
+      true
+    ]
+  },
+  "hash": "7f0f26f64011c0f1824795cc7d020994131e6d4a515b1bcd59bcd8421eb6457e"
+}

@@ -93,3 +93,21 @@ CREATE TABLE IF NOT EXISTS technique_tags (
     FOREIGN KEY (technique_id) REFERENCES techniques (id) ON DELETE CASCADE,
     FOREIGN KEY (tag_id) REFERENCES tags (id) ON DELETE CASCADE
 );
+
+CREATE TABLE IF NOT EXISTS attempts (
+    id INTEGER PRIMARY KEY,
+    student_technique_id INTEGER NOT NULL REFERENCES student_techniques (id) ON DELETE CASCADE,
+    recorded_by_id INTEGER NOT NULL REFERENCES users (id),
+    attempted_at TIMESTAMP NOT NULL,
+    coach_note TEXT,
+    coach_note_by_id INTEGER REFERENCES users (id),
+    coach_note_at TIMESTAMP,
+    student_note TEXT,
+    student_note_at TIMESTAMP,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_attempts_student_technique
+    ON attempts (student_technique_id, attempted_at DESC);
+CREATE INDEX IF NOT EXISTS idx_attempts_recorder
+    ON attempts (recorded_by_id, attempted_at DESC);

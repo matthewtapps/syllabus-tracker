@@ -1,4 +1,5 @@
 pub mod api;
+pub mod attempts;
 pub mod db;
 pub mod seed;
 pub mod sessions;

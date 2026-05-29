@@ -1,0 +1,56 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT a.id as \"id!: i64\",\n                  a.student_technique_id as \"student_technique_id!: i64\",\n                  st.technique_id as \"technique_id!: i64\",\n                  st.technique_name as \"technique_name: String\",\n                  a.attempted_at as \"attempted_at!: NaiveDateTime\",\n                  a.coach_note, a.student_note\n           FROM attempts a\n           JOIN student_techniques st ON st.id = a.student_technique_id\n           WHERE st.student_id = ?\n           ORDER BY a.attempted_at DESC, a.id DESC\n           LIMIT ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "id!: i64",
+        "ordinal": 0,
+        "type_info": "Integer"
+      },
+      {
+        "name": "student_technique_id!: i64",
+        "ordinal": 1,
+        "type_info": "Integer"
+      },
+      {
+        "name": "technique_id!: i64",
+        "ordinal": 2,
+        "type_info": "Integer"
+      },
+      {
+        "name": "technique_name: String",
+        "ordinal": 3,
+        "type_info": "Text"
+      },
+      {
+        "name": "attempted_at!: NaiveDateTime",
+        "ordinal": 4,
+        "type_info": "Datetime"
+      },
+      {
+        "name": "coach_note",
+        "ordinal": 5,
+        "type_info": "Text"
+      },
+      {
+        "name": "student_note",
+        "ordinal": 6,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": [
+      true,
+      false,
+      true,
+      true,
+      false,
+      true,
+      true
+    ]
+  },
+  "hash": "c492938a29dc7e93618d059b1306d43dabdcd0af4a767104d048511e7e1d830e"
+}
