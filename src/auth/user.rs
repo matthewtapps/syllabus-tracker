@@ -55,10 +55,6 @@ impl From<DbUser> for User {
 }
 
 impl User {
-    pub fn is_graduated(&self) -> bool {
-        self.graduated_at.is_some()
-    }
-
     pub fn has_permission(&self, permission: Permission) -> bool {
         self.role.has_permission(permission)
     }
