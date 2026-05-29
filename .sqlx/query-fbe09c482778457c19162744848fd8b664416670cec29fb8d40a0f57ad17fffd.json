@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT id, username, password, role, display_name, archived FROM users WHERE username = ?",
+  "query": "SELECT id, username, password, role, display_name, archived,\n                  CAST(graduated_at AS TEXT) as \"graduated_at?: String\"\n           FROM users WHERE username = ?",
   "describe": {
     "columns": [
       {
@@ -32,6 +32,11 @@
         "name": "archived",
         "ordinal": 5,
         "type_info": "Bool"
+      },
+      {
+        "name": "graduated_at?: String",
+        "ordinal": 6,
+        "type_info": "Null"
       }
     ],
     "parameters": {
@@ -43,8 +48,9 @@
       false,
       false,
       true,
-      false
+      false,
+      null
     ]
   },
-  "hash": "d44714cbe42d73043c21cb9b31c1ea7915b640cfffe234dbf79e4c82514bcdbd"
+  "hash": "fbe09c482778457c19162744848fd8b664416670cec29fb8d40a0f57ad17fffd"
 }

@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE users SET graduated_at = ?, graduated_by_id = ? WHERE id = ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": []
+  },
+  "hash": "1dbdc5209bce1cf1905b39cb0b942589e0d7261aef7308e560da4e2f0d60a030"
+}
