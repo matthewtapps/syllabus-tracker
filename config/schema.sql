@@ -27,8 +27,14 @@ CREATE TABLE IF NOT EXISTS student_techniques (
     coach_notes TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    last_coach_update_at TIMESTAMP,
+    last_coach_update_by_id INTEGER,
+    last_student_update_at TIMESTAMP,
+    last_student_update_by_id INTEGER,
     FOREIGN KEY (technique_id) REFERENCES techniques (id),
-    FOREIGN KEY (student_id) REFERENCES users (id)
+    FOREIGN KEY (student_id) REFERENCES users (id),
+    FOREIGN KEY (last_coach_update_by_id) REFERENCES users (id),
+    FOREIGN KEY (last_student_update_by_id) REFERENCES users (id)
 );
 
 CREATE TABLE IF NOT EXISTS user_sessions (

@@ -293,6 +293,156 @@ mod tests {
 
         assert!(has_triangle, "Triangle technique was not assigned");
     }
+
+    #[rocket::async_test]
+    async fn test_coach_update_bumps_coach_columns() {
+        let test_db = TestDbBuilder::new()
+            .coach("coach_user", Some("Coach User"))
+            .student("student_user", Some("Student User"))
+            .technique("Armbar", "Description of armbar", Some("coach_user"))
+            .assign_technique(Some("Armbar"), Some("student_user"), "red", "", "")
+            .build()
+            .await
+            .expect("Failed to build test DB");
+
+        let pool = test_db.pool.clone();
+        let (client, test_db) = setup_test_client(test_db).await;
+        let student_technique_id = test_db
+            .student_technique_id("student_user", "Armbar")
+            .await
+            .expect("Failed to get student technique id");
+        let coach_id = test_db.user_id("coach_user").expect("Coach not found");
+
+        let cookies = login_test_user(&client, "coach_user", "password123").await;
+        let response = client
+            .put(format!("/api/student_technique/{}", student_technique_id))
+            .cookies(cookies)
+            .header(ContentType::JSON)
+            .body(json!({ "status": "amber" }).to_string())
+            .dispatch()
+            .await;
+        assert_eq!(response.status(), Status::Ok);
+
+        let updated = get_student_technique(&pool, student_technique_id)
+            .await
+            .expect("Failed to fetch updated technique");
+
+        assert!(
+            updated.last_coach_update_at.is_some(),
+            "last_coach_update_at should be set after coach update"
+        );
+        assert_eq!(updated.last_coach_update_by_id, Some(coach_id));
+        assert!(
+            updated.last_student_update_at.is_none(),
+            "last_student_update_at should remain unset after coach update"
+        );
+    }
+
+    #[rocket::async_test]
+    async fn test_student_update_bumps_student_columns() {
+        let test_db = TestDbBuilder::new()
+            .coach("coach_user", Some("Coach User"))
+            .student("student_user", Some("Student User"))
+            .technique("Armbar", "Description of armbar", Some("coach_user"))
+            .assign_technique(Some("Armbar"), Some("student_user"), "red", "", "")
+            .build()
+            .await
+            .expect("Failed to build test DB");
+
+        let pool = test_db.pool.clone();
+        let (client, test_db) = setup_test_client(test_db).await;
+        let student_technique_id = test_db
+            .student_technique_id("student_user", "Armbar")
+            .await
+            .expect("Failed to get student technique id");
+        let student_id = test_db.user_id("student_user").expect("Student not found");
+
+        let cookies = login_test_user(&client, "student_user", "password123").await;
+        let response = client
+            .put(format!("/api/student_technique/{}", student_technique_id))
+            .cookies(cookies)
+            .header(ContentType::JSON)
+            .body(json!({ "student_notes": "I worked on this today" }).to_string())
+            .dispatch()
+            .await;
+        assert_eq!(response.status(), Status::Ok);
+
+        let updated = get_student_technique(&pool, student_technique_id)
+            .await
+            .expect("Failed to fetch updated technique");
+
+        assert!(
+            updated.last_student_update_at.is_some(),
+            "last_student_update_at should be set after student update"
+        );
+        assert_eq!(updated.last_student_update_by_id, Some(student_id));
+        assert!(
+            updated.last_coach_update_at.is_none(),
+            "last_coach_update_at should remain unset after student-only update"
+        );
+    }
+
+    #[rocket::async_test]
+    async fn test_has_new_student_activity_flag() {
+        let test_db = TestDbBuilder::new()
+            .coach("coach_user", Some("Coach User"))
+            .student("student_user", Some("Student User"))
+            .technique("Armbar", "Description of armbar", Some("coach_user"))
+            .assign_technique(Some("Armbar"), Some("student_user"), "red", "", "")
+            .build()
+            .await
+            .expect("Failed to build test DB");
+
+        let (client, test_db) = setup_test_client(test_db).await;
+        let student_id = test_db.user_id("student_user").expect("Student not found");
+        let student_technique_id = test_db
+            .student_technique_id("student_user", "Armbar")
+            .await
+            .expect("Failed to get student technique id");
+
+        // Coach edits first, then student edits after.
+        let coach_cookies = login_test_user(&client, "coach_user", "password123").await;
+        client
+            .put(format!("/api/student_technique/{}", student_technique_id))
+            .cookies(coach_cookies.clone())
+            .header(ContentType::JSON)
+            .body(json!({ "status": "amber" }).to_string())
+            .dispatch()
+            .await;
+
+        let student_cookies = login_test_user(&client, "student_user", "password123").await;
+        client
+            .put(format!("/api/student_technique/{}", student_technique_id))
+            .cookies(student_cookies)
+            .header(ContentType::JSON)
+            .body(json!({ "student_notes": "post-coach edit" }).to_string())
+            .dispatch()
+            .await;
+
+        // Fetch as coach and check the flag.
+        let response = client
+            .get(format!("/api/student/{}/techniques", student_id))
+            .cookies(coach_cookies)
+            .dispatch()
+            .await;
+        assert_eq!(response.status(), Status::Ok);
+        let body = response.into_string().await.unwrap();
+        let data: StudentTechniquesResponse = serde_json::from_str(&body).unwrap();
+        let t = data
+            .techniques
+            .iter()
+            .find(|t| t.id == student_technique_id)
+            .expect("technique missing from response");
+
+        assert!(
+            t.has_new_student_activity,
+            "expected has_new_student_activity=true when student edited after coach"
+        );
+        assert!(t.last_coach_update_at.is_some());
+        assert!(t.last_student_update_at.is_some());
+        assert_eq!(t.last_coach_update_by_name.as_deref(), Some("Coach User"));
+        assert_eq!(t.last_student_update_by_name.as_deref(), Some("Student User"));
+    }
 }
 
 #[rocket::async_test]

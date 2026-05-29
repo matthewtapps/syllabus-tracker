@@ -3,7 +3,7 @@ use std::collections::{HashMap, hash_map::Entry};
 use crate::{
     auth::{DbUser, DbUserSession, Role, User, UserSession},
     error::AppError,
-    models::{DbTag, Tag},
+    models::{DbTag, Tag, naive_to_utc},
 };
 use chrono::{NaiveDateTime, Utc};
 use sqlx::{Pool, Sqlite};
@@ -243,10 +243,18 @@ pub async fn get_student_techniques(
     let rows = sqlx::query!(
         r#"
         SELECT st.id, st.technique_id, st.technique_name, st.technique_description,
-               st.student_id, st.status, st.student_notes, st.coach_notes, 
+               st.student_id, st.status, st.student_notes, st.coach_notes,
                st.created_at, st.updated_at,
+               st.last_coach_update_at, st.last_coach_update_by_id,
+               st.last_student_update_at, st.last_student_update_by_id,
+               cu.display_name as coach_updater_display_name,
+               cu.username as coach_updater_username,
+               su.display_name as student_updater_display_name,
+               su.username as student_updater_username,
                tag.id as tag_id, tag.name as tag_name
         FROM student_techniques st
+        LEFT JOIN users cu ON st.last_coach_update_by_id = cu.id
+        LEFT JOIN users su ON st.last_student_update_by_id = su.id
         LEFT JOIN technique_tags tt ON st.technique_id = tt.technique_id
         LEFT JOIN tags tag ON tt.tag_id = tag.id
         WHERE st.student_id = ?
@@ -263,6 +271,15 @@ pub async fn get_student_techniques(
         let technique_id = row.id;
 
         if let Entry::Vacant(e) = techniques_map.entry(technique_id) {
+            let coach_updater_name = row
+                .coach_updater_display_name
+                .filter(|s| !s.is_empty())
+                .or(row.coach_updater_username);
+            let student_updater_name = row
+                .student_updater_display_name
+                .filter(|s| !s.is_empty())
+                .or(row.student_updater_username);
+
             let technique = StudentTechnique {
                 id: technique_id,
                 technique_id: row.technique_id.unwrap_or_default(),
@@ -272,14 +289,14 @@ pub async fn get_student_techniques(
                 status: row.status.unwrap_or_default(),
                 student_notes: row.student_notes.unwrap_or_default(),
                 coach_notes: row.coach_notes.unwrap_or_default(),
-                created_at: row
-                    .created_at
-                    .map(|dt| chrono::DateTime::<Utc>::from_naive_utc_and_offset(dt, Utc))
-                    .unwrap_or_else(Utc::now),
-                updated_at: row
-                    .updated_at
-                    .map(|dt| chrono::DateTime::<Utc>::from_naive_utc_and_offset(dt, Utc))
-                    .unwrap_or_else(Utc::now),
+                created_at: row.created_at.map(naive_to_utc).unwrap_or_else(Utc::now),
+                updated_at: row.updated_at.map(naive_to_utc).unwrap_or_else(Utc::now),
+                last_coach_update_at: row.last_coach_update_at.map(naive_to_utc),
+                last_coach_update_by_id: row.last_coach_update_by_id,
+                last_coach_update_by_name: coach_updater_name,
+                last_student_update_at: row.last_student_update_at.map(naive_to_utc),
+                last_student_update_by_id: row.last_student_update_by_id,
+                last_student_update_by_name: student_updater_name,
                 tags: Vec::new(),
             };
             e.insert(technique);
@@ -344,28 +361,55 @@ pub async fn get_student_technique(
     Ok(technique)
 }
 
-#[instrument]
+#[instrument(skip(actor))]
 pub async fn update_student_technique(
     pool: &Pool<Sqlite>,
     id: i64,
+    actor: &User,
     status: &str,
     student_notes: &str,
     coach_notes: &str,
 ) -> Result<(), AppError> {
     info!("Updating student technique");
     let now = Utc::now();
-    sqlx::query!(
-        "UPDATE student_techniques
-         SET status = ?, student_notes = ?, coach_notes = ?, updated_at = ?
-         WHERE id = ?",
-        status,
-        student_notes,
-        coach_notes,
-        now,
-        id
-    )
-    .execute(pool)
-    .await?;
+    let actor_id = actor.id;
+
+    match actor.role {
+        Role::Coach | Role::Admin => {
+            sqlx::query!(
+                "UPDATE student_techniques
+                 SET status = ?, student_notes = ?, coach_notes = ?, updated_at = ?,
+                     last_coach_update_at = ?, last_coach_update_by_id = ?
+                 WHERE id = ?",
+                status,
+                student_notes,
+                coach_notes,
+                now,
+                now,
+                actor_id,
+                id
+            )
+            .execute(pool)
+            .await?;
+        }
+        Role::Student => {
+            sqlx::query!(
+                "UPDATE student_techniques
+                 SET status = ?, student_notes = ?, coach_notes = ?, updated_at = ?,
+                     last_student_update_at = ?, last_student_update_by_id = ?
+                 WHERE id = ?",
+                status,
+                student_notes,
+                coach_notes,
+                now,
+                now,
+                actor_id,
+                id
+            )
+            .execute(pool)
+            .await?;
+        }
+    }
 
     Ok(())
 }
@@ -390,24 +434,49 @@ pub async fn create_technique(
     Ok(res.last_insert_rowid())
 }
 
-#[instrument]
+#[instrument(skip(actor))]
 pub async fn update_student_notes(
     pool: &Pool<Sqlite>,
     id: i64,
+    actor: &User,
     student_notes: &str,
 ) -> Result<(), AppError> {
     info!("Updating student notes");
     let now = Utc::now();
-    sqlx::query!(
-        "UPDATE student_techniques
-         SET student_notes = ?, updated_at = ?
-         WHERE id = ?",
-        student_notes,
-        now,
-        id
-    )
-    .execute(pool)
-    .await?;
+    let actor_id = actor.id;
+
+    match actor.role {
+        Role::Coach | Role::Admin => {
+            sqlx::query!(
+                "UPDATE student_techniques
+                 SET student_notes = ?, updated_at = ?,
+                     last_coach_update_at = ?, last_coach_update_by_id = ?
+                 WHERE id = ?",
+                student_notes,
+                now,
+                now,
+                actor_id,
+                id
+            )
+            .execute(pool)
+            .await?;
+        }
+        Role::Student => {
+            sqlx::query!(
+                "UPDATE student_techniques
+                 SET student_notes = ?, updated_at = ?,
+                     last_student_update_at = ?, last_student_update_by_id = ?
+                 WHERE id = ?",
+                student_notes,
+                now,
+                now,
+                actor_id,
+                id
+            )
+            .execute(pool)
+            .await?;
+        }
+    }
 
     Ok(())
 }

@@ -45,6 +45,12 @@ pub struct StudentTechnique {
     pub coach_notes: String,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+    pub last_coach_update_at: Option<DateTime<Utc>>,
+    pub last_coach_update_by_id: Option<i64>,
+    pub last_coach_update_by_name: Option<String>,
+    pub last_student_update_at: Option<DateTime<Utc>>,
+    pub last_student_update_by_id: Option<i64>,
+    pub last_student_update_by_name: Option<String>,
     pub tags: Vec<Tag>,
 }
 
@@ -60,6 +66,14 @@ pub struct DbStudentTechnique {
     pub coach_notes: Option<String>,
     pub created_at: Option<NaiveDateTime>,
     pub updated_at: Option<NaiveDateTime>,
+    pub last_coach_update_at: Option<NaiveDateTime>,
+    pub last_coach_update_by_id: Option<i64>,
+    pub last_student_update_at: Option<NaiveDateTime>,
+    pub last_student_update_by_id: Option<i64>,
+}
+
+pub fn naive_to_utc(dt: NaiveDateTime) -> DateTime<Utc> {
+    DateTime::<Utc>::from_naive_utc_and_offset(dt, Utc)
 }
 
 impl From<DbStudentTechnique> for StudentTechnique {
@@ -73,18 +87,14 @@ impl From<DbStudentTechnique> for StudentTechnique {
             status: db.status.unwrap_or_default(),
             student_notes: db.student_notes.unwrap_or_default(),
             coach_notes: db.coach_notes.unwrap_or_default(),
-            created_at: db
-                .created_at
-                .map(|dt| {
-                    chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(dt, chrono::Utc)
-                })
-                .unwrap_or_else(chrono::Utc::now),
-            updated_at: db
-                .updated_at
-                .map(|dt| {
-                    chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(dt, chrono::Utc)
-                })
-                .unwrap_or_else(chrono::Utc::now),
+            created_at: db.created_at.map(naive_to_utc).unwrap_or_else(Utc::now),
+            updated_at: db.updated_at.map(naive_to_utc).unwrap_or_else(Utc::now),
+            last_coach_update_at: db.last_coach_update_at.map(naive_to_utc),
+            last_coach_update_by_id: db.last_coach_update_by_id,
+            last_coach_update_by_name: None,
+            last_student_update_at: db.last_student_update_at.map(naive_to_utc),
+            last_student_update_by_id: db.last_student_update_by_id,
+            last_student_update_by_name: None,
             tags: Vec::new(),
         }
     }

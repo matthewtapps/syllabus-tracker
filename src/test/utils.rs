@@ -1,6 +1,6 @@
 #[cfg(test)]
 pub mod test_utils {
-    use crate::auth::Role;
+    use crate::auth::{Role, User};
     use crate::db::{
         assign_technique_to_student, create_technique, create_user, get_student_technique,
         update_student_technique,
@@ -224,9 +224,24 @@ pub mod test_utils {
                         || !st.student_notes.is_empty()
                         || !st.coach_notes.is_empty()
                     {
+                        let seed_coach_id = self
+                            .users
+                            .iter()
+                            .find(|u| matches!(u.role, Role::Coach | Role::Admin))
+                            .and_then(|u| user_id_map.get(&u.username).copied())
+                            .unwrap_or(0);
+                        let seed_actor = User {
+                            id: seed_coach_id,
+                            username: "test_seed".to_string(),
+                            role: Role::Coach,
+                            display_name: String::new(),
+                            archived: false,
+                            last_update: None,
+                        };
                         update_student_technique(
                             &pool,
                             assignment_id,
+                            &seed_actor,
                             &st.status,
                             &st.student_notes,
                             &st.coach_notes,

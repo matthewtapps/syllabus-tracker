@@ -147,6 +147,11 @@ export interface Technique {
   coach_notes: string;
   created_at: string;
   updated_at: string;
+  last_coach_update_at: string | null;
+  last_coach_update_by_name: string | null;
+  last_student_update_at: string | null;
+  last_student_update_by_name: string | null;
+  has_new_student_activity: boolean;
   tags: Tag[];
 }
 

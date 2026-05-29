@@ -7,8 +7,7 @@ import {
   SheetContent,
   SheetTrigger,
 } from "@/components/ui/sheet";
-import { BusFrontIcon, Menu } from "lucide-react";
-import { ModeToggle } from "./theme/mode-toggle";
+import { Menu } from "lucide-react";
 
 interface NavBarProps {
   user: User | null;
@@ -28,31 +27,42 @@ export function NavBar({ user, onLogout }: NavBarProps) {
     return location.pathname === path;
   };
 
-  const NavItem = ({ to, label }: { to: string; label: string }) => (
-    <Button
-      variant={isActive(to) ? "secondary" : "ghost"}
-      onClick={() => {
-        navigate(to);
-        setIsOpen(false);
-      }}
-      className="justify-start w-full sm:w-auto"
-    >
-      {label}
-    </Button>
-  );
+  const NavItem = ({ to, label }: { to: string; label: string }) => {
+    const active = isActive(to);
+    return (
+      <Button
+        variant="ghost"
+        onClick={() => {
+          navigate(to);
+          setIsOpen(false);
+        }}
+        className={
+          active
+            ? "justify-start w-full sm:w-auto text-primary hover:text-primary"
+            : "justify-start w-full sm:w-auto text-muted-foreground hover:text-foreground"
+        }
+        aria-current={active ? "page" : undefined}
+      >
+        {label}
+      </Button>
+    );
+  };
 
   return (
     <header className="border-b border-border sticky top-0 z-50 bg-background/80 backdrop-blur-sm">
       <div className="container mx-auto px-4 flex h-16 items-center justify-between">
         <div className="flex items-center gap-2">
           <button
-            className="flex items-center font-bold text-lg"
+            className="flex items-center gap-2 font-bold text-lg"
             onClick={() => navigate(user ? "/dashboard" : "/login")}
           >
-            <BusFrontIcon className="size-6 mx-2" />
-            <div>
-              Silly Bus
-            </div>
+            <img
+              src="/img/logo.png"
+              alt=""
+              className="h-7 w-7"
+              aria-hidden
+            />
+            <span>Silly Bus</span>
           </button>
 
           {/* Desktop Navigation */}
@@ -82,8 +92,6 @@ export function NavBar({ user, onLogout }: NavBarProps) {
         </div>
 
         <div className="flex items-center gap-4">
-          <ModeToggle />
-
           {user ? (
             <div className="hidden sm:flex items-center gap-4">
               <div className="text-sm font-medium bg-muted px-3 py-1.5 rounded-md">

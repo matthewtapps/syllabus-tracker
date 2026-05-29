@@ -227,6 +227,11 @@ pub struct TechniqueResponse {
     pub coach_notes: String,
     pub created_at: String,
     pub updated_at: String,
+    pub last_coach_update_at: Option<String>,
+    pub last_coach_update_by_name: Option<String>,
+    pub last_student_update_at: Option<String>,
+    pub last_student_update_by_name: Option<String>,
+    pub has_new_student_activity: bool,
     pub tags: Vec<TagResponse>,
 }
 
@@ -263,17 +268,30 @@ pub async fn api_get_student_techniques(
 
     let technique_responses: Vec<TechniqueResponse> = techniques
         .into_iter()
-        .map(|t| TechniqueResponse {
-            id: t.id,
-            technique_id: t.technique_id,
-            technique_name: t.technique_name,
-            technique_description: t.technique_description,
-            status: t.status,
-            student_notes: t.student_notes,
-            coach_notes: t.coach_notes,
-            created_at: t.created_at.to_rfc3339(),
-            updated_at: t.updated_at.to_rfc3339(),
-            tags: t.tags.into_iter().map(TagResponse::from).collect(), // Convert tags to TagResponse
+        .map(|t| {
+            let has_new_student_activity = match (t.last_student_update_at, t.last_coach_update_at)
+            {
+                (Some(student), Some(coach)) => student > coach,
+                (Some(_), None) => true,
+                _ => false,
+            };
+            TechniqueResponse {
+                id: t.id,
+                technique_id: t.technique_id,
+                technique_name: t.technique_name,
+                technique_description: t.technique_description,
+                status: t.status,
+                student_notes: t.student_notes,
+                coach_notes: t.coach_notes,
+                created_at: t.created_at.to_rfc3339(),
+                updated_at: t.updated_at.to_rfc3339(),
+                last_coach_update_at: t.last_coach_update_at.map(|d| d.to_rfc3339()),
+                last_coach_update_by_name: t.last_coach_update_by_name,
+                last_student_update_at: t.last_student_update_at.map(|d| d.to_rfc3339()),
+                last_student_update_by_name: t.last_student_update_by_name,
+                has_new_student_activity,
+                tags: t.tags.into_iter().map(TagResponse::from).collect(),
+            }
         })
         .collect();
 
@@ -325,7 +343,7 @@ pub async fn api_update_student_technique(
 
     if is_own_technique && !can_edit_all {
         if let Some(notes) = &technique.student_notes {
-            update_student_notes(db, id, notes).await?;
+            update_student_notes(db, id, &user, notes).await?;
         }
 
         return Ok(Status::Ok);
@@ -340,7 +358,7 @@ pub async fn api_update_student_technique(
             .clone()
             .unwrap_or(student_technique.coach_notes);
 
-        update_student_technique(db, id, &status, &student_notes, &coach_notes).await?;
+        update_student_technique(db, id, &user, &status, &student_notes, &coach_notes).await?;
 
         if technique.technique_name.is_some() || technique.technique_description.is_some() {
             let technique_name = technique

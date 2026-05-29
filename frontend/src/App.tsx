@@ -1,5 +1,4 @@
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
-import { ThemeProvider } from './components/theme/theme-provider';
 import { Toaster } from "sonner";
 import { useState, useEffect } from 'react';
 import { Layout } from './components/layout';
@@ -49,77 +48,70 @@ function App() {
   }
 
   return (
-    <ThemeProvider defaultTheme="dark" storageKey="vite-ui-theme">
-      <Router>
-        <TelemetryProvider>
-          <Layout user={user} onLogout={handleLogout}>
-            <Routes>
-              <Route
-                path="/login"
-                element={user ? <Navigate to="/dashboard" replace /> : <LoginPage onLoginSuccess={loadUser} />}
-              />
-              <Route
-                path="/student/:id"
-                element={user ? <StudentTechniques user={user} /> : <Navigate to="/login" replace />}
-              />
-              <Route
-                path="/students"
-                element={
-                  user && (user.role === 'coach' || user.role === 'Coach' || user.role === 'admin' || user.role === 'Admin')
-                    ? <StudentsList />
-                    : <Navigate to="/login" replace />
-                }
-              />
-              <Route
-                path="/dashboard"
-                element={user ? <Dashboard user={user} /> : <Navigate to="/login" replace />}
-              />
-              <Route
-                path="/profile"
-                element={user ? <ProfilePage /> : <Navigate to="/login" replace />}
-              />
-              <Route
-                path="/register-user"
-                element={
-                  user && (user.role === 'coach' || user.role === 'Coach' || user.role === 'admin' || user.role === 'Admin')
-                    ? <RegisterUserPage user={user} />
-                    : <Navigate to="/login" replace />
-                }
-              />
-
-
-              <Route
-                path="/admin"
-                element={
-                  user && (user.role === 'admin')
-                    ? <AdminPage />
-                    : <Navigate to="/login" replace />
-                }
-              />
-              <Route path="/" element={<Navigate to={user ? "/dashboard" : "/login"} replace />} />
-
-            </Routes>
-          </Layout>
-          <Toaster
-            toastOptions={{
-              classNames: {
-                toast: "group toast group-[.toast-group]:bg-background group-[.toast-group]:text-foreground group-[.toast-group]:border-border group-[.toast-group]:shadow-lg",
-                title: "text-sm font-semibold",
-                description: "text-sm opacity-90",
-                actionButton: "bg-primary text-primary-foreground",
-                cancelButton: "bg-muted text-muted-foreground",
-
-                error: "!bg-destructive/15 !border-destructive/30 !text-destructive",
-                success: "!bg-default/15 !border-default/30 !text-default-foreground",
-                warning: "!bg-secondary/20 !border-secondary/30 !text-secondary-foreground",
-                info: "!bg-default/15 !border-default/30 !text-default-foreground",
-              },
-            }}
-
-          />
-        </TelemetryProvider>
-      </Router>
-    </ThemeProvider >
+    <Router>
+      <TelemetryProvider>
+        <Layout user={user} onLogout={handleLogout}>
+          <Routes>
+            <Route
+              path="/login"
+              element={user ? <Navigate to="/dashboard" replace /> : <LoginPage onLoginSuccess={loadUser} />}
+            />
+            <Route
+              path="/student/:id"
+              element={user ? <StudentTechniques user={user} /> : <Navigate to="/login" replace />}
+            />
+            <Route
+              path="/students"
+              element={
+                user && (user.role === 'coach' || user.role === 'Coach' || user.role === 'admin' || user.role === 'Admin')
+                  ? <StudentsList />
+                  : <Navigate to="/login" replace />
+              }
+            />
+            <Route
+              path="/dashboard"
+              element={user ? <Dashboard user={user} /> : <Navigate to="/login" replace />}
+            />
+            <Route
+              path="/profile"
+              element={user ? <ProfilePage /> : <Navigate to="/login" replace />}
+            />
+            <Route
+              path="/register-user"
+              element={
+                user && (user.role === 'coach' || user.role === 'Coach' || user.role === 'admin' || user.role === 'Admin')
+                  ? <RegisterUserPage user={user} />
+                  : <Navigate to="/login" replace />
+              }
+            />
+            <Route
+              path="/admin"
+              element={
+                user && (user.role === 'admin')
+                  ? <AdminPage />
+                  : <Navigate to="/login" replace />
+              }
+            />
+            <Route path="/" element={<Navigate to={user ? "/dashboard" : "/login"} replace />} />
+          </Routes>
+        </Layout>
+        <Toaster
+          toastOptions={{
+            classNames: {
+              toast: "group toast group-[.toast-group]:bg-background group-[.toast-group]:text-foreground group-[.toast-group]:border-border group-[.toast-group]:shadow-lg",
+              title: "text-sm font-semibold",
+              description: "text-sm opacity-90",
+              actionButton: "bg-primary text-primary-foreground",
+              cancelButton: "bg-muted text-muted-foreground",
+              error: "!bg-destructive/15 !border-destructive/30 !text-destructive",
+              success: "!bg-default/15 !border-default/30 !text-default-foreground",
+              warning: "!bg-secondary/20 !border-secondary/30 !text-secondary-foreground",
+              info: "!bg-default/15 !border-default/30 !text-default-foreground",
+            },
+          }}
+        />
+      </TelemetryProvider>
+    </Router>
   );
 }
 
