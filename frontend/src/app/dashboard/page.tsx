@@ -32,8 +32,8 @@ import {
   SkeletonListRow,
   SkeletonStatTile,
 } from '@/components/skeleton-row';
+import { StatusDonut } from '@/components/status-donut';
 import type { Status } from '@/lib/status';
-import { StatusTiles } from './components/status-tiles';
 import { DashboardTotals } from './components/dashboard-totals';
 import { StudentSection } from './components/student-section';
 
@@ -202,7 +202,7 @@ function CoachDashboard() {
         assignments={totalAssignments}
       />
 
-      <StatusTiles counts={statusCounts} total={totalAssignments} className="mb-8" />
+      <StatusDonut counts={statusCounts} className="mb-8" />
 
       <div className="space-y-6">
         {needsAttention.length > 0 && (
@@ -358,7 +358,7 @@ function StudentDashboard({ user }: { user: User }) {
           <p className="-mt-4 mb-6 text-sm text-muted-foreground">
             You're {pctDone}% done with your syllabus.
           </p>
-          <StatusTiles counts={counts} total={total} className="mb-8" />
+          <StatusDonut counts={counts} className="mb-8" />
 
           <div className="space-y-6">
             {newFromCoach.length > 0 && (
