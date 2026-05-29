@@ -1,193 +1,192 @@
 import { useState } from 'react';
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
-import { Button } from '@/components/ui/button';
-import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { toast } from 'sonner';
-import { registerUser, type User } from '@/lib/api';
 import { useNavigate } from 'react-router-dom';
+import { toast } from 'sonner';
+import { z } from 'zod';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { registerUser, type User } from '@/lib/api';
+import { Button } from '@/components/ui/button';
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from '@/components/ui/form';
+import { Input } from '@/components/ui/input';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { PageHeader } from '@/components/page-header';
 import { TracedForm } from '@/components/traced-form';
 import { useFormWithValidation } from '@/components/hooks/useFormErrors';
 
-interface RegisterUserPageProps {
-  user: User
-};
+const baseSchema = z
+  .object({
+    username: z.string().min(1, 'Username is required'),
+    display_name: z.string(),
+    password: z.string().min(1, 'Password is required'),
+    confirm_password: z.string().min(1, 'Please confirm the password'),
+    role: z.enum(['student', 'coach', 'admin']),
+  })
+  .refine((data) => data.password === data.confirm_password, {
+    path: ['confirm_password'],
+    message: 'Passwords do not match',
+  });
 
-interface RegistrationFormValues {
-  username: string;
-  display_name: string;
-  password: string;
-  confirm_password: string;
-  role: string;
+type RegistrationFormValues = z.infer<typeof baseSchema>;
+
+interface RegisterUserPageProps {
+  user: User;
 }
 
 export default function RegisterUserPage({ user }: RegisterUserPageProps) {
-  const [isSubmitting, setIsSubmitting] = useState(false);
   const navigate = useNavigate();
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const isAdmin = user?.role === 'admin' || user?.role === 'Admin';
 
   const form = useFormWithValidation<RegistrationFormValues>({
+    resolver: zodResolver(baseSchema),
     defaultValues: {
       username: '',
       display_name: '',
       password: '',
       confirm_password: '',
-      role: 'student'
-    }
+      role: 'student',
+    },
   });
 
-  const handleSubmit = async (data: RegistrationFormValues) => {
+  async function handleSubmit(data: RegistrationFormValues) {
     setIsSubmitting(true);
-
     try {
       const response = await registerUser(data);
-      if (!response.ok) {
-        const errorData = await response.json();
-
-        if (errorData.status === 'error' && errorData.errors) {
-          // Set field errors
-          form.setFieldErrors(errorData.errors);
-
-          // Show first error as toast
-          const firstErrorField = Object.keys(errorData.errors)[0];
-          const firstErrorMessage = errorData.errors[firstErrorField][0];
-          toast.error(`${firstErrorField}: ${firstErrorMessage}`);
-
-          throw new Error('Validation failed');
-        } else {
-          throw new Error('Registration failed');
-        }
-      }
-
-      toast.success('User registered successfully');
-
+      if (!response.ok) throw response;
+      toast.success('User registered');
       form.reset();
-
-      // Redirect to students list if it was a student
-      if (data.role === 'student') {
-        navigate('/students');
-      }
-    } catch (err) {
-      console.error('Registration error:', err);
-
-      // Only show a generic error if it's not a validation error
-      if (!(err instanceof Error && err.message === 'Validation failed')) {
-        toast.error('Failed to register user');
-      }
+      if (data.role === 'student') navigate('/students');
     } finally {
       setIsSubmitting(false);
     }
-  };
-
-  const isAdmin = user?.role === 'admin' || user?.role === 'Admin';
+  }
 
   return (
-    <div className="container mx-auto py-8 px-4">
-      <h1 className="text-3xl font-bold mb-8">Register New User</h1>
+    <div className="container mx-auto px-4 py-6 sm:px-6 md:py-8">
+      <PageHeader
+        title="Register new user"
+        subtitle="Add a student, coach, or admin to the system."
+      />
 
-      <div className="max-w-md mx-auto">
-        <Card>
-          <CardHeader>
-            <CardTitle>Create Account</CardTitle>
-            <CardDescription>Add a new user to the system</CardDescription>
-          </CardHeader>
-          <TracedForm id="register_user" onSubmit={form.handleSubmit(handleSubmit)} setFieldErrors={form.setFieldErrors}>
-            <CardContent className="space-y-6">
-              <div className="space-y-2">
-                <Label htmlFor="username">Username</Label>
-                <Input
-                  id="username"
-                  {...form.register("username")}
-                  placeholder="Enter username"
-                  aria-invalid={!!form.formState.errors.username}
-                />
-                {form.formState.errors.username && (
-                  <p className="text-sm text-destructive mt-1">
-                    {String(form.formState.errors.username.message || "Invalid username")}
-                  </p>
-                )}
-              </div>
+      <div className="mx-auto max-w-md">
+        <Form {...form}>
+          <TracedForm
+            id="register_user"
+            onSubmit={form.handleSubmit(handleSubmit)}
+            setFieldErrors={form.setFieldErrors}
+            className="space-y-5"
+          >
+            <FormField
+              control={form.control}
+              name="username"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Username</FormLabel>
+                  <FormControl>
+                    <Input
+                      {...field}
+                      autoComplete="username"
+                      placeholder="e.g. matt_tapps"
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
 
-              <div className="space-y-2">
-                <Label htmlFor="display-name">Display Name</Label>
-                <Input
-                  id="display-name"
-                  {...form.register("display_name")}
-                  placeholder="Enter display name"
-                  aria-invalid={!!form.formState.errors.display_name}
-                />
-                {form.formState.errors.display_name && (
-                  <p className="text-sm text-destructive mt-1">
-                    {String(form.formState.errors.display_name.message || "Invalid display name")}
-                  </p>
-                )}
-              </div>
+            <FormField
+              control={form.control}
+              name="display_name"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Display name</FormLabel>
+                  <FormControl>
+                    <Input
+                      {...field}
+                      placeholder="How the user's name appears in the app"
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
 
-              <div className="space-y-2">
-                <Label htmlFor="password">Password</Label>
-                <Input
-                  id="password"
-                  type="password"
-                  {...form.register("password")}
-                  placeholder="Enter password"
-                  aria-invalid={!!form.formState.errors.password}
-                />
-                {form.formState.errors.password && (
-                  <p className="text-sm text-destructive mt-1">
-                    {String(form.formState.errors.password.message || "Invalid password")}
-                  </p>
-                )}
-              </div>
+            <FormField
+              control={form.control}
+              name="password"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Password</FormLabel>
+                  <FormControl>
+                    <Input
+                      {...field}
+                      type="password"
+                      autoComplete="new-password"
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
 
-              <div className="space-y-2">
-                <Label htmlFor="confirm_password">Confirm Password</Label>
-                <Input
-                  id="confirm_password"
-                  type="password"
-                  {...form.register("confirm_password")}
-                  placeholder="Confirm password"
-                  aria-invalid={!!form.formState.errors.confirm_password}
-                />
-                {form.formState.errors.confirm_password && (
-                  <p className="text-sm text-destructive mt-1">
-                    {String(form.formState.errors.confirm_password.message || "Passwords must match")}
-                  </p>
-                )}
-              </div>
+            <FormField
+              control={form.control}
+              name="confirm_password"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Confirm password</FormLabel>
+                  <FormControl>
+                    <Input
+                      {...field}
+                      type="password"
+                      autoComplete="new-password"
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
 
-              <div className="space-y-2">
-                <Label htmlFor="role">Role</Label>
-                <Select
-                  value={form.watch("role")}
-                  onValueChange={(value) => form.setValue("role", value)}
-                >
-                  <SelectTrigger id="role" aria-invalid={!!form.formState.errors.role}>
-                    <SelectValue placeholder="Select a role" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="student">Student</SelectItem>
-                    <SelectItem value="coach">Coach</SelectItem>
-                    {isAdmin && <SelectItem value="admin">Admin</SelectItem>}
-                  </SelectContent>
-                </Select>
-                {form.formState.errors.role && (
-                  <p className="text-sm text-destructive mt-1">
-                    {String(form.formState.errors.role.message || "Invalid role")}
-                  </p>
-                )}
-              </div>
-            </CardContent>
-            <CardFooter>
-              <Button
-                type="submit"
-                className="w-full"
-                disabled={isSubmitting}
-              >
-                {isSubmitting ? 'Registering...' : 'Register User'}
-              </Button>
-            </CardFooter>
+            <FormField
+              control={form.control}
+              name="role"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Role</FormLabel>
+                  <Select value={field.value} onValueChange={field.onChange}>
+                    <FormControl>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select a role" />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      <SelectItem value="student">Student</SelectItem>
+                      <SelectItem value="coach">Coach</SelectItem>
+                      {isAdmin && <SelectItem value="admin">Admin</SelectItem>}
+                    </SelectContent>
+                  </Select>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <Button type="submit" className="w-full" disabled={isSubmitting}>
+              {isSubmitting ? 'Registering...' : 'Register user'}
+            </Button>
           </TracedForm>
-        </Card>
+        </Form>
       </div>
     </div>
   );

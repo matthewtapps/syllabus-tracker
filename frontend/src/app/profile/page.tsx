@@ -1,225 +1,247 @@
-import { useState, useEffect } from 'react';
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
-import { Button } from '@/components/ui/button';
-import { Label } from '@/components/ui/label';
+import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
-import { getCurrentUser, updateUserProfile, updatePassword } from '@/lib/api';
-import type { User } from '@/lib/api';
+import { z } from 'zod';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { getCurrentUser, updatePassword, updateUserProfile, type User } from '@/lib/api';
+import { Button } from '@/components/ui/button';
+import {
+  Form,
+  FormControl,
+  FormDescription,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from '@/components/ui/form';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Separator } from '@/components/ui/separator';
+import { Skeleton } from '@/components/ui/skeleton';
+import { PageHeader } from '@/components/page-header';
 import { TracedForm } from '@/components/traced-form';
 import { useFormWithValidation } from '@/components/hooks/useFormErrors';
 
-interface ProfileFormValues {
-  display_name: string;
-}
+const profileSchema = z.object({
+  display_name: z.string(),
+});
 
-interface PasswordFormValues {
-  current_password: string;
-  new_password: string;
-  confirm_password: string;
-}
+const passwordSchema = z
+  .object({
+    current_password: z.string().min(1, 'Current password is required'),
+    new_password: z.string().min(1, 'New password is required'),
+    confirm_password: z.string().min(1, 'Please confirm the new password'),
+  })
+  .refine((data) => data.new_password === data.confirm_password, {
+    path: ['confirm_password'],
+    message: 'Passwords do not match',
+  });
+
+type ProfileValues = z.infer<typeof profileSchema>;
+type PasswordValues = z.infer<typeof passwordSchema>;
 
 export default function ProfilePage() {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    async function loadUser() {
-      try {
-        setLoading(true);
-        const userData = await getCurrentUser();
-        setUser(userData);
-      } catch (err) {
-        console.error('Failed to load user profile', err);
-        toast.error('Failed to load profile');
-      } finally {
-        setLoading(false);
-      }
-    }
-
-    loadUser();
-  }, []);
-
-  const profileForm = useFormWithValidation<ProfileFormValues>({
-    defaultValues: {
-      display_name: user?.display_name || '',
-    }
+  const profileForm = useFormWithValidation<ProfileValues>({
+    resolver: zodResolver(profileSchema),
+    defaultValues: { display_name: '' },
   });
 
-  const passwordForm = useFormWithValidation<PasswordFormValues>({
+  const passwordForm = useFormWithValidation<PasswordValues>({
+    resolver: zodResolver(passwordSchema),
     defaultValues: {
       current_password: '',
       new_password: '',
-      confirm_password: ''
-    }
+      confirm_password: '',
+    },
   });
 
-  const handleUpdateProfile = async (data: ProfileFormValues) => {
-    try {
-      await updateUserProfile(data);
-      toast.success('Profile updated successfully');
-
-      // Update the user state
-      if (user) {
-        setUser({
-          ...user,
-          display_name: data.display_name
-        });
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      try {
+        setLoading(true);
+        const data = await getCurrentUser();
+        if (cancelled) return;
+        setUser(data);
+        profileForm.reset({ display_name: data?.display_name ?? '' });
+      } catch (err) {
+        console.error(err);
+        toast.error('Failed to load profile');
+      } finally {
+        if (!cancelled) setLoading(false);
       }
-    } catch (err) {
-      console.error('Failed to update profile', err);
     }
-  };
+    load();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-  const handleChangePassword = async (data: PasswordFormValues) => {
-    if (data.new_password !== data.confirm_password) {
-      passwordForm.setError('confirm_password', {
-        type: 'manual',
-        message: 'Passwords do not match'
-      });
-      return;
-    }
+  async function handleProfileSubmit(data: ProfileValues) {
+    const response = await updateUserProfile(data);
+    if (!response.ok) throw response;
+    setUser((prev) => (prev ? { ...prev, display_name: data.display_name } : prev));
+    toast.success('Profile updated');
+  }
 
-    try {
-      await updatePassword({
-        current_password: data.current_password,
-        new_password: data.new_password
-      });
-
-      toast.success('Password changed successfully');
-
-      passwordForm.reset({
-        current_password: '',
-        new_password: '',
-        confirm_password: ''
-      });
-    } catch (err) {
-      console.error('Failed to change password', err);
-    }
-  };
-
-  if (loading) {
-    return (
-      <div className="container mx-auto py-8 px-4">
-        <div className="flex items-center justify-center min-h-[50vh]">
-          Loading...
-        </div>
-      </div>
-    );
+  async function handlePasswordSubmit(data: PasswordValues) {
+    const response = await updatePassword({
+      current_password: data.current_password,
+      new_password: data.new_password,
+    });
+    if (!response.ok) throw response;
+    toast.success('Password changed');
+    passwordForm.reset();
   }
 
   return (
-    <div className="container mx-auto py-8 px-4">
-      <h1 className="text-3xl font-bold mb-8">My Profile</h1>
+    <div className="container mx-auto max-w-2xl px-4 py-6 sm:px-6 md:py-8">
+      <PageHeader title="My profile" />
 
-      <div className="grid gap-8 md:grid-cols-2">
-        {/* Profile Information Card */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Profile Information</CardTitle>
-            <CardDescription>Update your display name and account details</CardDescription>
-          </CardHeader>
-          <TracedForm id="update_profile" onSubmit={profileForm.handleSubmit(handleUpdateProfile)} setFieldErrors={profileForm.setFieldErrors}>
-            <CardContent className="space-y-4">
+      <section className="space-y-5">
+        <div>
+          <h2 className="text-base font-semibold">Account</h2>
+          <p className="text-sm text-muted-foreground">
+            Update how your name appears in the app.
+          </p>
+        </div>
+
+        {loading ? (
+          <div className="space-y-3">
+            <Skeleton className="h-9 w-full" />
+            <Skeleton className="h-9 w-full" />
+          </div>
+        ) : (
+          <Form {...profileForm}>
+            <TracedForm
+              id="update_profile"
+              onSubmit={profileForm.handleSubmit(handleProfileSubmit)}
+              setFieldErrors={profileForm.setFieldErrors}
+              className="space-y-4"
+            >
               <div className="space-y-2">
                 <Label htmlFor="username">Username</Label>
-                <Input
-                  id="username"
-                  value={user?.username || ''}
-                  disabled
-                  className="bg-muted/50"
-                />
-                <p className="text-sm text-muted-foreground">Your username cannot be changed</p>
+                <Input id="username" value={user?.username ?? ''} disabled />
+                <p className="text-xs text-muted-foreground">
+                  Your username can't be changed.
+                </p>
               </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="display-name">Display Name</Label>
-                <Input
-                  id="display-name"
-                  {...profileForm.register("display_name")}
-                  placeholder="Enter your display name"
-                  aria-invalid={!!profileForm.formState.errors.display_name}
-                />
-                {profileForm.formState.errors.display_name && (
-                  <p className="text-sm text-destructive mt-1">
-                    {String(profileForm.formState.errors.display_name.message || "Invalid display name")}
-                  </p>
+              <FormField
+                control={profileForm.control}
+                name="display_name"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Display name</FormLabel>
+                    <FormControl>
+                      <Input {...field} placeholder="How others see you" />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
                 )}
-              </div>
-            </CardContent>
-            <CardFooter>
-              <Button type="submit" disabled={profileForm.formState.isSubmitting} className='my-4'>
-                {profileForm.formState.isSubmitting ? 'Updating...' : 'Update Profile'}
-              </Button>
-            </CardFooter>
-          </TracedForm>
-        </Card>
+              />
 
-        {/* Change Password Card */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Change Password</CardTitle>
-            <CardDescription>Update your account password</CardDescription>
-          </CardHeader>
-          <TracedForm id="change_password" onSubmit={passwordForm.handleSubmit(handleChangePassword)} setFieldErrors={passwordForm.setFieldErrors}>
-            <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="current-password">Current Password</Label>
-                <Input
-                  id="current-password"
-                  type="password"
-                  {...passwordForm.register("current_password")}
-                  aria-invalid={!!passwordForm.formState.errors.current_password}
-                />
-                {passwordForm.formState.errors.current_password && (
-                  <p className="text-sm text-destructive mt-1">
-                    {String(passwordForm.formState.errors.current_password.message || "Current password is required")}
-                  </p>
-                )}
+              <div className="flex justify-end">
+                <Button
+                  type="submit"
+                  disabled={profileForm.formState.isSubmitting}
+                >
+                  {profileForm.formState.isSubmitting ? 'Saving...' : 'Save changes'}
+                </Button>
               </div>
+            </TracedForm>
+          </Form>
+        )}
+      </section>
 
-              <div className="space-y-2">
-                <Label htmlFor="new-password">New Password</Label>
-                <Input
-                  id="new-password"
-                  type="password"
-                  {...passwordForm.register("new_password")}
-                  aria-invalid={!!passwordForm.formState.errors.new_password}
-                />
-                {passwordForm.formState.errors.new_password && (
-                  <p className="text-sm text-destructive mt-1">
-                    {String(passwordForm.formState.errors.new_password.message || "New password is required")}
-                  </p>
-                )}
-              </div>
+      <Separator className="my-8" />
 
-              <div className="space-y-2">
-                <Label htmlFor="confirm-password">Confirm New Password</Label>
-                <Input
-                  id="confirm-password"
-                  type="password"
-                  {...passwordForm.register("confirm_password")}
-                  aria-invalid={!!passwordForm.formState.errors.confirm_password}
-                />
-                {passwordForm.formState.errors.confirm_password && (
-                  <p className="text-sm text-destructive mt-1">
-                    {String(passwordForm.formState.errors.confirm_password.message || "Passwords must match")}
-                  </p>
-                )}
-              </div>
-            </CardContent>
-            <CardFooter>
+      <section className="space-y-5">
+        <div>
+          <h2 className="text-base font-semibold">Password</h2>
+          <p className="text-sm text-muted-foreground">
+            Update the password used to sign in.
+          </p>
+        </div>
+
+        <Form {...passwordForm}>
+          <TracedForm
+            id="change_password"
+            onSubmit={passwordForm.handleSubmit(handlePasswordSubmit)}
+            setFieldErrors={passwordForm.setFieldErrors}
+            className="space-y-4"
+          >
+            <FormField
+              control={passwordForm.control}
+              name="current_password"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Current password</FormLabel>
+                  <FormControl>
+                    <Input
+                      {...field}
+                      type="password"
+                      autoComplete="current-password"
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={passwordForm.control}
+              name="new_password"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>New password</FormLabel>
+                  <FormControl>
+                    <Input
+                      {...field}
+                      type="password"
+                      autoComplete="new-password"
+                    />
+                  </FormControl>
+                  <FormDescription>
+                    At least 1 character. Aim for something memorable but hard to guess.
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={passwordForm.control}
+              name="confirm_password"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Confirm new password</FormLabel>
+                  <FormControl>
+                    <Input
+                      {...field}
+                      type="password"
+                      autoComplete="new-password"
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <div className="flex justify-end">
               <Button
                 type="submit"
                 disabled={passwordForm.formState.isSubmitting}
-                className='my-4'
               >
-                {passwordForm.formState.isSubmitting ? 'Changing Password...' : 'Change Password'}
+                {passwordForm.formState.isSubmitting ? 'Changing...' : 'Change password'}
               </Button>
-            </CardFooter>
+            </div>
           </TracedForm>
-        </Card>
-      </div>
+        </Form>
+      </section>
     </div>
   );
 }

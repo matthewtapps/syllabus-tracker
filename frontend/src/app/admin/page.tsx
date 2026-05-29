@@ -1,69 +1,106 @@
-import { useState, useEffect } from 'react';
-import { getAllUsers, updateUser, type User } from '@/lib/api';
-import { Input } from '@/components/ui/input';
-import { Button } from '@/components/ui/button';
-import { Label } from '@/components/ui/label';
+import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { Label } from '@/components/ui/label';
 import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogFooter,
 } from '@/components/ui/dialog';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { MoreHorizontalIcon, EditIcon, KeyIcon } from 'lucide-react';
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from '@/components/ui/form';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
+import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { PageHeader } from '@/components/page-header';
+import { EmptyState } from '@/components/empty-state';
+import { SkeletonTableRow } from '@/components/skeleton-row';
 import { TracedForm } from '@/components/traced-form';
-import { Select, SelectContent, SelectItem, SelectValue } from '@/components/ui/select';
-import { SelectTrigger } from '@radix-ui/react-select';
 import { useFormWithValidation } from '@/components/hooks/useFormErrors';
+import { getAllUsers, updateUser, type User } from '@/lib/api';
+import { EditIcon, KeyIcon, MoreHorizontalIcon, Users, X } from 'lucide-react';
+import { z } from 'zod';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { cn } from '@/lib/utils';
 
-interface AdminUser extends User {
-  archived: boolean;
-}
+const editSchema = z.object({
+  username: z.string().min(1, 'Username is required'),
+  display_name: z.string(),
+  role: z.enum(['student', 'coach', 'admin']),
+});
 
-interface EditUserFormValues {
-  username: string;
-  display_name: string;
-  role: string;
-}
+const passwordSchema = z
+  .object({
+    new_password: z.string().min(1, 'New password is required'),
+    confirm_password: z.string().min(1, 'Please confirm the password'),
+  })
+  .refine((data) => data.new_password === data.confirm_password, {
+    path: ['confirm_password'],
+    message: 'Passwords do not match',
+  });
 
-interface PasswordFormValues {
-  new_password: string;
-  confirm_password: string;
+type EditValues = z.infer<typeof editSchema>;
+type PasswordValues = z.infer<typeof passwordSchema>;
+
+function initials(user: Pick<User, 'display_name' | 'username'>): string {
+  const source = user.display_name?.trim() || user.username || '';
+  const parts = source.split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return '?';
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
 }
 
 export default function AdminPage() {
-  const [users, setUsers] = useState<AdminUser[]>([]);
+  const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState('');
   const [showArchived, setShowArchived] = useState(false);
+  const [roleFilter, setRoleFilter] = useState<string>('all');
+  const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [isPasswordDialogOpen, setIsPasswordDialogOpen] = useState(false);
-  const [selectedUser, setSelectedUser] = useState<AdminUser | null>(null);
-  const [roleFilter, setRoleFilter] = useState<string>("all");
 
-  const editForm = useFormWithValidation<EditUserFormValues>({
-    defaultValues: {
-      username: '',
-      display_name: '',
-      role: ''
-    }
+  const editForm = useFormWithValidation<EditValues>({
+    resolver: zodResolver(editSchema),
+    defaultValues: { username: '', display_name: '', role: 'student' },
   });
 
-  const passwordForm = useFormWithValidation<PasswordFormValues>({
-    defaultValues: {
-      new_password: '',
-      confirm_password: ''
-    }
+  const passwordForm = useFormWithValidation<PasswordValues>({
+    resolver: zodResolver(passwordSchema),
+    defaultValues: { new_password: '', confirm_password: '' },
   });
 
   useEffect(() => {
@@ -77,138 +114,122 @@ export default function AdminPage() {
       setUsers(data);
       setError(null);
     } catch (err) {
-      console.error('Failed to load users', err);
+      console.error(err);
       setError('Failed to load users. Please try again.');
     } finally {
       setLoading(false);
     }
   }
 
-  const filteredUsers = users.filter(user => {
-    const matchesText = (
-      (user.display_name?.toLowerCase() || user.username.toLowerCase()).includes(filter.toLowerCase()) ||
-      user.role.toLowerCase().includes(filter.toLowerCase())
-    );
-
-    const matchesArchive = showArchived || !user.archived;
-
-    // Add role filtering
-    const matchesRole = roleFilter === "all" ||
-      user.role.toLowerCase() === roleFilter.toLowerCase();
-
+  const filtered = users.filter((u) => {
+    const needle = filter.trim().toLowerCase();
+    const matchesText =
+      !needle ||
+      (u.display_name?.toLowerCase() || '').includes(needle) ||
+      u.username.toLowerCase().includes(needle) ||
+      u.role.toLowerCase().includes(needle);
+    const matchesArchive = showArchived || !u.archived;
+    const matchesRole =
+      roleFilter === 'all' || u.role.toLowerCase() === roleFilter.toLowerCase();
     return matchesText && matchesArchive && matchesRole;
   });
 
-  const handleToggleArchive = async (user: AdminUser) => {
-    try {
-      await updateUser(user.id, { archived: !user.archived });
-
-      setUsers(prevUsers =>
-        prevUsers.map(u =>
-          u.id === user.id ? { ...u, archived: !user.archived } : u
-        )
-      );
-
-      toast.success(`User ${user.archived ? 'unarchived' : 'archived'} successfully`);
-    } catch (err) {
-      console.error('Failed to toggle archive status', err);
-      toast.error('Failed to update user');
-    }
-  };
-
-  const openEditDialog = (user: AdminUser) => {
-    setSelectedUser(user);
+  function openEditDialog(u: User) {
+    setSelectedUser(u);
     editForm.reset({
-      username: user.username,
-      display_name: user.display_name,
-      role: user.role.toLowerCase()
+      username: u.username,
+      display_name: u.display_name ?? '',
+      role: (u.role.toLowerCase() as EditValues['role']) ?? 'student',
     });
     setIsEditDialogOpen(true);
-  };
+  }
 
-  const openPasswordDialog = (user: AdminUser) => {
-    setSelectedUser(user);
-    passwordForm.reset({
-      new_password: '',
-      confirm_password: ''
-    });
+  function openPasswordDialog(u: User) {
+    setSelectedUser(u);
+    passwordForm.reset({ new_password: '', confirm_password: '' });
     setIsPasswordDialogOpen(true);
-  };
+  }
 
-  const handleEditUser = async (data: EditUserFormValues) => {
+  async function handleToggleArchive(u: User) {
+    try {
+      const response = await updateUser(u.id, { archived: !u.archived });
+      if (!response.ok) {
+        toast.error('Failed to update user');
+        return;
+      }
+      setUsers((prev) =>
+        prev.map((existing) =>
+          existing.id === u.id ? { ...existing, archived: !u.archived } : existing,
+        ),
+      );
+      toast.success(u.archived ? 'User unarchived' : 'User archived');
+    } catch (err) {
+      console.error(err);
+      toast.error('Failed to update user');
+    }
+  }
+
+  async function handleEditUser(data: EditValues) {
     if (!selectedUser) return;
-
     const response = await updateUser(selectedUser.id, {
       username: data.username,
       display_name: data.display_name,
       role: data.role,
     });
-
-    if (!response.ok) {
-      throw response;
-    }
-
-    setUsers(prevUsers =>
-      prevUsers.map(u =>
+    if (!response.ok) throw response;
+    setUsers((prev) =>
+      prev.map((u) =>
         u.id === selectedUser.id
           ? {
-            ...u,
-            username: data.username,
-            display_name: data.display_name,
-            role: data.role
-          }
-          : u
-      )
+              ...u,
+              username: data.username,
+              display_name: data.display_name,
+              role: data.role,
+            }
+          : u,
+      ),
     );
-
-    toast.success('User updated successfully');
+    toast.success('User updated');
     setIsEditDialogOpen(false);
-  };
+  }
 
-  const handleChangePassword = async (data: PasswordFormValues) => {
+  async function handleChangePassword(data: PasswordValues) {
     if (!selectedUser) return;
-
-    if (data.new_password !== data.confirm_password) {
-      passwordForm.setError('confirm_password', {
-        type: 'manual',
-        message: 'Passwords do not match'
-      });
-      return;
-    }
-
     const response = await updateUser(selectedUser.id, {
       password: data.new_password,
     });
-
-    if (!response.ok) {
-      throw response;
-    }
-
-    toast.success('Password changed successfully');
+    if (!response.ok) throw response;
+    toast.success('Password changed');
     setIsPasswordDialogOpen(false);
-  };
-
-  if (loading) {
-    return <div className="flex items-center justify-center min-h-[50vh]">Loading...</div>;
-  }
-
-  if (error) {
-    return <div className="flex items-center justify-center min-h-[50vh] text-red-500">{error}</div>;
   }
 
   return (
-    <div className="container mx-auto py-6 px-4 sm:px-6 md:py-8">
-      <h1 className="text-3xl font-bold mb-6">Admin Dashboard</h1>
+    <div className="container mx-auto px-4 py-6 sm:px-6 md:py-8">
+      <PageHeader title="Admin" subtitle="Manage user accounts and roles." />
 
-      <div className="flex flex-col sm:flex-row justify-between gap-4 mb-6">
-        <Input
-          placeholder="Filter users..."
-          value={filter}
-          onChange={(e) => setFilter(e.target.value)}
-          className="max-w-md"
-        />
+      <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="relative w-full sm:max-w-md">
+          <Input
+            placeholder="Filter users..."
+            value={filter}
+            onChange={(e) => setFilter(e.target.value)}
+            aria-label="Filter users"
+          />
+          {filter && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="absolute right-1 top-1/2 h-7 w-7 -translate-y-1/2"
+              onClick={() => setFilter('')}
+            >
+              <X className="h-4 w-4" aria-hidden />
+              <span className="sr-only">Clear filter</span>
+            </Button>
+          )}
+        </div>
 
-        <div className="flex gap-4 items-center">
+        <div className="flex items-center gap-3">
           <Select value={roleFilter} onValueChange={setRoleFilter}>
             <SelectTrigger className="w-[150px]">
               <SelectValue placeholder="Filter by role" />
@@ -221,219 +242,266 @@ export default function AdminPage() {
             </SelectContent>
           </Select>
 
-          <div className="flex items-center space-x-2">
+          <div className="flex items-center gap-2">
             <Checkbox
               id="show-archived"
               checked={showArchived}
               onCheckedChange={(checked) => setShowArchived(checked === true)}
             />
-            <Label htmlFor="show-archived">Show archived users</Label>
+            <Label htmlFor="show-archived" className="text-sm">
+              Show archived
+            </Label>
           </div>
         </div>
       </div>
 
-      <div className="border rounded-lg overflow-hidden">
-        {filteredUsers.length > 0 ? (
-          <div>
-            {/* Table Header */}
-            <div className="bg-muted/50 grid grid-cols-10 gap-2 px-4 py-3 font-medium text-sm">
-              <div className="col-span-4">User</div>
-              <div className="col-span-3">Role</div>
-              <div className="col-span-2">Status</div>
-              <div className="col-span-1 text-right">Actions</div>
-            </div>
-
-            {/* Table Body */}
-            <div className="divide-y">
-              {filteredUsers.map(user => (
-                <div
-                  key={user.id}
-                  className={`grid grid-cols-10 gap-2 px-4 py-4 items-center ${user.archived ? 'text-muted-foreground' : ''}`}
+      <div className="overflow-hidden rounded-lg border border-border bg-card">
+        {loading ? (
+          <div className="divide-y divide-border">
+            {Array.from({ length: 6 }).map((_, i) => (
+              <SkeletonTableRow key={i} columns={4} />
+            ))}
+          </div>
+        ) : error ? (
+          <div className="flex flex-col items-center gap-3 px-6 py-12 text-center">
+            <p className="text-sm text-destructive">{error}</p>
+            <Button variant="outline" onClick={loadUsers}>
+              Try again
+            </Button>
+          </div>
+        ) : filtered.length === 0 ? (
+          <EmptyState
+            icon={Users}
+            title="No matching users"
+            description={
+              filter || roleFilter !== 'all'
+                ? 'Try a different filter combination.'
+                : 'No users exist yet.'
+            }
+          />
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>User</TableHead>
+                <TableHead>Role</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead className="text-right">Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {filtered.map((u) => (
+                <TableRow
+                  key={u.id}
+                  className={cn(u.archived && 'text-muted-foreground')}
                 >
-                  <div className="col-span-4">
-                    <div className="font-medium">{user.username}</div>
-                    {user.display_name && <div className="text-sm text-muted-foreground">{user.display_name}</div>}
-                  </div>
-                  <div className="col-span-3">
-                    <span className="capitalize">{user.role}</span>
-                  </div>
-                  <div className="col-span-2">
-                    {user.archived ? (
-                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-destructive/10 text-destructive">
+                  <TableCell>
+                    <div className="flex items-center gap-3">
+                      <Avatar size="sm">
+                        <AvatarFallback>{initials(u)}</AvatarFallback>
+                      </Avatar>
+                      <div className="min-w-0">
+                        <div className="font-medium">{u.username}</div>
+                        {u.display_name && (
+                          <div className="text-xs text-muted-foreground">
+                            {u.display_name}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </TableCell>
+                  <TableCell className="capitalize">{u.role}</TableCell>
+                  <TableCell>
+                    {u.archived ? (
+                      <Badge variant="outline" className="text-muted-foreground">
                         Archived
-                      </span>
+                      </Badge>
                     ) : (
-                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-50 text-green-700 dark:bg-green-900/20 dark:text-green-400">
-                        Active
-                      </span>
+                      <Badge variant="secondary">Active</Badge>
                     )}
-                  </div>
-                  <div className="col-span-1 text-right">
+                  </TableCell>
+                  <TableCell className="text-right">
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
                         <Button variant="ghost" size="icon">
-                          <MoreHorizontalIcon className="h-5 w-5" />
+                          <MoreHorizontalIcon className="h-5 w-5" aria-hidden />
+                          <span className="sr-only">Actions for {u.username}</span>
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
-                        <DropdownMenuItem onClick={() => openEditDialog(user)}>
-                          <EditIcon className="mr-2 h-4 w-4" />
-                          Edit User
+                        <DropdownMenuItem onClick={() => openEditDialog(u)}>
+                          <EditIcon className="mr-2 h-4 w-4" aria-hidden />
+                          Edit user
                         </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => openPasswordDialog(user)}>
-                          <KeyIcon className="mr-2 h-4 w-4" />
-                          Change Password
+                        <DropdownMenuItem onClick={() => openPasswordDialog(u)}>
+                          <KeyIcon className="mr-2 h-4 w-4" aria-hidden />
+                          Change password
                         </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => handleToggleArchive(user)}>
-                          {user.archived ? "Unarchive User" : "Archive User"}
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem onClick={() => handleToggleArchive(u)}>
+                          {u.archived ? 'Unarchive user' : 'Archive user'}
                         </DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
-                  </div>
-                </div>
+                  </TableCell>
+                </TableRow>
               ))}
-            </div>
-          </div>
-        ) : (
-          <div className="text-center text-muted-foreground p-8">No users found</div>
+            </TableBody>
+          </Table>
         )}
       </div>
 
       <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="w-[calc(100vw-1rem)] max-w-md p-4 sm:p-6">
           <DialogHeader>
-            <DialogTitle>Edit User</DialogTitle>
-            <DialogDescription>
-              Update user information
-            </DialogDescription>
+            <DialogTitle>Edit user</DialogTitle>
+            <DialogDescription>Update account information.</DialogDescription>
           </DialogHeader>
 
-          <TracedForm
-            id="edit_user"
-            onSubmit={editForm.handleSubmit(handleEditUser)}
-            setFieldErrors={editForm.setFieldErrors}
-            className="space-y-4 py-4"
-          >
-            <div className="space-y-2">
-              <Label htmlFor="edit-role">Role</Label>
-              <Select
-                value={editForm.watch("role")}
-                onValueChange={(value) => editForm.setValue("role", value)}
-              >
-                <SelectTrigger id="edit-role">
-                  <SelectValue placeholder="Select a role" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="student">Student</SelectItem>
-                  <SelectItem value="coach">Coach</SelectItem>
-                  <SelectItem value="admin">Admin</SelectItem>
-                </SelectContent>
-              </Select>
-              {editForm.formState.errors.role && (
-                <p className="text-sm text-destructive mt-1">
-                  {String(editForm.formState.errors.role.message || "Invalid role")}
-                </p>
-              )}
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="edit-username">Username</Label>
-              <Input
-                id="edit-username"
-                {...editForm.register("username")}
-                required
-                aria-invalid={!!editForm.formState.errors.username}
+          <Form {...editForm}>
+            <TracedForm
+              id="edit_user"
+              onSubmit={editForm.handleSubmit(handleEditUser)}
+              setFieldErrors={editForm.setFieldErrors}
+              className="space-y-4"
+            >
+              <FormField
+                control={editForm.control}
+                name="role"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Role</FormLabel>
+                    <Select value={field.value} onValueChange={field.onChange}>
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        <SelectItem value="student">Student</SelectItem>
+                        <SelectItem value="coach">Coach</SelectItem>
+                        <SelectItem value="admin">Admin</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
               />
-              {editForm.formState.errors.username && (
-                <p className="text-sm text-destructive mt-1">
-                  {String(editForm.formState.errors.username.message || "Invalid username")}
-                </p>
-              )}
-            </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="edit-display-name">Display Name</Label>
-              <Input
-                id="edit-display-name"
-                {...editForm.register("display_name")}
-                placeholder="Enter display name"
-                aria-invalid={!!editForm.formState.errors.display_name}
+              <FormField
+                control={editForm.control}
+                name="username"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Username</FormLabel>
+                    <FormControl>
+                      <Input {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
               />
-              {editForm.formState.errors.display_name && (
-                <p className="text-sm text-destructive mt-1">
-                  {String(editForm.formState.errors.display_name.message || "Invalid display name")}
-                </p>
-              )}
-            </div>
 
-            <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setIsEditDialogOpen(false)}>
-                Cancel
-              </Button>
-              <Button type="submit" disabled={editForm.formState.isSubmitting}>
-                {editForm.formState.isSubmitting ? 'Saving...' : 'Save Changes'}
-              </Button>
-            </DialogFooter>
-          </TracedForm>
+              <FormField
+                control={editForm.control}
+                name="display_name"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Display name</FormLabel>
+                    <FormControl>
+                      <Input {...field} placeholder="Enter display name" />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <DialogFooter className="gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setIsEditDialogOpen(false)}
+                >
+                  Cancel
+                </Button>
+                <Button type="submit" disabled={editForm.formState.isSubmitting}>
+                  {editForm.formState.isSubmitting ? 'Saving...' : 'Save changes'}
+                </Button>
+              </DialogFooter>
+            </TracedForm>
+          </Form>
         </DialogContent>
       </Dialog>
 
       <Dialog open={isPasswordDialogOpen} onOpenChange={setIsPasswordDialogOpen}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="w-[calc(100vw-1rem)] max-w-md p-4 sm:p-6">
           <DialogHeader>
-            <DialogTitle>Change Password</DialogTitle>
+            <DialogTitle>Change password</DialogTitle>
             <DialogDescription>
-              Set a new password for {selectedUser?.username}
+              Set a new password for {selectedUser?.username}.
             </DialogDescription>
           </DialogHeader>
 
-          <TracedForm
-            id="change_password"
-            onSubmit={passwordForm.handleSubmit(handleChangePassword)}
-            setFieldErrors={passwordForm.setFieldErrors}
-            className="space-y-4 py-4"
-          >
-            <div className="space-y-2">
-              <Label htmlFor="new-password">New Password</Label>
-              <Input
-                id="new-password"
-                type="password"
-                {...passwordForm.register("new_password")}
-                required
-                aria-invalid={!!passwordForm.formState.errors.new_password}
+          <Form {...passwordForm}>
+            <TracedForm
+              id="change_password_admin"
+              onSubmit={passwordForm.handleSubmit(handleChangePassword)}
+              setFieldErrors={passwordForm.setFieldErrors}
+              className="space-y-4"
+            >
+              <FormField
+                control={passwordForm.control}
+                name="new_password"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>New password</FormLabel>
+                    <FormControl>
+                      <Input
+                        {...field}
+                        type="password"
+                        autoComplete="new-password"
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
               />
-              {passwordForm.formState.errors.new_password && (
-                <p className="text-sm text-destructive mt-1">
-                  {String(passwordForm.formState.errors.new_password.message || "New password is required")}
-                </p>
-              )}
-            </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="confirm-password">Confirm Password</Label>
-              <Input
-                id="confirm-password"
-                type="password"
-                {...passwordForm.register("confirm_password")}
-                required
-                aria-invalid={!!passwordForm.formState.errors.confirm_password}
+              <FormField
+                control={passwordForm.control}
+                name="confirm_password"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Confirm password</FormLabel>
+                    <FormControl>
+                      <Input
+                        {...field}
+                        type="password"
+                        autoComplete="new-password"
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
               />
-              {passwordForm.formState.errors.confirm_password && (
-                <p className="text-sm text-destructive mt-1">
-                  {String(passwordForm.formState.errors.confirm_password.message || "Passwords must match")}
-                </p>
-              )}
-            </div>
 
-            <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setIsPasswordDialogOpen(false)}>
-                Cancel
-              </Button>
-              <Button type="submit" disabled={passwordForm.formState.isSubmitting}>
-                {passwordForm.formState.isSubmitting ? 'Changing...' : 'Change Password'}
-              </Button>
-            </DialogFooter>
-          </TracedForm>
+              <DialogFooter className="gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setIsPasswordDialogOpen(false)}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  disabled={passwordForm.formState.isSubmitting}
+                >
+                  {passwordForm.formState.isSubmitting ? 'Changing...' : 'Change password'}
+                </Button>
+              </DialogFooter>
+            </TracedForm>
+          </Form>
         </DialogContent>
       </Dialog>
     </div>
