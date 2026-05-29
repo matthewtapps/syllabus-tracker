@@ -743,6 +743,34 @@ pub async fn update_user_admin(
     Ok(())
 }
 
+/// Atomically read the user's previous `last_seen_at` and update it to NOW.
+/// Returns the previous value (None if this is the first visit).
+#[instrument]
+pub async fn read_and_bump_last_seen(
+    pool: &Pool<Sqlite>,
+    user_id: i64,
+) -> Result<Option<String>, AppError> {
+    info!("Reading and bumping last_seen_at");
+
+    let row = sqlx::query!(
+        r#"SELECT CAST(last_seen_at AS TEXT) as "last_seen_at?: String" FROM users WHERE id = ?"#,
+        user_id
+    )
+    .fetch_one(pool)
+    .await?;
+
+    let now = Utc::now();
+    sqlx::query!(
+        "UPDATE users SET last_seen_at = ? WHERE id = ?",
+        now,
+        user_id
+    )
+    .execute(pool)
+    .await?;
+
+    Ok(row.last_seen_at)
+}
+
 #[instrument]
 pub async fn set_user_graduated(
     pool: &Pool<Sqlite>,

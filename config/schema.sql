@@ -6,7 +6,8 @@ CREATE TABLE IF NOT EXISTS users (
     display_name TEXT,
     archived BOOLEAN NOT NULL DEFAULT FALSE,
     graduated_at TIMESTAMP,
-    graduated_by_id INTEGER REFERENCES users(id)
+    graduated_by_id INTEGER REFERENCES users(id),
+    last_seen_at TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS techniques (

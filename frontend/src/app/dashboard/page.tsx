@@ -4,9 +4,14 @@ import {
   AlertCircle,
   ArrowRight,
   Bell,
+  CheckCircle2,
+  ChevronRight,
   Clock,
   GraduationCap,
   History,
+  type LucideIcon,
+  PlayCircle,
+  Sparkles,
   Users,
 } from 'lucide-react';
 import type { User } from '@/lib/api';
@@ -14,8 +19,12 @@ import {
   getLibraryStats,
   getStudentTechniques,
   getStudents,
+  markDashboardSeen,
 } from '@/lib/api';
 import type { Technique } from '@/lib/api';
+import { cn } from '@/lib/utils';
+import { formatRelative } from '@/lib/dates';
+import { statusToDotClass } from '@/lib/status';
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/page-header';
 import { EmptyState } from '@/components/empty-state';
@@ -235,6 +244,7 @@ function CoachDashboard() {
 
 function StudentDashboard({ user }: { user: User }) {
   const [techniques, setTechniques] = useState<Technique[] | null>(null);
+  const [previousSeenAt, setPreviousSeenAt] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -243,9 +253,13 @@ function StudentDashboard({ user }: { user: User }) {
     async function load() {
       try {
         setLoading(true);
-        const result = await getStudentTechniques(user.id);
+        const [techResult, seenResult] = await Promise.all([
+          getStudentTechniques(user.id),
+          markDashboardSeen(),
+        ]);
         if (cancelled) return;
-        setTechniques(result.techniques);
+        setTechniques(techResult.techniques);
+        setPreviousSeenAt(seenResult?.previous_last_seen_at ?? null);
         setError(null);
       } catch (err) {
         if (cancelled) return;
@@ -270,7 +284,37 @@ function StudentDashboard({ user }: { user: User }) {
   }, [techniques]);
 
   const total = counts.red + counts.amber + counts.green;
+  const pctDone = total > 0 ? Math.round((counts.green / total) * 100) : 0;
   const isGraduate = !!user.graduated_at;
+
+  const currentlyWorking = useMemo(() => {
+    return (techniques ?? [])
+      .filter((t) => t.status === 'amber')
+      .sort((a, b) => Date.parse(b.updated_at) - Date.parse(a.updated_at))
+      .slice(0, 5);
+  }, [techniques]);
+
+  const recentlyDone = useMemo(() => {
+    return (techniques ?? [])
+      .filter((t) => t.status === 'green')
+      .sort((a, b) => Date.parse(b.updated_at) - Date.parse(a.updated_at))
+      .slice(0, 3);
+  }, [techniques]);
+
+  const newFromCoach = useMemo(() => {
+    if (!previousSeenAt) return [];
+    return (techniques ?? [])
+      .filter((t) => {
+        if (!t.last_coach_update_at) return false;
+        return t.last_coach_update_at > previousSeenAt;
+      })
+      .sort(
+        (a, b) =>
+          Date.parse(b.last_coach_update_at ?? '0') -
+          Date.parse(a.last_coach_update_at ?? '0'),
+      )
+      .slice(0, 5);
+  }, [techniques, previousSeenAt]);
 
   return (
     <div className="container mx-auto px-4 py-6 sm:px-6 md:py-8">
@@ -312,17 +356,104 @@ function StudentDashboard({ user }: { user: User }) {
       ) : (
         <>
           <p className="-mt-4 mb-6 text-sm text-muted-foreground">
-            {total} {total === 1 ? 'technique' : 'techniques'} on your card.
+            You're {pctDone}% done with your syllabus.
           </p>
           <StatusTiles counts={counts} total={total} className="mb-8" />
-          <Button asChild>
-            <Link to={`/student/${user.id}`} className="flex items-center gap-2">
-              Open my techniques
-              <ArrowRight className="h-4 w-4" aria-hidden />
-            </Link>
-          </Button>
+
+          <div className="space-y-6">
+            {newFromCoach.length > 0 && (
+              <TechniqueSection
+                title="New from your coach"
+                icon={Sparkles}
+                techniques={newFromCoach}
+                studentId={user.id}
+                showCoachTimestamp
+              />
+            )}
+
+            {currentlyWorking.length > 0 && (
+              <TechniqueSection
+                title="Currently working on"
+                icon={PlayCircle}
+                techniques={currentlyWorking}
+                studentId={user.id}
+              />
+            )}
+
+            {recentlyDone.length > 0 && (
+              <TechniqueSection
+                title="Recently done"
+                icon={CheckCircle2}
+                techniques={recentlyDone}
+                studentId={user.id}
+              />
+            )}
+
+            <Button asChild variant="outline" className="w-full sm:w-auto">
+              <Link to={`/student/${user.id}`} className="flex items-center gap-2">
+                Open my syllabus
+                <ArrowRight className="h-4 w-4" aria-hidden />
+              </Link>
+            </Button>
+          </div>
         </>
       )}
     </div>
+  );
+}
+
+interface TechniqueSectionProps {
+  title: string;
+  icon: LucideIcon;
+  techniques: Technique[];
+  studentId: number;
+  showCoachTimestamp?: boolean;
+}
+
+function TechniqueSection({
+  title,
+  icon: Icon,
+  techniques,
+  studentId,
+  showCoachTimestamp = false,
+}: TechniqueSectionProps) {
+  return (
+    <section className="overflow-hidden rounded-lg border border-border bg-card">
+      <header className="flex items-center gap-2.5 border-b border-border px-4 py-3">
+        <Icon className="h-4 w-4 text-muted-foreground" aria-hidden />
+        <h2 className="text-sm font-semibold">{title}</h2>
+      </header>
+      <ul className="divide-y divide-border">
+        {techniques.map((t) => {
+          const ts = showCoachTimestamp ? t.last_coach_update_at : t.updated_at;
+          return (
+            <li key={t.id}>
+              <Link
+                to={`/student/${studentId}`}
+                className="flex items-center gap-3 px-4 py-3 transition-colors hover:bg-muted/40"
+              >
+                <span
+                  className={cn(
+                    'h-2 w-2 shrink-0 rounded-full',
+                    statusToDotClass(t.status as Status),
+                  )}
+                  aria-hidden
+                />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-medium">{t.technique_name}</p>
+                  {ts && (
+                    <p className="text-xs text-muted-foreground">{formatRelative(ts)}</p>
+                  )}
+                </div>
+                <ChevronRight
+                  className="h-4 w-4 shrink-0 text-muted-foreground"
+                  aria-hidden
+                />
+              </Link>
+            </li>
+          );
+        })}
+      </ul>
+    </section>
   );
 }

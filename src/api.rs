@@ -21,6 +21,7 @@ use crate::db::{
     find_user_by_username, get_all_tags, get_all_users, get_student_technique,
     get_student_techniques, get_students_by_recent_updates, get_tags_for_technique,
     count_techniques, get_unassigned_techniques, get_user, invalidate_session,
+    read_and_bump_last_seen,
     remove_tag_from_technique, set_user_archived, set_user_graduated, update_student_notes,
     update_student_technique,
     update_technique, update_user_display_name, update_user_password, update_user_role,
@@ -702,6 +703,24 @@ pub async fn api_update_user(
     }
 
     Ok(Status::Ok)
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct SeenResponse {
+    pub previous_last_seen_at: Option<String>,
+}
+
+/// Bump the current user's `last_seen_at` to NOW and return the previous value.
+/// The dashboard calls this on mount to compute "new from coach since last visit".
+#[post("/me/seen")]
+pub async fn api_bump_last_seen(
+    user: User,
+    db: &State<Pool<Sqlite>>,
+) -> ApiResult<Json<SeenResponse>> {
+    let previous = read_and_bump_last_seen(db, user.id).await?;
+    Ok(Json(SeenResponse {
+        previous_last_seen_at: previous,
+    }))
 }
 
 #[derive(Deserialize, Clone)]

@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT CAST(last_seen_at AS TEXT) as \"last_seen_at?: String\" FROM users WHERE id = ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "last_seen_at?: String",
+        "ordinal": 0,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "d01423ac24d14b66e25bf7e154454269f0e08f9691929e875519db5cbccf9683"
+}

@@ -393,6 +393,23 @@ export async function getAllUsers(): Promise<User[]> {
   return await response.json();
 }
 
+export interface SeenResponse {
+  previous_last_seen_at: string | null;
+}
+
+export async function markDashboardSeen(): Promise<SeenResponse | null> {
+  try {
+    const response = await fetch("/api/me/seen", {
+      method: "POST",
+      credentials: "include",
+    });
+    if (!response.ok) return null;
+    return await response.json();
+  } catch {
+    return null;
+  }
+}
+
 export async function setStudentGraduated(
   studentId: number,
   graduated: boolean,

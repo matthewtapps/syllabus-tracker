@@ -43,11 +43,7 @@ export function LoginForm({ onSuccess, className, ...props }: LoginFormProps) {
       const response = await login(data);
       if (response.success) {
         onSuccess();
-        if (response.user?.role === "student" || response.user?.role === "Student") {
-          navigate(`/student/${response.user.id}`);
-        } else {
-          navigate("/dashboard");
-        }
+        navigate("/dashboard");
       } else {
         throw new Error(response.error || "Login failed");
       }
