@@ -9,11 +9,14 @@
     "lint": "eslint .",
     "preview": "vite preview"
   },
-  "allowBuilds": [
-    "@tailwindcss/oxide",
-    "esbuild",
-    "protobufjs"
-  ],
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@tailwindcss/oxide",
+      "esbuild",
+      "protobufjs"
+    ]
+  },
+  "packageManager": "pnpm@10.8.0",
   "dependencies": {
     "@hookform/resolvers": "^5.0.1",
     "@opentelemetry/api": "^1.9.0",
