@@ -564,4 +564,76 @@ mod tests {
             .collect();
         assert!(!column_names.contains(&"email".to_string()));
     }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_rebuild_parent_with_existing_child_rows() {
+        // Regression: production crashed with "FOREIGN KEY constraint failed"
+        // when a parent table was rebuilt (column added) while an existing
+        // child table held rows referencing it. defer_foreign_keys=TRUE was
+        // not sufficient to keep the deferred FK check happy at COMMIT.
+        let pool = create_test_db().await;
+
+        sqlx::raw_sql(
+            r#"
+            CREATE TABLE users (
+                id INTEGER PRIMARY KEY,
+                username TEXT NOT NULL UNIQUE
+            );
+            CREATE TABLE posts (
+                id INTEGER PRIMARY KEY,
+                user_id INTEGER,
+                FOREIGN KEY (user_id) REFERENCES users (id)
+            );
+            "#,
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        sqlx::query("INSERT INTO users (id, username) VALUES (1, 'alice')")
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("INSERT INTO posts (id, user_id) VALUES (1, 1)")
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        // Target schema: same shape, but users gets a new column (forces rebuild).
+        let target = r#"
+            CREATE TABLE users (
+                id INTEGER PRIMARY KEY,
+                username TEXT NOT NULL UNIQUE,
+                email TEXT
+            );
+            CREATE TABLE posts (
+                id INTEGER PRIMARY KEY,
+                user_id INTEGER,
+                FOREIGN KEY (user_id) REFERENCES users (id)
+            );
+        "#;
+
+        let result = migrate_database_declaratively(pool.clone(), target).await;
+        assert!(
+            result.is_ok(),
+            "Rebuilding users while posts has rows referencing it should not fail: {:?}",
+            result.err()
+        );
+
+        let row = sqlx::query("SELECT user_id FROM posts WHERE id = 1")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(row.get::<i64, _>("user_id"), 1);
+
+        let violations = sqlx::query("PRAGMA foreign_key_check")
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+        assert!(
+            violations.is_empty(),
+            "No FK violations should remain after migration"
+        );
+    }
 }

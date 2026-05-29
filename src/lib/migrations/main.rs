@@ -1,5 +1,5 @@
 use regex::Regex;
-use sqlx::{Pool, Row, Sqlite, SqlitePool};
+use sqlx::{Connection, Pool, Row, Sqlite, SqlitePool};
 use std::{
     collections::{HashMap, HashSet},
     fmt, fs,
@@ -98,41 +98,73 @@ impl DeclarativeMigrator {
                 })?;
         }
 
-        // Start transaction with deferred foreign keys for the migration
-        let mut tx = self.pool.begin().await?;
-        sqlx::query("PRAGMA defer_foreign_keys = TRUE")
-            .execute(&mut *tx)
+        // SQLite's documented table-rebuild procedure requires foreign_keys=OFF
+        // *outside* the transaction. defer_foreign_keys=TRUE is not sufficient:
+        // DROP TABLE on a parent leaves child FK references in a broken state
+        // that the deferred check at COMMIT cannot reconcile, even after RENAME
+        // restores the parent name. We must restore foreign_keys=ON before
+        // releasing the connection so the pool's next consumer is unaffected.
+        let mut conn = self.pool.acquire().await?;
+        sqlx::query("PRAGMA foreign_keys = OFF")
+            .execute(&mut *conn)
             .await?;
 
-        // Analyze what changes need to be made
-        let changes_needed = self.analyze_changes(&mut tx, &pristine_pool).await?;
+        let result = self.run_migration(&mut conn, &pristine_pool).await;
 
-        // If no changes needed, just clean up and return
+        sqlx::query("PRAGMA foreign_keys = ON")
+            .execute(&mut *conn)
+            .await?;
+
+        let changes_made = result?;
+
+        // Run VACUUM only if actual schema changes were made
+        if self.schema_changes_made > 0 {
+            info!("Running VACUUM after migration");
+            sqlx::query("VACUUM").execute(&self.pool).await?;
+        }
+
+        info!(
+            "Migration completed. Schema changes made: {}",
+            self.schema_changes_made
+        );
+        Ok(changes_made)
+    }
+
+    async fn run_migration(
+        &mut self,
+        conn: &mut sqlx::pool::PoolConnection<Sqlite>,
+        pristine_pool: &SqlitePool,
+    ) -> Result<bool, MigrationError> {
+        let mut tx = conn.begin().await?;
+
+        let changes_needed = self.analyze_changes(&mut tx, pristine_pool).await?;
+
         if !changes_needed.has_any_changes() {
             tx.commit().await?;
             info!("No schema changes needed");
             return Ok(false);
         }
 
-        // Apply the changes
         let migration_result = self
-            .apply_changes(&mut tx, &pristine_pool, changes_needed)
+            .apply_changes(&mut tx, pristine_pool, changes_needed)
             .await;
 
         match migration_result {
             Ok(()) => {
-                tx.commit().await?;
-
-                // Run VACUUM only if actual schema changes were made
-                if self.schema_changes_made > 0 {
-                    info!("Running VACUUM after migration");
-                    sqlx::query("VACUUM").execute(&self.pool).await?;
+                // Since FK enforcement is off, verify integrity ourselves before committing
+                let violations = sqlx::query("PRAGMA foreign_key_check")
+                    .fetch_all(&mut *tx)
+                    .await?;
+                if !violations.is_empty() {
+                    tx.rollback().await?;
+                    return Err(MigrationError {
+                        message: format!(
+                            "Foreign key violations detected after migration: {} row(s)",
+                            violations.len()
+                        ),
+                    });
                 }
-
-                info!(
-                    "Migration completed. Schema changes made: {}",
-                    self.schema_changes_made
-                );
+                tx.commit().await?;
                 Ok(self.schema_changes_made > 0)
             }
             Err(e) => {
