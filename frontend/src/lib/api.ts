@@ -1004,3 +1004,67 @@ export async function getDownloadUrl(videoId: number): Promise<SignedUrl> {
   if (!response.ok) throw response;
   return (await response.json()) as SignedUrl;
 }
+
+export interface VideoStatsSnapshot {
+  video_id: number;
+  unique_viewers: number;
+  total_plays: number;
+  completed_plays: number;
+  total_seconds_watched: number;
+  completion_rate: number;
+}
+
+export interface DashboardVideoRow {
+  video_id: number;
+  video_title: string;
+  technique_id: number;
+  technique_name: string;
+  plays_this_window: number;
+  unique_viewers: number;
+}
+
+export interface DashboardVideoOverview {
+  total_seconds_watched: number;
+  videos_processing: number;
+  top_videos: DashboardVideoRow[];
+}
+
+export interface StorageObjectRow {
+  video_id: number;
+  title: string;
+  technique_id: number;
+  technique_name: string;
+  bytes: number;
+}
+
+export interface StorageOverview {
+  total_bytes: number;
+  total_objects: number;
+  top_objects: StorageObjectRow[];
+}
+
+export async function getVideoStats(
+  videoId: number,
+): Promise<VideoStatsSnapshot> {
+  const response = await fetch(`/api/videos/${videoId}/stats`, {
+    credentials: "include",
+  });
+  if (!response.ok) throw response;
+  return (await response.json()) as VideoStatsSnapshot;
+}
+
+export async function getDashboardVideoOverview(): Promise<DashboardVideoOverview> {
+  const response = await fetch(`/api/dashboard/video-overview`, {
+    credentials: "include",
+  });
+  if (!response.ok) throw response;
+  return (await response.json()) as DashboardVideoOverview;
+}
+
+export async function getAdminStorage(): Promise<StorageOverview> {
+  const response = await fetch(`/api/admin/storage`, {
+    credentials: "include",
+  });
+  if (!response.ok) throw response;
+  return (await response.json()) as StorageOverview;
+}

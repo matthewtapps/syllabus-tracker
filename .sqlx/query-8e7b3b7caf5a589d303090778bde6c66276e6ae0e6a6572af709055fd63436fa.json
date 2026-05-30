@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT COALESCE(SUM(seconds_watched), 0) AS seconds\n         FROM video_watch_events\n         WHERE event != 'opened' AND seconds_watched IS NOT NULL AND created_at >= ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "seconds",
+        "ordinal": 0,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "8e7b3b7caf5a589d303090778bde6c66276e6ae0e6a6572af709055fd63436fa"
+}

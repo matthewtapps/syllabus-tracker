@@ -542,6 +542,90 @@ mod tests {
     }
 
     #[rocket::async_test]
+    async fn video_stats_requires_coach_permission() {
+        let test_db = create_standard_test_db().await;
+        let (client, db) = setup_test_client(test_db).await;
+        let tid = first_technique_id(&db).await;
+
+        login_as(&client, "coach_user").await;
+        let video_id = upload_ready_video(&client, tid).await;
+
+        login_as(&client, "student_user").await;
+        let response = client
+            .get(format!("/api/videos/{}/stats", video_id))
+            .dispatch()
+            .await;
+        assert_eq!(response.status(), Status::Forbidden);
+
+        login_as(&client, "coach_user").await;
+        let response = client
+            .get(format!("/api/videos/{}/stats", video_id))
+            .dispatch()
+            .await;
+        assert_eq!(response.status(), Status::Ok);
+        let body: serde_json::Value =
+            serde_json::from_str(&response.into_string().await.unwrap()).unwrap();
+        assert_eq!(body["video_id"].as_i64().unwrap(), video_id);
+    }
+
+    #[rocket::async_test]
+    async fn video_stats_aggregates_across_users() {
+        let test_db = create_standard_test_db().await;
+        let (client, db) = setup_test_client(test_db).await;
+        let tid = first_technique_id(&db).await;
+
+        login_as(&client, "coach_user").await;
+        let video_id = upload_ready_video(&client, tid).await;
+
+        login_as(&client, "student_user").await;
+        post_watch_events(
+            &client,
+            video_id,
+            "play-s1",
+            vec![
+                json!({"event": "started"}),
+                json!({"event": "completed", "seconds_watched": 30}),
+            ],
+        )
+        .await;
+
+        login_as(&client, "coach_user").await;
+        let response = client
+            .get(format!("/api/videos/{}/stats", video_id))
+            .dispatch()
+            .await;
+        let body: serde_json::Value =
+            serde_json::from_str(&response.into_string().await.unwrap()).unwrap();
+        assert_eq!(body["unique_viewers"].as_i64().unwrap(), 1);
+        assert_eq!(body["total_plays"].as_i64().unwrap(), 1);
+        assert_eq!(body["completed_plays"].as_i64().unwrap(), 1);
+        assert_eq!(body["total_seconds_watched"].as_i64().unwrap(), 30);
+    }
+
+    #[rocket::async_test]
+    async fn admin_storage_returns_totals_and_top_objects() {
+        let test_db = create_standard_test_db().await;
+        let (client, db) = setup_test_client(test_db).await;
+        let tid = first_technique_id(&db).await;
+
+        login_as(&client, "coach_user").await;
+        upload_ready_video(&client, tid).await;
+        upload_ready_video(&client, tid).await;
+
+        login_as(&client, "student_user").await;
+        let denied = client.get("/api/admin/storage").dispatch().await;
+        assert_eq!(denied.status(), Status::Forbidden);
+
+        login_as(&client, "admin_user").await;
+        let response = client.get("/api/admin/storage").dispatch().await;
+        assert_eq!(response.status(), Status::Ok);
+        let body: serde_json::Value =
+            serde_json::from_str(&response.into_string().await.unwrap()).unwrap();
+        assert!(body["total_objects"].as_i64().unwrap() >= 2);
+        assert!(body["top_objects"].as_array().unwrap().len() >= 2);
+    }
+
+    #[rocket::async_test]
     async fn privacy_ack_persists() {
         let test_db = create_standard_test_db().await;
         let (client, _db) = setup_test_client(test_db).await;

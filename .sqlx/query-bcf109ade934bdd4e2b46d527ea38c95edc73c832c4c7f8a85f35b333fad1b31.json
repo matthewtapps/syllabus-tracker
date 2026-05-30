@@ -1,0 +1,44 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT v.id AS \"video_id!: i64\",\n                  v.title AS \"title!: String\",\n                  v.technique_id AS \"technique_id!: i64\",\n                  t.name AS \"technique_name!: String\",\n                  v.bytes AS \"bytes!: i64\"\n           FROM videos v\n           JOIN techniques t ON t.id = v.technique_id\n           WHERE v.bytes IS NOT NULL AND v.storage_key IS NOT NULL\n           ORDER BY v.bytes DESC\n           LIMIT ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "video_id!: i64",
+        "ordinal": 0,
+        "type_info": "Integer"
+      },
+      {
+        "name": "title!: String",
+        "ordinal": 1,
+        "type_info": "Text"
+      },
+      {
+        "name": "technique_id!: i64",
+        "ordinal": 2,
+        "type_info": "Integer"
+      },
+      {
+        "name": "technique_name!: String",
+        "ordinal": 3,
+        "type_info": "Text"
+      },
+      {
+        "name": "bytes!: i64",
+        "ordinal": 4,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "bcf109ade934bdd4e2b46d527ea38c95edc73c832c4c7f8a85f35b333fad1b31"
+}

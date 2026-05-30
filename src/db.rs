@@ -5,7 +5,7 @@ use crate::{
     error::AppError,
     models::{DbTag, Tag, naive_to_utc},
 };
-use chrono::{NaiveDateTime, Utc};
+use chrono::{DateTime, NaiveDateTime, Utc};
 use serde::Serialize;
 use sqlx::{Pool, Sqlite};
 use tracing::{info, instrument};
@@ -2896,4 +2896,223 @@ pub async fn record_privacy_ack(pool: &Pool<Sqlite>, user_id: i64) -> Result<(),
     .execute(pool)
     .await?;
     Ok(())
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct VideoStatsSnapshot {
+    pub video_id: i64,
+    pub unique_viewers: i64,
+    pub total_plays: i64,
+    pub completed_plays: i64,
+    pub total_seconds_watched: i64,
+    pub completion_rate: f64,
+}
+
+#[instrument(skip(pool))]
+pub async fn get_video_stats(
+    pool: &Pool<Sqlite>,
+    video_id: i64,
+) -> Result<VideoStatsSnapshot, AppError> {
+    let row = sqlx::query!(
+        "SELECT
+            COUNT(*) AS viewer_count,
+            COALESCE(SUM(play_count), 0) AS total_plays,
+            COALESCE(SUM(completed_count), 0) AS completed_plays,
+            COALESCE(SUM(total_seconds_watched), 0) AS total_seconds_watched
+         FROM video_watch_aggregates
+         WHERE video_id = ?",
+        video_id
+    )
+    .fetch_one(pool)
+    .await?;
+    let completion_rate = if row.total_plays > 0 {
+        row.completed_plays as f64 / row.total_plays as f64
+    } else {
+        0.0
+    };
+    Ok(VideoStatsSnapshot {
+        video_id,
+        unique_viewers: row.viewer_count,
+        total_plays: row.total_plays,
+        completed_plays: row.completed_plays,
+        total_seconds_watched: row.total_seconds_watched,
+        completion_rate,
+    })
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct StudentWatchActivityRow {
+    pub video_id: i64,
+    pub video_title: String,
+    pub technique_id: i64,
+    pub technique_name: String,
+    pub play_count: i64,
+    pub completed_count: i64,
+    pub total_seconds_watched: i64,
+    pub last_watched_at: Option<DateTime<Utc>>,
+}
+
+#[instrument(skip(pool))]
+pub async fn get_student_watch_activity(
+    pool: &Pool<Sqlite>,
+    student_id: i64,
+    since: DateTime<Utc>,
+) -> Result<Vec<StudentWatchActivityRow>, AppError> {
+    let rows = sqlx::query!(
+        r#"SELECT v.id AS "video_id!: i64",
+                  v.title AS "video_title!: String",
+                  v.technique_id AS "technique_id!: i64",
+                  t.name AS "technique_name!: String",
+                  a.play_count AS "play_count!: i64",
+                  a.completed_count AS "completed_count!: i64",
+                  a.total_seconds_watched AS "total_seconds_watched!: i64",
+                  a.last_watched_at AS "last_watched_at: NaiveDateTime"
+           FROM video_watch_aggregates a
+           JOIN videos v ON v.id = a.video_id
+           JOIN techniques t ON t.id = v.technique_id
+           WHERE a.user_id = ? AND a.last_watched_at >= ?
+           ORDER BY a.last_watched_at DESC
+           LIMIT 50"#,
+        student_id,
+        since,
+    )
+    .fetch_all(pool)
+    .await?;
+    Ok(rows
+        .into_iter()
+        .map(|r| StudentWatchActivityRow {
+            video_id: r.video_id,
+            video_title: r.video_title,
+            technique_id: r.technique_id,
+            technique_name: r.technique_name,
+            play_count: r.play_count,
+            completed_count: r.completed_count,
+            total_seconds_watched: r.total_seconds_watched,
+            last_watched_at: r.last_watched_at.map(naive_to_utc),
+        })
+        .collect())
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct DashboardVideoRow {
+    pub video_id: i64,
+    pub video_title: String,
+    pub technique_id: i64,
+    pub technique_name: String,
+    pub plays_this_window: i64,
+    pub unique_viewers: i64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct DashboardVideoOverview {
+    pub total_seconds_watched: i64,
+    pub videos_processing: i64,
+    pub top_videos: Vec<DashboardVideoRow>,
+}
+
+#[instrument(skip(pool))]
+pub async fn get_dashboard_video_overview(
+    pool: &Pool<Sqlite>,
+    since: DateTime<Utc>,
+) -> Result<DashboardVideoOverview, AppError> {
+    let totals_row = sqlx::query!(
+        "SELECT COALESCE(SUM(seconds_watched), 0) AS seconds
+         FROM video_watch_events
+         WHERE event != 'opened' AND seconds_watched IS NOT NULL AND created_at >= ?",
+        since
+    )
+    .fetch_one(pool)
+    .await?;
+    let processing_row = sqlx::query!(
+        "SELECT COUNT(*) AS count FROM videos WHERE processing_status = 'processing'"
+    )
+    .fetch_one(pool)
+    .await?;
+    let top_rows = sqlx::query!(
+        r#"SELECT v.id AS "video_id!: i64",
+                  v.title AS "video_title!: String",
+                  v.technique_id AS "technique_id!: i64",
+                  t.name AS "technique_name!: String",
+                  COUNT(*) AS "plays_this_window!: i64",
+                  COUNT(DISTINCT e.user_id) AS "unique_viewers!: i64"
+           FROM video_watch_events e
+           JOIN videos v ON v.id = e.video_id
+           JOIN techniques t ON t.id = v.technique_id
+           WHERE e.event = 'started' AND e.created_at >= ?
+           GROUP BY v.id
+           ORDER BY COUNT(*) DESC, v.id DESC
+           LIMIT 5"#,
+        since,
+    )
+    .fetch_all(pool)
+    .await?;
+    Ok(DashboardVideoOverview {
+        total_seconds_watched: totals_row.seconds,
+        videos_processing: processing_row.count,
+        top_videos: top_rows
+            .into_iter()
+            .map(|r| DashboardVideoRow {
+                video_id: r.video_id,
+                video_title: r.video_title,
+                technique_id: r.technique_id,
+                technique_name: r.technique_name,
+                plays_this_window: r.plays_this_window,
+                unique_viewers: r.unique_viewers,
+            })
+            .collect(),
+    })
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct StorageObjectRow {
+    pub video_id: i64,
+    pub title: String,
+    pub technique_id: i64,
+    pub technique_name: String,
+    pub bytes: i64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct StorageOverview {
+    pub total_bytes: i64,
+    pub total_objects: i64,
+    pub top_objects: Vec<StorageObjectRow>,
+}
+
+#[instrument(skip(pool))]
+pub async fn get_storage_overview(
+    pool: &Pool<Sqlite>,
+    top: i64,
+) -> Result<StorageOverview, AppError> {
+    let total_bytes = total_video_storage_bytes(pool).await?;
+    let total_objects = total_video_objects(pool).await?;
+    let top_rows = sqlx::query!(
+        r#"SELECT v.id AS "video_id!: i64",
+                  v.title AS "title!: String",
+                  v.technique_id AS "technique_id!: i64",
+                  t.name AS "technique_name!: String",
+                  v.bytes AS "bytes!: i64"
+           FROM videos v
+           JOIN techniques t ON t.id = v.technique_id
+           WHERE v.bytes IS NOT NULL AND v.storage_key IS NOT NULL
+           ORDER BY v.bytes DESC
+           LIMIT ?"#,
+        top,
+    )
+    .fetch_all(pool)
+    .await?;
+    Ok(StorageOverview {
+        total_bytes,
+        total_objects,
+        top_objects: top_rows
+            .into_iter()
+            .map(|r| StorageObjectRow {
+                video_id: r.video_id,
+                title: r.title,
+                technique_id: r.technique_id,
+                technique_name: r.technique_name,
+                bytes: r.bytes,
+            })
+            .collect(),
+    })
 }

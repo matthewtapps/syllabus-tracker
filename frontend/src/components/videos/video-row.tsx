@@ -31,6 +31,7 @@ import {
 import { cn } from "@/lib/utils";
 import { useWatchTracker } from "./useWatchTracker";
 import { VideoPlayerPanel } from "./video-player-panel";
+import { VideoStatsPanel } from "./video-stats-panel";
 
 interface VideoRowProps {
   video: Video;
@@ -50,6 +51,7 @@ export function VideoRow({
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [downloading, setDownloading] = useState(false);
+  const [showStats, setShowStats] = useState(false);
   const trackerEvents = useWatchTracker(video.id);
 
   const canPlay = video.processing_status === "ready";
@@ -182,6 +184,22 @@ export function VideoRow({
       {expanded && canPlay && (
         <div className="border-t border-border p-3">
           <VideoPlayerPanel video={video} events={trackerEvents} />
+          {canManage && (
+            <div className="mt-3">
+              <button
+                type="button"
+                className="text-xs font-medium text-muted-foreground underline-offset-2 hover:underline"
+                onClick={() => setShowStats((v) => !v)}
+              >
+                {showStats ? "Hide stats" : "Show stats"}
+              </button>
+              {showStats && (
+                <div className="mt-2">
+                  <VideoStatsPanel videoId={video.id} />
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
 

@@ -53,6 +53,7 @@ import {
 } from '@/components/skeleton-row';
 import { StatusDonut } from '@/components/status-donut';
 import type { Status } from '@/lib/status';
+import { VideoOverviewCard } from '@/components/videos/video-overview-card';
 import { DashboardTotals } from './components/dashboard-totals';
 import { StudentSection } from './components/student-section';
 
@@ -281,6 +282,8 @@ function CoachDashboard() {
       />
 
       <StatusDonut counts={statusCounts} className="mb-8" />
+
+      <VideoOverviewCard className="mb-6" />
 
       <div className="space-y-6">
         {resetRequests.length > 0 && (

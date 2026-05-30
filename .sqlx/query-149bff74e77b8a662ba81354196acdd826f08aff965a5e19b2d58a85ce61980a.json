@@ -1,0 +1,38 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT\n            COUNT(*) AS viewer_count,\n            COALESCE(SUM(play_count), 0) AS total_plays,\n            COALESCE(SUM(completed_count), 0) AS completed_plays,\n            COALESCE(SUM(total_seconds_watched), 0) AS total_seconds_watched\n         FROM video_watch_aggregates\n         WHERE video_id = ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "viewer_count",
+        "ordinal": 0,
+        "type_info": "Integer"
+      },
+      {
+        "name": "total_plays",
+        "ordinal": 1,
+        "type_info": "Integer"
+      },
+      {
+        "name": "completed_plays",
+        "ordinal": 2,
+        "type_info": "Integer"
+      },
+      {
+        "name": "total_seconds_watched",
+        "ordinal": 3,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "149bff74e77b8a662ba81354196acdd826f08aff965a5e19b2d58a85ce61980a"
+}

@@ -490,14 +490,38 @@ pub async fn api_video_privacy_ack_status(
     Ok(Json(PrivacyAckStatus { acked }))
 }
 
-#[get("/videos/<_vid>/stats")]
-pub async fn api_video_stats(_vid: i64, _user: User) -> Status {
-    Status::NotImplemented
+#[instrument(skip(pool))]
+#[get("/videos/<vid>/stats")]
+pub async fn api_video_stats(
+    vid: i64,
+    user: User,
+    pool: &State<Pool<Sqlite>>,
+) -> Result<Json<db::VideoStatsSnapshot>, Status> {
+    user.require_permission(Permission::ViewWatchStats)?;
+    let stats = db::get_video_stats(pool.inner(), vid)
+        .await
+        .map_err(Status::from)?;
+    Ok(Json(stats))
 }
 
-#[get("/students/<_sid>/watch-activity")]
-pub async fn api_student_watch_activity(_sid: i64, _user: User) -> Status {
-    Status::NotImplemented
+#[derive(Serialize)]
+pub struct StudentWatchActivityResponse {
+    pub activity: Vec<db::StudentWatchActivityRow>,
+}
+
+#[instrument(skip(pool))]
+#[get("/students/<sid>/watch-activity")]
+pub async fn api_student_watch_activity(
+    sid: i64,
+    user: User,
+    pool: &State<Pool<Sqlite>>,
+) -> Result<Json<StudentWatchActivityResponse>, Status> {
+    user.require_permission(Permission::ViewWatchStats)?;
+    let since = Utc::now() - chrono::Duration::days(30);
+    let activity = db::get_student_watch_activity(pool.inner(), sid, since)
+        .await
+        .map_err(Status::from)?;
+    Ok(Json(StudentWatchActivityResponse { activity }))
 }
 
 #[derive(Serialize)]
@@ -518,14 +542,31 @@ pub async fn api_my_watch_state(
     Ok(Json(WatchStateResponse { videos }))
 }
 
+#[instrument(skip(pool))]
 #[get("/dashboard/video-overview")]
-pub async fn api_dashboard_video_overview(_user: User) -> Status {
-    Status::NotImplemented
+pub async fn api_dashboard_video_overview(
+    user: User,
+    pool: &State<Pool<Sqlite>>,
+) -> Result<Json<db::DashboardVideoOverview>, Status> {
+    user.require_permission(Permission::ViewWatchStats)?;
+    let since = Utc::now() - chrono::Duration::days(7);
+    let overview = db::get_dashboard_video_overview(pool.inner(), since)
+        .await
+        .map_err(Status::from)?;
+    Ok(Json(overview))
 }
 
+#[instrument(skip(pool))]
 #[get("/admin/storage")]
-pub async fn api_admin_storage(_user: User) -> Status {
-    Status::NotImplemented
+pub async fn api_admin_storage(
+    user: User,
+    pool: &State<Pool<Sqlite>>,
+) -> Result<Json<db::StorageOverview>, Status> {
+    user.require_permission(Permission::ViewStorageStats)?;
+    let overview = db::get_storage_overview(pool.inner(), 10)
+        .await
+        .map_err(Status::from)?;
+    Ok(Json(overview))
 }
 
 fn is_mp4(content_type: Option<&rocket::http::ContentType>) -> bool {
