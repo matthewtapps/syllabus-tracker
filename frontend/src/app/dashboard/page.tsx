@@ -54,6 +54,7 @@ import {
 import { StatusDonut } from '@/components/status-donut';
 import type { Status } from '@/lib/status';
 import { VideoOverviewCard } from '@/components/videos/video-overview-card';
+import { useCapabilities } from '@/context/capabilities';
 import { DashboardTotals } from './components/dashboard-totals';
 import { StudentSection } from './components/student-section';
 
@@ -85,6 +86,7 @@ function CoachDashboard() {
   const [totalTechniques, setTotalTechniques] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const { videos: videosEnabled } = useCapabilities();
 
   useEffect(() => {
     let cancelled = false;
@@ -283,7 +285,7 @@ function CoachDashboard() {
 
       <StatusDonut counts={statusCounts} className="mb-8" />
 
-      <VideoOverviewCard className="mb-6" />
+      {videosEnabled && <VideoOverviewCard className="mb-6" />}
 
       <div className="space-y-6">
         {resetRequests.length > 0 && (

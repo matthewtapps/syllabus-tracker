@@ -9,3 +9,9 @@ pub use media::{DynMediaProbe, DynMediaTranscode, FfmpegMediaTranscode, FfprobeM
 pub use pipeline::{PipelineContext, ProcessingJobs};
 pub use routes::*;
 pub use storage::{DynVideoStorage, S3Config, S3VideoStorage};
+
+pub struct VideoStack {
+    pub storage: DynVideoStorage,
+    pub probe: DynMediaProbe,
+    pub transcode: DynMediaTranscode,
+}

@@ -3,6 +3,7 @@ extern crate rocket;
 
 mod api;
 mod auth;
+mod capabilities;
 mod db;
 mod env;
 mod error;
@@ -34,6 +35,7 @@ use api::{
     api_update_user, health,
 };
 use auth::unauthorized_api;
+use capabilities::{Capabilities, api_capabilities};
 use db::clean_expired_sessions;
 use error::AppError;
 use rocket::{Build, Rocket, tokio};
@@ -80,11 +82,17 @@ impl From<rocket::figment::Error> for Error {
 
 #[launch]
 async fn rocket() -> _ {
-    init_tracing();
-
     if let Err(e) = env::load_environment() {
         eprintln!("Failed to load environment variables: {}", e);
     }
+
+    let videos_enabled = dotenvy::var("VIDEOS_ENABLED")
+        .map(|v| v == "true" || v == "1")
+        .unwrap_or(false);
+
+    init_tracing(videos_enabled);
+
+    info!("Feature flag VIDEOS_ENABLED = {}", videos_enabled);
 
     let database_url =
         dotenvy::var("DATABASE_URL").expect("Failed to get database url from environment");
@@ -190,16 +198,19 @@ async fn rocket() -> _ {
         std::process::exit(0);
     }
 
-    let storage_config = videos::S3Config::from_env()
-        .expect("Failed to read S3 config from environment");
-    let storage: videos::DynVideoStorage =
-        std::sync::Arc::new(videos::S3VideoStorage::new(&storage_config));
-    let probe: videos::DynMediaProbe =
-        std::sync::Arc::new(videos::FfprobeMediaProbe::from_env());
-    let transcode: videos::DynMediaTranscode =
-        std::sync::Arc::new(videos::FfmpegMediaTranscode::from_env());
+    let video_stack = if videos_enabled {
+        let storage_config = videos::S3Config::from_env()
+            .expect("VIDEOS_ENABLED=true but S3 config missing from environment");
+        Some(videos::VideoStack {
+            storage: std::sync::Arc::new(videos::S3VideoStorage::new(&storage_config)),
+            probe: std::sync::Arc::new(videos::FfprobeMediaProbe::from_env()),
+            transcode: std::sync::Arc::new(videos::FfmpegMediaTranscode::from_env()),
+        })
+    } else {
+        None
+    };
 
-    init_rocket(pool, storage, probe, transcode).await
+    init_rocket(pool, video_stack).await
 }
 
 async fn sample_video_gauges(pool: &SqlitePool, active_jobs: i64) {
@@ -217,30 +228,11 @@ async fn sample_video_gauges(pool: &SqlitePool, active_jobs: i64) {
 
 pub async fn init_rocket(
     pool: SqlitePool,
-    storage: videos::DynVideoStorage,
-    probe: videos::DynMediaProbe,
-    transcode: videos::DynMediaTranscode,
+    video_stack: Option<videos::VideoStack>,
 ) -> Rocket<Build> {
     info!("Starting syllabus tracker");
 
-    let jobs = std::sync::Arc::new(videos::ProcessingJobs::new());
-    let pipeline_ctx = std::sync::Arc::new(videos::PipelineContext {
-        pool: pool.clone(),
-        storage: storage.clone(),
-        probe,
-        transcode,
-        jobs: jobs.clone(),
-        max_duration_seconds: videos::pipeline::max_video_duration_seconds(),
-    });
-
-    let sampler_pool = pool.clone();
-    let sampler_jobs = jobs.clone();
-    tokio::spawn(async move {
-        loop {
-            sample_video_gauges(&sampler_pool, sampler_jobs.snapshot()).await;
-            tokio::time::sleep(tokio::time::Duration::from_secs(300)).await;
-        }
-    });
+    let videos_enabled = video_stack.is_some();
 
     let upload_limit = videos::routes::upload_byte_limit();
     let limits = rocket::data::Limits::default()
@@ -248,11 +240,8 @@ pub async fn init_rocket(
         .limit("data-form", upload_limit);
     let figment = rocket::Config::figment().merge(("limits", limits));
 
-    rocket::custom(figment)
-        .manage(pool)
-        .manage(storage)
-        .manage(pipeline_ctx)
-        .manage(jobs)
+    let mut rocket = rocket::custom(figment)
+        .manage(Capabilities { videos: videos_enabled })
         .mount(
             "/api",
             routes![
@@ -307,29 +296,62 @@ pub async fn init_rocket(
                 api_attempt_summary,
                 api_attempt_heatmap,
                 api_attempt_sparkline,
-                api_video_upload,
-                api_video_status,
-                api_video_link,
-                api_list_technique_videos,
-                api_update_video,
-                api_reorder_videos,
-                api_replace_video,
-                api_delete_video,
-                api_video_playback_url,
-                api_video_download_url,
-                api_video_watch_events,
-                api_video_privacy_ack,
-                api_video_privacy_ack_status,
-                api_video_stats,
-                api_student_watch_activity,
-                api_my_watch_state,
-                api_dashboard_video_overview,
-                api_admin_storage,
             ],
         )
         .register("/api", catchers![unauthorized_api])
-        .mount("/api", routes![health])
-        .attach(TelemetryFairing)
+        .mount("/api", routes![health, api_capabilities])
+        .attach(TelemetryFairing);
+
+    if let Some(stack) = video_stack {
+        let jobs = std::sync::Arc::new(videos::ProcessingJobs::new());
+        let pipeline_ctx = std::sync::Arc::new(videos::PipelineContext {
+            pool: pool.clone(),
+            storage: stack.storage.clone(),
+            probe: stack.probe,
+            transcode: stack.transcode,
+            jobs: jobs.clone(),
+            max_duration_seconds: videos::pipeline::max_video_duration_seconds(),
+        });
+
+        let sampler_pool = pool.clone();
+        let sampler_jobs = jobs.clone();
+        tokio::spawn(async move {
+            loop {
+                sample_video_gauges(&sampler_pool, sampler_jobs.snapshot()).await;
+                tokio::time::sleep(tokio::time::Duration::from_secs(300)).await;
+            }
+        });
+
+        rocket = rocket
+            .manage(stack.storage)
+            .manage(pipeline_ctx)
+            .manage(jobs)
+            .mount(
+                "/api",
+                routes![
+                    api_video_upload,
+                    api_video_status,
+                    api_video_link,
+                    api_list_technique_videos,
+                    api_update_video,
+                    api_reorder_videos,
+                    api_replace_video,
+                    api_delete_video,
+                    api_video_playback_url,
+                    api_video_download_url,
+                    api_video_watch_events,
+                    api_video_privacy_ack,
+                    api_video_privacy_ack_status,
+                    api_video_stats,
+                    api_student_watch_activity,
+                    api_my_watch_state,
+                    api_dashboard_video_overview,
+                    api_admin_storage,
+                ],
+            );
+    }
+
+    rocket.manage(pool)
 }
 
 pub fn get_schema_string() -> String {

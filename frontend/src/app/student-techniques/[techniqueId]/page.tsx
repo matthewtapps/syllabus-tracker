@@ -47,6 +47,7 @@ import { StatusToggle } from "@/components/status-toggle";
 import TechniqueEditForm from "@/components/technique-edit-form";
 import { AddVideoButton } from "@/components/videos/add-video-button";
 import { VideoList } from "@/components/videos/video-list";
+import { useCapabilities } from "@/context/capabilities";
 import { WeeklyAttemptBars } from "@/components/weekly-attempt-bars";
 import { formatRelative } from "@/lib/dates";
 import type { Status } from "@/lib/status";
@@ -78,6 +79,7 @@ export default function StudentTechniqueDetail({
   } | null>(null);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [videoReloadKey, setVideoReloadKey] = useState(0);
+  const { videos: videosEnabled } = useCapabilities();
 
   useEffect(() => {
     let cancelled = false;
@@ -332,24 +334,26 @@ export default function StudentTechniqueDetail({
           </p>
         </section>
 
-        <section className="space-y-3">
-          <div className="flex items-start justify-between gap-3">
-            <h2 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-              Videos
-            </h2>
-            {canEditAll && (
-              <AddVideoButton
-                techniqueId={technique.technique_id}
-                onAdded={() => setVideoReloadKey((k) => k + 1)}
-              />
-            )}
-          </div>
-          <VideoList
-            techniqueId={technique.technique_id}
-            canManage={canEditAll}
-            reloadKey={videoReloadKey}
-          />
-        </section>
+        {videosEnabled && (
+          <section className="space-y-3">
+            <div className="flex items-start justify-between gap-3">
+              <h2 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                Videos
+              </h2>
+              {canEditAll && (
+                <AddVideoButton
+                  techniqueId={technique.technique_id}
+                  onAdded={() => setVideoReloadKey((k) => k + 1)}
+                />
+              )}
+            </div>
+            <VideoList
+              techniqueId={technique.technique_id}
+              canManage={canEditAll}
+              reloadKey={videoReloadKey}
+            />
+          </section>
+        )}
 
         <section className="space-y-2">
           <h2 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">

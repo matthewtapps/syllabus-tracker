@@ -7,8 +7,8 @@ import StudentTechniques from './app/student-techniques/page';
 import StudentTechniqueDetail from './app/student-techniques/[techniqueId]/page';
 import StudentsList from './app/students-list/page';
 import Dashboard from './app/dashboard/page';
-import { getCurrentUser } from './lib/api';
-import type { User } from './lib/api';
+import { getCapabilities, getCurrentUser } from './lib/api';
+import type { Capabilities, User } from './lib/api';
 import ProfilePage from './app/profile/page';
 import RegisterUserPage from './app/registration/page';
 import AdminPage from './app/admin/page';
@@ -19,9 +19,11 @@ import RegisterPage from './app/register/page';
 import PendingApprovalPage from './app/pending/page';
 import ForgotPasswordPage from './app/forgot-password/page';
 import { TelemetryProvider } from './context/telemetry';
+import { CapabilitiesProvider } from './context/capabilities';
 
 function App() {
   const [user, setUser] = useState<User | null>(null);
+  const [capabilities, setCapabilities] = useState<Capabilities | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -31,8 +33,12 @@ function App() {
   async function loadUser() {
     try {
       setLoading(true);
-      const userData = await getCurrentUser();
+      const [userData, caps] = await Promise.all([
+        getCurrentUser(),
+        getCapabilities(),
+      ]);
       setUser(userData);
+      setCapabilities(caps);
     } catch (error) {
       console.error('Failed to load user:', error);
     } finally {
@@ -64,6 +70,7 @@ function App() {
   return (
     <Router>
       <TelemetryProvider>
+        <CapabilitiesProvider value={capabilities}>
         <Layout user={user} onLogout={handleLogout}>
           <Routes>
             <Route
@@ -141,6 +148,7 @@ function App() {
             <Route path="/" element={<Navigate to={user ? "/dashboard" : "/login"} replace />} />
           </Routes>
         </Layout>
+        </CapabilitiesProvider>
         <Toaster
           toastOptions={{
             classNames: {

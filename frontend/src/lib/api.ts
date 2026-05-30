@@ -91,6 +91,24 @@ export async function getCurrentUser(): Promise<User | null> {
   }
 }
 
+export interface Capabilities {
+  videos: boolean;
+}
+
+export async function getCapabilities(): Promise<Capabilities | null> {
+  try {
+    const response = await fetch("/api/capabilities", {
+      credentials: "include",
+    });
+    if (!response.ok) {
+      return null;
+    }
+    return await response.json();
+  } catch (error) {
+    return null;
+  }
+}
+
 // Get unassigned techniques for a student
 export async function getTechniquesForAssignment(
   studentId: number,

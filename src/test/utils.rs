@@ -390,8 +390,12 @@ pub mod test_utils {
         let storage: DynVideoStorage = std::sync::Arc::new(InMemoryVideoStorage::new());
         let probe: DynMediaProbe = std::sync::Arc::new(FakeMediaProbe::ok_h264(30.0));
         let transcode: DynMediaTranscode = std::sync::Arc::new(FakeMediaTranscode);
-        let rocket =
-            init_rocket(test_db.pool.clone(), storage, probe, transcode).await;
+        let stack = Some(crate::videos::VideoStack {
+            storage,
+            probe,
+            transcode,
+        });
+        let rocket = init_rocket(test_db.pool.clone(), stack).await;
 
         let client = Client::tracked(rocket)
             .await

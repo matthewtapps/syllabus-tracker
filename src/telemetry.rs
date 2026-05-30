@@ -216,19 +216,20 @@ impl Fairing for ErrorTelemetryFairing {
     }
 }
 
-fn resource() -> Resource {
+fn resource(videos_enabled: bool) -> Resource {
     Resource::builder()
         .with_schema_url(
             [
                 KeyValue::new(SERVICE_NAME, env!("CARGO_PKG_NAME")),
                 KeyValue::new(SERVICE_VERSION, env!("CARGO_PKG_VERSION")),
+                KeyValue::new("feature.videos.enabled", videos_enabled),
             ],
             SCHEMA_URL,
         )
         .build()
 }
 
-pub fn init_tracing() {
+pub fn init_tracing(videos_enabled: bool) {
     let baggage_propagator = BaggagePropagator::new();
     let trace_context_propagator = TraceContextPropagator::new();
     let composite_propagator = TextMapCompositePropagator::new(vec![
@@ -246,7 +247,7 @@ pub fn init_tracing() {
     let tracer_provider = SdkTracerProvider::builder()
         .with_sampler(Sampler::AlwaysOn)
         .with_id_generator(RandomIdGenerator::default())
-        .with_resource(resource())
+        .with_resource(resource(videos_enabled))
         .with_batch_exporter(span_exporter)
         .build();
 
@@ -268,7 +269,7 @@ pub fn init_tracing() {
     let meter_exporter = MetricExporter::builder().with_tonic().build().unwrap();
 
     let meter_provider = SdkMeterProvider::builder()
-        .with_resource(resource())
+        .with_resource(resource(videos_enabled))
         .with_periodic_exporter(meter_exporter)
         .build();
 

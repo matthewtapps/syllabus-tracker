@@ -18,6 +18,7 @@ import { TagsEditor } from "./tags-editor";
 import { AttemptButton } from "./attempt-button";
 import { AttemptsPanel } from "./attempts-panel";
 import { InlineVideoList } from "./inline-video-list";
+import { useCapabilities } from "@/context/capabilities";
 
 interface TechniqueRowProps {
   technique: Technique;
@@ -62,6 +63,7 @@ export function TechniqueRow({
   const canEditStudentNotes = isOwnTechnique;
   const canManageTagsOnRow = canEditAll || canManageTags;
   const canLogAttempts = isOwnTechnique || canEditAll;
+  const { videos: videosEnabled } = useCapabilities();
 
   // Lazy-load the attempt history the first time the row is expanded. We keep
   // the list in this component so newly logged attempts (from the inline
@@ -257,10 +259,12 @@ export function TechniqueRow({
             />
           )}
 
-          <InlineVideoList
-            libraryTechniqueId={technique.technique_id}
-            canManage={canEditAll}
-          />
+          {videosEnabled && (
+            <InlineVideoList
+              libraryTechniqueId={technique.technique_id}
+              canManage={canEditAll}
+            />
+          )}
 
           {technique.technique_description && (
             <p className="whitespace-pre-wrap text-sm leading-relaxed text-muted-foreground">
