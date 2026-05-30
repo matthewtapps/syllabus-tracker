@@ -1,8 +1,15 @@
 import { useState } from "react";
-import { Loader2, MoreVerticalIcon, TrashIcon } from "lucide-react";
+import {
+  ChevronDownIcon,
+  ChevronUpIcon,
+  DownloadIcon,
+  Loader2,
+  MoreVerticalIcon,
+  TrashIcon,
+} from "lucide-react";
 import { toast } from "sonner";
 import type { Video } from "@/lib/api";
-import { deleteVideo } from "@/lib/api";
+import { deleteVideo, getDownloadUrl } from "@/lib/api";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -22,16 +29,29 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
+import { VideoPlayerPanel } from "./video-player-panel";
 
 interface VideoRowProps {
   video: Video;
   canManage: boolean;
+  expanded: boolean;
+  onToggleExpanded: () => void;
   onDeleted: (videoId: number) => void;
 }
 
-export function VideoRow({ video, canManage, onDeleted }: VideoRowProps) {
+export function VideoRow({
+  video,
+  canManage,
+  expanded,
+  onToggleExpanded,
+  onDeleted,
+}: VideoRowProps) {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [downloading, setDownloading] = useState(false);
+
+  const canPlay = video.processing_status === "ready";
+  const isNative = video.kind === "native";
 
   async function handleDelete() {
     setDeleting(true);
@@ -48,59 +68,119 @@ export function VideoRow({ video, canManage, onDeleted }: VideoRowProps) {
     }
   }
 
+  async function handleDownload() {
+    setDownloading(true);
+    try {
+      const signed = await getDownloadUrl(video.id);
+      window.open(signed.url, "_blank", "noopener,noreferrer");
+    } catch (err) {
+      console.error(err);
+      toast.error("Could not start download");
+    } finally {
+      setDownloading(false);
+    }
+  }
+
   const subtitle = buildSubtitle(video);
 
   return (
     <li
       className={cn(
-        "flex items-center justify-between gap-3 rounded-md border border-border bg-card p-3",
+        "rounded-md border border-border bg-card",
         video.processing_status === "failed" && "border-destructive/40",
       )}
     >
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2">
-          <p className="truncate text-sm font-medium text-foreground">
-            {video.title}
-          </p>
-          <StatusBadge video={video} />
-        </div>
-        {subtitle && (
-          <p className="mt-0.5 truncate text-xs text-muted-foreground">
-            {subtitle}
-          </p>
-        )}
-        {video.processing_status === "failed" && video.processing_error && (
-          <p className="mt-1 text-xs text-destructive">
-            {video.processing_error}
-          </p>
-        )}
-      </div>
+      <div className="flex items-center gap-2 p-3">
+        <button
+          type="button"
+          onClick={onToggleExpanded}
+          disabled={!canPlay}
+          aria-expanded={expanded}
+          className={cn(
+            "min-w-0 flex-1 text-left",
+            canPlay
+              ? "cursor-pointer"
+              : "cursor-not-allowed opacity-80",
+          )}
+        >
+          <div className="flex items-center gap-2">
+            {canPlay ? (
+              expanded ? (
+                <ChevronUpIcon
+                  className="h-4 w-4 text-muted-foreground"
+                  aria-hidden
+                />
+              ) : (
+                <ChevronDownIcon
+                  className="h-4 w-4 text-muted-foreground"
+                  aria-hidden
+                />
+              )
+            ) : null}
+            <p className="truncate text-sm font-medium text-foreground">
+              {video.title}
+            </p>
+            <StatusBadge video={video} />
+          </div>
+          {subtitle && (
+            <p className="ml-6 mt-0.5 truncate text-xs text-muted-foreground">
+              {subtitle}
+            </p>
+          )}
+          {video.processing_status === "failed" && video.processing_error && (
+            <p className="ml-6 mt-1 text-xs text-destructive">
+              {video.processing_error}
+            </p>
+          )}
+        </button>
 
-      {canManage && (
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
+        <div className="flex items-center gap-1">
+          {canPlay && isNative && (
             <Button
+              type="button"
               variant="ghost"
               size="icon"
               className="h-8 w-8 text-muted-foreground"
+              onClick={handleDownload}
+              disabled={downloading}
+              aria-label="Download video"
             >
-              <MoreVerticalIcon className="h-4 w-4" aria-hidden />
-              <span className="sr-only">Video actions</span>
+              <DownloadIcon className="h-4 w-4" aria-hidden />
             </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem
-              className="text-destructive focus:text-destructive"
-              onSelect={(event) => {
-                event.preventDefault();
-                setConfirmOpen(true);
-              }}
-            >
-              <TrashIcon className="mr-2 h-4 w-4" aria-hidden />
-              Delete
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+          )}
+          {canManage && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 text-muted-foreground"
+                >
+                  <MoreVerticalIcon className="h-4 w-4" aria-hidden />
+                  <span className="sr-only">Video actions</span>
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem
+                  className="text-destructive focus:text-destructive"
+                  onSelect={(event) => {
+                    event.preventDefault();
+                    setConfirmOpen(true);
+                  }}
+                >
+                  <TrashIcon className="mr-2 h-4 w-4" aria-hidden />
+                  Delete
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
+        </div>
+      </div>
+
+      {expanded && canPlay && (
+        <div className="border-t border-border p-3">
+          <VideoPlayerPanel video={video} />
+        </div>
       )}
 
       <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>

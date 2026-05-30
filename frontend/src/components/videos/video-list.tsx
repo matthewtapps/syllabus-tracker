@@ -55,8 +55,15 @@ export function VideoList({
     return () => window.clearInterval(handle);
   }, [hasProcessing, load]);
 
+  const [expandedId, setExpandedId] = useState<number | null>(null);
+
   function handleDeleted(videoId: number) {
     setVideos((prev) => (prev ? prev.filter((v) => v.id !== videoId) : prev));
+    setExpandedId((current) => (current === videoId ? null : current));
+  }
+
+  function toggleExpanded(videoId: number) {
+    setExpandedId((current) => (current === videoId ? null : videoId));
   }
 
   if (error) {
@@ -104,6 +111,8 @@ export function VideoList({
           key={video.id}
           video={video}
           canManage={canManage}
+          expanded={expandedId === video.id}
+          onToggleExpanded={() => toggleExpanded(video.id)}
           onDeleted={handleDeleted}
         />
       ))}
