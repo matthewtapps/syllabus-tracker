@@ -45,6 +45,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { StatusPill } from "@/components/status-pill";
 import { StatusToggle } from "@/components/status-toggle";
 import TechniqueEditForm from "@/components/technique-edit-form";
+import { AddVideoButton } from "@/components/videos/add-video-button";
+import { VideoList } from "@/components/videos/video-list";
 import { WeeklyAttemptBars } from "@/components/weekly-attempt-bars";
 import { formatRelative } from "@/lib/dates";
 import type { Status } from "@/lib/status";
@@ -75,6 +77,7 @@ export default function StudentTechniqueDetail({
     tag: Tag;
   } | null>(null);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [videoReloadKey, setVideoReloadKey] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -327,6 +330,25 @@ export default function StudentTechniqueDetail({
           <p className="whitespace-pre-wrap text-sm leading-relaxed text-muted-foreground">
             {technique.technique_description}
           </p>
+        </section>
+
+        <section className="space-y-3">
+          <div className="flex items-start justify-between gap-3">
+            <h2 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              Videos
+            </h2>
+            {canEditAll && (
+              <AddVideoButton
+                techniqueId={technique.technique_id}
+                onAdded={() => setVideoReloadKey((k) => k + 1)}
+              />
+            )}
+          </div>
+          <VideoList
+            techniqueId={technique.technique_id}
+            canManage={canEditAll}
+            reloadKey={videoReloadKey}
+          />
         </section>
 
         <section className="space-y-2">

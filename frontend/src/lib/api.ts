@@ -840,3 +840,167 @@ export async function getAttemptSparkline(
   const body = await response.json();
   return body.buckets as AttemptBucket[];
 }
+
+export type VideoKind = "native" | "youtube" | "vimeo" | "drive" | "link";
+export type ProcessingStatus = "processing" | "ready" | "failed";
+
+export interface Video {
+  id: number;
+  technique_id: number;
+  title: string;
+  description?: string | null;
+  position: number;
+  kind: VideoKind;
+  processing_status: ProcessingStatus;
+  processing_error?: string | null;
+  bytes?: number | null;
+  duration_seconds?: number | null;
+  width?: number | null;
+  height?: number | null;
+  external_url?: string | null;
+  external_host?: string | null;
+  external_video_id?: string | null;
+  uploaded_by_id: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SignedUrl {
+  url: string;
+  expires_at: string;
+}
+
+export interface UploadResponse {
+  video_id: number;
+  processing_status: ProcessingStatus;
+}
+
+export async function listVideos(techniqueId: number): Promise<Video[]> {
+  const response = await fetch(`/api/techniques/${techniqueId}/videos`, {
+    credentials: "include",
+  });
+  if (!response.ok) throw new Error("Failed to load videos");
+  const body = await response.json();
+  return body.videos as Video[];
+}
+
+export async function getVideoStatus(
+  videoId: number,
+): Promise<{ processing_status: ProcessingStatus; processing_error?: string | null }> {
+  const response = await fetch(`/api/videos/${videoId}/status`, {
+    credentials: "include",
+  });
+  if (!response.ok) throw new Error("Failed to load video status");
+  return await response.json();
+}
+
+export async function uploadVideo(
+  techniqueId: number,
+  file: File,
+  fields: { title: string; description?: string },
+  onProgress?: (loaded: number, total: number) => void,
+): Promise<UploadResponse> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", `/api/techniques/${techniqueId}/videos/upload`);
+    xhr.withCredentials = true;
+
+    if (onProgress) {
+      xhr.upload.addEventListener("progress", (e) => {
+        if (e.lengthComputable) onProgress(e.loaded, e.total);
+      });
+    }
+
+    xhr.addEventListener("load", () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try {
+          resolve(JSON.parse(xhr.responseText) as UploadResponse);
+        } catch {
+          reject(new Error("Invalid response from server"));
+        }
+      } else {
+        // Synthesise a Response so TracedForm can extract validation errors.
+        reject(
+          new Response(xhr.responseText || null, {
+            status: xhr.status,
+            statusText: xhr.statusText,
+          }),
+        );
+      }
+    });
+
+    xhr.addEventListener("error", () => reject(new Error("Network error during upload")));
+    xhr.addEventListener("abort", () => reject(new Error("Upload was cancelled")));
+
+    const body = new FormData();
+    body.append("file", file);
+    body.append("title", fields.title);
+    if (fields.description) body.append("description", fields.description);
+
+    xhr.send(body);
+  });
+}
+
+export async function linkVideo(
+  techniqueId: number,
+  payload: { title: string; description?: string; url: string },
+): Promise<Video> {
+  const response = await fetch(`/api/techniques/${techniqueId}/videos/link`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) throw response;
+  return (await response.json()) as Video;
+}
+
+export async function updateVideo(
+  videoId: number,
+  payload: { title?: string; description?: string; position?: number },
+): Promise<void> {
+  const response = await fetch(`/api/videos/${videoId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) throw response;
+}
+
+export async function reorderVideos(
+  techniqueId: number,
+  orderedIds: number[],
+): Promise<void> {
+  const response = await fetch(`/api/techniques/${techniqueId}/videos/reorder`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify({ ordered_ids: orderedIds }),
+  });
+  if (!response.ok) throw response;
+}
+
+export async function deleteVideo(videoId: number): Promise<void> {
+  const response = await fetch(`/api/videos/${videoId}`, {
+    method: "DELETE",
+    credentials: "include",
+  });
+  if (!response.ok) throw response;
+}
+
+export async function getPlaybackUrl(videoId: number): Promise<SignedUrl> {
+  const response = await fetch(`/api/videos/${videoId}/playback-url`, {
+    credentials: "include",
+  });
+  if (!response.ok) throw response;
+  return (await response.json()) as SignedUrl;
+}
+
+export async function getDownloadUrl(videoId: number): Promise<SignedUrl> {
+  const response = await fetch(`/api/videos/${videoId}/download-url`, {
+    credentials: "include",
+  });
+  if (!response.ok) throw response;
+  return (await response.json()) as SignedUrl;
+}
