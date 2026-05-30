@@ -455,17 +455,25 @@ export default function StudentTechniques({ user }: StudentTechniquesProps) {
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end" className="w-56">
                     {data.student.claimed_at ? (
-                      <DropdownMenuItem onClick={() => setResetConfirmOpen(true)}>
+                      <DropdownMenuItem
+                        onSelect={() => {
+                          setTimeout(() => setResetConfirmOpen(true), 0);
+                        }}
+                      >
                         <KeyRound className="mr-2 h-4 w-4" aria-hidden />
                         Reset password
                       </DropdownMenuItem>
                     ) : (
-                      <DropdownMenuItem onClick={handleIssueClaimLink}>
+                      <DropdownMenuItem onSelect={() => setTimeout(handleIssueClaimLink, 0)}>
                         <Copy className="mr-2 h-4 w-4" aria-hidden />
                         Copy invite link
                       </DropdownMenuItem>
                     )}
-                    <DropdownMenuItem onClick={() => setGraduateConfirmOpen(true)}>
+                    <DropdownMenuItem
+                      onSelect={() => {
+                        setTimeout(() => setGraduateConfirmOpen(true), 0);
+                      }}
+                    >
                       <GraduationCap className="mr-2 h-4 w-4" aria-hidden />
                       {isGraduate ? 'Un-graduate' : 'Graduate'}
                     </DropdownMenuItem>

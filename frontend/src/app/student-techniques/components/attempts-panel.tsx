@@ -193,18 +193,22 @@ function AttemptRow({
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
-            <DropdownMenuItem onClick={() => setEditingNote(true)}>
+            <DropdownMenuItem
+              onSelect={() => setTimeout(() => setEditingNote(true), 0)}
+            >
               <PencilIcon className="mr-2 h-3.5 w-3.5" aria-hidden />
               {myNote ? "Edit my note" : "Add my note"}
             </DropdownMenuItem>
             {canEditDate && (
-              <DropdownMenuItem onClick={() => setEditingDate(true)}>
+              <DropdownMenuItem
+                onSelect={() => setTimeout(() => setEditingDate(true), 0)}
+              >
                 Edit date
               </DropdownMenuItem>
             )}
             {canDelete && (
               <DropdownMenuItem
-                onClick={handleDelete}
+                onSelect={() => setTimeout(handleDelete, 0)}
                 className="text-destructive"
               >
                 Remove

@@ -228,11 +228,11 @@ export function NavBar({ user, onLogout }: NavBarProps) {
                   </div>
                 </DropdownMenuLabel>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={handleProfile}>
+                <DropdownMenuItem onSelect={() => setTimeout(handleProfile, 0)}>
                   <UserRound className="mr-2 h-4 w-4" aria-hidden />
                   My profile
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={onLogout}>
+                <DropdownMenuItem onSelect={() => setTimeout(onLogout, 0)}>
                   <LogOut className="mr-2 h-4 w-4" aria-hidden />
                   Logout
                 </DropdownMenuItem>

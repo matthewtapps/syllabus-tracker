@@ -167,9 +167,12 @@ export function VideoRow({
               <DropdownMenuContent align="end">
                 <DropdownMenuItem
                   className="text-destructive focus:text-destructive"
-                  onSelect={(event) => {
-                    event.preventDefault();
-                    setConfirmOpen(true);
+                  onSelect={() => {
+                    // Defer one tick so the dropdown's pointer-events
+                    // teardown completes before the AlertDialog mounts.
+                    // Otherwise Radix leaves body pointer-events: none and
+                    // the page locks until refresh.
+                    setTimeout(() => setConfirmOpen(true), 0);
                   }}
                 >
                   <TrashIcon className="mr-2 h-4 w-4" aria-hidden />

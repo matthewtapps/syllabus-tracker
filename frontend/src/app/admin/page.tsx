@@ -734,35 +734,35 @@ function UserActionsMenu({
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
-        <DropdownMenuItem onClick={onEdit}>
+        <DropdownMenuItem onSelect={() => setTimeout(onEdit, 0)}>
           <EditIcon className="mr-2 h-4 w-4" aria-hidden />
           Edit user
         </DropdownMenuItem>
         {isClaimed && (
-          <DropdownMenuItem onClick={onPassword}>
+          <DropdownMenuItem onSelect={() => setTimeout(onPassword, 0)}>
             <KeyIcon className="mr-2 h-4 w-4" aria-hidden />
             Change password
           </DropdownMenuItem>
         )}
         {isClaimed ? (
-          <DropdownMenuItem onClick={onResetPassword}>
+          <DropdownMenuItem onSelect={() => setTimeout(onResetPassword, 0)}>
             <KeyRound className="mr-2 h-4 w-4" aria-hidden />
             Reset password
           </DropdownMenuItem>
         ) : (
-          <DropdownMenuItem onClick={onIssueClaim}>
+          <DropdownMenuItem onSelect={() => setTimeout(onIssueClaim, 0)}>
             <Copy className="mr-2 h-4 w-4" aria-hidden />
             Copy invite link
           </DropdownMenuItem>
         )}
         {isStudent && (
-          <DropdownMenuItem onClick={onToggleGraduated}>
+          <DropdownMenuItem onSelect={() => setTimeout(onToggleGraduated, 0)}>
             <GraduationCap className="mr-2 h-4 w-4" aria-hidden />
             {isGraduated ? 'Un-graduate' : 'Graduate'}
           </DropdownMenuItem>
         )}
         <DropdownMenuSeparator />
-        <DropdownMenuItem onClick={onToggleArchive}>
+        <DropdownMenuItem onSelect={() => setTimeout(onToggleArchive, 0)}>
           {user.archived ? 'Unarchive user' : 'Archive user'}
         </DropdownMenuItem>
       </DropdownMenuContent>
