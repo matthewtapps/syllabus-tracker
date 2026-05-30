@@ -18,7 +18,7 @@ FROM chef AS dev-builder
 WORKDIR /app
 COPY --from=builder-deps /app/target target
 COPY --from=builder-deps /usr/local/cargo /usr/local/cargo
-RUN cargo install cargo-watch
+RUN cargo install cargo-watch --locked
 
 FROM mwader/static-ffmpeg:7.1.1 AS ffmpeg
 
