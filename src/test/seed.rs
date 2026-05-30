@@ -509,7 +509,7 @@ mod tests {
                     // Spread between roughly today and 90 days back, biased so
                     // higher n means older.
                     let days_back = ((n as i64 + 1) * 90 / target as i64).min(89);
-                    let hour_offset = ((*st_id as i64 + n as i64) % 12) - 6;
+                    let hour_offset = ((*st_id + n as i64) % 12) - 6;
                     let attempted_at = now
                         - Duration::days(days_back)
                         + Duration::hours(hour_offset);
