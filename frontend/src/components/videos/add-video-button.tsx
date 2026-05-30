@@ -10,11 +10,6 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import {
-  MAX_VIDEO_BYTES,
-  MAX_VIDEO_DURATION_SECONDS,
-  formatBytes,
-} from "./limits";
 import { LinkVideoForm } from "./link-video-form";
 import { UploadVideoForm } from "./upload-video-form";
 
@@ -32,7 +27,7 @@ export function AddVideoButton({ techniqueId, onAdded }: AddVideoButtonProps) {
   }
 
   return (
-    <div className="space-y-1">
+    <>
       <Button
         type="button"
         variant="outline"
@@ -42,11 +37,6 @@ export function AddVideoButton({ techniqueId, onAdded }: AddVideoButtonProps) {
         <PlusIcon className="mr-1.5 h-4 w-4" aria-hidden />
         Add video
       </Button>
-      <p className="text-xs text-muted-foreground">
-        Max {MAX_VIDEO_DURATION_SECONDS / 60} minutes, mp4 only, up to{" "}
-        {formatBytes(MAX_VIDEO_BYTES)}. Longer clips can be linked from YouTube,
-        Vimeo, or Drive.
-      </p>
 
       <Sheet open={open} onOpenChange={setOpen}>
         <SheetContent
@@ -93,6 +83,6 @@ export function AddVideoButton({ techniqueId, onAdded }: AddVideoButtonProps) {
           </Tabs>
         </SheetContent>
       </Sheet>
-    </div>
+    </>
   );
 }

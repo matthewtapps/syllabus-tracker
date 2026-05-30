@@ -723,21 +723,21 @@ function InlineDateEditor({
   }
 
   return (
-    <div className="mt-2 flex items-end gap-2">
-      <div className="space-y-1">
-        <Label className="text-xs">Attempt date</Label>
-        <Input
-          type="date"
-          value={value}
-          onChange={(e) => setValue(e.target.value)}
-        />
+    <div className="mt-2 space-y-2">
+      <Label className="text-xs">Attempt date</Label>
+      <Input
+        type="date"
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+      />
+      <div className="flex justify-end gap-2">
+        <Button type="button" variant="ghost" size="sm" onClick={onCancel}>
+          Cancel
+        </Button>
+        <Button type="button" size="sm" disabled={saving} onClick={handleSave}>
+          {saving ? "Saving..." : "Save"}
+        </Button>
       </div>
-      <Button type="button" variant="ghost" size="sm" onClick={onCancel}>
-        Cancel
-      </Button>
-      <Button type="button" size="sm" disabled={saving} onClick={handleSave}>
-        {saving ? "Saving..." : "Save"}
-      </Button>
     </div>
   );
 }

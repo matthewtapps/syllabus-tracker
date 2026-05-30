@@ -17,6 +17,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
+import { cn } from "@/lib/utils";
 import { formatRelative } from "@/lib/dates";
 
 interface AttemptsPanelProps {
@@ -27,6 +28,8 @@ interface AttemptsPanelProps {
   /** Source of truth for the attempt list. Null = still loading. */
   attempts: Attempt[] | null;
   error: string | null;
+  /** Suppress the panel's own "Attempts" heading row when the parent renders one. */
+  hideHeader?: boolean;
   onAttemptUpdated: (updated: Attempt) => void;
   onAttemptRemoved: (id: number) => void;
 }
@@ -41,6 +44,7 @@ export function AttemptsPanel({
   isCoachOrAdmin,
   attempts,
   error,
+  hideHeader = false,
   onAttemptUpdated,
   onAttemptRemoved,
 }: AttemptsPanelProps) {
@@ -52,23 +56,37 @@ export function AttemptsPanel({
 
   return (
     <section className="space-y-3">
-      <div className="flex items-baseline justify-between gap-3">
-        <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-          Attempts
-        </h3>
-        {stats && (
-          <p className="text-xs text-muted-foreground">
-            <span className="font-medium text-foreground">{stats.recentCount}</span>{" "}
-            in last {RECENT_WINDOW_DAYS} days
-            {stats.lastLabel && (
-              <>
-                {" "}
-                <span aria-hidden>·</span> last {stats.lastLabel}
-              </>
-            )}
-          </p>
-        )}
-      </div>
+      {!hideHeader && (
+        <div className="flex items-baseline justify-between gap-3">
+          <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            Attempts
+          </h3>
+          {stats && (
+            <p className="text-xs text-muted-foreground">
+              <span className="font-medium text-foreground">{stats.recentCount}</span>{" "}
+              in last {RECENT_WINDOW_DAYS} days
+              {stats.lastLabel && (
+                <>
+                  {" "}
+                  <span aria-hidden>·</span> last {stats.lastLabel}
+                </>
+              )}
+            </p>
+          )}
+        </div>
+      )}
+      {hideHeader && stats && (
+        <p className="text-xs text-muted-foreground">
+          <span className="font-medium text-foreground">{stats.recentCount}</span>{" "}
+          in last {RECENT_WINDOW_DAYS} days
+          {stats.lastLabel && (
+            <>
+              {" "}
+              <span aria-hidden>·</span> last {stats.lastLabel}
+            </>
+          )}
+        </p>
+      )}
 
       {error && <p className="text-sm text-destructive">{error}</p>}
       {!error && attempts === null && (
@@ -81,7 +99,7 @@ export function AttemptsPanel({
       )}
 
       {previewed.length > 0 && (
-        <ul className="space-y-2">
+        <ul className="divide-y divide-border rounded-md border border-border">
           {previewed.map((a) => (
             <AttemptRow
               key={a.id}
@@ -160,16 +178,23 @@ function AttemptRow({
     }
   }
 
+  const hasNotes = !!(attempt.student_note || attempt.coach_note);
+
   return (
-    <li className="rounded-md border border-border bg-background/40 px-3 py-2 text-sm">
-      <div className="flex items-start justify-between gap-2">
+    <li className="px-3 py-1.5 text-sm">
+      <div
+        className={cn(
+          "flex justify-between gap-2",
+          hasNotes ? "items-start" : "items-center",
+        )}
+      >
         <div className="min-w-0 flex-1">
           <p className="text-xs text-muted-foreground">
             {formatRelative(attempt.attempted_at)}
             {attempt.recorded_by_name && ` · ${attempt.recorded_by_name}`}
           </p>
           {attempt.student_note && (
-            <p className="mt-1 whitespace-pre-wrap text-sm">
+            <p className="mt-1 whitespace-pre-wrap text-sm leading-snug">
               <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
                 Student:
               </span>{" "}
@@ -177,7 +202,7 @@ function AttemptRow({
             </p>
           )}
           {attempt.coach_note && (
-            <p className="mt-1 whitespace-pre-wrap text-sm">
+            <p className="mt-1 whitespace-pre-wrap text-sm leading-snug">
               <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
                 Coach:
               </span>{" "}
@@ -187,7 +212,11 @@ function AttemptRow({
         </div>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon" className="h-7 w-7">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="-mr-1.5 h-6 w-6 text-muted-foreground"
+            >
               <MoreVerticalIcon className="h-3.5 w-3.5" aria-hidden />
               <span className="sr-only">Attempt actions</span>
             </Button>
@@ -323,21 +352,21 @@ function DateEditor({ attempt, onCancel, onSaved }: DateEditorProps) {
   }
 
   return (
-    <div className="mt-2 flex items-end gap-2">
-      <div className="space-y-1">
-        <Label className="text-xs">Attempt date</Label>
-        <Input
-          type="date"
-          value={value}
-          onChange={(e) => setValue(e.target.value)}
-        />
+    <div className="mt-2 space-y-2">
+      <Label className="text-xs">Attempt date</Label>
+      <Input
+        type="date"
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+      />
+      <div className="flex justify-end gap-2">
+        <Button type="button" variant="ghost" size="sm" onClick={onCancel}>
+          Cancel
+        </Button>
+        <Button type="button" size="sm" disabled={saving} onClick={handleSave}>
+          {saving ? "Saving..." : "Save"}
+        </Button>
       </div>
-      <Button type="button" variant="ghost" size="sm" onClick={onCancel}>
-        Cancel
-      </Button>
-      <Button type="button" size="sm" disabled={saving} onClick={handleSave}>
-        {saving ? "Saving..." : "Save"}
-      </Button>
     </div>
   );
 }

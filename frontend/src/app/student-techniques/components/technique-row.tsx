@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import {
-  ArrowUpRight,
   ChevronDownIcon,
   ChevronUpIcon,
   XIcon,
@@ -10,19 +9,15 @@ import type { Attempt, Tag, Technique } from "@/lib/api";
 import { listAttempts, updateTechnique } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { StatusPill } from "@/components/status-pill";
 import { StatusToggle } from "@/components/status-toggle";
 import { cn } from "@/lib/utils";
 import { formatRelative } from "@/lib/dates";
-import {
-  statusToBorderClass,
-  statusToDotClass,
-  type Status,
-} from "@/lib/status";
+import { statusToDotClass, type Status } from "@/lib/status";
 import { NotesEditor } from "./notes-editor";
 import { TagsEditor } from "./tags-editor";
 import { AttemptButton } from "./attempt-button";
 import { AttemptsPanel } from "./attempts-panel";
+import { InlineVideoList } from "./inline-video-list";
 
 interface TechniqueRowProps {
   technique: Technique;
@@ -41,6 +36,8 @@ interface TechniqueRowProps {
   onEditDefinition: (technique: Technique) => void;
 }
 
+const META_TAG_LIMIT = 3;
+
 export function TechniqueRow({
   technique,
   canEditAll,
@@ -57,6 +54,7 @@ export function TechniqueRow({
   onRequestTagRemoval,
   onEditDefinition,
 }: TechniqueRowProps) {
+  const navigate = useNavigate();
   const [expanded, setExpanded] = useState(defaultExpanded);
   const [attempts, setAttempts] = useState<Attempt[] | null>(null);
   const [attemptsError, setAttemptsError] = useState<string | null>(null);
@@ -99,13 +97,25 @@ export function TechniqueRow({
     onTagsChange({ ...technique, tags: updated }, updated, _allAfter);
   }
 
+  // Left-border accent: status colour when expanded, transparent otherwise.
+  // (New student activity is signalled by a small dot under the status dot.)
+  const borderAccent = expanded
+    ? statusBorderClass(status)
+    : "border-l-transparent";
+
+  const metaParts = buildMetaParts({
+    technique,
+    showCollectionChip,
+    selectedTagFilter,
+  });
+
   return (
     <div
       id={`technique-row-${technique.id}`}
       className={cn(
-        "border-l-4 border-l-transparent transition-colors scroll-mt-20",
+        "border-l-4 transition-colors scroll-mt-20",
+        borderAccent,
         expanded ? "bg-muted/20" : "hover:bg-muted/20",
-        expanded && statusToBorderClass(status),
       )}
     >
       <div
@@ -119,117 +129,107 @@ export function TechniqueRow({
             setExpanded((v) => !v);
           }
         }}
-        className="flex w-full items-center gap-3 px-4 py-3 text-left focus-visible:outline-none focus-visible:bg-muted/30 cursor-pointer sm:gap-4"
+        className="flex w-full items-start gap-3 px-4 py-3 text-left focus-visible:bg-muted/30 focus-visible:outline-none cursor-pointer"
         aria-expanded={expanded}
       >
-        <span
-          className={cn("h-2.5 w-2.5 shrink-0 rounded-full", statusToDotClass(status))}
-          aria-hidden
-        />
-
-        <div className="min-w-0 flex-1 space-y-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="font-medium">{technique.technique_name}</span>
-            <Link
-              to={`/student/${studentId}/technique/${technique.id}`}
-              onClick={(e) => e.stopPropagation()}
-              title="Open detail page"
-              aria-label="Open detail page"
-              className="inline-flex h-5 w-5 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-            >
-              <ArrowUpRight className="h-3.5 w-3.5" aria-hidden />
-            </Link>
-            {technique.has_new_student_activity && (
-              <span
-                className="inline-flex h-1.5 w-1.5 rounded-full bg-primary"
-                aria-label="New student activity"
-                title="Student edited after your last update"
-              />
-            )}
-            {!expanded && technique.attempt_count > 0 && (
-              <Badge variant="outline" className="text-[10px] font-normal">
-                {technique.attempt_count}{" "}
-                {technique.attempt_count === 1 ? "attempt" : "attempts"}
-              </Badge>
-            )}
-          </div>
-          {!expanded && (technique.tags.length > 0 || (showCollectionChip && technique.collection_name)) && (
-            <div className="flex flex-wrap gap-1">
-              {showCollectionChip && technique.collection_name && (
-                <Badge variant="secondary" className="text-xs">
-                  {technique.collection_name}
-                </Badge>
-              )}
-              {technique.tags.slice(0, 4).map((tag) => (
-                <Badge
-                  key={tag.id}
-                  variant={selectedTagFilter.includes(tag.name) ? "default" : "outline"}
-                  className="text-xs"
-                >
-                  {tag.name}
-                </Badge>
-              ))}
-              {technique.tags.length > 4 && (
-                <Badge variant="outline" className="text-xs">
-                  +{technique.tags.length - 4}
-                </Badge>
-              )}
-            </div>
+        <div className="mt-1.5 flex w-2.5 shrink-0 flex-col items-center gap-1">
+          <span
+            className={cn("h-2.5 w-2.5 rounded-full", statusToDotClass(status))}
+            aria-hidden
+          />
+          {technique.has_new_student_activity && (
+            <span
+              className="h-1.5 w-1.5 rounded-full bg-primary"
+              aria-label="Student edited after your last update"
+              title="Student edited after your last update"
+            />
           )}
         </div>
 
-        <div className="hidden shrink-0 text-xs text-muted-foreground sm:block">
-          {formatRelative(technique.updated_at)}
+        <div className="min-w-0 flex-1">
+          <p className="font-medium leading-snug">{technique.technique_name}</p>
+          {!expanded && metaParts.length > 0 && (
+            <p className="mt-0.5 truncate text-xs text-muted-foreground">
+              {metaParts.join(" · ")}
+            </p>
+          )}
         </div>
 
-        {canLogAttempts && (
-          <AttemptButton
-            studentTechniqueId={technique.id}
-            techniqueStatus={status}
-            onLogged={(result) => {
-              setAttempts((prev) =>
-                prev
-                  ? [result.attempt, ...prev.filter((a) => a.id !== result.attempt.id)]
-                  : prev,
-              );
-              onTechniqueUpdate({
-                ...technique,
-                attempt_count: technique.attempt_count + 1,
-                last_attempt_at: result.attempt.attempted_at,
-              });
-            }}
-            onStatusChange={(next) =>
-              onTechniqueUpdate({ ...technique, status: next })
-            }
-          />
-        )}
-
         {expanded ? (
-          <ChevronUpIcon className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+          <ChevronUpIcon
+            className="mt-1 h-4 w-4 shrink-0 text-muted-foreground"
+            aria-hidden
+          />
         ) : (
-          <ChevronDownIcon className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+          <ChevronDownIcon
+            className="mt-1 h-4 w-4 shrink-0 text-muted-foreground"
+            aria-hidden
+          />
         )}
       </div>
 
       {expanded && (
-        <div className="space-y-6 px-4 pb-6 pt-2">
+        <div className="space-y-5 px-4 pb-5">
           {canEditAll && (
-            <section className="space-y-2">
-              <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                Status
-              </h3>
-              <StatusToggle value={status} onChange={handleStatusChange} size="sm" />
-            </section>
+            <StatusToggle value={status} onChange={handleStatusChange} size="sm" />
           )}
 
-          {!canEditAll && (
-            <section className="space-y-2">
+          <section className="space-y-3">
+            <div className="flex items-center justify-between gap-2">
               <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                Status
+                Attempts
               </h3>
-              <StatusPill status={status} variant="solid" />
-            </section>
-          )}
+              {canLogAttempts && (
+                <AttemptButton
+                  studentTechniqueId={technique.id}
+                  techniqueStatus={status}
+                  onLogged={(result) => {
+                    setAttempts((prev) =>
+                      prev
+                        ? [
+                            result.attempt,
+                            ...prev.filter((a) => a.id !== result.attempt.id),
+                          ]
+                        : prev,
+                    );
+                    onTechniqueUpdate({
+                      ...technique,
+                      attempt_count: technique.attempt_count + 1,
+                      last_attempt_at: result.attempt.attempted_at,
+                    });
+                  }}
+                  onStatusChange={(next) =>
+                    onTechniqueUpdate({ ...technique, status: next })
+                  }
+                />
+              )}
+            </div>
+            <AttemptsPanel
+              studentTechniqueId={technique.id}
+              studentId={studentId}
+              currentUserId={currentUserId}
+              isCoachOrAdmin={canEditAll}
+              attempts={attempts}
+              error={attemptsError}
+              hideHeader
+              onAttemptUpdated={(updated) =>
+                setAttempts((prev) =>
+                  prev
+                    ? prev.map((a) => (a.id === updated.id ? updated : a))
+                    : prev,
+                )
+              }
+              onAttemptRemoved={(id) => {
+                setAttempts((prev) =>
+                  prev ? prev.filter((a) => a.id !== id) : prev,
+                );
+                onTechniqueUpdate({
+                  ...technique,
+                  attempt_count: Math.max(0, technique.attempt_count - 1),
+                });
+              }}
+            />
+          </section>
 
           {(canEditAll || (!canEditStudentNotes && technique.coach_notes)) && (
             <NotesEditor
@@ -257,127 +257,173 @@ export function TechniqueRow({
             />
           )}
 
-          <section className="space-y-2">
-            <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-              Description
-            </h3>
+          <InlineVideoList
+            libraryTechniqueId={technique.technique_id}
+            canManage={canEditAll}
+          />
+
+          {technique.technique_description && (
             <p className="whitespace-pre-wrap text-sm leading-relaxed text-muted-foreground">
               {technique.technique_description}
             </p>
-          </section>
-
-          <AttemptsPanel
-            studentTechniqueId={technique.id}
-            studentId={studentId}
-            currentUserId={currentUserId}
-            isCoachOrAdmin={canEditAll}
-            attempts={attempts}
-            error={attemptsError}
-            onAttemptUpdated={(updated) =>
-              setAttempts((prev) =>
-                prev
-                  ? prev.map((a) => (a.id === updated.id ? updated : a))
-                  : prev,
-              )
-            }
-            onAttemptRemoved={(id) => {
-              setAttempts((prev) =>
-                prev ? prev.filter((a) => a.id !== id) : prev,
-              );
-              onTechniqueUpdate({
-                ...technique,
-                attempt_count: Math.max(0, technique.attempt_count - 1),
-              });
-            }}
-          />
-
-          <section className="space-y-2">
-            <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-              Tags
-            </h3>
-            <div className="flex flex-wrap items-center gap-1.5">
-              {technique.tags.map((tag) => (
-                <Badge
-                  key={tag.id}
-                  variant="secondary"
-                  className="gap-1.5 pr-1.5 text-xs"
-                >
-                  {tag.name}
-                  {canManageTagsOnRow && (
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      className="h-5 w-5 rounded-full text-muted-foreground hover:bg-background hover:text-foreground"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onRequestTagRemoval(technique, tag);
-                      }}
-                    >
-                      <XIcon className="h-3 w-3" aria-hidden />
-                      <span className="sr-only">Remove tag {tag.name}</span>
-                    </Button>
-                  )}
-                </Badge>
-              ))}
-              {canManageTagsOnRow && (
-                <TagsEditor
-                  techniqueId={technique.technique_id}
-                  assignedTags={technique.tags}
-                  allTags={allTags}
-                  onTagAdded={handleTagAdded}
-                />
-              )}
-            </div>
-          </section>
-
-          {(canEditAll ||
-            technique.last_coach_update_at ||
-            technique.last_student_update_at) && (
-            <section className="grid gap-3 text-xs text-muted-foreground sm:grid-cols-2">
-              {technique.last_coach_update_at && (
-                <div>
-                  <span className="block text-[10px] font-medium uppercase tracking-wide">
-                    Last coach update
-                  </span>
-                  <span>
-                    {formatRelative(technique.last_coach_update_at)}
-                    {technique.last_coach_update_by_name &&
-                      ` · ${technique.last_coach_update_by_name}`}
-                  </span>
-                </div>
-              )}
-              {technique.last_student_update_at && (
-                <div>
-                  <span className="block text-[10px] font-medium uppercase tracking-wide">
-                    Last student update
-                  </span>
-                  <span>
-                    {formatRelative(technique.last_student_update_at)}
-                    {technique.last_student_update_by_name &&
-                      ` · ${technique.last_student_update_by_name}`}
-                  </span>
-                </div>
-              )}
-            </section>
           )}
 
-          {canEditAll && (
-            <div className="flex justify-end">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onEditDefinition(technique);
-                }}
+          <div className="flex flex-wrap items-center gap-1.5">
+            {technique.tags.map((tag) => (
+              <Badge
+                key={tag.id}
+                variant="secondary"
+                className="gap-1.5 pr-1.5 text-xs"
               >
-                Edit technique definition
-              </Button>
-            </div>
-          )}
+                {tag.name}
+                {canManageTagsOnRow && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-5 w-5 rounded-full text-muted-foreground hover:bg-background hover:text-foreground"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onRequestTagRemoval(technique, tag);
+                    }}
+                  >
+                    <XIcon className="h-3 w-3" aria-hidden />
+                    <span className="sr-only">Remove tag {tag.name}</span>
+                  </Button>
+                )}
+              </Badge>
+            ))}
+            {canManageTagsOnRow && (
+              <TagsEditor
+                techniqueId={technique.technique_id}
+                assignedTags={technique.tags}
+                allTags={allTags}
+                onTagAdded={handleTagAdded}
+              />
+            )}
+          </div>
+
+          <FooterMeta
+            technique={technique}
+            studentId={studentId}
+            onViewDetails={() =>
+              navigate(`/student/${studentId}/technique/${technique.id}`)
+            }
+            onEditDefinition={
+              canEditAll ? () => onEditDefinition(technique) : undefined
+            }
+          />
         </div>
       )}
+    </div>
+  );
+}
+
+interface MetaArgs {
+  technique: Technique;
+  showCollectionChip: boolean;
+  selectedTagFilter: string[];
+}
+
+function buildMetaParts({
+  technique,
+  showCollectionChip,
+}: MetaArgs): string[] {
+  const parts: string[] = [];
+  if (technique.attempt_count > 0) {
+    parts.push(
+      `${technique.attempt_count} ${technique.attempt_count === 1 ? "attempt" : "attempts"}`,
+    );
+  }
+  if (showCollectionChip && technique.collection_name) {
+    parts.push(technique.collection_name);
+  }
+  const tagNames = technique.tags.map((t) => t.name);
+  parts.push(...tagNames.slice(0, META_TAG_LIMIT));
+  if (tagNames.length > META_TAG_LIMIT) {
+    parts.push(`+${tagNames.length - META_TAG_LIMIT}`);
+  }
+  return parts;
+}
+
+function statusBorderClass(status: Status): string {
+  switch (status) {
+    case "red":
+      return "border-l-status-red";
+    case "amber":
+      return "border-l-status-amber";
+    case "green":
+      return "border-l-status-green";
+  }
+}
+
+interface FooterMetaProps {
+  technique: Technique;
+  studentId: number;
+  onViewDetails: () => void;
+  onEditDefinition?: () => void;
+}
+
+function FooterMeta({
+  technique,
+  onViewDetails,
+  onEditDefinition,
+}: FooterMetaProps) {
+  const lastCoach = technique.last_coach_update_at;
+  const lastStudent = technique.last_student_update_at;
+  const hasUpdates = lastCoach || lastStudent;
+
+  return (
+    <div className="flex flex-col gap-3 border-t border-border pt-3 sm:flex-row sm:items-center sm:justify-between">
+      <div className="space-y-1 text-xs text-muted-foreground">
+        <p className="font-medium uppercase tracking-wide">Edits</p>
+        {hasUpdates ? (
+          <>
+            {lastCoach && (
+              <p>
+                Coach: {formatRelative(lastCoach)}
+                {technique.last_coach_update_by_name &&
+                  ` · ${technique.last_coach_update_by_name}`}
+              </p>
+            )}
+            {lastStudent && (
+              <p>
+                Student: {formatRelative(lastStudent)}
+                {technique.last_student_update_by_name &&
+                  ` · ${technique.last_student_update_by_name}`}
+              </p>
+            )}
+          </>
+        ) : (
+          <p>No edits yet</p>
+        )}
+      </div>
+      <div className="flex items-center gap-2 self-end sm:self-auto">
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          onClick={(e) => {
+            e.stopPropagation();
+            onViewDetails();
+          }}
+        >
+          Open detail page
+        </Button>
+        {onEditDefinition && (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={(e) => {
+              e.stopPropagation();
+              onEditDefinition();
+            }}
+          >
+            Edit definition
+          </Button>
+        )}
+      </div>
     </div>
   );
 }
