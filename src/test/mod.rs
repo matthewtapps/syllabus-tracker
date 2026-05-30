@@ -5,5 +5,6 @@ pub mod seed;
 pub mod sessions;
 pub mod tags;
 pub mod utils;
+pub mod videos;
 
 pub use utils::*;

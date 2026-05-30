@@ -20,11 +20,17 @@ COPY --from=builder-deps /app/target target
 COPY --from=builder-deps /usr/local/cargo /usr/local/cargo
 RUN cargo install cargo-watch
 
+FROM mwader/static-ffmpeg:7.1.1 AS ffmpeg
+
 FROM chef AS dev
 WORKDIR /app
 COPY --from=dev-builder /usr/local/cargo/bin/cargo-watch /usr/local/cargo/bin/cargo-watch
+COPY --from=ffmpeg /ffmpeg /usr/local/bin/ffmpeg
+COPY --from=ffmpeg /ffprobe /usr/local/bin/ffprobe
 ENV ROCKET_ADDRESS=0.0.0.0
 ENV ROCKET_PORT=8000
+ENV FFMPEG_BIN=/usr/local/bin/ffmpeg
+ENV FFPROBE_BIN=/usr/local/bin/ffprobe
 EXPOSE 8000
 CMD ["cargo", "watch", "-x", "run"]
 
@@ -42,9 +48,13 @@ RUN cp target/x86_64-unknown-linux-musl/release/syllabus-tracker /app/syllabus-t
 FROM scratch AS production
 WORKDIR /app
 COPY --from=builder /app/syllabus-tracker /app/syllabus-tracker
+COPY --from=ffmpeg /ffmpeg /usr/local/bin/ffmpeg
+COPY --from=ffmpeg /ffprobe /usr/local/bin/ffprobe
 COPY config /app/config
 VOLUME /app/data
 EXPOSE 8000
 ENV ROCKET_ADDRESS=0.0.0.0
 ENV ROCKET_PORT=8000
+ENV FFMPEG_BIN=/usr/local/bin/ffmpeg
+ENV FFPROBE_BIN=/usr/local/bin/ffprobe
 CMD ["/app/syllabus-tracker"]

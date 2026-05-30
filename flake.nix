@@ -57,6 +57,7 @@
             sqlx-cli
             sqlite
             docker-buildx
+            ffmpeg-headless
 
             rust
 

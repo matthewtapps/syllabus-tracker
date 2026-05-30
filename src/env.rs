@@ -6,10 +6,12 @@ pub fn load_environment() -> Result<(), Box<dyn std::error::Error>> {
     let is_production =
         dotenvy::var("ROCKET_PROFILE").unwrap_or("development".to_string()) == "production";
 
+    // Load most-specific files first so existing shell env wins, then secrets,
+    // then environment-specific, then common defaults.
     let env_files = if is_production {
-        vec!["config/common.env", "config/prod.env", ".secrets.env"]
+        vec![".secrets.env", "config/prod.env", "config/common.env"]
     } else {
-        vec!["config/common.env", "config/dev.env", ".secrets.env"]
+        vec![".secrets.env", "config/dev.env", "config/common.env"]
     };
 
     for env_file in env_files {
@@ -25,7 +27,7 @@ fn load_env_file(path: &str) -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
 
-    dotenvy::from_filename_override(path)?;
+    dotenvy::from_filename(path)?;
     info!("Loaded environment from: {}", path);
     Ok(())
 }

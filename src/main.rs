@@ -194,19 +194,43 @@ async fn rocket() -> _ {
         .expect("Failed to read S3 config from environment");
     let storage: videos::DynVideoStorage =
         std::sync::Arc::new(videos::S3VideoStorage::new(&storage_config));
+    let probe: videos::DynMediaProbe =
+        std::sync::Arc::new(videos::FfprobeMediaProbe::from_env());
+    let transcode: videos::DynMediaTranscode =
+        std::sync::Arc::new(videos::FfmpegMediaTranscode::from_env());
 
-    init_rocket(pool, storage).await
+    init_rocket(pool, storage, probe, transcode).await
 }
 
 pub async fn init_rocket(
     pool: SqlitePool,
     storage: videos::DynVideoStorage,
+    probe: videos::DynMediaProbe,
+    transcode: videos::DynMediaTranscode,
 ) -> Rocket<Build> {
     info!("Starting syllabus tracker");
 
-    rocket::build()
+    let jobs = std::sync::Arc::new(videos::ProcessingJobs::new());
+    let pipeline_ctx = std::sync::Arc::new(videos::PipelineContext {
+        pool: pool.clone(),
+        storage: storage.clone(),
+        probe,
+        transcode,
+        jobs: jobs.clone(),
+        max_duration_seconds: videos::pipeline::max_video_duration_seconds(),
+    });
+
+    let upload_limit = videos::routes::upload_byte_limit();
+    let limits = rocket::data::Limits::default()
+        .limit("file", upload_limit)
+        .limit("data-form", upload_limit);
+    let figment = rocket::Config::figment().merge(("limits", limits));
+
+    rocket::custom(figment)
         .manage(pool)
         .manage(storage)
+        .manage(pipeline_ctx)
+        .manage(jobs)
         .mount(
             "/api",
             routes![

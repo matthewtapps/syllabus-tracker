@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "DELETE FROM video_watch_aggregates WHERE video_id = ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": []
+  },
+  "hash": "db0238fa2acab91a33ea61c53e10d6caa710699a1bab3c0c5345c864c6376cd7"
+}

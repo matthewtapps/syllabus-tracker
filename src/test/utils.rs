@@ -7,8 +7,9 @@ pub mod test_utils {
     };
     use crate::error::AppError;
     use crate::models::StudentTechnique;
+    use crate::videos::media::test_support::{FakeMediaProbe, FakeMediaTranscode};
     use crate::videos::storage::test_support::InMemoryVideoStorage;
-    use crate::videos::DynVideoStorage;
+    use crate::videos::{DynMediaProbe, DynMediaTranscode, DynVideoStorage};
     use crate::{get_schema_string, init_rocket};
     use rocket::http::{ContentType, Cookie};
     use rocket::local::asynchronous::Client;
@@ -387,7 +388,10 @@ pub mod test_utils {
 
     pub async fn setup_test_client(test_db: TestDb) -> (Client, TestDb) {
         let storage: DynVideoStorage = std::sync::Arc::new(InMemoryVideoStorage::new());
-        let rocket = init_rocket(test_db.pool.clone(), storage).await;
+        let probe: DynMediaProbe = std::sync::Arc::new(FakeMediaProbe::ok_h264(30.0));
+        let transcode: DynMediaTranscode = std::sync::Arc::new(FakeMediaTranscode);
+        let rocket =
+            init_rocket(test_db.pool.clone(), storage, probe, transcode).await;
 
         let client = Client::tracked(rocket)
             .await

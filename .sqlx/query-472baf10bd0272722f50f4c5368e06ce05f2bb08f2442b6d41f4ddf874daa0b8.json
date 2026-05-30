@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT COUNT(*) AS count\n         FROM videos\n         WHERE storage_key IS NOT NULL",
+  "describe": {
+    "columns": [
+      {
+        "name": "count",
+        "ordinal": 0,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "472baf10bd0272722f50f4c5368e06ce05f2bb08f2442b6d41f4ddf874daa0b8"
+}
