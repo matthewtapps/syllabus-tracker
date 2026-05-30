@@ -48,6 +48,7 @@ pub trait VideoStorage {
 #[derive(Debug, Clone)]
 pub struct S3Config {
     pub endpoint: String,
+    pub public_endpoint: String,
     pub region: String,
     pub bucket: String,
     pub access_key: String,
@@ -65,8 +66,12 @@ impl S3Config {
         let force_path_style = dotenvy::var("S3_FORCE_PATH_STYLE")
             .map(|v| v == "true" || v == "1")
             .unwrap_or(true);
+        let endpoint = read("S3_ENDPOINT")?;
+        let public_endpoint =
+            dotenvy::var("S3_PUBLIC_ENDPOINT").unwrap_or_else(|_| endpoint.clone());
         Ok(Self {
-            endpoint: read("S3_ENDPOINT")?,
+            endpoint,
+            public_endpoint,
             region: read("S3_REGION")?,
             bucket: read("S3_BUCKET")?,
             access_key: read("S3_ACCESS_KEY")?,
@@ -78,30 +83,47 @@ impl S3Config {
 
 pub struct S3VideoStorage {
     client: S3Client,
+    presign_client: S3Client,
     bucket: String,
 }
 
 impl S3VideoStorage {
     pub fn new(config: &S3Config) -> Self {
-        let credentials = Credentials::new(
-            config.access_key.clone(),
-            config.secret_key.clone(),
-            None,
-            None,
-            "static",
-        );
-        let s3_config = S3ConfigBuilder::new()
-            .behavior_version(BehaviorVersion::latest())
-            .endpoint_url(&config.endpoint)
-            .region(Region::new(config.region.clone()))
-            .credentials_provider(credentials)
-            .force_path_style(config.force_path_style)
-            .build();
+        let client = build_client(config, &config.endpoint);
+        // When S3_PUBLIC_ENDPOINT differs from S3_ENDPOINT, presigned URLs need
+        // to embed the host the browser can actually reach. SIGv4 signs the
+        // Host header, so we can't just rewrite the URL string after the fact:
+        // we need a second client whose endpoint is the public one and presign
+        // through that.
+        let presign_client = if config.public_endpoint == config.endpoint {
+            client.clone()
+        } else {
+            build_client(config, &config.public_endpoint)
+        };
         Self {
-            client: S3Client::from_conf(s3_config),
+            client,
+            presign_client,
             bucket: config.bucket.clone(),
         }
     }
+}
+
+fn build_client(config: &S3Config, endpoint: &str) -> S3Client {
+    let credentials = Credentials::new(
+        config.access_key.clone(),
+        config.secret_key.clone(),
+        None,
+        None,
+        "static",
+    );
+    let s3_config = S3ConfigBuilder::new()
+        .behavior_version(BehaviorVersion::latest())
+        .endpoint_url(endpoint)
+        .region(Region::new(config.region.clone()))
+        .credentials_provider(credentials)
+        .force_path_style(config.force_path_style)
+        .build();
+    S3Client::from_conf(s3_config)
 }
 
 #[async_trait]
@@ -145,7 +167,7 @@ impl VideoStorage for S3VideoStorage {
         let presign = PresigningConfig::expires_in(ttl)
             .map_err(|e| StorageError::Presign(e.to_string()))?;
         let req = self
-            .client
+            .presign_client
             .get_object()
             .bucket(&self.bucket)
             .key(key)
@@ -166,7 +188,7 @@ impl VideoStorage for S3VideoStorage {
             .map_err(|e| StorageError::Presign(e.to_string()))?;
         let disposition = format!("attachment; filename=\"{}\"", filename);
         let req = self
-            .client
+            .presign_client
             .get_object()
             .bucket(&self.bucket)
             .key(key)
