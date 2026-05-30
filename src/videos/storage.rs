@@ -220,14 +220,6 @@ pub mod test_support {
         pub fn new() -> Self {
             Self::default()
         }
-
-        pub fn contains(&self, key: &str) -> bool {
-            self.objects.lock().unwrap().contains_key(key)
-        }
-
-        pub fn len(&self) -> usize {
-            self.objects.lock().unwrap().len()
-        }
     }
 
     #[async_trait]

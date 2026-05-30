@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT id, technique_id, title, description, position, kind,\n                processing_status, processing_error, storage_key, bytes,\n                duration_seconds, width, height, content_type, original_filename,\n                external_url, external_host, external_video_id, uploaded_by_id,\n                created_at, updated_at\n         FROM videos\n         WHERE technique_id = ?\n         ORDER BY position ASC, id ASC",
+  "query": "SELECT id, technique_id, title, description, position, kind,\n                processing_status, processing_error, storage_key, bytes,\n                duration_seconds, width, height,\n                external_url, external_host, external_video_id, uploaded_by_id,\n                created_at, updated_at\n         FROM videos\n         WHERE id = ?",
   "describe": {
     "columns": [
       {
@@ -69,43 +69,33 @@
         "type_info": "Integer"
       },
       {
-        "name": "content_type",
+        "name": "external_url",
         "ordinal": 13,
         "type_info": "Text"
       },
       {
-        "name": "original_filename",
+        "name": "external_host",
         "ordinal": 14,
         "type_info": "Text"
       },
       {
-        "name": "external_url",
+        "name": "external_video_id",
         "ordinal": 15,
         "type_info": "Text"
       },
       {
-        "name": "external_host",
-        "ordinal": 16,
-        "type_info": "Text"
-      },
-      {
-        "name": "external_video_id",
-        "ordinal": 17,
-        "type_info": "Text"
-      },
-      {
         "name": "uploaded_by_id",
-        "ordinal": 18,
+        "ordinal": 16,
         "type_info": "Integer"
       },
       {
         "name": "created_at",
-        "ordinal": 19,
+        "ordinal": 17,
         "type_info": "Datetime"
       },
       {
         "name": "updated_at",
-        "ordinal": 20,
+        "ordinal": 18,
         "type_info": "Datetime"
       }
     ],
@@ -113,15 +103,13 @@
       "Right": 1
     },
     "nullable": [
-      true,
-      false,
-      false,
-      true,
       false,
       false,
       false,
       true,
-      true,
+      false,
+      false,
+      false,
       true,
       true,
       true,
@@ -136,5 +124,5 @@
       true
     ]
   },
-  "hash": "5829e9361a016204afe9170783a85820fa47cc9466a6480a8cff6c8b715a7366"
+  "hash": "b4d5a84ba9f4ea742fbfea64c8cfd8b5e328d0f86379540d1e61bf484ed53c18"
 }

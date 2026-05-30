@@ -2402,7 +2402,6 @@ pub async fn create_processing_video(
     title: &str,
     description: Option<&str>,
     uploaded_by_id: i64,
-    original_filename: Option<&str>,
 ) -> Result<i64, AppError> {
     info!("Creating processing video");
     let position = next_video_position(pool, technique_id).await?;
@@ -2411,15 +2410,14 @@ pub async fn create_processing_video(
     let res = sqlx::query!(
         "INSERT INTO videos (
             technique_id, title, description, position, kind, processing_status,
-            original_filename, uploaded_by_id
-         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            uploaded_by_id
+         ) VALUES (?, ?, ?, ?, ?, ?, ?)",
         technique_id,
         title,
         description,
         position,
         kind,
         status,
-        original_filename,
         uploaded_by_id,
     )
     .execute(pool)
@@ -2427,37 +2425,41 @@ pub async fn create_processing_video(
     Ok(res.last_insert_rowid())
 }
 
-#[instrument(skip(pool))]
+pub struct NewExternalVideo<'a> {
+    pub technique_id: i64,
+    pub title: &'a str,
+    pub description: Option<&'a str>,
+    pub uploaded_by_id: i64,
+    pub kind: VideoKind,
+    pub external_url: &'a str,
+    pub external_host: Option<&'a str>,
+    pub external_video_id: Option<&'a str>,
+}
+
+#[instrument(skip(pool, input), fields(technique_id = input.technique_id))]
 pub async fn create_external_video(
     pool: &Pool<Sqlite>,
-    technique_id: i64,
-    title: &str,
-    description: Option<&str>,
-    uploaded_by_id: i64,
-    kind: VideoKind,
-    external_url: &str,
-    external_host: Option<&str>,
-    external_video_id: Option<&str>,
+    input: NewExternalVideo<'_>,
 ) -> Result<i64, AppError> {
     info!("Creating external video");
-    let position = next_video_position(pool, technique_id).await?;
-    let kind_str = kind.as_str();
+    let position = next_video_position(pool, input.technique_id).await?;
+    let kind_str = input.kind.as_str();
     let status = ProcessingStatus::Ready.as_str();
     let res = sqlx::query!(
         "INSERT INTO videos (
             technique_id, title, description, position, kind, processing_status,
             external_url, external_host, external_video_id, uploaded_by_id
          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        technique_id,
-        title,
-        description,
+        input.technique_id,
+        input.title,
+        input.description,
         position,
         kind_str,
         status,
-        external_url,
-        external_host,
-        external_video_id,
-        uploaded_by_id,
+        input.external_url,
+        input.external_host,
+        input.external_video_id,
+        input.uploaded_by_id,
     )
     .execute(pool)
     .await?;
@@ -2465,7 +2467,6 @@ pub async fn create_external_video(
 }
 
 #[instrument(skip(pool))]
-#[allow(clippy::too_many_arguments)]
 pub async fn finalize_video_ready(
     pool: &Pool<Sqlite>,
     id: i64,
@@ -2474,7 +2475,6 @@ pub async fn finalize_video_ready(
     duration_seconds: i64,
     width: Option<i64>,
     height: Option<i64>,
-    content_type: &str,
 ) -> Result<(), AppError> {
     let status = ProcessingStatus::Ready.as_str();
     let now = Utc::now();
@@ -2487,7 +2487,6 @@ pub async fn finalize_video_ready(
              duration_seconds = ?,
              width = ?,
              height = ?,
-             content_type = ?,
              updated_at = ?
          WHERE id = ?",
         status,
@@ -2496,7 +2495,6 @@ pub async fn finalize_video_ready(
         duration_seconds,
         width,
         height,
-        content_type,
         now,
         id,
     )
@@ -2533,7 +2531,7 @@ pub async fn get_db_video(pool: &Pool<Sqlite>, id: i64) -> Result<Option<DbVideo
         DbVideo,
         "SELECT id, technique_id, title, description, position, kind,
                 processing_status, processing_error, storage_key, bytes,
-                duration_seconds, width, height, content_type, original_filename,
+                duration_seconds, width, height,
                 external_url, external_host, external_video_id, uploaded_by_id,
                 created_at, updated_at
          FROM videos
@@ -2559,7 +2557,7 @@ pub async fn list_videos_for_technique(
         DbVideo,
         "SELECT id, technique_id, title, description, position, kind,
                 processing_status, processing_error, storage_key, bytes,
-                duration_seconds, width, height, content_type, original_filename,
+                duration_seconds, width, height,
                 external_url, external_host, external_video_id, uploaded_by_id,
                 created_at, updated_at
          FROM videos
@@ -2651,7 +2649,6 @@ pub async fn delete_video(pool: &Pool<Sqlite>, id: i64) -> Result<Option<String>
 pub async fn reset_video_to_processing(
     pool: &Pool<Sqlite>,
     id: i64,
-    original_filename: Option<&str>,
 ) -> Result<(), AppError> {
     let status = ProcessingStatus::Processing.as_str();
     let kind = VideoKind::Native.as_str();
@@ -2661,7 +2658,6 @@ pub async fn reset_video_to_processing(
          SET processing_status = ?,
              processing_error = NULL,
              kind = ?,
-             original_filename = ?,
              external_url = NULL,
              external_host = NULL,
              external_video_id = NULL,
@@ -2669,7 +2665,6 @@ pub async fn reset_video_to_processing(
          WHERE id = ?",
         status,
         kind,
-        original_filename,
         now,
         id,
     )

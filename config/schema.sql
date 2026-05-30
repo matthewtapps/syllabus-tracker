@@ -126,8 +126,6 @@ CREATE TABLE IF NOT EXISTS videos (
     duration_seconds INTEGER,
     width INTEGER,
     height INTEGER,
-    content_type TEXT,
-    original_filename TEXT,
     external_url TEXT,
     external_host TEXT,
     external_video_id TEXT,

@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE videos\n         SET processing_status = ?,\n             processing_error = NULL,\n             storage_key = ?,\n             bytes = ?,\n             duration_seconds = ?,\n             width = ?,\n             height = ?,\n             updated_at = ?\n         WHERE id = ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 8
+    },
+    "nullable": []
+  },
+  "hash": "59ff92fab5814b8f68219ae1b9096124f3abe75d3a1dff04d75acd831a75bcf9"
+}

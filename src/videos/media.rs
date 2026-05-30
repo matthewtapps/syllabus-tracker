@@ -226,17 +226,6 @@ pub mod test_support {
             }
         }
 
-        pub fn ok_hevc(duration_seconds: f64) -> Self {
-            Self {
-                result: ProbeResult {
-                    duration_seconds,
-                    video_codec: Some("hevc".to_string()),
-                    container: Some("mov,mp4,m4a,3gp,3g2,mj2".to_string()),
-                    width: Some(320),
-                    height: Some(240),
-                },
-            }
-        }
     }
 
     #[async_trait]

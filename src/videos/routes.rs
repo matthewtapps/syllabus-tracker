@@ -107,15 +107,6 @@ pub async fn api_video_upload(
         return Err(Status::PayloadTooLarge);
     }
 
-    let original_filename = form.file.raw_name().and_then(|n| {
-        let raw = n.dangerous_unsafe_unsanitized_raw().as_str();
-        if raw.is_empty() {
-            None
-        } else {
-            Some(raw.to_string())
-        }
-    });
-
     tokio::fs::create_dir_all(pipeline::temp_dir())
         .await
         .map_err(|_| Status::InternalServerError)?;
@@ -136,7 +127,6 @@ pub async fn api_video_upload(
         form.title.trim(),
         form.description.as_deref(),
         user.id,
-        original_filename.as_deref(),
     )
     .await
     .map_err(Status::from)?;
@@ -188,14 +178,16 @@ pub async fn api_video_link(
     let parsed = embeds::parse(&req.url);
     let id = db::create_external_video(
         pool.inner(),
-        tid,
-        trimmed_title,
-        req.description.as_deref(),
-        user.id,
-        parsed.kind,
-        &parsed.canonical_url,
-        Some(parsed.host.as_str()),
-        parsed.video_id.as_deref(),
+        db::NewExternalVideo {
+            technique_id: tid,
+            title: trimmed_title,
+            description: req.description.as_deref(),
+            uploaded_by_id: user.id,
+            kind: parsed.kind,
+            external_url: &parsed.canonical_url,
+            external_host: Some(parsed.host.as_str()),
+            external_video_id: parsed.video_id.as_deref(),
+        },
     )
     .await
     .map_err(Status::from)?;
@@ -287,15 +279,6 @@ pub async fn api_replace_video(
     let technique_id = video.technique_id.ok_or(Status::InternalServerError)?;
     let existing_storage_key = video.storage_key.clone();
 
-    let original_filename = form.file.raw_name().and_then(|n| {
-        let raw = n.dangerous_unsafe_unsanitized_raw().as_str();
-        if raw.is_empty() {
-            None
-        } else {
-            Some(raw.to_string())
-        }
-    });
-
     tokio::fs::create_dir_all(pipeline::temp_dir())
         .await
         .map_err(|_| Status::InternalServerError)?;
@@ -306,7 +289,7 @@ pub async fn api_replace_video(
         .await
         .map_err(|_| Status::InternalServerError)?;
 
-    db::reset_video_to_processing(pool.inner(), vid, original_filename.as_deref())
+    db::reset_video_to_processing(pool.inner(), vid)
         .await
         .map_err(Status::from)?;
 

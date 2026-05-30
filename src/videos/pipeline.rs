@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
@@ -134,7 +134,7 @@ async fn run_pipeline(
     ctx: &PipelineContext,
     video_id: i64,
     technique_id: i64,
-    temp_input: &PathBuf,
+    temp_input: &Path,
     cleanup: &mut TempCleanup,
 ) -> Result<(), PipelineError> {
     let metrics = video_metrics();
@@ -167,9 +167,9 @@ async fn run_pipeline(
         metrics
             .transcodes_total
             .add(1, &[kv("result", "skipped")]);
-        temp_input.clone()
+        temp_input.to_path_buf()
     } else {
-        let mut transcoded = temp_input.clone();
+        let mut transcoded = temp_input.to_path_buf();
         transcoded.set_extension("out.mp4");
         cleanup.track(transcoded.clone());
         let transcode_started = Instant::now();
@@ -230,7 +230,6 @@ async fn run_pipeline(
         probe.duration_seconds.round() as i64,
         probe.width,
         probe.height,
-        "video/mp4",
     )
     .await?;
 

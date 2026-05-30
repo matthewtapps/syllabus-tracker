@@ -220,8 +220,6 @@ pub struct DbVideo {
     pub duration_seconds: Option<i64>,
     pub width: Option<i64>,
     pub height: Option<i64>,
-    pub content_type: Option<String>,
-    pub original_filename: Option<String>,
     pub external_url: Option<String>,
     pub external_host: Option<String>,
     pub external_video_id: Option<String>,
