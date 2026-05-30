@@ -6,10 +6,10 @@ build:
     docker build --target production -t syllabus-tracker-frontend:latest ./frontend
 
 up:
-    docker compose up -d
+    docker compose up -d --build
 
 dev:
-    docker compose up
+    docker compose up --build
 
 stop:
     docker compose stop
