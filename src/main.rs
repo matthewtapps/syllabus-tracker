@@ -202,6 +202,19 @@ async fn rocket() -> _ {
     init_rocket(pool, storage, probe, transcode).await
 }
 
+async fn sample_video_gauges(pool: &SqlitePool, active_jobs: i64) {
+    let metrics = videos::metrics::video_metrics();
+    metrics.processing_jobs_active.record(active_jobs, &[]);
+    match db::total_video_storage_bytes(pool).await {
+        Ok(bytes) => metrics.storage_bytes_total.record(bytes.max(0) as u64, &[]),
+        Err(e) => error!("failed to sample storage bytes: {}", e),
+    }
+    match db::total_video_objects(pool).await {
+        Ok(count) => metrics.storage_objects_total.record(count.max(0) as u64, &[]),
+        Err(e) => error!("failed to sample storage objects: {}", e),
+    }
+}
+
 pub async fn init_rocket(
     pool: SqlitePool,
     storage: videos::DynVideoStorage,
@@ -218,6 +231,15 @@ pub async fn init_rocket(
         transcode,
         jobs: jobs.clone(),
         max_duration_seconds: videos::pipeline::max_video_duration_seconds(),
+    });
+
+    let sampler_pool = pool.clone();
+    let sampler_jobs = jobs.clone();
+    tokio::spawn(async move {
+        loop {
+            sample_video_gauges(&sampler_pool, sampler_jobs.snapshot()).await;
+            tokio::time::sleep(tokio::time::Duration::from_secs(300)).await;
+        }
     });
 
     let upload_limit = videos::routes::upload_byte_limit();

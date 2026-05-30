@@ -1,5 +1,6 @@
 pub mod embeds;
 pub mod media;
+pub mod metrics;
 pub mod pipeline;
 pub mod routes;
 pub mod storage;

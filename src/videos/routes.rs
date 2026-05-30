@@ -16,6 +16,7 @@ use crate::auth::{Permission, User};
 use crate::db;
 use crate::models::{ProcessingStatus, Video};
 use crate::videos::embeds;
+use crate::videos::metrics::{kv, video_metrics};
 use crate::videos::pipeline::{
     self, max_video_bytes, signed_download_ttl, signed_playback_ttl, PipelineContext,
 };
@@ -91,11 +92,18 @@ pub async fn api_video_upload(
 ) -> Result<Json<UploadResponse>, Status> {
     user.require_permission(Permission::UploadVideos)?;
 
+    let metrics = video_metrics();
     if !is_mp4(form.file.content_type()) {
+        metrics
+            .uploads_total
+            .add(1, &[kv("result", "fail_format")]);
         return Err(Status::UnsupportedMediaType);
     }
 
     if form.file.len() > max_video_bytes() as u64 {
+        metrics
+            .uploads_total
+            .add(1, &[kv("result", "fail_size")]);
         return Err(Status::PayloadTooLarge);
     }
 
@@ -371,10 +379,14 @@ pub async fn api_video_playback_url(
     }
     let key = db_video.storage_key.ok_or(Status::Conflict)?;
     let ttl = signed_playback_ttl();
+    let started = std::time::Instant::now();
     let url = storage
         .presign_get(&key, ttl)
         .await
         .map_err(|_| Status::InternalServerError)?;
+    video_metrics()
+        .signed_url_mint_duration_ms
+        .record(started.elapsed().as_millis() as u64, &[]);
     let expires_at = Utc::now() + chrono::Duration::from_std(ttl).unwrap_or_default();
     Ok(Json(SignedUrlResponse { url, expires_at }))
 }
@@ -400,10 +412,14 @@ pub async fn api_video_download_url(
     let title = db_video.title.unwrap_or_else(|| format!("video-{}", vid));
     let filename = sanitised_download_name(&title);
     let ttl = signed_download_ttl();
+    let started = std::time::Instant::now();
     let url = storage
         .presign_attachment_get(&key, ttl, &filename)
         .await
         .map_err(|_| Status::InternalServerError)?;
+    video_metrics()
+        .signed_url_mint_duration_ms
+        .record(started.elapsed().as_millis() as u64, &[]);
     let expires_at = Utc::now() + chrono::Duration::from_std(ttl).unwrap_or_default();
     Ok(Json(SignedUrlResponse { url, expires_at }))
 }
@@ -459,6 +475,15 @@ pub async fn api_video_watch_events(
     db::ingest_watch_events(pool.inner(), vid, user.id, play_id, &inputs)
         .await
         .map_err(Status::from)?;
+    let metrics = video_metrics();
+    for input in &inputs {
+        metrics
+            .watch_events_total
+            .add(1, &[kv("event", input.event.clone())]);
+        if input.event == "started" {
+            metrics.watch_plays_total.add(1, &[]);
+        }
+    }
     Ok(Status::NoContent)
 }
 

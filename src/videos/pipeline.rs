@@ -11,6 +11,7 @@ use uuid::Uuid;
 
 use crate::db;
 use crate::videos::media::{DynMediaProbe, DynMediaTranscode, MediaError, ProbeResult};
+use crate::videos::metrics::{kv, video_metrics};
 use crate::videos::storage::{DynVideoStorage, StorageError};
 
 #[derive(Default)]
@@ -98,15 +99,29 @@ pub async fn process_uploaded_video(
     let result = run_pipeline(&ctx, video_id, technique_id, &temp_input, &mut cleanup).await;
     let elapsed = started.elapsed();
 
+    let elapsed_ms = elapsed.as_millis() as u64;
+    let metrics = video_metrics();
+    metrics
+        .upload_duration_ms
+        .record(elapsed_ms, &[]);
+
     match result {
-        Ok(()) => info!(elapsed_ms = elapsed.as_millis() as i64, "video pipeline ok"),
+        Ok(()) => {
+            info!(elapsed_ms = elapsed_ms as i64, "video pipeline ok");
+            metrics
+                .uploads_total
+                .add(1, &[kv("result", "ok")]);
+        }
         Err(err) => {
             error!(
-                elapsed_ms = elapsed.as_millis() as i64,
+                elapsed_ms = elapsed_ms as i64,
                 error = %err,
                 "video pipeline failed",
             );
             let message = err.to_string();
+            metrics
+                .uploads_total
+                .add(1, &[kv("result", "fail")]);
             if let Err(db_err) = db::mark_video_failed(&ctx.pool, video_id, &message).await {
                 error!(error = %db_err, "failed to record video failure");
             }
@@ -122,31 +137,90 @@ async fn run_pipeline(
     temp_input: &PathBuf,
     cleanup: &mut TempCleanup,
 ) -> Result<(), PipelineError> {
-    let probe = ctx.probe.probe(temp_input).await?;
-    enforce_duration(&probe, ctx.max_duration_seconds)?;
+    let metrics = video_metrics();
+
+    let probe_started = Instant::now();
+    let probe = match ctx.probe.probe(temp_input).await {
+        Ok(probe) => probe,
+        Err(err) => {
+            metrics
+                .transcode_failures_total
+                .add(1, &[kv("stage", "ffprobe")]);
+            return Err(err.into());
+        }
+    };
+    metrics
+        .ffprobe_duration_ms
+        .record(probe_started.elapsed().as_millis() as u64, &[]);
+    metrics
+        .video_duration_seconds
+        .record(probe.duration_seconds.round() as u64, &[]);
+
+    if let Err(err) = enforce_duration(&probe, ctx.max_duration_seconds) {
+        metrics
+            .transcode_failures_total
+            .add(1, &[kv("stage", "duration")]);
+        return Err(err);
+    }
 
     let upload_path = if probe.is_h264_mp4() {
+        metrics
+            .transcodes_total
+            .add(1, &[kv("result", "skipped")]);
         temp_input.clone()
     } else {
         let mut transcoded = temp_input.clone();
         transcoded.set_extension("out.mp4");
         cleanup.track(transcoded.clone());
-        ctx.transcode
+        let transcode_started = Instant::now();
+        match ctx
+            .transcode
             .transcode_to_h264_mp4(temp_input, &transcoded)
-            .await?;
+            .await
+        {
+            Ok(()) => {
+                metrics
+                    .transcode_duration_ms
+                    .record(transcode_started.elapsed().as_millis() as u64, &[]);
+                metrics
+                    .transcodes_total
+                    .add(1, &[kv("result", "ok")]);
+            }
+            Err(err) => {
+                metrics
+                    .transcodes_total
+                    .add(1, &[kv("result", "fail")]);
+                metrics
+                    .transcode_failures_total
+                    .add(1, &[kv("stage", "ffmpeg")]);
+                return Err(err.into());
+            }
+        }
         transcoded
     };
 
     let bytes = tokio::fs::metadata(&upload_path).await?.len() as i64;
+    metrics.upload_bytes.record(bytes as u64, &[]);
     let storage_key = format!(
         "videos/{}/{}.mp4",
         technique_id,
         Uuid::new_v4()
     );
 
-    ctx.storage
+    let put_started = Instant::now();
+    if let Err(err) = ctx
+        .storage
         .put_file(&storage_key, "video/mp4", &upload_path)
-        .await?;
+        .await
+    {
+        metrics
+            .transcode_failures_total
+            .add(1, &[kv("stage", "s3_put")]);
+        return Err(err.into());
+    }
+    metrics
+        .s3_put_duration_ms
+        .record(put_started.elapsed().as_millis() as u64, &[]);
 
     db::finalize_video_ready(
         &ctx.pool,
