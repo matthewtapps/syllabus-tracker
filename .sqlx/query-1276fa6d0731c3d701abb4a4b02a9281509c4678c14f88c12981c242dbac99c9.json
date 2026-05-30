@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT COUNT(*) AS count\n         FROM video_watch_events\n         WHERE video_id = ? AND user_id = ? AND play_id = ? AND event = 'completed'",
+  "describe": {
+    "columns": [
+      {
+        "name": "count",
+        "ordinal": 0,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "1276fa6d0731c3d701abb4a4b02a9281509c4678c14f88c12981c242dbac99c9"
+}

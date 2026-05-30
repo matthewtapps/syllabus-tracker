@@ -29,6 +29,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
+import { useWatchTracker } from "./useWatchTracker";
 import { VideoPlayerPanel } from "./video-player-panel";
 
 interface VideoRowProps {
@@ -49,6 +50,7 @@ export function VideoRow({
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [downloading, setDownloading] = useState(false);
+  const trackerEvents = useWatchTracker(video.id);
 
   const canPlay = video.processing_status === "ready";
   const isNative = video.kind === "native";
@@ -179,7 +181,7 @@ export function VideoRow({
 
       {expanded && canPlay && (
         <div className="border-t border-border p-3">
-          <VideoPlayerPanel video={video} />
+          <VideoPlayerPanel video={video} events={trackerEvents} />
         </div>
       )}
 

@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO video_privacy_acks (user_id)\n         VALUES (?)\n         ON CONFLICT (user_id) DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": []
+  },
+  "hash": "c9d81d5f3b0c338be2c5a86ae6fd5735def57395c067754b8697b028bdf6eced"
+}

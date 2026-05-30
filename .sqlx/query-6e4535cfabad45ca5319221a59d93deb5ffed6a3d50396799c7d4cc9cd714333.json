@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO video_watch_aggregates\n            (video_id, user_id, play_count, completed_count, total_seconds_watched,\n             first_watched_at, last_watched_at)\n         VALUES (?, ?, ?, ?, ?, ?, ?)\n         ON CONFLICT (video_id, user_id) DO UPDATE SET\n             play_count = play_count + excluded.play_count,\n             completed_count = completed_count + excluded.completed_count,\n             total_seconds_watched = total_seconds_watched + excluded.total_seconds_watched,\n             first_watched_at = COALESCE(first_watched_at, excluded.first_watched_at),\n             last_watched_at = excluded.last_watched_at",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 7
+    },
+    "nullable": []
+  },
+  "hash": "6e4535cfabad45ca5319221a59d93deb5ffed6a3d50396799c7d4cc9cd714333"
+}

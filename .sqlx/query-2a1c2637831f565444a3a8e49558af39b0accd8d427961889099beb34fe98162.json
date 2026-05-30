@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO video_watch_events\n                (video_id, user_id, event, seconds_watched, play_id)\n             VALUES (?, ?, ?, ?, ?)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 5
+    },
+    "nullable": []
+  },
+  "hash": "2a1c2637831f565444a3a8e49558af39b0accd8d427961889099beb34fe98162"
+}

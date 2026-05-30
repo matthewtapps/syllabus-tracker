@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import type { Video } from "@/lib/api";
 import { listVideos } from "@/lib/api";
+import { PrivacyAckBanner } from "./privacy-ack-banner";
 import { VideoRow } from "./video-row";
 
 interface VideoListProps {
@@ -105,17 +106,20 @@ export function VideoList({
   }
 
   return (
-    <ul className="space-y-2">
-      {videos.map((video) => (
-        <VideoRow
-          key={video.id}
-          video={video}
-          canManage={canManage}
-          expanded={expandedId === video.id}
-          onToggleExpanded={() => toggleExpanded(video.id)}
-          onDeleted={handleDeleted}
-        />
-      ))}
-    </ul>
+    <div className="space-y-3">
+      <PrivacyAckBanner enabled={!canManage && expandedId !== null} />
+      <ul className="space-y-2">
+        {videos.map((video) => (
+          <VideoRow
+            key={video.id}
+            video={video}
+            canManage={canManage}
+            expanded={expandedId === video.id}
+            onToggleExpanded={() => toggleExpanded(video.id)}
+            onDeleted={handleDeleted}
+          />
+        ))}
+      </ul>
+    </div>
   );
 }

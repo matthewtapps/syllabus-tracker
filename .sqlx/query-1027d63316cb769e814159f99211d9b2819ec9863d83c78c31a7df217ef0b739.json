@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT COALESCE(MAX(seconds_watched), 0) AS prior_max\n         FROM video_watch_events\n         WHERE video_id = ? AND user_id = ? AND play_id = ?\n           AND seconds_watched IS NOT NULL",
+  "describe": {
+    "columns": [
+      {
+        "name": "prior_max",
+        "ordinal": 0,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "1027d63316cb769e814159f99211d9b2819ec9863d83c78c31a7df217ef0b739"
+}

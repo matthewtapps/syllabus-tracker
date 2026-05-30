@@ -408,14 +408,86 @@ pub async fn api_video_download_url(
     Ok(Json(SignedUrlResponse { url, expires_at }))
 }
 
-#[post("/videos/<_vid>/watch-events")]
-pub async fn api_video_watch_events(_vid: i64, _user: User) -> Status {
-    Status::NotImplemented
+#[derive(Deserialize)]
+pub struct WatchEventBatch {
+    pub play_id: String,
+    pub events: Vec<WatchEventItem>,
 }
 
+#[derive(Deserialize)]
+pub struct WatchEventItem {
+    pub event: String,
+    pub seconds_watched: Option<i64>,
+}
+
+const ALLOWED_WATCH_EVENTS: &[&str] = &[
+    "started",
+    "progress_25",
+    "progress_50",
+    "progress_75",
+    "completed",
+    "opened",
+];
+
+#[instrument(skip(body, pool))]
+#[post("/videos/<vid>/watch-events", data = "<body>")]
+pub async fn api_video_watch_events(
+    vid: i64,
+    user: User,
+    body: Json<WatchEventBatch>,
+    pool: &State<Pool<Sqlite>>,
+) -> Result<Status, Status> {
+    let req = body.into_inner();
+    let play_id = req.play_id.trim();
+    if play_id.is_empty() || play_id.len() > 64 {
+        return Err(Status::UnprocessableEntity);
+    }
+    if req.events.is_empty() || req.events.len() > 32 {
+        return Err(Status::UnprocessableEntity);
+    }
+    let mut inputs = Vec::with_capacity(req.events.len());
+    for event in req.events {
+        if !ALLOWED_WATCH_EVENTS.contains(&event.event.as_str()) {
+            return Err(Status::UnprocessableEntity);
+        }
+        let seconds = event.seconds_watched.map(|s| s.max(0));
+        inputs.push(db::WatchEventInput {
+            event: event.event,
+            seconds_watched: seconds,
+        });
+    }
+    db::ingest_watch_events(pool.inner(), vid, user.id, play_id, &inputs)
+        .await
+        .map_err(Status::from)?;
+    Ok(Status::NoContent)
+}
+
+#[instrument(skip(pool))]
 #[post("/videos/privacy-ack")]
-pub async fn api_video_privacy_ack(_user: User) -> Status {
-    Status::NotImplemented
+pub async fn api_video_privacy_ack(
+    user: User,
+    pool: &State<Pool<Sqlite>>,
+) -> Result<Status, Status> {
+    db::record_privacy_ack(pool.inner(), user.id)
+        .await
+        .map_err(Status::from)?;
+    Ok(Status::NoContent)
+}
+
+#[derive(Serialize)]
+pub struct PrivacyAckStatus {
+    pub acked: bool,
+}
+
+#[get("/videos/privacy-ack")]
+pub async fn api_video_privacy_ack_status(
+    user: User,
+    pool: &State<Pool<Sqlite>>,
+) -> Result<Json<PrivacyAckStatus>, Status> {
+    let acked = db::has_privacy_ack(pool.inner(), user.id)
+        .await
+        .map_err(Status::from)?;
+    Ok(Json(PrivacyAckStatus { acked }))
 }
 
 #[get("/videos/<_vid>/stats")]
@@ -428,9 +500,22 @@ pub async fn api_student_watch_activity(_sid: i64, _user: User) -> Status {
     Status::NotImplemented
 }
 
-#[get("/me/watch-state?<_video_ids>")]
-pub async fn api_my_watch_state(_video_ids: Vec<i64>, _user: User) -> Status {
-    Status::NotImplemented
+#[derive(Serialize)]
+pub struct WatchStateResponse {
+    pub videos: std::collections::HashMap<i64, db::WatchAggregateRow>,
+}
+
+#[instrument(skip(pool))]
+#[get("/me/watch-state?<video_ids>")]
+pub async fn api_my_watch_state(
+    video_ids: Vec<i64>,
+    user: User,
+    pool: &State<Pool<Sqlite>>,
+) -> Result<Json<WatchStateResponse>, Status> {
+    let videos = db::get_my_watch_state(pool.inner(), user.id, &video_ids)
+        .await
+        .map_err(Status::from)?;
+    Ok(Json(WatchStateResponse { videos }))
 }
 
 #[get("/dashboard/video-overview")]

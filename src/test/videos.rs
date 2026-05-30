@@ -368,6 +368,199 @@ mod tests {
         assert_eq!(observed, reversed);
     }
 
+    async fn upload_ready_video(client: &Client, tid: i64) -> i64 {
+        let response = client
+            .post(format!("/api/techniques/{}/videos/upload", tid))
+            .header(multipart_content_type())
+            .body(multipart_upload_body(b"bytes", "clip.mp4", "Tracked", None))
+            .dispatch()
+            .await;
+        let body: serde_json::Value =
+            serde_json::from_str(&response.into_string().await.unwrap()).unwrap();
+        let video_id = body["video_id"].as_i64().unwrap();
+        assert_eq!(poll_status_until_ready(client, video_id).await, "ready");
+        video_id
+    }
+
+    async fn post_watch_events(
+        client: &Client,
+        video_id: i64,
+        play_id: &str,
+        events: Vec<serde_json::Value>,
+    ) -> rocket::http::Status {
+        client
+            .post(format!("/api/videos/{}/watch-events", video_id))
+            .header(ContentType::JSON)
+            .body(
+                json!({
+                    "play_id": play_id,
+                    "events": events,
+                })
+                .to_string(),
+            )
+            .dispatch()
+            .await
+            .status()
+    }
+
+    #[rocket::async_test]
+    async fn watch_event_ingest_increments_aggregates() {
+        let test_db = create_standard_test_db().await;
+        let (client, db) = setup_test_client(test_db).await;
+        let tid = first_technique_id(&db).await;
+
+        login_as(&client, "coach_user").await;
+        let video_id = upload_ready_video(&client, tid).await;
+
+        login_as(&client, "student_user").await;
+        let status = post_watch_events(
+            &client,
+            video_id,
+            "play-aaa",
+            vec![
+                json!({"event": "started"}),
+                json!({"event": "progress_25", "seconds_watched": 8}),
+                json!({"event": "completed", "seconds_watched": 30}),
+            ],
+        )
+        .await;
+        assert_eq!(status, Status::NoContent);
+
+        let response = client
+            .get(format!("/api/me/watch-state?video_ids={}", video_id))
+            .dispatch()
+            .await;
+        let body: serde_json::Value =
+            serde_json::from_str(&response.into_string().await.unwrap()).unwrap();
+        let agg = &body["videos"][video_id.to_string()];
+        assert_eq!(agg["play_count"].as_i64().unwrap(), 1);
+        assert_eq!(agg["completed_count"].as_i64().unwrap(), 1);
+        assert_eq!(agg["total_seconds_watched"].as_i64().unwrap(), 30);
+    }
+
+    #[rocket::async_test]
+    async fn rewatch_with_new_play_id_increments_play_count() {
+        let test_db = create_standard_test_db().await;
+        let (client, db) = setup_test_client(test_db).await;
+        let tid = first_technique_id(&db).await;
+
+        login_as(&client, "coach_user").await;
+        let video_id = upload_ready_video(&client, tid).await;
+
+        login_as(&client, "student_user").await;
+        post_watch_events(
+            &client,
+            video_id,
+            "play-1",
+            vec![
+                json!({"event": "started"}),
+                json!({"event": "completed", "seconds_watched": 25}),
+            ],
+        )
+        .await;
+        post_watch_events(
+            &client,
+            video_id,
+            "play-2",
+            vec![
+                json!({"event": "started"}),
+                json!({"event": "completed", "seconds_watched": 25}),
+            ],
+        )
+        .await;
+
+        let response = client
+            .get(format!("/api/me/watch-state?video_ids={}", video_id))
+            .dispatch()
+            .await;
+        let body: serde_json::Value =
+            serde_json::from_str(&response.into_string().await.unwrap()).unwrap();
+        let agg = &body["videos"][video_id.to_string()];
+        assert_eq!(agg["play_count"].as_i64().unwrap(), 2);
+        assert_eq!(agg["completed_count"].as_i64().unwrap(), 2);
+        assert_eq!(agg["total_seconds_watched"].as_i64().unwrap(), 50);
+    }
+
+    #[rocket::async_test]
+    async fn completed_idempotent_within_play_id() {
+        let test_db = create_standard_test_db().await;
+        let (client, db) = setup_test_client(test_db).await;
+        let tid = first_technique_id(&db).await;
+
+        login_as(&client, "coach_user").await;
+        let video_id = upload_ready_video(&client, tid).await;
+
+        login_as(&client, "student_user").await;
+        post_watch_events(
+            &client,
+            video_id,
+            "play-9",
+            vec![
+                json!({"event": "started"}),
+                json!({"event": "completed", "seconds_watched": 25}),
+            ],
+        )
+        .await;
+        // Same play_id, completed fires again (e.g. duplicate beacon).
+        post_watch_events(
+            &client,
+            video_id,
+            "play-9",
+            vec![json!({"event": "completed", "seconds_watched": 25})],
+        )
+        .await;
+
+        let response = client
+            .get(format!("/api/me/watch-state?video_ids={}", video_id))
+            .dispatch()
+            .await;
+        let body: serde_json::Value =
+            serde_json::from_str(&response.into_string().await.unwrap()).unwrap();
+        let agg = &body["videos"][video_id.to_string()];
+        assert_eq!(agg["play_count"].as_i64().unwrap(), 1);
+        assert_eq!(agg["completed_count"].as_i64().unwrap(), 1);
+    }
+
+    #[rocket::async_test]
+    async fn watch_event_rejects_unknown_event_name() {
+        let test_db = create_standard_test_db().await;
+        let (client, db) = setup_test_client(test_db).await;
+        let tid = first_technique_id(&db).await;
+
+        login_as(&client, "coach_user").await;
+        let video_id = upload_ready_video(&client, tid).await;
+
+        login_as(&client, "student_user").await;
+        let status = post_watch_events(
+            &client,
+            video_id,
+            "play-x",
+            vec![json!({"event": "secretly_scrubbed"})],
+        )
+        .await;
+        assert_eq!(status, Status::UnprocessableEntity);
+    }
+
+    #[rocket::async_test]
+    async fn privacy_ack_persists() {
+        let test_db = create_standard_test_db().await;
+        let (client, _db) = setup_test_client(test_db).await;
+
+        login_as(&client, "student_user").await;
+        let initial = client.get("/api/videos/privacy-ack").dispatch().await;
+        let body: serde_json::Value =
+            serde_json::from_str(&initial.into_string().await.unwrap()).unwrap();
+        assert_eq!(body["acked"], false);
+
+        let ack = client.post("/api/videos/privacy-ack").dispatch().await;
+        assert_eq!(ack.status(), Status::NoContent);
+
+        let after = client.get("/api/videos/privacy-ack").dispatch().await;
+        let body: serde_json::Value =
+            serde_json::from_str(&after.into_string().await.unwrap()).unwrap();
+        assert_eq!(body["acked"], true);
+    }
+
     // Silence unused Header import when adding follow-up cases.
     #[allow(dead_code)]
     fn _header(name: &'static str, value: &'static str) -> Header<'static> {
