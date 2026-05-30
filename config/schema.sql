@@ -111,3 +111,61 @@ CREATE INDEX IF NOT EXISTS idx_attempts_student_technique
     ON attempts (student_technique_id, attempted_at DESC);
 CREATE INDEX IF NOT EXISTS idx_attempts_recorder
     ON attempts (recorded_by_id, attempted_at DESC);
+
+CREATE TABLE IF NOT EXISTS videos (
+    id INTEGER PRIMARY KEY,
+    technique_id INTEGER NOT NULL REFERENCES techniques (id) ON DELETE CASCADE,
+    title TEXT NOT NULL,
+    description TEXT,
+    position INTEGER NOT NULL DEFAULT 0,
+    kind TEXT NOT NULL,
+    processing_status TEXT NOT NULL,
+    processing_error TEXT,
+    storage_key TEXT,
+    bytes INTEGER,
+    duration_seconds INTEGER,
+    width INTEGER,
+    height INTEGER,
+    content_type TEXT,
+    original_filename TEXT,
+    external_url TEXT,
+    external_host TEXT,
+    external_video_id TEXT,
+    uploaded_by_id INTEGER NOT NULL REFERENCES users (id),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_videos_technique_position
+    ON videos (technique_id, position);
+CREATE INDEX IF NOT EXISTS idx_videos_status
+    ON videos (processing_status);
+
+CREATE TABLE IF NOT EXISTS video_watch_events (
+    id INTEGER PRIMARY KEY,
+    video_id INTEGER NOT NULL REFERENCES videos (id) ON DELETE CASCADE,
+    user_id INTEGER NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+    event TEXT NOT NULL,
+    seconds_watched INTEGER,
+    play_id TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_watch_events_video_user
+    ON video_watch_events (video_id, user_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_watch_events_user
+    ON video_watch_events (user_id, created_at);
+
+CREATE TABLE IF NOT EXISTS video_watch_aggregates (
+    video_id INTEGER NOT NULL REFERENCES videos (id) ON DELETE CASCADE,
+    user_id INTEGER NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+    play_count INTEGER NOT NULL DEFAULT 0,
+    completed_count INTEGER NOT NULL DEFAULT 0,
+    total_seconds_watched INTEGER NOT NULL DEFAULT 0,
+    first_watched_at TIMESTAMP,
+    last_watched_at TIMESTAMP,
+    PRIMARY KEY (video_id, user_id)
+);
+
+CREATE TABLE IF NOT EXISTS video_privacy_acks (
+    user_id INTEGER PRIMARY KEY REFERENCES users (id) ON DELETE CASCADE,
+    acked_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);

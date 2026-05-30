@@ -21,6 +21,11 @@ pub enum Permission {
     EditUserRoles,
     DeleteUsers,
     EditUserCredentials,
+
+    UploadVideos,
+    DeleteVideos,
+    ViewWatchStats,
+    ViewStorageStats,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -53,6 +58,10 @@ static COACH_PERMISSIONS: Lazy<HashSet<Permission>> = Lazy::new(|| {
     permissions.insert(Permission::RegisterUsers);
     permissions.insert(Permission::ManageTags);
 
+    permissions.insert(Permission::UploadVideos);
+    permissions.insert(Permission::DeleteVideos);
+    permissions.insert(Permission::ViewWatchStats);
+
     permissions
 });
 
@@ -64,6 +73,8 @@ static ADMIN_PERMISSIONS: Lazy<HashSet<Permission>> = Lazy::new(|| {
     permissions.insert(Permission::EditUserRoles);
     permissions.insert(Permission::DeleteUsers);
     permissions.insert(Permission::EditUserCredentials);
+
+    permissions.insert(Permission::ViewStorageStats);
 
     permissions
 });
