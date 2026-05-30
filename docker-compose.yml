@@ -18,6 +18,7 @@ services:
       - /app/target
     depends_on:
       - otel-collector
+      - minio-init
     networks:
       - syllabus-net
 
@@ -53,6 +54,38 @@ services:
     networks:
       - syllabus-net
 
+  minio:
+    image: minio/minio:RELEASE.2025-04-22T22-12-26Z
+    command: server /data --console-address ":9001"
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    volumes:
+      - minio-data:/data
+    networks:
+      - syllabus-net
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  minio-init:
+    image: minio/mc:RELEASE.2025-04-16T18-13-26Z
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      sh -c "
+        mc alias set local http://minio:9000 minioadmin minioadmin &&
+        mc mb --ignore-existing local/syllabus-tracker-videos-dev
+      "
+    networks:
+      - syllabus-net
+
 networks:
   syllabus-net:
 
@@ -61,3 +94,4 @@ volumes:
   target-cache:
   sccache-data:
   node-modules:
+  minio-data:

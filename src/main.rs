@@ -190,14 +190,23 @@ async fn rocket() -> _ {
         std::process::exit(0);
     }
 
-    init_rocket(pool).await
+    let storage_config = videos::S3Config::from_env()
+        .expect("Failed to read S3 config from environment");
+    let storage: videos::DynVideoStorage =
+        std::sync::Arc::new(videos::S3VideoStorage::new(&storage_config));
+
+    init_rocket(pool, storage).await
 }
 
-pub async fn init_rocket(pool: SqlitePool) -> Rocket<Build> {
+pub async fn init_rocket(
+    pool: SqlitePool,
+    storage: videos::DynVideoStorage,
+) -> Rocket<Build> {
     info!("Starting syllabus tracker");
 
     rocket::build()
         .manage(pool)
+        .manage(storage)
         .mount(
             "/api",
             routes![

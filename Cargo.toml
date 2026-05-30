@@ -41,6 +41,12 @@ regex = "1.11.1"
 tokio = "1.45.0"
 dotenvy = "0.15.7"
 
+# Object storage
+aws-config = { version = "1.5.16", default-features = false, features = ["rt-tokio", "behavior-version-latest"] }
+aws-sdk-s3 = { version = "1.78.0", default-features = false, features = ["rt-tokio", "behavior-version-latest", "rustls"] }
+aws-credential-types = "1.2.1"
+async-trait = "0.1.83"
+
 [dev-dependencies]
 temp-env = { version = "0.3.6", features = ["async_closure"] }
 serial_test = "3.2.0"
