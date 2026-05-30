@@ -30,6 +30,20 @@ reseed-attempts:
     sqlite3 sqlite.db "DELETE FROM attempts;"
     just seed
 
+# Wipe all data from the database. Schema is preserved; rerun `just seed`
+# afterwards to repopulate demo data.
+clean:
+    sqlite3 sqlite.db "DELETE FROM attempts; \
+        DELETE FROM technique_tags; \
+        DELETE FROM tags; \
+        DELETE FROM collection_techniques; \
+        DELETE FROM student_techniques; \
+        DELETE FROM collections; \
+        DELETE FROM techniques; \
+        DELETE FROM invite_tokens; \
+        DELETE FROM user_sessions; \
+        DELETE FROM users;"
+
 # Frontend commands. All run from the frontend/ folder.
 fe-dev:
     cd frontend && pnpm dev
