@@ -1801,6 +1801,7 @@ pub struct AttemptBucket {
     pub count: i64,
 }
 
+#[allow(clippy::too_many_arguments)]
 fn hydrate_attempt_row(
     id: i64,
     student_technique_id: i64,

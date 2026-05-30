@@ -61,7 +61,11 @@ export function StudentSection({
       {students.length > 0 ? (
         <div className="divide-y divide-border">
           {students.map((student) => (
-            <StudentRow key={student.id} student={student} />
+            <StudentRow
+              key={student.id}
+              student={student}
+              href={`/student/${student.id}?from=dashboard`}
+            />
           ))}
         </div>
       ) : (

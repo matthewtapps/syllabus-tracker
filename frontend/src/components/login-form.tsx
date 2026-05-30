@@ -105,6 +105,7 @@ export function LoginForm({ onSuccess, className, ...props }: LoginFormProps) {
                     <FormLabel>Password</FormLabel>
                     <Link
                       to="/forgot-password"
+                      tabIndex={-1}
                       className="text-xs text-muted-foreground hover:text-foreground hover:underline"
                     >
                       Forgot password?

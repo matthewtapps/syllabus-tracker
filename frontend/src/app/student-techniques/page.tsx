@@ -401,16 +401,21 @@ export default function StudentTechniques({ user }: StudentTechniquesProps) {
 
   return (
     <div className="container mx-auto py-6 px-4 sm:px-6 md:py-8">
-      {!isOwnView && (
-        <div className="mb-4">
-          <Button asChild variant="ghost" size="sm" className="-ml-3 h-8 gap-1.5 text-muted-foreground">
-            <Link to="/students">
-              <ArrowLeft className="h-4 w-4" aria-hidden />
-              Back to students
-            </Link>
-          </Button>
-        </div>
-      )}
+      {!isOwnView && (() => {
+        const fromDashboard = searchParams.get('from') === 'dashboard';
+        const backTo = fromDashboard ? '/dashboard' : '/students';
+        const backLabel = fromDashboard ? 'Back to dashboard' : 'Back to students';
+        return (
+          <div className="mb-4">
+            <Button asChild variant="ghost" size="sm" className="-ml-3 h-8 gap-1.5 text-muted-foreground">
+              <Link to={backTo}>
+                <ArrowLeft className="h-4 w-4" aria-hidden />
+                {backLabel}
+              </Link>
+            </Button>
+          </div>
+        );
+      })()}
 
       {isGraduate && (
         <div className="mb-4 flex items-start gap-3 rounded-lg border border-status-green/30 bg-status-green-bg px-4 py-3 text-sm">
