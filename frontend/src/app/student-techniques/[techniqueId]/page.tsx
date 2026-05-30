@@ -1,19 +1,36 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { ArrowLeft, MoreVerticalIcon, PencilIcon } from "lucide-react";
+import {
+  ArrowLeft,
+  MoreVerticalIcon,
+  PencilIcon,
+  XIcon,
+} from "lucide-react";
 import { toast } from "sonner";
 import {
   type Attempt,
-  type AttemptBucket,
   type SingleStudentTechnique,
+  type Tag,
+  type Technique,
+  type TechniqueUpdate,
+  type User,
   deleteAttempt,
-  getAttemptSparkline,
+  getAllTags,
   getStudentTechniqueDetail,
   listAttempts,
+  removeTagFromTechnique,
   updateAttempt,
-  type User,
+  updateTechnique,
 } from "@/lib/api";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -24,14 +41,23 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { PageHeader } from "@/components/page-header";
-import { StatusPill } from "@/components/status-pill";
 import { Skeleton } from "@/components/ui/skeleton";
+import { StatusPill } from "@/components/status-pill";
+import { StatusToggle } from "@/components/status-toggle";
+import TechniqueEditForm from "@/components/technique-edit-form";
+import { WeeklyAttemptBars } from "@/components/weekly-attempt-bars";
 import { formatRelative } from "@/lib/dates";
 import type { Status } from "@/lib/status";
+import { AttemptButton } from "../components/attempt-button";
+import { NotesEditor } from "../components/notes-editor";
+import { TagRemoveDialog } from "../components/tag-remove-dialog";
+import { TagsEditor } from "../components/tags-editor";
 
 interface StudentTechniqueDetailProps {
   user: User;
 }
+
+const RECENT_WINDOW_DAYS = 30;
 
 export default function StudentTechniqueDetail({
   user,
@@ -42,22 +68,27 @@ export default function StudentTechniqueDetail({
 
   const [detail, setDetail] = useState<SingleStudentTechnique | null>(null);
   const [attempts, setAttempts] = useState<Attempt[] | null>(null);
-  const [buckets, setBuckets] = useState<AttemptBucket[]>([]);
+  const [allTags, setAllTags] = useState<Tag[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [tagToRemove, setTagToRemove] = useState<{
+    technique: Technique;
+    tag: Tag;
+  } | null>(null);
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     async function load() {
       try {
-        const [d, list, weekly] = await Promise.all([
+        const [d, list, tags] = await Promise.all([
           getStudentTechniqueDetail(stId),
           listAttempts(stId),
-          getAttemptSparkline(stId, 52),
+          getAllTags(),
         ]);
         if (cancelled) return;
         setDetail(d);
         setAttempts(list);
-        setBuckets(weekly);
+        setAllTags(tags);
       } catch (err) {
         if (cancelled) return;
         console.error(err);
@@ -70,8 +101,6 @@ export default function StudentTechniqueDetail({
     };
   }, [stId]);
 
-  const isCoachOrAdmin = !!detail?.can_edit_all_techniques;
-
   if (error) {
     return (
       <div className="container mx-auto px-4 py-6 sm:px-6 md:py-8">
@@ -82,7 +111,7 @@ export default function StudentTechniqueDetail({
 
   if (!detail) {
     return (
-      <div className="container mx-auto space-y-4 px-4 py-6 sm:px-6 md:py-8">
+      <div className="container mx-auto max-w-3xl space-y-4 px-4 py-6 sm:px-6 md:py-8">
         <Skeleton className="h-7 w-48" />
         <Skeleton className="h-20 w-full" />
         <Skeleton className="h-40 w-full" />
@@ -92,8 +121,74 @@ export default function StudentTechniqueDetail({
 
   const technique = detail.technique;
   const status = technique.status as Status;
+  const canEditAll = detail.can_edit_all_techniques;
+  const isOwnTechnique = user.id === detail.student.id;
+  const canEditStudentNotes = isOwnTechnique;
+  const canManageTagsOnRow = canEditAll || detail.can_manage_tags;
+  const canLogAttempts = isOwnTechnique || canEditAll;
 
-  function applyUpdate(next: Attempt) {
+  function applyTechniqueUpdate(patch: Partial<Technique>) {
+    setDetail((prev) =>
+      prev ? { ...prev, technique: { ...prev.technique, ...patch } } : prev,
+    );
+  }
+
+  async function handleStatusChange(next: Status) {
+    if (next === status) return;
+    const response = await updateTechnique(technique.id, { status: next });
+    if (!response.ok) {
+      toast.error("Could not update status");
+      return;
+    }
+    applyTechniqueUpdate({ status: next });
+  }
+
+  function handleTagAdded(tag: Tag, allAfter: Tag[]) {
+    const updated = [...technique.tags, tag].sort((a, b) =>
+      a.name.localeCompare(b.name),
+    );
+    applyTechniqueUpdate({ tags: updated });
+    setAllTags(allAfter);
+    toast.success("Tag added");
+  }
+
+  async function executeTagRemoval() {
+    if (!tagToRemove) return;
+    const { tag } = tagToRemove;
+    try {
+      const response = await removeTagFromTechnique(
+        technique.technique_id,
+        tag.id,
+      );
+      if (!response.ok) {
+        toast.error("Failed to remove tag");
+        return;
+      }
+      applyTechniqueUpdate({
+        tags: technique.tags.filter((t) => t.id !== tag.id),
+      });
+      toast.success(`Removed tag "${tag.name}"`);
+    } finally {
+      setTagToRemove(null);
+    }
+  }
+
+  async function handleEditDefinitionSubmit(updates: TechniqueUpdate) {
+    const response = await updateTechnique(technique.id, updates);
+    if (!response.ok) {
+      toast.error("Failed to save changes");
+      return;
+    }
+    applyTechniqueUpdate({
+      technique_name: updates.technique_name ?? technique.technique_name,
+      technique_description:
+        updates.technique_description ?? technique.technique_description,
+    });
+    toast.success("Changes saved");
+    setEditDialogOpen(false);
+  }
+
+  function applyAttemptUpdate(next: Attempt) {
     setAttempts((prev) =>
       prev ? prev.map((a) => (a.id === next.id ? next : a)) : prev,
     );
@@ -101,12 +196,23 @@ export default function StudentTechniqueDetail({
 
   function removeAttempt(id: number) {
     setAttempts((prev) => (prev ? prev.filter((a) => a.id !== id) : prev));
+    applyTechniqueUpdate({
+      attempt_count: Math.max(0, technique.attempt_count - 1),
+    });
   }
+
+  const totalAttempts = attempts?.length ?? technique.attempt_count;
+  const recentStats = computeRecency(attempts);
 
   return (
     <div className="container mx-auto max-w-3xl px-4 py-6 sm:px-6 md:py-8">
       <div className="mb-4">
-        <Button asChild variant="ghost" size="sm" className="-ml-3 h-8 gap-1.5 text-muted-foreground">
+        <Button
+          asChild
+          variant="ghost"
+          size="sm"
+          className="-ml-3 h-8 gap-1.5 text-muted-foreground"
+        >
           <Link to={`/student/${studentId}?focus=${technique.id}`}>
             <ArrowLeft className="h-4 w-4" aria-hidden />
             Back to syllabus
@@ -116,106 +222,279 @@ export default function StudentTechniqueDetail({
 
       <PageHeader
         title={technique.technique_name}
-        actions={<StatusPill status={status} variant="solid" />}
+        subtitle={
+          isOwnTechnique
+            ? "From your syllabus"
+            : `From ${detail.student.display_name || detail.student.username}'s syllabus`
+        }
+        actions={
+          <div className="flex items-center gap-2">
+            <StatusPill status={status} variant="solid" />
+            {canLogAttempts && (
+              <AttemptButton
+                studentTechniqueId={technique.id}
+                techniqueStatus={status}
+                onLogged={(result) => {
+                  setAttempts((prev) =>
+                    prev
+                      ? [
+                          result.attempt,
+                          ...prev.filter((a) => a.id !== result.attempt.id),
+                        ]
+                      : prev,
+                  );
+                  applyTechniqueUpdate({
+                    attempt_count: technique.attempt_count + 1,
+                    last_attempt_at: result.attempt.attempted_at,
+                  });
+                }}
+                onStatusChange={(next) => applyTechniqueUpdate({ status: next })}
+              />
+            )}
+          </div>
+        }
       />
 
-      <p className="mb-6 whitespace-pre-wrap text-sm text-muted-foreground">
-        {technique.technique_description}
-      </p>
+      <div className="space-y-8">
+        <section className="space-y-3">
+          <div className="flex items-baseline justify-between gap-3">
+            <h2 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              Recent activity
+            </h2>
+            {recentStats && (
+              <p className="text-xs text-muted-foreground">
+                <span className="font-medium text-foreground">
+                  {recentStats.recentCount}
+                </span>{" "}
+                in last {RECENT_WINDOW_DAYS} days
+                {recentStats.lastLabel && (
+                  <>
+                    {" "}
+                    <span aria-hidden>·</span> last {recentStats.lastLabel}
+                  </>
+                )}
+              </p>
+            )}
+          </div>
+          {attempts && attempts.length > 0 ? (
+            <div className="overflow-x-auto">
+              <WeeklyAttemptBars attempts={attempts} weeks={8} />
+            </div>
+          ) : (
+            <p className="text-sm italic text-muted-foreground">
+              No attempts logged yet.
+            </p>
+          )}
+        </section>
 
-      <section className="mb-8 space-y-2">
-        <h2 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-          Activity (last year)
-        </h2>
-        <YearBars buckets={buckets} />
-      </section>
+        <section className="space-y-2">
+          <h2 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            Status
+          </h2>
+          {canEditAll ? (
+            <StatusToggle value={status} onChange={handleStatusChange} size="sm" />
+          ) : (
+            <StatusPill status={status} variant="solid" />
+          )}
+        </section>
 
-      <section className="space-y-3">
-        <h2 className="text-sm font-semibold">
-          {attempts?.length ?? 0} {attempts?.length === 1 ? "attempt" : "attempts"}
-        </h2>
-        {attempts === null && (
-          <p className="text-sm text-muted-foreground">Loading attempts...</p>
+        {(canEditAll || (!canEditStudentNotes && technique.coach_notes)) && (
+          <NotesEditor
+            techniqueId={technique.id}
+            field="coach_notes"
+            label="Coach notes"
+            value={technique.coach_notes}
+            canEdit={canEditAll}
+            onSave={(v) => applyTechniqueUpdate({ coach_notes: v })}
+          />
         )}
-        {attempts !== null && attempts.length === 0 && (
-          <p className="text-sm italic text-muted-foreground">
-            No attempts logged yet.
+
+        {(canEditStudentNotes || canEditAll || technique.student_notes) && (
+          <NotesEditor
+            techniqueId={technique.id}
+            field="student_notes"
+            label={isOwnTechnique ? "My notes" : "Student notes"}
+            value={technique.student_notes}
+            canEdit={canEditStudentNotes || canEditAll}
+            onSave={(v) => applyTechniqueUpdate({ student_notes: v })}
+          />
+        )}
+
+        <section className="space-y-2">
+          <h2 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            Description
+          </h2>
+          <p className="whitespace-pre-wrap text-sm leading-relaxed text-muted-foreground">
+            {technique.technique_description}
           </p>
-        )}
-        {attempts && attempts.length > 0 && (
-          <ul className="space-y-2">
-            {attempts.map((a) => (
-              <DetailAttemptRow
-                key={a.id}
-                attempt={a}
-                currentUserId={user.id}
-                isCoachOrAdmin={isCoachOrAdmin}
-                onUpdate={applyUpdate}
-                onRemoved={() => removeAttempt(a.id)}
-              />
+        </section>
+
+        <section className="space-y-2">
+          <h2 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            Tags
+          </h2>
+          <div className="flex flex-wrap items-center gap-1.5">
+            {technique.tags.map((tag) => (
+              <Badge
+                key={tag.id}
+                variant="secondary"
+                className="gap-1.5 pr-1.5 text-xs"
+              >
+                {tag.name}
+                {canManageTagsOnRow && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-5 w-5 rounded-full text-muted-foreground hover:bg-background hover:text-foreground"
+                    onClick={() => setTagToRemove({ technique, tag })}
+                  >
+                    <XIcon className="h-3 w-3" aria-hidden />
+                    <span className="sr-only">Remove tag {tag.name}</span>
+                  </Button>
+                )}
+              </Badge>
             ))}
-          </ul>
+            {canManageTagsOnRow && (
+              <TagsEditor
+                techniqueId={technique.technique_id}
+                assignedTags={technique.tags}
+                allTags={allTags}
+                onTagAdded={handleTagAdded}
+              />
+            )}
+            {technique.tags.length === 0 && !canManageTagsOnRow && (
+              <span className="text-sm italic text-muted-foreground">
+                No tags
+              </span>
+            )}
+          </div>
+        </section>
+
+        {(canEditAll ||
+          technique.last_coach_update_at ||
+          technique.last_student_update_at) && (
+          <section className="grid gap-3 text-xs text-muted-foreground sm:grid-cols-2">
+            {technique.last_coach_update_at && (
+              <div>
+                <span className="block text-[10px] font-medium uppercase tracking-wide">
+                  Last coach update
+                </span>
+                <span>
+                  {formatRelative(technique.last_coach_update_at)}
+                  {technique.last_coach_update_by_name &&
+                    ` · ${technique.last_coach_update_by_name}`}
+                </span>
+              </div>
+            )}
+            {technique.last_student_update_at && (
+              <div>
+                <span className="block text-[10px] font-medium uppercase tracking-wide">
+                  Last student update
+                </span>
+                <span>
+                  {formatRelative(technique.last_student_update_at)}
+                  {technique.last_student_update_by_name &&
+                    ` · ${technique.last_student_update_by_name}`}
+                </span>
+              </div>
+            )}
+          </section>
         )}
-      </section>
+
+        <section className="space-y-3">
+          <h2 className="text-sm font-semibold">
+            All attempts ({totalAttempts})
+          </h2>
+          {attempts === null && (
+            <p className="text-sm text-muted-foreground">
+              Loading attempts...
+            </p>
+          )}
+          {attempts !== null && attempts.length === 0 && (
+            <p className="text-sm italic text-muted-foreground">
+              No attempts logged yet.
+            </p>
+          )}
+          {attempts && attempts.length > 0 && (
+            <ul className="space-y-2">
+              {attempts.map((a) => (
+                <DetailAttemptRow
+                  key={a.id}
+                  attempt={a}
+                  currentUserId={user.id}
+                  isCoachOrAdmin={canEditAll}
+                  onUpdate={applyAttemptUpdate}
+                  onRemoved={() => removeAttempt(a.id)}
+                />
+              ))}
+            </ul>
+          )}
+        </section>
+
+        {canEditAll && (
+          <div className="flex justify-end pt-4">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setEditDialogOpen(true)}
+            >
+              Edit technique definition
+            </Button>
+          </div>
+        )}
+      </div>
+
+      <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
+        <DialogContent className="max-h-[85vh] w-[calc(100vw-1rem)] max-w-md overflow-y-auto p-4 sm:p-6">
+          <DialogHeader>
+            <DialogTitle>Edit technique definition</DialogTitle>
+            <DialogDescription>
+              Changes to the name or description affect every student assigned
+              this technique.
+            </DialogDescription>
+          </DialogHeader>
+          <TechniqueEditForm
+            technique={technique}
+            canEditAll={canEditAll}
+            currentUserId={user.id}
+            studentId={detail.student.id}
+            onSubmit={handleEditDefinitionSubmit}
+          />
+        </DialogContent>
+      </Dialog>
+
+      <TagRemoveDialog
+        open={!!tagToRemove}
+        onOpenChange={(open) => !open && setTagToRemove(null)}
+        tagName={tagToRemove?.tag.name ?? null}
+        onConfirm={executeTagRemoval}
+      />
     </div>
   );
 }
 
-function YearBars({ buckets }: { buckets: AttemptBucket[] }) {
-  const series = useMemo(() => {
-    const map = new Map(buckets.map((b) => [b.date, b.count]));
-    const today = new Date();
-    const start = new Date(today);
-    start.setUTCDate(start.getUTCDate() - 52 * 7);
-    const day = start.getUTCDay();
-    const diff = day === 0 ? -6 : 1 - day;
-    start.setUTCDate(start.getUTCDate() + diff);
-    const out: { key: string; count: number }[] = [];
-    for (let i = 0; i < 52; i++) {
-      const d = new Date(start);
-      d.setUTCDate(d.getUTCDate() + i * 7);
-      const key = d.toISOString().slice(0, 10);
-      out.push({ key, count: map.get(key) ?? 0 });
-    }
-    return out;
-  }, [buckets]);
-
-  const max = Math.max(1, ...series.map((s) => s.count));
-  const width = 52 * 10 + 51 * 2;
-  const height = 60;
-
-  return (
-    <div className="overflow-x-auto">
-      <svg
-        width={width}
-        height={height}
-        viewBox={`0 0 ${width} ${height}`}
-        className="text-primary"
-        role="img"
-        aria-label="Weekly attempts over the last year"
-      >
-        {series.map((s, i) => {
-          const h = (s.count / max) * height;
-          return (
-            <rect
-              key={s.key}
-              x={i * 12}
-              y={height - h}
-              width={10}
-              height={h || 1}
-              rx={1}
-              className={s.count > 0 ? "fill-current" : "fill-muted-foreground/20"}
-            >
-              <title>
-                {s.count} {s.count === 1 ? "attempt" : "attempts"} (week of{" "}
-                {s.key})
-              </title>
-            </rect>
-          );
-        })}
-      </svg>
-    </div>
-  );
+function computeRecency(
+  attempts: Attempt[] | null,
+): { recentCount: number; lastLabel: string | null } | null {
+  if (!attempts || attempts.length === 0) return null;
+  const now = Date.now();
+  const cutoff = now - RECENT_WINDOW_DAYS * 86_400_000;
+  let recentCount = 0;
+  let mostRecent = 0;
+  for (const a of attempts) {
+    const t = Date.parse(a.attempted_at);
+    if (!Number.isFinite(t)) continue;
+    if (t >= cutoff) recentCount += 1;
+    if (t > mostRecent) mostRecent = t;
+  }
+  return {
+    recentCount,
+    lastLabel:
+      mostRecent > 0
+        ? formatRelative(new Date(mostRecent).toISOString())
+        : null,
+  };
 }
 
 interface DetailAttemptRowProps {
@@ -395,7 +674,11 @@ interface InlineDateEditorProps {
   onSaved: (next: Attempt) => void;
 }
 
-function InlineDateEditor({ attempt, onCancel, onSaved }: InlineDateEditorProps) {
+function InlineDateEditor({
+  attempt,
+  onCancel,
+  onSaved,
+}: InlineDateEditorProps) {
   const initial = attempt.attempted_at.slice(0, 10);
   const [value, setValue] = useState(initial);
   const [saving, setSaving] = useState(false);

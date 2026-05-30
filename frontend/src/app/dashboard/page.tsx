@@ -624,7 +624,7 @@ function RecentAttemptsSection({
           return (
             <li key={a.id}>
               <Link
-                to={`/student/${studentId}?focus=${a.technique_id}`}
+                to={`/student/${studentId}?focus=${a.student_technique_id}`}
                 className="flex items-center gap-3 px-4 py-3 transition-colors hover:bg-muted/40"
               >
                 <div className="min-w-0 flex-1">

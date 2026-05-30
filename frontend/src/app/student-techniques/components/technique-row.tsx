@@ -130,6 +130,15 @@ export function TechniqueRow({
         <div className="min-w-0 flex-1 space-y-1">
           <div className="flex flex-wrap items-center gap-2">
             <span className="font-medium">{technique.technique_name}</span>
+            <Link
+              to={`/student/${studentId}/technique/${technique.id}`}
+              onClick={(e) => e.stopPropagation()}
+              title="Open detail page"
+              aria-label="Open detail page"
+              className="inline-flex h-5 w-5 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            >
+              <ArrowUpRight className="h-3.5 w-3.5" aria-hidden />
+            </Link>
             {technique.has_new_student_activity && (
               <span
                 className="inline-flex h-1.5 w-1.5 rounded-full bg-primary"
@@ -204,15 +213,6 @@ export function TechniqueRow({
 
       {expanded && (
         <div className="space-y-6 px-4 pb-6 pt-2">
-          <div className="flex justify-end">
-            <Button asChild variant="link" size="sm" className="h-auto gap-1 p-0 text-xs">
-              <Link to={`/student/${studentId}/technique/${technique.id}`}>
-                Open detail view
-                <ArrowUpRight className="h-3 w-3" aria-hidden />
-              </Link>
-            </Button>
-          </div>
-
           {canEditAll && (
             <section className="space-y-2">
               <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
