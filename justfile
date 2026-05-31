@@ -111,6 +111,7 @@ dev: migrate
         kill -TERM $FRONTEND_PID $WATCHER_PID 2>/dev/null
         pkill -TERM -f target/debug/syllabus-tracker 2>/dev/null
         wait 2>/dev/null
+        docker compose stop minio minio-init otel-collector 2>/dev/null
     }
     trap cleanup INT TERM EXIT
 
