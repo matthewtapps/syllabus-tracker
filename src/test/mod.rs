@@ -1,6 +1,7 @@
 pub mod api;
 pub mod attempts;
 pub mod db;
+pub mod feature_flags;
 pub mod seed;
 pub mod sessions;
 pub mod tags;

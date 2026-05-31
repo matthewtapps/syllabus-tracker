@@ -387,14 +387,28 @@ pub mod test_utils {
     }
 
     pub async fn setup_test_client(test_db: TestDb) -> (Client, TestDb) {
-        let storage: DynVideoStorage = std::sync::Arc::new(InMemoryVideoStorage::new());
-        let probe: DynMediaProbe = std::sync::Arc::new(FakeMediaProbe::ok_h264(30.0));
-        let transcode: DynMediaTranscode = std::sync::Arc::new(FakeMediaTranscode);
-        let stack = Some(crate::videos::VideoStack {
-            storage,
-            probe,
-            transcode,
-        });
+        setup_test_client_with(test_db, true).await
+    }
+
+    /// Build a Rocket test client with the videos feature flag in the requested
+    /// state. Pass `videos_enabled = false` to exercise the disabled-branch
+    /// surface (no VideoStack, video routes not mounted, capabilities.videos = false).
+    pub async fn setup_test_client_with(
+        test_db: TestDb,
+        videos_enabled: bool,
+    ) -> (Client, TestDb) {
+        let stack = if videos_enabled {
+            let storage: DynVideoStorage = std::sync::Arc::new(InMemoryVideoStorage::new());
+            let probe: DynMediaProbe = std::sync::Arc::new(FakeMediaProbe::ok_h264(30.0));
+            let transcode: DynMediaTranscode = std::sync::Arc::new(FakeMediaTranscode);
+            Some(crate::videos::VideoStack {
+                storage,
+                probe,
+                transcode,
+            })
+        } else {
+            None
+        };
         let rocket = init_rocket(test_db.pool.clone(), stack).await;
 
         let client = Client::tracked(rocket)

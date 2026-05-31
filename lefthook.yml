@@ -1,0 +1,20 @@
+# Lefthook configuration. Runs on every git commit after each dev has run
+# `just install-hooks` once.
+#
+# Each command's `glob` filters which staged files trigger it. If nothing
+# matching is staged, the command is skipped entirely.
+#
+# Bypass everything with `git commit --no-verify`.
+
+pre-commit:
+  parallel: true
+  commands:
+    backend-lint:
+      glob: "*.rs"
+      run: just lint-backend
+    backend-test:
+      glob: "*.rs"
+      run: just test-backend
+    frontend-lint:
+      glob: "frontend/**/*.{ts,tsx,js,jsx,cjs,mjs}"
+      run: just lint-frontend

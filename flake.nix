@@ -72,6 +72,8 @@
             nodejs-slim_22
 
             just
+            lefthook
+            cargo-machete
           ];
         };
 
