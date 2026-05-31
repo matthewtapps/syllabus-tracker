@@ -39,7 +39,11 @@ services:
       S3_FORCE_PATH_STYLE: "true"
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
     volumes:
-      - app-data:/app/data
+      # Share the host's sqlite.db so `just up` and `just dev` operate on the
+      # same data. Matches the prod path (/app/data/sqlite.db from prod.env).
+      # If SQLite ever switches to WAL mode, this will need to mount the
+      # parent dir instead so the -wal/-shm sidecars stay co-located.
+      - ./sqlite.db:/app/data/sqlite.db
     depends_on:
       - otel-collector
       - minio-init
@@ -108,5 +112,4 @@ networks:
   syllabus-net:
 
 volumes:
-  app-data:
   minio-data:

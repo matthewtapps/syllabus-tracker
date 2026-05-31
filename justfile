@@ -72,10 +72,11 @@ build:
 
 # Production-like stack: builds the `production` Dockerfile targets for app
 # and frontend, fronts them with nginx on http://localhost:8080, and points
-# S3 at the local MinIO container. Use this to sanity-check the prod image
-# before pushing. For day-to-day iteration use `just dev`.
+# S3 at the local MinIO container. The host's sqlite.db is bind-mounted so
+# this sees the same data as `just dev`. Depends on `migrate` to ensure the
+# host db file exists before docker tries to bind-mount it.
 [group('run')]
-up:
+up: migrate
     docker compose up -d --build
 
 # Native dev loop. Brings up only the supporting infra in docker (minio,
