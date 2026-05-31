@@ -356,7 +356,7 @@ pub async fn api_video_playback_url(
         .map_err(Status::from)?
         .ok_or(Status::NotFound)?;
     let status =
-        ProcessingStatus::from_str(db_video.processing_status.as_deref().unwrap_or("processing"));
+        ProcessingStatus::from_db_str(db_video.processing_status.as_deref().unwrap_or("processing"));
     if status != ProcessingStatus::Ready {
         return Err(Status::Conflict);
     }
@@ -387,7 +387,7 @@ pub async fn api_video_download_url(
         .map_err(Status::from)?
         .ok_or(Status::NotFound)?;
     let status =
-        ProcessingStatus::from_str(db_video.processing_status.as_deref().unwrap_or("processing"));
+        ProcessingStatus::from_db_str(db_video.processing_status.as_deref().unwrap_or("processing"));
     if status != ProcessingStatus::Ready {
         return Err(Status::Conflict);
     }

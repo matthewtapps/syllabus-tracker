@@ -685,7 +685,7 @@ pub struct ModifiedTable {
 }
 
 impl ChangesNeeded {
-    fn has_any_changes(&self) -> bool {
+    pub fn has_any_changes(&self) -> bool {
         !self.new_tables.is_empty()
             || !self.removed_tables.is_empty()
             || !self.modified_tables.is_empty()

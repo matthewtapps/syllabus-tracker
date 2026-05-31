@@ -1,20 +1,13 @@
 #[macro_use]
 extern crate rocket;
 
-mod api;
-mod auth;
-mod capabilities;
-mod db;
-mod env;
-mod error;
-mod models;
-mod telemetry;
+pub use syllabus_tracker::{
+    api, auth, capabilities, db, env, error, get_schema_string, models, telemetry, validation,
+    videos,
+};
+
 #[cfg(test)]
 mod test;
-mod validation;
-mod videos;
-
-use std::path::Path;
 
 use api::api_get_all_users;
 use api::{
@@ -40,9 +33,7 @@ use capabilities::{Capabilities, api_capabilities};
 use db::clean_expired_sessions;
 use error::AppError;
 use rocket::{Build, Rocket, tokio};
-use syllabus_tracker::lib::migrations::{
-    get_schema_changes, migrate_database_declaratively, read_schema_file_to_string,
-};
+use syllabus_tracker::lib::migrations::get_schema_changes;
 use telemetry::TelemetryFairing;
 use telemetry::init_tracing;
 use thiserror::Error;
@@ -123,86 +114,47 @@ async fn rocket() -> _ {
         }
     });
 
-    info!("Running declarative database migration...");
-
+    // Panic if db schema isn't up to date or database doesn't exist
     let schema = get_schema_string();
+    let changes = get_schema_changes(pool.clone(), &schema)
+        .await
+        .unwrap_or_else(|e| panic!("Failed to analyze database schema: {:?}", e));
 
-    match get_schema_changes(pool.clone(), &schema).await {
-        Ok(changes) => {
-            let has_destructive_changes = !changes.removed_tables.is_empty()
-                || !changes.removed_indices.is_empty()
-                || changes
-                    .modified_tables
-                    .iter()
-                    .any(|t| !t.removed_columns.is_empty());
-
-            if has_destructive_changes {
-                let allow_destructive = dotenvy::var("ALLOW_DESTRUCTIVE_MIGRATIONS")
-                    .unwrap_or_else(|_| "false".to_string())
-                    .parse::<bool>()
-                    .unwrap_or(false);
-
-                if !allow_destructive {
-                    error!("Destructive database changes detected but not allowed:");
-
-                    if !changes.removed_tables.is_empty() {
-                        error!("  Tables to be removed: {:?}", changes.removed_tables);
-                    }
-
-                    if !changes.removed_indices.is_empty() {
-                        error!("  Indices to be removed: {:?}", changes.removed_indices);
-                    }
-
-                    for table in &changes.modified_tables {
-                        if !table.removed_columns.is_empty() {
-                            error!(
-                                "  Columns to be removed from {}: {:?}",
-                                table.name, table.removed_columns
-                            );
-                        }
-                    }
-
-                    error!("Set ALLOW_DESTRUCTIVE_MIGRATIONS=true to allow these changes");
-                    panic!("Deployment cancelled due to destructive database changes");
-                } else {
-                    warn!("Proceeding with destructive database changes (explicitly allowed)");
-                }
+    if changes.has_any_changes() {
+        error!("Database schema is out of sync with config/schema.sql:");
+        if !changes.new_tables.is_empty() {
+            error!("  Missing tables: {:?}", changes.new_tables);
+        }
+        if !changes.removed_tables.is_empty() {
+            error!("  Unexpected tables: {:?}", changes.removed_tables);
+        }
+        if !changes.new_indices.is_empty() {
+            error!("  Missing indices: {:?}", changes.new_indices);
+        }
+        if !changes.removed_indices.is_empty() {
+            error!("  Unexpected indices: {:?}", changes.removed_indices);
+        }
+        for table in &changes.modified_tables {
+            if !table.new_columns.is_empty() {
+                error!(
+                    "  Missing columns on {}: {:?}",
+                    table.name, table.new_columns
+                );
             }
-
-            info!("Running declarative database migration...");
-            match migrate_database_declaratively(pool.clone(), &schema).await {
-                Ok(changes_made) => {
-                    if changes_made {
-                        info!("Database migration completed with changes");
-                    } else {
-                        info!("Database schema is already up to date");
-                    }
-                }
-                Err(e) => {
-                    error!("Failed to migrate database: {:?}", e);
-                    panic!("Database migration failed: {:?}", e);
-                }
+            if !table.removed_columns.is_empty() {
+                error!(
+                    "  Unexpected columns on {}: {:?}",
+                    table.name, table.removed_columns
+                );
             }
         }
-        Err(e) => {
-            error!("Failed to analyze database changes: {:?}", e);
-            panic!("Database analysis failed: {:?}", e);
-        }
+        panic!(
+            "Database schema does not match config/schema.sql. \
+             Run the migrate binary first (locally: `just migrate` or \
+             `just migrate-destructive`; in prod: the CI migrate_database job)."
+        );
     }
-
-    if let Err(e) = db::backfill_student_technique_views(&pool).await {
-        error!("Failed to backfill student_technique_views: {:?}", e);
-        panic!("Backfill failed: {:?}", e);
-    }
-
-    // DRY_RUN_MIGRATE=true: succeed-and-exit after the migration runs. Used by
-    // the deploy pipeline to verify the new schema can be applied against a copy
-    // of the production database before swapping containers. The migration panics
-    // above on failure, so reaching this point already implies success.
-    if dotenvy::var("DRY_RUN_MIGRATE").unwrap_or_default() == "true" {
-        info!("DRY_RUN_MIGRATE=true: migration succeeded against this database, exiting");
-        std::process::exit(0);
-    }
+    info!("Database schema matches config/schema.sql");
 
     let video_stack = if videos_enabled {
         let storage_config = videos::S3Config::from_env()
@@ -358,12 +310,4 @@ pub async fn init_rocket(
     }
 
     rocket.manage(pool)
-}
-
-pub fn get_schema_string() -> String {
-    let schema_var =
-        dotenvy::var("SCHEMA_PATH").expect("Failed to find schema path from environment variable");
-    let schema_path = Path::new(&schema_var);
-
-    read_schema_file_to_string(schema_path).expect("Failed to read schema file to string")
 }

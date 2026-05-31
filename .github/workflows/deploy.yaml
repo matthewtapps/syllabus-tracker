@@ -142,7 +142,7 @@ jobs:
           echo "STEP_ID=lint" >> $GITHUB_ENV
 
       - name: Run clippy
-        run: buildevents cmd $TRACE_ID $STEP_ID clippy -- cargo clippy --all-targets -- -D warnings
+        run: buildevents cmd $TRACE_ID $STEP_ID clippy -- cargo clippy --all-targets --all-features -- -D warnings
         env:
           SQLX_OFFLINE: "true"
 
@@ -316,8 +316,161 @@ jobs:
           buildevents step $TRACE_ID $STEP_ID $STEP_START "Deploy NixOS Configuration"
           echo " nixos_config_updated=true" >> $BUILDEVENT_FILE
 
+  migrate_database:
+    needs: [deploy_nixos_config, build-backend]
+    runs-on: ubuntu-latest
+    if: github.repository == 'matthewtapps/syllabus-tracker'
+
+    env:
+      NIXOS_SERVER_IP: ${{ secrets.NIXOS_SERVER_IP }}
+      NIXOS_SERVER_USER: ${{ secrets.NIXOS_SERVER_USER }}
+      APP_DEPLOY_PATH: "/srv/syllabus-tracker"
+
+    steps:
+      - uses: honeycombio/gha-buildevents@1dad608d8534ec0fdf57e7503ceb8256b5ddc531 # v4.0.0
+        with:
+          apikey: ${{ secrets.HONEYCOMB_API_KEY }}
+          dataset: syllabus-tracker-build-events
+        env:
+          TRACE_ID: ${{ needs.start-build.outputs.trace_id }}
+
+      - name: Record migrate start
+        run: |
+          echo "STEP_START=$(date +%s)" >> $GITHUB_ENV
+          echo "STEP_ID=migrate_database" >> $GITHUB_ENV
+
+      - name: Checkout code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Set up SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H "${NIXOS_SERVER_IP}" >> ~/.ssh/known_hosts
+
+      - name: Stage config and secrets on server
+        env:
+          SECRET_HONEYCOMB_API_KEY: ${{ secrets.HONEYCOMB_API_KEY }}
+          SECRET_ROCKET_SECRET_KEY: ${{ secrets.ROCKET_SECRET_KEY }}
+        run: |
+          cat > docker_config.json << EOF
+          {
+            "auths": {
+              "${{ env.REGISTRY }}": {
+                "auth": "$(echo -n ${{ github.actor }}:${{ secrets.GITHUB_TOKEN }} | base64)"
+              }
+            }
+          }
+          EOF
+
+          ssh "${NIXOS_SERVER_USER}@${NIXOS_SERVER_IP}" "mkdir -p ~/.docker"
+          scp docker_config.json "${NIXOS_SERVER_USER}@${NIXOS_SERVER_IP}:~/.docker/config.json"
+
+          ssh "${NIXOS_SERVER_USER}@${NIXOS_SERVER_IP}" \
+            "mkdir -p ${APP_DEPLOY_PATH}/config"
+
+          # Stage just what the migrate binary needs: the config (for schema.sql
+          # + common.env + prod.env) and .secrets.env. The full app rsync still
+          # happens in deploy_application.
+          rsync -avz -e "ssh -i ~/.ssh/id_rsa" \
+            "${GITHUB_WORKSPACE}/config" \
+            "${NIXOS_SERVER_USER}@${NIXOS_SERVER_IP}:${APP_DEPLOY_PATH}"
+
+          ssh -i ~/.ssh/id_rsa \
+            "${NIXOS_SERVER_USER}@${NIXOS_SERVER_IP}" \
+            "echo 'HONEYCOMB_API_KEY=${SECRET_HONEYCOMB_API_KEY}' > ${APP_DEPLOY_PATH}/.secrets.env && \
+             echo 'ROCKET_SECRET_KEY=${SECRET_ROCKET_SECRET_KEY}' >> ${APP_DEPLOY_PATH}/.secrets.env && \
+             echo 'VITE_HONEYCOMB_API_KEY=${SECRET_HONEYCOMB_API_KEY}' >> ${APP_DEPLOY_PATH}/.secrets.env"
+
+      - name: Dry-run migration against copy of prod database
+        env:
+          BACKEND_IMAGE_TAG: ${{ needs.build-backend.outputs.image_tag }}
+          ALLOW_DESTRUCTIVE_MIGRATIONS: ${{ github.event.inputs.allow_destructive_migrations }}
+        run: |
+          ssh -i ~/.ssh/id_rsa \
+            "${NIXOS_SERVER_USER}@${NIXOS_SERVER_IP}" \
+            "bash -s" <<EOF
+              set -e
+              cd "${APP_DEPLOY_PATH}"
+
+              export REGISTRY="${REGISTRY}"
+              export IMAGE_NAME="${IMAGE_NAME}"
+              APP_IMAGE="\${REGISTRY}/\${IMAGE_NAME}/app:${BACKEND_IMAGE_TAG}"
+              SOURCE_VOLUME="syllabus-tracker-services_app-data"
+              DRY_RUN_VOLUME="syllabus-tracker-services_dry-run-data"
+
+              echo "Pulling new app image \${APP_IMAGE}..."
+              docker pull "\${APP_IMAGE}"
+
+              echo "Preparing copy of prod sqlite database for migration dry-run..."
+              docker volume rm -f "\${DRY_RUN_VOLUME}" >/dev/null 2>&1 || true
+              docker volume create "\${DRY_RUN_VOLUME}" >/dev/null
+              docker run --rm \
+                -v "\${SOURCE_VOLUME}:/source:ro" \
+                -v "\${DRY_RUN_VOLUME}:/dest" \
+                alpine:3.23 \
+                sh -c "cp /source/sqlite.db /dest/sqlite.db 2>/dev/null || echo 'no existing sqlite.db (fresh database)'"
+
+              echo "Running migration dry-run against the copy..."
+              set +e
+              docker run --rm \
+                --entrypoint /app/migrate \
+                --env-file ./config/common.env \
+                --env-file ./config/prod.env \
+                --env-file ./.secrets.env \
+                -e ALLOW_DESTRUCTIVE_MIGRATIONS="${ALLOW_DESTRUCTIVE_MIGRATIONS}" \
+                -v "\${DRY_RUN_VOLUME}:/app/data" \
+                "\${APP_IMAGE}" \
+                --dry-run
+              DRY_RUN_EXIT=\$?
+              set -e
+
+              docker volume rm -f "\${DRY_RUN_VOLUME}" >/dev/null 2>&1 || true
+
+              if [ "\${DRY_RUN_EXIT}" -ne 0 ]; then
+                echo "ERROR: migration dry-run failed against a copy of prod data (exit \${DRY_RUN_EXIT}). Aborting before applying to prod."
+                exit 1
+              fi
+
+              echo "Migration dry-run succeeded; safe to proceed."
+          EOF
+
+      - name: Apply migration to prod database
+        env:
+          BACKEND_IMAGE_TAG: ${{ needs.build-backend.outputs.image_tag }}
+          ALLOW_DESTRUCTIVE_MIGRATIONS: ${{ github.event.inputs.allow_destructive_migrations }}
+        run: |
+          ssh -i ~/.ssh/id_rsa \
+            "${NIXOS_SERVER_USER}@${NIXOS_SERVER_IP}" \
+            "bash -s" <<EOF
+              set -e
+              cd "${APP_DEPLOY_PATH}"
+
+              export REGISTRY="${REGISTRY}"
+              export IMAGE_NAME="${IMAGE_NAME}"
+              APP_IMAGE="\${REGISTRY}/\${IMAGE_NAME}/app:${BACKEND_IMAGE_TAG}"
+              APP_VOLUME="syllabus-tracker-services_app-data"
+
+              echo "Applying migration to prod database (volume: \${APP_VOLUME})..."
+              docker run --rm \
+                --entrypoint /app/migrate \
+                --env-file ./config/common.env \
+                --env-file ./config/prod.env \
+                --env-file ./.secrets.env \
+                -e ALLOW_DESTRUCTIVE_MIGRATIONS="${ALLOW_DESTRUCTIVE_MIGRATIONS}" \
+                -v "\${APP_VOLUME}:/app/data" \
+                "\${APP_IMAGE}"
+
+              echo "Prod migration applied. Container swap can proceed."
+          EOF
+
+      - name: Complete migrate step
+        run: |
+          buildevents step $TRACE_ID $STEP_ID $STEP_START "Migrate prod database"
+
   deploy_application:
-    needs: [deploy_nixos_config, build-backend, build-frontend]
+    needs: [migrate_database, build-backend, build-frontend]
     runs-on: ubuntu-latest
     if: github.repository == 'matthewtapps/syllabus-tracker'
 
@@ -390,58 +543,6 @@ jobs:
             "echo 'HONEYCOMB_API_KEY=${SECRET_HONEYCOMB_API_KEY}' > ${APP_DEPLOY_PATH}/.secrets.env && \
              echo 'ROCKET_SECRET_KEY=${SECRET_ROCKET_SECRET_KEY}' >> ${APP_DEPLOY_PATH}/.secrets.env && \
              echo 'VITE_HONEYCOMB_API_KEY=${SECRET_HONEYCOMB_API_KEY}' >> ${APP_DEPLOY_PATH}/.secrets.env"
-
-      - name: Dry-run migration against copy of prod database
-        env:
-          BACKEND_IMAGE_TAG: ${{ needs.build-backend.outputs.image_tag }}
-          ALLOW_DESTRUCTIVE_MIGRATIONS: ${{ github.event.inputs.allow_destructive_migrations }}
-        run: |
-          ssh -i ~/.ssh/id_rsa \
-            "${NIXOS_SERVER_USER}@${NIXOS_SERVER_IP}" \
-            "bash -s" <<EOF
-              set -e
-              cd "${APP_DEPLOY_PATH}"
-
-              export REGISTRY="${REGISTRY}"
-              export IMAGE_NAME="${IMAGE_NAME}"
-              APP_IMAGE="\${REGISTRY}/\${IMAGE_NAME}/app:${BACKEND_IMAGE_TAG}"
-              SOURCE_VOLUME="syllabus-tracker-services_app-data"
-              DRY_RUN_VOLUME="syllabus-tracker-services_dry-run-data"
-
-              echo "Pulling new app image \${APP_IMAGE}..."
-              docker pull "\${APP_IMAGE}"
-
-              echo "Preparing copy of prod sqlite database for migration dry-run..."
-              docker volume rm -f "\${DRY_RUN_VOLUME}" >/dev/null 2>&1 || true
-              docker volume create "\${DRY_RUN_VOLUME}" >/dev/null
-              docker run --rm \
-                -v "\${SOURCE_VOLUME}:/source:ro" \
-                -v "\${DRY_RUN_VOLUME}:/dest" \
-                alpine:3.23 \
-                sh -c "cp /source/sqlite.db /dest/sqlite.db 2>/dev/null || echo 'no existing sqlite.db (fresh database)'"
-
-              echo "Running migration dry-run against the copy..."
-              set +e
-              docker run --rm \
-                --env-file ./config/common.env \
-                --env-file ./config/prod.env \
-                --env-file ./.secrets.env \
-                -e DRY_RUN_MIGRATE=true \
-                -e ALLOW_DESTRUCTIVE_MIGRATIONS="${ALLOW_DESTRUCTIVE_MIGRATIONS}" \
-                -v "\${DRY_RUN_VOLUME}:/app/data" \
-                "\${APP_IMAGE}"
-              DRY_RUN_EXIT=\$?
-              set -e
-
-              docker volume rm -f "\${DRY_RUN_VOLUME}" >/dev/null 2>&1 || true
-
-              if [ "\${DRY_RUN_EXIT}" -ne 0 ]; then
-                echo "ERROR: migration dry-run failed against a copy of prod data (exit \${DRY_RUN_EXIT}). Aborting deploy before any container swap."
-                exit 1
-              fi
-
-              echo "Migration dry-run succeeded; safe to proceed."
-          EOF
 
       - name: Deploy application with Docker Compose
         env:

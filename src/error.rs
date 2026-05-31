@@ -1,5 +1,5 @@
 use rocket::http::Status;
-use syllabus_tracker::lib::migrations::MigrationError;
+use crate::lib::migrations::MigrationError;
 use thiserror::Error;
 use tracing::{Span, error, warn};
 

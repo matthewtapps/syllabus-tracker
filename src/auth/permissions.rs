@@ -3,6 +3,7 @@ use once_cell::sync::Lazy;
 use rocket::serde::Serialize;
 use std::collections::HashSet;
 use std::fmt;
+use std::str::FromStr;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Permission {
@@ -100,7 +101,12 @@ impl Role {
         }
     }
 
-    pub fn from_str(s: &str) -> Result<Self, Error> {
+}
+
+impl FromStr for Role {
+    type Err = Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
             "student" => Ok(Role::Student),
             "coach" => Ok(Role::Coach),

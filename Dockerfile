@@ -42,12 +42,19 @@ COPY Cargo.toml Cargo.lock ./
 COPY src ./src
 COPY .sqlx ./.sqlx
 ENV SQLX_OFFLINE=true
-RUN cargo build --release --target x86_64-unknown-linux-musl
+# `seed` is dev-only and not built here. The deploy pipeline invokes
+# `--entrypoint /app/migrate --dry-run` against a copy of the prod DB as a
+# pre-deploy gate; the main `syllabus-tracker` binary also runs the same
+# migration on boot as a defensive no-op if migrate already ran.
+RUN cargo build --release --target x86_64-unknown-linux-musl \
+    --bin syllabus-tracker --bin migrate
 RUN cp target/x86_64-unknown-linux-musl/release/syllabus-tracker /app/syllabus-tracker
+RUN cp target/x86_64-unknown-linux-musl/release/migrate /app/migrate
 
 FROM scratch AS production
 WORKDIR /app
 COPY --from=builder /app/syllabus-tracker /app/syllabus-tracker
+COPY --from=builder /app/migrate /app/migrate
 COPY --from=ffmpeg /ffmpeg /usr/local/bin/ffmpeg
 COPY --from=ffmpeg /ffprobe /usr/local/bin/ffprobe
 COPY config /app/config

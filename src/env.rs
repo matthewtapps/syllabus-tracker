@@ -32,7 +32,7 @@ fn load_env_file(path: &str) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub fn load_test_environment() -> Result<(), Box<dyn std::error::Error>> {
     let test_env_files = vec!["config/common.env", ".secrets.env"];
 

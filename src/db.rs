@@ -1,4 +1,5 @@
 use std::collections::{HashMap, hash_map::Entry};
+use std::str::FromStr;
 
 use crate::{
     auth::{DbUser, DbUserSession, Role, User, UserSession},

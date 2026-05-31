@@ -151,7 +151,10 @@ impl VideoKind {
         }
     }
 
-    pub fn from_str(s: &str) -> Self {
+    /// Lenient parse for values read out of the DB: unknown strings collapse to
+    /// `Link` rather than erroring, since we'd rather render a degraded video
+    /// row than crash if a future variant slips into a row.
+    pub fn from_db_str(s: &str) -> Self {
         match s {
             "native" => VideoKind::Native,
             "youtube" => VideoKind::Youtube,
@@ -179,7 +182,9 @@ impl ProcessingStatus {
         }
     }
 
-    pub fn from_str(s: &str) -> Self {
+    /// Lenient parse for values read out of the DB: unknown strings collapse to
+    /// `Processing` (the safe default) rather than erroring.
+    pub fn from_db_str(s: &str) -> Self {
         match s {
             "ready" => ProcessingStatus::Ready,
             "failed" => ProcessingStatus::Failed,
@@ -241,8 +246,8 @@ impl From<DbVideo> for Video {
             title: db.title.unwrap_or_default(),
             description: db.description,
             position: db.position.unwrap_or_default(),
-            kind: VideoKind::from_str(db.kind.as_deref().unwrap_or("link")),
-            processing_status: ProcessingStatus::from_str(
+            kind: VideoKind::from_db_str(db.kind.as_deref().unwrap_or("link")),
+            processing_status: ProcessingStatus::from_db_str(
                 db.processing_status.as_deref().unwrap_or("processing"),
             ),
             processing_error: db.processing_error,

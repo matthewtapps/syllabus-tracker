@@ -77,15 +77,20 @@ Notes:
 - After changing any `sqlx::query!` SQL, run `just sqlx-prepare` to refresh `.sqlx/`. `just sqlx-check` (part of `just verify`) will fail loudly if you forget.
 
 ## Running the app
+AI agents are not expected to run these commands, ever. They are documented here for agents to understand as context, to be able to inform users about.
 
 | Task | Command |
 | --- | --- |
 | Local dev (docker) | `just dev` |
 | Stop | `just stop` |
+| Apply schema to local sqlite.db | `just migrate` |
+| Apply schema, allow destructive changes | `just migrate-destructive` |
 | Seed demo data | `just seed` |
 | Wipe local sqlite | `just clean` |
 
-`just dev` boots the full stack via docker compose. `just clean` then `just dev` then `just seed` is the full reset cycle.
+`just dev` boots the full stack via docker compose. It chains through `migrate` first so the host's sqlite.db is created and in sync before docker starts the app. `just clean && just dev` (or `just clean && just seed`) is the full reset cycle.
+
+`migrate` and `seed` are implemented as dedicated bins under `src/bin/`. The `migrate` bin also ships in the production image and is invoked by the deploy pipeline's dedicated `migrate_database` job, which dry-runs against a copy of the prod DB then applies against the real one. The main `syllabus-tracker` binary does **not** self-heal or migrate on boot: it panics if the live DB schema does not match `config/schema.sql`. Migration is the migrate binary's job, exclusively.
 
 ## Feature flags
 
@@ -103,7 +108,7 @@ When adding a new runtime feature flag, follow the same pattern: parameterize th
 - No em-dashes in copy. Use commas, periods, or parentheses.
 - Prefer editing existing files over creating new ones.
 - UI work belongs under `frontend/src/` and follows the shadcn/ui + Tailwind v4 + RHF/Zod pattern (see the `shadcn-ui-design` skill).
-- Migrations: `config/schema.sql` is the canonical schema. The app migrates the local sqlite file on boot.
+- Migrations: `config/schema.sql` is the canonical schema. The dedicated `migrate` binary is the only thing that applies it; the app panics on boot if the live schema doesn't match.
 
 ## Frontend / TypeScript
 

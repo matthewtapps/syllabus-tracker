@@ -4,6 +4,12 @@ version = "1.0.0"
 edition = "2024"
 default-run = "syllabus-tracker"
 
+[features]
+# Exposes #[cfg(test)] helpers in the library (e.g. videos::media::test_support)
+# so the binary's integration tests can use them. CI and `just test-backend`
+# pass `--all-features`, which turns this on automatically.
+test-support = []
+
 [dependencies]
 
 # db

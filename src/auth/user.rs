@@ -2,6 +2,7 @@ use chrono::{NaiveDateTime, Utc};
 use rand::{Rng, distr::Alphanumeric, rng};
 use rocket::http::Status;
 use serde::Serialize;
+use std::str::FromStr;
 
 use super::{Permission, Role};
 

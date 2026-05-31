@@ -1,43 +1,3 @@
-[private]
-default:
-    @just help
-
-# ---- help -----------------------------------------------------------------
-
-# Show a curated, categorized command summary. For the full list use `just --list`.
-help:
-    @echo ""
-    @echo "  Verify a change"
-    @echo "    just check-fast      Inner loop: lint + test (no DB needed)"
-    @echo "    just verify          Full gate: lint + test + sqlx-check + unused-deps"
-    @echo ""
-    @echo "  Lint / test / format"
-    @echo "    just lint            Backend clippy + frontend eslint (with typecheck)"
-    @echo "    just test            Backend cargo test + frontend stub"
-    @echo "    just typecheck       Frontend tsc -b (silent on success)"
-    @echo "    just fmt             cargo fmt --all"
-    @echo "    just unused-deps     Scan Cargo.toml for unused crates"
-    @echo ""
-    @echo "  Sqlx offline cache"
-    @echo "    just sqlx-prepare    Regenerate .sqlx/ from current queries (needs DB)"
-    @echo "    just sqlx-check      Verify .sqlx/ is in sync (used by 'verify')"
-    @echo ""
-    @echo "  Run the app"
-    @echo "    just dev             Boot full stack via docker compose"
-    @echo "    just stop            docker compose stop"
-    @echo "    just down            docker compose down"
-    @echo "    just fe-dev          Frontend dev server only"
-    @echo ""
-    @echo "  Database"
-    @echo "    just seed            Insert demo data (idempotent)"
-    @echo "    just reseed-attempts Wipe attempts and reseed"
-    @echo "    just clean           Delete local sqlite files"
-    @echo ""
-    @echo "  Hooks"
-    @echo "    just install-hooks   Install lefthook pre-commit hook (run once per clone)"
-    @echo ""
-    @echo "For the full recipe list with all variants, run 'just --list'."
-
 # ---- verification ---------------------------------------------------------
 
 # Lint + test + sqlx-check + unused-deps. Post-change gate.
@@ -52,10 +12,11 @@ check-fast: lint test
 [group('verify')]
 lint: lint-backend lint-frontend
 
-# Backend clippy with warnings as errors.
+# Backend clippy with warnings as errors. `--all-features` turns on the
+# `test-support` feature so the bin's tests can see helpers gated behind it.
 [group('verify')]
 lint-backend:
-    SQLX_OFFLINE=true cargo clippy --all-targets -- -D warnings
+    SQLX_OFFLINE=true cargo clippy --all-targets --all-features -- -D warnings
 
 # Runs typecheck first so type errors surface alongside ESLint findings.
 [group('verify')]
@@ -94,12 +55,12 @@ unused-deps:
 # Regenerate .sqlx/ offline query metadata, including queries in test code.
 [group('verify')]
 sqlx-prepare:
-    DATABASE_URL=sqlite://sqlite.db cargo sqlx prepare -- --tests
+    DATABASE_URL=sqlite://sqlite.db cargo sqlx prepare -- --tests --all-features
 
 # Fail if the .sqlx/ cache is stale. Used by `just verify`.
 [group('verify')]
 sqlx-check:
-    DATABASE_URL=sqlite://sqlite.db cargo sqlx prepare --check -- --tests
+    DATABASE_URL=sqlite://sqlite.db cargo sqlx prepare --check -- --tests --all-features
 
 # ---- app / docker ---------------------------------------------------------
 
@@ -114,10 +75,11 @@ build:
 up:
     docker compose up -d --build
 
-# Boot the full stack with output attached, creating sqlite.db if missing.
+# Boot the full stack with output attached. Depends on `migrate` so the host's
+# sqlite.db is created and in sync before docker starts the app: the main
+# binary panics on schema mismatch.
 [group('run')]
-dev:
-    @test -f sqlite.db || (echo "sqlite.db not found, creating empty file for app to migrate into" && touch sqlite.db)
+dev: migrate
     docker compose up --build
 
 # Stop the docker compose stack.
@@ -149,11 +111,28 @@ fe-install:
 
 # ---- database -------------------------------------------------------------
 
-# Idempotent demo seed (users, techniques, collections, assignments, attempts).
+# Apply config/schema.sql to the local sqlite.db. Creates the DB file if
+# missing. Refuses destructive changes (drops); use `migrate-destructive` for
+# those.
 [group('db')]
-seed:
-    DATABASE_URL=sqlite://sqlite.db SCHEMA_PATH=./config/schema.sql \
-        cargo test --bin syllabus-tracker -- --ignored --nocapture seed_demo_data
+migrate:
+    SQLX_OFFLINE=true DATABASE_URL=sqlite://sqlite.db SCHEMA_PATH=./config/schema.sql \
+        cargo run --bin migrate
+
+# As `migrate`, but permits dropping tables, columns, and indices. Use after
+# a destructive schema change so the app boot doesn't panic on the diff.
+[group('db')]
+migrate-destructive:
+    SQLX_OFFLINE=true ALLOW_DESTRUCTIVE_MIGRATIONS=true \
+        DATABASE_URL=sqlite://sqlite.db SCHEMA_PATH=./config/schema.sql \
+        cargo run --bin migrate
+
+# Idempotent demo seed (users, techniques, collections, assignments, attempts).
+# Runs `migrate` first so a freshly-cleaned DB bootstraps cleanly.
+[group('db')]
+seed: migrate
+    SQLX_OFFLINE=true DATABASE_URL=sqlite://sqlite.db SCHEMA_PATH=./config/schema.sql \
+        cargo run --bin seed
 
 # Wipe just the attempts table then reseed (keeps users/techniques).
 [group('db')]
@@ -161,7 +140,8 @@ reseed-attempts:
     sqlite3 sqlite.db "DELETE FROM attempts;"
     just seed
 
-# Delete the local sqlite files. Next `just dev` will recreate and migrate.
+# Delete the local sqlite files. Next `just migrate` or `just dev` will
+# recreate and migrate.
 [group('db')]
 clean:
     rm -f sqlite.db sqlite.db-shm sqlite.db-wal
