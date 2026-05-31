@@ -16,6 +16,7 @@ pub mod videos;
 
 pub mod lib {
     pub mod migrations;
+    pub mod seed;
 }
 
 pub fn get_schema_string() -> String {

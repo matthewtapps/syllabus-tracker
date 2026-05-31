@@ -21,6 +21,7 @@ use syllabus_tracker::db::{
     get_tag_by_name,
 };
 use syllabus_tracker::env;
+use syllabus_tracker::lib::seed::{ItemOutcome, SeedReporter, TerminalSeedReporter};
 
 const STUDENT_NAMES: &[(&str, &str)] = &[
     ("demo_alex", "Alex Rivera"),
@@ -189,10 +190,13 @@ async fn ensure_user(
     password: &str,
     role: Role,
     display_name: &str,
-) -> Result<i64> {
-    let id = match find_user_by_username(pool, username).await? {
-        Some(existing) => existing.id,
-        None => create_user(pool, username, password, role.as_str(), Some(display_name)).await?,
+) -> Result<(i64, ItemOutcome)> {
+    let (id, outcome) = match find_user_by_username(pool, username).await? {
+        Some(existing) => (existing.id, ItemOutcome::Existed),
+        None => (
+            create_user(pool, username, password, role.as_str(), Some(display_name)).await?,
+            ItemOutcome::Created,
+        ),
     };
 
     // Backfill credentials so demo accounts are usable end-to-end without
@@ -213,14 +217,14 @@ async fn ensure_user(
     .execute(pool)
     .await?;
 
-    Ok(id)
+    Ok((id, outcome))
 }
 
-async fn ensure_tag(pool: &SqlitePool, name: &str) -> Result<i64> {
+async fn ensure_tag(pool: &SqlitePool, name: &str) -> Result<(i64, ItemOutcome)> {
     if let Some(tag) = get_tag_by_name(pool, name).await? {
-        return Ok(tag.id);
+        return Ok((tag.id, ItemOutcome::Existed));
     }
-    Ok(create_tag(pool, name).await?)
+    Ok((create_tag(pool, name).await?, ItemOutcome::Created))
 }
 
 async fn ensure_technique(
@@ -229,20 +233,20 @@ async fn ensure_technique(
     description: &str,
     coach_id: i64,
     tag_ids: &[i64],
-) -> Result<i64> {
+) -> Result<(i64, ItemOutcome)> {
     // Idempotency: look up by name.
     let existing: Option<(i64,)> = sqlx::query_as("SELECT id FROM techniques WHERE name = ? LIMIT 1")
         .bind(name)
         .fetch_optional(pool)
         .await?;
     if let Some((id,)) = existing {
-        return Ok(id);
+        return Ok((id, ItemOutcome::Existed));
     }
     let id = create_technique(pool, name, description, coach_id).await?;
     for &tag_id in tag_ids {
         add_tag_to_technique(pool, id, tag_id).await?;
     }
-    Ok(id)
+    Ok((id, ItemOutcome::Created))
 }
 
 /// Deterministic "shuffle by stride" so the seed is reproducible without
@@ -280,24 +284,45 @@ async fn run() -> Result<()> {
         std::env::var("DATABASE_URL").unwrap_or_else(|_| "sqlite://sqlite.db".to_string());
     println!("Seeding demo data into {}", url);
 
+    let reporter = TerminalSeedReporter::new();
+    let phases = [
+        "Connecting to database",
+        "Ensuring coach user",
+        "Ensuring admin user",
+        "Seeding tags",
+        "Seeding techniques",
+        "Seeding Blue Belt Fundamentals collection",
+        "Seeding students",
+        "Assigning techniques to students",
+        "Generating attempts",
+    ];
+    reporter.seed_started(&phases);
+
+    // 0. Connect to the database.
+    reporter.phase_started(phases[0], Some(1));
     let opts = SqliteConnectOptions::from_str(&url)
         .with_context(|| format!("Invalid DATABASE_URL: {}", url))?
         .create_if_missing(true);
     let pool = SqlitePool::connect_with(opts)
         .await
         .context("Failed to connect to database")?;
+    reporter.phase_finished();
 
     // 1. Coach (Coach role so they can be assigned as the technique creator).
-    let coach_id =
+    reporter.phase_started(phases[1], Some(1));
+    let (coach_id, outcome) =
         ensure_user(&pool, "demo_coach", "password", Role::Coach, "Demo Coach").await?;
-    println!("  coach id = {}", coach_id);
+    reporter.phase_item(outcome);
+    reporter.phase_finished();
 
-    let admin_id = ensure_user(&pool, "admin", "demo", Role::Admin, "Admin").await?;
-    println!("  admin id = {}", admin_id);
+    reporter.phase_started(phases[2], Some(1));
+    let (_admin_id, outcome) =
+        ensure_user(&pool, "admin", "demo", Role::Admin, "Admin").await?;
+    reporter.phase_item(outcome);
+    reporter.phase_finished();
 
     // 2. Tags
-    let mut tag_ids: std::collections::HashMap<&str, i64> = std::collections::HashMap::new();
-    for tag in [
+    const TAGS: &[&str] = &[
         "Guard",
         "Side Control",
         "Mount",
@@ -308,32 +333,40 @@ async fn run() -> Result<()> {
         "Sweeps",
         "Escapes",
         "Passes",
-    ] {
-        let id = ensure_tag(&pool, tag).await?;
+    ];
+    reporter.phase_started(phases[3], Some(TAGS.len() as u64));
+    let mut tag_ids: std::collections::HashMap<&str, i64> = std::collections::HashMap::new();
+    for tag in TAGS {
+        let (id, outcome) = ensure_tag(&pool, tag).await?;
         tag_ids.insert(tag, id);
+        reporter.phase_item(outcome);
     }
+    reporter.phase_finished();
 
     // 3. Techniques (with tags)
+    reporter.phase_started(phases[4], Some(TECHNIQUES.len() as u64));
     let mut technique_ids: Vec<i64> = Vec::with_capacity(TECHNIQUES.len());
     for (name, description, tags) in TECHNIQUES {
         let tids: Vec<i64> = tags
             .iter()
             .filter_map(|t| tag_ids.get(*t).copied())
             .collect();
-        let id = ensure_technique(&pool, name, description, coach_id, &tids).await?;
+        let (id, outcome) = ensure_technique(&pool, name, description, coach_id, &tids).await?;
         technique_ids.push(id);
+        reporter.phase_item(outcome);
     }
-    println!("  {} techniques ready", technique_ids.len());
+    reporter.phase_finished();
 
     // 3.5 Collection: "Blue Belt Fundamentals" with the first ~12 techniques
-    let blue_belt_id = {
+    reporter.phase_started(phases[5], Some(1));
+    let (blue_belt_id, outcome) = {
         let existing: Option<(i64,)> =
             sqlx::query_as("SELECT id FROM collections WHERE name = ? LIMIT 1")
                 .bind("Blue Belt Fundamentals")
                 .fetch_optional(&pool)
                 .await?;
         match existing {
-            Some((id,)) => id,
+            Some((id,)) => (id, ItemOutcome::Existed),
             None => {
                 let id = create_collection(
                     &pool,
@@ -345,19 +378,23 @@ async fn run() -> Result<()> {
                 for &tid in technique_ids.iter().take(12) {
                     add_technique_to_collection(&pool, id, tid).await?;
                 }
-                id
+                (id, ItemOutcome::Created)
             }
         }
     };
-    println!("  Blue Belt Fundamentals collection id = {}", blue_belt_id);
+    reporter.phase_item(outcome);
+    reporter.phase_finished();
 
     // 4. Students
+    reporter.phase_started(phases[6], Some(STUDENT_NAMES.len() as u64));
     let mut student_ids: Vec<i64> = Vec::with_capacity(STUDENT_NAMES.len());
     for (username, display_name) in STUDENT_NAMES {
-        let id = ensure_user(&pool, username, "demo", Role::Student, display_name).await?;
+        let (id, outcome) =
+            ensure_user(&pool, username, "demo", Role::Student, display_name).await?;
         student_ids.push(id);
+        reporter.phase_item(outcome);
     }
-    println!("  {} students ready", student_ids.len());
+    reporter.phase_finished();
 
     // 5. Assignments + status + timestamp backfill.
     // Use NaiveDateTime so sqlx encodes timestamps as "%F %T%.f" (the same
@@ -365,6 +402,8 @@ async fn run() -> Result<()> {
     // here would store RFC3339 strings with a 'T' separator and `+00:00`
     // suffix; the dashboard query then text-compares them against space-form
     // `seen_at` values and the unseen-activity flag gets stuck.
+    let assignments_total: u64 = STUDENT_PROFILES.iter().map(|p| p.0 as u64).sum();
+    reporter.phase_started(phases[7], Some(assignments_total));
     let now = Utc::now().naive_utc();
     for (i, &student_id) in student_ids.iter().enumerate() {
         let (count, red_pct, amber_pct, days_since_coach, has_new_activity) = STUDENT_PROFILES[i];
@@ -393,6 +432,23 @@ async fn run() -> Result<()> {
             } else {
                 None
             };
+
+            // Existence check up front so we can report Created vs Existed.
+            // assign_technique_to_student is itself idempotent and returns the
+            // existing id, so the call below is safe either way.
+            let pre_existing: Option<(i64,)> = sqlx::query_as(
+                "SELECT id FROM student_techniques WHERE student_id = ? AND technique_id = ? LIMIT 1",
+            )
+            .bind(student_id)
+            .bind(technique_id)
+            .fetch_optional(&pool)
+            .await?;
+            let outcome = if pre_existing.is_some() {
+                ItemOutcome::Existed
+            } else {
+                ItemOutcome::Created
+            };
+
             let assignment_id = assign_technique_to_student(
                 &pool,
                 technique_id,
@@ -453,12 +509,16 @@ async fn run() -> Result<()> {
             .bind(assignment_id)
             .execute(&pool)
             .await?;
+
+            reporter.phase_item(outcome);
         }
     }
+    reporter.phase_finished();
 
     // 6. Attempts. Spread across the last ~90 days so sparkline + heatmap
     // have something to draw. Skipped for any student_technique that
     // already has attempts so the seed remains idempotent.
+    reporter.phase_started(phases[8], None);
     let student_notes = [
         "Felt smooth today.",
         "Need to drill the timing more.",
@@ -474,7 +534,6 @@ async fn run() -> Result<()> {
         "Stay heavier on the chest.",
     ];
 
-    let mut total_attempts = 0i64;
     for &student_id in &student_ids {
         let rows: Vec<(i64, String)> =
             sqlx::query_as("SELECT id, status FROM student_techniques WHERE student_id = ?")
@@ -489,6 +548,12 @@ async fn run() -> Result<()> {
                     .fetch_one(&pool)
                     .await?;
             if existing.0 > 0 {
+                // Each pre-existing attempt counts toward the "existed" tally
+                // so re-runs show the true attempt count, not the count of
+                // student_techniques that happened to have attempts.
+                for _ in 0..existing.0 {
+                    reporter.phase_item(ItemOutcome::Existed);
+                }
                 continue;
             }
 
@@ -566,12 +631,12 @@ async fn run() -> Result<()> {
                 .bind(student_note_at)
                 .execute(&pool)
                 .await?;
-                total_attempts += 1;
+                reporter.phase_item(ItemOutcome::Created);
             }
         }
     }
-    println!("  {} attempts inserted", total_attempts);
+    reporter.phase_finished();
 
-    println!("Seed complete.");
+    reporter.seed_finished();
     Ok(())
 }
