@@ -6,6 +6,16 @@
 #
 # Bypass everything with `git commit --no-verify`.
 
+# Widen the output so terminal viewers (including lazygit, which only shows
+# whatever lefthook prints) can see progress and command stdout/stderr rather
+# than just a final pass/fail.
+output:
+  - summary
+  - failure
+  - execution
+  - execution_out
+  - skips
+
 pre-commit:
   parallel: true
   commands:
