@@ -79,11 +79,18 @@ pub async fn get_students_by_recent_updates(
             COALESCE(SUM(CASE WHEN st.status = 'red'   THEN 1 ELSE 0 END), 0) as "red_count?: i64",
             COALESCE(SUM(CASE WHEN st.status = 'amber' THEN 1 ELSE 0 END), 0) as "amber_count?: i64",
             COALESCE(SUM(CASE WHEN st.status = 'green' THEN 1 ELSE 0 END), 0) as "green_count?: i64",
+            -- `datetime(...)` wrapping defends against legacy rows where
+            -- `last_student_update_at` was written as RFC3339 with offset
+            -- (`2026-05-31T10:00:00+00:00`) while `seen_at` was written naive
+            -- (`2026-05-31 10:00:00`). Raw TEXT comparison would treat the
+            -- legacy format as always greater (because 'T' > ' '), producing
+            -- a stuck-on unseen dot. Remove once legacy timestamps are
+            -- migrated, see TODO.md.
             COALESCE(MAX(
                 CASE
                     WHEN st.last_student_update_at IS NULL THEN 0
                     WHEN stv.seen_at IS NULL THEN 1
-                    WHEN st.last_student_update_at > stv.seen_at THEN 1
+                    WHEN datetime(st.last_student_update_at) > datetime(stv.seen_at) THEN 1
                     ELSE 0
                 END
             ), 0) as "has_unseen_activity?: i64",

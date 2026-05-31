@@ -3,3 +3,4 @@
 - Migrate from DO droplet to hetzner
 - Update rust version to whatever latest is
 - Implement tanstack query for caching
+- Migrate legacy `last_student_update_at` / `last_coach_update_at` timestamps in prod to naive UTC format (pre-c822221 rows are stored as RFC3339 with offset). Once cleaned up, revert the `datetime(...)` wrapping in `crates/syllabus-tracker/src/db/reporting.rs`'s `has_unseen_activity` CASE.
