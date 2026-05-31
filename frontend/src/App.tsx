@@ -101,7 +101,7 @@ function App() {
               path="/students"
               element={
                 user && (user.role === 'coach' || user.role === 'Coach' || user.role === 'admin' || user.role === 'Admin')
-                  ? <StudentsList />
+                  ? <StudentsList user={user} />
                   : <Navigate to="/login" replace />
               }
             />

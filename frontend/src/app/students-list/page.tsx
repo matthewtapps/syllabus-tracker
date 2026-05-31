@@ -1,11 +1,22 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Users, UserPlus, X } from 'lucide-react';
-import { getStudents, type User } from '@/lib/api';
+import { toast } from 'sonner';
+import { Archive, GraduationCap, MoreVertical, UserPlus, Users, X } from 'lucide-react';
+import {
+  getStudents,
+  setStudentGraduated,
+  updateUser,
+  type User,
+} from '@/lib/api';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
-import { Switch } from '@/components/ui/switch';
-import { Label } from '@/components/ui/label';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import {
   Select,
   SelectContent,
@@ -17,27 +28,41 @@ import { PageHeader } from '@/components/page-header';
 import { EmptyState } from '@/components/empty-state';
 import { SkeletonListRow } from '@/components/skeleton-row';
 import { StudentRow } from '@/components/student-row';
+import { GraduateConfirmDialog } from '@/components/graduate-confirm-dialog';
 
 type SortBy = 'recent_update' | 'alphabetical';
+type StatusTab = 'active' | 'graduated' | 'archived' | 'all';
 
-export default function StudentsList() {
+const STATUS_TABS: { value: StatusTab; label: string }[] = [
+  { value: 'active', label: 'Active' },
+  { value: 'graduated', label: 'Graduated' },
+  { value: 'archived', label: 'Archived' },
+  { value: 'all', label: 'All' },
+];
+
+interface StudentsListProps {
+  user: User;
+}
+
+export default function StudentsList({ user }: StudentsListProps) {
   const navigate = useNavigate();
+  const isAdmin = user.role?.toLowerCase() === 'admin';
   const [students, setStudents] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState('');
   const [sortBy, setSortBy] = useState<SortBy>('recent_update');
-  const [showArchived, setShowArchived] = useState(false);
-  const [showGraduated, setShowGraduated] = useState(false);
+  const [statusTab, setStatusTab] = useState<StatusTab>('active');
+  const [graduateTarget, setGraduateTarget] = useState<User | null>(null);
 
   useEffect(() => {
     loadStudents();
-  }, [showArchived]);
+  }, []);
 
   async function loadStudents() {
     try {
       setLoading(true);
-      const data = await getStudents('recent_update', showArchived);
+      const data = await getStudents('recent_update', true);
       setStudents(data);
       setError(null);
     } catch (err) {
@@ -51,8 +76,14 @@ export default function StudentsList() {
   const filteredStudents = useMemo(() => {
     const needle = filter.trim().toLowerCase();
     let result = students.filter((student) => {
-      if (!showArchived && student.archived) return false;
-      if (!showGraduated && student.graduated_at) return false;
+      if (statusTab === 'active') {
+        if (student.archived || student.graduated_at) return false;
+      } else if (statusTab === 'graduated') {
+        if (!student.graduated_at) return false;
+      } else if (statusTab === 'archived') {
+        if (!student.archived) return false;
+      }
+
       if (!needle) return true;
       const name = student.display_name?.toLowerCase() || '';
       const username = student.username.toLowerCase();
@@ -68,7 +99,82 @@ export default function StudentsList() {
     }
 
     return result;
-  }, [students, filter, sortBy, showArchived, showGraduated]);
+  }, [students, filter, sortBy, statusTab]);
+
+  async function handleUnGraduate(student: User) {
+    const previous = student.graduated_at;
+    setStudents((prev) =>
+      prev.map((s) => (s.id === student.id ? { ...s, graduated_at: null } : s)),
+    );
+    try {
+      const response = await setStudentGraduated(student.id, false);
+      if (!response.ok) throw new Error('Failed');
+      toast.success('Un-graduated');
+    } catch (err) {
+      console.error(err);
+      setStudents((prev) =>
+        prev.map((s) =>
+          s.id === student.id ? { ...s, graduated_at: previous ?? null } : s,
+        ),
+      );
+      toast.error('Failed to un-graduate');
+    }
+  }
+
+  async function handleUnArchive(student: User) {
+    setStudents((prev) =>
+      prev.map((s) => (s.id === student.id ? { ...s, archived: false } : s)),
+    );
+    try {
+      const response = await updateUser(student.id, { archived: false });
+      if (!response.ok) throw new Error('Failed');
+      toast.success('Unarchived');
+    } catch (err) {
+      console.error(err);
+      setStudents((prev) =>
+        prev.map((s) => (s.id === student.id ? { ...s, archived: true } : s)),
+      );
+      toast.error('Failed to unarchive');
+    }
+  }
+
+  function rowActions(student: User) {
+    const showUnGraduate = !!student.graduated_at;
+    const showUnArchive = isAdmin && student.archived;
+    if (!showUnGraduate && !showUnArchive) return undefined;
+    return (
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-9 w-9"
+            aria-label={`Actions for ${student.display_name || student.username}`}
+          >
+            <MoreVertical className="h-4 w-4" aria-hidden />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          {showUnGraduate && (
+            <DropdownMenuItem
+              onSelect={() => setTimeout(() => setGraduateTarget(student), 0)}
+            >
+              <GraduationCap className="mr-2 h-4 w-4" aria-hidden />
+              Un-graduate
+            </DropdownMenuItem>
+          )}
+          {showUnArchive && (
+            <DropdownMenuItem
+              onSelect={() => setTimeout(() => handleUnArchive(student), 0)}
+            >
+              <Archive className="mr-2 h-4 w-4" aria-hidden />
+              Unarchive
+            </DropdownMenuItem>
+          )}
+        </DropdownMenuContent>
+      </DropdownMenu>
+    );
+  }
 
   return (
     <div className="container mx-auto py-6 px-4 sm:px-6 md:py-8">
@@ -82,52 +188,45 @@ export default function StudentsList() {
         }
       />
 
-      <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="relative w-full max-w-md">
-          <Input
-            placeholder="Filter students..."
-            value={filter}
-            onChange={(e) => setFilter(e.target.value)}
-            aria-label="Filter students"
-          />
-          {filter && (
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              className="absolute right-1 top-1/2 h-7 w-7 -translate-y-1/2"
-              onClick={() => setFilter('')}
-            >
-              <X className="h-4 w-4" aria-hidden />
-              <span className="sr-only">Clear filter</span>
-            </Button>
-          )}
-        </div>
+      <div className="mb-6 space-y-3">
+        <Tabs value={statusTab} onValueChange={(v) => setStatusTab(v as StatusTab)}>
+          <TabsList className="w-full sm:w-auto">
+            {STATUS_TABS.map(({ value, label }) => (
+              <TabsTrigger
+                key={value}
+                value={value}
+                className="flex-1 px-2 sm:flex-initial sm:px-3"
+              >
+                {label}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        </Tabs>
 
-        <div className="flex flex-wrap items-center gap-4">
-          <div className="flex items-center gap-2">
-            <Switch
-              id="show-graduated"
-              checked={showGraduated}
-              onCheckedChange={setShowGraduated}
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="relative w-full sm:max-w-md">
+            <Input
+              placeholder="Filter students..."
+              value={filter}
+              onChange={(e) => setFilter(e.target.value)}
+              aria-label="Filter students"
             />
-            <Label htmlFor="show-graduated" className="text-sm">
-              Show graduated
-            </Label>
-          </div>
-          <div className="flex items-center gap-2">
-            <Switch
-              id="show-archived"
-              checked={showArchived}
-              onCheckedChange={setShowArchived}
-            />
-            <Label htmlFor="show-archived" className="text-sm">
-              Show archived
-            </Label>
+            {filter && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="absolute right-1 top-1/2 h-7 w-7 -translate-y-1/2"
+                onClick={() => setFilter('')}
+              >
+                <X className="h-4 w-4" aria-hidden />
+                <span className="sr-only">Clear filter</span>
+              </Button>
+            )}
           </div>
 
           <Select value={sortBy} onValueChange={(v) => setSortBy(v as SortBy)}>
-            <SelectTrigger className="w-[180px]">
+            <SelectTrigger className="w-full sm:w-[180px]">
               <SelectValue placeholder="Sort by..." />
             </SelectTrigger>
             <SelectContent>
@@ -155,7 +254,11 @@ export default function StudentsList() {
         ) : filteredStudents.length > 0 ? (
           <div className="divide-y divide-border">
             {filteredStudents.map((student) => (
-              <StudentRow key={student.id} student={student} />
+              <StudentRow
+                key={student.id}
+                student={student}
+                actions={rowActions(student)}
+              />
             ))}
           </div>
         ) : students.length === 0 ? (
@@ -174,7 +277,15 @@ export default function StudentsList() {
           <EmptyState
             icon={Users}
             title="No matching students"
-            description="Try a different search or clear the filter."
+            description={
+              filter
+                ? 'Try a different search or clear the filter.'
+                : statusTab === 'graduated'
+                  ? 'No graduated students.'
+                  : statusTab === 'archived'
+                    ? 'No archived students.'
+                    : 'No students in this view.'
+            }
             action={
               filter && (
                 <Button variant="outline" onClick={() => setFilter('')}>
@@ -185,6 +296,23 @@ export default function StudentsList() {
           />
         )}
       </div>
+
+      <GraduateConfirmDialog
+        open={!!graduateTarget}
+        onOpenChange={(open) => {
+          if (!open) setGraduateTarget(null);
+        }}
+        mode="ungraduate"
+        studentName={
+          graduateTarget?.display_name || graduateTarget?.username || ''
+        }
+        onConfirm={() => {
+          if (graduateTarget) {
+            handleUnGraduate(graduateTarget);
+            setGraduateTarget(null);
+          }
+        }}
+      />
     </div>
   );
 }
