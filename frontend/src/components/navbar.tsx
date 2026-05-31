@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { useNavigate, useLocation, Link } from "react-router-dom";
-import { LogOut, Menu, UserRound } from "lucide-react";
+import { Download, LogOut, Menu, UserRound } from "lucide-react";
 import type { User } from "@/lib/api";
+import { useInstallPrompt } from "@/lib/use-install-prompt";
 import { Button } from "@/components/ui/button";
 import {
   Sheet,
@@ -57,6 +58,8 @@ export function NavBar({ user, onLogout }: NavBarProps) {
   const location = useLocation();
   const [isOpen, setIsOpen] = useState(false);
 
+  const { canInstall, promptInstall } = useInstallPrompt();
+
   const links = user ? buildNavLinks(user) : [];
   const isActive = (path: string) => location.pathname === path;
   const handleLogout = () => {
@@ -66,6 +69,10 @@ export function NavBar({ user, onLogout }: NavBarProps) {
   const handleProfile = () => {
     setIsOpen(false);
     navigate("/profile");
+  };
+  const handleInstall = () => {
+    setIsOpen(false);
+    void promptInstall();
   };
 
   return (
@@ -132,6 +139,16 @@ export function NavBar({ user, onLogout }: NavBarProps) {
               <div className="flex flex-col gap-1 border-t border-border px-3 py-3">
                 {user ? (
                   <>
+                    {canInstall && (
+                      <Button
+                        variant="ghost"
+                        className="justify-start gap-2 text-sm"
+                        onClick={handleInstall}
+                      >
+                        <Download className="h-4 w-4" aria-hidden />
+                        Install app
+                      </Button>
+                    )}
                     <Button
                       variant="ghost"
                       className="justify-start gap-2 text-sm"
@@ -228,6 +245,12 @@ export function NavBar({ user, onLogout }: NavBarProps) {
                   </div>
                 </DropdownMenuLabel>
                 <DropdownMenuSeparator />
+                {canInstall && (
+                  <DropdownMenuItem onSelect={() => setTimeout(() => void promptInstall(), 0)}>
+                    <Download className="mr-2 h-4 w-4" aria-hidden />
+                    Install app
+                  </DropdownMenuItem>
+                )}
                 <DropdownMenuItem onSelect={() => setTimeout(handleProfile, 0)}>
                   <UserRound className="mr-2 h-4 w-4" aria-hidden />
                   My profile
