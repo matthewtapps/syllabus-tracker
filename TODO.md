@@ -1,4 +1,3 @@
 - Multi-tenancy, integrated easy billing
 - Refactor database file into domain-segmented files
-- Graduated students shouldn't appear on coach/admin dashboards.
 - Migrate from DO droplet to hetzner
