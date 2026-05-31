@@ -443,7 +443,7 @@ pub async fn update_student_technique(
     coach_notes: &str,
 ) -> Result<(), AppError> {
     info!("Updating student technique");
-    let now = Utc::now();
+    let now = Utc::now().naive_utc();
     let actor_id = actor.id;
 
     match actor.role {
@@ -514,7 +514,7 @@ pub async fn update_student_notes(
     student_notes: &str,
 ) -> Result<(), AppError> {
     info!("Updating student notes");
-    let now = Utc::now();
+    let now = Utc::now().naive_utc();
     let actor_id = actor.id;
 
     match actor.role {
@@ -903,7 +903,7 @@ pub async fn set_user_graduated(
     info!("Setting graduated state");
 
     if graduated {
-        let now = Utc::now();
+        let now = Utc::now().naive_utc();
         sqlx::query!(
             "UPDATE users SET graduated_at = ?, graduated_by_id = ? WHERE id = ?",
             now,
@@ -1262,7 +1262,7 @@ pub async fn create_self_registered_user(
         (None, Some(l)) => l.to_string(),
         (None, None) => username.to_string(),
     };
-    let now = Utc::now();
+    let now = Utc::now().naive_utc();
 
     let res = sqlx::query!(
         "INSERT INTO users
@@ -1288,7 +1288,7 @@ pub async fn approve_user(
     user_id: i64,
 ) -> Result<(), AppError> {
     info!("Approving user");
-    let now = Utc::now();
+    let now = Utc::now().naive_utc();
     sqlx::query!(
         "UPDATE users SET approved_at = ? WHERE id = ? AND approved_at IS NULL",
         now,
@@ -1312,7 +1312,7 @@ pub async fn create_user_stub(
 ) -> Result<i64, AppError> {
     info!("Creating stub user");
     // Coach-driven creates are implicitly approved.
-    let now = Utc::now();
+    let now = Utc::now().naive_utc();
     let res = sqlx::query!(
         "INSERT INTO users (username, password, display_name, role, email, approved_at)
          VALUES (NULL, '', ?, ?, ?, ?)",
@@ -1419,7 +1419,7 @@ pub async fn claim_invite(
     }
 
     let hashed = bcrypt::hash(password, bcrypt::DEFAULT_COST)?;
-    let now = Utc::now();
+    let now = Utc::now().naive_utc();
 
     // Apply both updates. SQLite single-connection writes are serialized by the
     // pool, so this is effectively atomic for our purposes.
@@ -1483,7 +1483,7 @@ pub async fn request_password_reset(
     username: &str,
 ) -> Result<(), AppError> {
     info!("Recording password reset request");
-    let now = Utc::now();
+    let now = Utc::now().naive_utc();
     sqlx::query!(
         "UPDATE users SET reset_requested_at = ? WHERE username = ?",
         now,
@@ -2279,7 +2279,7 @@ pub async fn update_attempt_note(
 
     ensure_can_access_student_technique(pool, actor, row.student_technique_id).await?;
 
-    let now = Utc::now();
+    let now = Utc::now().naive_utc();
     let actor_id = actor.id;
     // Empty string clears the note.
     let normalised: Option<String> = note
@@ -2289,7 +2289,7 @@ pub async fn update_attempt_note(
     let mut tx = pool.begin().await?;
     match actor.role {
         Role::Coach | Role::Admin => {
-            let stamp = normalised.as_ref().map(|_| now.naive_utc());
+            let stamp = normalised.as_ref().map(|_| now);
             let by_id = normalised.as_ref().map(|_| actor_id);
             sqlx::query!(
                 "UPDATE attempts
@@ -2304,7 +2304,7 @@ pub async fn update_attempt_note(
             .await?;
         }
         Role::Student => {
-            let stamp = normalised.as_ref().map(|_| now.naive_utc());
+            let stamp = normalised.as_ref().map(|_| now);
             sqlx::query!(
                 "UPDATE attempts
                  SET student_note = ?, student_note_at = ?
@@ -2564,7 +2564,7 @@ pub async fn finalize_video_ready(
     height: Option<i64>,
 ) -> Result<(), AppError> {
     let status = ProcessingStatus::Ready.as_str();
-    let now = Utc::now();
+    let now = Utc::now().naive_utc();
     sqlx::query!(
         "UPDATE videos
          SET processing_status = ?,
@@ -2597,7 +2597,7 @@ pub async fn mark_video_failed(
     error: &str,
 ) -> Result<(), AppError> {
     let status = ProcessingStatus::Failed.as_str();
-    let now = Utc::now();
+    let now = Utc::now().naive_utc();
     sqlx::query!(
         "UPDATE videos
          SET processing_status = ?, processing_error = ?, updated_at = ?
@@ -2665,7 +2665,7 @@ pub async fn update_video_metadata(
     description: Option<Option<&str>>,
     position: Option<i64>,
 ) -> Result<(), AppError> {
-    let now = Utc::now();
+    let now = Utc::now().naive_utc();
     if let Some(title) = title {
         sqlx::query!("UPDATE videos SET title = ?, updated_at = ? WHERE id = ?", title, now, id)
             .execute(pool)
@@ -2701,7 +2701,7 @@ pub async fn reorder_videos(
     ordered_ids: &[i64],
 ) -> Result<(), AppError> {
     let mut tx = pool.begin().await?;
-    let now = Utc::now();
+    let now = Utc::now().naive_utc();
     for (index, video_id) in ordered_ids.iter().enumerate() {
         let position = index as i64;
         sqlx::query!(
@@ -2739,7 +2739,7 @@ pub async fn reset_video_to_processing(
 ) -> Result<(), AppError> {
     let status = ProcessingStatus::Processing.as_str();
     let kind = VideoKind::Native.as_str();
-    let now = Utc::now();
+    let now = Utc::now().naive_utc();
     sqlx::query!(
         "UPDATE videos
          SET processing_status = ?,
@@ -2885,7 +2885,7 @@ pub async fn ingest_watch_events(
         .await?;
     }
 
-    let now = Utc::now();
+    let now = Utc::now().naive_utc();
     let play_increment: i64 = if has_new_play { 1 } else { 0 };
     let completed_increment: i64 = if has_new_completed { 1 } else { 0 };
     sqlx::query!(

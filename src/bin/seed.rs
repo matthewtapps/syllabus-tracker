@@ -359,8 +359,13 @@ async fn run() -> Result<()> {
     }
     println!("  {} students ready", student_ids.len());
 
-    // 5. Assignments + status + timestamp backfill
-    let now = Utc::now();
+    // 5. Assignments + status + timestamp backfill.
+    // Use NaiveDateTime so sqlx encodes timestamps as "%F %T%.f" (the same
+    // format `mark_seen` and `CURRENT_TIMESTAMP` use). Mixing in `DateTime<Utc>`
+    // here would store RFC3339 strings with a 'T' separator and `+00:00`
+    // suffix; the dashboard query then text-compares them against space-form
+    // `seen_at` values and the unseen-activity flag gets stuck.
+    let now = Utc::now().naive_utc();
     for (i, &student_id) in student_ids.iter().enumerate() {
         let (count, red_pct, amber_pct, days_since_coach, has_new_activity) = STUDENT_PROFILES[i];
         if count == 0 {
