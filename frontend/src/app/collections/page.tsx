@@ -1,14 +1,12 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { BookOpen, ChevronRight, Plus, Users } from 'lucide-react';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { toast } from 'sonner';
-import {
-  createCollection,
-  getCollections,
-  type Collection,
-} from '@/lib/api';
+import { type Collection } from '@/lib/api';
+import { useCollections } from '@/lib/queries';
+import { useCreateCollection } from '@/lib/mutations';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -43,8 +41,10 @@ type NewCollectionValues = z.infer<typeof newCollectionSchema>;
 
 export default function CollectionsPage() {
   const navigate = useNavigate();
-  const [collections, setCollections] = useState<Collection[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const collectionsQuery = useCollections();
+  const createMutation = useCreateCollection();
+  const collections = collectionsQuery.data ?? null;
+  const error = collectionsQuery.error ? 'Failed to load collections.' : null;
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
 
   const form = useFormWithValidation<NewCollectionValues>({
@@ -52,27 +52,11 @@ export default function CollectionsPage() {
     defaultValues: { name: '', description: '' },
   });
 
-  useEffect(() => {
-    load();
-  }, []);
-
-  async function load() {
-    try {
-      const result = await getCollections();
-      setCollections(result);
-      setError(null);
-    } catch (err) {
-      console.error(err);
-      setError('Failed to load collections.');
-    }
-  }
-
   async function handleCreate(values: NewCollectionValues) {
-    const response = await createCollection({
+    const response = await createMutation.mutateAsync({
       name: values.name,
       description: values.description,
     });
-    if (!response.ok) throw response;
     const created: Collection = await response.json();
     setCreateDialogOpen(false);
     form.reset();
@@ -174,7 +158,7 @@ export default function CollectionsPage() {
         ) : error ? (
           <div className="flex flex-col items-center gap-3 px-6 py-12 text-center">
             <p className="text-sm text-destructive">{error}</p>
-            <Button variant="outline" onClick={load}>
+            <Button variant="outline" onClick={() => collectionsQuery.refetch()}>
               Try again
             </Button>
           </div>

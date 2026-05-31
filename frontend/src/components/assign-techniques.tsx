@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Badge } from '@/components/ui/badge';
@@ -13,15 +13,16 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { type Collection } from '@/lib/api';
 import {
-  assignCollectionToStudent,
-  assignTechniquesToStudent,
-  createAndAssignTechnique,
-  getCollections,
-  getTechniquesForAssignment,
-  type AssignableTechnique,
-  type Collection,
-} from '@/lib/api';
+  useCollections,
+  useStudentUnassignedTechniques,
+} from '@/lib/queries';
+import {
+  useAssignCollectionToStudent,
+  useAssignTechniquesToStudent,
+  useCreateAndAssignTechnique,
+} from '@/lib/mutations';
 import { useFormWithValidation } from './hooks/useFormErrors';
 import { TracedForm } from './traced-form';
 import { toast } from 'sonner';
@@ -55,15 +56,28 @@ export default function AssignTechniques({
   defaultCollectionId,
   onAssignComplete,
 }: AssignTechniquesProps) {
-  const [unassignedTechniques, setUnassignedTechniques] = useState<
-    AssignableTechnique[]
-  >([]);
-  const [collections, setCollections] = useState<Collection[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const unassignedQuery = useStudentUnassignedTechniques(studentId);
+  const collectionsQuery = useCollections();
+  const unassignedTechniques = useMemo(
+    () => unassignedQuery.data ?? [],
+    [unassignedQuery.data],
+  );
+  const collections: Collection[] = useMemo(
+    () => collectionsQuery.data ?? [],
+    [collectionsQuery.data],
+  );
+  const loading = unassignedQuery.isLoading;
+  const error = unassignedQuery.error ? 'Failed to load available techniques.' : null;
+  const assignMutation = useAssignTechniquesToStudent();
+  const createMutation = useCreateAndAssignTechnique();
+  const assignCollectionMutation = useAssignCollectionToStudent();
   const [filterText, setFilterText] = useState('');
   const [tagFilter, setTagFilter] = useState<string[]>([]);
-  const [availableTags, setAvailableTags] = useState<string[]>([]);
+  const availableTags = useMemo(() => {
+    const set = new Set<string>();
+    unassignedTechniques.forEach((t) => t.tags.forEach((tag) => set.add(tag.name)));
+    return Array.from(set).sort();
+  }, [unassignedTechniques]);
   const [tab, setTab] = useState<'assign' | 'create' | 'collection'>('assign');
   const [collectionChoice, setCollectionChoice] = useState<string>(
     defaultCollectionId ? String(defaultCollectionId) : LOOSE_VALUE,
@@ -78,38 +92,6 @@ export default function AssignTechniques({
   const assignForm = useFormWithValidation<AssignTechniquesFormValues>({
     defaultValues: { selected_technique_ids: [] },
   });
-
-  useEffect(() => {
-    let cancelled = false;
-    async function load() {
-      try {
-        setLoading(true);
-        const [techniques, cols] = await Promise.all([
-          getTechniquesForAssignment(studentId),
-          getCollections().catch(() => [] as Collection[]),
-        ]);
-        if (cancelled) return;
-        setUnassignedTechniques(techniques);
-        setCollections(cols);
-        const uniqueTags = new Set<string>();
-        techniques.forEach((technique) => {
-          technique.tags.forEach((tag) => uniqueTags.add(tag.name));
-        });
-        setAvailableTags(Array.from(uniqueTags).sort());
-        setError(null);
-      } catch (err) {
-        if (cancelled) return;
-        setError('Failed to load available techniques.');
-        console.error(err);
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    }
-    load();
-    return () => {
-      cancelled = true;
-    };
-  }, [studentId]);
 
   const selectedIds = assignForm.watch('selected_technique_ids');
 
@@ -168,25 +150,23 @@ export default function AssignTechniques({
 
   async function handleAssignTechniques(data: AssignTechniquesFormValues) {
     if (data.selected_technique_ids.length === 0) return;
-    const response = await assignTechniquesToStudent(
+    await assignMutation.mutateAsync({
       studentId,
-      data.selected_technique_ids,
-      chosenCollectionId(),
-    );
-    if (!response.ok) throw response;
+      techniqueIds: data.selected_technique_ids,
+      collectionId: chosenCollectionId(),
+    });
     assignForm.reset();
     onAssignComplete();
   }
 
   async function handleCreateTechnique(data: CreateTechniqueFormValues) {
     if (!data.name.trim() || !data.description.trim()) return;
-    const response = await createAndAssignTechnique(
+    await createMutation.mutateAsync({
       studentId,
-      data.name,
-      data.description,
-      chosenCollectionId(),
-    );
-    if (!response.ok) throw response;
+      name: data.name,
+      description: data.description,
+      collectionId: chosenCollectionId(),
+    });
     createTechniqueForm.reset();
     onAssignComplete();
   }
@@ -196,12 +176,13 @@ export default function AssignTechniques({
     if (!Number.isFinite(id)) return;
     setAssigningCollection(true);
     try {
-      const response = await assignCollectionToStudent(studentId, id);
-      if (!response.ok) {
-        toast.error('Failed to assign collection');
-        return;
-      }
+      await assignCollectionMutation.mutateAsync({
+        studentId,
+        collectionId: id,
+      });
       onAssignComplete();
+    } catch {
+      toast.error('Failed to assign collection');
     } finally {
       setAssigningCollection(false);
     }

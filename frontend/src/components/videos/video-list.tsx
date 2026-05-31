@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import type { Video } from "@/lib/api";
-import { listVideos } from "@/lib/api";
+import { useQueryClient } from "@tanstack/react-query";
+import { useTechniqueVideos } from "@/lib/queries";
+import { qk } from "@/lib/query-keys";
 import { PrivacyAckBanner } from "./privacy-ack-banner";
 import { VideoRow } from "./video-row";
 
@@ -11,55 +12,29 @@ interface VideoListProps {
   reloadKey?: number;
 }
 
-const POLL_INTERVAL_MS = 2_000;
-
 export function VideoList({
   techniqueId,
   canManage,
   reloadKey = 0,
 }: VideoListProps) {
-  const [videos, setVideos] = useState<Video[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const cancelledRef = useRef(false);
+  const qc = useQueryClient();
+  const videosQuery = useTechniqueVideos(techniqueId);
+  const videos = videosQuery.data ?? null;
+  const error = videosQuery.error ? "Could not load videos" : null;
 
-  const load = useCallback(async () => {
-    try {
-      const next = await listVideos(techniqueId);
-      if (!cancelledRef.current) {
-        setVideos(next);
-        setError(null);
-      }
-    } catch (err) {
-      console.error(err);
-      if (!cancelledRef.current) {
-        setError("Could not load videos");
-      }
+  // External bumps (e.g. after AddVideoButton finishes) request a refetch.
+  useEffect(() => {
+    if (reloadKey > 0) {
+      qc.invalidateQueries({ queryKey: qk.techniqueVideos(techniqueId) });
     }
-  }, [techniqueId]);
-
-  useEffect(() => {
-    cancelledRef.current = false;
-    load();
-    return () => {
-      cancelledRef.current = true;
-    };
-  }, [load, reloadKey]);
-
-  const hasProcessing =
-    videos?.some((v) => v.processing_status === "processing") ?? false;
-
-  useEffect(() => {
-    if (!hasProcessing) return;
-    const handle = window.setInterval(() => {
-      load();
-    }, POLL_INTERVAL_MS);
-    return () => window.clearInterval(handle);
-  }, [hasProcessing, load]);
+  }, [reloadKey, techniqueId, qc]);
 
   const [expandedId, setExpandedId] = useState<number | null>(null);
 
   function handleDeleted(videoId: number) {
-    setVideos((prev) => (prev ? prev.filter((v) => v.id !== videoId) : prev));
+    qc.setQueryData(qk.techniqueVideos(techniqueId), (prev: typeof videos) =>
+      prev ? prev.filter((v) => v.id !== videoId) : prev,
+    );
     setExpandedId((current) => (current === videoId ? null : current));
   }
 
@@ -75,8 +50,7 @@ export function VideoList({
           type="button"
           className="ml-1 underline-offset-2 hover:underline"
           onClick={() => {
-            setError(null);
-            load();
+            videosQuery.refetch();
             toast.message("Reloading videos");
           }}
         >

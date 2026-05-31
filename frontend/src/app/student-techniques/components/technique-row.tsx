@@ -1,12 +1,17 @@
-import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   ChevronDownIcon,
   ChevronUpIcon,
   XIcon,
 } from "lucide-react";
 import type { Attempt, Tag, Technique } from "@/lib/api";
-import { listAttempts, markStudentTechniqueSeen, updateTechnique } from "@/lib/api";
+import { useAttempts } from "@/lib/queries";
+import {
+  useMarkStudentTechniqueSeen,
+  useUpdateTechnique,
+} from "@/lib/mutations";
+import { qk } from "@/lib/query-keys";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { StatusToggle } from "@/components/status-toggle";
@@ -33,7 +38,7 @@ interface TechniqueRowProps {
   allTags: Tag[];
   selectedTagFilter: string[];
   onTechniqueUpdate: (technique: Technique) => void;
-  onTagsChange: (technique: Technique, newTags: Tag[], allTagsAfter?: Tag[]) => void;
+  onTagsChange: (technique: Technique) => void;
   onRequestTagRemoval: (technique: Technique, tag: Tag) => void;
   onEditDefinition: (technique: Technique) => void;
 }
@@ -59,33 +64,31 @@ export function TechniqueRow({
 }: TechniqueRowProps) {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const [attempts, setAttempts] = useState<Attempt[] | null>(null);
-  const [attemptsError, setAttemptsError] = useState<string | null>(null);
+  const qc = useQueryClient();
+  const attemptsQuery = useAttempts(expanded ? technique.id : undefined);
+  const attempts = attemptsQuery.data ?? null;
+  const attemptsError = attemptsQuery.error ? "Could not load attempts" : null;
+  const markSeenMutation = useMarkStudentTechniqueSeen();
+  const updateTechniqueMutation = useUpdateTechnique();
   const status = technique.status as Status;
   const canEditStudentNotes = isOwnTechnique;
   const canManageTagsOnRow = canEditAll || canManageTags;
   const canLogAttempts = isOwnTechnique || canEditAll;
   const { videos: videosEnabled } = useCapabilities();
 
-  // Lazy-load the attempt history the first time the row is expanded. We keep
-  // the list in this component so newly logged attempts (from the inline
-  // button) show up in the panel without a refetch.
-  useEffect(() => {
-    if (!expanded || attempts !== null || attemptsError) return;
-    let cancelled = false;
-    (async () => {
-      try {
-        const list = await listAttempts(technique.id);
-        if (!cancelled) setAttempts(list);
-      } catch (err) {
-        console.error(err);
-        if (!cancelled) setAttemptsError("Could not load attempts");
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [expanded, attempts, attemptsError, technique.id]);
+  // useAttempts (above) is enabled only when the row is expanded; cache holds
+  // the list so navigating between rows doesn't re-fetch.
+
+  // Patch the cached attempts list for this technique - lets child components
+  // reflect their own server updates without waiting for a refetch.
+  function patchAttempts(
+    updater: (prev: Attempt[] | null) => Attempt[] | null,
+  ) {
+    qc.setQueryData<Attempt[]>(qk.attempts(technique.id), (prev) => {
+      const next = updater(prev ?? null);
+      return next ?? undefined;
+    });
+  }
 
   // Viewer is "the owning student" if this is their own row and they don't
   // have edit-all (the coach viewing as themselves takes the coach branch).
@@ -101,23 +104,29 @@ export function TechniqueRow({
     const willExpand = !expanded;
     if (willExpand && technique.has_unseen_activity) {
       onTechniqueUpdate({ ...technique, has_unseen_activity: false });
-      void markStudentTechniqueSeen(technique.id);
+      markSeenMutation.mutate(technique.id);
     }
     onToggle();
   }
 
   async function handleStatusChange(next: Status) {
     if (next === status) return;
-    const response = await updateTechnique(technique.id, { status: next });
-    if (!response.ok) return;
-    onTechniqueUpdate({ ...technique, status: next });
+    try {
+      await updateTechniqueMutation.mutateAsync({
+        studentTechniqueId: technique.id,
+        updates: { status: next },
+      });
+      onTechniqueUpdate({ ...technique, status: next });
+    } catch {
+      // Surface failure silently; mutation rollback restores the prior state.
+    }
   }
 
-  function handleTagAdded(tag: Tag, _allAfter: Tag[]) {
+  function handleTagAdded(tag: Tag) {
     const updated = [...technique.tags, tag].sort((a, b) =>
       a.name.localeCompare(b.name),
     );
-    onTagsChange({ ...technique, tags: updated }, updated, _allAfter);
+    onTagsChange({ ...technique, tags: updated });
   }
 
   // Left-border accent: status colour when expanded, transparent otherwise.
@@ -207,7 +216,7 @@ export function TechniqueRow({
                   studentTechniqueId={technique.id}
                   techniqueStatus={status}
                   onLogged={(result) => {
-                    setAttempts((prev) =>
+                    patchAttempts((prev) =>
                       prev
                         ? [
                             result.attempt,
@@ -236,14 +245,14 @@ export function TechniqueRow({
               error={attemptsError}
               hideHeader
               onAttemptUpdated={(updated) =>
-                setAttempts((prev) =>
+                patchAttempts((prev) =>
                   prev
                     ? prev.map((a) => (a.id === updated.id ? updated : a))
                     : prev,
                 )
               }
               onAttemptRemoved={(id) => {
-                setAttempts((prev) =>
+                patchAttempts((prev) =>
                   prev ? prev.filter((a) => a.id !== id) : prev,
                 );
                 onTechniqueUpdate({

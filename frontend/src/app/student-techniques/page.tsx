@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
 import {
   ArrowLeft,
   BookOpen,
@@ -11,17 +12,7 @@ import {
 } from 'lucide-react';
 import { ClaimLinkPanel } from '@/components/claim-link-panel';
 import { toast } from 'sonner';
-import {
-  getAllTags,
-  getAttemptSummary,
-  getStudentTechniques,
-  removeTagFromTechnique,
-  resetUserClaim,
-  setStudentGraduated,
-  updateTechnique,
-  type AttemptSummary,
-  type InviteResponse,
-} from '@/lib/api';
+import { type InviteResponse } from '@/lib/api';
 import type {
   StudentTechniques,
   Tag,
@@ -29,6 +20,18 @@ import type {
   TechniqueUpdate,
   User,
 } from '@/lib/api';
+import {
+  useAllTags,
+  useAttemptSummary,
+  useStudentTechniques,
+} from '@/lib/queries';
+import {
+  useRemoveTagFromTechnique,
+  useResetUserClaim,
+  useSetStudentGraduated,
+  useUpdateTechnique,
+} from '@/lib/mutations';
+import { qk } from '@/lib/query-keys';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -95,6 +98,15 @@ interface StudentTechniquesProps {
 
 export default function StudentTechniques({ user }: StudentTechniquesProps) {
   const { id } = useParams<{ id: string }>();
+  const studentId = parseInt(id || '0', 10);
+  const qc = useQueryClient();
+  const studentTechniquesQuery = useStudentTechniques(studentId);
+  const tagsQuery = useAllTags();
+  const attemptSummaryQuery = useAttemptSummary(studentId);
+  const updateTechniqueMutation = useUpdateTechnique();
+  const removeTagMutation = useRemoveTagFromTechnique();
+  const resetClaimMutation = useResetUserClaim();
+  const graduateMutation = useSetStudentGraduated();
   const [searchParams, setSearchParams] = useSearchParams();
   const focusId = (() => {
     const raw = searchParams.get('focus');
@@ -137,11 +149,21 @@ export default function StudentTechniques({ user }: StudentTechniquesProps) {
       { replace: true },
     );
   }
-  const [data, setData] = useState<StudentTechniques | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [allTags, setAllTags] = useState<Tag[]>([]);
-  const [attemptSummary, setAttemptSummary] = useState<AttemptSummary | null>(null);
+  const data = studentTechniquesQuery.data ?? null;
+  const allTags = tagsQuery.data ?? [];
+  const attemptSummary = attemptSummaryQuery.data ?? null;
+  const loading = studentTechniquesQuery.isLoading;
+  const error = studentTechniquesQuery.error
+    ? 'Failed to load techniques. Please try again.'
+    : null;
+
+  // Patch the cached student-techniques object - used for inline edits where
+  // a child wants to reflect a server update without waiting for a refetch.
+  function patchData(updater: (prev: StudentTechniques) => StudentTechniques) {
+    qc.setQueryData<StudentTechniques>(qk.studentTechniques(studentId), (prev) =>
+      prev ? updater(prev) : prev,
+    );
+  }
 
   const filterText = searchParams.get('q') ?? '';
   function setFilterText(next: string) {
@@ -202,36 +224,6 @@ export default function StudentTechniques({ user }: StudentTechniquesProps) {
   const [graduateConfirmOpen, setGraduateConfirmOpen] = useState(false);
   const [issuedClaimUrl, setIssuedClaimUrl] = useState<string | null>(null);
   const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
-
-  useEffect(() => {
-    let cancelled = false;
-    async function load() {
-      try {
-        setLoading(true);
-        const studentId = parseInt(id || '0', 10);
-        const [techniques, tagsResult, summaryResult] = await Promise.all([
-          getStudentTechniques(studentId),
-          getAllTags(),
-          getAttemptSummary(studentId).catch(() => null),
-        ]);
-        if (cancelled) return;
-        setData(techniques);
-        setAllTags(tagsResult);
-        setAttemptSummary(summaryResult);
-        setError(null);
-      } catch (err) {
-        if (cancelled) return;
-        console.error(err);
-        setError('Failed to load techniques. Please try again.');
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    }
-    load();
-    return () => {
-      cancelled = true;
-    };
-  }, [id]);
 
   // When landing with ?focus=<id>, clear any filter that would hide the row,
   // scroll to the row, and consume the param so back/forward navigation behaves.
@@ -365,21 +357,15 @@ export default function StudentTechniques({ user }: StudentTechniquesProps) {
   }
 
   function updateTechniqueLocally(updated: Technique) {
-    setData((prev) =>
-      prev
-        ? {
-            ...prev,
-            techniques: prev.techniques.map((t) =>
-              t.id === updated.id ? updated : t,
-            ),
-          }
-        : prev,
-    );
+    patchData((prev) => ({
+      ...prev,
+      techniques: prev.techniques.map((t) => (t.id === updated.id ? updated : t)),
+    }));
   }
 
-  function handleTagsChange(updated: Technique, _newTags: Tag[], allTagsAfter?: Tag[]) {
+  function handleTagsChange(updated: Technique) {
     updateTechniqueLocally(updated);
-    if (allTagsAfter) setAllTags(allTagsAfter);
+    qc.invalidateQueries({ queryKey: qk.tags() });
     toast.success('Tag added');
   }
 
@@ -387,11 +373,10 @@ export default function StudentTechniques({ user }: StudentTechniquesProps) {
     if (!tagToRemove) return;
     const { technique, tag } = tagToRemove;
     try {
-      const response = await removeTagFromTechnique(technique.technique_id, tag.id);
-      if (!response.ok) {
-        toast.error('Failed to remove tag');
-        return;
-      }
+      await removeTagMutation.mutateAsync({
+        techniqueId: technique.technique_id,
+        tagId: tag.id,
+      });
       const updated: Technique = {
         ...technique,
         tags: technique.tags.filter((t) => t.id !== tag.id),
@@ -399,6 +384,8 @@ export default function StudentTechniques({ user }: StudentTechniquesProps) {
       updateTechniqueLocally(updated);
       setSelectedTags((prev) => prev.filter((t) => t !== tag.name));
       toast.success(`Removed tag "${tag.name}"`);
+    } catch {
+      toast.error('Failed to remove tag');
     } finally {
       setTagToRemove(null);
     }
@@ -407,24 +394,19 @@ export default function StudentTechniques({ user }: StudentTechniquesProps) {
   async function handleEditDefinitionSubmit(updates: TechniqueUpdate) {
     if (!editingTechnique) return;
     try {
-      const response = await updateTechnique(editingTechnique.id, updates);
-      if (!response.ok) {
-        toast.error('Failed to save changes');
-        return;
-      }
+      await updateTechniqueMutation.mutateAsync({
+        studentTechniqueId: editingTechnique.id,
+        updates,
+      });
       // Mirror name/description across all assigned student rows like the API does.
-      setData((prev) =>
-        prev
-          ? {
-              ...prev,
-              techniques: prev.techniques.map((t) =>
-                t.technique_id === editingTechnique.technique_id
-                  ? { ...t, ...updates }
-                  : t,
-              ),
-            }
-          : prev,
-      );
+      patchData((prev) => ({
+        ...prev,
+        techniques: prev.techniques.map((t) =>
+          t.technique_id === editingTechnique.technique_id
+            ? { ...t, ...updates }
+            : t,
+        ),
+      }));
       toast.success('Changes saved');
       setEditingTechnique(null);
       setIsEditDialogOpen(false);
@@ -437,56 +419,45 @@ export default function StudentTechniques({ user }: StudentTechniquesProps) {
   async function handleIssueClaimLink() {
     if (!data) return;
     try {
-      const response = await resetUserClaim(data.student.id);
-      if (!response.ok) {
-        toast.error('Failed to create link');
-        return;
-      }
+      const response = await resetClaimMutation.mutateAsync(data.student.id);
       const invite: InviteResponse = await response.json();
       const url = `${window.location.origin}${invite.claim_path}`;
       setIssuedClaimUrl(url);
       // Reflect that the user is back in "unclaimed" state.
-      setData((prev) =>
-        prev ? { ...prev, student: { ...prev.student, claimed_at: undefined } } : prev,
-      );
+      patchData((prev) => ({
+        ...prev,
+        student: { ...prev.student, claimed_at: undefined },
+      }));
     } catch (err) {
       console.error(err);
       toast.error('Failed to create link');
     }
   }
 
-  async function handleToggleGraduated() {
+  function handleToggleGraduated() {
     if (!data) return;
     const wasGraduated = !!data.student.graduated_at;
-    try {
-      const response = await setStudentGraduated(data.student.id, !wasGraduated);
-      if (!response.ok) {
-        toast.error('Failed to update student');
-        return;
-      }
-      setData((prev) =>
-        prev
-          ? {
-              ...prev,
-              student: {
-                ...prev.student,
-                graduated_at: wasGraduated ? undefined : new Date().toISOString(),
-              },
-            }
-          : prev,
-      );
-      toast.success(wasGraduated ? 'Un-graduated' : 'Graduated 🎓');
-    } catch (err) {
-      console.error(err);
-      toast.error('Failed to update student');
-    }
+    graduateMutation.mutate(
+      { id: data.student.id, graduated: !wasGraduated },
+      {
+        onSuccess: () => {
+          patchData((prev) => ({
+            ...prev,
+            student: {
+              ...prev.student,
+              graduated_at: wasGraduated ? undefined : new Date().toISOString(),
+            },
+          }));
+          toast.success(wasGraduated ? 'Un-graduated' : 'Graduated 🎓');
+        },
+        onError: () => toast.error('Failed to update student'),
+      },
+    );
   }
 
-  async function reloadAfterAssignment() {
-    if (!id) return;
-    const studentId = parseInt(id, 10);
-    const refreshed = await getStudentTechniques(studentId);
-    setData(refreshed);
+  function reloadAfterAssignment() {
+    // The useAssignTechniquesToStudent mutation has already invalidated the
+    // student's technique list - this just closes the dialog.
     setIsAddDialogOpen(false);
   }
 

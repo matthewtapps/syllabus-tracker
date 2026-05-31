@@ -1,15 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { toast } from 'sonner';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
-import {
-  getAttemptHeatmap,
-  getCurrentUser,
-  updatePassword,
-  updateUserProfile,
-  type AttemptBucket,
-  type User,
-} from '@/lib/api';
+import { useAttemptHeatmap, useCurrentUser } from '@/lib/queries';
+import { useUpdatePassword, useUpdateUserProfile } from '@/lib/mutations';
 import { AttemptHeatmap } from '@/components/attempt-heatmap';
 import { Button } from '@/components/ui/button';
 import {
@@ -48,9 +42,13 @@ type ProfileValues = z.infer<typeof profileSchema>;
 type PasswordValues = z.infer<typeof passwordSchema>;
 
 export default function ProfilePage() {
-  const [user, setUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [heatmap, setHeatmap] = useState<AttemptBucket[] | null>(null);
+  const userQuery = useCurrentUser();
+  const user = userQuery.data ?? null;
+  const loading = userQuery.isLoading;
+  const heatmapQuery = useAttemptHeatmap(user?.id);
+  const heatmap = heatmapQuery.data ?? null;
+  const profileMutation = useUpdateUserProfile();
+  const passwordMutation = useUpdatePassword();
 
   const profileForm = useFormWithValidation<ProfileValues>({
     resolver: zodResolver(profileSchema),
@@ -66,51 +64,22 @@ export default function ProfilePage() {
     },
   });
 
+  // Once we have the current user, seed the display-name field exactly once.
   useEffect(() => {
-    let cancelled = false;
-    async function load() {
-      try {
-        setLoading(true);
-        const data = await getCurrentUser();
-        if (cancelled) return;
-        setUser(data);
-        profileForm.reset({ display_name: data?.display_name ?? '' });
-        if (data) {
-          getAttemptHeatmap(data.id)
-            .then((buckets) => {
-              if (!cancelled) setHeatmap(buckets);
-            })
-            .catch(() => {
-              if (!cancelled) setHeatmap([]);
-            });
-        }
-      } catch (err) {
-        console.error(err);
-        toast.error('Failed to load profile');
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    }
-    load();
-    return () => {
-      cancelled = true;
-    };
+    if (user) profileForm.reset({ display_name: user.display_name ?? '' });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [user?.id]);
 
   async function handleProfileSubmit(data: ProfileValues) {
-    const response = await updateUserProfile(data);
-    if (!response.ok) throw response;
-    setUser((prev) => (prev ? { ...prev, display_name: data.display_name } : prev));
+    await profileMutation.mutateAsync({ display_name: data.display_name });
     toast.success('Profile updated');
   }
 
   async function handlePasswordSubmit(data: PasswordValues) {
-    const response = await updatePassword({
+    await passwordMutation.mutateAsync({
       current_password: data.current_password,
       new_password: data.new_password,
     });
-    if (!response.ok) throw response;
     toast.success('Password changed');
     passwordForm.reset();
   }

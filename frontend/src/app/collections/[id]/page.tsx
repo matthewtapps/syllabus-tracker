@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
 import {
   ArrowLeft,
   BookOpen,
@@ -12,17 +13,21 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
-  deleteCollection,
-  getCollection,
-  getCollectionStudents,
   getTechniquesForAssignment,
-  removeTechniqueFromCollection,
-  updateCollection,
   type Collection,
   type LibraryTechnique,
   type Tag,
-  type User,
 } from '@/lib/api';
+import {
+  useCollection,
+  useCollectionStudents,
+} from '@/lib/queries';
+import {
+  useDeleteCollection,
+  useRemoveTechniqueFromCollection,
+  useUpdateCollection,
+} from '@/lib/mutations';
+import { qk } from '@/lib/query-keys';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -61,10 +66,17 @@ export default function CollectionDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const collectionId = id ? parseInt(id, 10) : 0;
+  const qc = useQueryClient();
 
-  const [collection, setCollection] = useState<Collection | null>(null);
-  const [students, setStudents] = useState<User[]>([]);
-  const [error, setError] = useState<string | null>(null);
+  const collectionQuery = useCollection(collectionId);
+  const studentsQuery = useCollectionStudents(collectionId);
+  const collection = collectionQuery.data ?? null;
+  const students = studentsQuery.data ?? [];
+  const error = collectionQuery.error ? 'Failed to load collection.' : null;
+  const updateMutation = useUpdateCollection();
+  const removeTechniqueMutation = useRemoveTechniqueFromCollection();
+  const deleteMutation = useDeleteCollection();
+
   const [editingMeta, setEditingMeta] = useState(false);
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
@@ -78,26 +90,18 @@ export default function CollectionDetailPage() {
   );
   const [detailsMode, setDetailsMode] = useState<'view' | 'edit'>('view');
 
+  // Sync local name/description form state when the collection arrives or refreshes.
   useEffect(() => {
-    load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [collectionId]);
-
-  async function load() {
-    try {
-      const [c, studs] = await Promise.all([
-        getCollection(collectionId),
-        getCollectionStudents(collectionId),
-      ]);
-      setCollection(c);
-      setStudents(studs);
-      setName(c.name);
-      setDescription(c.description);
-      setError(null);
-    } catch (err) {
-      console.error(err);
-      setError('Failed to load collection.');
+    if (collection && !editingMeta) {
+      setName(collection.name);
+      setDescription(collection.description);
     }
+  }, [collection, editingMeta]);
+
+  function patchCollection(updater: (prev: Collection) => Collection) {
+    qc.setQueryData<Collection>(qk.collection(collectionId), (prev) =>
+      prev ? updater(prev) : prev,
+    );
   }
 
   // Library pool. Fetch student id 0 to get the full unassigned list (no real
@@ -130,17 +134,15 @@ export default function CollectionDetailPage() {
     if (!collection) return;
     setSavingMeta(true);
     try {
-      const response = await updateCollection(collection.id, {
-        name,
-        description,
+      await updateMutation.mutateAsync({
+        id: collection.id,
+        data: { name, description },
       });
-      if (!response.ok) {
-        toast.error('Failed to save');
-        return;
-      }
-      setCollection({ ...collection, name, description });
+      patchCollection((prev) => ({ ...prev, name, description }));
       setEditingMeta(false);
       toast.success('Saved');
+    } catch {
+      toast.error('Failed to save');
     } finally {
       setSavingMeta(false);
     }
@@ -151,37 +153,35 @@ export default function CollectionDetailPage() {
     const existingIds = new Set(collection.techniques.map((t) => t.id));
     const fresh = added.filter((t) => !existingIds.has(t.id));
     if (fresh.length === 0) return;
-    setCollection({
-      ...collection,
-      techniques: [...collection.techniques, ...fresh],
-      technique_count: collection.technique_count + fresh.length,
-    });
+    patchCollection((prev) => ({
+      ...prev,
+      techniques: [...prev.techniques, ...fresh],
+      technique_count: prev.technique_count + fresh.length,
+    }));
   }
 
   function handleTechniqueSaved(updated: LibraryTechnique) {
-    if (!collection) return;
-    setCollection({
-      ...collection,
-      techniques: collection.techniques.map((t) =>
+    patchCollection((prev) => ({
+      ...prev,
+      techniques: prev.techniques.map((t) =>
         t.id === updated.id ? { ...t, ...updated } : t,
       ),
-    });
+    }));
     setDetailsTechnique(updated);
   }
 
   async function handleRemoveTechnique(techId: number) {
     if (!collection) return;
     try {
-      const response = await removeTechniqueFromCollection(collection.id, techId);
-      if (!response.ok) {
-        toast.error('Failed to remove');
-        return;
-      }
-      setCollection({
-        ...collection,
-        techniques: collection.techniques.filter((t) => t.id !== techId),
-        technique_count: Math.max(0, collection.technique_count - 1),
+      await removeTechniqueMutation.mutateAsync({
+        collectionId: collection.id,
+        techniqueId: techId,
       });
+      patchCollection((prev) => ({
+        ...prev,
+        techniques: prev.techniques.filter((t) => t.id !== techId),
+        technique_count: Math.max(0, prev.technique_count - 1),
+      }));
       toast.success('Removed');
     } catch (err) {
       console.error(err);
@@ -192,11 +192,7 @@ export default function CollectionDetailPage() {
   async function handleDelete() {
     if (!collection) return;
     try {
-      const response = await deleteCollection(collection.id);
-      if (!response.ok) {
-        toast.error('Failed to delete');
-        return;
-      }
+      await deleteMutation.mutateAsync(collection.id);
       toast.success('Collection deleted');
       navigate('/collections');
     } catch (err) {

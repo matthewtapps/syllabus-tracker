@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
 import {
   AlertCircle,
   ArrowRight,
@@ -20,16 +21,15 @@ import {
 } from 'lucide-react';
 import type { User } from '@/lib/api';
 import { toast } from 'sonner';
+import { type InviteResponse, type RecentAttemptItem } from '@/lib/api';
 import {
-  approveUser,
-  getLibraryStats,
-  getRecentAttemptsForStudent,
-  getStudentTechniques,
-  getStudents,
-  resetUserClaim,
-  type InviteResponse,
-  type RecentAttemptItem,
-} from '@/lib/api';
+  useLibraryStats,
+  useRecentAttempts,
+  useStudentTechniques,
+  useStudents,
+} from '@/lib/queries';
+import { useApproveUser, useResetUserClaim } from '@/lib/mutations';
+import { qk } from '@/lib/query-keys';
 import {
   Dialog,
   DialogContent,
@@ -82,43 +82,16 @@ export default function Dashboard({ user }: DashboardProps) {
 }
 
 function CoachDashboard() {
-  const [students, setStudents] = useState<User[] | null>(null);
-  const [totalTechniques, setTotalTechniques] = useState<number | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const qc = useQueryClient();
+  const studentsQuery = useStudents('recent_update', false);
+  const libraryStatsQuery = useLibraryStats();
+  const students = studentsQuery.data ?? null;
+  const totalTechniques = libraryStatsQuery.data?.total_techniques ?? null;
+  const loading = studentsQuery.isLoading;
+  const error = studentsQuery.error ? 'Failed to load dashboard data. Please try again.' : null;
+  const resetClaimMutation = useResetUserClaim();
+  const approveMutation = useApproveUser();
   const { videos: videosEnabled } = useCapabilities();
-
-  useEffect(() => {
-    let cancelled = false;
-    async function load() {
-      try {
-        setLoading(true);
-        const [studentsResult, statsResult] = await Promise.allSettled([
-          getStudents('recent_update', false),
-          getLibraryStats(),
-        ]);
-        if (cancelled) return;
-        if (studentsResult.status === 'rejected') throw studentsResult.reason;
-        setStudents(studentsResult.value);
-        setTotalTechniques(
-          statsResult.status === 'fulfilled'
-            ? statsResult.value.total_techniques
-            : null,
-        );
-        setError(null);
-      } catch (err) {
-        if (cancelled) return;
-        console.error(err);
-        setError('Failed to load dashboard data. Please try again.');
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    }
-    load();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   const activeStudents = useMemo(
     () => (students ?? []).filter((s) => !s.archived && !s.graduated_at),
@@ -162,21 +135,18 @@ function CoachDashboard() {
 
   async function handleSendResetLink(studentId: number) {
     try {
-      const response = await resetUserClaim(studentId);
-      if (!response.ok) {
-        toast.error('Failed to create link');
-        return;
-      }
+      const response = await resetClaimMutation.mutateAsync(studentId);
       const invite: InviteResponse = await response.json();
       setIssuedClaimUrl(`${window.location.origin}${invite.claim_path}`);
-      setStudents((prev) =>
-        prev
-          ? prev.map((s) =>
-              s.id === studentId
-                ? { ...s, reset_requested_at: null, claimed_at: null }
-                : s,
-            )
-          : prev,
+      // Reflect locally pending: clear reset_requested_at so it disappears from the queue.
+      qc.setQueryData<User[]>(
+        qk.students('recent_update', false),
+        (prev) =>
+          prev?.map((s) =>
+            s.id === studentId
+              ? { ...s, reset_requested_at: null, claimed_at: null }
+              : s,
+          ),
       );
     } catch (err) {
       console.error(err);
@@ -186,20 +156,7 @@ function CoachDashboard() {
 
   async function handleApprove(studentId: number) {
     try {
-      const response = await approveUser(studentId);
-      if (!response.ok) {
-        toast.error('Failed to approve');
-        return;
-      }
-      setStudents((prev) =>
-        prev
-          ? prev.map((s) =>
-              s.id === studentId
-                ? { ...s, approved_at: new Date().toISOString() }
-                : s,
-            )
-          : prev,
-      );
+      await approveMutation.mutateAsync(studentId);
       toast.success('Approved');
     } catch (err) {
       console.error(err);
@@ -436,37 +393,12 @@ function CoachDashboard() {
 }
 
 function StudentDashboard({ user }: { user: User }) {
-  const [techniques, setTechniques] = useState<Technique[] | null>(null);
-  const [recentAttempts, setRecentAttempts] = useState<RecentAttemptItem[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    async function load() {
-      try {
-        setLoading(true);
-        const [techResult, recentResult] = await Promise.all([
-          getStudentTechniques(user.id),
-          getRecentAttemptsForStudent(user.id, 5).catch(() => []),
-        ]);
-        if (cancelled) return;
-        setTechniques(techResult.techniques);
-        setRecentAttempts(recentResult);
-        setError(null);
-      } catch (err) {
-        if (cancelled) return;
-        console.error(err);
-        setError('Failed to load your techniques.');
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    }
-    load();
-    return () => {
-      cancelled = true;
-    };
-  }, [user.id]);
+  const techniquesQuery = useStudentTechniques(user.id);
+  const recentAttemptsQuery = useRecentAttempts(user.id, 5);
+  const techniques = techniquesQuery.data?.techniques ?? null;
+  const recentAttempts: RecentAttemptItem[] = recentAttemptsQuery.data ?? [];
+  const loading = techniquesQuery.isLoading;
+  const error = techniquesQuery.error ? 'Failed to load your techniques.' : null;
 
   const counts = useMemo<Record<Status, number>>(() => {
     const totals: Record<Status, number> = { red: 0, amber: 0, green: 0 };

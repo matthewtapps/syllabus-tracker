@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import { Input } from '@/components/ui/input';
@@ -61,14 +61,14 @@ import { GraduateConfirmDialog } from '@/components/graduate-confirm-dialog';
 import { ClaimLinkPanel } from '@/components/claim-link-panel';
 import { TracedForm } from '@/components/traced-form';
 import { useFormWithValidation } from '@/components/hooks/useFormErrors';
+import { type InviteResponse, type User } from '@/lib/api';
+import { useAllUsers } from '@/lib/queries';
 import {
-  getAllUsers,
-  resetUserClaim,
-  setStudentGraduated,
-  updateUser,
-  type InviteResponse,
-  type User,
-} from '@/lib/api';
+  useResetUserClaim,
+  useSetStudentGraduated,
+  useToggleUserArchived,
+  useUpdateUser,
+} from '@/lib/mutations';
 import {
   Archive,
   Copy,
@@ -156,9 +156,14 @@ function UserStatusBadges({ user }: { user: User }) {
 }
 
 export default function AdminPage() {
-  const [users, setUsers] = useState<User[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const usersQuery = useAllUsers();
+  const users = usersQuery.data ?? [];
+  const loading = usersQuery.isLoading;
+  const error = usersQuery.error ? 'Failed to load users. Please try again.' : null;
+  const updateUserMutation = useUpdateUser();
+  const toggleArchive = useToggleUserArchived();
+  const resetClaimMutation = useResetUserClaim();
+  const graduateMutation = useSetStudentGraduated();
   const [searchParams, setSearchParams] = useSearchParams();
   const filter = searchParams.get('q') ?? '';
   function setFilter(next: string) {
@@ -207,24 +212,6 @@ export default function AdminPage() {
     defaultValues: { new_password: '', confirm_password: '' },
   });
 
-  useEffect(() => {
-    loadUsers();
-  }, []);
-
-  async function loadUsers() {
-    try {
-      setLoading(true);
-      const data = await getAllUsers();
-      setUsers(data);
-      setError(null);
-    } catch (err) {
-      console.error(err);
-      setError('Failed to load users. Please try again.');
-    } finally {
-      setLoading(false);
-    }
-  }
-
   const filtered = users.filter((u) => {
     const needle = filter.trim().toLowerCase();
     const matchesText =
@@ -261,101 +248,61 @@ export default function AdminPage() {
     setIsPasswordDialogOpen(true);
   }
 
-  async function handleToggleArchive(u: User) {
-    try {
-      const response = await updateUser(u.id, { archived: !u.archived });
-      if (!response.ok) {
-        toast.error('Failed to update user');
-        return;
-      }
-      setUsers((prev) =>
-        prev.map((existing) =>
-          existing.id === u.id ? { ...existing, archived: !u.archived } : existing,
-        ),
-      );
-      toast.success(u.archived ? 'User unarchived' : 'User archived');
-    } catch (err) {
-      console.error(err);
-      toast.error('Failed to update user');
-    }
+  function handleToggleArchive(u: User) {
+    toggleArchive.mutate(
+      { userId: u.id, archived: !u.archived },
+      {
+        onSuccess: () =>
+          toast.success(u.archived ? 'User unarchived' : 'User archived'),
+        onError: () => toast.error('Failed to update user'),
+      },
+    );
   }
 
   async function handleIssueClaim(u: User) {
     try {
-      const response = await resetUserClaim(u.id);
-      if (!response.ok) {
-        toast.error('Failed to create link');
-        return;
-      }
+      const response = await resetClaimMutation.mutateAsync(u.id);
       const invite: InviteResponse = await response.json();
       const url = `${window.location.origin}${invite.claim_path}`;
       setIssuedClaimUrl(url);
-      setUsers((prev) =>
-        prev.map((existing) =>
-          existing.id === u.id ? { ...existing, claimed_at: null } : existing,
-        ),
-      );
     } catch (err) {
       console.error(err);
       toast.error('Failed to create link');
     }
   }
 
-  async function handleToggleGraduated(u: User) {
+  function handleToggleGraduated(u: User) {
     const wasGraduated = !!u.graduated_at;
-    try {
-      const response = await setStudentGraduated(u.id, !wasGraduated);
-      if (!response.ok) {
-        toast.error('Failed to update user');
-        return;
-      }
-      setUsers((prev) =>
-        prev.map((existing) =>
-          existing.id === u.id
-            ? {
-                ...existing,
-                graduated_at: wasGraduated ? null : new Date().toISOString(),
-              }
-            : existing,
-        ),
-      );
-      toast.success(wasGraduated ? 'Un-graduated' : 'Graduated 🎓');
-    } catch (err) {
-      console.error(err);
-      toast.error('Failed to update user');
-    }
+    graduateMutation.mutate(
+      { id: u.id, graduated: !wasGraduated },
+      {
+        onSuccess: () =>
+          toast.success(wasGraduated ? 'Un-graduated' : 'Graduated 🎓'),
+        onError: () => toast.error('Failed to update user'),
+      },
+    );
   }
 
   async function handleEditUser(data: EditValues) {
     if (!selectedUser) return;
-    const response = await updateUser(selectedUser.id, {
-      username: data.username,
-      display_name: data.display_name,
-      role: data.role,
+    await updateUserMutation.mutateAsync({
+      userId: selectedUser.id,
+      data: {
+        username: data.username,
+        display_name: data.display_name,
+        role: data.role,
+      },
     });
-    if (!response.ok) throw response;
-    setUsers((prev) =>
-      prev.map((u) =>
-        u.id === selectedUser.id
-          ? {
-              ...u,
-              username: data.username,
-              display_name: data.display_name,
-              role: data.role,
-            }
-          : u,
-      ),
-    );
     toast.success('User updated');
     setIsEditDialogOpen(false);
   }
 
   async function handleChangePassword(data: PasswordValues) {
     if (!selectedUser) return;
-    const response = await updateUser(selectedUser.id, {
-      password: data.new_password,
+    await updateUserMutation.mutateAsync({
+      userId: selectedUser.id,
+      data: { password: data.new_password },
     });
-    if (!response.ok) throw response;
     toast.success('Password changed');
     setIsPasswordDialogOpen(false);
   }
@@ -425,7 +372,7 @@ export default function AdminPage() {
         ) : error ? (
           <div className="flex flex-col items-center gap-3 px-6 py-12 text-center">
             <p className="text-sm text-destructive">{error}</p>
-            <Button variant="outline" onClick={loadUsers}>
+            <Button variant="outline" onClick={() => usersQuery.refetch()}>
               Try again
             </Button>
           </div>

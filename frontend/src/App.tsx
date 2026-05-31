@@ -1,14 +1,17 @@
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { Toaster } from "sonner";
-import { useState, useEffect } from 'react';
+import {
+  QueryClient,
+  QueryClientProvider,
+  useQueryClient,
+} from '@tanstack/react-query';
+import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 import { Layout } from './components/layout';
 import LoginPage from './app/login/page';
 import StudentTechniques from './app/student-techniques/page';
 import StudentTechniqueDetail from './app/student-techniques/[techniqueId]/page';
 import StudentsList from './app/students-list/page';
 import Dashboard from './app/dashboard/page';
-import { getCapabilities, getCurrentUser } from './lib/api';
-import type { Capabilities, User } from './lib/api';
 import ProfilePage from './app/profile/page';
 import RegisterUserPage from './app/registration/page';
 import AdminPage from './app/admin/page';
@@ -20,40 +23,63 @@ import PendingApprovalPage from './app/pending/page';
 import ForgotPasswordPage from './app/forgot-password/page';
 import { TelemetryProvider } from './context/telemetry';
 import { CapabilitiesProvider } from './context/capabilities';
+import { useCapabilities, useCurrentUser } from './lib/queries';
+import { qk } from './lib/query-keys';
+
+// Module-level singleton. StrictMode double-renders won't reset it.
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      // Every mount triggers a background refetch; the cached data still
+      // renders instantly. Window-focus refetch picks up updates from other
+      // tabs / sessions.
+      staleTime: 0,
+      gcTime: 5 * 60 * 1000,
+      refetchOnWindowFocus: true,
+      refetchOnReconnect: true,
+      retry: (failureCount, error) => {
+        // The global 401 redirect in lib/auth-redirect.ts handles session
+        // expiry; never retry auth failures.
+        const status = (error as { status?: number } | null)?.status;
+        if (status === 401) return false;
+        return failureCount < 1;
+      },
+    },
+    mutations: { retry: false },
+  },
+});
 
 function App() {
-  const [user, setUser] = useState<User | null>(null);
-  const [capabilities, setCapabilities] = useState<Capabilities | null>(null);
-  const [loading, setLoading] = useState(true);
+  return (
+    <QueryClientProvider client={queryClient}>
+      <AppShell />
+      {import.meta.env.DEV && <ReactQueryDevtools initialIsOpen={false} />}
+    </QueryClientProvider>
+  );
+}
 
-  useEffect(() => {
-    loadUser();
-  }, []);
+function AppShell() {
+  const qc = useQueryClient();
+  const userQuery = useCurrentUser();
+  const capabilitiesQuery = useCapabilities();
 
-  async function loadUser() {
-    try {
-      setLoading(true);
-      const [userData, caps] = await Promise.all([
-        getCurrentUser(),
-        getCapabilities(),
-      ]);
-      setUser(userData);
-      setCapabilities(caps);
-    } catch (error) {
-      console.error('Failed to load user:', error);
-    } finally {
-      setLoading(false);
-    }
-  }
+  const user = userQuery.data ?? null;
+  const capabilities = capabilitiesQuery.data ?? null;
+  const loading = userQuery.isLoading || capabilitiesQuery.isLoading;
 
   const handleLogout = () => {
     fetch('/api/logout', {
       method: 'POST',
-      credentials: 'include'
+      credentials: 'include',
     }).then(() => {
-      setUser(null);
+      qc.clear();
       window.location.href = '/';
     });
+  };
+
+  const handleAuthSuccess = () => {
+    qc.invalidateQueries({ queryKey: qk.currentUser() });
+    qc.invalidateQueries({ queryKey: qk.capabilities() });
   };
 
   if (loading) {
@@ -75,15 +101,15 @@ function App() {
           <Routes>
             <Route
               path="/login"
-              element={user ? <Navigate to="/dashboard" replace /> : <LoginPage onLoginSuccess={loadUser} />}
+              element={user ? <Navigate to="/dashboard" replace /> : <LoginPage onLoginSuccess={handleAuthSuccess} />}
             />
             <Route
               path="/invite/:token"
-              element={<InvitePage onClaimSuccess={loadUser} />}
+              element={<InvitePage onClaimSuccess={handleAuthSuccess} />}
             />
             <Route
               path="/register"
-              element={user ? <Navigate to="/dashboard" replace /> : <RegisterPage onRegisterSuccess={loadUser} />}
+              element={user ? <Navigate to="/dashboard" replace /> : <RegisterPage onRegisterSuccess={handleAuthSuccess} />}
             />
             <Route
               path="/forgot-password"

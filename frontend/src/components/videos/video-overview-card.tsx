@@ -1,8 +1,6 @@
-import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { PlayCircleIcon } from "lucide-react";
-import type { DashboardVideoOverview } from "@/lib/api";
-import { getDashboardVideoOverview } from "@/lib/api";
+import { useDashboardVideoOverview } from "@/lib/queries";
 import { Badge } from "@/components/ui/badge";
 
 interface VideoOverviewCardProps {
@@ -10,27 +8,9 @@ interface VideoOverviewCardProps {
 }
 
 export function VideoOverviewCard({ className }: VideoOverviewCardProps) {
-  const [overview, setOverview] = useState<DashboardVideoOverview | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const next = await getDashboardVideoOverview();
-        if (!cancelled) {
-          setOverview(next);
-          setError(null);
-        }
-      } catch (err) {
-        console.error(err);
-        if (!cancelled) setError("Could not load video activity");
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  const overviewQuery = useDashboardVideoOverview();
+  const overview = overviewQuery.data ?? null;
+  const error = overviewQuery.error ? "Could not load video activity" : null;
 
   return (
     <section

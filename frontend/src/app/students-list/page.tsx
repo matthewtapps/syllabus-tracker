@@ -1,13 +1,10 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import { Archive, GraduationCap, MoreVertical, UserPlus, Users, X } from 'lucide-react';
-import {
-  getStudents,
-  setStudentGraduated,
-  updateUser,
-  type User,
-} from '@/lib/api';
+import { type User } from '@/lib/api';
+import { useStudents } from '@/lib/queries';
+import { useSetStudentGraduated, useToggleUserArchived } from '@/lib/mutations';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -53,9 +50,14 @@ interface StudentsListProps {
 export default function StudentsList({ user }: StudentsListProps) {
   const navigate = useNavigate();
   const isAdmin = user.role?.toLowerCase() === 'admin';
-  const [students, setStudents] = useState<User[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const studentsQuery = useStudents('recent_update', true);
+  const students = useMemo(() => studentsQuery.data ?? [], [studentsQuery.data]);
+  const loading = studentsQuery.isLoading;
+  const error = studentsQuery.error
+    ? 'Failed to load students. Please try again.'
+    : null;
+  const graduateMutation = useSetStudentGraduated();
+  const archiveMutation = useToggleUserArchived();
   const [searchParams, setSearchParams] = useSearchParams();
   const filter = searchParams.get('q') ?? '';
   function setFilter(next: string) {
@@ -92,24 +94,6 @@ export default function StudentsList({ user }: StudentsListProps) {
   }
   const [graduateTarget, setGraduateTarget] = useState<User | null>(null);
 
-  useEffect(() => {
-    loadStudents();
-  }, []);
-
-  async function loadStudents() {
-    try {
-      setLoading(true);
-      const data = await getStudents('recent_update', true);
-      setStudents(data);
-      setError(null);
-    } catch (err) {
-      console.error(err);
-      setError('Failed to load students. Please try again.');
-    } finally {
-      setLoading(false);
-    }
-  }
-
   const filteredStudents = useMemo(() => {
     const needle = filter.trim().toLowerCase();
     let result = students.filter((student) => {
@@ -138,41 +122,24 @@ export default function StudentsList({ user }: StudentsListProps) {
     return result;
   }, [students, filter, sortBy, statusTab]);
 
-  async function handleUnGraduate(student: User) {
-    const previous = student.graduated_at;
-    setStudents((prev) =>
-      prev.map((s) => (s.id === student.id ? { ...s, graduated_at: null } : s)),
+  function handleUnGraduate(student: User) {
+    graduateMutation.mutate(
+      { id: student.id, graduated: false },
+      {
+        onSuccess: () => toast.success('Un-graduated'),
+        onError: () => toast.error('Failed to un-graduate'),
+      },
     );
-    try {
-      const response = await setStudentGraduated(student.id, false);
-      if (!response.ok) throw new Error('Failed');
-      toast.success('Un-graduated');
-    } catch (err) {
-      console.error(err);
-      setStudents((prev) =>
-        prev.map((s) =>
-          s.id === student.id ? { ...s, graduated_at: previous ?? null } : s,
-        ),
-      );
-      toast.error('Failed to un-graduate');
-    }
   }
 
-  async function handleUnArchive(student: User) {
-    setStudents((prev) =>
-      prev.map((s) => (s.id === student.id ? { ...s, archived: false } : s)),
+  function handleUnArchive(student: User) {
+    archiveMutation.mutate(
+      { userId: student.id, archived: false },
+      {
+        onSuccess: () => toast.success('Unarchived'),
+        onError: () => toast.error('Failed to unarchive'),
+      },
     );
-    try {
-      const response = await updateUser(student.id, { archived: false });
-      if (!response.ok) throw new Error('Failed');
-      toast.success('Unarchived');
-    } catch (err) {
-      console.error(err);
-      setStudents((prev) =>
-        prev.map((s) => (s.id === student.id ? { ...s, archived: true } : s)),
-      );
-      toast.error('Failed to unarchive');
-    }
   }
 
   function rowActions(student: User) {
@@ -284,7 +251,7 @@ export default function StudentsList({ user }: StudentsListProps) {
         ) : error ? (
           <div className="flex flex-col items-center gap-3 px-6 py-12 text-center">
             <p className="text-sm text-destructive">{error}</p>
-            <Button variant="outline" onClick={loadStudents}>
+            <Button variant="outline" onClick={() => studentsQuery.refetch()}>
               Try again
             </Button>
           </div>

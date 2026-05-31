@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   ArrowLeft,
   MoreVerticalIcon,
@@ -14,14 +15,19 @@ import {
   type Technique,
   type TechniqueUpdate,
   type User,
-  deleteAttempt,
-  getAllTags,
-  getStudentTechniqueDetail,
-  listAttempts,
-  removeTagFromTechnique,
-  updateAttempt,
-  updateTechnique,
 } from "@/lib/api";
+import {
+  useAllTags,
+  useAttempts,
+  useStudentTechniqueDetail,
+} from "@/lib/queries";
+import {
+  useDeleteAttempt,
+  useRemoveTagFromTechnique,
+  useUpdateAttempt,
+  useUpdateTechnique,
+} from "@/lib/mutations";
+import { qk } from "@/lib/query-keys";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -69,11 +75,20 @@ export default function StudentTechniqueDetail({
   const [searchParams] = useSearchParams();
   const studentId = parseInt(id ?? "0", 10);
   const stId = parseInt(techniqueId ?? "0", 10);
+  const qc = useQueryClient();
 
-  const [detail, setDetail] = useState<SingleStudentTechnique | null>(null);
-  const [attempts, setAttempts] = useState<Attempt[] | null>(null);
-  const [allTags, setAllTags] = useState<Tag[]>([]);
-  const [error, setError] = useState<string | null>(null);
+  const detailQuery = useStudentTechniqueDetail(stId);
+  const attemptsQuery = useAttempts(stId);
+  const tagsQuery = useAllTags();
+  const detail = detailQuery.data ?? null;
+  const attempts = attemptsQuery.data ?? null;
+  const allTags = tagsQuery.data ?? [];
+  const error = detailQuery.error ? "Could not load technique" : null;
+  const updateTechniqueMutation = useUpdateTechnique();
+  const removeTagMutation = useRemoveTagFromTechnique();
+  const updateAttemptMutation = useUpdateAttempt(stId, studentId);
+  const deleteAttemptMutation = useDeleteAttempt(stId, studentId);
+
   const [tagToRemove, setTagToRemove] = useState<{
     technique: Technique;
     tag: Tag;
@@ -82,30 +97,17 @@ export default function StudentTechniqueDetail({
   const [videoReloadKey, setVideoReloadKey] = useState(0);
   const { videos: videosEnabled } = useCapabilities();
 
-  useEffect(() => {
-    let cancelled = false;
-    async function load() {
-      try {
-        const [d, list, tags] = await Promise.all([
-          getStudentTechniqueDetail(stId),
-          listAttempts(stId),
-          getAllTags(),
-        ]);
-        if (cancelled) return;
-        setDetail(d);
-        setAttempts(list);
-        setAllTags(tags);
-      } catch (err) {
-        if (cancelled) return;
-        console.error(err);
-        setError("Could not load technique");
-      }
-    }
-    load();
-    return () => {
-      cancelled = true;
-    };
-  }, [stId]);
+  function patchDetail(updater: (prev: SingleStudentTechnique) => SingleStudentTechnique) {
+    qc.setQueryData<SingleStudentTechnique>(qk.studentTechnique(stId), (prev) =>
+      prev ? updater(prev) : prev,
+    );
+  }
+  function patchAttempts(updater: (prev: Attempt[] | null) => Attempt[] | null) {
+    qc.setQueryData<Attempt[]>(qk.attempts(stId), (prev) => {
+      const next = updater(prev ?? null);
+      return next ?? undefined;
+    });
+  }
 
   if (error) {
     return (
@@ -134,27 +136,28 @@ export default function StudentTechniqueDetail({
   const canLogAttempts = isOwnTechnique || canEditAll;
 
   function applyTechniqueUpdate(patch: Partial<Technique>) {
-    setDetail((prev) =>
-      prev ? { ...prev, technique: { ...prev.technique, ...patch } } : prev,
-    );
+    patchDetail((prev) => ({ ...prev, technique: { ...prev.technique, ...patch } }));
   }
 
   async function handleStatusChange(next: Status) {
     if (next === status) return;
-    const response = await updateTechnique(technique.id, { status: next });
-    if (!response.ok) {
+    try {
+      await updateTechniqueMutation.mutateAsync({
+        studentTechniqueId: technique.id,
+        updates: { status: next },
+      });
+      applyTechniqueUpdate({ status: next });
+    } catch {
       toast.error("Could not update status");
-      return;
     }
-    applyTechniqueUpdate({ status: next });
   }
 
-  function handleTagAdded(tag: Tag, allAfter: Tag[]) {
+  function handleTagAdded(tag: Tag) {
     const updated = [...technique.tags, tag].sort((a, b) =>
       a.name.localeCompare(b.name),
     );
     applyTechniqueUpdate({ tags: updated });
-    setAllTags(allAfter);
+    qc.invalidateQueries({ queryKey: qk.tags() });
     toast.success("Tag added");
   }
 
@@ -162,46 +165,45 @@ export default function StudentTechniqueDetail({
     if (!tagToRemove) return;
     const { tag } = tagToRemove;
     try {
-      const response = await removeTagFromTechnique(
-        technique.technique_id,
-        tag.id,
-      );
-      if (!response.ok) {
-        toast.error("Failed to remove tag");
-        return;
-      }
+      await removeTagMutation.mutateAsync({
+        techniqueId: technique.technique_id,
+        tagId: tag.id,
+      });
       applyTechniqueUpdate({
         tags: technique.tags.filter((t) => t.id !== tag.id),
       });
       toast.success(`Removed tag "${tag.name}"`);
+    } catch {
+      toast.error("Failed to remove tag");
     } finally {
       setTagToRemove(null);
     }
   }
 
   async function handleEditDefinitionSubmit(updates: TechniqueUpdate) {
-    const response = await updateTechnique(technique.id, updates);
-    if (!response.ok) {
+    try {
+      await updateTechniqueMutation.mutateAsync({
+        studentTechniqueId: technique.id,
+        updates,
+      });
+      applyTechniqueUpdate({
+        technique_name: updates.technique_name ?? technique.technique_name,
+        technique_description:
+          updates.technique_description ?? technique.technique_description,
+      });
+      toast.success("Changes saved");
+      setEditDialogOpen(false);
+    } catch {
       toast.error("Failed to save changes");
-      return;
     }
-    applyTechniqueUpdate({
-      technique_name: updates.technique_name ?? technique.technique_name,
-      technique_description:
-        updates.technique_description ?? technique.technique_description,
-    });
-    toast.success("Changes saved");
-    setEditDialogOpen(false);
   }
 
   function applyAttemptUpdate(next: Attempt) {
-    setAttempts((prev) =>
-      prev ? prev.map((a) => (a.id === next.id ? next : a)) : prev,
-    );
+    patchAttempts((prev) => (prev ? prev.map((a) => (a.id === next.id ? next : a)) : prev));
   }
 
   function removeAttempt(id: number) {
-    setAttempts((prev) => (prev ? prev.filter((a) => a.id !== id) : prev));
+    patchAttempts((prev) => (prev ? prev.filter((a) => a.id !== id) : prev));
     applyTechniqueUpdate({
       attempt_count: Math.max(0, technique.attempt_count - 1),
     });
@@ -251,7 +253,7 @@ export default function StudentTechniqueDetail({
                 studentTechniqueId={technique.id}
                 techniqueStatus={status}
                 onLogged={(result) => {
-                  setAttempts((prev) =>
+                  patchAttempts((prev) =>
                     prev
                       ? [
                           result.attempt,
@@ -463,6 +465,8 @@ export default function StudentTechniqueDetail({
                   isCoachOrAdmin={canEditAll}
                   onUpdate={applyAttemptUpdate}
                   onRemoved={() => removeAttempt(a.id)}
+                  updateMutation={updateAttemptMutation}
+                  deleteMutation={deleteAttemptMutation}
                 />
               ))}
             </ul>
@@ -540,6 +544,8 @@ interface DetailAttemptRowProps {
   isCoachOrAdmin: boolean;
   onUpdate: (next: Attempt) => void;
   onRemoved: () => void;
+  updateMutation: ReturnType<typeof useUpdateAttempt>;
+  deleteMutation: ReturnType<typeof useDeleteAttempt>;
 }
 
 function DetailAttemptRow({
@@ -548,6 +554,8 @@ function DetailAttemptRow({
   isCoachOrAdmin,
   onUpdate,
   onRemoved,
+  updateMutation,
+  deleteMutation,
 }: DetailAttemptRowProps) {
   const [editingNote, setEditingNote] = useState(false);
   const [editingDate, setEditingDate] = useState(false);
@@ -557,10 +565,10 @@ function DetailAttemptRow({
   const myNote = isCoachOrAdmin ? attempt.coach_note : attempt.student_note;
 
   async function handleDelete() {
-    const response = await deleteAttempt(attempt.id);
-    if (response.ok) {
+    try {
+      await deleteMutation.mutateAsync(attempt.id);
       onRemoved();
-    } else {
+    } catch {
       toast.error("Could not remove attempt");
     }
   }
@@ -628,6 +636,7 @@ function DetailAttemptRow({
         <InlineNoteEditor
           attempt={attempt}
           isCoachOrAdmin={isCoachOrAdmin}
+          updateMutation={updateMutation}
           onCancel={() => setEditingNote(false)}
           onSaved={(next) => {
             onUpdate(next);
@@ -639,6 +648,7 @@ function DetailAttemptRow({
       {editingDate && (
         <InlineDateEditor
           attempt={attempt}
+          updateMutation={updateMutation}
           onCancel={() => setEditingDate(false)}
           onSaved={(next) => {
             onUpdate(next);
@@ -653,6 +663,7 @@ function DetailAttemptRow({
 interface InlineNoteEditorProps {
   attempt: Attempt;
   isCoachOrAdmin: boolean;
+  updateMutation: ReturnType<typeof useUpdateAttempt>;
   onCancel: () => void;
   onSaved: (next: Attempt) => void;
 }
@@ -660,6 +671,7 @@ interface InlineNoteEditorProps {
 function InlineNoteEditor({
   attempt,
   isCoachOrAdmin,
+  updateMutation,
   onCancel,
   onSaved,
 }: InlineNoteEditorProps) {
@@ -673,19 +685,20 @@ function InlineNoteEditor({
     if (saving) return;
     setSaving(true);
     const trimmed = value.trim();
-    const response = await updateAttempt(attempt.id, {
-      note: trimmed,
-      clear_note: trimmed.length === 0,
-    });
-    setSaving(false);
-    if (!response.ok) {
+    try {
+      await updateMutation.mutateAsync({
+        attemptId: attempt.id,
+        data: { note: trimmed, clear_note: trimmed.length === 0 },
+      });
+      const next: Attempt = isCoachOrAdmin
+        ? { ...attempt, coach_note: trimmed || null }
+        : { ...attempt, student_note: trimmed || null };
+      onSaved(next);
+    } catch {
       toast.error("Could not save note");
-      return;
+    } finally {
+      setSaving(false);
     }
-    const next: Attempt = isCoachOrAdmin
-      ? { ...attempt, coach_note: trimmed || null }
-      : { ...attempt, student_note: trimmed || null };
-    onSaved(next);
   }
 
   return (
@@ -711,12 +724,14 @@ function InlineNoteEditor({
 
 interface InlineDateEditorProps {
   attempt: Attempt;
+  updateMutation: ReturnType<typeof useUpdateAttempt>;
   onCancel: () => void;
   onSaved: (next: Attempt) => void;
 }
 
 function InlineDateEditor({
   attempt,
+  updateMutation,
   onCancel,
   onSaved,
 }: InlineDateEditorProps) {
@@ -728,13 +743,17 @@ function InlineDateEditor({
     if (saving) return;
     setSaving(true);
     const iso = new Date(`${value}T12:00:00Z`).toISOString();
-    const response = await updateAttempt(attempt.id, { attempted_at: iso });
-    setSaving(false);
-    if (!response.ok) {
+    try {
+      await updateMutation.mutateAsync({
+        attemptId: attempt.id,
+        data: { attempted_at: iso },
+      });
+      onSaved({ ...attempt, attempted_at: iso });
+    } catch {
       toast.error("Could not update date");
-      return;
+    } finally {
+      setSaving(false);
     }
-    onSaved({ ...attempt, attempted_at: iso });
   }
 
   return (
