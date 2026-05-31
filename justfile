@@ -165,11 +165,16 @@ reseed-attempts:
     sqlite3 sqlite.db "DELETE FROM attempts;"
     just seed
 
-# Delete the local sqlite files. Next `just migrate` or `just dev` will
-# recreate and migrate.
-[group('db')]
+# ---- housekeeping ---------------------------------------------------------
+
+# Delete local sqlite files and build artifacts (cargo target/, frontend
+# dist/). Leaves node_modules and frontend/node_modules/.vite alone; if those
+# get into a bad state, remove them by hand. Next `just dev` recreates
+# everything.
+[group('housekeeping')]
 clean:
     rm -f sqlite.db sqlite.db-shm sqlite.db-wal
+    rm -rf target frontend/dist
 
 # ---- hooks ----------------------------------------------------------------
 
