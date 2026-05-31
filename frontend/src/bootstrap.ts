@@ -17,5 +17,7 @@ const apiKey =
 window.apiKey = apiKey;
 
 import { initTelemetry } from "./lib/telemetry";
+import { installAuthRedirect } from "./lib/auth-redirect";
 
+installAuthRedirect();
 initTelemetry();
