@@ -391,10 +391,15 @@ mod tests {
                 } else {
                     None
                 };
-                let assignment_id =
-                    assign_technique_to_student(&pool, technique_id, student_id, collection_id)
-                        .await
-                        .expect("assign technique");
+                let assignment_id = assign_technique_to_student(
+                    &pool,
+                    technique_id,
+                    student_id,
+                    collection_id,
+                    coach_id,
+                )
+                .await
+                .expect("assign technique");
 
                 // Status distribution
                 let p = (assigned_n as f64) / (count as f64);

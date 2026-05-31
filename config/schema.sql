@@ -7,7 +7,6 @@ CREATE TABLE IF NOT EXISTS users (
     archived BOOLEAN NOT NULL DEFAULT FALSE,
     graduated_at TIMESTAMP,
     graduated_by_id INTEGER REFERENCES users(id),
-    last_seen_at TIMESTAMP,
     email TEXT,
     claimed_at TIMESTAMP,
     approved_at TIMESTAMP,
@@ -47,6 +46,14 @@ CREATE TABLE IF NOT EXISTS student_techniques (
     FOREIGN KEY (last_student_update_by_id) REFERENCES users (id),
     FOREIGN KEY (collection_id) REFERENCES collections (id)
 );
+
+CREATE TABLE IF NOT EXISTS student_technique_views (
+    student_technique_id INTEGER NOT NULL REFERENCES student_techniques(id) ON DELETE CASCADE,
+    user_id              INTEGER NOT NULL REFERENCES users(id)              ON DELETE CASCADE,
+    seen_at              TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (student_technique_id, user_id)
+);
+CREATE INDEX IF NOT EXISTS idx_stv_user ON student_technique_views(user_id);
 
 CREATE TABLE IF NOT EXISTS collections (
     id INTEGER PRIMARY KEY,

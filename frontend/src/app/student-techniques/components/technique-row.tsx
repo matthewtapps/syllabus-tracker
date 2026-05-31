@@ -6,7 +6,7 @@ import {
   XIcon,
 } from "lucide-react";
 import type { Attempt, Tag, Technique } from "@/lib/api";
-import { listAttempts, updateTechnique } from "@/lib/api";
+import { listAttempts, markStudentTechniqueSeen, updateTechnique } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { StatusToggle } from "@/components/status-toggle";
@@ -18,7 +18,7 @@ import { TagsEditor } from "./tags-editor";
 import { AttemptButton } from "./attempt-button";
 import { AttemptsPanel } from "./attempts-panel";
 import { InlineVideoList } from "./inline-video-list";
-import { useCapabilities } from "@/context/capabilities";
+import { useCapabilities } from "@/context/capabilities-context";
 
 interface TechniqueRowProps {
   technique: Technique;
@@ -85,6 +85,27 @@ export function TechniqueRow({
     };
   }, [expanded, attempts, attemptsError, technique.id]);
 
+  // Viewer is "the owning student" if this is their own row and they don't
+  // have edit-all (the coach viewing as themselves takes the coach branch).
+  const viewerIsOwner = isOwnTechnique && !canEditAll;
+  const unseenDotLabel = viewerIsOwner
+    ? "Coach edited this since you last looked"
+    : "Student edited this since you last looked";
+
+  // Expanding the row counts as "looking" for this viewer; clear the dot.
+  // Optimistically update local state so it disappears immediately, then fire
+  // the network call. Skip the call if the flag is already false.
+  function toggleExpanded() {
+    setExpanded((wasExpanded) => {
+      const nextExpanded = !wasExpanded;
+      if (nextExpanded && technique.has_unseen_activity) {
+        onTechniqueUpdate({ ...technique, has_unseen_activity: false });
+        void markStudentTechniqueSeen(technique.id);
+      }
+      return nextExpanded;
+    });
+  }
+
   async function handleStatusChange(next: Status) {
     if (next === status) return;
     const response = await updateTechnique(technique.id, { status: next });
@@ -123,12 +144,12 @@ export function TechniqueRow({
       <div
         role="button"
         tabIndex={0}
-        onClick={() => setExpanded((v) => !v)}
+        onClick={() => toggleExpanded()}
         onKeyDown={(e) => {
           if (e.target !== e.currentTarget) return;
           if (e.key === "Enter" || e.key === " ") {
             e.preventDefault();
-            setExpanded((v) => !v);
+            toggleExpanded();
           }
         }}
         className="flex w-full items-start gap-3 px-4 py-3 text-left focus-visible:bg-muted/30 focus-visible:outline-none cursor-pointer"
@@ -139,11 +160,11 @@ export function TechniqueRow({
             className={cn("h-2.5 w-2.5 rounded-full", statusToDotClass(status))}
             aria-hidden
           />
-          {technique.has_new_student_activity && (
+          {technique.has_unseen_activity && (
             <span
               className="h-1.5 w-1.5 rounded-full bg-primary"
-              aria-label="Student edited after your last update"
-              title="Student edited after your last update"
+              aria-label={unseenDotLabel}
+              title={unseenDotLabel}
             />
           )}
         </div>

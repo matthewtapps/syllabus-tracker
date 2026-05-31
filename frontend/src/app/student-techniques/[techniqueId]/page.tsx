@@ -47,7 +47,7 @@ import { StatusToggle } from "@/components/status-toggle";
 import TechniqueEditForm from "@/components/technique-edit-form";
 import { AddVideoButton } from "@/components/videos/add-video-button";
 import { VideoList } from "@/components/videos/video-list";
-import { useCapabilities } from "@/context/capabilities";
+import { useCapabilities } from "@/context/capabilities-context";
 import { WeeklyAttemptBars } from "@/components/weekly-attempt-bars";
 import { formatRelative } from "@/lib/dates";
 import type { Status } from "@/lib/status";

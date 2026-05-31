@@ -473,7 +473,7 @@ mod tests {
         create_attempt(&db.pool, &student, st_id, Utc::now(), None)
             .await
             .unwrap();
-        let techs = crate::db::get_student_techniques(&db.pool, student_id)
+        let techs = crate::db::get_student_techniques(&db.pool, student_id, student_id)
             .await
             .unwrap();
         let target = techs.into_iter().find(|t| t.id == st_id).unwrap();

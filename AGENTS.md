@@ -104,3 +104,27 @@ When adding a new runtime feature flag, follow the same pattern: parameterize th
 - Prefer editing existing files over creating new ones.
 - UI work belongs under `frontend/src/` and follows the shadcn/ui + Tailwind v4 + RHF/Zod pattern (see the `shadcn-ui-design` skill).
 - Migrations: `config/schema.sql` is the canonical schema. The app migrates the local sqlite file on boot.
+
+## Frontend / TypeScript
+
+### Types
+
+- **Never use `any`.** If `tsc` or eslint demands a type, write the real one.
+- **Never use `unknown`.** If a value has no compile-time shape, give the producer a real type rather than punting to the consumer.
+- **Never use `as Type` typecasts.** Use type guards, discriminated unions, or fix the source's type so the cast isn't needed. `as const` is fine, it narrows literals without weakening safety.
+- **Optional vs nullable: pick a side.** Don't mark a field `field?: T` just to dodge "the backend might not send it". If the field is sometimes absent, write `field: T | null` so call sites are forced to handle the null branch.
+- **Use `T[]` over `Array<T>`.** Matches the existing convention.
+- **API response shapes belong in `frontend/src/lib/api.ts`** and are imported by consumers. Don't redeclare a local `interface` that mirrors a backend response.
+
+### File and component layout
+
+- **One file per concern for hot reload**: a `.tsx` file should export only components. Move hooks, contexts, constants, and `cva` variant configs to a sibling `*-context.ts` / `*-variants.ts` file. (eslint's `react-refresh/only-export-components` enforces this.)
+- **One top-level component per file**, unless a sibling is a small private helper used only in the same file. Keeps imports clean and hot reload working.
+- **Props types stay co-located** with their component (declared just above it). Don't move them to a shared types file just because they're "shared looking".
+- **`function Foo()` over `const Foo = () =>`** for top-level components, matching the shadcn-ui convention used throughout the codebase.
+- **No barrel re-exports** (`index.ts` files that re-export a folder's contents). They break tree-shaking and confuse react-refresh.
+
+### API helpers and error handling
+
+- **`catch` clauses that don't use the error should be bare**: `} catch { ... }`, not `} catch (e) { ... }` with `e` unused.
+- **Pick fire-and-forget or throw for each `lib/api.ts` helper, and stick to it.** Best-effort calls (e.g. analytics pings, `markStudentTechniqueSeen`) catch internally and return `void`. Calls the user must know about either throw or return `Response`/`null` so callers can react. Don't mix the two in one function.

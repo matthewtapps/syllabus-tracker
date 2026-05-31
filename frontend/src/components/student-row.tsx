@@ -65,11 +65,11 @@ export function StudentRow({ student, href, className, actions }: StudentRowProp
                 Archived
               </Badge>
             )}
-            {student.has_new_student_activity && !student.graduated_at && (
+            {student.has_unseen_activity && !student.graduated_at && (
               <span
                 className="inline-flex h-2 w-2 shrink-0 rounded-full bg-primary"
                 aria-label="New student activity"
-                title="New student activity since your last update"
+                title="New student activity since you last looked"
               />
             )}
           </div>

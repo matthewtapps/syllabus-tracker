@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO student_techniques\n     (student_id, student_notes, coach_notes, technique_id, technique_name, technique_description, collection_id, last_coach_update_at, last_coach_update_by_id)\n     SELECT ?, '', '', t.id, t.name, t.description, ?, ?, ?\n     FROM techniques t WHERE t.id = ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 5
+    },
+    "nullable": []
+  },
+  "hash": "e5c07a74ba0623748f3fd192fef27ee6cf21063239aef093c8305cede0819341"
+}

@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT t.id, t.name \n             FROM tags t\n             JOIN technique_tags tt ON t.id = tt.tag_id\n             WHERE tt.technique_id = ?\n             ORDER BY t.name",
+  "query": "SELECT t.id, t.name\n             FROM tags t\n             JOIN technique_tags tt ON t.id = tt.tag_id\n             WHERE tt.technique_id = ?\n             ORDER BY t.name",
   "describe": {
     "columns": [
       {
@@ -22,5 +22,5 @@
       false
     ]
   },
-  "hash": "ea0f6694fa257c86c7140b4e6f153e1702ef3e789527d706416e6c7f0d926d6f"
+  "hash": "ffa68a770f54187938f0563ec8ad7fbf2d65a1ffedcd9c791ccc853c50677eee"
 }

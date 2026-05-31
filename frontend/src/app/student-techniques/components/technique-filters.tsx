@@ -8,7 +8,7 @@ import { cn } from "@/lib/utils";
 
 export type FilterTab = "all" | Status | "new_activity";
 
-export const FILTER_TABS: { value: FilterTab; label: string }[] = [
+const FILTER_TABS: { value: FilterTab; label: string }[] = [
   { value: "all", label: "All" },
   { value: "red", label: STATUS_LABELS.red },
   { value: "amber", label: STATUS_LABELS.amber },

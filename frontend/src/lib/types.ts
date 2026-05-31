@@ -7,12 +7,11 @@ export interface ValidationErrorResponse {
 export function isValidationErrorResponse(
   obj: unknown,
 ): obj is ValidationErrorResponse {
+  if (typeof obj !== "object" || obj === null) return false;
+  const record = obj as Record<string, unknown>;
   return (
-    typeof obj === "object" &&
-    obj !== null &&
-    "status" in obj &&
-    "errors" in obj &&
-    typeof (obj as any).status === "string" &&
-    typeof (obj as any).errors === "object"
+    typeof record.status === "string" &&
+    typeof record.errors === "object" &&
+    record.errors !== null
   );
 }

@@ -205,6 +205,7 @@ pub async fn assign_technique_to_student(
     technique_id: i64,
     student_id: i64,
     collection_id: Option<i64>,
+    actor_id: i64,
 ) -> Result<i64, AppError> {
     info!("Assigning technique to student");
     struct ReturnRow {
@@ -236,13 +237,19 @@ pub async fn assign_technique_to_student(
         return Ok(row.id);
     }
 
+    // Stamp the coach-update timestamps on creation so the assignment itself
+    // counts as a coach action — the student sees an "unseen activity" dot
+    // until they open it.
+    let now = Utc::now().naive_utc();
     let res = sqlx::query!(
         "INSERT INTO student_techniques
-     (student_id, student_notes, coach_notes, technique_id, technique_name, technique_description, collection_id)
-     SELECT ?, '', '', t.id, t.name, t.description, ?
+     (student_id, student_notes, coach_notes, technique_id, technique_name, technique_description, collection_id, last_coach_update_at, last_coach_update_by_id)
+     SELECT ?, '', '', t.id, t.name, t.description, ?, ?, ?
      FROM techniques t WHERE t.id = ?",
         student_id,
         collection_id,
+        now,
+        actor_id,
         technique_id
     )
     .execute(pool)
@@ -255,6 +262,7 @@ pub async fn assign_technique_to_student(
 pub async fn get_student_techniques(
     pool: &Pool<Sqlite>,
     student_id: i64,
+    viewer_id: i64,
 ) -> Result<Vec<StudentTechnique>, AppError> {
     info!("Getting student techniques with tags");
 
@@ -271,9 +279,10 @@ pub async fn get_student_techniques(
                su.display_name as student_updater_display_name,
                su.username as student_updater_username,
                coll.name as "collection_name?",
-               tag.id as tag_id, tag.name as tag_name,
+               tag.id as "tag_id?: i64", tag.name as "tag_name?: String",
                COALESCE(att.attempt_count, 0) as "attempt_count!: i64",
-               att.last_attempt_at as "last_attempt_at?: NaiveDateTime"
+               att.last_attempt_at as "last_attempt_at?: NaiveDateTime",
+               stv.seen_at as "viewer_seen_at?: NaiveDateTime"
         FROM student_techniques st
         LEFT JOIN users cu ON st.last_coach_update_by_id = cu.id
         LEFT JOIN users su ON st.last_student_update_by_id = su.id
@@ -287,9 +296,12 @@ pub async fn get_student_techniques(
             FROM attempts
             GROUP BY student_technique_id
         ) att ON att.student_technique_id = st.id
+        LEFT JOIN student_technique_views stv
+               ON stv.student_technique_id = st.id AND stv.user_id = ?
         WHERE st.student_id = ?
         ORDER BY st.updated_at DESC
         "#,
+        viewer_id,
         student_id
     )
     .fetch_all(pool)
@@ -332,11 +344,12 @@ pub async fn get_student_techniques(
                 tags: Vec::new(),
                 attempt_count: row.attempt_count,
                 last_attempt_at: row.last_attempt_at.map(naive_to_utc),
+                viewer_seen_at: row.viewer_seen_at.map(naive_to_utc),
             };
             e.insert(technique);
         }
 
-        if let (tag_id, Some(tag_name)) = (row.tag_id, row.tag_name) {
+        if let (Some(tag_id), Some(tag_name)) = (row.tag_id, row.tag_name) {
             let tag = Tag {
                 id: tag_id,
                 name: tag_name,
@@ -363,6 +376,7 @@ pub async fn get_student_techniques(
 pub async fn get_student_technique(
     pool: &Pool<Sqlite>,
     student_technique_id: i64,
+    viewer_id: i64,
 ) -> Result<StudentTechnique, AppError> {
     info!("Getting student technique with tags");
 
@@ -379,7 +393,7 @@ pub async fn get_student_technique(
     if let Some(technique_id) = row.technique_id {
         let tags = sqlx::query_as!(
             DbTag,
-            "SELECT t.id, t.name 
+            "SELECT t.id, t.name
              FROM tags t
              JOIN technique_tags tt ON t.id = tt.tag_id
              WHERE tt.technique_id = ?
@@ -403,6 +417,17 @@ pub async fn get_student_technique(
     .await?;
     technique.attempt_count = agg.count;
     technique.last_attempt_at = agg.last.map(naive_to_utc);
+
+    let seen = sqlx::query!(
+        r#"SELECT seen_at as "seen_at?: NaiveDateTime"
+           FROM student_technique_views
+           WHERE student_technique_id = ? AND user_id = ?"#,
+        student_technique_id,
+        viewer_id
+    )
+    .fetch_optional(pool)
+    .await?;
+    technique.viewer_seen_at = seen.and_then(|r| r.seen_at).map(naive_to_utc);
 
     Ok(technique)
 }
@@ -597,10 +622,12 @@ pub async fn add_techniques_to_student(
     student_id: i64,
     technique_ids: Vec<i64>,
     collection_id: Option<i64>,
+    actor_id: i64,
 ) -> Result<(), AppError> {
     info!("Adding techniques to student");
     for technique_id in technique_ids {
-        assign_technique_to_student(pool, technique_id, student_id, collection_id).await?;
+        assign_technique_to_student(pool, technique_id, student_id, collection_id, actor_id)
+            .await?;
     }
 
     Ok(())
@@ -619,7 +646,7 @@ pub async fn create_and_assign_technique(
     let technique_id =
         create_technique(pool, technique_name, technique_description, coach_id).await?;
 
-    assign_technique_to_student(pool, technique_id, student_id, collection_id).await?;
+    assign_technique_to_student(pool, technique_id, student_id, collection_id, coach_id).await?;
 
     Ok(())
 }
@@ -670,7 +697,7 @@ pub async fn authenticate_user(
                     red_count: None,
                     amber_count: None,
                     green_count: None,
-                    has_new_student_activity: None,
+                    has_unseen_activity: None,
                 }))
             } else {
                 Ok(None) // Password doesn't match
@@ -806,32 +833,62 @@ pub async fn update_user_admin(
     Ok(())
 }
 
-/// Atomically read the user's previous `last_seen_at` and update it to NOW.
-/// Returns the previous value (None if this is the first visit).
-#[instrument]
-pub async fn read_and_bump_last_seen(
+/// Upsert the `seen_at` for `(student_technique_id, user_id)` to NOW. Used by
+/// the row-expand "mark seen" interaction to clear the unseen-activity dot
+/// for the viewer.
+#[instrument(skip(pool))]
+pub async fn mark_student_technique_seen(
     pool: &Pool<Sqlite>,
+    student_technique_id: i64,
     user_id: i64,
-) -> Result<Option<String>, AppError> {
-    info!("Reading and bumping last_seen_at");
-
-    let row = sqlx::query!(
-        r#"SELECT CAST(last_seen_at AS TEXT) as "last_seen_at?: String" FROM users WHERE id = ?"#,
-        user_id
-    )
-    .fetch_one(pool)
-    .await?;
-
-    let now = Utc::now();
+) -> Result<(), AppError> {
+    let now = Utc::now().naive_utc();
     sqlx::query!(
-        "UPDATE users SET last_seen_at = ? WHERE id = ?",
-        now,
-        user_id
+        "INSERT INTO student_technique_views (student_technique_id, user_id, seen_at)
+         VALUES (?, ?, ?)
+         ON CONFLICT(student_technique_id, user_id)
+         DO UPDATE SET seen_at = excluded.seen_at",
+        student_technique_id,
+        user_id,
+        now
+    )
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+/// Idempotently backfill `student_technique_views` so existing rows do not
+/// suddenly light up with dots for every viewer when the per-viewer "unseen
+/// activity" feature ships. Safe to re-run on every boot: `INSERT OR IGNORE`
+/// leaves rows added by live traffic untouched.
+#[instrument(skip(pool))]
+pub async fn backfill_student_technique_views(pool: &Pool<Sqlite>) -> Result<(), AppError> {
+    info!("Backfilling student_technique_views");
+
+    sqlx::query!(
+        "INSERT OR IGNORE INTO student_technique_views (student_technique_id, user_id, seen_at)
+         SELECT st.id, st.student_id,
+                COALESCE(MAX(st.last_coach_update_at, st.last_student_update_at, st.created_at),
+                         CURRENT_TIMESTAMP)
+         FROM   student_techniques st
+         WHERE  st.student_id IS NOT NULL"
     )
     .execute(pool)
     .await?;
 
-    Ok(row.last_seen_at)
+    sqlx::query!(
+        "INSERT OR IGNORE INTO student_technique_views (student_technique_id, user_id, seen_at)
+         SELECT st.id, u.id,
+                COALESCE(MAX(st.last_coach_update_at, st.last_student_update_at, st.created_at),
+                         CURRENT_TIMESTAMP)
+         FROM   student_techniques st
+         CROSS JOIN users u
+         WHERE  u.role IN ('coach', 'admin')"
+    )
+    .execute(pool)
+    .await?;
+
+    Ok(())
 }
 
 #[instrument]
@@ -1116,6 +1173,7 @@ pub async fn assign_collection_to_student(
     pool: &Pool<Sqlite>,
     student_id: i64,
     collection_id: i64,
+    actor_id: i64,
 ) -> Result<usize, AppError> {
     info!("Assigning collection to student");
     let technique_ids: Vec<i64> = sqlx::query_scalar!(
@@ -1133,7 +1191,7 @@ pub async fn assign_collection_to_student(
     .await?;
 
     for tid in technique_ids {
-        assign_technique_to_student(pool, tid, student_id, Some(collection_id)).await?;
+        assign_technique_to_student(pool, tid, student_id, Some(collection_id), actor_id).await?;
     }
 
     let after: i64 = sqlx::query_scalar!(
@@ -1541,14 +1599,19 @@ pub struct UserWithActivityDto {
     pub red_count: Option<i64>,
     pub amber_count: Option<i64>,
     pub green_count: Option<i64>,
-    pub has_new_student_activity: Option<i64>,
+    pub has_unseen_activity: Option<i64>,
 }
 
 #[instrument(skip(pool))]
 pub async fn get_students_by_recent_updates(
     pool: &Pool<Sqlite>,
     include_archived: bool,
+    viewer_id: i64,
 ) -> Result<Vec<User>, AppError> {
+    // Aggregate flag: does this student have any student_technique where the
+    // student has touched it since the viewing coach last looked? `stv.seen_at`
+    // is null for rows the viewer has never opened, so MAX(...) of a NULL
+    // becomes a "yes" via the first WHEN branch.
     let dtos = sqlx::query_as!(
         UserWithActivityDto,
         r#"
@@ -1574,17 +1637,20 @@ pub async fn get_students_by_recent_updates(
             COALESCE(MAX(
                 CASE
                     WHEN st.last_student_update_at IS NULL THEN 0
-                    WHEN st.last_coach_update_at IS NULL THEN 1
-                    WHEN st.last_student_update_at > st.last_coach_update_at THEN 1
+                    WHEN stv.seen_at IS NULL THEN 1
+                    WHEN st.last_student_update_at > stv.seen_at THEN 1
                     ELSE 0
                 END
-            ), 0) as has_new_student_activity
+            ), 0) as has_unseen_activity
         FROM users u
         LEFT JOIN student_techniques st ON u.id = st.student_id
+        LEFT JOIN student_technique_views stv
+               ON stv.student_technique_id = st.id AND stv.user_id = ?
         WHERE u.role = 'student'
         GROUP BY u.id
         ORDER BY last_update DESC NULLS LAST
-        "#
+        "#,
+        viewer_id
     )
     .fetch_all(pool)
     .await?;
@@ -1611,7 +1677,7 @@ pub async fn get_students_by_recent_updates(
             red_count: dto.red_count,
             amber_count: dto.amber_count,
             green_count: dto.green_count,
-            has_new_student_activity: dto.has_new_student_activity.map(|v| v != 0),
+            has_unseen_activity: dto.has_unseen_activity.map(|v| v != 0),
         })
         .collect();
 

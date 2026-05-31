@@ -1,11 +1,6 @@
-import { createContext, useContext, type ReactNode } from 'react';
+import { type ReactNode } from 'react';
 import type { Capabilities } from '@/lib/api';
-
-const DEFAULT_CAPABILITIES: Capabilities = {
-  videos: false,
-};
-
-const CapabilitiesContext = createContext<Capabilities>(DEFAULT_CAPABILITIES);
+import { CapabilitiesContext, DEFAULT_CAPABILITIES } from './capabilities-context';
 
 interface CapabilitiesProviderProps {
   value: Capabilities | null;
@@ -18,8 +13,4 @@ export function CapabilitiesProvider({ value, children }: CapabilitiesProviderPr
       {children}
     </CapabilitiesContext.Provider>
   );
-}
-
-export function useCapabilities(): Capabilities {
-  return useContext(CapabilitiesContext);
 }

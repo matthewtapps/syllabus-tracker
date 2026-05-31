@@ -233,7 +233,7 @@ mod tests {
 
         assert_eq!(response.status(), Status::Ok);
 
-        let updated_technique = get_student_technique(&test_db.pool, student_technique_id)
+        let updated_technique = get_student_technique(&test_db.pool, student_technique_id, 0)
             .await
             .expect("Failed to get student technique");
 
@@ -323,7 +323,7 @@ mod tests {
             .await;
         assert_eq!(response.status(), Status::Ok);
 
-        let updated = get_student_technique(&pool, student_technique_id)
+        let updated = get_student_technique(&pool, student_technique_id, 0)
             .await
             .expect("Failed to fetch updated technique");
 
@@ -357,6 +357,13 @@ mod tests {
             .expect("Failed to get student technique id");
         let student_id = test_db.user_id("student_user").expect("Student not found");
 
+        // Snapshot the coach timestamp set by the initial assignment so we can
+        // assert the student edit does not overwrite it.
+        let before = get_student_technique(&pool, student_technique_id, 0)
+            .await
+            .expect("Failed to fetch baseline");
+        let coach_stamp_before = before.last_coach_update_at;
+
         let cookies = login_test_user(&client, "student_user", "password123").await;
         let response = client
             .put(format!("/api/student_technique/{}", student_technique_id))
@@ -367,7 +374,7 @@ mod tests {
             .await;
         assert_eq!(response.status(), Status::Ok);
 
-        let updated = get_student_technique(&pool, student_technique_id)
+        let updated = get_student_technique(&pool, student_technique_id, 0)
             .await
             .expect("Failed to fetch updated technique");
 
@@ -376,14 +383,14 @@ mod tests {
             "last_student_update_at should be set after student update"
         );
         assert_eq!(updated.last_student_update_by_id, Some(student_id));
-        assert!(
-            updated.last_coach_update_at.is_none(),
-            "last_coach_update_at should remain unset after student-only update"
+        assert_eq!(
+            updated.last_coach_update_at, coach_stamp_before,
+            "student-only update should not touch last_coach_update_at"
         );
     }
 
     #[rocket::async_test]
-    async fn test_has_new_student_activity_flag() {
+    async fn test_has_unseen_activity_coach_view_after_student_edit() {
         let test_db = TestDbBuilder::new()
             .coach("coach_user", Some("Coach User"))
             .student("student_user", Some("Student User"))
@@ -435,13 +442,295 @@ mod tests {
             .expect("technique missing from response");
 
         assert!(
-            t.has_new_student_activity,
-            "expected has_new_student_activity=true when student edited after coach"
+            t.has_unseen_activity,
+            "expected has_unseen_activity=true when student edited and coach hasn't looked since"
         );
         assert!(t.last_coach_update_at.is_some());
         assert!(t.last_student_update_at.is_some());
         assert_eq!(t.last_coach_update_by_name.as_deref(), Some("Coach User"));
         assert_eq!(t.last_student_update_by_name.as_deref(), Some("Student User"));
+    }
+
+    /// Helper: fetch the techniques list as the given user and pull out the
+    /// flag for a specific student_technique id.
+    async fn fetch_unseen_flag(
+        client: &rocket::local::asynchronous::Client,
+        cookies: Vec<Cookie<'static>>,
+        student_id: i64,
+        student_technique_id: i64,
+    ) -> bool {
+        let response = client
+            .get(format!("/api/student/{}/techniques", student_id))
+            .cookies(cookies)
+            .dispatch()
+            .await;
+        assert_eq!(response.status(), Status::Ok);
+        let body = response.into_string().await.unwrap();
+        let data: StudentTechniquesResponse = serde_json::from_str(&body).unwrap();
+        data.techniques
+            .iter()
+            .find(|t| t.id == student_technique_id)
+            .expect("technique missing from response")
+            .has_unseen_activity
+    }
+
+    #[rocket::async_test]
+    async fn test_student_does_not_see_dot_for_own_edits() {
+        let test_db = TestDbBuilder::new()
+            .coach("coach_user", Some("Coach User"))
+            .student("student_user", Some("Student User"))
+            .technique("Armbar", "desc", Some("coach_user"))
+            .assign_technique(Some("Armbar"), Some("student_user"), "red", "", "")
+            .build()
+            .await
+            .expect("Failed to build test DB");
+
+        let (client, test_db) = setup_test_client(test_db).await;
+        let student_id = test_db.user_id("student_user").expect("Student not found");
+        let st_id = test_db
+            .student_technique_id("student_user", "Armbar")
+            .await
+            .expect("Failed to get id");
+
+        // Clear the assignment-time coach activity by marking it seen as the
+        // student, then verify a student-only edit does not re-light the dot.
+        let student_cookies = login_test_user(&client, "student_user", "password123").await;
+        client
+            .post(format!("/api/student_technique/{}/mark_seen", st_id))
+            .cookies(student_cookies.clone())
+            .dispatch()
+            .await;
+
+        client
+            .put(format!("/api/student_technique/{}", st_id))
+            .cookies(student_cookies.clone())
+            .header(ContentType::JSON)
+            .body(json!({ "student_notes": "my own note" }).to_string())
+            .dispatch()
+            .await;
+
+        let flag =
+            fetch_unseen_flag(&client, student_cookies, student_id, st_id).await;
+        assert!(!flag, "student should not see a dot for their own edit");
+    }
+
+    #[rocket::async_test]
+    async fn test_student_sees_dot_for_coach_edit_cleared_by_mark_seen() {
+        let test_db = TestDbBuilder::new()
+            .coach("coach_user", Some("Coach User"))
+            .student("student_user", Some("Student User"))
+            .technique("Armbar", "desc", Some("coach_user"))
+            .assign_technique(Some("Armbar"), Some("student_user"), "red", "", "")
+            .build()
+            .await
+            .expect("Failed to build test DB");
+
+        let (client, test_db) = setup_test_client(test_db).await;
+        let student_id = test_db.user_id("student_user").expect("Student not found");
+        let st_id = test_db
+            .student_technique_id("student_user", "Armbar")
+            .await
+            .expect("Failed to get id");
+
+        // Student starts fresh, marks the assignment as seen.
+        let student_cookies = login_test_user(&client, "student_user", "password123").await;
+        client
+            .post(format!("/api/student_technique/{}/mark_seen", st_id))
+            .cookies(student_cookies.clone())
+            .dispatch()
+            .await;
+        assert!(
+            !fetch_unseen_flag(&client, student_cookies.clone(), student_id, st_id).await,
+            "no dot after student marked seen"
+        );
+
+        // Coach edits → student should now see a dot.
+        let coach_cookies = login_test_user(&client, "coach_user", "password123").await;
+        // Sleep so the new coach timestamp is strictly later than seen_at.
+        tokio::time::sleep(std::time::Duration::from_millis(1100)).await;
+        client
+            .put(format!("/api/student_technique/{}", st_id))
+            .cookies(coach_cookies.clone())
+            .header(ContentType::JSON)
+            .body(json!({ "coach_notes": "try this grip" }).to_string())
+            .dispatch()
+            .await;
+
+        assert!(
+            fetch_unseen_flag(&client, student_cookies.clone(), student_id, st_id).await,
+            "student should see a dot after coach edit"
+        );
+
+        // Student opens the row (mark_seen) → dot clears.
+        client
+            .post(format!("/api/student_technique/{}/mark_seen", st_id))
+            .cookies(student_cookies.clone())
+            .dispatch()
+            .await;
+        assert!(
+            !fetch_unseen_flag(&client, student_cookies, student_id, st_id).await,
+            "student's dot should clear after mark_seen"
+        );
+    }
+
+    #[rocket::async_test]
+    async fn test_coach_sees_dot_for_student_edit_cleared_by_mark_seen() {
+        let test_db = TestDbBuilder::new()
+            .coach("coach_user", Some("Coach User"))
+            .student("student_user", Some("Student User"))
+            .technique("Armbar", "desc", Some("coach_user"))
+            .assign_technique(Some("Armbar"), Some("student_user"), "red", "", "")
+            .build()
+            .await
+            .expect("Failed to build test DB");
+
+        let (client, test_db) = setup_test_client(test_db).await;
+        let student_id = test_db.user_id("student_user").expect("Student not found");
+        let st_id = test_db
+            .student_technique_id("student_user", "Armbar")
+            .await
+            .expect("Failed to get id");
+
+        // No coach has ever looked, no student edit yet → no dot for the coach.
+        let coach_cookies = login_test_user(&client, "coach_user", "password123").await;
+        assert!(
+            !fetch_unseen_flag(&client, coach_cookies.clone(), student_id, st_id).await,
+            "no dot for coach before any student activity"
+        );
+
+        // Student edits.
+        let student_cookies = login_test_user(&client, "student_user", "password123").await;
+        client
+            .put(format!("/api/student_technique/{}", st_id))
+            .cookies(student_cookies)
+            .header(ContentType::JSON)
+            .body(json!({ "student_notes": "progress!" }).to_string())
+            .dispatch()
+            .await;
+
+        assert!(
+            fetch_unseen_flag(&client, coach_cookies.clone(), student_id, st_id).await,
+            "coach should see a dot after student edit"
+        );
+
+        // Coach marks seen → dot clears.
+        client
+            .post(format!("/api/student_technique/{}/mark_seen", st_id))
+            .cookies(coach_cookies.clone())
+            .dispatch()
+            .await;
+        assert!(
+            !fetch_unseen_flag(&client, coach_cookies, student_id, st_id).await,
+            "coach's dot should clear after mark_seen"
+        );
+    }
+
+    #[rocket::async_test]
+    async fn test_mark_seen_is_per_coach() {
+        let test_db = TestDbBuilder::new()
+            .coach("coach_a", Some("Coach A"))
+            .coach("coach_b", Some("Coach B"))
+            .student("student_user", Some("Student User"))
+            .technique("Armbar", "desc", Some("coach_a"))
+            .assign_technique(Some("Armbar"), Some("student_user"), "red", "", "")
+            .build()
+            .await
+            .expect("Failed to build test DB");
+
+        let (client, test_db) = setup_test_client(test_db).await;
+        let student_id = test_db.user_id("student_user").expect("Student not found");
+        let st_id = test_db
+            .student_technique_id("student_user", "Armbar")
+            .await
+            .expect("Failed to get id");
+
+        // Student creates new activity.
+        let student_cookies = login_test_user(&client, "student_user", "password123").await;
+        client
+            .put(format!("/api/student_technique/{}", st_id))
+            .cookies(student_cookies)
+            .header(ContentType::JSON)
+            .body(json!({ "student_notes": "progress!" }).to_string())
+            .dispatch()
+            .await;
+
+        let coach_a_cookies = login_test_user(&client, "coach_a", "password123").await;
+        let coach_b_cookies = login_test_user(&client, "coach_b", "password123").await;
+
+        // Both coaches see the dot.
+        assert!(fetch_unseen_flag(&client, coach_a_cookies.clone(), student_id, st_id).await);
+        assert!(fetch_unseen_flag(&client, coach_b_cookies.clone(), student_id, st_id).await);
+
+        // Coach A marks seen.
+        client
+            .post(format!("/api/student_technique/{}/mark_seen", st_id))
+            .cookies(coach_a_cookies.clone())
+            .dispatch()
+            .await;
+
+        // Coach A's dot is cleared; coach B still sees one.
+        assert!(
+            !fetch_unseen_flag(&client, coach_a_cookies, student_id, st_id).await,
+            "coach A should no longer see the dot"
+        );
+        assert!(
+            fetch_unseen_flag(&client, coach_b_cookies, student_id, st_id).await,
+            "coach B should still see the dot"
+        );
+    }
+
+    #[rocket::async_test]
+    async fn test_brand_new_assignment_dots_for_student() {
+        let test_db = TestDbBuilder::new()
+            .coach("coach_user", Some("Coach User"))
+            .student("student_user", Some("Student User"))
+            .technique("Armbar", "desc", Some("coach_user"))
+            .assign_technique(Some("Armbar"), Some("student_user"), "red", "", "")
+            .build()
+            .await
+            .expect("Failed to build test DB");
+
+        let (client, test_db) = setup_test_client(test_db).await;
+        let student_id = test_db.user_id("student_user").expect("Student not found");
+        let st_id = test_db
+            .student_technique_id("student_user", "Armbar")
+            .await
+            .expect("Failed to get id");
+
+        // Fresh student has never opened the row → assignment-time coach
+        // activity surfaces as a dot.
+        let student_cookies = login_test_user(&client, "student_user", "password123").await;
+        assert!(
+            fetch_unseen_flag(&client, student_cookies, student_id, st_id).await,
+            "student should see a dot on a brand-new assignment"
+        );
+    }
+
+    #[rocket::async_test]
+    async fn test_mark_seen_permission_denied_for_other_student() {
+        let test_db = TestDbBuilder::new()
+            .coach("coach_user", Some("Coach User"))
+            .student("student_user", Some("Student User"))
+            .student("other_student", Some("Other Student"))
+            .technique("Armbar", "desc", Some("coach_user"))
+            .assign_technique(Some("Armbar"), Some("student_user"), "red", "", "")
+            .build()
+            .await
+            .expect("Failed to build test DB");
+
+        let (client, test_db) = setup_test_client(test_db).await;
+        let st_id = test_db
+            .student_technique_id("student_user", "Armbar")
+            .await
+            .expect("Failed to get id");
+
+        let other_cookies = login_test_user(&client, "other_student", "password123").await;
+        let response = client
+            .post(format!("/api/student_technique/{}/mark_seen", st_id))
+            .cookies(other_cookies)
+            .dispatch()
+            .await;
+        assert_eq!(response.status(), Status::Forbidden);
     }
 
     #[rocket::async_test]

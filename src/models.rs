@@ -56,6 +56,10 @@ pub struct StudentTechnique {
     pub tags: Vec<Tag>,
     pub attempt_count: i64,
     pub last_attempt_at: Option<DateTime<Utc>>,
+    /// When the viewer (whoever the request was made for) last opened this
+    /// row. `None` means they have never opened it. Drives `has_unseen_activity`
+    /// in the API response.
+    pub viewer_seen_at: Option<DateTime<Utc>>,
 }
 
 #[derive(sqlx::FromRow, Clone, Default)]
@@ -105,6 +109,7 @@ impl From<DbStudentTechnique> for StudentTechnique {
             tags: Vec::new(),
             attempt_count: 0,
             last_attempt_at: None,
+            viewer_seen_at: None,
         }
     }
 }

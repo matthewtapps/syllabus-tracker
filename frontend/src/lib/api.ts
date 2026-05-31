@@ -29,7 +29,7 @@ export async function login(
     });
 
     return await response.json();
-  } catch (error) {
+  } catch {
     return {
       success: false,
       error: "Network error. Please try again.",
@@ -48,7 +48,7 @@ export async function logout(): Promise<void | null> {
     });
 
     return await response.json();
-  } catch (error) {
+  } catch {
     return null;
   }
 }
@@ -72,7 +72,7 @@ export interface User {
   red_count?: number | null;
   amber_count?: number | null;
   green_count?: number | null;
-  has_new_student_activity?: boolean | null;
+  has_unseen_activity?: boolean | null;
 }
 
 export async function getCurrentUser(): Promise<User | null> {
@@ -86,7 +86,7 @@ export async function getCurrentUser(): Promise<User | null> {
     }
 
     return await response.json();
-  } catch (error) {
+  } catch {
     return null;
   }
 }
@@ -104,7 +104,7 @@ export async function getCapabilities(): Promise<Capabilities | null> {
       return null;
     }
     return await response.json();
-  } catch (error) {
+  } catch {
     return null;
   }
 }
@@ -112,7 +112,7 @@ export async function getCapabilities(): Promise<Capabilities | null> {
 // Get unassigned techniques for a student
 export async function getTechniquesForAssignment(
   studentId: number,
-): Promise<any[]> {
+): Promise<AssignableTechnique[]> {
   const response = await fetch(
     `/api/student/${studentId}/unassigned_techniques`,
     {
@@ -177,7 +177,7 @@ export interface Technique {
   last_coach_update_by_name: string | null;
   last_student_update_at: string | null;
   last_student_update_by_name: string | null;
-  has_new_student_activity: boolean;
+  has_unseen_activity: boolean;
   collection_id: number | null;
   collection_name: string | null;
   tags: Tag[];
@@ -191,6 +191,12 @@ export interface LibraryTechnique {
   description: string;
   coach_id: number;
   coach_name: string;
+}
+
+/// Shape returned by `/api/student/<id>/unassigned_techniques`. Includes the
+/// library tags so assignment dialogs can show them as chips.
+export interface AssignableTechnique extends LibraryTechnique {
+  tags: Tag[];
 }
 
 export interface Collection {
@@ -572,20 +578,14 @@ export async function getAllUsers(): Promise<User[]> {
   return await response.json();
 }
 
-export interface SeenResponse {
-  previous_last_seen_at: string | null;
-}
-
-export async function markDashboardSeen(): Promise<SeenResponse | null> {
+export async function markStudentTechniqueSeen(id: number): Promise<void> {
   try {
-    const response = await fetch("/api/me/seen", {
+    await fetch(`/api/student_technique/${id}/mark_seen`, {
       method: "POST",
       credentials: "include",
     });
-    if (!response.ok) return null;
-    return await response.json();
-  } catch {
-    return null;
+  } catch (err) {
+    console.error("Failed to mark technique seen", err);
   }
 }
 

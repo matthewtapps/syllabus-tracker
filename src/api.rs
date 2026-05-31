@@ -26,7 +26,7 @@ use crate::db::{
     get_all_users, get_collection, get_student_technique, get_student_techniques,
     get_students_by_recent_updates, get_students_with_collection, get_tags_for_technique,
     get_unassigned_techniques, get_user, invalidate_session, list_attempts,
-    list_recent_attempts_for_student, read_and_bump_last_seen, remove_tag_from_technique,
+    list_recent_attempts_for_student, mark_student_technique_seen, remove_tag_from_technique,
     remove_technique_from_collection, request_password_reset, reset_user_claim, set_user_archived,
     set_user_graduated, update_attempt_note, update_attempt_timestamp, update_collection,
     update_student_notes, update_student_technique, update_technique, update_user_display_name,
@@ -131,7 +131,7 @@ pub struct UserData {
     pub red_count: Option<i64>,
     pub amber_count: Option<i64>,
     pub green_count: Option<i64>,
-    pub has_new_student_activity: Option<bool>,
+    pub has_unseen_activity: Option<bool>,
 }
 
 impl From<User> for UserData {
@@ -155,7 +155,7 @@ impl From<User> for UserData {
             red_count: user.red_count,
             amber_count: user.amber_count,
             green_count: user.green_count,
-            has_new_student_activity: user.has_new_student_activity,
+            has_unseen_activity: user.has_unseen_activity,
         }
     }
 }
@@ -255,6 +255,29 @@ pub async fn api_login(
     }
 }
 
+/// Viewer-relative "the other party has done something since I last looked"
+/// flag. If `viewer_is_owner` is true the viewer is the owning student and we
+/// look at coach activity; otherwise the viewer is a coach/admin and we look
+/// at student activity. A null `viewer_seen_at` means the viewer has never
+/// opened this row, so any activity counts.
+pub fn compute_has_unseen_activity(
+    viewer_is_owner: bool,
+    last_coach_update_at: Option<chrono::DateTime<chrono::Utc>>,
+    last_student_update_at: Option<chrono::DateTime<chrono::Utc>>,
+    viewer_seen_at: Option<chrono::DateTime<chrono::Utc>>,
+) -> bool {
+    let other_party_update = if viewer_is_owner {
+        last_coach_update_at
+    } else {
+        last_student_update_at
+    };
+    match (other_party_update, viewer_seen_at) {
+        (Some(_), None) => true,
+        (Some(update), Some(seen)) => update > seen,
+        _ => false,
+    }
+}
+
 #[derive(Serialize, Deserialize)]
 pub struct TechniqueResponse {
     pub id: i64,
@@ -270,7 +293,7 @@ pub struct TechniqueResponse {
     pub last_coach_update_by_name: Option<String>,
     pub last_student_update_at: Option<String>,
     pub last_student_update_by_name: Option<String>,
-    pub has_new_student_activity: bool,
+    pub has_unseen_activity: bool,
     pub tags: Vec<TagResponse>,
     pub attempt_count: i64,
     pub last_attempt_at: Option<String>,
@@ -307,17 +330,18 @@ pub async fn api_get_student_techniques(
 
     let student = get_user(db, id).await?;
 
-    let techniques = get_student_techniques(db, id).await?;
+    let techniques = get_student_techniques(db, id, user.id).await?;
 
+    let viewer_is_owner = user.id == id;
     let technique_responses: Vec<TechniqueResponse> = techniques
         .into_iter()
         .map(|t| {
-            let has_new_student_activity = match (t.last_student_update_at, t.last_coach_update_at)
-            {
-                (Some(student), Some(coach)) => student > coach,
-                (Some(_), None) => true,
-                _ => false,
-            };
+            let has_unseen_activity = compute_has_unseen_activity(
+                viewer_is_owner,
+                t.last_coach_update_at,
+                t.last_student_update_at,
+                t.viewer_seen_at,
+            );
             TechniqueResponse {
                 id: t.id,
                 technique_id: t.technique_id,
@@ -332,7 +356,7 @@ pub async fn api_get_student_techniques(
                 last_coach_update_by_name: t.last_coach_update_by_name,
                 last_student_update_at: t.last_student_update_at.map(|d| d.to_rfc3339()),
                 last_student_update_by_name: t.last_student_update_by_name,
-                has_new_student_activity,
+                has_unseen_activity,
                 tags: t.tags.into_iter().map(TagResponse::from).collect(),
                 attempt_count: t.attempt_count,
                 last_attempt_at: t.last_attempt_at.map(|d| d.to_rfc3339()),
@@ -379,7 +403,7 @@ pub async fn api_update_student_technique(
 ) -> ApiResult<Status> {
     technique.validate()?;
 
-    let student_technique = get_student_technique(db, id).await?;
+    let student_technique = get_student_technique(db, id, user.id).await?;
 
     let is_own_technique = user.id == student_technique.student_id;
     let can_edit_all = user.has_permission(Permission::EditAllTechniques);
@@ -451,7 +475,7 @@ pub async fn api_get_students(
     // Always use the aggregating query so the response carries per-student
     // counts and activity flags. Sort order is handled client-side.
     let _ = params.sort_by;
-    let students = get_students_by_recent_updates(db, include_archived).await?;
+    let students = get_students_by_recent_updates(db, include_archived, user.id).await?;
 
     let student_responses: Vec<UserData> = students.into_iter().map(UserData::from).collect();
 
@@ -494,6 +518,7 @@ pub async fn api_assign_techniques(
         student_id,
         request.technique_ids.clone(),
         request.collection_id,
+        user.id,
     )
     .await?;
 
@@ -747,22 +772,20 @@ pub async fn api_update_user(
     Ok(Status::Ok)
 }
 
-#[derive(Serialize, Deserialize)]
-pub struct SeenResponse {
-    pub previous_last_seen_at: Option<String>,
-}
-
-/// Bump the current user's `last_seen_at` to NOW and return the previous value.
-/// The dashboard calls this on mount to compute "new from coach since last visit".
-#[post("/me/seen")]
-pub async fn api_bump_last_seen(
+/// Mark a student_technique row as seen by the current viewer, clearing the
+/// "unseen activity" dot for them. Used by the row-expand interaction.
+#[post("/student_technique/<id>/mark_seen")]
+pub async fn api_mark_student_technique_seen(
+    id: i64,
     user: User,
     db: &State<Pool<Sqlite>>,
-) -> ApiResult<Json<SeenResponse>> {
-    let previous = read_and_bump_last_seen(db, user.id).await?;
-    Ok(Json(SeenResponse {
-        previous_last_seen_at: previous,
-    }))
+) -> ApiResult<Status> {
+    let st = get_student_technique(db, id, user.id).await?;
+    if user.id != st.student_id && !user.has_permission(Permission::ViewAllStudents) {
+        return Err(Status::Forbidden.into());
+    }
+    mark_student_technique_seen(db, id, user.id).await?;
+    Ok(Status::NoContent)
 }
 
 #[derive(Deserialize, Clone)]
@@ -1352,7 +1375,7 @@ pub async fn api_assign_collection(
     db: &State<Pool<Sqlite>>,
 ) -> ApiResult<Status> {
     user.require_permission(Permission::AssignTechniques)?;
-    assign_collection_to_student(db, student_id, collection_id).await?;
+    assign_collection_to_student(db, student_id, collection_id, user.id).await?;
     Ok(Status::Ok)
 }
 
@@ -1435,17 +1458,18 @@ pub async fn api_get_single_student_technique(
     user: User,
     db: &State<Pool<Sqlite>>,
 ) -> ApiResult<Json<SingleStudentTechniqueResponse>> {
-    let st = get_student_technique(db, id).await?;
+    let st = get_student_technique(db, id, user.id).await?;
     if user.id != st.student_id && !user.has_permission(Permission::ViewAllStudents) {
         return Err(Status::Forbidden.into());
     }
     let student = get_user(db, st.student_id).await?;
 
-    let has_new_student_activity = match (st.last_student_update_at, st.last_coach_update_at) {
-        (Some(student), Some(coach)) => student > coach,
-        (Some(_), None) => true,
-        _ => false,
-    };
+    let has_unseen_activity = compute_has_unseen_activity(
+        user.id == st.student_id,
+        st.last_coach_update_at,
+        st.last_student_update_at,
+        st.viewer_seen_at,
+    );
 
     let technique_response = TechniqueResponse {
         id: st.id,
@@ -1461,7 +1485,7 @@ pub async fn api_get_single_student_technique(
         last_coach_update_by_name: st.last_coach_update_by_name,
         last_student_update_at: st.last_student_update_at.map(|d| d.to_rfc3339()),
         last_student_update_by_name: st.last_student_update_by_name,
-        has_new_student_activity,
+        has_unseen_activity,
         tags: st.tags.into_iter().map(TagResponse::from).collect(),
         attempt_count: st.attempt_count,
         last_attempt_at: st.last_attempt_at.map(|d| d.to_rfc3339()),
@@ -1487,7 +1511,7 @@ pub async fn api_list_attempts(
     user: User,
     db: &State<Pool<Sqlite>>,
 ) -> ApiResult<Json<AttemptListResponse>> {
-    let st = get_student_technique(db, id).await?;
+    let st = get_student_technique(db, id, user.id).await?;
     if user.id != st.student_id && !user.has_permission(Permission::ViewAllStudents) {
         return Err(Status::Forbidden.into());
     }
@@ -1694,7 +1718,7 @@ pub async fn api_attempt_sparkline(
     user: User,
     db: &State<Pool<Sqlite>>,
 ) -> ApiResult<Json<AttemptBucketsResponse>> {
-    let st = get_student_technique(db, id).await?;
+    let st = get_student_technique(db, id, user.id).await?;
     if user.id != st.student_id && !user.has_permission(Permission::ViewAllStudents) {
         return Err(Status::Forbidden.into());
     }

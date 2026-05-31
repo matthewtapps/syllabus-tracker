@@ -20,14 +20,15 @@ use api::api_get_all_users;
 use api::{
     api_add_tag_to_technique, api_add_techniques_to_collection, api_approve_user,
     api_assign_collection, api_assign_techniques, api_attempt_heatmap, api_attempt_sparkline,
-    api_attempt_summary, api_bump_last_seen, api_change_password, api_claim_invite,
+    api_attempt_summary, api_change_password, api_claim_invite,
     api_create_and_assign_technique, api_create_attempt, api_create_collection, api_create_tag,
     api_create_technique_in_collection, api_delete_attempt, api_delete_collection, api_delete_tag,
     api_get_all_tags, api_get_collection, api_get_collection_students, api_get_collections,
     api_get_invite, api_get_single_student_technique, api_get_student_techniques,
     api_get_students, api_get_technique_tags,
     api_get_unassigned_techniques, api_invite_user, api_library_stats, api_list_attempts,
-    api_login, api_logout, api_me, api_me_unauthorized, api_recent_attempts, api_register_user,
+    api_login, api_logout, api_mark_student_technique_seen, api_me, api_me_unauthorized,
+    api_recent_attempts, api_register_user,
     api_remove_tag_from_technique, api_remove_technique_from_collection,
     api_request_password_reset, api_reset_user_claim, api_self_register,
     api_set_student_graduated, api_update_attempt, api_update_collection,
@@ -189,6 +190,11 @@ async fn rocket() -> _ {
         }
     }
 
+    if let Err(e) = db::backfill_student_technique_views(&pool).await {
+        error!("Failed to backfill student_technique_views: {:?}", e);
+        panic!("Backfill failed: {:?}", e);
+    }
+
     // DRY_RUN_MIGRATE=true: succeed-and-exit after the migration runs. Used by
     // the deploy pipeline to verify the new schema can be applied against a copy
     // of the production database before swapping containers. The migration panics
@@ -268,7 +274,7 @@ pub async fn init_rocket(
                 api_get_all_users,
                 api_library_stats,
                 api_set_student_graduated,
-                api_bump_last_seen,
+                api_mark_student_technique_seen,
                 api_invite_user,
                 api_get_invite,
                 api_claim_invite,

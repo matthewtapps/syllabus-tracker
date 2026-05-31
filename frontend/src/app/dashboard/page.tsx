@@ -26,7 +26,6 @@ import {
   getRecentAttemptsForStudent,
   getStudentTechniques,
   getStudents,
-  markDashboardSeen,
   resetUserClaim,
   type InviteResponse,
   type RecentAttemptItem,
@@ -54,7 +53,7 @@ import {
 import { StatusDonut } from '@/components/status-donut';
 import type { Status } from '@/lib/status';
 import { VideoOverviewCard } from '@/components/videos/video-overview-card';
-import { useCapabilities } from '@/context/capabilities';
+import { useCapabilities } from '@/context/capabilities-context';
 import { DashboardTotals } from './components/dashboard-totals';
 import { StudentSection } from './components/student-section';
 
@@ -139,7 +138,7 @@ function CoachDashboard() {
     statusCounts.red + statusCounts.amber + statusCounts.green;
 
   const needsAttention = useMemo(
-    () => activeStudents.filter((s) => s.has_new_student_activity),
+    () => activeStudents.filter((s) => s.has_unseen_activity),
     [activeStudents],
   );
 
@@ -432,7 +431,6 @@ function CoachDashboard() {
 
 function StudentDashboard({ user }: { user: User }) {
   const [techniques, setTechniques] = useState<Technique[] | null>(null);
-  const [previousSeenAt, setPreviousSeenAt] = useState<string | null>(null);
   const [recentAttempts, setRecentAttempts] = useState<RecentAttemptItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -442,14 +440,12 @@ function StudentDashboard({ user }: { user: User }) {
     async function load() {
       try {
         setLoading(true);
-        const [techResult, seenResult, recentResult] = await Promise.all([
+        const [techResult, recentResult] = await Promise.all([
           getStudentTechniques(user.id),
-          markDashboardSeen(),
           getRecentAttemptsForStudent(user.id, 5).catch(() => []),
         ]);
         if (cancelled) return;
         setTechniques(techResult.techniques);
-        setPreviousSeenAt(seenResult?.previous_last_seen_at ?? null);
         setRecentAttempts(recentResult);
         setError(null);
       } catch (err) {
@@ -493,19 +489,15 @@ function StudentDashboard({ user }: { user: User }) {
   }, [techniques]);
 
   const newFromCoach = useMemo(() => {
-    if (!previousSeenAt) return [];
     return (techniques ?? [])
-      .filter((t) => {
-        if (!t.last_coach_update_at) return false;
-        return t.last_coach_update_at > previousSeenAt;
-      })
+      .filter((t) => t.has_unseen_activity)
       .sort(
         (a, b) =>
           Date.parse(b.last_coach_update_at ?? '0') -
           Date.parse(a.last_coach_update_at ?? '0'),
       )
       .slice(0, 5);
-  }, [techniques, previousSeenAt]);
+  }, [techniques]);
 
   return (
     <div className="container mx-auto px-4 py-6 sm:px-6 md:py-8">

@@ -199,6 +199,13 @@ pub mod test_utils {
                 }
             }
 
+            let seed_coach_id = self
+                .users
+                .iter()
+                .find(|u| matches!(u.role, Role::Coach | Role::Admin))
+                .and_then(|u| user_id_map.get(&u.username).copied())
+                .unwrap_or(0);
+
             for st in &self.student_techniques {
                 let student_id = match &st.student_username {
                     Some(username) => user_id_map.get(username).copied(),
@@ -221,18 +228,14 @@ pub mod test_utils {
                 };
 
                 if let (Some(s_id), Some(t_id)) = (student_id, technique_id) {
-                    let assignment_id = assign_technique_to_student(&pool, t_id, s_id, None).await?;
+                    let assignment_id =
+                        assign_technique_to_student(&pool, t_id, s_id, None, seed_coach_id)
+                            .await?;
 
                     if st.status != "red"
                         || !st.student_notes.is_empty()
                         || !st.coach_notes.is_empty()
                     {
-                        let seed_coach_id = self
-                            .users
-                            .iter()
-                            .find(|u| matches!(u.role, Role::Coach | Role::Admin))
-                            .and_then(|u| user_id_map.get(&u.username).copied())
-                            .unwrap_or(0);
                         let seed_actor = User {
                             id: seed_coach_id,
                             username: "test_seed".to_string(),
@@ -252,7 +255,7 @@ pub mod test_utils {
                             red_count: None,
                             amber_count: None,
                             green_count: None,
-                            has_new_student_activity: None,
+                            has_unseen_activity: None,
                         };
                         update_student_technique(
                             &pool,
@@ -361,7 +364,9 @@ pub mod test_utils {
 
         #[allow(dead_code)]
         pub async fn get_student_technique(&self, id: i64) -> Result<StudentTechnique, AppError> {
-            get_student_technique(&self.pool, id).await
+            // Test callers that don't care about the viewer-relative
+            // `viewer_seen_at` field; pass 0 so the LEFT JOIN never matches.
+            get_student_technique(&self.pool, id, 0).await
         }
     }
 

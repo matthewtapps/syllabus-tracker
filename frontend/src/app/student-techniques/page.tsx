@@ -228,7 +228,7 @@ export default function StudentTechniques({ user }: StudentTechniquesProps) {
       if (!matchesCollection(t)) continue;
       base.all += 1;
       base[t.status as Status] += 1;
-      if (t.has_new_student_activity) base.new_activity += 1;
+      if (t.has_unseen_activity) base.new_activity += 1;
     }
     return base;
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -239,7 +239,7 @@ export default function StudentTechniques({ user }: StudentTechniquesProps) {
     const needle = filterText.trim().toLowerCase();
     return data.techniques.filter((t) => {
       if (!matchesCollection(t)) return false;
-      if (activeTab === 'new_activity' && !t.has_new_student_activity) return false;
+      if (activeTab === 'new_activity' && !t.has_unseen_activity) return false;
       if (activeTab !== 'all' && activeTab !== 'new_activity' && t.status !== activeTab)
         return false;
       if (

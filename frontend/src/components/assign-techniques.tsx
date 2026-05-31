@@ -19,6 +19,7 @@ import {
   createAndAssignTechnique,
   getCollections,
   getTechniquesForAssignment,
+  type AssignableTechnique,
   type Collection,
 } from '@/lib/api';
 import { useFormWithValidation } from './hooks/useFormErrors';
@@ -54,7 +55,9 @@ export default function AssignTechniques({
   defaultCollectionId,
   onAssignComplete,
 }: AssignTechniquesProps) {
-  const [unassignedTechniques, setUnassignedTechniques] = useState<any[]>([]);
+  const [unassignedTechniques, setUnassignedTechniques] = useState<
+    AssignableTechnique[]
+  >([]);
   const [collections, setCollections] = useState<Collection[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -89,10 +92,8 @@ export default function AssignTechniques({
         setUnassignedTechniques(techniques);
         setCollections(cols);
         const uniqueTags = new Set<string>();
-        techniques.forEach((technique: any) => {
-          if (technique.tags) {
-            technique.tags.forEach((tag: any) => uniqueTags.add(tag.name));
-          }
+        techniques.forEach((technique) => {
+          technique.tags.forEach((tag) => uniqueTags.add(tag.name));
         });
         setAvailableTags(Array.from(uniqueTags).sort());
         setError(null);
@@ -119,14 +120,10 @@ export default function AssignTechniques({
         !needle ||
         technique.name.toLowerCase().includes(needle) ||
         technique.description.toLowerCase().includes(needle) ||
-        (technique.tags &&
-          technique.tags.some((tag: any) => tag.name.toLowerCase().includes(needle)));
+        technique.tags.some((tag) => tag.name.toLowerCase().includes(needle));
       const matchesTags =
         tagFilter.length === 0 ||
-        tagFilter.every(
-          (tag) =>
-            technique.tags && technique.tags.some((t: any) => t.name === tag),
-        );
+        tagFilter.every((tag) => technique.tags.some((t) => t.name === tag));
       return matchesText && matchesTags;
     });
   }, [unassignedTechniques, filterText, tagFilter]);
@@ -343,9 +340,9 @@ export default function AssignTechniques({
                     />
                     <div className="min-w-0 flex-1">
                       <span className="text-sm font-medium">{technique.name}</span>
-                      {technique.tags && technique.tags.length > 0 && (
+                      {technique.tags.length > 0 && (
                         <div className="mt-1 flex flex-wrap gap-1">
-                          {technique.tags.map((tag: any) => (
+                          {technique.tags.map((tag) => (
                             <Badge
                               key={tag.id}
                               variant="outline"

@@ -94,7 +94,7 @@ export function TracedForm({
       if (error instanceof Response) {
         try {
           errorData = await error.json();
-        } catch (e) {
+        } catch {
           // Not JSON
         }
       } else if (error && typeof error === 'object' && 'response' in error) {
@@ -102,7 +102,7 @@ export function TracedForm({
         if (errorResponse instanceof Response) {
           try {
             errorData = await errorResponse.json();
-          } catch (e) {
+          } catch {
             // Not JSON
           }
         }

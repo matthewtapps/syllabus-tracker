@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT seen_at as \"seen_at?: NaiveDateTime\"\n           FROM student_technique_views\n           WHERE student_technique_id = ? AND user_id = ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "seen_at?: NaiveDateTime",
+        "ordinal": 0,
+        "type_info": "Datetime"
+      }
+    ],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "eb2f3196e23735c45c4e9ff3f14ca9d27335737e76b142c76afa6b0940c00101"
+}
