@@ -59,13 +59,17 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_nonexistent_session() {
+        // get_schema_string() reads SCHEMA_PATH; under nextest each test runs
+        // in its own process so we can't rely on TestDbBuilder having loaded it.
+        crate::env::load_test_environment().expect("load test env");
+
         let pool = SqlitePool::connect("sqlite::memory:")
             .await
             .expect("Failed to create in-memory database");
 
         let schema = get_schema_string();
 
-        let _ = migrate_database_declaratively(pool.clone(), &schema).await;
+        let _ = migrate_database_declaratively(pool.clone(), &schema, false).await;
 
         let result = get_session_by_token(&pool, "nonexistent_token").await;
 

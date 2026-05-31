@@ -56,6 +56,3 @@ aws-sdk-s3 = { version = "1.78.0", default-features = false, features = ["rt-tok
 aws-credential-types = "1.2.1"
 async-trait = "0.1.83"
 
-[dev-dependencies]
-temp-env = { version = "0.3.6", features = ["async_closure"] }
-serial_test = "3.2.0"

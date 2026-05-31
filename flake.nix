@@ -64,6 +64,7 @@
             openssl
             pkg-config
             lld
+            clang
 
             typescript-language-server
 
@@ -74,7 +75,14 @@
             just
             lefthook
             cargo-machete
+            cargo-nextest
+            cargo-watch
+            sccache
           ];
+
+          # Picked up by cargo for the native target. Docker builds don't see
+          # this env var, so the release-musl pipeline is unaffected.
+          RUSTC_WRAPPER = "sccache";
         };
 
         NIX_LD_LIBRARY_PATH = "${lib.makeLibraryPath buildInputs}";

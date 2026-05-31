@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "\n        SELECT\n            u.id,\n            u.username,\n            u.display_name,\n            u.role,\n            u.archived,\n            CAST(u.graduated_at AS TEXT) as \"graduated_at?: String\",\n            u.email,\n            CAST(u.claimed_at AS TEXT) as \"claimed_at?: String\",\n            CAST(u.approved_at AS TEXT) as \"approved_at?: String\",\n            u.first_name,\n            u.last_name,\n            CAST(u.reset_requested_at AS TEXT) as \"reset_requested_at?: String\",\n            MAX(st.updated_at) as last_update,\n            CAST(MAX(st.last_coach_update_at) AS TEXT) as \"last_coach_update_at?: String\",\n            COUNT(st.id) as total_techniques,\n            COALESCE(SUM(CASE WHEN st.status = 'red'   THEN 1 ELSE 0 END), 0) as red_count,\n            COALESCE(SUM(CASE WHEN st.status = 'amber' THEN 1 ELSE 0 END), 0) as amber_count,\n            COALESCE(SUM(CASE WHEN st.status = 'green' THEN 1 ELSE 0 END), 0) as green_count,\n            COALESCE(MAX(\n                CASE\n                    WHEN st.last_student_update_at IS NULL THEN 0\n                    WHEN stv.seen_at IS NULL THEN 1\n                    WHEN st.last_student_update_at > stv.seen_at THEN 1\n                    ELSE 0\n                END\n            ), 0) as has_unseen_activity\n        FROM users u\n        LEFT JOIN student_techniques st ON u.id = st.student_id\n        LEFT JOIN student_technique_views stv\n               ON stv.student_technique_id = st.id AND stv.user_id = ?\n        WHERE u.role = 'student'\n        GROUP BY u.id\n        ORDER BY last_update DESC NULLS LAST\n        ",
+  "query": "\n        SELECT\n            u.id,\n            u.username,\n            u.display_name,\n            u.role,\n            u.archived,\n            CAST(u.graduated_at AS TEXT) as \"graduated_at?: String\",\n            u.email,\n            CAST(u.claimed_at AS TEXT) as \"claimed_at?: String\",\n            CAST(u.approved_at AS TEXT) as \"approved_at?: String\",\n            u.first_name,\n            u.last_name,\n            CAST(u.reset_requested_at AS TEXT) as \"reset_requested_at?: String\",\n            MAX(st.updated_at) as last_update,\n            CAST(MAX(st.last_coach_update_at) AS TEXT) as \"last_coach_update_at?: String\",\n            COUNT(st.id) as total_techniques,\n            COALESCE(SUM(CASE WHEN st.status = 'red'   THEN 1 ELSE 0 END), 0) as red_count,\n            COALESCE(SUM(CASE WHEN st.status = 'amber' THEN 1 ELSE 0 END), 0) as amber_count,\n            COALESCE(SUM(CASE WHEN st.status = 'green' THEN 1 ELSE 0 END), 0) as green_count,\n            COALESCE(MAX(\n                CASE\n                    WHEN st.last_student_update_at IS NULL THEN 0\n                    WHEN stv.seen_at IS NULL THEN 1\n                    WHEN st.last_student_update_at > stv.seen_at THEN 1\n                    ELSE 0\n                END\n            ), 0) as has_unseen_activity,\n            MAX(st.last_student_update_at) as \"latest_student_note_at?: NaiveDateTime\",\n            (SELECT MAX(last_watched_at)\n               FROM video_watch_aggregates\n              WHERE user_id = u.id) as \"latest_watch_at?: NaiveDateTime\"\n        FROM users u\n        LEFT JOIN student_techniques st ON u.id = st.student_id\n        LEFT JOIN student_technique_views stv\n               ON stv.student_technique_id = st.id AND stv.user_id = ?\n        WHERE u.role = 'student'\n        GROUP BY u.id\n        ORDER BY last_update DESC NULLS LAST\n        ",
   "describe": {
     "columns": [
       {
@@ -31,7 +31,7 @@
       {
         "name": "graduated_at?: String",
         "ordinal": 5,
-        "type_info": "Text"
+        "type_info": "Null"
       },
       {
         "name": "email",
@@ -97,6 +97,16 @@
         "name": "has_unseen_activity",
         "ordinal": 18,
         "type_info": "Integer"
+      },
+      {
+        "name": "latest_student_note_at?: NaiveDateTime",
+        "ordinal": 19,
+        "type_info": "Text"
+      },
+      {
+        "name": "latest_watch_at?: NaiveDateTime",
+        "ordinal": 20,
+        "type_info": "Null"
       }
     ],
     "parameters": {
@@ -121,8 +131,10 @@
       null,
       null,
       null,
+      null,
+      null,
       null
     ]
   },
-  "hash": "b9c446d9b8c1472dba011e527d3759e6a56e0da5bead6da8d439bc71406164e1"
+  "hash": "eebc2910b2aa1b88a26b02f7dedc94a7b817e005c9c2b3dbf82b18c4e84460e9"
 }

@@ -132,6 +132,7 @@ pub struct UserData {
     pub amber_count: Option<i64>,
     pub green_count: Option<i64>,
     pub has_unseen_activity: Option<bool>,
+    pub last_student_initiative_at: Option<String>,
 }
 
 impl From<User> for UserData {
@@ -156,6 +157,7 @@ impl From<User> for UserData {
             amber_count: user.amber_count,
             green_count: user.green_count,
             has_unseen_activity: user.has_unseen_activity,
+            last_student_initiative_at: user.last_student_initiative_at.clone(),
         }
     }
 }

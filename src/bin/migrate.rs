@@ -111,12 +111,12 @@ async fn run() -> Result<()> {
         .await
         .map_err(|e| anyhow::anyhow!("Failed to analyze schema changes: {:?}", e))?;
 
-    if has_destructive_changes(&changes) {
-        let allow_destructive = std::env::var("ALLOW_DESTRUCTIVE_MIGRATIONS")
-            .unwrap_or_default()
-            .parse::<bool>()
-            .unwrap_or(false);
+    let allow_destructive = std::env::var("ALLOW_DESTRUCTIVE_MIGRATIONS")
+        .unwrap_or_default()
+        .parse::<bool>()
+        .unwrap_or(false);
 
+    if has_destructive_changes(&changes) {
         if !allow_destructive {
             print_destructive_changes(&changes);
             eprintln!("Set ALLOW_DESTRUCTIVE_MIGRATIONS=true to allow these changes.");
@@ -138,7 +138,7 @@ async fn run() -> Result<()> {
         Arc::new(TerminalReporter::new())
     };
 
-    migrate_database_declaratively_with_reporter(pool.clone(), &schema, reporter)
+    migrate_database_declaratively_with_reporter(pool.clone(), &schema, allow_destructive, reporter)
         .await
         .map_err(|e| anyhow::anyhow!("Migration failed: {:?}", e))?;
 

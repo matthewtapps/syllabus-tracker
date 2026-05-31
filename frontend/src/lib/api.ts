@@ -73,6 +73,7 @@ export interface User {
   amber_count?: number | null;
   green_count?: number | null;
   has_unseen_activity?: boolean | null;
+  last_student_initiative_at?: string | null;
 }
 
 export async function getCurrentUser(): Promise<User | null> {

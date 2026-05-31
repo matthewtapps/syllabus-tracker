@@ -699,6 +699,7 @@ pub async fn authenticate_user(
                     amber_count: None,
                     green_count: None,
                     has_unseen_activity: None,
+                    last_student_initiative_at: None,
                 }))
             } else {
                 Ok(None) // Password doesn't match
@@ -1601,6 +1602,8 @@ pub struct UserWithActivityDto {
     pub amber_count: Option<i64>,
     pub green_count: Option<i64>,
     pub has_unseen_activity: Option<i64>,
+    pub latest_student_note_at: Option<NaiveDateTime>,
+    pub latest_watch_at: Option<NaiveDateTime>,
 }
 
 #[instrument(skip(pool))]
@@ -1642,7 +1645,11 @@ pub async fn get_students_by_recent_updates(
                     WHEN st.last_student_update_at > stv.seen_at THEN 1
                     ELSE 0
                 END
-            ), 0) as has_unseen_activity
+            ), 0) as has_unseen_activity,
+            MAX(st.last_student_update_at) as "latest_student_note_at?: NaiveDateTime",
+            (SELECT MAX(last_watched_at)
+               FROM video_watch_aggregates
+              WHERE user_id = u.id) as "latest_watch_at?: NaiveDateTime"
         FROM users u
         LEFT JOIN student_techniques st ON u.id = st.student_id
         LEFT JOIN student_technique_views stv
@@ -1659,26 +1666,39 @@ pub async fn get_students_by_recent_updates(
     // First collect into a Vec<User>
     let users: Vec<User> = dtos
         .into_iter()
-        .map(|dto| User {
-            id: dto.id.unwrap_or_default(),
-            username: dto.username.unwrap_or_default(),
-            role: Role::from_str(&dto.role.unwrap_or_default()).unwrap(),
-            display_name: dto.display_name.unwrap_or_default(),
-            archived: dto.archived.unwrap_or_default(),
-            graduated_at: dto.graduated_at,
-            email: dto.email,
-            claimed_at: dto.claimed_at,
-            approved_at: dto.approved_at,
-            first_name: dto.first_name,
-            last_name: dto.last_name,
-            reset_requested_at: dto.reset_requested_at,
-            last_update: dto.last_update,
-            last_coach_update_at: dto.last_coach_update_at,
-            total_techniques: dto.total_techniques,
-            red_count: dto.red_count,
-            amber_count: dto.amber_count,
-            green_count: dto.green_count,
-            has_unseen_activity: dto.has_unseen_activity.map(|v| v != 0),
+        .map(|dto| {
+            // Most-recent timestamp across student-driven signals: their own
+            // note edits and any video they watched. Frontend uses this to
+            // surface "taking initiative" independently of the per-coach
+            // unseen flag.
+            let initiative = match (dto.latest_student_note_at, dto.latest_watch_at) {
+                (Some(a), Some(b)) => Some(a.max(b)),
+                (Some(a), None) => Some(a),
+                (None, Some(b)) => Some(b),
+                (None, None) => None,
+            };
+            User {
+                id: dto.id.unwrap_or_default(),
+                username: dto.username.unwrap_or_default(),
+                role: Role::from_str(&dto.role.unwrap_or_default()).unwrap(),
+                display_name: dto.display_name.unwrap_or_default(),
+                archived: dto.archived.unwrap_or_default(),
+                graduated_at: dto.graduated_at,
+                email: dto.email,
+                claimed_at: dto.claimed_at,
+                approved_at: dto.approved_at,
+                first_name: dto.first_name,
+                last_name: dto.last_name,
+                reset_requested_at: dto.reset_requested_at,
+                last_update: dto.last_update,
+                last_coach_update_at: dto.last_coach_update_at,
+                total_techniques: dto.total_techniques,
+                red_count: dto.red_count,
+                amber_count: dto.amber_count,
+                green_count: dto.green_count,
+                has_unseen_activity: dto.has_unseen_activity.map(|v| v != 0),
+                last_student_initiative_at: initiative.map(|dt| naive_to_utc(dt).to_rfc3339()),
+            }
         })
         .collect();
 

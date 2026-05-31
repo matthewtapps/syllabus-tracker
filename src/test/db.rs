@@ -9,6 +9,10 @@ mod tests {
     use syllabus_tracker::lib::migrations::migrate_database_declaratively;
 
     async fn setup_test_db() -> Pool<Sqlite> {
+        // get_schema_string() reads SCHEMA_PATH; under nextest each test runs
+        // in its own process so we can't rely on TestDbBuilder having loaded it.
+        crate::env::load_test_environment().expect("load test env");
+
         let pool = SqlitePoolOptions::new()
             .max_connections(5)
             .connect("sqlite::memory:")
@@ -17,7 +21,7 @@ mod tests {
 
         let schema = get_schema_string();
 
-        let _ = migrate_database_declaratively(pool.clone(), &schema).await;
+        let _ = migrate_database_declaratively(pool.clone(), &schema, false).await;
 
         pool
     }

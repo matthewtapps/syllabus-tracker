@@ -151,7 +151,7 @@ pub mod test_utils {
 
             let schema = get_schema_string();
 
-            migrate_database_declaratively(pool.clone(), &schema).await?;
+            migrate_database_declaratively(pool.clone(), &schema, false).await?;
 
             let mut user_id_map: HashMap<String, i64> = HashMap::new();
             let mut technique_id_map: HashMap<String, i64> = HashMap::new();
@@ -256,6 +256,7 @@ pub mod test_utils {
                             amber_count: None,
                             green_count: None,
                             has_unseen_activity: None,
+                            last_student_initiative_at: None,
                         };
                         update_student_technique(
                             &pool,

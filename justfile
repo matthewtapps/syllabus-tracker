@@ -35,7 +35,7 @@ test: test-backend test-frontend
 # Backend tests. Uses cached sqlx query metadata so no live DB is needed.
 [group('verify')]
 test-backend:
-    SQLX_OFFLINE=true cargo test --all-features
+    SQLX_OFFLINE=true cargo nextest run --all-features
 
 # Frontend tests. No suite exists yet; stub for when one does.
 [group('verify')]
@@ -75,12 +75,34 @@ build:
 up:
     docker compose up -d --build
 
-# Boot the full stack with output attached. Depends on `migrate` so the host's
-# sqlite.db is created and in sync before docker starts the app: the main
-# binary panics on schema mismatch.
+# Native dev loop. Brings up only the supporting infra in docker (minio,
+# minio-init, otel-collector) and runs the backend + frontend on the host so
+# we reuse the warm `target/` cache instead of recompiling inside a container.
+# `just up` still runs the full dockerised stack if you need to test the image.
 [group('run')]
 dev: migrate
-    docker compose up --build
+    #!/usr/bin/env bash
+    set -uo pipefail
+    docker compose up -d minio minio-init otel-collector
+
+    set -a
+    source config/common.env
+    source config/dev.env
+    [ -f .secrets.env ] && source .secrets.env
+    set +a
+    # The env files target the docker network; rewrite to localhost for native.
+    export S3_ENDPOINT=http://localhost:9000
+    export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317
+
+    cleanup() {
+        trap - INT TERM EXIT
+        kill 0
+    }
+    trap cleanup INT TERM EXIT
+
+    (cd frontend && pnpm install && pnpm dev --host) &
+    cargo watch -x run &
+    wait -n
 
 # Stop the docker compose stack.
 [group('run')]

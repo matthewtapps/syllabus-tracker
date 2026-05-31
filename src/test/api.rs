@@ -706,6 +706,219 @@ mod tests {
         );
     }
 
+    /// Helper: fetch `/api/students` as the given coach, return the parsed
+    /// `last_student_initiative_at` (chrono) for one student. None if absent.
+    async fn fetch_initiative(
+        client: &rocket::local::asynchronous::Client,
+        cookies: Vec<Cookie<'static>>,
+        student_username: &str,
+    ) -> Option<chrono::DateTime<chrono::Utc>> {
+        let response = client
+            .get("/api/students")
+            .cookies(cookies)
+            .dispatch()
+            .await;
+        assert_eq!(response.status(), Status::Ok);
+        let body = response.into_string().await.unwrap();
+        let students: Vec<UserData> = serde_json::from_str(&body).unwrap();
+        let s = students
+            .iter()
+            .find(|s| s.username == student_username)
+            .expect("student missing from response");
+        s.last_student_initiative_at
+            .as_deref()
+            .map(|raw| chrono::DateTime::parse_from_rfc3339(raw).unwrap().to_utc())
+    }
+
+    #[rocket::async_test]
+    async fn test_taking_initiative_recent_student_note_update() {
+        let test_db = TestDbBuilder::new()
+            .coach("coach_user", Some("Coach User"))
+            .student("student_user", Some("Student User"))
+            .technique("Armbar", "desc", Some("coach_user"))
+            .assign_technique(Some("Armbar"), Some("student_user"), "red", "", "")
+            .build()
+            .await
+            .expect("Failed to build test DB");
+
+        let (client, test_db) = setup_test_client(test_db).await;
+        let st_id = test_db
+            .student_technique_id("student_user", "Armbar")
+            .await
+            .expect("Failed to get id");
+
+        let before = chrono::Utc::now();
+        let student_cookies = login_test_user(&client, "student_user", "password123").await;
+        let resp = client
+            .put(format!("/api/student_technique/{}", st_id))
+            .cookies(student_cookies)
+            .header(ContentType::JSON)
+            .body(json!({ "student_notes": "drilled this morning" }).to_string())
+            .dispatch()
+            .await;
+        assert_eq!(resp.status(), Status::Ok);
+
+        let coach_cookies = login_test_user(&client, "coach_user", "password123").await;
+        let initiative = fetch_initiative(&client, coach_cookies, "student_user")
+            .await
+            .expect("expected last_student_initiative_at to be set after student note edit");
+        assert!(
+            initiative >= before - chrono::Duration::seconds(5),
+            "initiative timestamp {} should be at or after test start {}",
+            initiative,
+            before
+        );
+    }
+
+    #[rocket::async_test]
+    async fn test_taking_initiative_recent_watch() {
+        let test_db = TestDbBuilder::new()
+            .coach("coach_user", Some("Coach User"))
+            .student("student_user", Some("Student User"))
+            .technique("Armbar", "desc", Some("coach_user"))
+            .assign_technique(Some("Armbar"), Some("student_user"), "red", "", "")
+            .build()
+            .await
+            .expect("Failed to build test DB");
+
+        let pool = test_db.pool.clone();
+        let (client, test_db) = setup_test_client(test_db).await;
+        let student_id = test_db.user_id("student_user").expect("Student not found");
+        let technique_id = test_db.technique_id("Armbar").expect("Technique not found");
+
+        // Direct inserts: a video row plus a watch aggregate timestamped now.
+        let watched_at = chrono::Utc::now().naive_utc();
+        let video_id: i64 = sqlx::query_scalar!(
+            r#"INSERT INTO videos (technique_id, title, kind, processing_status, uploaded_by_id)
+               VALUES (?, 'demo', 'upload', 'ready', ?)
+               RETURNING id as "id!: i64""#,
+            technique_id,
+            student_id
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("insert video");
+        sqlx::query!(
+            "INSERT INTO video_watch_aggregates
+               (video_id, user_id, play_count, completed_count, total_seconds_watched, last_watched_at)
+             VALUES (?, ?, 1, 0, 30, ?)",
+            video_id,
+            student_id,
+            watched_at,
+        )
+        .execute(&pool)
+        .await
+        .expect("insert watch aggregate");
+
+        let coach_cookies = login_test_user(&client, "coach_user", "password123").await;
+        let initiative = fetch_initiative(&client, coach_cookies, "student_user")
+            .await
+            .expect("expected last_student_initiative_at to be set from watch aggregate");
+        let watched_utc = chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(
+            watched_at,
+            chrono::Utc,
+        );
+        assert!(
+            (initiative - watched_utc).num_seconds().abs() <= 1,
+            "initiative {} should match watch time {}",
+            initiative,
+            watched_utc
+        );
+    }
+
+    #[rocket::async_test]
+    async fn test_taking_initiative_max_across_signals() {
+        let test_db = TestDbBuilder::new()
+            .coach("coach_user", Some("Coach User"))
+            .student("student_user", Some("Student User"))
+            .technique("Armbar", "desc", Some("coach_user"))
+            .assign_technique(Some("Armbar"), Some("student_user"), "red", "", "")
+            .build()
+            .await
+            .expect("Failed to build test DB");
+
+        let pool = test_db.pool.clone();
+        let (client, test_db) = setup_test_client(test_db).await;
+        let st_id = test_db
+            .student_technique_id("student_user", "Armbar")
+            .await
+            .expect("Failed to get id");
+        let student_id = test_db.user_id("student_user").expect("Student not found");
+        let technique_id = test_db.technique_id("Armbar").expect("Technique not found");
+
+        // Note edit 3 days ago, watch 1 day ago. Watch should win.
+        let note_at = (chrono::Utc::now() - chrono::Duration::days(3)).naive_utc();
+        let watched_at = (chrono::Utc::now() - chrono::Duration::days(1)).naive_utc();
+
+        sqlx::query!(
+            "UPDATE student_techniques SET last_student_update_at = ? WHERE id = ?",
+            note_at,
+            st_id
+        )
+        .execute(&pool)
+        .await
+        .expect("backdate student note");
+
+        let video_id: i64 = sqlx::query_scalar!(
+            r#"INSERT INTO videos (technique_id, title, kind, processing_status, uploaded_by_id)
+               VALUES (?, 'demo', 'upload', 'ready', ?)
+               RETURNING id as "id!: i64""#,
+            technique_id,
+            student_id
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("insert video");
+        sqlx::query!(
+            "INSERT INTO video_watch_aggregates
+               (video_id, user_id, play_count, completed_count, total_seconds_watched, last_watched_at)
+             VALUES (?, ?, 1, 0, 30, ?)",
+            video_id,
+            student_id,
+            watched_at,
+        )
+        .execute(&pool)
+        .await
+        .expect("insert watch aggregate");
+
+        let coach_cookies = login_test_user(&client, "coach_user", "password123").await;
+        let initiative = fetch_initiative(&client, coach_cookies, "student_user")
+            .await
+            .expect("expected initiative timestamp");
+        let watched_utc = chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(
+            watched_at,
+            chrono::Utc,
+        );
+        assert!(
+            (initiative - watched_utc).num_seconds().abs() <= 1,
+            "initiative {} should equal the more recent watch {}",
+            initiative,
+            watched_utc
+        );
+    }
+
+    #[rocket::async_test]
+    async fn test_taking_initiative_null_when_no_activity() {
+        let test_db = TestDbBuilder::new()
+            .coach("coach_user", Some("Coach User"))
+            .student("student_user", Some("Student User"))
+            .technique("Armbar", "desc", Some("coach_user"))
+            .assign_technique(Some("Armbar"), Some("student_user"), "red", "", "")
+            .build()
+            .await
+            .expect("Failed to build test DB");
+
+        let (client, _test_db) = setup_test_client(test_db).await;
+
+        let coach_cookies = login_test_user(&client, "coach_user", "password123").await;
+        let initiative = fetch_initiative(&client, coach_cookies, "student_user").await;
+        assert!(
+            initiative.is_none(),
+            "fresh student with no notes/watches should have no initiative timestamp, got {:?}",
+            initiative
+        );
+    }
+
     #[rocket::async_test]
     async fn test_mark_seen_permission_denied_for_other_student() {
         let test_db = TestDbBuilder::new()

@@ -58,6 +58,7 @@ import { DashboardTotals } from './components/dashboard-totals';
 import { StudentSection } from './components/student-section';
 
 const STALE_THRESHOLD_DAYS = 14;
+const INITIATIVE_THRESHOLD_DAYS = 7;
 const RECENT_LIMIT = 8;
 
 interface DashboardProps {
@@ -137,10 +138,15 @@ function CoachDashboard() {
   const totalAssignments =
     statusCounts.red + statusCounts.amber + statusCounts.green;
 
-  const needsAttention = useMemo(
-    () => activeStudents.filter((s) => s.has_unseen_activity),
-    [activeStudents],
-  );
+  const needsAttention = useMemo(() => {
+    const cutoff = Date.now() - INITIATIVE_THRESHOLD_DAYS * 86400 * 1000;
+    return activeStudents.filter((s) => {
+      const ts = s.last_student_initiative_at;
+      if (!ts) return false;
+      const parsed = Date.parse(ts);
+      return Number.isFinite(parsed) && parsed >= cutoff;
+    });
+  }, [activeStudents]);
 
   const pendingApprovals = useMemo(
     () => activeStudents.filter((s) => s.claimed_at && !s.approved_at),
@@ -370,7 +376,7 @@ function CoachDashboard() {
             title="Taking initiative"
             icon={Bell}
             variant="attention"
-            description="Students who've updated their notes since you last looked."
+            description="Students who've been active in the past week."
             students={needsAttention}
           />
         )}

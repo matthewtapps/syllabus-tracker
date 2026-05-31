@@ -1,0 +1,5 @@
+# Target-scoped to the native GNU host so Docker (musl) builds are unaffected.
+# `RUSTC_WRAPPER=sccache` is exported by the nix dev shell — see flake.nix.
+[target.x86_64-unknown-linux-gnu]
+linker = "clang"
+rustflags = ["-C", "link-arg=-fuse-ld=lld"]

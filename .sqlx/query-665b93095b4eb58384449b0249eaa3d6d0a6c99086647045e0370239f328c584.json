@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO video_watch_aggregates\n               (video_id, user_id, play_count, completed_count, total_seconds_watched, last_watched_at)\n             VALUES (?, ?, 1, 0, 30, ?)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": []
+  },
+  "hash": "665b93095b4eb58384449b0249eaa3d6d0a6c99086647045e0370239f328c584"
+}

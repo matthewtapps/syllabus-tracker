@@ -692,21 +692,24 @@ pub fn normalize_sql(sql: &str) -> String {
 pub async fn migrate_database_declaratively(
     pool: Pool<Sqlite>,
     target_schema: &str,
+    allow_deletions: bool,
 ) -> Result<bool, MigrationError> {
-    migrate_database_declaratively_with_reporter(pool, target_schema, Arc::new(NoopReporter)).await
+    migrate_database_declaratively_with_reporter(
+        pool,
+        target_schema,
+        allow_deletions,
+        Arc::new(NoopReporter),
+    )
+    .await
 }
 
 #[instrument(skip_all)]
 pub async fn migrate_database_declaratively_with_reporter(
     pool: Pool<Sqlite>,
     target_schema: &str,
+    allow_deletions: bool,
     reporter: Arc<dyn MigrationReporter>,
 ) -> Result<bool, MigrationError> {
-    let allow_deletions = dotenvy::var("ALLOW_DESTRUCTIVE_MIGRATIONS")
-        .unwrap_or_else(|_| "false".to_string())
-        .parse::<bool>()
-        .unwrap_or(false);
-
     let mut migrator =
         DeclarativeMigrator::with_reporter(pool, target_schema, allow_deletions, reporter);
     migrator.migrate().await
