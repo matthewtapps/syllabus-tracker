@@ -97,14 +97,23 @@ dev: migrate
     export S3_ENDPOINT=http://localhost:9000
     export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317
 
+    (cd frontend && pnpm install && pnpm dev --host) &
+    FRONTEND_PID=$!
+    cargo watch -x run &
+    WATCHER_PID=$!
+
     cleanup() {
         trap - INT TERM EXIT
-        kill 0
+        # cargo-watch spawns its run target in its own process group, so a plain
+        # `kill 0` on the script's group dies before reaching the rust binary
+        # and we orphan a backend on :8000. Signal the tracked PIDs, then sweep
+        # any leftover backend by its known dev-build path.
+        kill -TERM $FRONTEND_PID $WATCHER_PID 2>/dev/null
+        pkill -TERM -f target/debug/syllabus-tracker 2>/dev/null
+        wait 2>/dev/null
     }
     trap cleanup INT TERM EXIT
 
-    (cd frontend && pnpm install && pnpm dev --host) &
-    cargo watch -x run &
     wait -n
 
 # Stop the docker compose stack.
