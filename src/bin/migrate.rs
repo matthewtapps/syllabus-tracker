@@ -7,12 +7,15 @@
 //! - `--dry-run`: do the destructive-changes check and exit 0 if safe, 1 if not.
 //!   The deploy pipeline runs this against a copy of the prod DB as a gate
 //!   before swapping containers.
+//! - `--verbose`: re-enable the structured tracing logs (the default UI is a
+//!   compact, human-readable progress display).
 //!
 //! The SQLite file is created on the fly if missing, so `just clean &&
 //! just migrate` works out of the box.
 
 use std::process::ExitCode;
 use std::str::FromStr;
+use std::sync::Arc;
 
 use anyhow::{Context, Result};
 use sqlx::SqlitePool;
@@ -21,19 +24,22 @@ use syllabus_tracker::db::backfill_student_technique_views;
 use syllabus_tracker::env;
 use syllabus_tracker::get_schema_string;
 use syllabus_tracker::lib::migrations::{
-    ChangesNeeded, get_schema_changes, migrate_database_declaratively,
+    ChangesNeeded, MigrationReporter, NoopReporter, TerminalReporter, get_schema_changes,
+    migrate_database_declaratively_with_reporter,
 };
-use tracing::{error, info, warn};
 
 struct Args {
     dry_run: bool,
+    verbose: bool,
 }
 
 fn parse_args() -> Result<Args> {
     let mut dry_run = false;
+    let mut verbose = false;
     for arg in std::env::args().skip(1) {
         match arg.as_str() {
             "--dry-run" => dry_run = true,
+            "--verbose" | "-v" => verbose = true,
             "--help" | "-h" => {
                 print_help();
                 std::process::exit(0);
@@ -43,16 +49,17 @@ fn parse_args() -> Result<Args> {
             }
         }
     }
-    Ok(Args { dry_run })
+    Ok(Args { dry_run, verbose })
 }
 
 fn print_help() {
-    println!("Usage: migrate [--dry-run]");
+    println!("Usage: migrate [--dry-run] [--verbose]");
     println!();
     println!("Applies config/schema.sql to the database at $DATABASE_URL.");
     println!();
     println!("Options:");
     println!("  --dry-run    Detect changes and exit, without applying them.");
+    println!("  --verbose    Re-enable structured tracing logs (raw SQL, spans).");
     println!();
     println!("Env:");
     println!("  DATABASE_URL                    sqlite:// URL of the target DB.");
@@ -74,12 +81,20 @@ async fn run() -> Result<()> {
     let args = parse_args()?;
 
     env::load_environment().ok();
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
-        )
-        .init();
+    if args.verbose {
+        // Default to debug for the migrations module so the SQL/span output
+        // is back, but keep other crates at whatever RUST_LOG asks for
+        // (config/dev.env pins RUST_LOG=info, which would otherwise hide the
+        // migration debug logs we want in verbose mode).
+        let filter = tracing_subscriber::EnvFilter::try_from_default_env()
+            .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info"))
+            .add_directive(
+                "syllabus_tracker::lib::migrations=debug"
+                    .parse()
+                    .expect("static directive parses"),
+            );
+        tracing_subscriber::fmt().with_env_filter(filter).init();
+    }
 
     let database_url = std::env::var("DATABASE_URL").context("DATABASE_URL not set")?;
 
@@ -103,19 +118,27 @@ async fn run() -> Result<()> {
             .unwrap_or(false);
 
         if !allow_destructive {
-            log_destructive_changes(&changes);
-            error!("Set ALLOW_DESTRUCTIVE_MIGRATIONS=true to allow these changes.");
+            print_destructive_changes(&changes);
+            eprintln!("Set ALLOW_DESTRUCTIVE_MIGRATIONS=true to allow these changes.");
             anyhow::bail!("Destructive database changes detected but not allowed");
         }
-        warn!("Proceeding with destructive database changes (explicitly allowed)");
+        eprintln!("Warning: proceeding with destructive database changes (explicitly allowed).");
     }
 
     if args.dry_run {
-        info!("--dry-run set: schema check passed, no changes applied");
+        println!("--dry-run set: schema check passed, no changes applied.");
         return Ok(());
     }
 
-    let changes_made = migrate_database_declaratively(pool.clone(), &schema)
+    // Verbose mode emits the structured tracing logs and skips the TUI to
+    // avoid mixing spinner escape codes with log lines.
+    let reporter: Arc<dyn MigrationReporter> = if args.verbose {
+        Arc::new(NoopReporter)
+    } else {
+        Arc::new(TerminalReporter::new())
+    };
+
+    migrate_database_declaratively_with_reporter(pool.clone(), &schema, reporter)
         .await
         .map_err(|e| anyhow::anyhow!("Migration failed: {:?}", e))?;
 
@@ -126,11 +149,6 @@ async fn run() -> Result<()> {
         .await
         .context("Failed to backfill student_technique_views")?;
 
-    if changes_made {
-        info!("Migration complete (changes applied)");
-    } else {
-        info!("Schema already up to date");
-    }
     Ok(())
 }
 
@@ -143,17 +161,17 @@ fn has_destructive_changes(changes: &ChangesNeeded) -> bool {
             .any(|t| !t.removed_columns.is_empty())
 }
 
-fn log_destructive_changes(changes: &ChangesNeeded) {
-    error!("Destructive database changes detected but not allowed:");
+fn print_destructive_changes(changes: &ChangesNeeded) {
+    eprintln!("Destructive database changes detected but not allowed:");
     if !changes.removed_tables.is_empty() {
-        error!("  Tables to be removed: {:?}", changes.removed_tables);
+        eprintln!("  Tables to be removed: {:?}", changes.removed_tables);
     }
     if !changes.removed_indices.is_empty() {
-        error!("  Indices to be removed: {:?}", changes.removed_indices);
+        eprintln!("  Indices to be removed: {:?}", changes.removed_indices);
     }
     for table in &changes.modified_tables {
         if !table.removed_columns.is_empty() {
-            error!(
+            eprintln!(
                 "  Columns to be removed from {}: {:?}",
                 table.name, table.removed_columns
             );

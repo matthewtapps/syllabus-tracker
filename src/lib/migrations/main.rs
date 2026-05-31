@@ -4,8 +4,11 @@ use std::{
     collections::{HashMap, HashSet},
     fmt, fs,
     path::Path,
+    sync::Arc,
 };
-use tracing::{info, instrument};
+use tracing::{debug, instrument};
+
+use crate::lib::migrations::reporter::{MigrationReporter, NoopReporter};
 
 #[derive(Debug)]
 pub struct TableInfo {
@@ -27,6 +30,7 @@ pub struct DeclarativeMigrator {
     target_schema: String,
     allow_deletions: bool,
     schema_changes_made: u32,
+    reporter: Arc<dyn MigrationReporter>,
 }
 
 #[allow(dead_code)]
@@ -59,11 +63,21 @@ impl fmt::Display for MigrationError {
 
 impl DeclarativeMigrator {
     pub fn new(pool: Pool<Sqlite>, target_schema: &str, allow_deletions: bool) -> Self {
+        Self::with_reporter(pool, target_schema, allow_deletions, Arc::new(NoopReporter))
+    }
+
+    pub fn with_reporter(
+        pool: Pool<Sqlite>,
+        target_schema: &str,
+        allow_deletions: bool,
+        reporter: Arc<dyn MigrationReporter>,
+    ) -> Self {
         Self {
             pool,
             target_schema: target_schema.to_string(),
             allow_deletions,
             schema_changes_made: 0,
+            reporter,
         }
     }
 
@@ -85,7 +99,7 @@ impl DeclarativeMigrator {
 
     #[instrument(skip(self))]
     pub async fn migrate(&mut self) -> Result<bool, MigrationError> {
-        info!("Starting declarative database migration");
+        debug!("Starting declarative database migration");
 
         // Create pristine database with target schema
         let pristine_pool = SqlitePool::connect("sqlite::memory:").await?;
@@ -115,18 +129,28 @@ impl DeclarativeMigrator {
             .execute(&mut *conn)
             .await?;
 
-        let changes_made = result?;
+        let changes_made = match result {
+            Ok(c) => c,
+            Err(e) => {
+                self.reporter.migration_finished(false);
+                return Err(e);
+            }
+        };
 
         // Run VACUUM only if actual schema changes were made
         if self.schema_changes_made > 0 {
-            info!("Running VACUUM after migration");
-            sqlx::query("VACUUM").execute(&self.pool).await?;
+            debug!("Running VACUUM after migration");
+            if let Err(e) = sqlx::query("VACUUM").execute(&self.pool).await {
+                self.reporter.migration_finished(false);
+                return Err(e.into());
+            }
         }
 
-        info!(
+        debug!(
             "Migration completed. Schema changes made: {}",
             self.schema_changes_made
         );
+        self.reporter.migration_finished(changes_made);
         Ok(changes_made)
     }
 
@@ -139,9 +163,11 @@ impl DeclarativeMigrator {
 
         let changes_needed = self.analyze_changes(&mut tx, pristine_pool).await?;
 
+        self.reporter.migration_started(&changes_needed);
+
         if !changes_needed.has_any_changes() {
             tx.commit().await?;
-            info!("No schema changes needed");
+            debug!("No schema changes needed");
             return Ok(false);
         }
 
@@ -279,12 +305,8 @@ impl DeclarativeMigrator {
 
             if target_user_version != 0 {
                 let pragma_sql = format!("PRAGMA user_version = {}", target_user_version);
-                self.execute_schema_change(
-                    &format!("Set user_version to {}", target_user_version),
-                    &pragma_sql,
-                    &mut **tx,
-                )
-                .await?;
+                self.execute_schema_change(PRAGMA_STEP_DESCRIPTION, &pragma_sql, &mut **tx)
+                    .await?;
             }
         }
 
@@ -299,7 +321,9 @@ impl DeclarativeMigrator {
         target_table: &TableInfo,
         pristine_pool: &SqlitePool,
     ) -> Result<(), MigrationError> {
-        info!("Migrating table: {}", table_name);
+        debug!("Migrating table: {}", table_name);
+        self.reporter
+            .step_started(&modified_table_description(table_name));
 
         // Create temporary table with new schema
         let temp_name = format!("{}_migration_new", table_name);
@@ -308,7 +332,7 @@ impl DeclarativeMigrator {
             &format!("CREATE TABLE {}", temp_name),
         );
 
-        self.execute_schema_change(
+        self.execute_schema_change_silent(
             &format!("Create temporary table for {}", table_name),
             &temp_sql,
             &mut **tx,
@@ -349,7 +373,7 @@ impl DeclarativeMigrator {
                 temp_name, columns_str, columns_str, table_name
             );
 
-            self.execute_schema_change(
+            self.execute_schema_change_silent(
                 &format!("Copy data to new {}", table_name),
                 &copy_sql,
                 &mut **tx,
@@ -359,7 +383,7 @@ impl DeclarativeMigrator {
 
         // Drop old table and rename new one
         let drop_sql = format!("DROP TABLE {}", table_name);
-        self.execute_schema_change(
+        self.execute_schema_change_silent(
             &format!("Drop old table {}", table_name),
             &drop_sql,
             &mut **tx,
@@ -367,13 +391,14 @@ impl DeclarativeMigrator {
         .await?;
 
         let rename_sql = format!("ALTER TABLE {} RENAME TO {}", temp_name, table_name);
-        self.execute_schema_change(
+        self.execute_schema_change_silent(
             &format!("Rename new table to {}", table_name),
             &rename_sql,
             &mut **tx,
         )
         .await?;
 
+        self.reporter.step_finished();
         Ok(())
     }
 
@@ -401,9 +426,10 @@ impl DeclarativeMigrator {
         for (index_name, target_index) in target_indices {
             if let Some(current_index) = current_indices.get(index_name) {
                 if normalize_sql(&current_index.sql) != normalize_sql(&target_index.sql) {
-                    // Index changed, drop and recreate
+                    // Index changed: drop silently and recreate as the announced step
+                    // so the user-facing checklist shows one entry per modified index.
                     let drop_sql = format!("DROP INDEX {}", index_name);
-                    self.execute_schema_change(
+                    self.execute_schema_change_silent(
                         &format!("Drop changed index {}", index_name),
                         &drop_sql,
                         &mut **tx,
@@ -439,7 +465,26 @@ impl DeclarativeMigrator {
         sql: &str,
         executor: impl sqlx::Executor<'_, Database = Sqlite>,
     ) -> Result<(), MigrationError> {
-        info!("Database migration: {} with SQL:\n{}", description, sql);
+        self.reporter.step_started(description);
+        debug!("Database migration: {} with SQL:\n{}", description, sql);
+        sqlx::query(sql).execute(executor).await?;
+        self.schema_changes_made += 1;
+        self.reporter.step_finished();
+        Ok(())
+    }
+
+    /// Like `execute_schema_change` but does not emit reporter events. Used
+    /// for sub-steps inside `migrate_table` so the user-facing checklist
+    /// shows one entry per modified table rather than four (create temp +
+    /// copy + drop + rename).
+    #[instrument(skip(self, executor))]
+    async fn execute_schema_change_silent(
+        &mut self,
+        description: &str,
+        sql: &str,
+        executor: impl sqlx::Executor<'_, Database = Sqlite>,
+    ) -> Result<(), MigrationError> {
+        debug!("Database migration: {} with SQL:\n{}", description, sql);
         sqlx::query(sql).execute(executor).await?;
         self.schema_changes_made += 1;
         Ok(())
@@ -648,13 +693,87 @@ pub async fn migrate_database_declaratively(
     pool: Pool<Sqlite>,
     target_schema: &str,
 ) -> Result<bool, MigrationError> {
+    migrate_database_declaratively_with_reporter(pool, target_schema, Arc::new(NoopReporter)).await
+}
+
+#[instrument(skip_all)]
+pub async fn migrate_database_declaratively_with_reporter(
+    pool: Pool<Sqlite>,
+    target_schema: &str,
+    reporter: Arc<dyn MigrationReporter>,
+) -> Result<bool, MigrationError> {
     let allow_deletions = dotenvy::var("ALLOW_DESTRUCTIVE_MIGRATIONS")
         .unwrap_or_else(|_| "false".to_string())
         .parse::<bool>()
         .unwrap_or(false);
 
-    let mut migrator = DeclarativeMigrator::new(pool, target_schema, allow_deletions);
+    let mut migrator =
+        DeclarativeMigrator::with_reporter(pool, target_schema, allow_deletions, reporter);
     migrator.migrate().await
+}
+
+/// The description string used when a table is being modified in place.
+/// Shared between the migration logic (when it announces the step) and
+/// reporters (when they build the planned-step list up front).
+pub fn modified_table_description(table_name: &str) -> String {
+    format!("Modifying table {}", table_name)
+}
+
+pub const PRAGMA_STEP_DESCRIPTION: &str = "Update database PRAGMAs";
+
+/// Build the ordered list of step descriptions a reporter should expect,
+/// derived from the changes the migration is about to apply. Kept in sync
+/// with the descriptions emitted inside `apply_changes` and `migrate_table`.
+///
+/// Each category is sorted alphabetically so the planned-step display has a
+/// stable order, even though the underlying analysis derives names from a
+/// `HashSet`. Reporters look up bars by description string (which is unique
+/// per step), so the actual execution order doesn't need to match.
+pub fn planned_step_descriptions(changes: &ChangesNeeded) -> Vec<String> {
+    let mut steps = Vec::new();
+
+    let mut new_tables = changes.new_tables.clone();
+    new_tables.sort();
+    for name in &new_tables {
+        steps.push(format!("Create new table {}", name));
+    }
+
+    let mut modified_tables: Vec<&str> =
+        changes.modified_tables.iter().map(|t| t.name.as_str()).collect();
+    modified_tables.sort();
+    for name in modified_tables {
+        steps.push(modified_table_description(name));
+    }
+
+    let mut removed_tables = changes.removed_tables.clone();
+    removed_tables.sort();
+    for name in &removed_tables {
+        steps.push(format!("Drop table {}", name));
+    }
+
+    let mut removed_indices = changes.removed_indices.clone();
+    removed_indices.sort();
+    for name in &removed_indices {
+        steps.push(format!("Drop obsolete index {}", name));
+    }
+
+    let mut modified_indices = changes.modified_indices.clone();
+    modified_indices.sort();
+    for name in &modified_indices {
+        steps.push(format!("Recreate index {}", name));
+    }
+
+    let mut new_indices = changes.new_indices.clone();
+    new_indices.sort();
+    for name in &new_indices {
+        steps.push(format!("Create new index {}", name));
+    }
+
+    if changes.pragma_changes {
+        steps.push(PRAGMA_STEP_DESCRIPTION.to_string());
+    }
+
+    steps
 }
 
 #[instrument(skip_all)]

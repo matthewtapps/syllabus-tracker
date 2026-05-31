@@ -47,6 +47,9 @@ regex = "1.11.1"
 tokio = { version = "1.45.0", features = ["process", "fs", "io-util", "macros", "rt", "rt-multi-thread", "time", "sync"] }
 dotenvy = "0.15.7"
 
+# migrate binary terminal UI
+indicatif = "0.18"
+
 # Object storage
 aws-config = { version = "1.5.16", default-features = false, features = ["rt-tokio", "behavior-version-latest"] }
 aws-sdk-s3 = { version = "1.78.0", default-features = false, features = ["rt-tokio", "behavior-version-latest", "rustls"] }
