@@ -2,14 +2,13 @@
 mod tests {
     use crate::auth::Role;
     use crate::db::{create_user, find_user_by_username};
-    use crate::get_schema_string;
 
+    use migration_engine::migrations::{migrate_database_declaratively, read_schema_file_to_string};
     use rocket::tokio;
     use sqlx::{Pool, Sqlite, sqlite::SqlitePoolOptions};
-    use syllabus_tracker::lib::migrations::migrate_database_declaratively;
 
     async fn setup_test_db() -> Pool<Sqlite> {
-        // get_schema_string() reads SCHEMA_PATH; under nextest each test runs
+        // SCHEMA_PATH is read fresh here because under nextest each test runs
         // in its own process so we can't rely on TestDbBuilder having loaded it.
         crate::env::load_test_environment().expect("load test env");
 
@@ -19,7 +18,9 @@ mod tests {
             .await
             .expect("Failed to create in-memory database");
 
-        let schema = get_schema_string();
+        let schema_path = dotenvy::var("SCHEMA_PATH").expect("SCHEMA_PATH not set");
+        let schema = read_schema_file_to_string(std::path::Path::new(&schema_path))
+            .expect("Failed to read schema file");
 
         let _ = migrate_database_declaratively(pool.clone(), &schema, false).await;
 

@@ -2,8 +2,7 @@
 extern crate rocket;
 
 pub use syllabus_tracker::{
-    api, auth, capabilities, db, env, error, get_schema_string, models, telemetry, validation,
-    videos,
+    api, auth, capabilities, db, env, error, models, telemetry, validation, videos,
 };
 
 #[cfg(test)]
@@ -33,7 +32,7 @@ use capabilities::{Capabilities, api_capabilities};
 use db::clean_expired_sessions;
 use error::AppError;
 use rocket::{Build, Rocket, tokio};
-use syllabus_tracker::lib::migrations::get_schema_changes;
+use migration_engine::migrations::{get_schema_changes, read_schema_file_to_string};
 use telemetry::TelemetryFairing;
 use telemetry::init_tracing;
 use thiserror::Error;
@@ -115,7 +114,10 @@ async fn rocket() -> _ {
     });
 
     // Panic if db schema isn't up to date or database doesn't exist
-    let schema = get_schema_string();
+    let schema_path =
+        dotenvy::var("SCHEMA_PATH").expect("SCHEMA_PATH environment variable not set");
+    let schema = read_schema_file_to_string(std::path::Path::new(&schema_path))
+        .expect("Failed to read schema file");
     let changes = get_schema_changes(pool.clone(), &schema)
         .await
         .unwrap_or_else(|e| panic!("Failed to analyze database schema: {:?}", e));

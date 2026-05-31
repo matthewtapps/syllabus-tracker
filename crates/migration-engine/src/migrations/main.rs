@@ -8,7 +8,7 @@ use std::{
 };
 use tracing::{debug, instrument};
 
-use crate::lib::migrations::reporter::{MigrationReporter, NoopReporter};
+use crate::migrations::reporter::{MigrationReporter, NoopReporter};
 
 #[derive(Debug)]
 pub struct TableInfo {

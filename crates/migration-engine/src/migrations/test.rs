@@ -2,7 +2,7 @@
 mod tests {
     use sqlx::{Row, SqlitePool};
 
-    use crate::lib::migrations::{migrate_database_declaratively, normalize_sql};
+    use crate::migrations::{migrate_database_declaratively, normalize_sql};
 
     const EMPTY_SCHEMA: &str = "";
 

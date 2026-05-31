@@ -13,20 +13,18 @@
 //! The SQLite file is created on the fly if missing, so `just clean &&
 //! just migrate` works out of the box.
 
+use std::path::Path;
 use std::process::ExitCode;
 use std::str::FromStr;
 use std::sync::Arc;
 
 use anyhow::{Context, Result};
+use migration_engine::migrations::{
+    ChangesNeeded, MigrationReporter, NoopReporter, TerminalReporter, get_schema_changes,
+    migrate_database_declaratively_with_reporter, read_schema_file_to_string,
+};
 use sqlx::SqlitePool;
 use sqlx::sqlite::SqliteConnectOptions;
-use syllabus_tracker::db::backfill_student_technique_views;
-use syllabus_tracker::env;
-use syllabus_tracker::get_schema_string;
-use syllabus_tracker::lib::migrations::{
-    ChangesNeeded, MigrationReporter, NoopReporter, TerminalReporter, get_schema_changes,
-    migrate_database_declaratively_with_reporter,
-};
 
 struct Args {
     dry_run: bool,
@@ -80,7 +78,6 @@ async fn main() -> ExitCode {
 async fn run() -> Result<()> {
     let args = parse_args()?;
 
-    env::load_environment().ok();
     if args.verbose {
         // Default to debug for the migrations module so the SQL/span output
         // is back, but keep other crates at whatever RUST_LOG asks for
@@ -89,7 +86,7 @@ async fn run() -> Result<()> {
         let filter = tracing_subscriber::EnvFilter::try_from_default_env()
             .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info"))
             .add_directive(
-                "syllabus_tracker::lib::migrations=debug"
+                "migration_engine::migrations=debug"
                     .parse()
                     .expect("static directive parses"),
             );
@@ -97,6 +94,7 @@ async fn run() -> Result<()> {
     }
 
     let database_url = std::env::var("DATABASE_URL").context("DATABASE_URL not set")?;
+    let schema_path = std::env::var("SCHEMA_PATH").context("SCHEMA_PATH not set")?;
 
     let opts = SqliteConnectOptions::from_str(&database_url)
         .with_context(|| format!("Invalid DATABASE_URL: {}", database_url))?
@@ -105,7 +103,8 @@ async fn run() -> Result<()> {
         .await
         .context("Failed to connect to database")?;
 
-    let schema = get_schema_string();
+    let schema = read_schema_file_to_string(Path::new(&schema_path))
+        .map_err(|e| anyhow::anyhow!("Failed to read schema file at {}: {}", schema_path, e))?;
 
     let changes = get_schema_changes(pool.clone(), &schema)
         .await
@@ -141,13 +140,6 @@ async fn run() -> Result<()> {
     migrate_database_declaratively_with_reporter(pool.clone(), &schema, allow_destructive, reporter)
         .await
         .map_err(|e| anyhow::anyhow!("Migration failed: {:?}", e))?;
-
-    // Idempotent data backfills run after the schema apply so the migrate
-    // binary owns "make DB app-ready" end to end. main.rs no longer mutates
-    // anything at boot.
-    backfill_student_technique_views(&pool)
-        .await
-        .context("Failed to backfill student_technique_views")?;
 
     Ok(())
 }

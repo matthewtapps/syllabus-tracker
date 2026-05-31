@@ -5,8 +5,8 @@ use std::time::{Duration, Instant};
 
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 
-use crate::lib::migrations::reporter::MigrationReporter;
-use crate::lib::migrations::{ChangesNeeded, planned_step_descriptions};
+use crate::migrations::reporter::MigrationReporter;
+use crate::migrations::{ChangesNeeded, planned_step_descriptions};
 
 /// Human-readable progress display for the migrate binary.
 ///

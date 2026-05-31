@@ -1,5 +1,5 @@
+use migration_engine::migrations::MigrationError;
 use rocket::http::Status;
-use crate::lib::migrations::MigrationError;
 use thiserror::Error;
 use tracing::{Span, error, warn};
 

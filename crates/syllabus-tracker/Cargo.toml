@@ -1,0 +1,59 @@
+[package]
+name = "syllabus-tracker"
+edition.workspace = true
+version.workspace = true
+rust-version.workspace = true
+default-run = "syllabus-tracker"
+
+[features]
+# Exposes #[cfg(test)] helpers in the library (e.g. videos::media::test_support)
+# so the binary's integration tests can use them. CI and `just test-backend`
+# pass `--all-features`, which turns this on automatically.
+test-support = []
+
+[dependencies]
+migration-engine = { path = "../migration-engine" }
+
+# db
+sqlx = { workspace = true }
+
+# web framework
+rocket = { git = "https://github.com/rwf2/Rocket", branch = "master", features = ["trace", "json", "secrets", "tls"] }
+validator = { version = "0.20.0", features = ["derive"] }
+serde = { version = "1.0.219", features = ["derive"] }
+chrono = { workspace = true }
+serde_json = "1.0.140"
+
+# auth
+thiserror = "1.0"
+anyhow = { workspace = true }
+bcrypt = "0.15.0"  # For password hashing
+
+# Otel
+opentelemetry_sdk = { version = "0.29.0", features = ["logs", "trace", "rt-tokio"] }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+opentelemetry-otlp = { version = "0.29.0", features = ["metrics", "trace", "grpc-tonic", "tls", "tls-roots", "tls-webpki-roots"] }
+opentelemetry = { version = "0.29.1", features = ["trace"] }
+opentelemetry-semantic-conventions = { version = "0.29.0", features = ["semconv_experimental"] }
+tracing-core = "0.1.33"
+tracing-opentelemetry = "0.30.0"
+tonic = { version = "0.12.3", features = ["transport", "tls", "tls-roots", "tls-webpki-roots"] }
+once_cell = "1.21.3"
+opentelemetry-http = "0.29.0"
+either = "1.15.0"
+env_logger = "0.11.8"
+rand = "0.9.1"
+uuid = { version = "1.16.0", features = ["v4"] }
+regex = { workspace = true }
+tokio = { workspace = true }
+dotenvy = { workspace = true }
+
+# seed binary terminal UI
+indicatif = { workspace = true }
+
+# Object storage
+aws-config = { version = "1.5.16", default-features = false, features = ["rt-tokio", "behavior-version-latest"] }
+aws-sdk-s3 = { version = "1.78.0", default-features = false, features = ["rt-tokio", "behavior-version-latest", "rustls"] }
+aws-credential-types = "1.2.1"
+async-trait = "0.1.83"

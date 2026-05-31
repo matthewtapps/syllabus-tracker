@@ -3,7 +3,7 @@ WORKDIR /app
 
 FROM chef AS planner
 COPY Cargo.toml Cargo.lock ./
-COPY src ./src
+COPY crates ./crates
 COPY .sqlx ./.sqlx
 RUN cargo chef prepare --recipe-path recipe.json
 
@@ -21,7 +21,7 @@ WORKDIR /app
 COPY --from=builder-deps /app/target target
 COPY --from=builder-deps /usr/local/cargo /usr/local/cargo
 COPY Cargo.toml Cargo.lock ./
-COPY src ./src
+COPY crates ./crates
 COPY .sqlx ./.sqlx
 ENV SQLX_OFFLINE=true
 # `seed` is dev-only and not built here. The deploy pipeline invokes
@@ -29,7 +29,8 @@ ENV SQLX_OFFLINE=true
 # pre-deploy gate; the main `syllabus-tracker` binary also runs the same
 # migration on boot as a defensive no-op if migrate already ran.
 RUN cargo build --release --target x86_64-unknown-linux-musl \
-    --bin syllabus-tracker --bin migrate
+    -p syllabus-tracker --bin syllabus-tracker \
+    -p migration-engine --bin migrate
 RUN cp target/x86_64-unknown-linux-musl/release/syllabus-tracker /app/syllabus-tracker
 RUN cp target/x86_64-unknown-linux-musl/release/migrate /app/migrate
 

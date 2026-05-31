@@ -447,37 +447,3 @@ pub async fn mark_student_technique_seen(
     Ok(())
 }
 
-/// Idempotently backfill `student_technique_views` so existing rows do not
-/// suddenly light up with dots for every viewer when the per-viewer "unseen
-/// activity" feature ships. Safe to re-run on every boot: `INSERT OR IGNORE`
-/// leaves rows added by live traffic untouched.
-#[instrument(skip(pool))]
-pub async fn backfill_student_technique_views(pool: &Pool<Sqlite>) -> Result<(), AppError> {
-    info!("Backfilling student_technique_views");
-
-    sqlx::query!(
-        "INSERT OR IGNORE INTO student_technique_views (student_technique_id, user_id, seen_at)
-         SELECT st.id, st.student_id,
-                COALESCE(MAX(st.last_coach_update_at, st.last_student_update_at, st.created_at),
-                         CURRENT_TIMESTAMP)
-         FROM   student_techniques st
-         WHERE  st.student_id IS NOT NULL"
-    )
-    .execute(pool)
-    .await?;
-
-    sqlx::query!(
-        "INSERT OR IGNORE INTO student_technique_views (student_technique_id, user_id, seen_at)
-         SELECT st.id, u.id,
-                COALESCE(MAX(st.last_coach_update_at, st.last_student_update_at, st.created_at),
-                         CURRENT_TIMESTAMP)
-         FROM   student_techniques st
-         CROSS JOIN users u
-         WHERE  u.role IN ('coach', 'admin')"
-    )
-    .execute(pool)
-    .await?;
-
-    Ok(())
-}
-

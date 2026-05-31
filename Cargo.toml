@@ -1,58 +1,20 @@
-[package]
-name = "syllabus-tracker"
-version = "1.0.0"
+[workspace]
+members = ["crates/migration-engine", "crates/syllabus-tracker"]
+default-members = ["crates/syllabus-tracker"]
+resolver = "3"
+
+[workspace.package]
 edition = "2024"
-default-run = "syllabus-tracker"
+version = "1.0.0"
+rust-version = "1.86"
 
-[features]
-# Exposes #[cfg(test)] helpers in the library (e.g. videos::media::test_support)
-# so the binary's integration tests can use them. CI and `just test-backend`
-# pass `--all-features`, which turns this on automatically.
-test-support = []
-
-[dependencies]
-
-# db
-sqlx = { version = "0.8.5", features = ["runtime-async-std", "sqlite", "chrono" ] }
-
-# web framework
-rocket = { git = "https://github.com/rwf2/Rocket", branch = "master", features = ["trace", "json", "secrets", "tls"] }
-validator = { version = "0.20.0", features = ["derive"] }
-serde = { version = "1.0.219", features = ["derive"] }
-chrono = { version = "0.4.40", features = ["serde"] }
-serde_json = "1.0.140"
-
-# auth
-thiserror = "1.0"
+[workspace.dependencies]
+sqlx = { version = "0.8.5", features = ["runtime-async-std", "sqlite", "chrono"] }
+tokio = { version = "1.45.0", features = ["process", "fs", "io-util", "macros", "rt", "rt-multi-thread", "time", "sync"] }
 anyhow = "1.0"
-bcrypt = "0.15.0"  # For password hashing
-
-# Otel
-opentelemetry_sdk = { version = "0.29.0", features = ["logs", "trace", "rt-tokio"] }
+dotenvy = "0.15.7"
 tracing = { version = "0.1.41", features = ["std", "attributes"] }
 tracing-subscriber = { version = "0.3.19", features = ["env-filter", "registry", "std", "fmt"] }
-opentelemetry-otlp = { version = "0.29.0", features = ["metrics", "trace", "grpc-tonic", "tls", "tls-roots", "tls-webpki-roots"] }
-opentelemetry = { version = "0.29.1", features = ["trace"] }
-opentelemetry-semantic-conventions = { version = "0.29.0", features = ["semconv_experimental"] }
-tracing-core = "0.1.33"
-tracing-opentelemetry = "0.30.0"
-tonic = { version = "0.12.3", features = ["transport", "tls", "tls-roots", "tls-webpki-roots"] }
-once_cell = "1.21.3"
-opentelemetry-http = "0.29.0"
-either = "1.15.0"
-env_logger = "0.11.8"
-rand = "0.9.1"
-uuid = { version = "1.16.0", features = ["v4"] }
-regex = "1.11.1"
-tokio = { version = "1.45.0", features = ["process", "fs", "io-util", "macros", "rt", "rt-multi-thread", "time", "sync"] }
-dotenvy = "0.15.7"
-
-# migrate binary terminal UI
 indicatif = "0.18"
-
-# Object storage
-aws-config = { version = "1.5.16", default-features = false, features = ["rt-tokio", "behavior-version-latest"] }
-aws-sdk-s3 = { version = "1.78.0", default-features = false, features = ["rt-tokio", "behavior-version-latest", "rustls"] }
-aws-credential-types = "1.2.1"
-async-trait = "0.1.83"
-
+regex = "1.11.1"
+chrono = { version = "0.4.40", features = ["serde"] }

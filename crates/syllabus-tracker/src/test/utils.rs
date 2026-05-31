@@ -7,17 +7,17 @@ pub mod test_utils {
     };
     use crate::error::AppError;
     use crate::models::StudentTechnique;
+    use crate::init_rocket;
     use crate::videos::media::test_support::{FakeMediaProbe, FakeMediaTranscode};
     use crate::videos::storage::test_support::InMemoryVideoStorage;
     use crate::videos::{DynMediaProbe, DynMediaTranscode, DynVideoStorage};
-    use crate::{get_schema_string, init_rocket};
+    use migration_engine::migrations::{migrate_database_declaratively, read_schema_file_to_string};
     use rocket::http::{ContentType, Cookie};
     use rocket::local::asynchronous::Client;
     use serde_json::json;
     use sqlx::{Pool, Sqlite, SqlitePool};
     use std::collections::HashMap;
     use std::sync::Once;
-    use syllabus_tracker::lib::migrations::migrate_database_declaratively;
     use tracing::log::LevelFilter;
 
     static INIT: Once = Once::new();
@@ -149,7 +149,9 @@ pub mod test_utils {
 
             let pool = SqlitePool::connect("sqlite::memory:").await?;
 
-            let schema = get_schema_string();
+            let schema_path = dotenvy::var("SCHEMA_PATH").expect("SCHEMA_PATH not set");
+            let schema = read_schema_file_to_string(std::path::Path::new(&schema_path))
+                .expect("Failed to read schema file");
 
             migrate_database_declaratively(pool.clone(), &schema, false).await?;
 

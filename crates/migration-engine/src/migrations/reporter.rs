@@ -1,4 +1,4 @@
-use crate::lib::migrations::ChangesNeeded;
+use crate::migrations::ChangesNeeded;
 
 pub trait MigrationReporter: Send + Sync {
     fn migration_started(&self, changes: &ChangesNeeded);

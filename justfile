@@ -16,7 +16,7 @@ lint: lint-backend lint-frontend
 # `test-support` feature so the bin's tests can see helpers gated behind it.
 [group('verify')]
 lint-backend:
-    SQLX_OFFLINE=true cargo clippy --all-targets --all-features -- -D warnings
+    SQLX_OFFLINE=true cargo clippy --workspace --all-targets --all-features -- -D warnings
 
 # Runs typecheck first so type errors surface alongside ESLint findings.
 [group('verify')]
@@ -35,7 +35,7 @@ test: test-backend test-frontend
 # Backend tests. Uses cached sqlx query metadata so no live DB is needed.
 [group('verify')]
 test-backend:
-    SQLX_OFFLINE=true cargo nextest run --all-features
+    SQLX_OFFLINE=true cargo nextest run --workspace --all-features
 
 # Frontend tests. No suite exists yet; stub for when one does.
 [group('verify')]
@@ -53,14 +53,16 @@ unused-deps:
     cargo machete
 
 # Regenerate .sqlx/ offline query metadata, including queries in test code.
+# `--workspace` puts the cache at the workspace root and limits cargo-check
+# to the macro-bearing crate via `-p syllabus-tracker`.
 [group('verify')]
 sqlx-prepare:
-    DATABASE_URL=sqlite://sqlite.db cargo sqlx prepare -- --tests --all-features
+    DATABASE_URL=sqlite://sqlite.db cargo sqlx prepare --workspace -- -p syllabus-tracker --tests --all-features
 
 # Fail if the .sqlx/ cache is stale. Used by `just verify`.
 [group('verify')]
 sqlx-check:
-    DATABASE_URL=sqlite://sqlite.db cargo sqlx prepare --check -- --tests --all-features
+    DATABASE_URL=sqlite://sqlite.db cargo sqlx prepare --check --workspace -- -p syllabus-tracker --tests --all-features
 
 # ---- app / docker ---------------------------------------------------------
 
@@ -152,7 +154,7 @@ fe-install:
 [group('db')]
 migrate:
     SQLX_OFFLINE=true DATABASE_URL=sqlite://sqlite.db SCHEMA_PATH=./config/schema.sql \
-        cargo run --bin migrate
+        cargo run -p migration-engine --bin migrate
 
 # As `migrate`, but permits dropping tables, columns, and indices. Use after
 # a destructive schema change so the app boot doesn't panic on the diff.
@@ -160,14 +162,14 @@ migrate:
 migrate-destructive:
     SQLX_OFFLINE=true ALLOW_DESTRUCTIVE_MIGRATIONS=true \
         DATABASE_URL=sqlite://sqlite.db SCHEMA_PATH=./config/schema.sql \
-        cargo run --bin migrate
+        cargo run -p migration-engine --bin migrate
 
 # Idempotent demo seed (users, techniques, collections, assignments, attempts).
 # Runs `migrate` first so a freshly-cleaned DB bootstraps cleanly.
 [group('db')]
 seed: migrate
     SQLX_OFFLINE=true DATABASE_URL=sqlite://sqlite.db SCHEMA_PATH=./config/schema.sql \
-        cargo run --bin seed
+        cargo run -p syllabus-tracker --bin seed
 
 # Wipe just the attempts table then reseed (keeps users/techniques).
 [group('db')]
