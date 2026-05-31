@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE techniques\n         SET name = ?, description = ?\n         WHERE id = ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": []
+  },
+  "hash": "1c81b687117316c17a7d9750f469aa22045adf070a812663258419d5545f8233"
+}

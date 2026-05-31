@@ -1,0 +1,38 @@
+//! Data-access layer. One file per domain (users, sessions, techniques, etc.);
+//! cross-domain read-only queries live in `reporting.rs`. Composite write
+//! operations belong to the file that owns the outer transaction, with calls
+//! fanning out one-way to leaf modules. Each submodule re-exports its public
+//! names through this `mod.rs` so call sites stay flat (`crate::db::foo`).
+
+mod attempts;
+mod collections;
+mod invites;
+mod reporting;
+mod sessions;
+mod student_techniques;
+mod tags;
+mod techniques;
+mod users;
+mod videos;
+mod watch;
+
+pub use attempts::*;
+pub use collections::*;
+pub use invites::*;
+pub use reporting::*;
+pub use sessions::*;
+pub use student_techniques::*;
+pub use tags::*;
+pub use techniques::*;
+pub use users::*;
+pub use videos::*;
+pub use watch::*;
+
+// Back-compat re-exports for callers that historically reached for these types
+// via `crate::db::*`. The types themselves now live in `crate::models`; this
+// shim keeps the call sites unchanged.
+pub use crate::models::{
+    AttemptBucket, AttemptCreateResult, AttemptListItem, AttemptSuggestion, AttemptSummary,
+    Collection, DashboardVideoOverview, DashboardVideoRow, StorageObjectRow, StorageOverview,
+    StudentWatchActivityRow, VideoStatsSnapshot, WatchAggregateRow,
+};

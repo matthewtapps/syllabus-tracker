@@ -285,3 +285,117 @@ impl From<DbTag> for Tag {
         }
     }
 }
+
+#[derive(Debug, Serialize, Clone)]
+pub struct Collection {
+    pub id: i64,
+    pub name: String,
+    pub description: String,
+    pub coach_id: Option<i64>,
+    pub created_at: DateTime<Utc>,
+    pub technique_count: i64,
+    pub student_count: i64,
+    pub techniques: Vec<Technique>,
+}
+
+/// What the UI should suggest after a successful attempt log. Only the
+/// transition from zero attempts on a red technique surfaces a nudge; all
+/// other cases are silent.
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum AttemptSuggestion {
+    None,
+    Amber,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct AttemptCreateResult {
+    pub attempt: Attempt,
+    pub suggestion: AttemptSuggestion,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct AttemptListItem {
+    pub id: i64,
+    pub student_technique_id: i64,
+    pub technique_id: i64,
+    pub technique_name: String,
+    pub attempted_at: DateTime<Utc>,
+    pub coach_note: Option<String>,
+    pub student_note: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct AttemptSummary {
+    pub this_week: i64,
+    pub this_month: i64,
+    pub total: i64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct AttemptBucket {
+    pub date: chrono::NaiveDate,
+    pub count: i64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct WatchAggregateRow {
+    pub play_count: i64,
+    pub completed_count: i64,
+    pub total_seconds_watched: i64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct VideoStatsSnapshot {
+    pub video_id: i64,
+    pub unique_viewers: i64,
+    pub total_plays: i64,
+    pub completed_plays: i64,
+    pub total_seconds_watched: i64,
+    pub completion_rate: f64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct StudentWatchActivityRow {
+    pub video_id: i64,
+    pub video_title: String,
+    pub technique_id: i64,
+    pub technique_name: String,
+    pub play_count: i64,
+    pub completed_count: i64,
+    pub total_seconds_watched: i64,
+    pub last_watched_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct DashboardVideoRow {
+    pub video_id: i64,
+    pub video_title: String,
+    pub technique_id: i64,
+    pub technique_name: String,
+    pub plays_this_window: i64,
+    pub unique_viewers: i64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct DashboardVideoOverview {
+    pub total_seconds_watched: i64,
+    pub videos_processing: i64,
+    pub top_videos: Vec<DashboardVideoRow>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct StorageObjectRow {
+    pub video_id: i64,
+    pub title: String,
+    pub technique_id: i64,
+    pub technique_name: String,
+    pub bytes: i64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct StorageOverview {
+    pub total_bytes: i64,
+    pub total_objects: i64,
+    pub top_objects: Vec<StorageObjectRow>,
+}

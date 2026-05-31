@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "\n        SELECT t.id, t.name, t.description, t.coach_id, t.coach_name,\n               tag.id as tag_id, tag.name as tag_name\n        FROM techniques t\n        LEFT JOIN technique_tags tt ON t.id = tt.technique_id\n        LEFT JOIN tags tag ON tt.tag_id = tag.id\n        WHERE t.id NOT IN (\n            SELECT technique_id FROM student_techniques \n            WHERE student_id = ?\n        )\n        ORDER BY t.name\n        ",
+  "query": "\n        SELECT t.id, t.name, t.description, t.coach_id, t.coach_name,\n               tag.id as tag_id, tag.name as tag_name\n        FROM techniques t\n        LEFT JOIN technique_tags tt ON t.id = tt.technique_id\n        LEFT JOIN tags tag ON tt.tag_id = tag.id\n        WHERE t.id NOT IN (\n            SELECT technique_id FROM student_techniques\n            WHERE student_id = ?\n        )\n        ORDER BY t.name\n        ",
   "describe": {
     "columns": [
       {
@@ -52,5 +52,5 @@
       true
     ]
   },
-  "hash": "f97648db329367e55d705ad706b2d0b91d1149b1f149f981314de0ecc85fe225"
+  "hash": "161bef2ddb91711c3c140b6a02cc664b8c010b7be400a1512372667df0b2e9ce"
 }

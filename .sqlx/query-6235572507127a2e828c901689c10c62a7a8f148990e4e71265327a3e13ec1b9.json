@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE student_techniques\n         SET technique_name = ?, technique_description = ?\n         WHERE technique_id = ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": []
+  },
+  "hash": "6235572507127a2e828c901689c10c62a7a8f148990e4e71265327a3e13ec1b9"
+}
