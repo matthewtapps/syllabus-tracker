@@ -9,6 +9,7 @@ up:
     docker compose up -d --build
 
 dev:
+    @test -f sqlite.db || (echo "sqlite.db not found, creating empty file for app to migrate into" && touch sqlite.db)
     docker compose up --build
 
 stop:
@@ -30,19 +31,10 @@ reseed-attempts:
     sqlite3 sqlite.db "DELETE FROM attempts;"
     just seed
 
-# Wipe all data from the database. Schema is preserved; rerun `just seed`
-# afterwards to repopulate demo data.
+# Delete the local sqlite database file entirely. `just dev` will recreate an
+# empty file and the app will migrate it; rerun `just seed` to repopulate.
 clean:
-    sqlite3 sqlite.db "DELETE FROM attempts; \
-        DELETE FROM technique_tags; \
-        DELETE FROM tags; \
-        DELETE FROM collection_techniques; \
-        DELETE FROM student_techniques; \
-        DELETE FROM collections; \
-        DELETE FROM techniques; \
-        DELETE FROM invite_tokens; \
-        DELETE FROM user_sessions; \
-        DELETE FROM users;"
+    rm -f sqlite.db sqlite.db-shm sqlite.db-wal
 
 # Frontend commands. All run from the frontend/ folder.
 fe-dev:

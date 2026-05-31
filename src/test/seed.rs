@@ -290,6 +290,9 @@ mod tests {
         .await;
         println!("  coach id = {}", coach_id);
 
+        let admin_id = ensure_user(&pool, "admin", "demo", Role::Admin, "Admin").await;
+        println!("  admin id = {}", admin_id);
+
         // 2. Tags
         let mut tag_ids: std::collections::HashMap<&str, i64> = std::collections::HashMap::new();
         for tag in [
