@@ -218,37 +218,37 @@ export default function AssignTechniques({
     return <div className="text-sm text-destructive">{error}</div>;
   }
 
-  return (
-    <div className="space-y-4">
-      {tab !== 'collection' && (
-        <div className="space-y-2">
-          <Label htmlFor="collection-choice" className="text-sm">
-            File under
-          </Label>
-          <Select value={collectionChoice} onValueChange={setCollectionChoice}>
-            <SelectTrigger id="collection-choice">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={LOOSE_VALUE}>Loose (no collection)</SelectItem>
-              {collections.map((c) => (
-                <SelectItem key={c.id} value={String(c.id)}>
-                  {c.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <p className="text-xs text-muted-foreground">
-            Files these techniques under a collection on this student's
-            syllabus. Pick "Loose (no collection)" to leave them unfiled.
-          </p>
-        </div>
-      )}
+  const fileUnderField = (
+    <div className="space-y-2">
+      <Label htmlFor="collection-choice" className="text-sm">
+        File under
+      </Label>
+      <Select value={collectionChoice} onValueChange={setCollectionChoice}>
+        <SelectTrigger id="collection-choice">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value={LOOSE_VALUE}>Loose (no collection)</SelectItem>
+          {collections.map((c) => (
+            <SelectItem key={c.id} value={String(c.id)}>
+              {c.name}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      <p className="text-xs text-muted-foreground">
+        Files these techniques under a collection on this student's syllabus.
+        Pick "Loose (no collection)" to leave them unfiled.
+      </p>
+    </div>
+  );
 
-      <Tabs
-        value={tab}
-        onValueChange={(v) => setTab(v as 'assign' | 'create' | 'collection')}
-      >
+  return (
+    <Tabs
+      value={tab}
+      onValueChange={(v) => setTab(v as 'assign' | 'create' | 'collection')}
+      className="flex min-h-0 flex-1 flex-col"
+    >
         <TabsList className="w-full">
           <TabsTrigger value="assign" className="flex-1 min-w-0 px-2 sm:px-3">
             Pick
@@ -263,7 +263,7 @@ export default function AssignTechniques({
           </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="assign" className="mt-4 space-y-4">
+        <TabsContent value="assign" className="mt-4 flex min-h-0 flex-col">
           {unassignedTechniques.length === 0 ? (
             <p className="py-6 text-center text-sm text-muted-foreground">
               No unassigned techniques left to assign.
@@ -273,8 +273,10 @@ export default function AssignTechniques({
               id="assign_techniques"
               onSubmit={assignForm.handleSubmit(handleAssignTechniques)}
               setFieldErrors={assignForm.setFieldErrors}
-              className="space-y-4"
+              className="flex min-h-0 flex-1 flex-col gap-4"
             >
+              {fileUnderField}
+
               <Input
                 placeholder="Filter techniques..."
                 value={filterText}
@@ -328,7 +330,7 @@ export default function AssignTechniques({
                 </span>
               </div>
 
-              <div className="grid max-h-72 grid-cols-1 gap-2 overflow-y-auto pr-1 md:grid-cols-2">
+              <div className="grid min-h-0 flex-1 grid-cols-1 gap-2 overflow-y-auto pr-1 md:grid-cols-2">
                 {filteredTechniques.map((technique) => (
                   <label
                     key={technique.id}
@@ -375,13 +377,14 @@ export default function AssignTechniques({
         </TabsContent>
 
         {canCreateTechniques && (
-          <TabsContent value="create" className="mt-4">
+          <TabsContent value="create" className="mt-4 min-h-0 overflow-y-auto">
             <TracedForm
               id="create_technique"
               onSubmit={createTechniqueForm.handleSubmit(handleCreateTechnique)}
               setFieldErrors={createTechniqueForm.setFieldErrors}
               className="space-y-4"
             >
+              {fileUnderField}
               <div className="space-y-2">
                 <Label htmlFor="new-technique-name">Technique name</Label>
                 <Input
@@ -428,7 +431,7 @@ export default function AssignTechniques({
           </TabsContent>
         )}
 
-        <TabsContent value="collection" className="mt-4 space-y-4">
+        <TabsContent value="collection" className="mt-4 min-h-0 space-y-4 overflow-y-auto">
           {collections.length === 0 ? (
             <p className="py-6 text-center text-sm text-muted-foreground">
               No collections yet. Create one from the Collections page.
@@ -468,7 +471,6 @@ export default function AssignTechniques({
             </>
           )}
         </TabsContent>
-      </Tabs>
-    </div>
+    </Tabs>
   );
 }

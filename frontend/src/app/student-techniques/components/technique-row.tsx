@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   ChevronDownIcon,
   ChevronUpIcon,
@@ -27,7 +27,8 @@ interface TechniqueRowProps {
   isOwnTechnique: boolean;
   studentId: number;
   currentUserId: number;
-  defaultExpanded?: boolean;
+  expanded: boolean;
+  onToggle: () => void;
   showCollectionChip?: boolean;
   allTags: Tag[];
   selectedTagFilter: string[];
@@ -46,7 +47,8 @@ export function TechniqueRow({
   isOwnTechnique,
   studentId,
   currentUserId,
-  defaultExpanded = false,
+  expanded,
+  onToggle,
   showCollectionChip = false,
   allTags,
   selectedTagFilter,
@@ -56,7 +58,7 @@ export function TechniqueRow({
   onEditDefinition,
 }: TechniqueRowProps) {
   const navigate = useNavigate();
-  const [expanded, setExpanded] = useState(defaultExpanded);
+  const [searchParams] = useSearchParams();
   const [attempts, setAttempts] = useState<Attempt[] | null>(null);
   const [attemptsError, setAttemptsError] = useState<string | null>(null);
   const status = technique.status as Status;
@@ -96,14 +98,12 @@ export function TechniqueRow({
   // Optimistically update local state so it disappears immediately, then fire
   // the network call. Skip the call if the flag is already false.
   function toggleExpanded() {
-    setExpanded((wasExpanded) => {
-      const nextExpanded = !wasExpanded;
-      if (nextExpanded && technique.has_unseen_activity) {
-        onTechniqueUpdate({ ...technique, has_unseen_activity: false });
-        void markStudentTechniqueSeen(technique.id);
-      }
-      return nextExpanded;
-    });
+    const willExpand = !expanded;
+    if (willExpand && technique.has_unseen_activity) {
+      onTechniqueUpdate({ ...technique, has_unseen_activity: false });
+      void markStudentTechniqueSeen(technique.id);
+    }
+    onToggle();
   }
 
   async function handleStatusChange(next: Status) {
@@ -331,9 +331,19 @@ export function TechniqueRow({
           <FooterMeta
             technique={technique}
             studentId={studentId}
-            onViewDetails={() =>
-              navigate(`/student/${studentId}/technique/${technique.id}`)
-            }
+            onViewDetails={() => {
+              const next = new URLSearchParams();
+              const tab = searchParams.get('tab');
+              const collection = searchParams.get('collection');
+              if (tab) next.set('from_tab', tab);
+              if (collection) next.set('from_collection', collection);
+              const qs = next.toString();
+              navigate(
+                `/student/${studentId}/technique/${technique.id}${
+                  qs ? `?${qs}` : ''
+                }`,
+              );
+            }}
             onEditDefinition={
               canEditAll ? () => onEditDefinition(technique) : undefined
             }

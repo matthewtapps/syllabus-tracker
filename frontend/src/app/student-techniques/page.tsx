@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import {
   ArrowLeft,
@@ -77,6 +77,18 @@ import {
 import { TagRemoveDialog } from './components/tag-remove-dialog';
 import type { Status } from '@/lib/status';
 
+const FILTER_TAB_VALUES = new Set<FilterTab>([
+  'all',
+  'red',
+  'amber',
+  'green',
+  'new_activity',
+]);
+
+function isFilterTab(value: string | null): value is FilterTab {
+  return value !== null && FILTER_TAB_VALUES.has(value as FilterTab);
+}
+
 interface StudentTechniquesProps {
   user: User;
 }
@@ -90,15 +102,84 @@ export default function StudentTechniques({ user }: StudentTechniquesProps) {
     const parsed = parseInt(raw, 10);
     return Number.isFinite(parsed) ? parsed : null;
   })();
+  const expandedSet = useMemo(() => {
+    const raw = searchParams.get('expanded');
+    if (!raw) return new Set<number>();
+    const out = new Set<number>();
+    for (const part of raw.split(',')) {
+      const parsed = parseInt(part.trim(), 10);
+      if (Number.isFinite(parsed)) out.add(parsed);
+    }
+    return out;
+  }, [searchParams]);
+  function toggleExpandedId(techniqueId: number) {
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        const current = new Set<number>();
+        const raw = prev.get('expanded');
+        if (raw) {
+          for (const part of raw.split(',')) {
+            const parsed = parseInt(part.trim(), 10);
+            if (Number.isFinite(parsed)) current.add(parsed);
+          }
+        }
+        if (current.has(techniqueId)) current.delete(techniqueId);
+        else current.add(techniqueId);
+        if (current.size === 0) next.delete('expanded');
+        else
+          next.set(
+            'expanded',
+            [...current].sort((a, b) => a - b).join(','),
+          );
+        return next;
+      },
+      { replace: true },
+    );
+  }
   const [data, setData] = useState<StudentTechniques | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [allTags, setAllTags] = useState<Tag[]>([]);
   const [attemptSummary, setAttemptSummary] = useState<AttemptSummary | null>(null);
 
-  const [filterText, setFilterText] = useState('');
-  const [activeTab, setActiveTab] = useState<FilterTab>('all');
-  const [selectedTags, setSelectedTags] = useState<string[]>([]);
+  const filterText = searchParams.get('q') ?? '';
+  function setFilterText(next: string) {
+    setSearchParams((prev) => {
+      const params = new URLSearchParams(prev);
+      if (!next) params.delete('q');
+      else params.set('q', next);
+      return params;
+    }, { replace: true });
+  }
+  const tabParam = searchParams.get('tab');
+  const activeTab: FilterTab = isFilterTab(tabParam) ? tabParam : 'all';
+  function setActiveTab(next: FilterTab) {
+    setSearchParams((prev) => {
+      const params = new URLSearchParams(prev);
+      if (next === 'all') params.delete('tab');
+      else params.set('tab', next);
+      return params;
+    }, { replace: true });
+  }
+  const selectedTags = useMemo(() => {
+    const raw = searchParams.get('tags');
+    if (!raw) return [] as string[];
+    return raw.split(',').map((t) => t.trim()).filter(Boolean);
+  }, [searchParams]);
+  function setSelectedTags(next: string[] | ((prev: string[]) => string[])) {
+    setSearchParams((prev) => {
+      const params = new URLSearchParams(prev);
+      const current = (params.get('tags') ?? '')
+        .split(',')
+        .map((t) => t.trim())
+        .filter(Boolean);
+      const resolved = typeof next === 'function' ? next(current) : next;
+      if (resolved.length === 0) params.delete('tags');
+      else params.set('tags', resolved.join(','));
+      return params;
+    }, { replace: true });
+  }
   // 'all' = no collection filter, 'other' = loose assignments only, or a
   // numeric collection id.
   const collectionFilter = searchParams.get('collection') ?? 'all';
@@ -165,9 +246,6 @@ export default function StudentTechniques({ user }: StudentTechniquesProps) {
       }, { replace: true });
       return;
     }
-    setFilterText('');
-    setActiveTab('all');
-    setSelectedTags([]);
     requestAnimationFrame(() => {
       const el = document.getElementById(`technique-row-${focusId}`);
       el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -175,9 +253,28 @@ export default function StudentTechniques({ user }: StudentTechniquesProps) {
     setSearchParams((prev) => {
       const next = new URLSearchParams(prev);
       next.delete('focus');
+      next.delete('tab');
+      next.delete('q');
+      next.delete('tags');
       return next;
     }, { replace: true });
   }, [focusId, data, setSearchParams]);
+
+  // On the first render where data is available, if the URL has any
+  // ?expanded= rows, scroll the first one into view. Runs once per mount —
+  // subsequent expand/collapse toggles (and browser back/forward) don't
+  // re-scroll the page.
+  const didInitialScrollRef = useRef(false);
+  useEffect(() => {
+    if (didInitialScrollRef.current || !data || expandedSet.size === 0) return;
+    didInitialScrollRef.current = true;
+    const firstId = data.techniques.find((t) => expandedSet.has(t.id))?.id;
+    if (firstId === undefined) return;
+    requestAnimationFrame(() => {
+      const el = document.getElementById(`technique-row-${firstId}`);
+      el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  }, [data, expandedSet]);
 
   // Unique collections the student has assignments in (drives the selector
   // visibility). "Loose" is added if any technique has no collection.
@@ -238,6 +335,10 @@ export default function StudentTechniques({ user }: StudentTechniquesProps) {
     if (!data) return [];
     const needle = filterText.trim().toLowerCase();
     return data.techniques.filter((t) => {
+      // Expanded rows always stay visible so they don't yank out from under
+      // the user when the active filter would now exclude them (e.g. status
+      // change in detail page, or status change inline within the row).
+      if (expandedSet.has(t.id)) return true;
       if (!matchesCollection(t)) return false;
       if (activeTab === 'new_activity' && !t.has_unseen_activity) return false;
       if (activeTab !== 'all' && activeTab !== 'new_activity' && t.status !== activeTab)
@@ -255,7 +356,7 @@ export default function StudentTechniques({ user }: StudentTechniquesProps) {
       );
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data, filterText, activeTab, selectedTags, collectionFilter]);
+  }, [data, filterText, activeTab, selectedTags, collectionFilter, expandedSet]);
 
   function toggleTagFilter(tagName: string) {
     setSelectedTags((prev) =>
@@ -403,7 +504,10 @@ export default function StudentTechniques({ user }: StudentTechniquesProps) {
     <div className="container mx-auto py-6 px-4 sm:px-6 md:py-8">
       {!isOwnView && (() => {
         const fromDashboard = searchParams.get('from') === 'dashboard';
-        const backTo = fromDashboard ? '/dashboard' : '/students';
+        const fromTab = searchParams.get('from_tab');
+        const backTo = fromDashboard
+          ? '/dashboard'
+          : `/students${fromTab && fromTab !== 'active' ? `?tab=${fromTab}` : ''}`;
         const backLabel = fromDashboard ? 'Back to dashboard' : 'Back to students';
         return (
           <div className="mb-4">
@@ -488,7 +592,7 @@ export default function StudentTechniques({ user }: StudentTechniquesProps) {
                       Add techniques
                     </Button>
                   </DialogTrigger>
-                  <DialogContent className="max-h-[85vh] w-[calc(100vw-1rem)] max-w-xl overflow-y-auto p-4 sm:p-6">
+                  <DialogContent className="flex h-[min(85vh,640px)] w-[calc(100vw-1rem)] max-w-xl flex-col p-4 sm:p-6">
                     <DialogHeader>
                       <DialogTitle>Add techniques</DialogTitle>
                       <DialogDescription>
@@ -615,9 +719,13 @@ export default function StudentTechniques({ user }: StudentTechniquesProps) {
               <Button
                 variant="outline"
                 onClick={() => {
-                  setFilterText('');
-                  setSelectedTags([]);
-                  setActiveTab('all');
+                  setSearchParams((prev) => {
+                    const next = new URLSearchParams(prev);
+                    next.delete('q');
+                    next.delete('tags');
+                    next.delete('tab');
+                    return next;
+                  }, { replace: true });
                 }}
               >
                 Reset filters
@@ -635,7 +743,10 @@ export default function StudentTechniques({ user }: StudentTechniquesProps) {
                 isOwnTechnique={user.id === data.student.id}
                 studentId={data.student.id}
                 currentUserId={user.id}
-                defaultExpanded={technique.id === focusId}
+                expanded={
+                  expandedSet.has(technique.id) || technique.id === focusId
+                }
+                onToggle={() => toggleExpandedId(technique.id)}
                 showCollectionChip={showCollectionSelector && collectionFilter === 'all'}
                 allTags={allTags}
                 selectedTagFilter={selectedTags}

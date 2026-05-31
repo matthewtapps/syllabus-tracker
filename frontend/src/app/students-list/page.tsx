@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import { Archive, GraduationCap, MoreVertical, UserPlus, Users, X } from 'lucide-react';
 import {
@@ -40,6 +40,12 @@ const STATUS_TABS: { value: StatusTab; label: string }[] = [
   { value: 'all', label: 'All' },
 ];
 
+const STATUS_TAB_VALUES = new Set<StatusTab>(['active', 'graduated', 'archived', 'all']);
+
+function isStatusTab(value: string | null): value is StatusTab {
+  return value !== null && STATUS_TAB_VALUES.has(value as StatusTab);
+}
+
 interface StudentsListProps {
   user: User;
 }
@@ -50,9 +56,40 @@ export default function StudentsList({ user }: StudentsListProps) {
   const [students, setStudents] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [filter, setFilter] = useState('');
-  const [sortBy, setSortBy] = useState<SortBy>('recent_update');
-  const [statusTab, setStatusTab] = useState<StatusTab>('active');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const filter = searchParams.get('q') ?? '';
+  function setFilter(next: string) {
+    setSearchParams((prev) => {
+      const params = new URLSearchParams(prev);
+      if (!next) params.delete('q');
+      else params.set('q', next);
+      return params;
+    }, { replace: true });
+  }
+  const sortParam = searchParams.get('sort');
+  const sortBy: SortBy =
+    sortParam === 'alphabetical' ? 'alphabetical' : 'recent_update';
+  function setSortBy(next: SortBy) {
+    setSearchParams((prev) => {
+      const params = new URLSearchParams(prev);
+      if (next === 'recent_update') params.delete('sort');
+      else params.set('sort', next);
+      return params;
+    }, { replace: true });
+  }
+  const tabParam = searchParams.get('tab');
+  const statusTab: StatusTab = isStatusTab(tabParam) ? tabParam : 'active';
+  function setStatusTab(next: StatusTab) {
+    setSearchParams(
+      (prev) => {
+        const params = new URLSearchParams(prev);
+        if (next === 'active') params.delete('tab');
+        else params.set('tab', next);
+        return params;
+      },
+      { replace: true },
+    );
+  }
   const [graduateTarget, setGraduateTarget] = useState<User | null>(null);
 
   useEffect(() => {
@@ -257,6 +294,7 @@ export default function StudentsList({ user }: StudentsListProps) {
               <StudentRow
                 key={student.id}
                 student={student}
+                href={`/student/${student.id}${statusTab !== 'active' ? `?from_tab=${statusTab}` : ''}`}
                 actions={rowActions(student)}
               />
             ))}

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useParams, useSearchParams } from "react-router-dom";
 import {
   ArrowLeft,
   MoreVerticalIcon,
@@ -66,6 +66,7 @@ export default function StudentTechniqueDetail({
   user,
 }: StudentTechniqueDetailProps) {
   const { id, techniqueId } = useParams<{ id: string; techniqueId: string }>();
+  const [searchParams] = useSearchParams();
   const studentId = parseInt(id ?? "0", 10);
   const stId = parseInt(techniqueId ?? "0", 10);
 
@@ -209,6 +210,16 @@ export default function StudentTechniqueDetail({
   const totalAttempts = attempts?.length ?? technique.attempt_count;
   const recentStats = computeRecency(attempts);
 
+  const backToSyllabus = (() => {
+    const next = new URLSearchParams();
+    const fromTab = searchParams.get("from_tab");
+    const fromCollection = searchParams.get("from_collection");
+    if (fromTab) next.set("tab", fromTab);
+    if (fromCollection) next.set("collection", fromCollection);
+    next.set("expanded", String(technique.id));
+    return `/student/${studentId}?${next.toString()}`;
+  })();
+
   return (
     <div className="container mx-auto max-w-3xl px-4 py-6 sm:px-6 md:py-8">
       <div className="mb-4">
@@ -218,7 +229,7 @@ export default function StudentTechniqueDetail({
           size="sm"
           className="-ml-3 h-8 gap-1.5 text-muted-foreground"
         >
-          <Link to={`/student/${studentId}?focus=${technique.id}`}>
+          <Link to={backToSyllabus}>
             <ArrowLeft className="h-4 w-4" aria-hidden />
             Back to syllabus
           </Link>
