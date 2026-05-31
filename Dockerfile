@@ -14,25 +14,7 @@ ENV SQLX_OFFLINE=true
 RUN rustup target add x86_64-unknown-linux-musl
 RUN cargo chef cook --release --target x86_64-unknown-linux-musl
 
-FROM chef AS dev-builder
-WORKDIR /app
-COPY --from=builder-deps /app/target target
-COPY --from=builder-deps /usr/local/cargo /usr/local/cargo
-RUN cargo install cargo-watch --locked
-
 FROM mwader/static-ffmpeg:7.1.1 AS ffmpeg
-
-FROM chef AS dev
-WORKDIR /app
-COPY --from=dev-builder /usr/local/cargo/bin/cargo-watch /usr/local/cargo/bin/cargo-watch
-COPY --from=ffmpeg /ffmpeg /usr/local/bin/ffmpeg
-COPY --from=ffmpeg /ffprobe /usr/local/bin/ffprobe
-ENV ROCKET_ADDRESS=0.0.0.0
-ENV ROCKET_PORT=8000
-ENV FFMPEG_BIN=/usr/local/bin/ffmpeg
-ENV FFPROBE_BIN=/usr/local/bin/ffprobe
-EXPOSE 8000
-CMD ["cargo", "watch", "-x", "run"]
 
 FROM chef AS builder
 WORKDIR /app

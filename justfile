@@ -70,7 +70,10 @@ build:
     docker build --target production -t syllabus-tracker:latest .
     docker build --target production -t syllabus-tracker-frontend:latest ./frontend
 
-# Start the full stack via docker compose in detached mode.
+# Production-like stack: builds the `production` Dockerfile targets for app
+# and frontend, fronts them with nginx on http://localhost:8080, and points
+# S3 at the local MinIO container. Use this to sanity-check the prod image
+# before pushing. For day-to-day iteration use `just dev`.
 [group('run')]
 up:
     docker compose up -d --build
@@ -78,7 +81,6 @@ up:
 # Native dev loop. Brings up only the supporting infra in docker (minio,
 # minio-init, otel-collector) and runs the backend + frontend on the host so
 # we reuse the warm `target/` cache instead of recompiling inside a container.
-# `just up` still runs the full dockerised stack if you need to test the image.
 [group('run')]
 dev: migrate
     #!/usr/bin/env bash
