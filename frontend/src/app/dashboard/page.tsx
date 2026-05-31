@@ -121,7 +121,7 @@ function CoachDashboard() {
   }, []);
 
   const activeStudents = useMemo(
-    () => (students ?? []).filter((s) => !s.archived),
+    () => (students ?? []).filter((s) => !s.archived && !s.graduated_at),
     [students],
   );
 
