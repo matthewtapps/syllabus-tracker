@@ -1,15 +1,8 @@
 import { useState } from "react";
-import {
-  ChevronDownIcon,
-  ChevronUpIcon,
-  DownloadIcon,
-  Loader2,
-  MoreVerticalIcon,
-  TrashIcon,
-} from "lucide-react";
+import { Loader2, PlayIcon, TrashIcon } from "lucide-react";
 import { toast } from "sonner";
 import type { Video } from "@/lib/api";
-import { deleteVideo, getDownloadUrl } from "@/lib/api";
+import { deleteVideo } from "@/lib/api";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -20,42 +13,31 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
-import { useWatchTracker } from "./useWatchTracker";
-import { VideoPlayerPanel } from "./video-player-panel";
-import { VideoStatsPanel } from "./video-stats-panel";
 
 interface VideoRowProps {
   video: Video;
   canManage: boolean;
-  expanded: boolean;
-  onToggleExpanded: () => void;
+  onPlay: () => void;
   onDeleted: (videoId: number) => void;
+  /** Render-prop for a drag handle when sortable. */
+  dragHandle?: React.ReactNode;
 }
 
 export function VideoRow({
   video,
   canManage,
-  expanded,
-  onToggleExpanded,
+  onPlay,
   onDeleted,
+  dragHandle,
 }: VideoRowProps) {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  const [downloading, setDownloading] = useState(false);
-  const [showStats, setShowStats] = useState(false);
-  const trackerEvents = useWatchTracker(video.id);
 
-  const canPlay = video.processing_status === "ready";
-  const isNative = video.kind === "native";
+  const isProcessing = video.processing_status === "processing";
+  const isFailed = video.processing_status === "failed";
+  const isPlayable = video.processing_status === "ready";
 
   async function handleDelete() {
     setDeleting(true);
@@ -72,138 +54,79 @@ export function VideoRow({
     }
   }
 
-  async function handleDownload() {
-    setDownloading(true);
-    try {
-      const signed = await getDownloadUrl(video.id);
-      window.open(signed.url, "_blank", "noopener,noreferrer");
-    } catch (err) {
-      console.error(err);
-      toast.error("Could not start download");
-    } finally {
-      setDownloading(false);
-    }
-  }
-
-  const subtitle = buildSubtitle(video);
-
   return (
     <li
       className={cn(
-        "rounded-md border border-border bg-card",
-        video.processing_status === "failed" && "border-destructive/40",
+        "relative overflow-hidden rounded-md border border-border bg-card",
+        isFailed && "border-destructive/40",
       )}
     >
-      <div className="flex items-center gap-2 p-3">
+      <div className="flex items-center gap-1.5 px-2 py-1.5 sm:px-3 sm:py-2">
+        {dragHandle}
         <button
           type="button"
-          onClick={onToggleExpanded}
-          disabled={!canPlay}
-          aria-expanded={expanded}
+          onClick={isPlayable ? onPlay : undefined}
+          disabled={!isPlayable}
           className={cn(
-            "min-w-0 flex-1 text-left",
-            canPlay
+            "flex min-w-0 flex-1 items-center gap-3 text-left",
+            isPlayable
               ? "cursor-pointer"
               : "cursor-not-allowed opacity-80",
           )}
         >
-          <div className="flex items-center gap-2">
-            {canPlay ? (
-              expanded ? (
-                <ChevronUpIcon
-                  className="h-4 w-4 text-muted-foreground"
-                  aria-hidden
-                />
-              ) : (
-                <ChevronDownIcon
-                  className="h-4 w-4 text-muted-foreground"
-                  aria-hidden
-                />
-              )
-            ) : null}
-            <p className="truncate text-sm font-medium text-foreground">
-              {video.title}
-            </p>
-            <StatusBadge video={video} />
-          </div>
-          {subtitle && (
-            <p className="ml-6 mt-0.5 truncate text-xs text-muted-foreground">
-              {subtitle}
-            </p>
+          {isProcessing ? (
+            <Loader2
+              className="h-4 w-4 shrink-0 animate-spin text-muted-foreground"
+              aria-hidden
+            />
+          ) : (
+            <PlayIcon
+              className="h-4 w-4 shrink-0 text-muted-foreground"
+              aria-hidden
+            />
           )}
-          {video.processing_status === "failed" && video.processing_error && (
-            <p className="ml-6 mt-1 text-xs text-destructive">
-              {video.processing_error}
-            </p>
-          )}
+          <span className="min-w-0 flex-1 truncate text-sm font-medium">
+            {video.title}
+          </span>
+          <span className="shrink-0 text-xs text-muted-foreground">
+            {isFailed
+              ? "Failed"
+              : isProcessing
+                ? "Processing..."
+                : formatDuration(video.duration_seconds)}
+          </span>
         </button>
 
-        <div className="flex items-center gap-1">
-          {canPlay && isNative && (
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8 text-muted-foreground"
-              onClick={handleDownload}
-              disabled={downloading}
-              aria-label="Download video"
-            >
-              <DownloadIcon className="h-4 w-4" aria-hidden />
-            </Button>
-          )}
-          {canManage && (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-8 w-8 text-muted-foreground"
-                >
-                  <MoreVerticalIcon className="h-4 w-4" aria-hidden />
-                  <span className="sr-only">Video actions</span>
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem
-                  className="text-destructive focus:text-destructive"
-                  onSelect={() => {
-                    // Defer one tick so the dropdown's pointer-events
-                    // teardown completes before the AlertDialog mounts.
-                    // Otherwise Radix leaves body pointer-events: none and
-                    // the page locks until refresh.
-                    setTimeout(() => setConfirmOpen(true), 0);
-                  }}
-                >
-                  <TrashIcon className="mr-2 h-4 w-4" aria-hidden />
-                  Delete
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          )}
-        </div>
+        {canManage && (
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7 shrink-0 text-muted-foreground hover:text-destructive"
+            onClick={(e) => {
+              e.stopPropagation();
+              setConfirmOpen(true);
+            }}
+            aria-label={`Delete ${video.title}`}
+          >
+            <TrashIcon className="h-3.5 w-3.5" aria-hidden />
+          </Button>
+        )}
       </div>
 
-      {expanded && canPlay && (
-        <div className="border-t border-border p-3">
-          <VideoPlayerPanel video={video} events={trackerEvents} />
-          {canManage && (
-            <div className="mt-3">
-              <button
-                type="button"
-                className="text-xs font-medium text-muted-foreground underline-offset-2 hover:underline"
-                onClick={() => setShowStats((v) => !v)}
-              >
-                {showStats ? "Hide stats" : "Show stats"}
-              </button>
-              {showStats && (
-                <div className="mt-2">
-                  <VideoStatsPanel videoId={video.id} />
-                </div>
-              )}
-            </div>
-          )}
+      {isProcessing && (
+        <div
+          className="absolute inset-x-0 bottom-0 h-0.5 overflow-hidden bg-muted/60"
+          aria-hidden
+        >
+          <div className="h-full w-1/3 animate-[processingBar_1.4s_ease-in-out_infinite] rounded-full bg-primary/70" />
         </div>
+      )}
+
+      {isFailed && video.processing_error && (
+        <p className="border-t border-destructive/30 bg-destructive/5 px-3 py-1.5 text-xs text-destructive">
+          {video.processing_error}
+        </p>
       )}
 
       <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
@@ -211,8 +134,8 @@ export function VideoRow({
           <AlertDialogHeader>
             <AlertDialogTitle>Delete this video?</AlertDialogTitle>
             <AlertDialogDescription>
-              This permanently removes "{video.title}" from this technique. Watch
-              history for this video will also be cleared.
+              This permanently removes &ldquo;{video.title}&rdquo; from this
+              technique. Watch history for this video will also be cleared.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -234,59 +157,8 @@ export function VideoRow({
   );
 }
 
-function StatusBadge({ video }: { video: Video }) {
-  if (video.processing_status === "processing") {
-    return (
-      <Badge variant="outline" className="gap-1 text-xs">
-        <Loader2 className="h-3 w-3 animate-spin" aria-hidden />
-        Processing
-      </Badge>
-    );
-  }
-  if (video.processing_status === "failed") {
-    return (
-      <Badge variant="destructive" className="text-xs">
-        Failed
-      </Badge>
-    );
-  }
-  const kindLabel = kindLabelFor(video);
-  return kindLabel ? (
-    <Badge variant="secondary" className="text-xs uppercase tracking-wide">
-      {kindLabel}
-    </Badge>
-  ) : null;
-}
-
-function kindLabelFor(video: Video): string | null {
-  switch (video.kind) {
-    case "native":
-      return "Upload";
-    case "youtube":
-      return "YouTube";
-    case "vimeo":
-      return "Vimeo";
-    case "drive":
-      return "Drive";
-    case "link":
-      return "Link";
-    default:
-      return null;
-  }
-}
-
-function buildSubtitle(video: Video): string | null {
-  const parts: string[] = [];
-  if (typeof video.duration_seconds === "number" && video.duration_seconds > 0) {
-    parts.push(formatDuration(video.duration_seconds));
-  }
-  if (video.description) {
-    parts.push(video.description);
-  }
-  return parts.length ? parts.join(" · ") : null;
-}
-
-function formatDuration(seconds: number): string {
+function formatDuration(seconds: number | null | undefined): string {
+  if (typeof seconds !== "number" || seconds <= 0) return "";
   const mins = Math.floor(seconds / 60);
   const secs = Math.round(seconds % 60);
   return `${mins}:${secs.toString().padStart(2, "0")}`;

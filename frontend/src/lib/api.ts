@@ -717,6 +717,7 @@ export interface LibraryTechniqueRow {
   tags: Tag[];
   collection_count: number;
   student_count: number;
+  video_count: number;
   last_activity_at: string | null;
 }
 
@@ -726,6 +727,36 @@ export async function getLibraryTechniques(): Promise<LibraryTechniqueRow[]> {
   });
   if (!response.ok) {
     throw new Error("Failed to fetch techniques");
+  }
+  return await response.json();
+}
+
+export interface LibraryTechniqueCollectionRef {
+  id: number;
+  name: string;
+}
+
+export interface AttemptWeekBucket {
+  date: string;
+  count: number;
+}
+
+export interface LibraryTechniqueStats {
+  collections: LibraryTechniqueCollectionRef[];
+  status_counts: { red: number; amber: number; green: number };
+  attempts_30d: number;
+  attempts_weekly_buckets: AttemptWeekBucket[];
+  video_plays: number;
+}
+
+export async function getLibraryTechniqueStats(
+  techniqueId: number,
+): Promise<LibraryTechniqueStats> {
+  const response = await fetch(`/api/techniques/${techniqueId}/stats`, {
+    credentials: "include",
+  });
+  if (!response.ok) {
+    throw new Error("Failed to fetch technique stats");
   }
   return await response.json();
 }

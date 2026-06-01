@@ -1,0 +1,32 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT\n            COALESCE(SUM(CASE WHEN status = 'red'   THEN 1 ELSE 0 END), 0) AS \"red!: i64\",\n            COALESCE(SUM(CASE WHEN status = 'amber' THEN 1 ELSE 0 END), 0) AS \"amber!: i64\",\n            COALESCE(SUM(CASE WHEN status = 'green' THEN 1 ELSE 0 END), 0) AS \"green!: i64\"\n           FROM student_techniques WHERE technique_id = ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "red!: i64",
+        "ordinal": 0,
+        "type_info": "Integer"
+      },
+      {
+        "name": "amber!: i64",
+        "ordinal": 1,
+        "type_info": "Integer"
+      },
+      {
+        "name": "green!: i64",
+        "ordinal": 2,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "869a3248e8567ca0f1886e40e9aa567b8dcbf70591f2ffe6913420a8814ee262"
+}

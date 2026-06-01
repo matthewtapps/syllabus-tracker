@@ -1,17 +1,17 @@
 use std::collections::{HashMap, hash_map::Entry};
 
 use chrono::NaiveDateTime;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use sqlx::{Pool, Sqlite};
 use tracing::{info, instrument};
 
 use crate::error::AppError;
-use crate::models::{Tag, Technique};
+use crate::models::{AttemptBucket, Tag, Technique};
 
 /// One row in the library / full-techniques admin list. Aggregates collection
 /// membership count, how many students have the technique assigned, and the
 /// most recent activity on any of those assignments.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize)]
 pub struct LibraryTechniqueRow {
     pub id: i64,
     pub name: String,
@@ -19,6 +19,7 @@ pub struct LibraryTechniqueRow {
     pub tags: Vec<Tag>,
     pub collection_count: i64,
     pub student_count: i64,
+    pub video_count: i64,
     pub last_activity_at: Option<String>,
 }
 
@@ -36,6 +37,7 @@ pub async fn list_library_techniques(
             t.description,
             COALESCE((SELECT COUNT(*) FROM collection_techniques ct WHERE ct.technique_id = t.id), 0) AS "collection_count!: i64",
             COALESCE((SELECT COUNT(DISTINCT st.student_id) FROM student_techniques st WHERE st.technique_id = t.id), 0) AS "student_count!: i64",
+            COALESCE((SELECT COUNT(*) FROM videos v WHERE v.technique_id = t.id), 0) AS "video_count!: i64",
             (SELECT MAX(st.updated_at) FROM student_techniques st WHERE st.technique_id = t.id) AS "last_activity_at?: NaiveDateTime"
         FROM techniques t
         ORDER BY t.name
@@ -75,6 +77,7 @@ pub async fn list_library_techniques(
             description: r.description.unwrap_or_default(),
             collection_count: r.collection_count,
             student_count: r.student_count,
+            video_count: r.video_count,
             last_activity_at: r.last_activity_at.map(|dt| {
                 chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(dt, chrono::Utc)
                     .to_rfc3339()
@@ -136,6 +139,125 @@ pub async fn get_all_techniques(pool: &Pool<Sqlite>) -> Result<Vec<Technique>, A
 
     let techniques: Vec<Technique> = techniques_map.into_values().collect();
     Ok(techniques)
+}
+
+/// Collection reference shown on the library expanded row.
+#[derive(Debug, Serialize)]
+pub struct LibraryTechniqueCollectionRef {
+    pub id: i64,
+    pub name: String,
+}
+
+/// Status mix across all student_techniques for a single library technique.
+#[derive(Debug, Serialize)]
+pub struct LibraryTechniqueStatusCounts {
+    pub red: i64,
+    pub amber: i64,
+    pub green: i64,
+}
+
+/// Everything needed to render the expanded library row's stats strip.
+#[derive(Debug, Serialize)]
+pub struct LibraryTechniqueStats {
+    pub collections: Vec<LibraryTechniqueCollectionRef>,
+    pub status_counts: LibraryTechniqueStatusCounts,
+    pub attempts_30d: i64,
+    pub attempts_weekly_buckets: Vec<AttemptBucket>,
+    pub video_plays: i64,
+}
+
+#[instrument]
+pub async fn library_technique_stats(
+    pool: &Pool<Sqlite>,
+    technique_id: i64,
+) -> Result<LibraryTechniqueStats, AppError> {
+    let collections_rows = sqlx::query!(
+        r#"SELECT c.id AS "id!: i64", c.name AS "name!: String"
+           FROM collection_techniques ct
+           JOIN collections c ON c.id = ct.collection_id
+           WHERE ct.technique_id = ?
+           ORDER BY c.name"#,
+        technique_id
+    )
+    .fetch_all(pool)
+    .await?;
+    let collections = collections_rows
+        .into_iter()
+        .map(|r| LibraryTechniqueCollectionRef {
+            id: r.id,
+            name: r.name,
+        })
+        .collect();
+
+    let status_row = sqlx::query!(
+        r#"SELECT
+            COALESCE(SUM(CASE WHEN status = 'red'   THEN 1 ELSE 0 END), 0) AS "red!: i64",
+            COALESCE(SUM(CASE WHEN status = 'amber' THEN 1 ELSE 0 END), 0) AS "amber!: i64",
+            COALESCE(SUM(CASE WHEN status = 'green' THEN 1 ELSE 0 END), 0) AS "green!: i64"
+           FROM student_techniques WHERE technique_id = ?"#,
+        technique_id
+    )
+    .fetch_one(pool)
+    .await?;
+    let status_counts = LibraryTechniqueStatusCounts {
+        red: status_row.red,
+        amber: status_row.amber,
+        green: status_row.green,
+    };
+
+    let attempts_30d_row = sqlx::query!(
+        r#"SELECT COUNT(*) AS "count!: i64"
+           FROM attempts a
+           JOIN student_techniques st ON st.id = a.student_technique_id
+           WHERE st.technique_id = ?
+             AND a.attempted_at >= datetime('now', '-30 days')"#,
+        technique_id
+    )
+    .fetch_one(pool)
+    .await?;
+
+    let bucket_rows = sqlx::query!(
+        r#"SELECT date(a.attempted_at, 'weekday 0', '-6 days') AS "week_start!: String",
+                  COUNT(*) AS "count!: i64"
+           FROM attempts a
+           JOIN student_techniques st ON st.id = a.student_technique_id
+           WHERE st.technique_id = ?
+             AND a.attempted_at >= datetime('now', '-56 days')
+           GROUP BY date(a.attempted_at, 'weekday 0', '-6 days')
+           ORDER BY 1"#,
+        technique_id,
+    )
+    .fetch_all(pool)
+    .await?;
+    let attempts_weekly_buckets = bucket_rows
+        .into_iter()
+        .filter_map(|r| {
+            chrono::NaiveDate::parse_from_str(&r.week_start, "%Y-%m-%d")
+                .ok()
+                .map(|date| AttemptBucket {
+                    date,
+                    count: r.count,
+                })
+        })
+        .collect();
+
+    let plays_row = sqlx::query!(
+        r#"SELECT COALESCE(SUM(a.play_count), 0) AS "plays!: i64"
+           FROM video_watch_aggregates a
+           JOIN videos v ON v.id = a.video_id
+           WHERE v.technique_id = ?"#,
+        technique_id
+    )
+    .fetch_one(pool)
+    .await?;
+
+    Ok(LibraryTechniqueStats {
+        collections,
+        status_counts,
+        attempts_30d: attempts_30d_row.count,
+        attempts_weekly_buckets,
+        video_plays: plays_row.plays,
+    })
 }
 
 #[instrument]

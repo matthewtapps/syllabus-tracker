@@ -14,6 +14,7 @@ import {
   getDashboardVideoOverview,
   getLibraryStats,
   getLibraryTechniques,
+  getLibraryTechniqueStats,
   getRecentAttemptsForStudent,
   getStudentTechniqueDetail,
   getStudentTechniques,
@@ -177,18 +178,35 @@ export function useLibraryTechniques() {
   });
 }
 
+export function useLibraryTechniqueStats(
+  techniqueId: number | undefined,
+  enabled: boolean = true,
+) {
+  return useQuery({
+    queryKey: qk.libraryTechniqueStats(techniqueId ?? 0),
+    queryFn: () => getLibraryTechniqueStats(techniqueId as number),
+    enabled:
+      enabled && typeof techniqueId === "number" && Number.isFinite(techniqueId),
+  });
+}
+
 // ---- Videos ----
 
-// Polls every 2s while any video is still processing; otherwise no interval.
+// Polls every 1.5s while any video is still processing; otherwise no
+// interval. Polling continues in background tabs so users that switch away
+// during a long upload come back to a finished video.
 export function useTechniqueVideos(techniqueId: number | undefined) {
   return useQuery({
     queryKey: qk.techniqueVideos(techniqueId ?? 0),
     queryFn: () => listVideos(techniqueId as number),
     enabled: typeof techniqueId === "number" && Number.isFinite(techniqueId),
+    staleTime: 0,
+    refetchOnWindowFocus: true,
+    refetchIntervalInBackground: true,
     refetchInterval: (query) => {
       const data = query.state.data;
       if (!data) return false;
-      return data.some((v) => v.processing_status === "processing") ? 2000 : false;
+      return data.some((v) => v.processing_status === "processing") ? 1500 : false;
     },
   });
 }

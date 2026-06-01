@@ -91,3 +91,14 @@
     font-weight: 600;
   }
 }
+
+/* Indeterminate progress bar: slides a short pill across the track,
+   used along the bottom border of a still-processing video row. */
+@keyframes processingBar {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(400%);
+  }
+}

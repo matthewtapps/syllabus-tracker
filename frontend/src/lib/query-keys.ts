@@ -31,6 +31,8 @@ export const qk = {
 
   libraryStats: () => ["libraryStats"] as const,
   libraryTechniques: () => ["libraryTechniques"] as const,
+  libraryTechniqueStats: (id: number) =>
+    ["libraryTechnique", id, "stats"] as const,
 
   techniqueVideos: (techniqueId: number) =>
     ["technique", techniqueId, "videos"] as const,

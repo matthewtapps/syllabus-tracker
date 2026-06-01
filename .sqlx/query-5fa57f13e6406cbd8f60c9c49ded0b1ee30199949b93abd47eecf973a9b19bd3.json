@@ -1,0 +1,26 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT c.id AS \"id!: i64\", c.name AS \"name!: String\"\n           FROM collection_techniques ct\n           JOIN collections c ON c.id = ct.collection_id\n           WHERE ct.technique_id = ?\n           ORDER BY c.name",
+  "describe": {
+    "columns": [
+      {
+        "name": "id!: i64",
+        "ordinal": 0,
+        "type_info": "Integer"
+      },
+      {
+        "name": "name!: String",
+        "ordinal": 1,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "5fa57f13e6406cbd8f60c9c49ded0b1ee30199949b93abd47eecf973a9b19bd3"
+}

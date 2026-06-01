@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT COALESCE(SUM(a.play_count), 0) AS \"plays!: i64\"\n           FROM video_watch_aggregates a\n           JOIN videos v ON v.id = a.video_id\n           WHERE v.technique_id = ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "plays!: i64",
+        "ordinal": 0,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "ccef560a1a6fbbaa83fae89bab38f4602c4d452c2787d91b84b8fd54eb48eddd"
+}

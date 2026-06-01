@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -22,7 +23,8 @@ import { NotesEditor } from "./notes-editor";
 import { TagsEditor } from "./tags-editor";
 import { AttemptButton } from "./attempt-button";
 import { AttemptsPanel } from "./attempts-panel";
-import { InlineVideoList } from "./inline-video-list";
+import { VideoList } from "@/components/videos/video-list";
+import { AddVideoButton } from "@/components/videos/add-video-button";
 import { useCapabilities } from "@/context/capabilities-context";
 
 interface TechniqueRowProps {
@@ -290,8 +292,8 @@ export function TechniqueRow({
           )}
 
           {videosEnabled && (
-            <InlineVideoList
-              libraryTechniqueId={technique.technique_id}
+            <VideoSection
+              techniqueId={technique.technique_id}
               canManage={canEditAll}
             />
           )}
@@ -469,5 +471,34 @@ function FooterMeta({
         )}
       </div>
     </div>
+  );
+}
+
+interface VideoSectionProps {
+  techniqueId: number;
+  canManage: boolean;
+}
+
+function VideoSection({ techniqueId, canManage }: VideoSectionProps) {
+  const [reloadKey, setReloadKey] = useState(0);
+  return (
+    <section className="space-y-2" onClick={(e) => e.stopPropagation()}>
+      <div className="flex items-center justify-between gap-2">
+        <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          Videos
+        </h3>
+        {canManage && (
+          <AddVideoButton
+            techniqueId={techniqueId}
+            onAdded={() => setReloadKey((k) => k + 1)}
+          />
+        )}
+      </div>
+      <VideoList
+        techniqueId={techniqueId}
+        canManage={canManage}
+        reloadKey={reloadKey}
+      />
+    </section>
   );
 }

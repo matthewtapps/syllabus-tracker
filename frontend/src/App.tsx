@@ -54,7 +54,12 @@ function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <AppShell />
-      {import.meta.env.DEV && <ReactQueryDevtools initialIsOpen={false} />}
+      {import.meta.env.DEV && (
+        <ReactQueryDevtools
+          initialIsOpen={false}
+          buttonPosition="top-right"
+        />
+      )}
     </QueryClientProvider>
   );
 }
@@ -185,6 +190,9 @@ function AppShell() {
         </Layout>
         </CapabilitiesProvider>
         <Toaster
+          mobileOffset={{
+            bottom: 'calc(env(safe-area-inset-bottom) + 4.5rem)',
+          }}
           toastOptions={{
             classNames: {
               toast: "group toast group-[.toast-group]:bg-background group-[.toast-group]:text-foreground group-[.toast-group]:border-border group-[.toast-group]:shadow-lg",
