@@ -10,6 +10,7 @@ use rocket::response::Responder;
 use rocket::response::status::Custom;
 use rocket::serde::{Deserialize, Serialize, json::Json};
 use sqlx::{Pool, Sqlite};
+use tracing::warn;
 use validator::Validate;
 use validator::ValidationErrors;
 
@@ -1562,7 +1563,15 @@ pub async fn api_update_attempt(
     body.validate()?;
     if let Some(raw) = body.attempted_at.as_deref() {
         let dt = chrono::DateTime::parse_from_rfc3339(raw)
-            .map_err(|_| ApiError::from(Status::BadRequest))?
+            .map_err(|e| {
+                warn!(
+                    attempt_id = id,
+                    raw_value = raw,
+                    error = %e,
+                    "rejected attempt update: attempted_at not RFC3339"
+                );
+                ApiError::from(Status::BadRequest)
+            })?
             .with_timezone(&chrono::Utc);
         update_attempt_timestamp(db, &user, id, dt).await?;
     }
@@ -1687,13 +1696,27 @@ pub async fn api_attempt_heatmap(
     let today = chrono::Utc::now().date_naive();
     let default_from = today - chrono::Duration::days(365);
     let from = match params.from.as_deref() {
-        Some(s) => chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d")
-            .map_err(|_| ApiError::from(Status::BadRequest))?,
+        Some(s) => chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d").map_err(|e| {
+            warn!(
+                student_id = id,
+                raw_value = s,
+                error = %e,
+                "rejected heatmap query: from not YYYY-MM-DD"
+            );
+            ApiError::from(Status::BadRequest)
+        })?,
         None => default_from,
     };
     let to = match params.to.as_deref() {
-        Some(s) => chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d")
-            .map_err(|_| ApiError::from(Status::BadRequest))?,
+        Some(s) => chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d").map_err(|e| {
+            warn!(
+                student_id = id,
+                raw_value = s,
+                error = %e,
+                "rejected heatmap query: to not YYYY-MM-DD"
+            );
+            ApiError::from(Status::BadRequest)
+        })?,
         None => today,
     };
     let buckets = attempt_buckets_for_student(db, id, from, to).await?;

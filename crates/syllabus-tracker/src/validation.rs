@@ -4,7 +4,7 @@ use rocket::response::status::Custom;
 use rocket::serde::json::Json;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use tracing::instrument;
+use tracing::{error, instrument, warn};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ValidationResponse {
@@ -74,6 +74,15 @@ impl ToValidationResponse for Status {
             Status::ServiceUnavailable => ("service", "Service unavailable"),
             _ => ("error", "An error occurred"),
         };
+
+        // Surface bare-status returns at log level so they don't vanish silently.
+        // Handlers that already logged the underlying cause will produce two
+        // lines, which is acceptable for visibility.
+        if self.code >= 500 {
+            error!(status = %self, field, "API returned bare error status");
+        } else if self.code >= 400 {
+            warn!(status = %self, field, "API returned bare error status");
+        }
 
         Custom(self, Json(ValidationResponse::with_error(field, message)))
     }

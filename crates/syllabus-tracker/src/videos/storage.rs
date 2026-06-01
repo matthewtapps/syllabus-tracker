@@ -59,8 +59,8 @@ pub struct S3Config {
 impl S3Config {
     pub fn from_env() -> Result<Self, StorageError> {
         let read = |key: &str| {
-            dotenvy::var(key).map_err(|_| {
-                StorageError::Backend(format!("missing env var: {}", key))
+            dotenvy::var(key).map_err(|e| {
+                StorageError::Backend(format!("missing env var {}: {}", key, e))
             })
         };
         let force_path_style = dotenvy::var("S3_FORCE_PATH_STYLE")

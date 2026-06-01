@@ -118,7 +118,15 @@ pub async fn api_video_upload(
 
     tokio::fs::create_dir_all(pipeline::temp_dir())
         .await
-        .map_err(|_| Status::InternalServerError)?;
+        .map_err(|e| {
+            error!(
+                technique_id = tid,
+                temp_dir = ?pipeline::temp_dir(),
+                error = %e,
+                "failed to create video temp dir"
+            );
+            Status::InternalServerError
+        })?;
     let mut dest = pipeline::temp_dir();
     dest.push(format!("{}.mp4", Uuid::new_v4()));
 
@@ -126,7 +134,12 @@ pub async fn api_video_upload(
         .persist_to(&dest)
         .await
         .map_err(|e| {
-            warn!("failed to persist upload: {}", e);
+            error!(
+                technique_id = tid,
+                dest = ?dest,
+                error = %e,
+                "failed to persist uploaded video to disk"
+            );
             Status::InternalServerError
         })?;
 
@@ -204,7 +217,14 @@ pub async fn api_video_link(
     let video = db::get_video(pool.inner(), id)
         .await
         .map_err(Status::from)?
-        .ok_or(Status::InternalServerError)?;
+        .ok_or_else(|| {
+            error!(
+                video_id = id,
+                technique_id = tid,
+                "linked video row vanished immediately after insert"
+            );
+            Status::InternalServerError
+        })?;
     Ok(Json(video))
 }
 
@@ -295,18 +315,40 @@ pub async fn api_replace_video(
         .await
         .map_err(Status::from)?
         .ok_or(Status::NotFound)?;
-    let technique_id = video.technique_id.ok_or(Status::InternalServerError)?;
+    let technique_id = video.technique_id.ok_or_else(|| {
+        error!(
+            video_id = vid,
+            "video being replaced has no technique_id; refusing to process"
+        );
+        Status::InternalServerError
+    })?;
     let existing_storage_key = video.storage_key.clone();
 
     tokio::fs::create_dir_all(pipeline::temp_dir())
         .await
-        .map_err(|_| Status::InternalServerError)?;
+        .map_err(|e| {
+            error!(
+                video_id = vid,
+                temp_dir = ?pipeline::temp_dir(),
+                error = %e,
+                "failed to create video temp dir for replace"
+            );
+            Status::InternalServerError
+        })?;
     let mut dest = pipeline::temp_dir();
     dest.push(format!("{}.mp4", Uuid::new_v4()));
     form.file
         .persist_to(&dest)
         .await
-        .map_err(|_| Status::InternalServerError)?;
+        .map_err(|e| {
+            error!(
+                video_id = vid,
+                dest = ?dest,
+                error = %e,
+                "failed to persist replacement video to disk"
+            );
+            Status::InternalServerError
+        })?;
 
     db::reset_video_to_processing(pool.inner(), vid)
         .await
@@ -385,7 +427,15 @@ pub async fn api_video_playback_url(
     let url = storage
         .presign_get(&key, ttl)
         .await
-        .map_err(|_| Status::InternalServerError)?;
+        .map_err(|e| {
+            error!(
+                video_id = vid,
+                storage_key = %key,
+                error = %e,
+                "failed to mint signed playback url"
+            );
+            Status::InternalServerError
+        })?;
     video_metrics()
         .signed_url_mint_duration_ms
         .record(started.elapsed().as_millis() as u64, &[]);
@@ -418,7 +468,15 @@ pub async fn api_video_download_url(
     let url = storage
         .presign_attachment_get(&key, ttl, &filename)
         .await
-        .map_err(|_| Status::InternalServerError)?;
+        .map_err(|e| {
+            error!(
+                video_id = vid,
+                storage_key = %key,
+                error = %e,
+                "failed to mint signed download url"
+            );
+            Status::InternalServerError
+        })?;
     video_metrics()
         .signed_url_mint_duration_ms
         .record(started.elapsed().as_millis() as u64, &[]);

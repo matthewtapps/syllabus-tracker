@@ -2,7 +2,7 @@
 extern crate rocket;
 
 pub use syllabus_tracker::{
-    api, auth, capabilities, db, env, error, models, telemetry, validation, videos,
+    api, auth, capabilities, catchers, db, env, error, models, telemetry, validation, videos,
 };
 
 #[cfg(test)]
@@ -29,6 +29,10 @@ use api::{
 };
 use auth::unauthorized_api;
 use capabilities::{Capabilities, api_capabilities};
+use catchers::{
+    bad_request, default_catcher, internal_error, not_found, payload_too_large,
+    unprocessable_entity,
+};
 use db::clean_expired_sessions;
 use error::AppError;
 use rocket::{Build, Rocket, tokio};
@@ -258,7 +262,18 @@ pub async fn init_rocket(
                 api_attempt_sparkline,
             ],
         )
-        .register("/api", catchers![unauthorized_api])
+        .register(
+            "/api",
+            catchers![
+                unauthorized_api,
+                bad_request,
+                not_found,
+                payload_too_large,
+                unprocessable_entity,
+                internal_error,
+                default_catcher,
+            ],
+        )
         .mount("/api", routes![health, api_capabilities])
         .attach(TelemetryFairing);
 
