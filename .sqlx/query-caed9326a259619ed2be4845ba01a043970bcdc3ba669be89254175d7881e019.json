@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT id, username, password, role, display_name, archived,\n                  email, first_name, last_name,\n                  CAST(graduated_at AS TEXT) as \"graduated_at?: String\",\n                  CAST(claimed_at AS TEXT) as \"claimed_at?: String\",\n                  CAST(approved_at AS TEXT) as \"approved_at?: String\",\n                  CAST(reset_requested_at AS TEXT) as \"reset_requested_at?: String\"\n           FROM users WHERE username = ?",
+  "query": "SELECT id, username, password, role, display_name, archived,\n                  email, first_name, last_name,\n                  graduated_at as \"graduated_at?: chrono::NaiveDateTime\",\n                  claimed_at as \"claimed_at?: chrono::NaiveDateTime\",\n                  approved_at as \"approved_at?: chrono::NaiveDateTime\",\n                  reset_requested_at as \"reset_requested_at?: chrono::NaiveDateTime\"\n           FROM users WHERE username = ?",
   "describe": {
     "columns": [
       {
@@ -49,24 +49,24 @@
         "type_info": "Text"
       },
       {
-        "name": "graduated_at?: String",
+        "name": "graduated_at?: chrono::NaiveDateTime",
         "ordinal": 9,
-        "type_info": "Null"
+        "type_info": "Datetime"
       },
       {
-        "name": "claimed_at?: String",
+        "name": "claimed_at?: chrono::NaiveDateTime",
         "ordinal": 10,
-        "type_info": "Null"
+        "type_info": "Datetime"
       },
       {
-        "name": "approved_at?: String",
+        "name": "approved_at?: chrono::NaiveDateTime",
         "ordinal": 11,
-        "type_info": "Null"
+        "type_info": "Datetime"
       },
       {
-        "name": "reset_requested_at?: String",
+        "name": "reset_requested_at?: chrono::NaiveDateTime",
         "ordinal": 12,
-        "type_info": "Null"
+        "type_info": "Datetime"
       }
     ],
     "parameters": {
@@ -82,11 +82,11 @@
       true,
       true,
       true,
-      null,
-      null,
-      null,
-      null
+      true,
+      true,
+      true,
+      true
     ]
   },
-  "hash": "81624f7d8037bbfb4ffa99121cad7824a4a46dfbda83d924168b0c9963e566f8"
+  "hash": "caed9326a259619ed2be4845ba01a043970bcdc3ba669be89254175d7881e019"
 }

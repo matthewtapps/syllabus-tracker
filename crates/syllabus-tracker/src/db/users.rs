@@ -106,10 +106,10 @@ pub async fn authenticate_user(
     let user_auth = sqlx::query!(
         r#"SELECT id, username, password, role, display_name, archived,
                   email, first_name, last_name,
-                  CAST(graduated_at AS TEXT) as "graduated_at?: String",
-                  CAST(claimed_at AS TEXT) as "claimed_at?: String",
-                  CAST(approved_at AS TEXT) as "approved_at?: String",
-                  CAST(reset_requested_at AS TEXT) as "reset_requested_at?: String"
+                  graduated_at as "graduated_at?: chrono::NaiveDateTime",
+                  claimed_at as "claimed_at?: chrono::NaiveDateTime",
+                  approved_at as "approved_at?: chrono::NaiveDateTime",
+                  reset_requested_at as "reset_requested_at?: chrono::NaiveDateTime"
            FROM users WHERE username = ?"#,
         username
     )
@@ -124,19 +124,22 @@ pub async fn authenticate_user(
                 return Ok(None);
             }
             if bcrypt::verify(password, &user.password)? {
+                let to_iso = |dt: chrono::NaiveDateTime| {
+                    chrono::DateTime::<Utc>::from_naive_utc_and_offset(dt, Utc).to_rfc3339()
+                };
                 Ok(Some(User {
                     id: user.id.unwrap(),
                     username: user.username.clone().unwrap_or_default(),
                     role: Role::from_str(&user.role)?,
                     display_name: user.display_name.unwrap_or_default(),
                     archived: user.archived,
-                    graduated_at: user.graduated_at,
+                    graduated_at: user.graduated_at.map(to_iso),
                     email: user.email,
-                    claimed_at: user.claimed_at,
-                    approved_at: user.approved_at,
+                    claimed_at: user.claimed_at.map(to_iso),
+                    approved_at: user.approved_at.map(to_iso),
                     first_name: user.first_name,
                     last_name: user.last_name,
-                    reset_requested_at: user.reset_requested_at,
+                    reset_requested_at: user.reset_requested_at.map(to_iso),
                     last_update: None,
                     last_coach_update_at: None,
                     total_techniques: None,
