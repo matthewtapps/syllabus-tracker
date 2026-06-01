@@ -83,13 +83,13 @@ processors:
       ]
 
 exporters:
-  otlp_grpc/traces:
-    endpoint: "api.honeycomb.io:443"
+  otlp_http/traces:
+    endpoint: "https://api.honeycomb.io:443"
     headers:
       "x-honeycomb-team": "${HONEYCOMB_API_KEY}"
       "x-honeycomb-dataset": "syllabus-tracker"
-  otlp_grpc/metrics:
-    endpoint: "api.honeycomb.io:443"
+  otlp_http/metrics:
+    endpoint: "https://api.honeycomb.io:443"
     headers:
       "x-honeycomb-team": "${HONEYCOMB_API_KEY}"
       "x-honeycomb-dataset": "syllabus-tracker-metrics"
@@ -101,11 +101,11 @@ service:
     traces:
       receivers: [otlp]
       processors: [batch, resource, tail_sampling]
-      exporters: [otlp_grpc/traces]
+      exporters: [otlp_http/traces]
     metrics:
       receivers: [docker_stats, host_metrics, otlp]
       processors: [batch, resource]
-      exporters: [otlp_grpc/metrics]
+      exporters: [otlp_http/metrics]
 
   telemetry:
     metrics:
