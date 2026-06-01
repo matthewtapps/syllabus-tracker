@@ -126,6 +126,16 @@ function CoachDashboard() {
     [activeStudents],
   );
 
+  const needsSyllabus = useMemo(
+    () =>
+      activeStudents.filter((s) => {
+        if ((s.total_techniques ?? 0) !== 0) return false;
+        if (s.claimed_at && !s.approved_at) return false;
+        return true;
+      }),
+    [activeStudents],
+  );
+
   const resetRequests = useMemo(
     () => activeStudents.filter((s) => s.reset_requested_at),
     [activeStudents],
@@ -326,6 +336,16 @@ function CoachDashboard() {
               ))}
             </ul>
           </section>
+        )}
+
+        {needsSyllabus.length > 0 && (
+          <StudentSection
+            title="Ready for a syllabus"
+            icon={Sparkles}
+            variant="attention"
+            description="New students with no techniques yet. Open one to assign their starting set."
+            students={needsSyllabus}
+          />
         )}
 
         {needsAttention.length > 0 && (
