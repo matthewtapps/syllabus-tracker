@@ -185,6 +185,11 @@ in
     virtualHosts.${domain} = {
       forceSSL = true;
       enableACME = true;
+      # Headroom for video uploads. Set on the vhost so it applies to every
+      # location. The app's VIDEO_MAX_BYTES is the authoritative limit.
+      extraConfig = ''
+        client_max_body_size 1G;
+      '';
       locations."/" = {
         proxyPass = "http://127.0.0.1:8080/";
         extraConfig = ''
