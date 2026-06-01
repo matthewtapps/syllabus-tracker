@@ -1,29 +1,24 @@
 # Deploying the videos feature
 
-The video upload/view feature is implemented but gated behind a runtime flag because Hetzner Object Storage was not yet provisioned at the time of merge. This guide is the recipe for turning it on in production once the bucket exists.
+The video upload/view feature is implemented but gated behind a runtime flag because the Cloudflare R2 bucket was not yet provisioned at the time of merge. This guide is the recipe for turning it on in production once the bucket exists.
 
 ## Current state
 
 - `config/prod.env` sets `VIDEOS_ENABLED=false`. Production currently boots without constructing any S3 client, no video routes are mounted, the frontend's `/api/capabilities` returns `{ videos: false }`, and the UI hides all video surfaces.
 - `config/dev.env` sets `VIDEOS_ENABLED=true` (against local MinIO). Local dev keeps working unchanged.
-- `infra/terraform/` is ready to provision a Hetzner bucket but has not been applied.
-- `.github/workflows/deploy.yaml` does not write S3 credentials into `.secrets.env` yet.
+- `infra/terraform/` is ready to provision a Cloudflare R2 bucket but has not been applied.
+- `.github/workflows/deploy.yaml` already surfaces the R2 credentials into `.secrets.env` (the `CLOUDFLARE_R2_ACCESS_KEY_ID` / `CLOUDFLARE_R2_SECRET_ACCESS_KEY` repository secrets must exist before the workflow runs the migration step).
 
 Pushing to `main` right now is safe: the prod app will deploy with videos invisible. The cutover below is what turns them on.
 
 ## Cutover, end to end
 
-### 1. Provision the Hetzner bucket (one-time)
+### 1. Provision the R2 bucket (one-time)
 
-You need an active Hetzner Object Storage product on the project. If the console still only shows "Storage Share" or "Storage Box", Object Storage is not enabled for your account yet, open a ticket to enable it before continuing.
+You need a Cloudflare account. Generate an API token at https://dash.cloudflare.com/profile/api-tokens with the **Workers R2 Storage** policy (Read + Edit) scoped to the account.
 
 ```sh
-# In the Hetzner console: Security > Object Storage Keys > Generate.
-# Save the access key + secret somewhere safe (you cannot retrieve the
-# secret again later).
-
-export AWS_ACCESS_KEY_ID=<hetzner_access_key>
-export AWS_SECRET_ACCESS_KEY=<hetzner_secret_key>
+export CLOUDFLARE_API_TOKEN=<your_token>
 
 cd infra/terraform
 terraform init
@@ -31,49 +26,25 @@ terraform plan
 terraform apply
 ```
 
-`terraform apply` creates `syllabus-tracker-videos-prod` in `fsn1` with a CORS rule for `https://syllabustracker.matthewtapps.com`. State is local for now; if you ever rotate machines move it to remote state first.
+`terraform apply` creates `syllabus-tracker-videos-prod` in the `WEUR` location with a CORS rule for `https://syllabustracker.matthewtapps.com`. State is local for now; if you ever rotate machines move it to remote state first.
 
-If a future Terraform run trips on a Hetzner-rejected request (bucket policy, ACL, etc.), wrap the offending resource in `lifecycle { ignore_changes = [...] }` per `infra/terraform/README.md`.
+### 2. Generate the runtime S3 credentials
 
-### 2. Store the S3 credentials in GitHub Actions
+Now that the bucket exists, mint the S3-compatible credentials the app will use at runtime. These are *not* the same as the Cloudflare API token above.
+
+1. Cloudflare dashboard > **R2 Object Storage** > **Manage R2 API Tokens** > **Create API Token**.
+2. Permissions: **Object Read & Write**.
+3. Specify bucket: **`syllabus-tracker-videos-prod`**.
+4. Save the **Access Key ID** and **Secret Access Key** somewhere safe (you cannot retrieve the secret again later).
+
+### 3. Store the S3 credentials in GitHub Actions
 
 In the repo settings, **Settings > Secrets and variables > Actions**, add two repository secrets:
 
-- `HETZNER_S3_ACCESS_KEY` (the access key you generated)
-- `HETZNER_S3_SECRET_KEY` (the secret)
+- `CLOUDFLARE_R2_ACCESS_KEY_ID`
+- `CLOUDFLARE_R2_SECRET_ACCESS_KEY`
 
 Keep them out of the Terraform variables file: those credentials are runtime config, not infra state.
-
-### 3. Wire the secrets into the deploy
-
-Patch `.github/workflows/deploy.yaml` so the secrets land in the prod `.secrets.env`. Find the existing block (around line 388) that creates `.secrets.env` over SSH:
-
-```yaml
-ssh -i ~/.ssh/id_rsa \
-  "${NIXOS_SERVER_USER}@${NIXOS_SERVER_IP}" \
-  "echo 'HONEYCOMB_API_KEY=${SECRET_HONEYCOMB_API_KEY}' > ${APP_DEPLOY_PATH}/.secrets.env && \
-   echo 'ROCKET_SECRET_KEY=${SECRET_ROCKET_SECRET_KEY}' >> ${APP_DEPLOY_PATH}/.secrets.env && \
-   echo 'VITE_HONEYCOMB_API_KEY=${SECRET_HONEYCOMB_API_KEY}' >> ${APP_DEPLOY_PATH}/.secrets.env"
-```
-
-Add two more `echo` lines for the S3 creds, and surface the secrets to the step's environment:
-
-```yaml
-env:
-  # ...existing env entries...
-  SECRET_S3_ACCESS_KEY: ${{ secrets.HETZNER_S3_ACCESS_KEY }}
-  SECRET_S3_SECRET_KEY: ${{ secrets.HETZNER_S3_SECRET_KEY }}
-run: |
-  ssh -i ~/.ssh/id_rsa \
-    "${NIXOS_SERVER_USER}@${NIXOS_SERVER_IP}" \
-    "echo 'HONEYCOMB_API_KEY=${SECRET_HONEYCOMB_API_KEY}' > ${APP_DEPLOY_PATH}/.secrets.env && \
-     echo 'ROCKET_SECRET_KEY=${SECRET_ROCKET_SECRET_KEY}' >> ${APP_DEPLOY_PATH}/.secrets.env && \
-     echo 'VITE_HONEYCOMB_API_KEY=${SECRET_HONEYCOMB_API_KEY}' >> ${APP_DEPLOY_PATH}/.secrets.env && \
-     echo 'S3_ACCESS_KEY=${SECRET_S3_ACCESS_KEY}' >> ${APP_DEPLOY_PATH}/.secrets.env && \
-     echo 'S3_SECRET_KEY=${SECRET_S3_SECRET_KEY}' >> ${APP_DEPLOY_PATH}/.secrets.env"
-```
-
-(Match the bash quoting in the existing block exactly; the surrounding double quotes mean both `${SECRET_*}` variables expand on the runner before the SSH command runs.)
 
 ### 4. Flip the feature flag
 
@@ -83,15 +54,15 @@ run: |
 +VIDEOS_ENABLED=true
 ```
 
-Leave the rest of the file alone. `S3_ENDPOINT`, `S3_REGION`, `S3_BUCKET` are already set for Hetzner.
+Leave the rest of the file alone. `S3_ENDPOINT`, `S3_REGION`, `S3_BUCKET` are already set for R2.
 
 ### 5. Push and watch the deploy
 
-Commit steps 3 and 4 together and push to `main`. CI does the rest:
+Commit step 4 and push to `main`. CI does the rest:
 
 1. Build images
 2. Push the new compose file and config
-3. Write the updated `.secrets.env` (now including the S3 creds)
+3. Write `.secrets.env`, including the S3 creds from the GitHub secrets
 4. Dry-run migrate against a copy of the prod DB. This will also catch a misconfigured S3 setup early: with `VIDEOS_ENABLED=true` and missing S3 vars the app panics on boot with the explicit "S3 config missing" message.
 5. Swap containers.
 
@@ -125,7 +96,7 @@ In Honeycomb:
 
 ### 7. (Optional) Move Terraform state off your laptop
 
-Once you trust the setup, point Terraform at a remote backend so the state survives laptop loss. Either a small private S3 bucket (could even be a second Hetzner bucket called `syllabus-tracker-tf-state`) or Terraform Cloud's free tier. Initialise with `terraform init -migrate-state` after editing `versions.tf`.
+Once you trust the setup, point Terraform at a remote backend so the state survives laptop loss. R2 itself can host the state (a second bucket called `syllabus-tracker-tf-state`), or use Terraform Cloud's free tier. Initialise with `terraform init -migrate-state` after editing `versions.tf`.
 
 ## Removing the feature flag (one PR, when stable)
 
@@ -142,13 +113,21 @@ Plan reference: `/home/matt/.claude/plans/jiggly-meandering-salamander.md` has t
 ## Troubleshooting
 
 **App panics at startup with "VIDEOS_ENABLED=true but S3 config missing".**
-Step 3 (wiring secrets into `.secrets.env`) didn't take. SSH to the server and `cat /opt/syllabus-tracker/.secrets.env` to confirm `S3_ACCESS_KEY` and `S3_SECRET_KEY` are present.
+The `CLOUDFLARE_R2_ACCESS_KEY_ID` / `CLOUDFLARE_R2_SECRET_ACCESS_KEY` repository secrets aren't set in GitHub Actions, so the deploy workflow wrote a `.secrets.env` without `S3_ACCESS_KEY` / `S3_SECRET_KEY`. SSH to the server and `cat /opt/syllabus-tracker/.secrets.env` to confirm.
 
 **Upload returns 500, log says "presign error" or "put_object error".**
-Either the bucket doesn't exist (Terraform not applied) or the credentials are wrong. `aws --endpoint-url https://fsn1.your-objectstorage.com s3 ls s3://syllabus-tracker-videos-prod/` from your laptop with the same env vars Terraform used will confirm both.
+Either the bucket doesn't exist (Terraform not applied), the credentials are wrong, or the R2 token's bucket scope doesn't match `S3_BUCKET`. Test from your laptop:
+
+```sh
+export AWS_ACCESS_KEY_ID=<r2_access_key>
+export AWS_SECRET_ACCESS_KEY=<r2_secret_key>
+aws --endpoint-url https://ea9e8573831e597fc41f865267b8fd35.r2.cloudflarestorage.com \
+    --region auto \
+    s3 ls s3://syllabus-tracker-videos-prod/
+```
 
 **Browser shows "No video with supported format and MIME type found".**
-The presigned URL embeds a host the browser can't reach. In production, `S3_ENDPOINT` and `S3_PUBLIC_ENDPOINT` should both be the same Hetzner URL (no override needed). In dev with MinIO they differ on purpose; that split should not leak into prod.
+The presigned URL embeds a host the browser can't reach. In production, `S3_ENDPOINT` and `S3_PUBLIC_ENDPOINT` should both be the R2 endpoint (no `S3_PUBLIC_ENDPOINT` override needed, the code falls back to `S3_ENDPOINT`). In dev with MinIO they differ on purpose; that split should not leak into prod.
 
 **Watch stats look wrong.**
 The `video_watch_aggregates` table is the read path. `SELECT * FROM video_watch_aggregates WHERE video_id = ?` on the server's sqlite tells you the current state. Each new `play_id` from the client increments `play_count`; same `play_id` is idempotent.

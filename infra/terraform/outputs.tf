@@ -1,7 +1,8 @@
 output "bucket_name" {
-  value = aws_s3_bucket.videos.bucket
+  value = cloudflare_r2_bucket.videos.name
 }
 
-output "endpoint" {
-  value = var.hetzner_s3_endpoint
+output "s3_endpoint" {
+  value       = "https://${var.cloudflare_account_id}.r2.cloudflarestorage.com"
+  description = "S3-compatible endpoint to set as S3_ENDPOINT in prod.env."
 }

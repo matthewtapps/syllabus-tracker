@@ -28,8 +28,8 @@ services:
       - config/prod.env
       - .secrets.env
     environment:
-      # prod.env points S3 at Hetzner and uses prod creds; override for the
-      # local MinIO container. S3_PUBLIC_ENDPOINT is what the browser hits
+      # prod.env points S3 at Cloudflare R2 and uses prod creds; override for
+      # the local MinIO container. S3_PUBLIC_ENDPOINT is what the browser hits
       # when it follows a presigned URL, so it must be the host port.
       S3_ENDPOINT: http://minio:9000
       S3_PUBLIC_ENDPOINT: http://localhost:9000

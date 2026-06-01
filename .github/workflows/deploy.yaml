@@ -357,6 +357,8 @@ jobs:
         env:
           SECRET_HONEYCOMB_API_KEY: ${{ secrets.HONEYCOMB_API_KEY }}
           SECRET_ROCKET_SECRET_KEY: ${{ secrets.ROCKET_SECRET_KEY }}
+          SECRET_S3_ACCESS_KEY: ${{ secrets.CLOUDFLARE_R2_ACCESS_KEY_ID }}
+          SECRET_S3_SECRET_KEY: ${{ secrets.CLOUDFLARE_R2_SECRET_ACCESS_KEY }}
         run: |
           cat > docker_config.json << EOF
           {
@@ -385,7 +387,9 @@ jobs:
             "${NIXOS_SERVER_USER}@${NIXOS_SERVER_IP}" \
             "echo 'HONEYCOMB_API_KEY=${SECRET_HONEYCOMB_API_KEY}' > ${APP_DEPLOY_PATH}/.secrets.env && \
              echo 'ROCKET_SECRET_KEY=${SECRET_ROCKET_SECRET_KEY}' >> ${APP_DEPLOY_PATH}/.secrets.env && \
-             echo 'VITE_HONEYCOMB_API_KEY=${SECRET_HONEYCOMB_API_KEY}' >> ${APP_DEPLOY_PATH}/.secrets.env"
+             echo 'VITE_HONEYCOMB_API_KEY=${SECRET_HONEYCOMB_API_KEY}' >> ${APP_DEPLOY_PATH}/.secrets.env && \
+             echo 'S3_ACCESS_KEY=${SECRET_S3_ACCESS_KEY}' >> ${APP_DEPLOY_PATH}/.secrets.env && \
+             echo 'S3_SECRET_KEY=${SECRET_S3_SECRET_KEY}' >> ${APP_DEPLOY_PATH}/.secrets.env"
 
       - name: Dry-run migration against copy of prod database
         env:
@@ -516,6 +520,8 @@ jobs:
           FRONTEND_IMAGE_TAG: ${{ needs.build-frontend.outputs.image_tag }}
           SECRET_HONEYCOMB_API_KEY: ${{ secrets.HONEYCOMB_API_KEY }}
           SECRET_ROCKET_SECRET_KEY: ${{ secrets.ROCKET_SECRET_KEY }}
+          SECRET_S3_ACCESS_KEY: ${{ secrets.CLOUDFLARE_R2_ACCESS_KEY_ID }}
+          SECRET_S3_SECRET_KEY: ${{ secrets.CLOUDFLARE_R2_SECRET_ACCESS_KEY }}
         run: |
           cat > docker_config.json << EOF
           {
@@ -546,7 +552,9 @@ jobs:
             "${NIXOS_SERVER_USER}@${NIXOS_SERVER_IP}" \
             "echo 'HONEYCOMB_API_KEY=${SECRET_HONEYCOMB_API_KEY}' > ${APP_DEPLOY_PATH}/.secrets.env && \
              echo 'ROCKET_SECRET_KEY=${SECRET_ROCKET_SECRET_KEY}' >> ${APP_DEPLOY_PATH}/.secrets.env && \
-             echo 'VITE_HONEYCOMB_API_KEY=${SECRET_HONEYCOMB_API_KEY}' >> ${APP_DEPLOY_PATH}/.secrets.env"
+             echo 'VITE_HONEYCOMB_API_KEY=${SECRET_HONEYCOMB_API_KEY}' >> ${APP_DEPLOY_PATH}/.secrets.env && \
+             echo 'S3_ACCESS_KEY=${SECRET_S3_ACCESS_KEY}' >> ${APP_DEPLOY_PATH}/.secrets.env && \
+             echo 'S3_SECRET_KEY=${SECRET_S3_SECRET_KEY}' >> ${APP_DEPLOY_PATH}/.secrets.env"
 
       - name: Deploy application with Docker Compose
         env:

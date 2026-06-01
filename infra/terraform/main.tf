@@ -1,15 +1,21 @@
-resource "aws_s3_bucket" "videos" {
-  bucket = var.bucket_name
+resource "cloudflare_r2_bucket" "videos" {
+  account_id = var.cloudflare_account_id
+  name       = var.bucket_name
+  location   = var.r2_location
 }
 
-resource "aws_s3_bucket_cors_configuration" "videos" {
-  bucket = aws_s3_bucket.videos.id
+resource "cloudflare_r2_bucket_cors" "videos" {
+  account_id  = var.cloudflare_account_id
+  bucket_name = cloudflare_r2_bucket.videos.name
 
-  cors_rule {
-    allowed_methods = ["GET", "HEAD"]
-    allowed_origins = [var.app_origin]
-    allowed_headers = ["*"]
+  rules = [{
+    id = "app-presigned-reads"
+    allowed = {
+      methods = ["GET", "HEAD"]
+      origins = [var.app_origin]
+      headers = ["*"]
+    }
     expose_headers  = ["ETag", "Content-Length", "Content-Type"]
     max_age_seconds = 3600
-  }
+  }]
 }
