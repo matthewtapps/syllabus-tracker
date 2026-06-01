@@ -260,6 +260,7 @@ pub mod test_utils {
                             has_unseen_activity: None,
                             last_student_initiative_at: None,
                             last_watch_at: None,
+                            last_watch_video_title: None,
                         };
                         update_student_technique(
                             &pool,

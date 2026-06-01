@@ -45,6 +45,7 @@ struct UserWithActivityDto {
     pub has_unseen_activity: Option<i64>,
     pub latest_student_note_at: Option<NaiveDateTime>,
     pub latest_watch_at: Option<NaiveDateTime>,
+    pub latest_watch_video_title: Option<String>,
 }
 
 #[instrument(skip(pool))]
@@ -97,7 +98,13 @@ pub async fn get_students_by_recent_updates(
             MAX(st.last_student_update_at) as "latest_student_note_at?: NaiveDateTime",
             (SELECT MAX(last_watched_at)
                FROM video_watch_aggregates
-              WHERE user_id = u.id) as "latest_watch_at?: NaiveDateTime"
+              WHERE user_id = u.id) as "latest_watch_at?: NaiveDateTime",
+            (SELECT v.title
+               FROM video_watch_aggregates a
+               JOIN videos v ON v.id = a.video_id
+              WHERE a.user_id = u.id
+              ORDER BY a.last_watched_at DESC
+              LIMIT 1) as "latest_watch_video_title?: String"
         FROM users u
         LEFT JOIN student_techniques st ON u.id = st.student_id
         LEFT JOIN student_technique_views stv
@@ -148,6 +155,7 @@ pub async fn get_students_by_recent_updates(
                 last_watch_at: dto
                     .latest_watch_at
                     .map(|dt| naive_to_utc(dt).to_rfc3339()),
+                last_watch_video_title: dto.latest_watch_video_title,
             }
         })
         .collect();

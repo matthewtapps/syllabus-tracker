@@ -51,12 +51,12 @@ import type { Status } from '@/lib/status';
 import { VideoOverviewCard } from '@/components/videos/video-overview-card';
 import { useCapabilities } from '@/context/capabilities-context';
 import { DashboardTotals } from './components/dashboard-totals';
-import { QueueSheet } from './components/queue-sheet';
+import { QueuePanel } from './components/queue-panel';
 
 const STALE_THRESHOLD_DAYS = 14;
 const INITIATIVE_THRESHOLD_DAYS = 7;
 
-type RosterTab = 'initiative' | 'all' | 'quiet';
+type RosterTab = 'initiative' | 'recent' | 'quiet';
 
 interface DashboardProps {
   user: User | null;
@@ -171,6 +171,15 @@ function CoachDashboard() {
     }
   }
 
+  const recentStudents = useMemo(() => {
+    const cutoff = Date.now() - STALE_THRESHOLD_DAYS * 86400 * 1000;
+    return activeStudents.filter((s) => {
+      if (!s.last_update) return false;
+      const ts = Date.parse(s.last_update);
+      return Number.isFinite(ts) && ts >= cutoff;
+    });
+  }, [activeStudents]);
+
   const quietStudents = useMemo(() => {
     const cutoff = Date.now() - STALE_THRESHOLD_DAYS * 86400 * 1000;
     return activeStudents.filter((s) => {
@@ -186,7 +195,7 @@ function CoachDashboard() {
 
   const rosterCounts = {
     initiative: initiativeStudents.length,
-    all: activeStudents.length,
+    recent: recentStudents.length,
     quiet: quietStudents.length,
   };
 
@@ -195,7 +204,7 @@ function CoachDashboard() {
       ? initiativeStudents
       : rosterTab === 'quiet'
         ? quietStudents
-        : activeStudents;
+        : recentStudents;
 
   if (loading) {
     return (
@@ -262,30 +271,21 @@ function CoachDashboard() {
         assignments={totalAssignments}
       />
 
-      <div className="mb-6 space-y-3">
-        <QueueSheet
-          resetRequests={resetRequests}
-          pendingApprovals={pendingApprovals}
-          needsSyllabus={needsSyllabus}
-          onSendResetLink={handleSendResetLink}
-          onApprove={handleApprove}
-        />
-        {totalAssignments > 0 && <StatusDonut counts={statusCounts} />}
-      </div>
+      {totalAssignments > 0 && <StatusDonut counts={statusCounts} className="mb-6" />}
 
       <Tabs
         value={rosterTab}
         onValueChange={(v) => setRosterTab(v as RosterTab)}
-        className="mb-6 gap-3"
+        className="mb-8 gap-3"
       >
         <TabsList className="w-full">
           <TabsTrigger value="initiative">
             Initiative
             <RosterCountBadge n={rosterCounts.initiative} />
           </TabsTrigger>
-          <TabsTrigger value="all">
-            All
-            <RosterCountBadge n={rosterCounts.all} />
+          <TabsTrigger value="recent">
+            Recent
+            <RosterCountBadge n={rosterCounts.recent} />
           </TabsTrigger>
           <TabsTrigger value="quiet">
             Quiet
@@ -293,15 +293,20 @@ function CoachDashboard() {
           </TabsTrigger>
         </TabsList>
 
+        <p className="px-1 text-xs text-muted-foreground">
+          {rosterDescription(rosterTab)}
+        </p>
+
         <TabsContent value={rosterTab}>
           <Roster
             students={rosterForTab}
             emptyMessage={rosterEmptyMessage(rosterTab)}
+            showWatchTitle={rosterTab === 'initiative'}
           />
         </TabsContent>
       </Tabs>
 
-      <div className="flex justify-end">
+      <div className="mb-8 flex justify-end">
         <Button asChild variant="ghost" size="sm" className="h-8 px-2">
           <Link to="/students" className="flex items-center gap-1">
             View all students
@@ -310,7 +315,17 @@ function CoachDashboard() {
         </Button>
       </div>
 
-      {videosEnabled && <VideoOverviewCard className="mt-8" />}
+      <div className="mb-8">
+        <QueuePanel
+          resetRequests={resetRequests}
+          pendingApprovals={pendingApprovals}
+          needsSyllabus={needsSyllabus}
+          onSendResetLink={handleSendResetLink}
+          onApprove={handleApprove}
+        />
+      </div>
+
+      {videosEnabled && <VideoOverviewCard />}
 
       <Dialog
         open={!!issuedClaimUrl}
@@ -345,9 +360,11 @@ function CoachDashboard() {
 function Roster({
   students,
   emptyMessage,
+  showWatchTitle,
 }: {
   students: User[];
   emptyMessage: string;
+  showWatchTitle?: boolean;
 }) {
   if (students.length === 0) {
     return (
@@ -363,10 +380,22 @@ function Roster({
           key={s.id}
           student={s}
           href={`/student/${s.id}?from=dashboard`}
+          showWatchTitle={showWatchTitle}
         />
       ))}
     </div>
   );
+}
+
+function rosterDescription(tab: RosterTab): string {
+  switch (tab) {
+    case 'initiative':
+      return `Students who edited their own notes or watched a video in the last ${INITIATIVE_THRESHOLD_DAYS} days.`;
+    case 'recent':
+      return `Any update (by you or them) in the last ${STALE_THRESHOLD_DAYS} days.`;
+    case 'quiet':
+      return `Students with techniques assigned but no coach update in the last ${STALE_THRESHOLD_DAYS} days.`;
+  }
 }
 
 function RosterCountBadge({ n }: { n: number }) {
@@ -383,8 +412,8 @@ function rosterEmptyMessage(tab: RosterTab): string {
       return 'No students active in the past week.';
     case 'quiet':
       return `No students have gone ${STALE_THRESHOLD_DAYS} days without a coach update.`;
-    case 'all':
-      return 'No active students.';
+    case 'recent':
+      return `No activity in the last ${STALE_THRESHOLD_DAYS} days.`;
   }
 }
 

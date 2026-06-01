@@ -75,6 +75,7 @@ export interface User {
   has_unseen_activity?: boolean | null;
   last_student_initiative_at?: string | null;
   last_watch_at?: string | null;
+  last_watch_video_title?: string | null;
 }
 
 export async function getCurrentUser(): Promise<User | null> {

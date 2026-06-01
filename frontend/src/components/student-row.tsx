@@ -23,9 +23,16 @@ interface StudentRowProps {
   href?: string;
   className?: string;
   actions?: ReactNode;
+  showWatchTitle?: boolean;
 }
 
-export function StudentRow({ student, href, className, actions }: StudentRowProps) {
+export function StudentRow({
+  student,
+  href,
+  className,
+  actions,
+  showWatchTitle,
+}: StudentRowProps) {
   const total = student.total_techniques ?? 0;
   const green = student.green_count ?? 0;
   const amber = student.amber_count ?? 0;
@@ -82,7 +89,7 @@ export function StudentRow({ student, href, className, actions }: StudentRowProp
                 title="New student activity since you last looked"
               />
             )}
-            {watchedRecently && !student.graduated_at && (
+            {watchedRecently && !student.graduated_at && !showWatchTitle && (
               <Badge
                 variant="outline"
                 className="shrink-0 gap-1 border-primary/40 px-1.5 py-0 text-[10px] font-medium text-primary"
@@ -97,6 +104,16 @@ export function StudentRow({ student, href, className, actions }: StudentRowProp
           {hasSecondary && (
             <p className="truncate text-xs text-muted-foreground">
               {student.username}
+            </p>
+          )}
+
+          {showWatchTitle && watchedRecently && student.last_watch_video_title && (
+            <p className="flex min-w-0 items-center gap-1.5 text-xs text-primary">
+              <PlayCircle className="h-3.5 w-3.5 shrink-0" aria-hidden />
+              <span className="truncate">
+                Watched &lsquo;{student.last_watch_video_title}&rsquo;
+                {student.last_watch_at && ` · ${formatRelative(student.last_watch_at)}`}
+              </span>
             </p>
           )}
 

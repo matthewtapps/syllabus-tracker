@@ -36,6 +36,9 @@ const STUDENT_NAMES: &[(&str, &str)] = &[
     ("demo_camila", "Camila Rodriguez"),
     ("demo_tobias", "Tobias Nielsen"),
     ("demo_aisha", "Aisha Khan"),
+    // Queue-state demos: render in the dashboard "Things for you" panel.
+    ("demo_jordan", "Jordan Pierce"),
+    ("demo_robin", "Robin Lee"),
 ];
 
 /// (name, description, tag names)
@@ -182,6 +185,8 @@ const STUDENT_PROFILES: &[(usize, f64, f64, i64, bool)] = &[
     (4, 0.70, 0.20, 25, false),  // Camila — newer student
     (3, 0.80, 0.15, 30, false),  // Tobias — very new
     (0, 0.00, 0.00, 0, false),   // Aisha — just registered, no techniques yet
+    (0, 0.00, 0.00, 0, false),   // Jordan — pending approval (claimed but unapproved)
+    (5, 0.40, 0.40, 12, false),  // Robin — active student who requested a password reset
 ];
 
 async fn ensure_user(
@@ -394,6 +399,18 @@ async fn run() -> Result<()> {
         student_ids.push(id);
         reporter.phase_item(outcome);
     }
+    // Force queue-state demos into the shapes the dashboard expects:
+    // Jordan as a self-signup awaiting approval, Robin as an existing student
+    // who has asked for a fresh sign-in link. ensure_user always backfills
+    // claimed_at/approved_at, so we override them here on every run.
+    sqlx::query("UPDATE users SET approved_at = NULL WHERE username = 'demo_jordan'")
+        .execute(&pool)
+        .await?;
+    sqlx::query(
+        "UPDATE users SET reset_requested_at = CURRENT_TIMESTAMP WHERE username = 'demo_robin'",
+    )
+    .execute(&pool)
+    .await?;
     reporter.phase_finished();
 
     // 5. Assignments + status + timestamp backfill.
