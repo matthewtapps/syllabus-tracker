@@ -21,7 +21,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { PageHeader } from '@/components/page-header';
 import { EmptyState } from '@/components/empty-state';
 import { SkeletonListRow } from '@/components/skeleton-row';
 import { StudentRow } from '@/components/student-row';
@@ -182,15 +181,12 @@ export default function StudentsList({ user }: StudentsListProps) {
 
   return (
     <div className="container mx-auto py-6 px-4 sm:px-6 md:py-8">
-      <PageHeader
-        title="Students"
-        actions={
-          <Button onClick={() => navigate('/register-user')}>
-            <UserPlus className="mr-2 h-4 w-4" aria-hidden />
-            Register student
-          </Button>
-        }
-      />
+      <div className="mb-6 flex justify-end">
+        <Button onClick={() => navigate('/register-user')}>
+          <UserPlus className="mr-2 h-4 w-4" aria-hidden />
+          Register student
+        </Button>
+      </div>
 
       <div className="mb-6 space-y-3">
         <Tabs value={statusTab} onValueChange={(v) => setStatusTab(v as StatusTab)}>

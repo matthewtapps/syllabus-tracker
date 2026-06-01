@@ -54,7 +54,6 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
-import { PageHeader } from '@/components/page-header';
 import { EmptyState } from '@/components/empty-state';
 import { SkeletonTableRow } from '@/components/skeleton-row';
 import { GraduateConfirmDialog } from '@/components/graduate-confirm-dialog';
@@ -309,7 +308,6 @@ export default function AdminPage() {
 
   return (
     <div className="container mx-auto px-4 py-6 sm:px-6 md:py-8">
-      <PageHeader title="Admin" subtitle="Manage user accounts and roles." />
 
       <div className="mb-6 space-y-3">
         <Tabs value={statusTab} onValueChange={(v) => setStatusTab(v as StatusTab)}>

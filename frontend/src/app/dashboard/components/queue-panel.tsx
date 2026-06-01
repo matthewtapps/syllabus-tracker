@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { Copy, KeyRound, Sparkles, UserPlus } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
@@ -83,10 +84,10 @@ export function QueuePanel({
 }
 
 interface QueueGroupProps {
-  icon: React.ReactNode;
+  icon: ReactNode;
   title: string;
   caption?: string;
-  children: React.ReactNode;
+  children: ReactNode;
 }
 
 function QueueGroup({ icon, title, caption, children }: QueueGroupProps) {

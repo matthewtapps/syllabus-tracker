@@ -19,7 +19,6 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
-import { PageHeader } from '@/components/page-header';
 import { TracedForm } from '@/components/traced-form';
 import { useFormWithValidation } from '@/components/hooks/useFormErrors';
 
@@ -86,8 +85,6 @@ export default function ProfilePage() {
 
   return (
     <div className="container mx-auto max-w-2xl px-4 py-6 sm:px-6 md:py-8">
-      <PageHeader title="My profile" />
-
       <section className="space-y-5">
         <div>
           <h2 className="text-base font-semibold">Account</h2>

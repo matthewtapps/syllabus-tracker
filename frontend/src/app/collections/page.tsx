@@ -27,7 +27,6 @@ import {
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
-import { PageHeader } from '@/components/page-header';
 import { EmptyState } from '@/components/empty-state';
 import { SkeletonListRow } from '@/components/skeleton-row';
 import { TracedForm } from '@/components/traced-form';
@@ -66,87 +65,86 @@ export default function CollectionsPage() {
 
   return (
     <div className="container mx-auto px-4 py-6 sm:px-6 md:py-8">
-      <PageHeader
-        title="Collections"
-        subtitle="Organize techniques into reusable syllabi or training tracks."
-        actions={
-          <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
-            <DialogTrigger asChild>
-              <Button>
-                <Plus className="mr-2 h-4 w-4" aria-hidden />
-                New collection
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="w-[calc(100vw-1rem)] max-w-md p-4 sm:p-6">
-              <DialogHeader>
-                <DialogTitle>New collection</DialogTitle>
-                <DialogDescription>
-                  Give it a name and a short description. You'll add techniques
-                  on the next screen.
-                </DialogDescription>
-              </DialogHeader>
-              <Form {...form}>
-                <TracedForm
-                  id="create_collection"
-                  onSubmit={form.handleSubmit(handleCreate)}
-                  setFieldErrors={form.setFieldErrors}
-                  className="space-y-4"
-                >
-                  <FormField
-                    control={form.control}
-                    name="name"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Name</FormLabel>
-                        <FormControl>
-                          <Input
-                            {...field}
-                            autoFocus
-                            placeholder="e.g. Blue Belt syllabus"
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="description"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Description</FormLabel>
-                        <FormControl>
-                          <Textarea
-                            {...field}
-                            placeholder="What does this collection cover?"
-                            className="min-h-24"
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <DialogFooter className="gap-2">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={() => setCreateDialogOpen(false)}
-                    >
-                      Cancel
-                    </Button>
-                    <Button
-                      type="submit"
-                      disabled={form.formState.isSubmitting}
-                    >
-                      {form.formState.isSubmitting ? 'Creating...' : 'Create'}
-                    </Button>
-                  </DialogFooter>
-                </TracedForm>
-              </Form>
-            </DialogContent>
-          </Dialog>
-        }
-      />
+      <div className="mb-6 flex items-end justify-between gap-4">
+        <p className="text-sm text-muted-foreground sm:text-base">
+          Organize techniques into reusable syllabi or training tracks.
+        </p>
+        <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
+          <DialogTrigger asChild>
+            <Button className="shrink-0">
+              <Plus className="mr-2 h-4 w-4" aria-hidden />
+              New collection
+            </Button>
+          </DialogTrigger>
+          <DialogContent className="w-[calc(100vw-1rem)] max-w-md p-4 sm:p-6">
+            <DialogHeader>
+              <DialogTitle>New collection</DialogTitle>
+              <DialogDescription>
+                Give it a name and a short description. You'll add techniques
+                on the next screen.
+              </DialogDescription>
+            </DialogHeader>
+            <Form {...form}>
+              <TracedForm
+                id="create_collection"
+                onSubmit={form.handleSubmit(handleCreate)}
+                setFieldErrors={form.setFieldErrors}
+                className="space-y-4"
+              >
+                <FormField
+                  control={form.control}
+                  name="name"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Name</FormLabel>
+                      <FormControl>
+                        <Input
+                          {...field}
+                          autoFocus
+                          placeholder="e.g. Blue Belt syllabus"
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="description"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Description</FormLabel>
+                      <FormControl>
+                        <Textarea
+                          {...field}
+                          placeholder="What does this collection cover?"
+                          className="min-h-24"
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <DialogFooter className="gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setCreateDialogOpen(false)}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    type="submit"
+                    disabled={form.formState.isSubmitting}
+                  >
+                    {form.formState.isSubmitting ? 'Creating...' : 'Create'}
+                  </Button>
+                </DialogFooter>
+              </TracedForm>
+            </Form>
+          </DialogContent>
+        </Dialog>
+      </div>
 
       <div className="overflow-hidden rounded-lg border border-border bg-card">
         {collections === null && !error ? (

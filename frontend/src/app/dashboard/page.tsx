@@ -40,7 +40,6 @@ import { formatRelative } from '@/lib/dates';
 import { statusToDotClass } from '@/lib/status';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { PageHeader } from '@/components/page-header';
 import { EmptyState } from '@/components/empty-state';
 import {
   SkeletonListRow,
@@ -66,8 +65,7 @@ export default function Dashboard({ user }: DashboardProps) {
   if (!user) {
     return (
       <div className="container mx-auto px-4 py-6 sm:px-6 md:py-8">
-        <PageHeader title="Dashboard" />
-      </div>
+        </div>
     );
   }
 
@@ -209,8 +207,7 @@ function CoachDashboard() {
   if (loading) {
     return (
       <div className="container mx-auto px-4 py-6 sm:px-6 md:py-8">
-        <PageHeader title="Dashboard" />
-        <div className="mb-6 grid grid-cols-3 gap-3 sm:gap-4">
+          <div className="mb-6 grid grid-cols-3 gap-3 sm:gap-4">
           <SkeletonStatTile />
           <SkeletonStatTile />
           <SkeletonStatTile />
@@ -227,8 +224,7 @@ function CoachDashboard() {
   if (error || !students) {
     return (
       <div className="container mx-auto px-4 py-6 sm:px-6 md:py-8">
-        <PageHeader title="Dashboard" />
-        <div className="flex flex-col items-center gap-3 rounded-lg border border-border bg-card px-6 py-12 text-center">
+          <div className="flex flex-col items-center gap-3 rounded-lg border border-border bg-card px-6 py-12 text-center">
           <p className="text-sm text-destructive">
             {error ?? 'Failed to load dashboard data.'}
           </p>
@@ -243,8 +239,7 @@ function CoachDashboard() {
   if (activeStudents.length === 0) {
     return (
       <div className="container mx-auto px-4 py-6 sm:px-6 md:py-8">
-        <PageHeader title="Dashboard" />
-        <div className="rounded-lg border border-border bg-card">
+          <div className="rounded-lg border border-border bg-card">
           <EmptyState
             icon={Users}
             title="No students yet"
@@ -262,7 +257,6 @@ function CoachDashboard() {
 
   return (
     <div className="container mx-auto px-4 py-6 sm:px-6 md:py-8">
-      <PageHeader title="Dashboard" />
 
       <DashboardTotals
         className="-mt-4 mb-4"
@@ -305,15 +299,6 @@ function CoachDashboard() {
           />
         </TabsContent>
       </Tabs>
-
-      <div className="mb-8 flex justify-end">
-        <Button asChild variant="ghost" size="sm" className="h-8 px-2">
-          <Link to="/students" className="flex items-center gap-1">
-            View all students
-            <ArrowRight className="h-3.5 w-3.5" aria-hidden />
-          </Link>
-        </Button>
-      </div>
 
       <div className="mb-8">
         <QueuePanel
@@ -464,7 +449,6 @@ function StudentDashboard({ user }: { user: User }) {
 
   return (
     <div className="container mx-auto px-4 py-6 sm:px-6 md:py-8">
-      <PageHeader title="Dashboard" />
 
       {isGraduate && (
         <div className="mb-6 flex items-start gap-3 rounded-lg border border-status-green/30 bg-status-green-bg px-4 py-3 text-sm">
