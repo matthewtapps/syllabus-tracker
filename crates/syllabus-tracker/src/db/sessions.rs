@@ -50,6 +50,22 @@ pub async fn get_session_by_token(
 }
 
 #[instrument(skip(pool, token))]
+pub async fn extend_session_expiry(
+    pool: &Pool<Sqlite>,
+    token: &str,
+    new_expires_at: NaiveDateTime,
+) -> Result<(), AppError> {
+    sqlx::query!(
+        "UPDATE user_sessions SET expires_at = ? WHERE token = ?",
+        new_expires_at,
+        token
+    )
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+#[instrument(skip(pool, token))]
 pub async fn invalidate_session(pool: &Pool<Sqlite>, token: &str) -> Result<(), AppError> {
     info!("Invalidating session");
 

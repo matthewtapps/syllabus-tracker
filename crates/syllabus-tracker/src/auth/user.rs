@@ -160,6 +160,11 @@ impl From<DbUserSession> for UserSession {
 }
 
 impl UserSession {
+    /// How long a freshly issued session lasts before requiring re-login.
+    /// The auth guard slides this window forward on use, so an active user
+    /// effectively never logs in again.
+    pub const LIFETIME_DAYS: i64 = 30;
+
     pub fn is_valid(&self) -> bool {
         let now = Utc::now().naive_utc();
         self.expires_at > now

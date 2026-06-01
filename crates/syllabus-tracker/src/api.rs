@@ -189,25 +189,27 @@ async fn establish_session(
     use rocket::http::{Cookie, SameSite};
 
     let token = UserSession::generate_token();
-    let expires_at = Utc::now() + chrono::Duration::hours(1);
+    let lifetime = chrono::Duration::days(UserSession::LIFETIME_DAYS);
+    let cookie_max_age = rocket::time::Duration::days(UserSession::LIFETIME_DAYS);
+    let expires_at = Utc::now() + lifetime;
     create_user_session(db, user.id, &token, expires_at.naive_utc()).await?;
 
     cookies.add_private(
         Cookie::build(("session_token", token))
             .same_site(SameSite::Lax)
             .http_only(true)
-            .max_age(rocket::time::Duration::hours(1)),
+            .max_age(cookie_max_age),
     );
     cookies.add_private(
         Cookie::build(("user_id", user.id.to_string()))
             .same_site(SameSite::Lax)
             .http_only(true)
-            .max_age(rocket::time::Duration::hours(1)),
+            .max_age(cookie_max_age),
     );
     cookies.add_private(
         Cookie::build(("logged_in", user.username.clone()))
             .same_site(SameSite::Lax)
-            .max_age(rocket::time::Duration::hours(1)),
+            .max_age(cookie_max_age),
     );
     let current_timestamp = rocket::time::OffsetDateTime::now_utc()
         .unix_timestamp()
@@ -215,12 +217,12 @@ async fn establish_session(
     cookies.add_private(
         Cookie::build(("session_timestamp", current_timestamp))
             .same_site(SameSite::Lax)
-            .max_age(rocket::time::Duration::hours(1)),
+            .max_age(cookie_max_age),
     );
     cookies.add_private(
         Cookie::build(("user_role", user.role.to_string()))
             .same_site(SameSite::Lax)
-            .max_age(rocket::time::Duration::hours(1)),
+            .max_age(cookie_max_age),
     );
     Ok(())
 }
