@@ -168,6 +168,14 @@ in
     443
   ]; # SSH, HTTP, HTTPS
 
+  # Allow the docker bridge subnet (RFC1918 172.16.0.0/12 covers docker0
+  # and all docker-compose-created bridges) to reach the nginx stub_status
+  # endpoint on tcp/8082. nginx-level allow rules above provide a second
+  # layer of defence.
+  networking.firewall.extraCommands = ''
+    iptables -A nixos-fw -p tcp -s 172.16.0.0/12 --dport 8082 -j nixos-fw-accept
+  '';
+
   nix.settings.experimental-features = [ "nix-command" "flakes" ];
 
   # Docker
@@ -199,6 +207,32 @@ in
         '';
       };
     };
+
+    # stub_status for the docker otel-collector's nginx receiver. Bound
+    # on all interfaces; the host firewall + the allow rules below restrict
+    # access to docker bridges only (172.16.0.0/12).
+    virtualHosts."_stub_status" = {
+      listen = [{ addr = "0.0.0.0"; port = 8082; ssl = false; }];
+      locations."/status" = {
+        extraConfig = ''
+          stub_status on;
+          access_log off;
+          allow 172.16.0.0/12;
+          allow 127.0.0.1;
+          deny all;
+        '';
+      };
+    };
+  };
+
+  # OpenTelemetry tracing on the host nginx. Spans are exported via OTLP/gRPC
+  # to the docker otel-collector, which routes by service.name to the
+  # nginx-do-host Honeycomb dataset.
+  services.nginx.otel = {
+    enable = true;
+    serviceName = "nginx-do-host";
+    endpoint = "127.0.0.1:4317";
+    traceContext = "propagate";
   };
 
   security.acme = {

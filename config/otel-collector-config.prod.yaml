@@ -15,6 +15,17 @@ receivers:
       memory:
       load:
       disk:
+  # Scrapes stub_status on the docker nginx (see nginx/default.conf, the
+  # :8081/status server block). Reachable on the internal compose network.
+  nginx/app:
+    endpoint: "http://nginx:8081/status"
+    collection_interval: 30s
+  # Scrapes stub_status on the NixOS host nginx via the docker bridge
+  # gateway. The host firewall + nginx-level allow rules keep this
+  # endpoint private to docker bridges.
+  nginx/host:
+    endpoint: "http://host.docker.internal:8082/status"
+    collection_interval: 30s
 
 processors:
   batch:
@@ -28,6 +39,19 @@ processors:
       - action: insert
         key: deployment.environment
         value: "${OTEL_ENVIRONMENT}"
+  # The nginx receiver emits resourceless metrics; stamp service.name so
+  # they land in the right Honeycomb dataset and aren't confused with
+  # host_metrics or app metrics.
+  resource/nginx-app:
+    attributes:
+      - action: insert
+        key: service.name
+        value: nginx-syllabus-tracker
+  resource/nginx-host:
+    attributes:
+      - action: insert
+        key: service.name
+        value: nginx-do-host
   tail_sampling:
     decision_wait: 10s
     num_traces: 1
@@ -82,30 +106,87 @@ processors:
         },
       ]
 
+connectors:
+  # Splits incoming OTLP traces into per-source pipelines so each lands
+  # in its own Honeycomb dataset. Default catches the Rust app (service.name
+  # = syllabus-tracker) and anything not explicitly matched.
+  routing/traces:
+    default_pipelines: [traces/app]
+    error_mode: ignore
+    table:
+      - context: resource
+        statement: route() where attributes["service.name"] == "nginx-syllabus-tracker"
+        pipelines: [traces/nginx-app]
+      - context: resource
+        statement: route() where attributes["service.name"] == "nginx-do-host"
+        pipelines: [traces/nginx-host]
+
 exporters:
   otlp_http/traces:
     endpoint: "https://api.honeycomb.io:443"
     headers:
       "x-honeycomb-team": "${HONEYCOMB_API_KEY}"
       "x-honeycomb-dataset": "syllabus-tracker"
+  otlp_http/traces-nginx-app:
+    endpoint: "https://api.honeycomb.io:443"
+    headers:
+      "x-honeycomb-team": "${HONEYCOMB_API_KEY}"
+      "x-honeycomb-dataset": "nginx-syllabus-tracker"
+  otlp_http/traces-nginx-host:
+    endpoint: "https://api.honeycomb.io:443"
+    headers:
+      "x-honeycomb-team": "${HONEYCOMB_API_KEY}"
+      "x-honeycomb-dataset": "nginx-do-host"
   otlp_http/metrics:
     endpoint: "https://api.honeycomb.io:443"
     headers:
       "x-honeycomb-team": "${HONEYCOMB_API_KEY}"
       "x-honeycomb-dataset": "syllabus-tracker-metrics"
+  otlp_http/metrics-nginx-app:
+    endpoint: "https://api.honeycomb.io:443"
+    headers:
+      "x-honeycomb-team": "${HONEYCOMB_API_KEY}"
+      "x-honeycomb-dataset": "nginx-syllabus-tracker"
+  otlp_http/metrics-nginx-host:
+    endpoint: "https://api.honeycomb.io:443"
+    headers:
+      "x-honeycomb-team": "${HONEYCOMB_API_KEY}"
+      "x-honeycomb-dataset": "nginx-do-host"
   debug:
     verbosity: normal
 
 service:
   pipelines:
-    traces:
+    # Fan-in: every OTLP trace hits this pipeline first and is dispatched
+    # by service.name to one of the per-dataset pipelines below.
+    traces/in:
       receivers: [otlp]
-      processors: [batch, resource, tail_sampling]
+      processors: [resource]
+      exporters: [routing/traces]
+    traces/app:
+      receivers: [routing/traces]
+      processors: [batch, tail_sampling]
       exporters: [otlp_http/traces]
+    traces/nginx-app:
+      receivers: [routing/traces]
+      processors: [batch, tail_sampling]
+      exporters: [otlp_http/traces-nginx-app]
+    traces/nginx-host:
+      receivers: [routing/traces]
+      processors: [batch, tail_sampling]
+      exporters: [otlp_http/traces-nginx-host]
     metrics:
       receivers: [docker_stats, host_metrics, otlp]
       processors: [batch, resource]
       exporters: [otlp_http/metrics]
+    metrics/nginx-app:
+      receivers: [nginx/app]
+      processors: [batch, resource, resource/nginx-app]
+      exporters: [otlp_http/metrics-nginx-app]
+    metrics/nginx-host:
+      receivers: [nginx/host]
+      processors: [batch, resource, resource/nginx-host]
+      exporters: [otlp_http/metrics-nginx-host]
 
   telemetry:
     metrics:

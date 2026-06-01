@@ -7,7 +7,14 @@ name: syllabus-tracker-local
 
 services:
   nginx:
-    image: nginx:1.29.8-alpine
+    image: nginx:1.31-alpine-otel
+    # See docker-compose.nixos.yml: -g injects load_module into main context.
+    command:
+      [
+        "nginx",
+        "-g",
+        "load_module modules/ngx_otel_module.so; daemon off;",
+      ]
     ports:
       - "8080:80"
     volumes:

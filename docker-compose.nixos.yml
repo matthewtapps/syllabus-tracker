@@ -2,8 +2,16 @@ name: syllabus-tracker-services
 
 services:
   nginx:
-    image: nginx:1.29.8-alpine
+    image: nginx:1.31-alpine-otel
     restart: unless-stopped
+    # `load_module` must live in nginx's main context; -g injects it
+    # before the bundled nginx.conf is parsed.
+    command:
+      [
+        "nginx",
+        "-g",
+        "load_module modules/ngx_otel_module.so; daemon off;",
+      ]
     ports:
       - "127.0.0.1:8080:80"
     volumes:
@@ -59,6 +67,16 @@ services:
     command: ["--config=/etc/otel-collector-config.yaml"]
     group_add:
       - "131"
+    # OTLP/gRPC published on loopback so the NixOS host nginx (running
+    # outside docker) can ship its spans to the same collector that
+    # handles app + docker-nginx telemetry.
+    ports:
+      - "127.0.0.1:4317:4317"
+    # Lets the nginx receiver scrape host nginx stub_status via the
+    # bridge gateway. See nixos/configuration.nix for the matching
+    # firewall + allow rules.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - ./config/otel-collector-config.prod.yaml:/etc/otel-collector-config.yaml
       - /var/run/docker.sock:/var/run/docker.sock
