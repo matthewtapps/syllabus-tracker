@@ -1,12 +1,15 @@
 import { useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
-import { BookOpen, FolderOpen, Pencil, Search, Users } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { BookOpen, FolderOpen, Pencil, Search, Users, X as XIcon } from 'lucide-react';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { toast } from 'sonner';
-import type { LibraryTechniqueRow } from '@/lib/api';
-import { useLibraryTechniques } from '@/lib/queries';
-import { useUpdateLibraryTechnique } from '@/lib/mutations';
+import type { LibraryTechniqueRow, Tag } from '@/lib/api';
+import { useAllTags, useLibraryTechniques } from '@/lib/queries';
+import {
+  useRemoveTagFromTechnique,
+  useUpdateLibraryTechnique,
+} from '@/lib/mutations';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -26,12 +29,13 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
 import { TracedForm } from '@/components/traced-form';
 import { EmptyState } from '@/components/empty-state';
 import { useFormWithValidation } from '@/components/hooks/useFormErrors';
+import { TagsEditor } from '@/app/student-techniques/components/tags-editor';
 import { formatRelative } from '@/lib/dates';
-import { cn } from '@/lib/utils';
 
 const editSchema = z.object({
   name: z.string().min(1, 'Name is required').max(100, 'Name is too long'),
@@ -40,6 +44,7 @@ const editSchema = z.object({
 type EditValues = z.infer<typeof editSchema>;
 
 export default function LibraryPage() {
+  const navigate = useNavigate();
   const techniquesQuery = useLibraryTechniques();
   const techniques = useMemo(
     () => techniquesQuery.data ?? [],
@@ -80,22 +85,30 @@ export default function LibraryPage() {
 
   return (
     <div className="container mx-auto px-4 py-6 sm:px-6 md:py-8">
-      <div className="mb-4 flex items-center gap-2">
-        <div className="relative min-w-0 flex-1">
-          <Search
-            className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
-            aria-hidden
-          />
-          <Input
-            placeholder="Search techniques"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="pl-9"
-          />
-        </div>
-        <Button asChild variant="outline" size="sm" className="shrink-0">
-          <Link to="/collections">Collections</Link>
-        </Button>
+      <Tabs
+        value="library"
+        onValueChange={(v) => {
+          if (v === 'collections') navigate('/collections');
+        }}
+        className="mb-4"
+      >
+        <TabsList>
+          <TabsTrigger value="library">All techniques</TabsTrigger>
+          <TabsTrigger value="collections">Collections</TabsTrigger>
+        </TabsList>
+      </Tabs>
+
+      <div className="mb-4 relative">
+        <Search
+          className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
+          aria-hidden
+        />
+        <Input
+          placeholder="Search techniques"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="pl-9"
+        />
       </div>
 
       {availableTags.length > 0 && (
@@ -133,72 +146,71 @@ export default function LibraryPage() {
           : `${filtered.length} of ${techniques.length} techniques`}
       </p>
 
-      {loading ? (
-        <ul className="divide-y divide-border">
-          {Array.from({ length: 5 }).map((_, i) => (
-            <li key={i} className="px-1 py-4">
-              <div className="h-4 w-1/3 animate-pulse rounded bg-muted" />
-              <div className="mt-2 h-3 w-2/3 animate-pulse rounded bg-muted" />
-            </li>
-          ))}
-        </ul>
-      ) : error ? (
-        <div className="flex flex-col items-center gap-3 rounded-lg border border-border bg-card px-6 py-12 text-center">
-          <p className="text-sm text-destructive">{error}</p>
-          <Button variant="outline" onClick={() => window.location.reload()}>
-            Try again
-          </Button>
-        </div>
-      ) : techniques.length === 0 ? (
-        <EmptyState
-          icon={BookOpen}
-          title="No techniques yet"
-          description="Assign a technique to a student or build a collection to start the library."
-        />
-      ) : filtered.length === 0 ? (
-        <div className="rounded-lg border border-dashed border-border px-6 py-10 text-center text-sm text-muted-foreground">
-          No techniques match the current filters.
-        </div>
-      ) : (
-        <ul className="divide-y divide-border">
-          {filtered.map((t) => (
-            <li key={t.id}>
-              <button
-                type="button"
-                onClick={() => setEditing(t)}
-                className={cn(
-                  'group flex w-full items-start gap-3 px-1 py-3 text-left transition-colors',
-                  'hover:bg-muted/40',
-                )}
-              >
-                <div className="min-w-0 flex-1 space-y-1">
-                  <p className="truncate text-sm font-medium">{t.name}</p>
-                  <p className="text-xs text-muted-foreground">
-                    <MetadataLine row={t} />
-                  </p>
-                  {t.tags.length > 0 && (
-                    <div className="flex flex-wrap gap-1 pt-0.5">
-                      {t.tags.map((tag) => (
-                        <Badge
-                          key={tag.id}
-                          variant="outline"
-                          className="px-1.5 py-0 text-[10px]"
-                        >
-                          {tag.name}
-                        </Badge>
-                      ))}
-                    </div>
-                  )}
-                </div>
-                <Pencil
-                  className="h-4 w-4 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100"
-                  aria-hidden
-                />
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
+      <div className="overflow-hidden rounded-lg border border-border bg-card">
+        {loading ? (
+          <div className="divide-y divide-border">
+            {Array.from({ length: 5 }).map((_, i) => (
+              <div key={i} className="px-4 py-4">
+                <div className="h-4 w-1/3 animate-pulse rounded bg-muted" />
+                <div className="mt-2 h-3 w-2/3 animate-pulse rounded bg-muted" />
+              </div>
+            ))}
+          </div>
+        ) : error ? (
+          <div className="flex flex-col items-center gap-3 px-6 py-12 text-center">
+            <p className="text-sm text-destructive">{error}</p>
+            <Button variant="outline" onClick={() => window.location.reload()}>
+              Try again
+            </Button>
+          </div>
+        ) : techniques.length === 0 ? (
+          <EmptyState
+            icon={BookOpen}
+            title="No techniques yet"
+            description="Assign a technique to a student or build a collection to start the library."
+          />
+        ) : filtered.length === 0 ? (
+          <p className="px-6 py-10 text-center text-sm text-muted-foreground">
+            No techniques match the current filters.
+          </p>
+        ) : (
+          <ul className="divide-y divide-border">
+            {filtered.map((t) => (
+              <li key={t.id}>
+                <button
+                  type="button"
+                  onClick={() => setEditing(t)}
+                  className="group flex w-full items-start gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/40"
+                >
+                  <div className="min-w-0 flex-1 space-y-1">
+                    <p className="truncate text-sm font-medium">{t.name}</p>
+                    <p className="text-xs text-muted-foreground">
+                      <MetadataLine row={t} />
+                    </p>
+                    {t.tags.length > 0 && (
+                      <div className="flex flex-wrap gap-1 pt-0.5">
+                        {t.tags.map((tag) => (
+                          <Badge
+                            key={tag.id}
+                            variant="outline"
+                            className="px-1.5 py-0 text-[10px]"
+                          >
+                            {tag.name}
+                          </Badge>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  <Pencil
+                    className="h-4 w-4 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100"
+                    aria-hidden
+                  />
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
 
       <EditDialog technique={editing} onClose={() => setEditing(null)} />
     </div>
@@ -238,6 +250,24 @@ interface EditDialogProps {
 
 function EditDialog({ technique, onClose }: EditDialogProps) {
   const updateMutation = useUpdateLibraryTechnique();
+  const removeTagMutation = useRemoveTagFromTechnique();
+  const allTagsQuery = useAllTags();
+  const allTags = allTagsQuery.data ?? [];
+
+  // Optimistic local tag list so add/remove feels instant. Seeded from
+  // `technique?.tags` whenever the dialog opens on a different technique;
+  // the `values` form prop on the parent form handles name/description reset.
+  const [localTags, setLocalTags] = useState<Tag[]>([]);
+  const [seededFor, setSeededFor] = useState<number | null>(null);
+  if (technique && seededFor !== technique.id) {
+    setLocalTags(technique.tags);
+    setSeededFor(technique.id);
+  }
+  if (!technique && seededFor !== null) {
+    setSeededFor(null);
+    setLocalTags([]);
+  }
+
   const form = useFormWithValidation<EditValues>({
     resolver: zodResolver(editSchema),
     defaultValues: { name: '', description: '' },
@@ -261,6 +291,31 @@ function EditDialog({ technique, onClose }: EditDialogProps) {
     }
   }
 
+  async function handleRemoveTag(tag: Tag) {
+    if (!technique) return;
+    setLocalTags((prev) => prev.filter((t) => t.id !== tag.id));
+    try {
+      await removeTagMutation.mutateAsync({
+        techniqueId: technique.id,
+        tagId: tag.id,
+      });
+    } catch (err) {
+      console.error(err);
+      toast.error('Failed to remove tag');
+      setLocalTags((prev) =>
+        [...prev, tag].sort((a, b) => a.name.localeCompare(b.name)),
+      );
+    }
+  }
+
+  function handleTagAdded(tag: Tag) {
+    setLocalTags((prev) =>
+      [...prev.filter((t) => t.id !== tag.id), tag].sort((a, b) =>
+        a.name.localeCompare(b.name),
+      ),
+    );
+  }
+
   return (
     <Dialog
       open={!!technique}
@@ -272,7 +327,8 @@ function EditDialog({ technique, onClose }: EditDialogProps) {
         <DialogHeader>
           <DialogTitle>Edit technique</DialogTitle>
           <DialogDescription>
-            Changes apply to every student who has this technique assigned.
+            Name and description apply to every student who has this technique
+            assigned.
           </DialogDescription>
         </DialogHeader>
         <Form {...form}>
@@ -308,6 +364,40 @@ function EditDialog({ technique, onClose }: EditDialogProps) {
                 </FormItem>
               )}
             />
+
+            <div className="space-y-2">
+              <p className="text-sm font-medium">Tags</p>
+              <div className="flex flex-wrap items-center gap-1.5">
+                {localTags.map((tag) => (
+                  <Badge
+                    key={tag.id}
+                    variant="secondary"
+                    className="gap-1 pr-1 text-xs"
+                  >
+                    {tag.name}
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-4 w-4 rounded-full text-muted-foreground hover:bg-background hover:text-foreground"
+                      onClick={() => handleRemoveTag(tag)}
+                    >
+                      <XIcon className="h-3 w-3" aria-hidden />
+                      <span className="sr-only">Remove {tag.name}</span>
+                    </Button>
+                  </Badge>
+                ))}
+                {technique && (
+                  <TagsEditor
+                    techniqueId={technique.id}
+                    assignedTags={localTags}
+                    allTags={allTags}
+                    onTagAdded={handleTagAdded}
+                  />
+                )}
+              </div>
+            </div>
+
             <DialogFooter className="gap-2">
               <Button type="button" variant="outline" onClick={onClose}>
                 Cancel

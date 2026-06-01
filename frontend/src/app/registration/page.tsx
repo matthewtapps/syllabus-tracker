@@ -13,12 +13,6 @@ import {
   type User,
 } from '@/lib/api';
 import { Button } from '@/components/ui/button';
-import {
-  Accordion,
-  AccordionContent,
-  AccordionItem,
-  AccordionTrigger,
-} from '@/components/ui/accordion';
 import { ClaimLinkPanel } from '@/components/claim-link-panel';
 import {
   Dialog,
@@ -135,21 +129,15 @@ export default function AddUserPage({ user }: AddUserPageProps) {
   }
 
   return (
-    <div className="container mx-auto max-w-md px-4 py-4 sm:px-6 sm:py-6 md:py-8">
-      <div className="mb-5 space-y-1 sm:mb-8">
-        <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Add user</h1>
-        <p className="text-sm text-muted-foreground">
-          Create the account, then share the link.
-        </p>
-      </div>
-
-      <Form {...form}>
-        <TracedForm
-          id="invite_user"
-          onSubmit={form.handleSubmit(handleSubmit)}
-          setFieldErrors={form.setFieldErrors}
-          className="space-y-4"
-        >
+    <div className="container mx-auto max-w-md px-4 py-6 sm:px-6 md:py-8">
+      <section className="rounded-lg border border-border bg-card p-4 sm:p-6">
+        <Form {...form}>
+          <TracedForm
+            id="invite_user"
+            onSubmit={form.handleSubmit(handleSubmit)}
+            setFieldErrors={form.setFieldErrors}
+            className="space-y-4"
+          >
             <FormField
               control={form.control}
               name="display_name"
@@ -157,7 +145,11 @@ export default function AddUserPage({ user }: AddUserPageProps) {
                 <FormItem>
                   <FormLabel>Display name</FormLabel>
                   <FormControl>
-                    <Input {...field} placeholder="e.g. Alex Rivera" />
+                    <Input
+                      {...field}
+                      autoFocus
+                      placeholder="e.g. Alex Rivera"
+                    />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -215,7 +207,8 @@ export default function AddUserPage({ user }: AddUserPageProps) {
                       </SelectContent>
                     </Select>
                     <FormDescription>
-                      Bulk-assigns the collection's techniques to this new student.
+                      Bulk-assigns the collection's techniques to this new
+                      student.
                     </FormDescription>
                     <FormMessage />
                   </FormItem>
@@ -232,42 +225,39 @@ export default function AddUserPage({ user }: AddUserPageProps) {
             </Button>
           </TracedForm>
         </Form>
+      </section>
 
-      <div className="mt-6">
-        <Accordion type="single" collapsible>
-          <AccordionItem value="qr" className="rounded-lg border border-border bg-card px-4">
-            <AccordionTrigger className="text-sm font-medium">
-              <span className="flex items-center gap-2">
-                <QrCode className="h-4 w-4" aria-hidden />
-                Or let students sign up themselves
-              </span>
-            </AccordionTrigger>
-            <AccordionContent className="space-y-3">
-              <p className="text-sm text-muted-foreground">
-                Display this QR at the gym. Students who scan land on the
-                signup page and wait for your approval.
-              </p>
-              <div className="flex items-center justify-center rounded-md border border-border bg-background p-4">
-                <QRCodeSVG
-                  value={`${window.location.origin}/register`}
-                  size={160}
-                  bgColor="transparent"
-                  fgColor="currentColor"
-                  className="text-foreground"
-                />
-              </div>
-              <p className="break-all text-center font-mono text-xs text-muted-foreground">
-                {window.location.origin}/register
-              </p>
-            </AccordionContent>
-          </AccordionItem>
-        </Accordion>
-      </div>
+      <section className="mt-4 rounded-lg border border-border bg-card p-4 sm:p-6">
+        <div className="flex items-start gap-3">
+          <QrCode
+            className="mt-0.5 h-5 w-5 shrink-0 text-muted-foreground"
+            aria-hidden
+          />
+          <div className="min-w-0 flex-1 space-y-1">
+            <p className="text-sm font-semibold">
+              Or let students sign up themselves
+            </p>
+            <p className="text-xs text-muted-foreground">
+              Display this QR at the gym. Students who scan land on the signup
+              page and wait for your approval.
+            </p>
+          </div>
+        </div>
+        <div className="mt-4 flex items-center justify-center rounded-md border border-border bg-background p-4">
+          <QRCodeSVG
+            value={`${window.location.origin}/register`}
+            size={160}
+            bgColor="transparent"
+            fgColor="currentColor"
+            className="text-foreground"
+          />
+        </div>
+        <p className="mt-3 break-all text-center font-mono text-xs text-muted-foreground">
+          {window.location.origin}/register
+        </p>
+      </section>
 
-      <ClaimLinkDialog
-        issued={issued}
-        onClose={() => setIssued(null)}
-      />
+      <ClaimLinkDialog issued={issued} onClose={() => setIssued(null)} />
     </div>
   );
 }

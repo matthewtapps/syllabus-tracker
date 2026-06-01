@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { BookOpen, ChevronRight, Plus, Users } from 'lucide-react';
+import { BookOpen, ChevronRight, Plus, Search, Users } from 'lucide-react';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { toast } from 'sonner';
@@ -26,6 +26,7 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
 import { EmptyState } from '@/components/empty-state';
 import { SkeletonListRow } from '@/components/skeleton-row';
@@ -45,6 +46,18 @@ export default function CollectionsPage() {
   const collections = collectionsQuery.data ?? null;
   const error = collectionsQuery.error ? 'Failed to load collections.' : null;
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
+  const [search, setSearch] = useState('');
+
+  const filteredCollections = useMemo(() => {
+    if (!collections) return null;
+    const needle = search.trim().toLowerCase();
+    if (!needle) return collections;
+    return collections.filter(
+      (c) =>
+        c.name.toLowerCase().includes(needle) ||
+        (c.description?.toLowerCase().includes(needle) ?? false),
+    );
+  }, [collections, search]);
 
   const form = useFormWithValidation<NewCollectionValues>({
     resolver: zodResolver(newCollectionSchema),
@@ -65,15 +78,38 @@ export default function CollectionsPage() {
 
   return (
     <div className="container mx-auto px-4 py-6 sm:px-6 md:py-8">
-      <div className="mb-4 flex items-center justify-end gap-2">
-        <Button asChild variant="outline" size="sm">
-          <Link to="/library">All techniques</Link>
-        </Button>
+      <Tabs
+        value="collections"
+        onValueChange={(v) => {
+          if (v === 'library') navigate('/library');
+        }}
+        className="mb-4"
+      >
+        <TabsList>
+          <TabsTrigger value="library">All techniques</TabsTrigger>
+          <TabsTrigger value="collections">Collections</TabsTrigger>
+        </TabsList>
+      </Tabs>
+
+      <div className="mb-4 flex items-center gap-2">
+        <div className="relative min-w-0 flex-1">
+          <Search
+            className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
+            aria-hidden
+          />
+          <Input
+            placeholder="Search collections"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="pl-9"
+          />
+        </div>
         <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
           <DialogTrigger asChild>
-            <Button size="sm">
+            <Button className="shrink-0">
               <Plus className="mr-2 h-4 w-4" aria-hidden />
-              New collection
+              <span className="hidden sm:inline">New collection</span>
+              <span className="sm:hidden">New</span>
             </Button>
           </DialogTrigger>
           <DialogContent className="w-[calc(100vw-1rem)] max-w-md p-4 sm:p-6">
@@ -172,9 +208,13 @@ export default function CollectionsPage() {
               </Button>
             }
           />
+        ) : filteredCollections && filteredCollections.length === 0 ? (
+          <p className="px-6 py-10 text-center text-sm text-muted-foreground">
+            No collections match the current search.
+          </p>
         ) : (
           <ul className="divide-y divide-border">
-            {collections!.map((c) => (
+            {filteredCollections!.map((c) => (
               <li key={c.id}>
                 <Link
                   to={`/collections/${c.id}`}

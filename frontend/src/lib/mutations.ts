@@ -298,6 +298,7 @@ export function useAddTagToTechnique() {
     mutationFn: async (vars: { techniqueId: number; tagId: number }) =>
       unwrap(await addTagToTechnique(vars.techniqueId, vars.tagId)),
     onSuccess: () => {
+      qc.invalidateQueries({ queryKey: qk.libraryTechniques() });
       qc.invalidateQueries({
         predicate: (q) =>
           (q.queryKey[0] === "student" && q.queryKey[2] === "techniques") ||
@@ -313,6 +314,7 @@ export function useRemoveTagFromTechnique() {
     mutationFn: async (vars: { techniqueId: number; tagId: number }) =>
       unwrap(await removeTagFromTechnique(vars.techniqueId, vars.tagId)),
     onSuccess: () => {
+      qc.invalidateQueries({ queryKey: qk.libraryTechniques() });
       qc.invalidateQueries({
         predicate: (q) =>
           (q.queryKey[0] === "student" && q.queryKey[2] === "techniques") ||
