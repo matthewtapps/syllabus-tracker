@@ -40,8 +40,8 @@ processors:
         key: deployment.environment
         value: "${OTEL_ENVIRONMENT}"
   # The nginx receiver emits resourceless metrics; stamp service.name so
-  # they land in the right Honeycomb dataset and aren't confused with
-  # host_metrics or app metrics.
+  # Honeycomb routes them to the right dataset (it auto-routes metrics
+  # without an explicit dataset header by service.name).
   resource/nginx-app:
     attributes:
       - action: insert
@@ -106,75 +106,38 @@ processors:
         },
       ]
 
-connectors:
-  # Splits incoming OTLP traces into per-source pipelines so each lands
-  # in its own Honeycomb dataset. Default catches the Rust app (service.name
-  # = syllabus-tracker) and anything not explicitly matched.
-  routing/traces:
-    default_pipelines: [traces/app]
-    error_mode: ignore
-    table:
-      - context: resource
-        statement: route() where attributes["service.name"] == "nginx-syllabus-tracker"
-        pipelines: [traces/nginx-app]
-      - context: resource
-        statement: route() where attributes["service.name"] == "nginx-do-host"
-        pipelines: [traces/nginx-host]
-
 exporters:
+  # No x-honeycomb-dataset header: in a Honeycomb Environment, traces
+  # land in the dataset named after service.name. So:
+  #   service.name = syllabus-tracker        -> syllabus-tracker dataset
+  #   service.name = nginx-syllabus-tracker  -> nginx-syllabus-tracker dataset
+  #   service.name = nginx-do-host           -> nginx-do-host dataset
   otlp_http/traces:
     endpoint: "https://api.honeycomb.io:443"
     headers:
       "x-honeycomb-team": "${HONEYCOMB_API_KEY}"
-      "x-honeycomb-dataset": "syllabus-tracker"
-  otlp_http/traces-nginx-app:
-    endpoint: "https://api.honeycomb.io:443"
-    headers:
-      "x-honeycomb-team": "${HONEYCOMB_API_KEY}"
-      "x-honeycomb-dataset": "nginx-syllabus-tracker"
-  otlp_http/traces-nginx-host:
-    endpoint: "https://api.honeycomb.io:443"
-    headers:
-      "x-honeycomb-team": "${HONEYCOMB_API_KEY}"
-      "x-honeycomb-dataset": "nginx-do-host"
+  # Metrics still need explicit dataset routing because the app's metrics
+  # don't share a service.name with the metrics dataset name. Nginx
+  # metrics use service.name routing (no header) so they land alongside
+  # their traces.
   otlp_http/metrics:
     endpoint: "https://api.honeycomb.io:443"
     headers:
       "x-honeycomb-team": "${HONEYCOMB_API_KEY}"
       "x-honeycomb-dataset": "syllabus-tracker-metrics"
-  otlp_http/metrics-nginx-app:
+  otlp_http/metrics-nginx:
     endpoint: "https://api.honeycomb.io:443"
     headers:
       "x-honeycomb-team": "${HONEYCOMB_API_KEY}"
-      "x-honeycomb-dataset": "nginx-syllabus-tracker"
-  otlp_http/metrics-nginx-host:
-    endpoint: "https://api.honeycomb.io:443"
-    headers:
-      "x-honeycomb-team": "${HONEYCOMB_API_KEY}"
-      "x-honeycomb-dataset": "nginx-do-host"
   debug:
     verbosity: normal
 
 service:
   pipelines:
-    # Fan-in: every OTLP trace hits this pipeline first and is dispatched
-    # by service.name to one of the per-dataset pipelines below.
-    traces/in:
+    traces:
       receivers: [otlp]
-      processors: [resource]
-      exporters: [routing/traces]
-    traces/app:
-      receivers: [routing/traces]
-      processors: [batch, tail_sampling]
+      processors: [batch, resource, tail_sampling]
       exporters: [otlp_http/traces]
-    traces/nginx-app:
-      receivers: [routing/traces]
-      processors: [batch, tail_sampling]
-      exporters: [otlp_http/traces-nginx-app]
-    traces/nginx-host:
-      receivers: [routing/traces]
-      processors: [batch, tail_sampling]
-      exporters: [otlp_http/traces-nginx-host]
     metrics:
       receivers: [docker_stats, host_metrics, otlp]
       processors: [batch, resource]
@@ -182,11 +145,11 @@ service:
     metrics/nginx-app:
       receivers: [nginx/app]
       processors: [batch, resource, resource/nginx-app]
-      exporters: [otlp_http/metrics-nginx-app]
+      exporters: [otlp_http/metrics-nginx]
     metrics/nginx-host:
       receivers: [nginx/host]
       processors: [batch, resource, resource/nginx-host]
-      exporters: [otlp_http/metrics-nginx-host]
+      exporters: [otlp_http/metrics-nginx]
 
   telemetry:
     metrics:
