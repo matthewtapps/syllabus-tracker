@@ -202,7 +202,23 @@ pub async fn init_rocket(
     let limits = rocket::data::Limits::default()
         .limit("file", upload_limit)
         .limit("data-form", upload_limit);
-    let figment = rocket::Config::figment().merge(("limits", limits));
+
+    // The production image is built FROM scratch, so /tmp does not exist.
+    // Rocket's multipart form parser streams uploads through its temp_dir;
+    // point it at our pipeline temp dir (which we also persist into) and
+    // create it eagerly so the first upload doesn't ENOENT.
+    let temp_dir = videos::pipeline::temp_dir();
+    if let Err(e) = std::fs::create_dir_all(&temp_dir) {
+        error!(
+            temp_dir = ?temp_dir,
+            error = %e,
+            "failed to create video temp dir at startup; uploads will fail"
+        );
+    }
+
+    let figment = rocket::Config::figment()
+        .merge(("limits", limits))
+        .merge(("temp_dir", &temp_dir));
 
     let mut rocket = rocket::custom(figment)
         .manage(Capabilities { videos: videos_enabled })
