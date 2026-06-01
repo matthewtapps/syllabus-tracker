@@ -2,14 +2,14 @@ use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
 use rocket::data::{ByteUnit, ToByteUnit};
-use rocket::form::Form;
+use rocket::form::{Errors as FormErrors, Form};
 use rocket::fs::TempFile;
 use rocket::http::Status;
 use rocket::serde::{json::Json, Deserialize, Serialize};
 use rocket::tokio;
 use rocket::State;
 use sqlx::{Pool, Sqlite};
-use tracing::{instrument, warn};
+use tracing::{error, instrument, warn};
 use uuid::Uuid;
 
 use crate::auth::{Permission, User};
@@ -86,11 +86,20 @@ pub fn upload_byte_limit() -> ByteUnit {
 pub async fn api_video_upload(
     tid: i64,
     user: User,
-    mut form: Form<UploadForm<'_>>,
+    form: Result<Form<UploadForm<'_>>, FormErrors<'_>>,
     pool: &State<Pool<Sqlite>>,
     ctx: &State<Arc<PipelineContext>>,
 ) -> Result<Json<UploadResponse>, Status> {
     user.require_permission(Permission::UploadVideos)?;
+
+    let mut form = form.map_err(|errs| {
+        error!(
+            technique_id = tid,
+            errors = %errs,
+            "video upload form failed to parse"
+        );
+        Status::BadRequest
+    })?;
 
     let metrics = video_metrics();
     if !is_mp4(form.file.content_type()) {
@@ -260,11 +269,21 @@ pub async fn api_reorder_videos(
 pub async fn api_replace_video(
     vid: i64,
     user: User,
-    mut form: Form<ReplaceForm<'_>>,
+    form: Result<Form<ReplaceForm<'_>>, FormErrors<'_>>,
     pool: &State<Pool<Sqlite>>,
     ctx: &State<Arc<PipelineContext>>,
 ) -> Result<Json<UploadResponse>, Status> {
     user.require_permission(Permission::UploadVideos)?;
+
+    let mut form = form.map_err(|errs| {
+        error!(
+            video_id = vid,
+            errors = %errs,
+            "video replace form failed to parse"
+        );
+        Status::BadRequest
+    })?;
+
     if !is_mp4(form.file.content_type()) {
         return Err(Status::UnsupportedMediaType);
     }

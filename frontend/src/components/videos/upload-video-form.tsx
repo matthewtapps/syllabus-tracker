@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
 import { z } from "zod";
+import { FileVideoIcon, VideoIcon } from "lucide-react";
 import {
   MAX_VIDEO_BYTES,
   MAX_VIDEO_DURATION_SECONDS,
@@ -48,7 +49,8 @@ export function UploadVideoForm({
   const [file, setFile] = useState<File | null>(null);
   const [fileError, setFileError] = useState<string | null>(null);
   const [progressPct, setProgressPct] = useState<number | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const galleryInputRef = useRef<HTMLInputElement>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
 
   const form = useFormWithValidation<FormValues>({
     resolver: zodResolver(schema),
@@ -97,10 +99,6 @@ export function UploadVideoForm({
       // server enforce the limit instead of blocking the upload.
     }
     setFile(picked);
-    if (!form.getValues("title")) {
-      const baseName = picked.name.replace(/\.[^.]+$/, "");
-      form.setValue("title", baseName);
-    }
   }
 
   async function handleSubmit(values: FormValues) {
@@ -140,19 +138,54 @@ export function UploadVideoForm({
         className="space-y-4"
       >
         <div className="space-y-2">
-          <FormLabel htmlFor="video_file">Video file</FormLabel>
-          <Input
-            id="video_file"
+          <FormLabel>Video file</FormLabel>
+          <input
+            ref={galleryInputRef}
             type="file"
             accept="video/mp4"
-            capture="environment"
-            ref={fileInputRef}
+            className="sr-only"
             onChange={(e) => {
               const picked = e.target.files?.[0] ?? null;
               pickFile(picked);
+              e.target.value = "";
             }}
             disabled={isSubmitting}
           />
+          <input
+            ref={cameraInputRef}
+            type="file"
+            accept="video/mp4"
+            capture="environment"
+            className="sr-only"
+            onChange={(e) => {
+              const picked = e.target.files?.[0] ?? null;
+              pickFile(picked);
+              e.target.value = "";
+            }}
+            disabled={isSubmitting}
+          />
+          <div className="flex gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              className="flex-1"
+              onClick={() => galleryInputRef.current?.click()}
+              disabled={isSubmitting}
+            >
+              <FileVideoIcon className="mr-1.5 h-4 w-4" aria-hidden />
+              Choose video
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              className="flex-1"
+              onClick={() => cameraInputRef.current?.click()}
+              disabled={isSubmitting}
+            >
+              <VideoIcon className="mr-1.5 h-4 w-4" aria-hidden />
+              Record video
+            </Button>
+          </div>
           {file ? (
             <p className="text-xs text-muted-foreground">
               {file.name} · {formatBytes(file.size)}
