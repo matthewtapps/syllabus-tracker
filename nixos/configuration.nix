@@ -1,12 +1,19 @@
 {
   pkgs,
   lib,
+  nginx-otel,
   ...
 }:
 
 let
   domain = "syllabustracker.matthewtapps.com";
   acmeEmail = "mail@matthewtapps.com";
+
+  # nginx built with ngx_otel_module available as a dynamic module. We
+  # don't use the flake's NixOS module (it relies on
+  # services.nginx.prependConfig which is only on nixos-unstable);
+  # we inject `load_module` via the systemd ExecStart -g flag below.
+  nginxOtelPkg = nginx-otel.packages.${pkgs.system}.nginx-with-otel;
 
   adminSshKey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEQG/SNksegRf+4EUWzyInTY09rKR3xOwrX91ZjqIbKe matt@Matt-DESKTOP-NIXOS";
   adminUser = "syllabusadmin";
@@ -187,9 +194,29 @@ in
   # Nginx and ACME (Let's Encrypt) for SSL
   services.nginx = {
     enable = true;
+    # Swap in the otel-enabled nginx. enableReload pins the running
+    # config at /etc/nginx/nginx.conf, which the ExecStart override
+    # below relies on.
+    package = nginxOtelPkg;
+    enableReload = true;
+    # gixy (the build-time linter) doesn't know about the otel directives
+    # and may reject them. Runtime `nginx -t` (via preStart/ExecReload)
+    # still validates with the module loaded.
+    validateConfigFile = false;
     recommendedOptimisation = true;
     recommendedProxySettings = true;
     recommendedTlsSettings = true;
+    # The otel directives have to live in http {}. service.name is what
+    # Honeycomb uses to route to the nginx-do-host dataset (no explicit
+    # dataset header on the collector exporter).
+    appendHttpConfig = ''
+      otel_service_name "nginx-do-host";
+      otel_exporter {
+        endpoint 127.0.0.1:4317;
+      }
+      otel_trace on;
+      otel_trace_context propagate;
+    '';
     virtualHosts.${domain} = {
       forceSSL = true;
       enableACME = true;
@@ -225,14 +252,22 @@ in
     };
   };
 
-  # OpenTelemetry tracing on the host nginx. Spans are exported via OTLP/gRPC
-  # to the docker otel-collector, which routes by service.name to the
-  # nginx-do-host Honeycomb dataset.
-  services.nginx.otel = {
-    enable = true;
-    serviceName = "nginx-do-host";
-    endpoint = "127.0.0.1:4317";
-    traceContext = "propagate";
+  # `load_module` has to sit in nginx's main context. 24.11's nginx
+  # module has no option for that, so we override every nginx invocation
+  # to inject it via `-g`. The preStart and ExecReload commands also run
+  # `nginx -t` for config validation, so they need the module loaded too,
+  # otherwise the otel directives error out. Keep these in sync with the
+  # upstream execCommand format (see nixpkgs
+  # services/web-servers/nginx/default.nix).
+  systemd.services.nginx = {
+    serviceConfig.ExecStart = lib.mkForce
+      "${nginxOtelPkg}/bin/nginx -c '/etc/nginx/nginx.conf' -g 'load_module modules/ngx_otel_module.so;'";
+    serviceConfig.ExecReload = lib.mkForce [
+      "${nginxOtelPkg}/bin/nginx -c '/etc/nginx/nginx.conf' -t -g 'load_module modules/ngx_otel_module.so;'"
+      "${pkgs.coreutils}/bin/kill -HUP $MAINPID"
+    ];
+    preStart = lib.mkForce
+      "${nginxOtelPkg}/bin/nginx -c '/etc/nginx/nginx.conf' -t -g 'load_module modules/ngx_otel_module.so;'";
   };
 
   security.acme = {
