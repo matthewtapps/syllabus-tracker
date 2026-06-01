@@ -145,6 +145,7 @@ pub async fn authenticate_user(
                     green_count: None,
                     has_unseen_activity: None,
                     last_student_initiative_at: None,
+                    last_watch_at: None,
                 }))
             } else {
                 Ok(None)

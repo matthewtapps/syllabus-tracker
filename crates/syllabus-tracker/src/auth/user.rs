@@ -28,6 +28,7 @@ pub struct User {
     pub green_count: Option<i64>,
     pub has_unseen_activity: Option<bool>,
     pub last_student_initiative_at: Option<String>,
+    pub last_watch_at: Option<String>,
 }
 
 #[derive(sqlx::FromRow, Clone)]
@@ -73,6 +74,7 @@ impl From<DbUser> for User {
             green_count: None,
             has_unseen_activity: None,
             last_student_initiative_at: None,
+            last_watch_at: None,
         }
     }
 }

@@ -259,6 +259,7 @@ pub mod test_utils {
                             green_count: None,
                             has_unseen_activity: None,
                             last_student_initiative_at: None,
+                            last_watch_at: None,
                         };
                         update_student_technique(
                             &pool,

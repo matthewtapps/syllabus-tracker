@@ -1,12 +1,14 @@
 import { type ReactNode } from "react";
 import { Link } from "react-router-dom";
-import { Archive, ChevronRight, Clock, GraduationCap } from "lucide-react";
+import { Archive, ChevronRight, Clock, GraduationCap, PlayCircle } from "lucide-react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import type { User } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { formatRelative } from "@/lib/dates";
+
+const WATCH_RECENT_DAYS = 7;
 
 function initials(user: Pick<User, "display_name" | "username">): string {
   const source = user.display_name?.trim() || user.username || "";
@@ -31,6 +33,14 @@ export function StudentRow({ student, href, className, actions }: StudentRowProp
   const target = href ?? `/student/${student.id}`;
   const displayName = student.display_name || student.username;
   const hasSecondary = student.display_name && student.display_name !== student.username;
+
+  let watchedRecently = false;
+  if (student.last_watch_at) {
+    const ts = Date.parse(student.last_watch_at);
+    if (Number.isFinite(ts)) {
+      watchedRecently = ts >= Date.now() - WATCH_RECENT_DAYS * 86400 * 1000;
+    }
+  }
 
   return (
     <div
@@ -71,6 +81,16 @@ export function StudentRow({ student, href, className, actions }: StudentRowProp
                 aria-label="New student activity"
                 title="New student activity since you last looked"
               />
+            )}
+            {watchedRecently && !student.graduated_at && (
+              <Badge
+                variant="outline"
+                className="shrink-0 gap-1 border-primary/40 px-1.5 py-0 text-[10px] font-medium text-primary"
+                title="Watched a video in the last 7 days"
+              >
+                <PlayCircle className="h-3 w-3" aria-hidden />
+                Watching
+              </Badge>
             )}
           </div>
 

@@ -145,6 +145,9 @@ pub async fn get_students_by_recent_updates(
                 green_count: dto.green_count,
                 has_unseen_activity: dto.has_unseen_activity.map(|v| v != 0),
                 last_student_initiative_at: initiative.map(|dt| naive_to_utc(dt).to_rfc3339()),
+                last_watch_at: dto
+                    .latest_watch_at
+                    .map(|dt| naive_to_utc(dt).to_rfc3339()),
             }
         })
         .collect();

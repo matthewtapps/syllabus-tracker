@@ -4,19 +4,13 @@ import { useQueryClient } from '@tanstack/react-query';
 import {
   AlertCircle,
   ArrowRight,
-  Bell,
   CheckCircle2,
   ChevronRight,
-  Clock,
-  Copy,
   Dumbbell,
   GraduationCap,
-  History,
-  KeyRound,
   type LucideIcon,
   PlayCircle,
   Sparkles,
-  UserPlus,
   Users,
 } from 'lucide-react';
 import type { User } from '@/lib/api';
@@ -39,11 +33,13 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { ClaimLinkPanel } from '@/components/claim-link-panel';
+import { StudentRow } from '@/components/student-row';
 import type { Technique } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { formatRelative } from '@/lib/dates';
 import { statusToDotClass } from '@/lib/status';
 import { Button } from '@/components/ui/button';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { PageHeader } from '@/components/page-header';
 import { EmptyState } from '@/components/empty-state';
 import {
@@ -55,11 +51,12 @@ import type { Status } from '@/lib/status';
 import { VideoOverviewCard } from '@/components/videos/video-overview-card';
 import { useCapabilities } from '@/context/capabilities-context';
 import { DashboardTotals } from './components/dashboard-totals';
-import { StudentSection } from './components/student-section';
+import { QueueSheet } from './components/queue-sheet';
 
 const STALE_THRESHOLD_DAYS = 14;
 const INITIATIVE_THRESHOLD_DAYS = 7;
-const RECENT_LIMIT = 8;
+
+type RosterTab = 'initiative' | 'all' | 'quiet';
 
 interface DashboardProps {
   user: User | null;
@@ -111,7 +108,7 @@ function CoachDashboard() {
   const totalAssignments =
     statusCounts.red + statusCounts.amber + statusCounts.green;
 
-  const needsAttention = useMemo(() => {
+  const initiativeStudents = useMemo(() => {
     const cutoff = Date.now() - INITIATIVE_THRESHOLD_DAYS * 86400 * 1000;
     return activeStudents.filter((s) => {
       const ts = s.last_student_initiative_at;
@@ -174,7 +171,7 @@ function CoachDashboard() {
     }
   }
 
-  const staleStudents = useMemo(() => {
+  const quietStudents = useMemo(() => {
     const cutoff = Date.now() - STALE_THRESHOLD_DAYS * 86400 * 1000;
     return activeStudents.filter((s) => {
       if ((s.total_techniques ?? 0) === 0) return false;
@@ -185,10 +182,20 @@ function CoachDashboard() {
     });
   }, [activeStudents]);
 
-  const recentStudents = useMemo(
-    () => activeStudents.slice(0, RECENT_LIMIT),
-    [activeStudents],
-  );
+  const [rosterTab, setRosterTab] = useState<RosterTab>('initiative');
+
+  const rosterCounts = {
+    initiative: initiativeStudents.length,
+    all: activeStudents.length,
+    quiet: quietStudents.length,
+  };
+
+  const rosterForTab =
+    rosterTab === 'initiative'
+      ? initiativeStudents
+      : rosterTab === 'quiet'
+        ? quietStudents
+        : activeStudents;
 
   if (loading) {
     return (
@@ -249,138 +256,61 @@ function CoachDashboard() {
       <PageHeader title="Dashboard" />
 
       <DashboardTotals
-        className="-mt-4 mb-6"
+        className="-mt-4 mb-4"
         students={activeStudents.length}
         techniques={totalTechniques}
         assignments={totalAssignments}
       />
 
-      <StatusDonut counts={statusCounts} className="mb-8" />
-
-      {videosEnabled && <VideoOverviewCard className="mb-6" />}
-
-      <div className="space-y-6">
-        {resetRequests.length > 0 && (
-          <section className="overflow-hidden rounded-lg border border-status-amber/30 bg-card">
-            <header className="flex items-center gap-2.5 border-b border-status-amber/30 bg-status-amber-bg px-4 py-3">
-              <KeyRound className="h-4 w-4 text-status-amber" aria-hidden />
-              <div>
-                <h2 className="text-sm font-semibold">Password reset requests</h2>
-                <p className="text-xs text-muted-foreground">
-                  Students asking for a fresh sign-in link.
-                </p>
-              </div>
-            </header>
-            <ul className="divide-y divide-border">
-              {resetRequests.map((s) => (
-                <li
-                  key={s.id}
-                  className="flex items-center gap-3 px-4 py-3"
-                >
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium">
-                      {s.display_name || s.username}
-                    </p>
-                    {s.username && s.display_name && (
-                      <p className="truncate text-xs text-muted-foreground">
-                        {s.username}
-                      </p>
-                    )}
-                  </div>
-                  <Button
-                    size="sm"
-                    onClick={() => handleSendResetLink(s.id)}
-                    className="gap-2"
-                  >
-                    <Copy className="h-4 w-4" aria-hidden />
-                    Send link
-                  </Button>
-                </li>
-              ))}
-            </ul>
-          </section>
-        )}
-
-        {pendingApprovals.length > 0 && (
-          <section className="overflow-hidden rounded-lg border border-status-amber/30 bg-card">
-            <header className="flex items-center gap-2.5 border-b border-status-amber/30 bg-status-amber-bg px-4 py-3">
-              <UserPlus className="h-4 w-4 text-status-amber" aria-hidden />
-              <div>
-                <h2 className="text-sm font-semibold">Pending approvals</h2>
-                <p className="text-xs text-muted-foreground">
-                  Students who signed up themselves. Approve to start preparing
-                  their card.
-                </p>
-              </div>
-            </header>
-            <ul className="divide-y divide-border">
-              {pendingApprovals.map((s) => (
-                <li
-                  key={s.id}
-                  className="flex items-center gap-3 px-4 py-3"
-                >
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium">
-                      {s.display_name || s.username}
-                    </p>
-                    {s.username && s.display_name && (
-                      <p className="truncate text-xs text-muted-foreground">
-                        {s.username}
-                      </p>
-                    )}
-                  </div>
-                  <Button size="sm" onClick={() => handleApprove(s.id)}>
-                    Approve
-                  </Button>
-                </li>
-              ))}
-            </ul>
-          </section>
-        )}
-
-        {needsSyllabus.length > 0 && (
-          <StudentSection
-            title="Ready for a syllabus"
-            icon={Sparkles}
-            variant="attention"
-            description="New students with no techniques yet. Open one to assign their starting set."
-            students={needsSyllabus}
-          />
-        )}
-
-        {needsAttention.length > 0 && (
-          <StudentSection
-            title="Taking initiative"
-            icon={Bell}
-            variant="attention"
-            description="Students who've been active in the past week."
-            students={needsAttention}
-          />
-        )}
-
-        <StudentSection
-          title="Recently updated"
-          icon={Clock}
-          students={recentStudents}
-          footer={
-            <Button asChild variant="ghost" size="sm" className="h-8 px-2">
-              <Link to="/students" className="flex items-center gap-1">
-                View all students
-                <ArrowRight className="h-3.5 w-3.5" aria-hidden />
-              </Link>
-            </Button>
-          }
+      <div className="mb-6 space-y-3">
+        <QueueSheet
+          resetRequests={resetRequests}
+          pendingApprovals={pendingApprovals}
+          needsSyllabus={needsSyllabus}
+          onSendResetLink={handleSendResetLink}
+          onApprove={handleApprove}
         />
-
-        {staleStudents.length > 0 && (
-          <StudentSection
-            title="Quiet for a while"
-            icon={History}
-            description={`No coach update in the last ${STALE_THRESHOLD_DAYS} days.`}
-            students={staleStudents.slice(0, RECENT_LIMIT)}
-          />
-        )}
+        {totalAssignments > 0 && <StatusDonut counts={statusCounts} />}
       </div>
+
+      <Tabs
+        value={rosterTab}
+        onValueChange={(v) => setRosterTab(v as RosterTab)}
+        className="mb-6 gap-3"
+      >
+        <TabsList className="w-full">
+          <TabsTrigger value="initiative">
+            Initiative
+            <RosterCountBadge n={rosterCounts.initiative} />
+          </TabsTrigger>
+          <TabsTrigger value="all">
+            All
+            <RosterCountBadge n={rosterCounts.all} />
+          </TabsTrigger>
+          <TabsTrigger value="quiet">
+            Quiet
+            <RosterCountBadge n={rosterCounts.quiet} />
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value={rosterTab}>
+          <Roster
+            students={rosterForTab}
+            emptyMessage={rosterEmptyMessage(rosterTab)}
+          />
+        </TabsContent>
+      </Tabs>
+
+      <div className="flex justify-end">
+        <Button asChild variant="ghost" size="sm" className="h-8 px-2">
+          <Link to="/students" className="flex items-center gap-1">
+            View all students
+            <ArrowRight className="h-3.5 w-3.5" aria-hidden />
+          </Link>
+        </Button>
+      </div>
+
+      {videosEnabled && <VideoOverviewCard className="mt-8" />}
 
       <Dialog
         open={!!issuedClaimUrl}
@@ -410,6 +340,52 @@ function CoachDashboard() {
       </Dialog>
     </div>
   );
+}
+
+function Roster({
+  students,
+  emptyMessage,
+}: {
+  students: User[];
+  emptyMessage: string;
+}) {
+  if (students.length === 0) {
+    return (
+      <div className="rounded-lg border border-border bg-card px-4 py-10 text-center">
+        <p className="text-sm text-muted-foreground">{emptyMessage}</p>
+      </div>
+    );
+  }
+  return (
+    <div className="divide-y divide-border overflow-hidden rounded-lg border border-border bg-card">
+      {students.map((s) => (
+        <StudentRow
+          key={s.id}
+          student={s}
+          href={`/student/${s.id}?from=dashboard`}
+        />
+      ))}
+    </div>
+  );
+}
+
+function RosterCountBadge({ n }: { n: number }) {
+  return (
+    <span className="ml-1 inline-flex h-4 min-w-4 items-center justify-center rounded bg-muted px-1 text-[10px] font-semibold tabular-nums text-muted-foreground">
+      {n}
+    </span>
+  );
+}
+
+function rosterEmptyMessage(tab: RosterTab): string {
+  switch (tab) {
+    case 'initiative':
+      return 'No students active in the past week.';
+    case 'quiet':
+      return `No students have gone ${STALE_THRESHOLD_DAYS} days without a coach update.`;
+    case 'all':
+      return 'No active students.';
+  }
 }
 
 function StudentDashboard({ user }: { user: User }) {
