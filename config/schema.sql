@@ -138,12 +138,20 @@ CREATE TABLE IF NOT EXISTS videos (
     external_video_id TEXT,
     uploaded_by_id INTEGER NOT NULL REFERENCES users (id),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    -- Soft delete. Set to mark a video gone from the UI while keeping the
+    -- row, storage_key, and watch history intact so it can be recovered.
+    -- All read queries must filter `deleted_at IS NULL`. There is no UI to
+    -- undelete yet; a coach who deletes by mistake currently needs an
+    -- operator to clear this column out of band.
+    deleted_at TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_videos_technique_position
     ON videos (technique_id, position);
 CREATE INDEX IF NOT EXISTS idx_videos_status
     ON videos (processing_status);
+CREATE INDEX IF NOT EXISTS idx_videos_alive_by_technique
+    ON videos (technique_id) WHERE deleted_at IS NULL;
 
 CREATE TABLE IF NOT EXISTS video_watch_events (
     id INTEGER PRIMARY KEY,

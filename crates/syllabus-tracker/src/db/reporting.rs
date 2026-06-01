@@ -102,7 +102,7 @@ pub async fn get_students_by_recent_updates(
             (SELECT v.title
                FROM video_watch_aggregates a
                JOIN videos v ON v.id = a.video_id
-              WHERE a.user_id = u.id
+              WHERE a.user_id = u.id AND v.deleted_at IS NULL
               ORDER BY a.last_watched_at DESC
               LIMIT 1) as "latest_watch_video_title?: String"
         FROM users u
@@ -217,7 +217,7 @@ pub async fn get_student_watch_activity(
            FROM video_watch_aggregates a
            JOIN videos v ON v.id = a.video_id
            JOIN techniques t ON t.id = v.technique_id
-           WHERE a.user_id = ? AND a.last_watched_at >= ?
+           WHERE a.user_id = ? AND a.last_watched_at >= ? AND v.deleted_at IS NULL
            ORDER BY a.last_watched_at DESC
            LIMIT 50"#,
         student_id,
@@ -254,7 +254,8 @@ pub async fn get_dashboard_video_overview(
     .fetch_one(pool)
     .await?;
     let processing_row = sqlx::query!(
-        "SELECT COUNT(*) AS count FROM videos WHERE processing_status = 'processing'"
+        "SELECT COUNT(*) AS count FROM videos
+         WHERE processing_status = 'processing' AND deleted_at IS NULL"
     )
     .fetch_one(pool)
     .await?;
@@ -268,7 +269,7 @@ pub async fn get_dashboard_video_overview(
            FROM video_watch_events e
            JOIN videos v ON v.id = e.video_id
            JOIN techniques t ON t.id = v.technique_id
-           WHERE e.event = 'started' AND e.created_at >= ?
+           WHERE e.event = 'started' AND e.created_at >= ? AND v.deleted_at IS NULL
            GROUP BY v.id
            ORDER BY COUNT(*) DESC, v.id DESC
            LIMIT 5"#,

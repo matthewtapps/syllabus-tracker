@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT COUNT(*) AS count FROM videos WHERE processing_status = 'processing'",
+  "query": "SELECT COUNT(*) AS count FROM videos\n         WHERE processing_status = 'processing' AND deleted_at IS NULL",
   "describe": {
     "columns": [
       {
@@ -16,5 +16,5 @@
       false
     ]
   },
-  "hash": "6c6456470189ba3f03331f656ef3d521d23d2160bfdc833de5ac50acfdb17273"
+  "hash": "afd0407fe79467cc64980eec6aa6659a971304dd2bb279c0cc0769611b0567ed"
 }

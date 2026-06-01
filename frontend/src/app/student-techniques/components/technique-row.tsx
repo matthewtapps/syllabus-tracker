@@ -484,9 +484,16 @@ function VideoSection({ techniqueId, canManage }: VideoSectionProps) {
   return (
     <section className="space-y-2" onClick={(e) => e.stopPropagation()}>
       <div className="flex items-center justify-between gap-2">
-        <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-          Videos
-        </h3>
+        <div>
+          <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            Videos
+          </h3>
+          {canManage && (
+            <p className="text-[11px] text-muted-foreground">
+              Order applies to every student.
+            </p>
+          )}
+        </div>
         {canManage && (
           <AddVideoButton
             techniqueId={techniqueId}

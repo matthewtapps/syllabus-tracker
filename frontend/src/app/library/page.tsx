@@ -283,9 +283,14 @@ function ExpandedPanel({ technique }: ExpandedPanelProps) {
 
       <section className="space-y-2">
         <div className="flex items-center justify-between gap-2">
-          <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-            Videos
-          </h3>
+          <div>
+            <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              Videos
+            </h3>
+            <p className="text-[11px] text-muted-foreground">
+              Order applies to every student.
+            </p>
+          </div>
           <AddVideoButton
             techniqueId={technique.id}
             onAdded={() => setReloadKey((k) => k + 1)}
@@ -310,11 +315,14 @@ function NameDescriptionDisplay({
 }) {
   return (
     <div className="flex items-start gap-2">
-      <div className="min-w-0 flex-1 space-y-1">
-        <h2 className="text-base font-semibold">{technique.name}</h2>
-        {technique.description && (
+      <div className="min-w-0 flex-1">
+        {technique.description ? (
           <p className="whitespace-pre-wrap text-sm leading-relaxed text-muted-foreground">
             {technique.description}
+          </p>
+        ) : (
+          <p className="text-sm italic text-muted-foreground">
+            No description yet.
           </p>
         )}
       </div>

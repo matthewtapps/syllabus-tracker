@@ -381,26 +381,21 @@ pub async fn api_replace_video(
     }))
 }
 
-#[instrument(skip(pool, storage))]
+#[instrument(skip(pool))]
 #[delete("/videos/<vid>")]
 pub async fn api_delete_video(
     vid: i64,
     user: User,
     pool: &State<Pool<Sqlite>>,
-    storage: &State<DynVideoStorage>,
 ) -> Result<Status, Status> {
     user.require_permission(Permission::DeleteVideos)?;
-    let storage_key = db::delete_video(pool.inner(), vid)
+    // Soft delete only: keep the storage blob and watch history around so
+    // an accidental delete can be recovered by clearing `deleted_at`. A
+    // future hard-purge job will reclaim R2 space for rows that have been
+    // soft-deleted for long enough.
+    db::delete_video(pool.inner(), vid)
         .await
         .map_err(Status::from)?;
-    if let Some(key) = storage_key {
-        let storage = storage.inner().clone();
-        tokio::spawn(async move {
-            if let Err(e) = storage.delete(&key).await {
-                warn!("failed to delete storage object {}: {}", key, e);
-            }
-        });
-    }
     Ok(Status::NoContent)
 }
 

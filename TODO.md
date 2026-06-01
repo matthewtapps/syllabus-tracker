@@ -5,3 +5,4 @@
 - Let students tag/pin specific techniques and/or specific videos, with quick access from the dashboard.
 - For QR-code flows (registration QR, claim-link QR, etc.), tap the QR to enlarge to fullscreen for easier scanning; show a small hint near the code. Tap the fullscreen image to dismiss.
 - Videos - select from google drive button, instead of needing a link. Is the same possible for Youtube? Can we validate the permissions on the video and give a specific warning when we do it?
+- Database backup service syncing to blob storage, now that we have that set up for videos!

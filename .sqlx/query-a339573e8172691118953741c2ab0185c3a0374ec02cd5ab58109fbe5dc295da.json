@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT v.id AS \"video_id!: i64\",\n                  v.title AS \"video_title!: String\",\n                  v.technique_id AS \"technique_id!: i64\",\n                  t.name AS \"technique_name!: String\",\n                  a.play_count AS \"play_count!: i64\",\n                  a.completed_count AS \"completed_count!: i64\",\n                  a.total_seconds_watched AS \"total_seconds_watched!: i64\",\n                  a.last_watched_at AS \"last_watched_at: NaiveDateTime\"\n           FROM video_watch_aggregates a\n           JOIN videos v ON v.id = a.video_id\n           JOIN techniques t ON t.id = v.technique_id\n           WHERE a.user_id = ? AND a.last_watched_at >= ?\n           ORDER BY a.last_watched_at DESC\n           LIMIT 50",
+  "query": "SELECT v.id AS \"video_id!: i64\",\n                  v.title AS \"video_title!: String\",\n                  v.technique_id AS \"technique_id!: i64\",\n                  t.name AS \"technique_name!: String\",\n                  a.play_count AS \"play_count!: i64\",\n                  a.completed_count AS \"completed_count!: i64\",\n                  a.total_seconds_watched AS \"total_seconds_watched!: i64\",\n                  a.last_watched_at AS \"last_watched_at: NaiveDateTime\"\n           FROM video_watch_aggregates a\n           JOIN videos v ON v.id = a.video_id\n           JOIN techniques t ON t.id = v.technique_id\n           WHERE a.user_id = ? AND a.last_watched_at >= ? AND v.deleted_at IS NULL\n           ORDER BY a.last_watched_at DESC\n           LIMIT 50",
   "describe": {
     "columns": [
       {
@@ -58,5 +58,5 @@
       true
     ]
   },
-  "hash": "0570d217b84cac03019e72f319888b56096b92a4c334ae263e1bbf730a49f41d"
+  "hash": "a339573e8172691118953741c2ab0185c3a0374ec02cd5ab58109fbe5dc295da"
 }

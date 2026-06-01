@@ -10,7 +10,7 @@ pub async fn next_video_position(pool: &Pool<Sqlite>, technique_id: i64) -> Resu
     let row = sqlx::query!(
         "SELECT COALESCE(MAX(position), -1) AS max_position
          FROM videos
-         WHERE technique_id = ?",
+         WHERE technique_id = ? AND deleted_at IS NULL",
         technique_id
     )
     .fetch_one(pool)
@@ -158,7 +158,7 @@ pub async fn get_db_video(pool: &Pool<Sqlite>, id: i64) -> Result<Option<DbVideo
                 external_url, external_host, external_video_id, uploaded_by_id,
                 created_at, updated_at
          FROM videos
-         WHERE id = ?",
+         WHERE id = ? AND deleted_at IS NULL",
         id
     )
     .fetch_optional(pool)
@@ -184,7 +184,7 @@ pub async fn list_videos_for_technique(
                 external_url, external_host, external_video_id, uploaded_by_id,
                 created_at, updated_at
          FROM videos
-         WHERE technique_id = ?
+         WHERE technique_id = ? AND deleted_at IS NULL
          ORDER BY position ASC, id ASC",
         technique_id
     )
@@ -243,7 +243,7 @@ pub async fn reorder_videos(
         sqlx::query!(
             "UPDATE videos
              SET position = ?, updated_at = ?
-             WHERE id = ? AND technique_id = ?",
+             WHERE id = ? AND technique_id = ? AND deleted_at IS NULL",
             position,
             now,
             video_id,
@@ -256,16 +256,24 @@ pub async fn reorder_videos(
     Ok(())
 }
 
+/// Soft-deletes a video. The row, storage_key, and watch history stay
+/// intact so the video can be recovered by clearing `deleted_at`. Read
+/// queries filter out deleted rows, so the video disappears from the UI.
+/// Returns `true` if a row was marked deleted (matched and was alive).
 #[instrument(skip(pool))]
-pub async fn delete_video(pool: &Pool<Sqlite>, id: i64) -> Result<Option<String>, AppError> {
-    let row = sqlx::query!("SELECT storage_key FROM videos WHERE id = ?", id)
-        .fetch_optional(pool)
-        .await?;
-    let storage_key = row.and_then(|r| r.storage_key);
-    sqlx::query!("DELETE FROM videos WHERE id = ?", id)
-        .execute(pool)
-        .await?;
-    Ok(storage_key)
+pub async fn delete_video(pool: &Pool<Sqlite>, id: i64) -> Result<bool, AppError> {
+    let now = Utc::now().naive_utc();
+    let result = sqlx::query!(
+        "UPDATE videos
+         SET deleted_at = ?, updated_at = ?
+         WHERE id = ? AND deleted_at IS NULL",
+        now,
+        now,
+        id,
+    )
+    .execute(pool)
+    .await?;
+    Ok(result.rows_affected() > 0)
 }
 
 #[instrument(skip(pool))]
@@ -309,6 +317,9 @@ pub async fn clear_video_watch_state(pool: &Pool<Sqlite>, video_id: i64) -> Resu
     Ok(())
 }
 
+// Storage stats include soft-deleted videos on purpose: their blobs are
+// still in R2 and still cost storage until a future hard-purge step
+// removes them.
 #[instrument(skip(pool))]
 pub async fn total_video_storage_bytes(pool: &Pool<Sqlite>) -> Result<i64, AppError> {
     let row = sqlx::query!(

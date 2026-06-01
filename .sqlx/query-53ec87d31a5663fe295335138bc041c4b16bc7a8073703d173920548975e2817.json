@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT v.id AS \"video_id!: i64\",\n                  v.title AS \"video_title!: String\",\n                  v.technique_id AS \"technique_id!: i64\",\n                  t.name AS \"technique_name!: String\",\n                  COUNT(*) AS \"plays_this_window!: i64\",\n                  COUNT(DISTINCT e.user_id) AS \"unique_viewers!: i64\"\n           FROM video_watch_events e\n           JOIN videos v ON v.id = e.video_id\n           JOIN techniques t ON t.id = v.technique_id\n           WHERE e.event = 'started' AND e.created_at >= ?\n           GROUP BY v.id\n           ORDER BY COUNT(*) DESC, v.id DESC\n           LIMIT 5",
+  "query": "SELECT v.id AS \"video_id!: i64\",\n                  v.title AS \"video_title!: String\",\n                  v.technique_id AS \"technique_id!: i64\",\n                  t.name AS \"technique_name!: String\",\n                  COUNT(*) AS \"plays_this_window!: i64\",\n                  COUNT(DISTINCT e.user_id) AS \"unique_viewers!: i64\"\n           FROM video_watch_events e\n           JOIN videos v ON v.id = e.video_id\n           JOIN techniques t ON t.id = v.technique_id\n           WHERE e.event = 'started' AND e.created_at >= ? AND v.deleted_at IS NULL\n           GROUP BY v.id\n           ORDER BY COUNT(*) DESC, v.id DESC\n           LIMIT 5",
   "describe": {
     "columns": [
       {
@@ -46,5 +46,5 @@
       false
     ]
   },
-  "hash": "8dacd2f6ebf332f36618464edacb454764f84904c00714eb047e7a30f52b4881"
+  "hash": "53ec87d31a5663fe295335138bc041c4b16bc7a8073703d173920548975e2817"
 }
