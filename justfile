@@ -177,6 +177,29 @@ reseed-attempts:
     sqlite3 sqlite.db "DELETE FROM attempts;"
     just seed
 
+# ---- infra ----------------------------------------------------------------
+
+# Run terraform in infra/terraform/ with CLOUDFLARE_API_TOKEN sourced from
+# .secrets.env. Default action is `plan`; pass anything else, e.g.
+# `just tf init`, `just tf apply`, `just tf output`.
+[group('infra')]
+tf *cmd="plan":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if [ ! -f .secrets.env ]; then
+        echo "missing .secrets.env (need CLOUDFLARE_API_TOKEN); see .secrets.template.env" >&2
+        exit 1
+    fi
+    set -a
+    source .secrets.env
+    set +a
+    if [ -z "${CLOUDFLARE_API_TOKEN:-}" ]; then
+        echo "CLOUDFLARE_API_TOKEN not set in .secrets.env" >&2
+        exit 1
+    fi
+    cd infra/terraform
+    terraform {{cmd}}
+
 # ---- housekeeping ---------------------------------------------------------
 
 # Delete local sqlite files and build artifacts (cargo target/, frontend
