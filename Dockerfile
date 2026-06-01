@@ -40,6 +40,9 @@ COPY --from=builder /app/syllabus-tracker /app/syllabus-tracker
 COPY --from=builder /app/migrate /app/migrate
 COPY --from=ffmpeg /ffmpeg /usr/local/bin/ffmpeg
 COPY --from=ffmpeg /ffprobe /usr/local/bin/ffprobe
+# rustls-native-certs reads this path; without it the scratch image has no
+# trust store and any outbound HTTPS (e.g. R2 presign/put) panics on boot.
+COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 COPY config /app/config
 VOLUME /app/data
 EXPOSE 8000
