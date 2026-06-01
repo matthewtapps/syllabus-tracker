@@ -55,6 +55,12 @@ import { QueuePanel } from './components/queue-panel';
 const STALE_THRESHOLD_DAYS = 14;
 const INITIATIVE_THRESHOLD_DAYS = 7;
 
+const DASHBOARD_DATE_FORMAT = new Intl.DateTimeFormat(undefined, {
+  weekday: 'long',
+  month: 'long',
+  day: 'numeric',
+});
+
 type RosterTab = 'initiative' | 'recent' | 'quiet';
 
 interface DashboardProps {
@@ -258,8 +264,12 @@ function CoachDashboard() {
   return (
     <div className="container mx-auto px-4 py-6 sm:px-6 md:py-8">
 
+      <p className="mb-1 text-xs uppercase tracking-wide text-muted-foreground">
+        {DASHBOARD_DATE_FORMAT.format(new Date())}
+      </p>
+
       <DashboardTotals
-        className="-mt-4 mb-4"
+        className="mb-4"
         students={activeStudents.length}
         techniques={totalTechniques}
         assignments={totalAssignments}

@@ -523,6 +523,7 @@ export function useUpdateLibraryTechnique() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: qk.collections() });
       qc.invalidateQueries({ queryKey: ["collection"] });
+      qc.invalidateQueries({ queryKey: qk.libraryTechniques() });
       qc.invalidateQueries({
         predicate: (q) =>
           (q.queryKey[0] === "student" && q.queryKey[2] === "techniques") ||

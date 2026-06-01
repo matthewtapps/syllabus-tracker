@@ -1,10 +1,87 @@
 use std::collections::{HashMap, hash_map::Entry};
 
+use chrono::NaiveDateTime;
+use serde::{Deserialize, Serialize};
 use sqlx::{Pool, Sqlite};
 use tracing::{info, instrument};
 
 use crate::error::AppError;
 use crate::models::{Tag, Technique};
+
+/// One row in the library / full-techniques admin list. Aggregates collection
+/// membership count, how many students have the technique assigned, and the
+/// most recent activity on any of those assignments.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct LibraryTechniqueRow {
+    pub id: i64,
+    pub name: String,
+    pub description: String,
+    pub tags: Vec<Tag>,
+    pub collection_count: i64,
+    pub student_count: i64,
+    pub last_activity_at: Option<String>,
+}
+
+#[instrument]
+pub async fn list_library_techniques(
+    pool: &Pool<Sqlite>,
+) -> Result<Vec<LibraryTechniqueRow>, AppError> {
+    info!("Listing library techniques with usage aggregates");
+
+    let rows = sqlx::query!(
+        r#"
+        SELECT
+            t.id AS "id!: i64",
+            t.name,
+            t.description,
+            COALESCE((SELECT COUNT(*) FROM collection_techniques ct WHERE ct.technique_id = t.id), 0) AS "collection_count!: i64",
+            COALESCE((SELECT COUNT(DISTINCT st.student_id) FROM student_techniques st WHERE st.technique_id = t.id), 0) AS "student_count!: i64",
+            (SELECT MAX(st.updated_at) FROM student_techniques st WHERE st.technique_id = t.id) AS "last_activity_at?: NaiveDateTime"
+        FROM techniques t
+        ORDER BY t.name
+        "#
+    )
+    .fetch_all(pool)
+    .await?;
+
+    let tag_rows = sqlx::query!(
+        r#"SELECT tt.technique_id AS "technique_id!: i64",
+                  tag.id AS "tag_id!: i64",
+                  tag.name AS "tag_name!: String"
+           FROM technique_tags tt
+           JOIN tags tag ON tag.id = tt.tag_id
+           ORDER BY tag.name"#
+    )
+    .fetch_all(pool)
+    .await?;
+
+    let mut tags_by_technique: HashMap<i64, Vec<Tag>> = HashMap::new();
+    for row in tag_rows {
+        tags_by_technique
+            .entry(row.technique_id)
+            .or_default()
+            .push(Tag {
+                id: row.tag_id,
+                name: row.tag_name,
+            });
+    }
+
+    Ok(rows
+        .into_iter()
+        .map(|r| LibraryTechniqueRow {
+            id: r.id,
+            tags: tags_by_technique.remove(&r.id).unwrap_or_default(),
+            name: r.name,
+            description: r.description.unwrap_or_default(),
+            collection_count: r.collection_count,
+            student_count: r.student_count,
+            last_activity_at: r.last_activity_at.map(|dt| {
+                chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(dt, chrono::Utc)
+                    .to_rfc3339()
+            }),
+        })
+        .collect())
+}
 
 #[instrument]
 pub async fn get_all_techniques(pool: &Pool<Sqlite>) -> Result<Vec<Technique>, AppError> {

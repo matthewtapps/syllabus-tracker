@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { NavLink, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import {
   Download,
   EllipsisVertical,
@@ -31,6 +31,8 @@ interface Tab {
   to: string;
   label: string;
   icon: LucideIcon;
+  /** Extra paths whose presence should keep this tab marked active. */
+  alsoActiveOn?: string[];
 }
 
 function buildTabs(user: User): Tab[] {
@@ -44,15 +46,31 @@ function buildTabs(user: User): Tab[] {
   ];
   if (isCoachOrAdmin) {
     tabs.push({ to: '/students', label: 'Students', icon: Users });
-    tabs.push({ to: '/collections', label: 'Techniques', icon: Library });
+    tabs.push({
+      to: '/library',
+      label: 'Techniques',
+      icon: Library,
+      alsoActiveOn: ['/collections'],
+    });
   } else {
     tabs.push({ to: `/student/${user.id}`, label: 'My techniques', icon: Library });
   }
   return tabs;
 }
 
+function isTabActive(pathname: string, tab: Tab): boolean {
+  if (pathname === tab.to) return true;
+  if (pathname.startsWith(`${tab.to}/`)) return true;
+  return (
+    tab.alsoActiveOn?.some(
+      (p) => pathname === p || pathname.startsWith(`${p}/`),
+    ) ?? false
+  );
+}
+
 export function BottomNav({ user, onLogout }: BottomNavProps) {
   const tabs = buildTabs(user);
+  const { pathname } = useLocation();
 
   return (
     <nav
@@ -60,24 +78,26 @@ export function BottomNav({ user, onLogout }: BottomNavProps) {
       className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-background/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-sm sm:hidden"
     >
       <ul className="grid h-14 grid-cols-4">
-        {tabs.map((tab) => (
-          <li key={tab.to} className="contents">
-            <NavLink
-              to={tab.to}
-              className={({ isActive }) =>
-                cn(
+        {tabs.map((tab) => {
+          const active = isTabActive(pathname, tab);
+          return (
+            <li key={tab.to} className="contents">
+              <Link
+                to={tab.to}
+                aria-current={active ? 'page' : undefined}
+                className={cn(
                   'flex flex-col items-center justify-center gap-0.5 text-[10px] font-medium',
-                  isActive
+                  active
                     ? 'text-primary'
                     : 'text-muted-foreground hover:text-foreground',
-                )
-              }
-            >
-              <tab.icon className="h-5 w-5" aria-hidden />
-              {tab.label}
-            </NavLink>
-          </li>
-        ))}
+                )}
+              >
+                <tab.icon className="h-5 w-5" aria-hidden />
+                {tab.label}
+              </Link>
+            </li>
+          );
+        })}
         <li className="contents">
           <MoreTab user={user} onLogout={onLogout} />
         </li>

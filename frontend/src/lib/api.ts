@@ -710,6 +710,26 @@ export async function getLibraryStats(): Promise<LibraryStats> {
   return await response.json();
 }
 
+export interface LibraryTechniqueRow {
+  id: number;
+  name: string;
+  description: string;
+  tags: Tag[];
+  collection_count: number;
+  student_count: number;
+  last_activity_at: string | null;
+}
+
+export async function getLibraryTechniques(): Promise<LibraryTechniqueRow[]> {
+  const response = await fetch("/api/techniques", {
+    credentials: "include",
+  });
+  if (!response.ok) {
+    throw new Error("Failed to fetch techniques");
+  }
+  return await response.json();
+}
+
 // ---- Attempts ----
 
 export interface Attempt {

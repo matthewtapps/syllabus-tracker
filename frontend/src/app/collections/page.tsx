@@ -65,13 +65,13 @@ export default function CollectionsPage() {
 
   return (
     <div className="container mx-auto px-4 py-6 sm:px-6 md:py-8">
-      <div className="mb-6 flex items-end justify-between gap-4">
-        <p className="text-sm text-muted-foreground sm:text-base">
-          Organize techniques into reusable syllabi or training tracks.
-        </p>
+      <div className="mb-4 flex items-center justify-end gap-2">
+        <Button asChild variant="outline" size="sm">
+          <Link to="/library">All techniques</Link>
+        </Button>
         <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
           <DialogTrigger asChild>
-            <Button className="shrink-0">
+            <Button size="sm">
               <Plus className="mr-2 h-4 w-4" aria-hidden />
               New collection
             </Button>

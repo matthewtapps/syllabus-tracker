@@ -30,6 +30,7 @@ export const qk = {
   collectionStudents: (id: number) => ["collection", id, "students"] as const,
 
   libraryStats: () => ["libraryStats"] as const,
+  libraryTechniques: () => ["libraryTechniques"] as const,
 
   techniqueVideos: (techniqueId: number) =>
     ["technique", techniqueId, "videos"] as const,

@@ -13,6 +13,7 @@ import {
   getCurrentUser,
   getDashboardVideoOverview,
   getLibraryStats,
+  getLibraryTechniques,
   getRecentAttemptsForStudent,
   getStudentTechniqueDetail,
   getStudentTechniques,
@@ -166,6 +167,13 @@ export function useLibraryStats() {
   return useQuery({
     queryKey: qk.libraryStats(),
     queryFn: getLibraryStats,
+  });
+}
+
+export function useLibraryTechniques() {
+  return useQuery({
+    queryKey: qk.libraryTechniques(),
+    queryFn: getLibraryTechniques,
   });
 }
 

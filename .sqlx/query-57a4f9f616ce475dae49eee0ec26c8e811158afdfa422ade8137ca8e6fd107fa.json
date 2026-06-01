@@ -1,0 +1,32 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT tt.technique_id AS \"technique_id!: i64\",\n                  tag.id AS \"tag_id!: i64\",\n                  tag.name AS \"tag_name!: String\"\n           FROM technique_tags tt\n           JOIN tags tag ON tag.id = tt.tag_id\n           ORDER BY tag.name",
+  "describe": {
+    "columns": [
+      {
+        "name": "technique_id!: i64",
+        "ordinal": 0,
+        "type_info": "Integer"
+      },
+      {
+        "name": "tag_id!: i64",
+        "ordinal": 1,
+        "type_info": "Integer"
+      },
+      {
+        "name": "tag_name!: String",
+        "ordinal": 2,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "57a4f9f616ce475dae49eee0ec26c8e811158afdfa422ade8137ca8e6fd107fa"
+}

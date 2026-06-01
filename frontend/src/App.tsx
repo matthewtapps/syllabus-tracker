@@ -16,6 +16,7 @@ import ProfilePage from './app/profile/page';
 import RegisterUserPage from './app/registration/page';
 import AdminPage from './app/admin/page';
 import CollectionsPage from './app/collections/page';
+import LibraryPage from './app/library/page';
 import CollectionDetailPage from './app/collections/[id]/page';
 import InvitePage from './app/invite/page';
 import RegisterPage from './app/register/page';
@@ -152,6 +153,14 @@ function AppShell() {
               element={
                 user && (user.role === 'admin')
                   ? <AdminPage />
+                  : <Navigate to="/login" replace />
+              }
+            />
+            <Route
+              path="/library"
+              element={
+                user && (user.role === 'coach' || user.role === 'Coach' || user.role === 'admin' || user.role === 'Admin')
+                  ? <LibraryPage />
                   : <Navigate to="/login" replace />
               }
             />

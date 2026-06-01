@@ -592,6 +592,16 @@ pub async fn api_library_stats(
     Ok(Json(LibraryStatsResponse { total_techniques }))
 }
 
+#[get("/techniques")]
+pub async fn api_list_library_techniques(
+    user: User,
+    db: &State<Pool<Sqlite>>,
+) -> ApiResult<Json<Vec<crate::db::LibraryTechniqueRow>>> {
+    user.require_permission(Permission::ViewAllStudents)?;
+    let rows = crate::db::list_library_techniques(db).await?;
+    Ok(Json(rows))
+}
+
 #[get("/me", rank = 2)]
 pub async fn api_me_unauthorized() -> Status {
     Status::Unauthorized
