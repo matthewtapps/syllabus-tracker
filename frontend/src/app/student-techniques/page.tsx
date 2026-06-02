@@ -58,15 +58,8 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { Label } from '@/components/ui/label';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import { PageHeader } from '@/components/page-header';
+import { Badge } from '@/components/ui/badge';
+import { Separator } from '@/components/ui/separator';
 import { EmptyState } from '@/components/empty-state';
 import { SkeletonListRow } from '@/components/skeleton-row';
 import { GraduateConfirmDialog } from '@/components/graduate-confirm-dialog';
@@ -202,16 +195,29 @@ export default function StudentTechniques({ user }: StudentTechniquesProps) {
       return params;
     }, { replace: true });
   }
-  // 'all' = no collection filter, 'other' = loose assignments only, or a
-  // numeric collection id.
-  const collectionFilter = searchParams.get('collection') ?? 'all';
-  function setCollectionFilter(next: string) {
+  // Multi-select collection filter with OR semantics. Each entry is a
+  // numeric collection id or the sentinel string 'other' for techniques
+  // not in any collection. Empty array = no filter (show all). Encoded
+  // in the URL as a comma-separated `collections=` param.
+  const collectionFilters = useMemo<string[]>(() => {
+    const raw = searchParams.get('collections');
+    if (!raw) return [];
+    return raw.split(',').map((s) => s.trim()).filter(Boolean);
+  }, [searchParams]);
+  function setCollectionFilters(next: string[]) {
     setSearchParams((prev) => {
       const params = new URLSearchParams(prev);
-      if (next === 'all') params.delete('collection');
-      else params.set('collection', next);
+      if (next.length === 0) params.delete('collections');
+      else params.set('collections', next.join(','));
       return params;
     }, { replace: true });
+  }
+  function toggleCollectionFilter(value: string) {
+    setCollectionFilters(
+      collectionFilters.includes(value)
+        ? collectionFilters.filter((v) => v !== value)
+        : [...collectionFilters, value],
+    );
   }
 
   const [editingTechnique, setEditingTechnique] = useState<Technique | null>(null);
@@ -286,15 +292,19 @@ export default function StudentTechniques({ user }: StudentTechniquesProps) {
     [data],
   );
 
-  const showCollectionSelector =
-    studentCollections.length + (hasLooseAssignments ? 1 : 0) >= 2;
+  // Render the collection filter as soon as the student has any
+  // collection assignment (even a single one) so coaches and students can
+  // narrow the list to that collection. The selector hides only when
+  // there are no collections at all.
+  const showCollectionSelector = studentCollections.length > 0;
 
   function matchesCollection(t: Technique): boolean {
-    if (collectionFilter === 'all') return true;
-    if (collectionFilter === 'other') return !t.collection_id;
-    const parsed = parseInt(collectionFilter, 10);
-    if (!Number.isFinite(parsed)) return true;
-    return t.collection_id === parsed;
+    if (collectionFilters.length === 0) return true;
+    return collectionFilters.some((value) => {
+      if (value === 'other') return !t.collection_id;
+      const parsed = parseInt(value, 10);
+      return Number.isFinite(parsed) && t.collection_id === parsed;
+    });
   }
 
   const availableTags = useMemo(() => {
@@ -321,7 +331,7 @@ export default function StudentTechniques({ user }: StudentTechniquesProps) {
     }
     return base;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data, collectionFilter]);
+  }, [data, collectionFilters]);
 
   const filteredTechniques = useMemo<Technique[]>(() => {
     if (!data) return [];
@@ -348,7 +358,7 @@ export default function StudentTechniques({ user }: StudentTechniquesProps) {
       );
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data, filterText, activeTab, selectedTags, collectionFilter, expandedSet]);
+  }, [data, filterText, activeTab, selectedTags, collectionFilters, expandedSet]);
 
   function toggleTagFilter(tagName: string) {
     setSelectedTags((prev) =>
@@ -465,11 +475,6 @@ export default function StudentTechniques({ user }: StudentTechniquesProps) {
   const isOwnView = !!data && user.id === data.student.id;
   const studentGraduatedAt = data?.student.graduated_at ?? null;
   const isGraduate = !!studentGraduatedAt;
-  const headerTitle = !data
-    ? 'Techniques'
-    : isOwnView
-      ? 'My techniques'
-      : `${studentName}'s techniques`;
 
   return (
     <div className="container mx-auto py-6 px-4 sm:px-6 md:py-8">
@@ -515,127 +520,107 @@ export default function StudentTechniques({ user }: StudentTechniquesProps) {
         </div>
       )}
 
-      <PageHeader
-        title={headerTitle}
-        actions={
-          data && (
-            <div className="flex items-center gap-2">
-              {data.can_edit_all_techniques && !isOwnView && (
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button variant="outline" size="icon">
-                      <MoreVertical className="h-4 w-4" aria-hidden />
-                      <span className="sr-only">More actions</span>
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="w-56">
-                    {data.student.claimed_at ? (
-                      <DropdownMenuItem
-                        onSelect={() => {
-                          setTimeout(() => setResetConfirmOpen(true), 0);
-                        }}
-                      >
-                        <KeyRound className="mr-2 h-4 w-4" aria-hidden />
-                        Reset password
-                      </DropdownMenuItem>
-                    ) : (
-                      <DropdownMenuItem onSelect={() => setTimeout(handleIssueClaimLink, 0)}>
-                        <Copy className="mr-2 h-4 w-4" aria-hidden />
-                        Copy invite link
-                      </DropdownMenuItem>
-                    )}
-                    <DropdownMenuItem
-                      onSelect={() => {
-                        setTimeout(() => setGraduateConfirmOpen(true), 0);
-                      }}
-                    >
-                      <GraduationCap className="mr-2 h-4 w-4" aria-hidden />
-                      {isGraduate ? 'Un-graduate' : 'Graduate'}
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              )}
-              {data.can_assign_techniques && (
-                <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
-                  <DialogTrigger asChild>
-                    <Button>
-                      <Plus className="mr-2 h-4 w-4" aria-hidden />
-                      Add techniques
-                    </Button>
-                  </DialogTrigger>
-                  <DialogContent className="flex h-[min(85vh,640px)] w-[calc(100vw-1rem)] max-w-xl flex-col p-4 sm:p-6">
-                    <DialogHeader>
-                      <DialogTitle>Add techniques</DialogTitle>
-                      <DialogDescription>
-                        Assign existing techniques or create new ones for{' '}
-                        {data.student.display_name || data.student.username}.
-                        Collections are folders for a student's techniques: a
-                        technique can sit in a collection or stay loose.
-                      </DialogDescription>
-                    </DialogHeader>
-                    <AssignTechniques
-                      studentId={data.student.id}
-                      canCreateTechniques={data.can_create_techniques}
-                      defaultCollectionId={
-                        collectionFilter !== 'all' && collectionFilter !== 'other'
-                          ? parseInt(collectionFilter, 10)
-                          : null
-                      }
-                      onAssignComplete={reloadAfterAssignment}
-                    />
-                  </DialogContent>
-                </Dialog>
-              )}
-            </div>
-          )
-        }
-      />
-
-      {!loading && !error && data && attemptSummary && attemptSummary.total > 0 && (
-        <div className="-mt-2 mb-4 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
-          <span>
-            <span className="font-medium text-foreground">{attemptSummary.this_week}</span>{' '}
-            {attemptSummary.this_week === 1 ? 'attempt' : 'attempts'} this week
-          </span>
-          <span aria-hidden>·</span>
-          <span>
-            <span className="font-medium text-foreground">{attemptSummary.this_month}</span> this month
-          </span>
-          <span aria-hidden>·</span>
-          <span>
-            <span className="font-medium text-foreground">{attemptSummary.total}</span> total
-          </span>
+      {data && (attemptSummary || data.can_assign_techniques || (data.can_edit_all_techniques && !isOwnView)) && (
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+            {attemptSummary && attemptSummary.total > 0 ? (
+              <>
+                <span>
+                  <span className="font-medium text-foreground">{attemptSummary.this_week}</span>{' '}
+                  {attemptSummary.this_week === 1 ? 'attempt' : 'attempts'} this week
+                </span>
+                <span aria-hidden>·</span>
+                <span>
+                  <span className="font-medium text-foreground">{attemptSummary.this_month}</span> this month
+                </span>
+                <span aria-hidden>·</span>
+                <span>
+                  <span className="font-medium text-foreground">{attemptSummary.total}</span> total
+                </span>
+              </>
+            ) : (
+              <span />
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+          {data.can_edit_all_techniques && !isOwnView && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="icon">
+                  <MoreVertical className="h-4 w-4" aria-hidden />
+                  <span className="sr-only">More actions</span>
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-56">
+                {data.student.claimed_at ? (
+                  <DropdownMenuItem
+                    onSelect={() => {
+                      setTimeout(() => setResetConfirmOpen(true), 0);
+                    }}
+                  >
+                    <KeyRound className="mr-2 h-4 w-4" aria-hidden />
+                    Reset password
+                  </DropdownMenuItem>
+                ) : (
+                  <DropdownMenuItem onSelect={() => setTimeout(handleIssueClaimLink, 0)}>
+                    <Copy className="mr-2 h-4 w-4" aria-hidden />
+                    Copy invite link
+                  </DropdownMenuItem>
+                )}
+                <DropdownMenuItem
+                  onSelect={() => {
+                    setTimeout(() => setGraduateConfirmOpen(true), 0);
+                  }}
+                >
+                  <GraduationCap className="mr-2 h-4 w-4" aria-hidden />
+                  {isGraduate ? 'Un-graduate' : 'Graduate'}
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
+          {data.can_assign_techniques && (
+            <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
+              <DialogTrigger asChild>
+                <Button>
+                  <Plus className="mr-2 h-4 w-4" aria-hidden />
+                  Add techniques
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="flex h-[min(85vh,640px)] w-[calc(100vw-1rem)] max-w-xl flex-col p-4 sm:p-6">
+                <DialogHeader>
+                  <DialogTitle>Add techniques</DialogTitle>
+                  <DialogDescription>
+                    Assign existing techniques or create new ones for{' '}
+                    {data.student.display_name || data.student.username}.
+                    Collections are folders for a student's techniques: a
+                    technique can sit in a collection or stay loose.
+                  </DialogDescription>
+                </DialogHeader>
+                <AssignTechniques
+                  studentId={data.student.id}
+                  canCreateTechniques={data.can_create_techniques}
+                  defaultCollectionId={(() => {
+                    // Pre-select a collection in the Add Techniques flow only
+                    // when the filter unambiguously points at one — i.e. the
+                    // coach has a single numeric collection selected. With
+                    // none, multiple, or "Other" selected, leave it null.
+                    if (collectionFilters.length !== 1) return null;
+                    const only = collectionFilters[0];
+                    if (only === 'other') return null;
+                    const parsed = parseInt(only, 10);
+                    return Number.isFinite(parsed) ? parsed : null;
+                  })()}
+                  onAssignComplete={reloadAfterAssignment}
+                />
+              </DialogContent>
+            </Dialog>
+          )}
+          </div>
         </div>
       )}
 
       {!loading && !error && data && (
         <div className="mb-6 space-y-4">
-          {showCollectionSelector && (
-            <div className="flex flex-wrap items-center gap-3">
-              <Label htmlFor="collection-filter" className="text-sm font-medium">
-                Showing
-              </Label>
-              <Select
-                value={collectionFilter}
-                onValueChange={setCollectionFilter}
-              >
-                <SelectTrigger id="collection-filter" className="w-auto min-w-56">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All techniques</SelectItem>
-                  {studentCollections.map((c) => (
-                    <SelectItem key={c.id} value={String(c.id)}>
-                      {c.name}
-                    </SelectItem>
-                  ))}
-                  {hasLooseAssignments && (
-                    <SelectItem value="other">Other (no collection)</SelectItem>
-                  )}
-                </SelectContent>
-              </Select>
-            </div>
-          )}
           <TechniqueFilters
             filterText={filterText}
             onFilterTextChange={setFilterText}
@@ -646,6 +631,52 @@ export default function StudentTechniques({ user }: StudentTechniquesProps) {
             onToggleTag={toggleTagFilter}
             counts={counts}
           />
+          {showCollectionSelector && availableTags.length > 0 && (
+            <Separator />
+          )}
+          {showCollectionSelector && (
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-xs uppercase tracking-wide text-muted-foreground">
+                Collections
+              </span>
+              <div className="flex flex-wrap gap-1.5">
+                {studentCollections.map((c) => {
+                  const value = String(c.id);
+                  const active = collectionFilters.includes(value);
+                  return (
+                    <Badge
+                      key={c.id}
+                      variant={active ? 'default' : 'outline'}
+                      className="cursor-pointer select-none"
+                      onClick={() => toggleCollectionFilter(value)}
+                    >
+                      {c.name}
+                    </Badge>
+                  );
+                })}
+                {hasLooseAssignments && (
+                  <Badge
+                    variant={collectionFilters.includes('other') ? 'default' : 'outline'}
+                    className="cursor-pointer select-none"
+                    onClick={() => toggleCollectionFilter('other')}
+                  >
+                    No collection
+                  </Badge>
+                )}
+                {collectionFilters.length > 0 && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-6 px-2 text-xs"
+                    onClick={() => setCollectionFilters([])}
+                  >
+                    Clear
+                  </Button>
+                )}
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -719,7 +750,7 @@ export default function StudentTechniques({ user }: StudentTechniquesProps) {
                   expandedSet.has(technique.id) || technique.id === focusId
                 }
                 onToggle={() => toggleExpandedId(technique.id)}
-                showCollectionChip={showCollectionSelector && collectionFilter === 'all'}
+                showCollectionChip={showCollectionSelector && collectionFilters.length === 0}
                 allTags={allTags}
                 selectedTagFilter={selectedTags}
                 onTechniqueUpdate={updateTechniqueLocally}

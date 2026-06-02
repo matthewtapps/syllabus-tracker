@@ -17,6 +17,11 @@ pub struct LibraryTechniqueRow {
     pub name: String,
     pub description: String,
     pub tags: Vec<Tag>,
+    /// IDs of the collections this technique belongs to. Sent alongside
+    /// `collection_count` so the frontend can render bubble filters that
+    /// scope the list to "techniques in collection X" without an extra
+    /// per-row fetch.
+    pub collection_ids: Vec<i64>,
     pub collection_count: i64,
     pub student_count: i64,
     pub video_count: i64,
@@ -68,11 +73,27 @@ pub async fn list_library_techniques(
             });
     }
 
+    let collection_rows = sqlx::query!(
+        r#"SELECT technique_id AS "technique_id!: i64",
+                  collection_id AS "collection_id!: i64"
+           FROM collection_techniques"#
+    )
+    .fetch_all(pool)
+    .await?;
+    let mut collections_by_technique: HashMap<i64, Vec<i64>> = HashMap::new();
+    for row in collection_rows {
+        collections_by_technique
+            .entry(row.technique_id)
+            .or_default()
+            .push(row.collection_id);
+    }
+
     Ok(rows
         .into_iter()
         .map(|r| LibraryTechniqueRow {
             id: r.id,
             tags: tags_by_technique.remove(&r.id).unwrap_or_default(),
+            collection_ids: collections_by_technique.remove(&r.id).unwrap_or_default(),
             name: r.name,
             description: r.description.unwrap_or_default(),
             collection_count: r.collection_count,

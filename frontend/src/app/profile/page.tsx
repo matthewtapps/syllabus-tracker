@@ -28,10 +28,27 @@ const profileSchema = z.object({
     .regex(/^\S+$/, 'No spaces in usernames'),
 });
 
+// Visible-on-page list of password rules. Each rule renders below the
+// new-password field. Keep `test` in sync with the backend's validation
+// in `api_change_password` so client and server agree on what's valid.
+const PASSWORD_RULES: { label: string; test: (v: string) => boolean }[] = [
+  {
+    label: 'At least 5 characters long',
+    test: (v) => v.length >= 5,
+  },
+];
+
 const passwordSchema = z
   .object({
     current_password: z.string().min(1, 'Current password is required'),
-    new_password: z.string().min(1, 'New password is required'),
+    new_password: z
+      .string()
+      .refine((v) => PASSWORD_RULES.every((r) => r.test(v)), {
+        // Empty message; the per-rule list below the input is the actual
+        // failure surface, so FormMessage just acts as the trigger that
+        // flips the input's error state on.
+        message: '',
+      }),
     confirm_password: z.string().min(1, 'Please confirm the new password'),
   })
   .refine((data) => data.new_password === data.confirm_password, {
@@ -187,7 +204,7 @@ export default function ProfilePage() {
             <FormField
               control={passwordForm.control}
               name="new_password"
-              render={({ field }) => (
+              render={({ field, fieldState }) => (
                 <FormItem>
                   <FormLabel>New password</FormLabel>
                   <FormControl>
@@ -197,7 +214,10 @@ export default function ProfilePage() {
                       autoComplete="new-password"
                     />
                   </FormControl>
-                  <FormMessage />
+                  <PasswordRules
+                    value={field.value}
+                    showErrors={!!fieldState.error}
+                  />
                 </FormItem>
               )}
             />
@@ -233,5 +253,30 @@ export default function ProfilePage() {
       </section>
 
     </div>
+  );
+}
+
+function PasswordRules({
+  value,
+  showErrors,
+}: {
+  value: string;
+  showErrors: boolean;
+}) {
+  return (
+    <ul className="space-y-0.5 text-xs">
+      {PASSWORD_RULES.map((rule) => {
+        const passes = rule.test(value);
+        const isError = showErrors && !passes;
+        return (
+          <li
+            key={rule.label}
+            className={isError ? 'text-destructive' : 'text-muted-foreground'}
+          >
+            {rule.label}
+          </li>
+        );
+      })}
+    </ul>
   );
 }

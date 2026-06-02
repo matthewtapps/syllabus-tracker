@@ -22,6 +22,7 @@ import type {
 } from '@/lib/api';
 import {
   useAllTags,
+  useCollections,
   useLibraryTechniqueStats,
   useLibraryTechniques,
 } from '@/lib/queries';
@@ -40,6 +41,7 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
+import { Separator } from '@/components/ui/separator';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
 import { TracedForm } from '@/components/traced-form';
@@ -62,6 +64,14 @@ export default function LibraryPage() {
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [search, setSearch] = useState('');
   const [activeTags, setActiveTags] = useState<string[]>([]);
+  // Multi-select with OR semantics, matching the bubble UX the user
+  // described. `null` is the sentinel for "not in any collection".
+  const [activeCollections, setActiveCollections] = useState<(number | null)[]>(
+    [],
+  );
+
+  const collectionsQuery = useCollections();
+  const collections = collectionsQuery.data ?? [];
 
   const availableTags = useMemo(() => {
     const set = new Set<string>();
@@ -80,9 +90,16 @@ export default function LibraryPage() {
       const matchesTags =
         activeTags.length === 0 ||
         activeTags.every((tag) => t.tags.some((x) => x.name === tag));
-      return matchesText && matchesTags;
+      const matchesCollection =
+        activeCollections.length === 0 ||
+        activeCollections.some((c) =>
+          c === null
+            ? t.collection_ids.length === 0
+            : t.collection_ids.includes(c),
+        );
+      return matchesText && matchesTags && matchesCollection;
     });
-  }, [techniques, search, activeTags]);
+  }, [techniques, search, activeTags, activeCollections]);
 
   function toggleTag(tag: string) {
     setActiveTags((prev) =>
@@ -119,7 +136,7 @@ export default function LibraryPage() {
       </div>
 
       {availableTags.length > 0 && (
-        <div className="mb-4 flex flex-wrap gap-1.5">
+        <div className="mb-3 flex flex-wrap gap-1.5">
           {availableTags.map((tag) => {
             const active = activeTags.includes(tag);
             return (
@@ -140,6 +157,64 @@ export default function LibraryPage() {
               size="sm"
               className="h-6 px-2 text-xs"
               onClick={() => setActiveTags([])}
+            >
+              Clear
+            </Button>
+          )}
+        </div>
+      )}
+
+      {collections.length > 0 && availableTags.length > 0 && (
+        <Separator className="mb-3" />
+      )}
+
+      {collections.length > 0 && (
+        <div className="mb-4 flex flex-wrap gap-1.5">
+          {collections.map((c) => {
+            const active = activeCollections.includes(c.id);
+            return (
+              <Badge
+                key={c.id}
+                variant={active ? 'default' : 'outline'}
+                className="cursor-pointer select-none"
+                onClick={() =>
+                  setActiveCollections((prev) =>
+                    active
+                      ? prev.filter((x) => x !== c.id)
+                      : [...prev, c.id],
+                  )
+                }
+              >
+                {c.name}
+              </Badge>
+            );
+          })}
+          {(() => {
+            const active = activeCollections.includes(null);
+            return (
+              <Badge
+                key="__no_collection"
+                variant={active ? 'default' : 'outline'}
+                className="cursor-pointer select-none"
+                onClick={() =>
+                  setActiveCollections((prev) =>
+                    active
+                      ? prev.filter((x) => x !== null)
+                      : [...prev, null],
+                  )
+                }
+              >
+                No collection
+              </Badge>
+            );
+          })()}
+          {activeCollections.length > 0 && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-6 px-2 text-xs"
+              onClick={() => setActiveCollections([])}
             >
               Clear
             </Button>

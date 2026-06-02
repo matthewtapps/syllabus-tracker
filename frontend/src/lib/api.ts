@@ -716,6 +716,8 @@ export interface LibraryTechniqueRow {
   name: string;
   description: string;
   tags: Tag[];
+  /** IDs of every collection this technique belongs to. */
+  collection_ids: number[];
   collection_count: number;
   student_count: number;
   video_count: number;
