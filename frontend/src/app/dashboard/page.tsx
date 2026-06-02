@@ -17,6 +17,7 @@ import type { User } from '@/lib/api';
 import { toast } from 'sonner';
 import { type InviteResponse, type RecentAttemptItem } from '@/lib/api';
 import {
+  useAttemptHeatmap,
   useLibraryStats,
   useRecentAttempts,
   useStudentTechniques,
@@ -40,6 +41,7 @@ import { formatRelative } from '@/lib/dates';
 import { statusToDotClass } from '@/lib/status';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { AttemptHeatmap } from '@/components/attempt-heatmap';
 import { EmptyState } from '@/components/empty-state';
 import {
   SkeletonListRow,
@@ -415,8 +417,10 @@ function rosterEmptyMessage(tab: RosterTab): string {
 function StudentDashboard({ user }: { user: User }) {
   const techniquesQuery = useStudentTechniques(user.id);
   const recentAttemptsQuery = useRecentAttempts(user.id, 5);
+  const heatmapQuery = useAttemptHeatmap(user.id);
   const techniques = techniquesQuery.data?.techniques ?? null;
   const recentAttempts: RecentAttemptItem[] = recentAttemptsQuery.data ?? [];
+  const heatmap = heatmapQuery.data ?? [];
   const loading = techniquesQuery.isLoading;
   const error = techniquesQuery.error ? 'Failed to load your techniques.' : null;
 
@@ -459,6 +463,9 @@ function StudentDashboard({ user }: { user: User }) {
 
   return (
     <div className="container mx-auto px-4 py-6 sm:px-6 md:py-8">
+      <p className="mb-4 text-xs uppercase tracking-wide text-muted-foreground">
+        {DASHBOARD_DATE_FORMAT.format(new Date())}
+      </p>
 
       {isGraduate && (
         <div className="mb-6 flex items-start gap-3 rounded-lg border border-status-green/30 bg-status-green-bg px-4 py-3 text-sm">
@@ -498,7 +505,21 @@ function StudentDashboard({ user }: { user: User }) {
           <p className="-mt-4 mb-6 text-sm text-muted-foreground">
             You're {pctDone}% done with your syllabus.
           </p>
-          <StatusDonut counts={counts} className="mb-8" />
+          <StatusDonut counts={counts} className="mb-6" />
+
+          {heatmap.length > 0 && (
+            <section className="mb-8 overflow-hidden rounded-lg border border-border bg-card">
+              <header className="border-b border-border px-4 py-3">
+                <h2 className="text-sm font-semibold">Training activity</h2>
+                <p className="text-xs text-muted-foreground">
+                  Attempts logged over the last year.
+                </p>
+              </header>
+              <div className="px-4 py-4">
+                <AttemptHeatmap buckets={heatmap} />
+              </div>
+            </section>
+          )}
 
           <div className="space-y-6">
             {newFromCoach.length > 0 && (

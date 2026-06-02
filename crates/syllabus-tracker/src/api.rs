@@ -641,6 +641,12 @@ pub async fn api_logout(cookies: &CookieJar<'_>, db: &State<Pool<Sqlite>>) -> Re
 pub struct ProfileUpdateRequest {
     #[validate(length(max = 100, message = "Display name must be under 100 characters"))]
     display_name: String,
+    #[validate(length(
+        min = 1,
+        max = 50,
+        message = "Username must be 1-50 characters"
+    ))]
+    username: Option<String>,
 }
 
 #[put("/profile", data = "<profile>")]
@@ -650,6 +656,25 @@ pub async fn api_update_profile(
     db: &State<Pool<Sqlite>>,
 ) -> ApiResult<Status> {
     profile.validate()?;
+
+    if let Some(new_username) = profile.username.as_deref() {
+        let trimmed = new_username.trim();
+        if trimmed != user.username {
+            // Field-level uniqueness check so the frontend can highlight the
+            // username input. `update_username` does its own check, but its
+            // error type collapses to a generic 500 here.
+            if let Some(other) = find_user_by_username(db, trimmed).await? {
+                if other.id != user.id {
+                    let mut errors = validator::ValidationErrors::new();
+                    let mut err = validator::ValidationError::new("unique");
+                    err.message = Some("That username is already taken".into());
+                    errors.add("username", err);
+                    return Err(errors.into());
+                }
+            }
+            update_username(db, user.id, trimmed).await?;
+        }
+    }
 
     update_user_display_name(db, user.id, &profile.display_name).await?;
 

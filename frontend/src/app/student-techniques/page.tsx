@@ -713,6 +713,7 @@ export default function StudentTechniques({ user }: StudentTechniquesProps) {
                 canManageTags={data.can_manage_tags}
                 isOwnTechnique={user.id === data.student.id}
                 studentId={data.student.id}
+                studentDisplayName={data.student.display_name || data.student.username}
                 currentUserId={user.id}
                 expanded={
                   expandedSet.has(technique.id) || technique.id === focusId

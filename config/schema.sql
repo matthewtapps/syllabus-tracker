@@ -144,7 +144,11 @@ CREATE TABLE IF NOT EXISTS videos (
     -- All read queries must filter `deleted_at IS NULL`. There is no UI to
     -- undelete yet; a coach who deletes by mistake currently needs an
     -- operator to clear this column out of band.
-    deleted_at TIMESTAMP
+    deleted_at TIMESTAMP,
+    -- Global hide. When set, students don't see the video at all (unless
+    -- they have an explicit per-student override row pointing the other
+    -- way). Coaches still see the video, badged "Hidden".
+    hidden_at TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_videos_technique_position
     ON videos (technique_id, position);
@@ -152,6 +156,22 @@ CREATE INDEX IF NOT EXISTS idx_videos_status
     ON videos (processing_status);
 CREATE INDEX IF NOT EXISTS idx_videos_alive_by_technique
     ON videos (technique_id) WHERE deleted_at IS NULL;
+
+-- Per-student visibility override for a single video. A row exists only
+-- when a coach has explicitly set a non-default visibility for that
+-- (student, video). `visible = 1` forces the video to show even when the
+-- global hide is set; `visible = 0` forces it hidden even when the global
+-- default is visible. Absence of a row = follow the global default.
+CREATE TABLE IF NOT EXISTS video_student_visibility (
+    video_id INTEGER NOT NULL REFERENCES videos (id) ON DELETE CASCADE,
+    student_id INTEGER NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+    visible BOOLEAN NOT NULL,
+    set_by_id INTEGER REFERENCES users (id),
+    set_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (video_id, student_id)
+);
+CREATE INDEX IF NOT EXISTS idx_vsv_student
+    ON video_student_visibility (student_id);
 
 CREATE TABLE IF NOT EXISTS video_watch_events (
     id INTEGER PRIMARY KEY,

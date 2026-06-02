@@ -71,13 +71,20 @@ function isTabActive(pathname: string, tab: Tab): boolean {
 export function BottomNav({ user, onLogout }: BottomNavProps) {
   const tabs = buildTabs(user);
   const { pathname } = useLocation();
+  // Grid columns match the actual tab count (+1 for the More slot) so a
+  // student's 2-tab nav doesn't sit awkwardly left-aligned with empty
+  // cells on the right.
+  const cellCount = tabs.length + 1;
 
   return (
     <nav
       aria-label="Primary"
       className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-background/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-sm sm:hidden"
     >
-      <ul className="grid h-14 grid-cols-4">
+      <ul
+        className="grid h-14"
+        style={{ gridTemplateColumns: `repeat(${cellCount}, minmax(0, 1fr))` }}
+      >
         {tabs.map((tab) => {
           const active = isTabActive(pathname, tab);
           return (

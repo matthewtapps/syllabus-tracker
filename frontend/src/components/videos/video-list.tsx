@@ -32,23 +32,34 @@ interface VideoListProps {
   techniqueId: number;
   canManage: boolean;
   reloadKey?: number;
+  /** When set, the list is fetched in the context of viewing this student's
+   * techniques: coaches see per-student override info per row and the
+   * visibility popover lets them set both global and per-student. */
+  forStudent?: number;
+  /** Name shown in the per-student visibility controls. Only used when
+   * `forStudent` is also set. */
+  studentDisplayName?: string;
 }
 
 export function VideoList({
   techniqueId,
   canManage,
   reloadKey = 0,
+  forStudent,
+  studentDisplayName,
 }: VideoListProps) {
   const qc = useQueryClient();
-  const videosQuery = useTechniqueVideos(techniqueId);
+  const videosQuery = useTechniqueVideos(techniqueId, forStudent);
   const serverVideos = videosQuery.data ?? null;
   const error = videosQuery.error ? "Could not load videos" : null;
   const reorderMutation = useReorderVideos(techniqueId);
 
-  // External bumps (e.g. after AddVideoButton finishes) request a refetch.
+  // External bumps (e.g. after AddVideoButton finishes) request a refetch
+  // across every (technique, forStudent) cache bucket so all viewer
+  // contexts see the new video.
   useEffect(() => {
     if (reloadKey > 0) {
-      qc.invalidateQueries({ queryKey: qk.techniqueVideos(techniqueId) });
+      qc.invalidateQueries({ queryKey: qk.techniqueVideosAll(techniqueId) });
     }
   }, [reloadKey, techniqueId, qc]);
 
@@ -74,8 +85,10 @@ export function VideoList({
   }, [serverVideos, localOrder]);
 
   function handleDeleted(videoId: number) {
-    qc.setQueryData(qk.techniqueVideos(techniqueId), (prev: Video[] | null | undefined) =>
-      prev ? prev.filter((v) => v.id !== videoId) : prev,
+    qc.setQueryData(
+      qk.techniqueVideos(techniqueId, forStudent ?? null),
+      (prev: Video[] | null | undefined) =>
+        prev ? prev.filter((v) => v.id !== videoId) : prev,
     );
     setLocalOrder((prev) => prev?.filter((id) => id !== videoId) ?? prev);
     setPlaying((current) => (current?.id === videoId ? null : current));
@@ -130,9 +143,9 @@ export function VideoList({
 
   if (videos === null) {
     return (
-      <ul className="space-y-1.5">
-        <li className="h-10 animate-pulse rounded-md bg-muted/40" />
-        <li className="h-10 animate-pulse rounded-md bg-muted/40" />
+      <ul className="divide-y divide-white/15 overflow-hidden rounded-md border border-white/20 bg-card shadow-sm">
+        <li className="h-10 animate-pulse bg-muted/40" />
+        <li className="h-10 animate-pulse bg-muted/40" />
       </ul>
     );
   }
@@ -160,12 +173,15 @@ export function VideoList({
           onDragEnd={handleDragEnd}
         >
           <SortableContext items={ids} strategy={verticalListSortingStrategy}>
-            <ul className="space-y-1.5">
+            <ul className="divide-y divide-white/15 overflow-hidden rounded-md border border-white/20 bg-card shadow-sm">
               {videos.map((video) => (
                 <SortableVideoRow
                   key={video.id}
                   video={video}
+                  techniqueId={techniqueId}
                   canManage={canManage}
+                  forStudent={forStudent}
+                  studentDisplayName={studentDisplayName}
                   onPlay={() => setPlaying(video)}
                   onDeleted={handleDeleted}
                 />
@@ -174,12 +190,15 @@ export function VideoList({
           </SortableContext>
         </DndContext>
       ) : (
-        <ul className="space-y-1.5">
+        <ul className="divide-y divide-white/15 overflow-hidden rounded-md border border-white/20 bg-card shadow-sm">
           {videos.map((video) => (
             <VideoRow
               key={video.id}
               video={video}
+              techniqueId={techniqueId}
               canManage={canManage}
+              forStudent={forStudent}
+              studentDisplayName={studentDisplayName}
               onPlay={() => setPlaying(video)}
               onDeleted={handleDeleted}
             />
@@ -194,14 +213,20 @@ export function VideoList({
 
 interface SortableVideoRowProps {
   video: Video;
+  techniqueId: number;
   canManage: boolean;
+  forStudent?: number;
+  studentDisplayName?: string;
   onPlay: () => void;
   onDeleted: (videoId: number) => void;
 }
 
 function SortableVideoRow({
   video,
+  techniqueId,
   canManage,
+  forStudent,
+  studentDisplayName,
   onPlay,
   onDeleted,
 }: SortableVideoRowProps) {
@@ -241,7 +266,10 @@ function SortableVideoRow({
     >
       <VideoRow
         video={video}
+        techniqueId={techniqueId}
         canManage={canManage}
+        forStudent={forStudent}
+        studentDisplayName={studentDisplayName}
         onPlay={onPlay}
         onDeleted={onDeleted}
         dragHandle={handle}

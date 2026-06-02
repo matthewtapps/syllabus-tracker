@@ -21,7 +21,6 @@ import {
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
-import { Textarea } from "@/components/ui/textarea";
 import { useFormWithValidation } from "@/components/hooks/useFormErrors";
 import { TracedForm } from "@/components/traced-form";
 
@@ -215,23 +214,9 @@ export function UploadVideoForm({
           )}
         />
 
-        <FormField
-          control={form.control}
-          name="description"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Description (optional)</FormLabel>
-              <FormControl>
-                <Textarea
-                  {...field}
-                  className="min-h-24 max-h-48"
-                  placeholder="What should students notice?"
-                />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
+        {/* Description input was removed: the field is still in the DB
+            for forward-compat but isn't surfaced anywhere in the UI yet,
+            and asking for it at upload time was friction without payoff. */}
 
         {progressPct !== null && (
           <div className="space-y-1">

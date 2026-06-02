@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use chrono::Utc;
 use sqlx::{Pool, Sqlite};
 use tracing::{info, instrument};
@@ -156,7 +158,7 @@ pub async fn get_db_video(pool: &Pool<Sqlite>, id: i64) -> Result<Option<DbVideo
                 processing_status, processing_error, storage_key, bytes,
                 duration_seconds, width, height,
                 external_url, external_host, external_video_id, uploaded_by_id,
-                created_at, updated_at
+                created_at, updated_at, hidden_at
          FROM videos
          WHERE id = ? AND deleted_at IS NULL",
         id
@@ -171,6 +173,10 @@ pub async fn get_video(pool: &Pool<Sqlite>, id: i64) -> Result<Option<Video>, Ap
     Ok(get_db_video(pool, id).await?.map(Video::from))
 }
 
+/// Lists all non-deleted videos for a technique. This is the coach-facing
+/// view: hidden videos are returned, the caller decides whether to badge
+/// them. For the student-facing view that filters down to effective
+/// visibility, use [`list_videos_for_technique_visible_to`].
 #[instrument(skip(pool))]
 pub async fn list_videos_for_technique(
     pool: &Pool<Sqlite>,
@@ -182,7 +188,7 @@ pub async fn list_videos_for_technique(
                 processing_status, processing_error, storage_key, bytes,
                 duration_seconds, width, height,
                 external_url, external_host, external_video_id, uploaded_by_id,
-                created_at, updated_at
+                created_at, updated_at, hidden_at
          FROM videos
          WHERE technique_id = ? AND deleted_at IS NULL
          ORDER BY position ASC, id ASC",
@@ -191,6 +197,173 @@ pub async fn list_videos_for_technique(
     .fetch_all(pool)
     .await?;
     Ok(rows.into_iter().map(Video::from).collect())
+}
+
+/// Lists videos for a technique, filtered to what `student_id` should
+/// actually see (effective visibility: per-student override beats global
+/// hide, soft-deleted videos always excluded).
+#[instrument(skip(pool))]
+pub async fn list_videos_for_technique_visible_to(
+    pool: &Pool<Sqlite>,
+    technique_id: i64,
+    student_id: i64,
+) -> Result<Vec<Video>, AppError> {
+    let rows = sqlx::query_as!(
+        DbVideo,
+        "SELECT v.id, v.technique_id, v.title, v.description, v.position, v.kind,
+                v.processing_status, v.processing_error, v.storage_key, v.bytes,
+                v.duration_seconds, v.width, v.height,
+                v.external_url, v.external_host, v.external_video_id, v.uploaded_by_id,
+                v.created_at, v.updated_at, v.hidden_at
+         FROM videos v
+         LEFT JOIN video_student_visibility vsv
+                ON vsv.video_id = v.id AND vsv.student_id = ?
+         WHERE v.technique_id = ?
+           AND v.deleted_at IS NULL
+           AND COALESCE(vsv.visible, v.hidden_at IS NULL) = 1
+         ORDER BY v.position ASC, v.id ASC",
+        student_id,
+        technique_id,
+    )
+    .fetch_all(pool)
+    .await?;
+    Ok(rows.into_iter().map(Video::from).collect())
+}
+
+/// Returns the effective visibility for a single (video, student) pair.
+/// Used by playback / download guards to refuse access if the student
+/// shouldn't be able to see the video. Coaches bypass this check.
+#[instrument(skip(pool))]
+pub async fn video_visible_to_student(
+    pool: &Pool<Sqlite>,
+    video_id: i64,
+    student_id: i64,
+) -> Result<bool, AppError> {
+    let row = sqlx::query!(
+        "SELECT
+            CASE
+                WHEN v.deleted_at IS NOT NULL THEN 0
+                WHEN vsv.visible IS NOT NULL THEN vsv.visible
+                WHEN v.hidden_at IS NULL THEN 1
+                ELSE 0
+            END AS \"visible!: i64\"
+         FROM videos v
+         LEFT JOIN video_student_visibility vsv
+                ON vsv.video_id = v.id AND vsv.student_id = ?
+         WHERE v.id = ?",
+        student_id,
+        video_id,
+    )
+    .fetch_optional(pool)
+    .await?;
+    Ok(row.map(|r| r.visible != 0).unwrap_or(false))
+}
+
+/// Sets (or clears) the global hide flag on a video. `actor_id` is not
+/// currently recorded on the video itself — the audit lives in app logs.
+#[instrument(skip(pool))]
+pub async fn set_video_hidden_globally(
+    pool: &Pool<Sqlite>,
+    video_id: i64,
+    hidden: bool,
+) -> Result<bool, AppError> {
+    let now = Utc::now().naive_utc();
+    let result = if hidden {
+        sqlx::query!(
+            "UPDATE videos SET hidden_at = ?, updated_at = ?
+             WHERE id = ? AND deleted_at IS NULL AND hidden_at IS NULL",
+            now,
+            now,
+            video_id,
+        )
+        .execute(pool)
+        .await?
+    } else {
+        sqlx::query!(
+            "UPDATE videos SET hidden_at = NULL, updated_at = ?
+             WHERE id = ? AND deleted_at IS NULL AND hidden_at IS NOT NULL",
+            now,
+            video_id,
+        )
+        .execute(pool)
+        .await?
+    };
+    Ok(result.rows_affected() > 0)
+}
+
+/// Sets, updates, or clears the per-student visibility override for a
+/// video. `Some(true)` = always show, `Some(false)` = always hide,
+/// `None` = clear the override (revert to following the global default).
+#[instrument(skip(pool))]
+pub async fn set_video_student_visibility(
+    pool: &Pool<Sqlite>,
+    video_id: i64,
+    student_id: i64,
+    visible: Option<bool>,
+    actor_id: i64,
+) -> Result<(), AppError> {
+    let now = Utc::now().naive_utc();
+    match visible {
+        Some(b) => {
+            sqlx::query!(
+                "INSERT INTO video_student_visibility
+                    (video_id, student_id, visible, set_by_id, set_at)
+                 VALUES (?, ?, ?, ?, ?)
+                 ON CONFLICT (video_id, student_id) DO UPDATE
+                    SET visible = excluded.visible,
+                        set_by_id = excluded.set_by_id,
+                        set_at = excluded.set_at",
+                video_id,
+                student_id,
+                b,
+                actor_id,
+                now,
+            )
+            .execute(pool)
+            .await?;
+        }
+        None => {
+            sqlx::query!(
+                "DELETE FROM video_student_visibility
+                 WHERE video_id = ? AND student_id = ?",
+                video_id,
+                student_id,
+            )
+            .execute(pool)
+            .await?;
+        }
+    }
+    Ok(())
+}
+
+/// Returns a map of video_id -> override.visible for a batch of videos
+/// against a single student. Used to annotate the coach's view of a
+/// student's technique page.
+#[instrument(skip(pool, video_ids))]
+pub async fn list_video_student_overrides(
+    pool: &Pool<Sqlite>,
+    video_ids: &[i64],
+    student_id: i64,
+) -> Result<HashMap<i64, bool>, AppError> {
+    if video_ids.is_empty() {
+        return Ok(HashMap::new());
+    }
+    // sqlx can't bind a Vec directly into IN (...); build a CSV placeholder
+    // list. Inputs are i64 read from our own DB, so the format is safe.
+    let placeholders = video_ids
+        .iter()
+        .map(|id| id.to_string())
+        .collect::<Vec<_>>()
+        .join(",");
+    let sql = format!(
+        "SELECT video_id, visible FROM video_student_visibility
+         WHERE student_id = ? AND video_id IN ({placeholders})"
+    );
+    let rows: Vec<(i64, bool)> = sqlx::query_as(&sql)
+        .bind(student_id)
+        .fetch_all(pool)
+        .await?;
+    Ok(rows.into_iter().collect())
 }
 
 #[instrument(skip(pool))]

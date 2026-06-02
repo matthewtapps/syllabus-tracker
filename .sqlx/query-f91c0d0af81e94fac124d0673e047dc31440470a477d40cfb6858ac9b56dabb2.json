@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO video_student_visibility\n                    (video_id, student_id, visible, set_by_id, set_at)\n                 VALUES (?, ?, ?, ?, ?)\n                 ON CONFLICT (video_id, student_id) DO UPDATE\n                    SET visible = excluded.visible,\n                        set_by_id = excluded.set_by_id,\n                        set_at = excluded.set_at",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 5
+    },
+    "nullable": []
+  },
+  "hash": "f91c0d0af81e94fac124d0673e047dc31440470a477d40cfb6858ac9b56dabb2"
+}

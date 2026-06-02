@@ -190,9 +190,8 @@ function AppShell() {
         </Layout>
         </CapabilitiesProvider>
         <Toaster
-          mobileOffset={{
-            bottom: 'calc(env(safe-area-inset-bottom) + 4.5rem)',
-          }}
+          position="top-center"
+          closeButton
           toastOptions={{
             classNames: {
               toast: "group toast group-[.toast-group]:bg-background group-[.toast-group]:text-foreground group-[.toast-group]:border-border group-[.toast-group]:shadow-lg",

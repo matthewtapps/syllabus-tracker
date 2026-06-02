@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE videos SET hidden_at = NULL, updated_at = ?\n             WHERE id = ? AND deleted_at IS NULL AND hidden_at IS NOT NULL",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "4bfc8163188342c179709dd4345dfa92d48766b9221d08275e961138bd9080d7"
+}

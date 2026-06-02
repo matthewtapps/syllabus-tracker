@@ -213,6 +213,10 @@ pub struct Video {
     pub uploaded_by_id: i64,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+    /// Global hide timestamp. `None` = visible to everyone; `Some` = hidden
+    /// from students (coaches still see, badged). Per-student overrides may
+    /// flip the effective visibility either way.
+    pub hidden_at: Option<DateTime<Utc>>,
 }
 
 #[derive(sqlx::FromRow, Clone, Default)]
@@ -236,6 +240,7 @@ pub struct DbVideo {
     pub uploaded_by_id: Option<i64>,
     pub created_at: Option<NaiveDateTime>,
     pub updated_at: Option<NaiveDateTime>,
+    pub hidden_at: Option<NaiveDateTime>,
 }
 
 impl From<DbVideo> for Video {
@@ -261,6 +266,7 @@ impl From<DbVideo> for Video {
             uploaded_by_id: db.uploaded_by_id.unwrap_or_default(),
             created_at: db.created_at.map(naive_to_utc).unwrap_or_else(Utc::now),
             updated_at: db.updated_at.map(naive_to_utc).unwrap_or_else(Utc::now),
+            hidden_at: db.hidden_at.map(naive_to_utc),
         }
     }
 }

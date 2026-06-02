@@ -21,9 +21,11 @@ interface VideoPlayerDialogProps {
 export function VideoPlayerDialog({ video, onClose }: VideoPlayerDialogProps) {
   return (
     <Dialog open={!!video} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="max-h-[90vh] w-[calc(100vw-1rem)] max-w-2xl overflow-y-auto p-4 sm:p-6">
-        <DialogHeader className="pr-8">
-          <DialogTitle className="truncate text-base">
+      <DialogContent className="max-h-[90vh] w-[calc(100vw-1rem)] max-w-2xl overflow-y-auto p-4 sm:p-6 [&>*]:min-w-0">
+        <DialogHeader className="min-w-0 pr-8">
+          {/* line-clamp-2 + break-words so long titles wrap inside the
+              dialog instead of forcing it to grow past the viewport. */}
+          <DialogTitle className="line-clamp-2 break-words text-base leading-snug">
             {video?.title ?? "Video"}
           </DialogTitle>
         </DialogHeader>

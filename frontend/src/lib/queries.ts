@@ -195,10 +195,17 @@ export function useLibraryTechniqueStats(
 // Polls every 1.5s while any video is still processing; otherwise no
 // interval. Polling continues in background tabs so users that switch away
 // during a long upload come back to a finished video.
-export function useTechniqueVideos(techniqueId: number | undefined) {
+//
+// `forStudent` partitions the cache: coaches viewing different students'
+// pages get separate cache entries with the right per-student override
+// annotations on each video.
+export function useTechniqueVideos(
+  techniqueId: number | undefined,
+  forStudent?: number,
+) {
   return useQuery({
-    queryKey: qk.techniqueVideos(techniqueId ?? 0),
-    queryFn: () => listVideos(techniqueId as number),
+    queryKey: qk.techniqueVideos(techniqueId ?? 0, forStudent ?? null),
+    queryFn: () => listVideos(techniqueId as number, { forStudent }),
     enabled: typeof techniqueId === "number" && Number.isFinite(techniqueId),
     staleTime: 0,
     refetchOnWindowFocus: true,

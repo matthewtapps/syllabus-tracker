@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import type { AttemptBucket } from "@/lib/api";
 
 interface AttemptHeatmapProps {
@@ -53,8 +53,17 @@ export function AttemptHeatmap({ buckets, weeks = 52 }: AttemptHeatmapProps) {
   const width = weeks * (CELL + GAP);
   const height = 7 * (CELL + GAP);
 
+  // Default the horizontal scroll to the far right (most recent week), so
+  // the part of the year that just happened is in view by default.
+  const scrollerRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const el = scrollerRef.current;
+    if (!el) return;
+    el.scrollLeft = el.scrollWidth;
+  }, [weeks, buckets]);
+
   return (
-    <div className="overflow-x-auto">
+    <div ref={scrollerRef} className="overflow-x-auto">
       <svg
         width={width}
         height={height + 14}

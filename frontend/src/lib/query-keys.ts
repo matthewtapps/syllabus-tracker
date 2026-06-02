@@ -34,7 +34,12 @@ export const qk = {
   libraryTechniqueStats: (id: number) =>
     ["libraryTechnique", id, "stats"] as const,
 
-  techniqueVideos: (techniqueId: number) =>
+  techniqueVideos: (techniqueId: number, forStudent: number | null = null) =>
+    ["technique", techniqueId, "videos", forStudent] as const,
+  // Prefix matcher for all `techniqueVideos` cache buckets for a technique,
+  // regardless of `forStudent`. Use when invalidating after a mutation that
+  // could affect every viewer's copy of the list.
+  techniqueVideosAll: (techniqueId: number) =>
     ["technique", techniqueId, "videos"] as const,
   videoStatus: (videoId: number) => ["video", videoId, "status"] as const,
   videoStats: (videoId: number) => ["video", videoId, "stats"] as const,

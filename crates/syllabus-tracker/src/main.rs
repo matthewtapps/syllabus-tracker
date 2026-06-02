@@ -43,7 +43,9 @@ use telemetry::init_tracing;
 use thiserror::Error;
 use videos::{
     api_admin_storage, api_dashboard_video_overview, api_delete_video, api_list_technique_videos,
-    api_my_watch_state, api_reorder_videos, api_replace_video, api_student_watch_activity,
+    api_my_watch_state, api_reorder_videos, api_replace_video,
+    api_set_video_global_hidden, api_set_video_student_visibility,
+    api_student_watch_activity,
     api_update_video, api_video_download_url, api_video_link, api_video_playback_url,
     api_video_privacy_ack, api_video_privacy_ack_status, api_video_stats, api_video_status,
     api_video_upload, api_video_watch_events,
@@ -331,6 +333,8 @@ pub async fn init_rocket(
                     api_reorder_videos,
                     api_replace_video,
                     api_delete_video,
+                    api_set_video_global_hidden,
+                    api_set_video_student_visibility,
                     api_video_playback_url,
                     api_video_download_url,
                     api_video_watch_events,

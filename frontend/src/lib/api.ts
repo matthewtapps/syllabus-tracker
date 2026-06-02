@@ -426,6 +426,7 @@ export async function getStudents(
 
 export interface ProfileUpdateData {
   display_name: string;
+  username?: string;
 }
 
 export async function updateUserProfile(
@@ -935,6 +936,12 @@ export interface Video {
   uploaded_by_id: number;
   created_at: string;
   updated_at: string;
+  /** ISO timestamp when the video was globally hidden; `null` when visible.
+   * Coaches always receive this. Students never see hidden videos at all. */
+  hidden_at: string | null;
+  /** Set only on coach views of a specific student's technique page when an
+   * explicit per-student override exists for this video. Omitted otherwise. */
+  override_for_student?: "show" | "hide";
 }
 
 export interface SignedUrl {
@@ -947,13 +954,45 @@ export interface UploadResponse {
   processing_status: ProcessingStatus;
 }
 
-export async function listVideos(techniqueId: number): Promise<Video[]> {
-  const response = await fetch(`/api/techniques/${techniqueId}/videos`, {
+export async function listVideos(
+  techniqueId: number,
+  opts?: { forStudent?: number },
+): Promise<Video[]> {
+  const url = new URL(`/api/techniques/${techniqueId}/videos`, window.location.origin);
+  if (typeof opts?.forStudent === "number") {
+    url.searchParams.set("for_student", String(opts.forStudent));
+  }
+  const response = await fetch(url.pathname + url.search, {
     credentials: "include",
   });
   if (!response.ok) throw new Error("Failed to load videos");
   const body = await response.json();
   return body.videos as Video[];
+}
+
+export async function setVideoGlobalHidden(
+  videoId: number,
+  hidden: boolean,
+): Promise<Response> {
+  return await fetch(`/api/videos/${videoId}/global-hidden`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ hidden }),
+    credentials: "include",
+  });
+}
+
+export async function setVideoStudentVisibility(
+  videoId: number,
+  studentId: number,
+  visible: boolean | null,
+): Promise<Response> {
+  return await fetch(`/api/videos/${videoId}/visibility/${studentId}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ visible }),
+    credentials: "include",
+  });
 }
 
 export async function getVideoStatus(

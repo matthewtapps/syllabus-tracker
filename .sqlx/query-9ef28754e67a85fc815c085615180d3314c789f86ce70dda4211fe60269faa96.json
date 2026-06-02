@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT\n            CASE\n                WHEN v.deleted_at IS NOT NULL THEN 0\n                WHEN vsv.visible IS NOT NULL THEN vsv.visible\n                WHEN v.hidden_at IS NULL THEN 1\n                ELSE 0\n            END AS \"visible!: i64\"\n         FROM videos v\n         LEFT JOIN video_student_visibility vsv\n                ON vsv.video_id = v.id AND vsv.student_id = ?\n         WHERE v.id = ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "visible!: i64",
+        "ordinal": 0,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "9ef28754e67a85fc815c085615180d3314c789f86ce70dda4211fe60269faa96"
+}

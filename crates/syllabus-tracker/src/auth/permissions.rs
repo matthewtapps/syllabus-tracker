@@ -25,6 +25,7 @@ pub enum Permission {
 
     UploadVideos,
     DeleteVideos,
+    ManageVideoVisibility,
     ViewWatchStats,
     ViewStorageStats,
 }
@@ -61,6 +62,7 @@ static COACH_PERMISSIONS: Lazy<HashSet<Permission>> = Lazy::new(|| {
 
     permissions.insert(Permission::UploadVideos);
     permissions.insert(Permission::DeleteVideos);
+    permissions.insert(Permission::ManageVideoVisibility);
     permissions.insert(Permission::ViewWatchStats);
 
     permissions

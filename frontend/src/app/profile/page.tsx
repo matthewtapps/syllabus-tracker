@@ -2,21 +2,18 @@ import { useEffect } from 'react';
 import { toast } from 'sonner';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useAttemptHeatmap, useCurrentUser } from '@/lib/queries';
+import { useCurrentUser } from '@/lib/queries';
 import { useUpdatePassword, useUpdateUserProfile } from '@/lib/mutations';
-import { AttemptHeatmap } from '@/components/attempt-heatmap';
 import { Button } from '@/components/ui/button';
 import {
   Form,
   FormControl,
-  FormDescription,
   FormField,
   FormItem,
   FormLabel,
   FormMessage,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
 import { TracedForm } from '@/components/traced-form';
@@ -24,6 +21,11 @@ import { useFormWithValidation } from '@/components/hooks/useFormErrors';
 
 const profileSchema = z.object({
   display_name: z.string(),
+  username: z
+    .string()
+    .min(1, 'Username is required')
+    .max(50, 'Username is too long')
+    .regex(/^\S+$/, 'No spaces in usernames'),
 });
 
 const passwordSchema = z
@@ -44,14 +46,12 @@ export default function ProfilePage() {
   const userQuery = useCurrentUser();
   const user = userQuery.data ?? null;
   const loading = userQuery.isLoading;
-  const heatmapQuery = useAttemptHeatmap(user?.id);
-  const heatmap = heatmapQuery.data ?? null;
   const profileMutation = useUpdateUserProfile();
   const passwordMutation = useUpdatePassword();
 
   const profileForm = useFormWithValidation<ProfileValues>({
     resolver: zodResolver(profileSchema),
-    defaultValues: { display_name: '' },
+    defaultValues: { display_name: '', username: '' },
   });
 
   const passwordForm = useFormWithValidation<PasswordValues>({
@@ -63,14 +63,22 @@ export default function ProfilePage() {
     },
   });
 
-  // Once we have the current user, seed the display-name field exactly once.
+  // Once we have the current user, seed the form exactly once.
   useEffect(() => {
-    if (user) profileForm.reset({ display_name: user.display_name ?? '' });
+    if (user) {
+      profileForm.reset({
+        display_name: user.display_name ?? '',
+        username: user.username ?? '',
+      });
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id]);
 
   async function handleProfileSubmit(data: ProfileValues) {
-    await profileMutation.mutateAsync({ display_name: data.display_name });
+    await profileMutation.mutateAsync({
+      display_name: data.display_name,
+      username: data.username.trim(),
+    });
     toast.success('Profile updated');
   }
 
@@ -86,12 +94,7 @@ export default function ProfilePage() {
   return (
     <div className="container mx-auto max-w-2xl px-4 py-6 sm:px-6 md:py-8">
       <section className="space-y-5">
-        <div>
-          <h2 className="text-base font-semibold">Account</h2>
-          <p className="text-sm text-muted-foreground">
-            Update how your name appears in the app.
-          </p>
-        </div>
+        <h2 className="text-base font-semibold">Account</h2>
 
         {loading ? (
           <div className="space-y-3">
@@ -106,13 +109,23 @@ export default function ProfilePage() {
               setFieldErrors={profileForm.setFieldErrors}
               className="space-y-4"
             >
-              <div className="space-y-2">
-                <Label htmlFor="username">Username</Label>
-                <Input id="username" value={user?.username ?? ''} disabled />
-                <p className="text-xs text-muted-foreground">
-                  Your username can't be changed.
-                </p>
-              </div>
+              <FormField
+                control={profileForm.control}
+                name="username"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Username</FormLabel>
+                    <FormControl>
+                      <Input
+                        {...field}
+                        autoComplete="username"
+                        spellCheck={false}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
 
               <FormField
                 control={profileForm.control}
@@ -144,12 +157,7 @@ export default function ProfilePage() {
       <Separator className="my-8" />
 
       <section className="space-y-5">
-        <div>
-          <h2 className="text-base font-semibold">Password</h2>
-          <p className="text-sm text-muted-foreground">
-            Update the password used to sign in.
-          </p>
-        </div>
+        <h2 className="text-base font-semibold">Password</h2>
 
         <Form {...passwordForm}>
           <TracedForm
@@ -189,9 +197,6 @@ export default function ProfilePage() {
                       autoComplete="new-password"
                     />
                   </FormControl>
-                  <FormDescription>
-                    At least 1 character. Aim for something memorable but hard to guess.
-                  </FormDescription>
                   <FormMessage />
                 </FormItem>
               )}
@@ -227,20 +232,6 @@ export default function ProfilePage() {
         </Form>
       </section>
 
-      {heatmap && heatmap.length > 0 && (
-        <>
-          <Separator className="my-8" />
-          <section className="space-y-3">
-            <div>
-              <h2 className="text-base font-semibold">Training activity</h2>
-              <p className="text-sm text-muted-foreground">
-                Attempts logged over the last year.
-              </p>
-            </div>
-            <AttemptHeatmap buckets={heatmap} />
-          </section>
-        </>
-      )}
     </div>
   );
 }

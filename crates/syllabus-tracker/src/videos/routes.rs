@@ -24,7 +24,7 @@ use crate::videos::storage::DynVideoStorage;
 
 #[derive(Serialize)]
 pub struct ListVideosResponse {
-    pub videos: Vec<Video>,
+    pub videos: Vec<VideoListItem>,
 }
 
 #[derive(Serialize)]
@@ -228,17 +228,110 @@ pub async fn api_video_link(
     Ok(Json(video))
 }
 
+#[derive(Serialize)]
+pub struct VideoListItem {
+    #[serde(flatten)]
+    pub video: Video,
+    /// "show" or "hide" when an explicit per-student override exists for
+    /// `for_student`. Absent (omitted from JSON) when no override is set,
+    /// or when the request didn't specify a `for_student` viewer.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub override_for_student: Option<String>,
+}
+
 #[instrument(skip(pool))]
-#[get("/techniques/<tid>/videos")]
+#[get("/techniques/<tid>/videos?<for_student>")]
 pub async fn api_list_technique_videos(
     tid: i64,
-    _user: User,
+    for_student: Option<i64>,
+    user: User,
     pool: &State<Pool<Sqlite>>,
 ) -> Result<Json<ListVideosResponse>, Status> {
-    let videos = db::list_videos_for_technique(pool.inner(), tid)
+    let is_coach = user.has_permission(crate::auth::Permission::ViewAllStudents);
+    let videos = if !is_coach {
+        // Students always see only what's effectively visible to them,
+        // regardless of any for_student query param a client tries to pass.
+        db::list_videos_for_technique_visible_to(pool.inner(), tid, user.id)
+            .await
+            .map_err(Status::from)?
+    } else {
+        db::list_videos_for_technique(pool.inner(), tid)
+            .await
+            .map_err(Status::from)?
+    };
+
+    let items: Vec<VideoListItem> = if is_coach && for_student.is_some() {
+        let student_id = for_student.unwrap();
+        let video_ids: Vec<i64> = videos.iter().map(|v| v.id).collect();
+        let overrides = db::list_video_student_overrides(pool.inner(), &video_ids, student_id)
+            .await
+            .map_err(Status::from)?;
+        videos
+            .into_iter()
+            .map(|v| {
+                let override_for_student = overrides
+                    .get(&v.id)
+                    .map(|b| if *b { "show".to_string() } else { "hide".to_string() });
+                VideoListItem {
+                    video: v,
+                    override_for_student,
+                }
+            })
+            .collect()
+    } else {
+        videos
+            .into_iter()
+            .map(|video| VideoListItem {
+                video,
+                override_for_student: None,
+            })
+            .collect()
+    };
+
+    Ok(Json(ListVideosResponse { videos: items }))
+}
+
+#[derive(Deserialize)]
+pub struct SetGlobalHiddenRequest {
+    pub hidden: bool,
+}
+
+#[instrument(skip(pool, body))]
+#[put("/videos/<vid>/global-hidden", data = "<body>")]
+pub async fn api_set_video_global_hidden(
+    vid: i64,
+    body: Json<SetGlobalHiddenRequest>,
+    user: User,
+    pool: &State<Pool<Sqlite>>,
+) -> Result<Status, Status> {
+    user.require_permission(crate::auth::Permission::ManageVideoVisibility)?;
+    db::set_video_hidden_globally(pool.inner(), vid, body.hidden)
         .await
         .map_err(Status::from)?;
-    Ok(Json(ListVideosResponse { videos }))
+    Ok(Status::NoContent)
+}
+
+#[derive(Deserialize)]
+pub struct SetStudentVisibilityRequest {
+    /// `Some(true)` = always show, `Some(false)` = always hide, `None` =
+    /// clear the override (follow the global default).
+    pub visible: Option<bool>,
+}
+
+#[instrument(skip(pool, body))]
+#[put("/videos/<vid>/visibility/<student_id>", data = "<body>")]
+pub async fn api_set_video_student_visibility(
+    vid: i64,
+    student_id: i64,
+    body: Json<SetStudentVisibilityRequest>,
+    user: User,
+    pool: &State<Pool<Sqlite>>,
+) -> Result<Status, Status> {
+    user.require_permission(crate::auth::Permission::ManageVideoVisibility)?;
+    db::set_video_student_visibility(pool.inner(), vid, student_id, body.visible, user.id)
+        .await
+        .map_err(Status::from)?;
+    Ok(Status::NoContent)
 }
 
 #[instrument(skip(body, pool))]
@@ -403,7 +496,7 @@ pub async fn api_delete_video(
 #[get("/videos/<vid>/playback-url")]
 pub async fn api_video_playback_url(
     vid: i64,
-    _user: User,
+    user: User,
     pool: &State<Pool<Sqlite>>,
     storage: &State<DynVideoStorage>,
 ) -> Result<Json<SignedUrlResponse>, Status> {
@@ -411,6 +504,17 @@ pub async fn api_video_playback_url(
         .await
         .map_err(Status::from)?
         .ok_or(Status::NotFound)?;
+    // Students can only fetch playback URLs for videos that are effectively
+    // visible to them. Coaches bypass the check (library / preview flow).
+    let is_coach = user.has_permission(crate::auth::Permission::ViewAllStudents);
+    if !is_coach {
+        let visible = db::video_visible_to_student(pool.inner(), vid, user.id)
+            .await
+            .map_err(Status::from)?;
+        if !visible {
+            return Err(Status::NotFound);
+        }
+    }
     let status =
         ProcessingStatus::from_db_str(db_video.processing_status.as_deref().unwrap_or("processing"));
     if status != ProcessingStatus::Ready {
@@ -442,7 +546,7 @@ pub async fn api_video_playback_url(
 #[get("/videos/<vid>/download-url")]
 pub async fn api_video_download_url(
     vid: i64,
-    _user: User,
+    user: User,
     pool: &State<Pool<Sqlite>>,
     storage: &State<DynVideoStorage>,
 ) -> Result<Json<SignedUrlResponse>, Status> {
@@ -450,6 +554,15 @@ pub async fn api_video_download_url(
         .await
         .map_err(Status::from)?
         .ok_or(Status::NotFound)?;
+    let is_coach = user.has_permission(crate::auth::Permission::ViewAllStudents);
+    if !is_coach {
+        let visible = db::video_visible_to_student(pool.inner(), vid, user.id)
+            .await
+            .map_err(Status::from)?;
+        if !visible {
+            return Err(Status::NotFound);
+        }
+    }
     let status =
         ProcessingStatus::from_db_str(db_video.processing_status.as_deref().unwrap_or("processing"));
     if status != ProcessingStatus::Ready {

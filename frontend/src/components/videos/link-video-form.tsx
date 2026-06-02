@@ -15,7 +15,6 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import { useFormWithValidation } from "@/components/hooks/useFormErrors";
 import { TracedForm } from "@/components/traced-form";
 
@@ -115,19 +114,7 @@ export function LinkVideoForm({
           )}
         />
 
-        <FormField
-          control={form.control}
-          name="description"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Description (optional)</FormLabel>
-              <FormControl>
-                <Textarea {...field} className="min-h-24 max-h-48" />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
+        {/* Description input intentionally hidden: see UploadVideoForm. */}
 
         <div className="flex justify-end gap-2">
           <Button

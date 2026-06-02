@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT id, technique_id, title, description, position, kind,\n                processing_status, processing_error, storage_key, bytes,\n                duration_seconds, width, height,\n                external_url, external_host, external_video_id, uploaded_by_id,\n                created_at, updated_at\n         FROM videos\n         WHERE id = ? AND deleted_at IS NULL",
+  "query": "SELECT id, technique_id, title, description, position, kind,\n                processing_status, processing_error, storage_key, bytes,\n                duration_seconds, width, height,\n                external_url, external_host, external_video_id, uploaded_by_id,\n                created_at, updated_at, hidden_at\n         FROM videos\n         WHERE technique_id = ? AND deleted_at IS NULL\n         ORDER BY position ASC, id ASC",
   "describe": {
     "columns": [
       {
@@ -97,20 +97,25 @@
         "name": "updated_at",
         "ordinal": 18,
         "type_info": "Datetime"
+      },
+      {
+        "name": "hidden_at",
+        "ordinal": 19,
+        "type_info": "Datetime"
       }
     ],
     "parameters": {
       "Right": 1
     },
     "nullable": [
+      true,
+      false,
+      false,
+      true,
       false,
       false,
       false,
       true,
-      false,
-      false,
-      false,
-      true,
       true,
       true,
       true,
@@ -120,9 +125,10 @@
       true,
       true,
       false,
+      true,
       true,
       true
     ]
   },
-  "hash": "36e2b824e59b0f0b0e8295e2a26cc1a1b121c78dd263746273c527abadd78f10"
+  "hash": "264efc84559526075686b2f8d41e8834999ef7c9b215e58d8128dce14d56ab5f"
 }

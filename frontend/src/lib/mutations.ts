@@ -22,6 +22,8 @@ import {
   reorderVideos,
   resetUserClaim,
   setStudentGraduated,
+  setVideoGlobalHidden,
+  setVideoStudentVisibility,
   updateAttempt,
   updateCollection,
   updateLibraryTechnique,
@@ -55,7 +57,7 @@ async function unwrap(res: Response): Promise<Response> {
 export function useUpdateUserProfile() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (data: { display_name: string }) =>
+    mutationFn: async (data: { display_name: string; username?: string }) =>
       unwrap(await updateUserProfile(data)),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: qk.currentUser() });
@@ -679,7 +681,7 @@ export function useReorderVideos(techniqueId: number) {
       await reorderVideos(techniqueId, orderedIds);
     },
     onSuccess: () =>
-      qc.invalidateQueries({ queryKey: qk.techniqueVideos(techniqueId) }),
+      qc.invalidateQueries({ queryKey: qk.techniqueVideosAll(techniqueId) }),
   });
 }
 
@@ -691,7 +693,7 @@ export function useDeleteVideo(techniqueId?: number) {
     },
     onSuccess: () => {
       if (techniqueId !== undefined) {
-        qc.invalidateQueries({ queryKey: qk.techniqueVideos(techniqueId) });
+        qc.invalidateQueries({ queryKey: qk.techniqueVideosAll(techniqueId) });
       } else {
         qc.invalidateQueries({
           predicate: (q) =>
@@ -699,6 +701,38 @@ export function useDeleteVideo(techniqueId?: number) {
         });
       }
     },
+  });
+}
+
+export function useSetVideoGlobalHidden(techniqueId: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (vars: { videoId: number; hidden: boolean }) => {
+      const response = await setVideoGlobalHidden(vars.videoId, vars.hidden);
+      if (!response.ok) throw new Error("Failed to update visibility");
+    },
+    onSuccess: () =>
+      qc.invalidateQueries({ queryKey: qk.techniqueVideosAll(techniqueId) }),
+  });
+}
+
+export function useSetVideoStudentVisibility(techniqueId: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (vars: {
+      videoId: number;
+      studentId: number;
+      visible: boolean | null;
+    }) => {
+      const response = await setVideoStudentVisibility(
+        vars.videoId,
+        vars.studentId,
+        vars.visible,
+      );
+      if (!response.ok) throw new Error("Failed to update visibility");
+    },
+    onSuccess: () =>
+      qc.invalidateQueries({ queryKey: qk.techniqueVideosAll(techniqueId) }),
   });
 }
 

@@ -33,6 +33,7 @@ interface TechniqueRowProps {
   canManageTags: boolean;
   isOwnTechnique: boolean;
   studentId: number;
+  studentDisplayName: string;
   currentUserId: number;
   expanded: boolean;
   onToggle: () => void;
@@ -53,6 +54,7 @@ export function TechniqueRow({
   canManageTags,
   isOwnTechnique,
   studentId,
+  studentDisplayName,
   currentUserId,
   expanded,
   onToggle,
@@ -208,6 +210,47 @@ export function TechniqueRow({
             <StatusToggle value={status} onChange={handleStatusChange} size="sm" />
           )}
 
+          {technique.technique_description && (
+            <p className="whitespace-pre-wrap text-sm leading-relaxed text-muted-foreground">
+              {technique.technique_description}
+            </p>
+          )}
+
+          <div className="flex flex-wrap items-center gap-1.5">
+            {technique.tags.map((tag) => (
+              <Badge
+                key={tag.id}
+                variant="secondary"
+                className="gap-1.5 pr-1.5 text-xs"
+              >
+                {tag.name}
+                {canManageTagsOnRow && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-5 w-5 rounded-full text-muted-foreground hover:bg-background hover:text-foreground"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onRequestTagRemoval(technique, tag);
+                    }}
+                  >
+                    <XIcon className="h-3 w-3" aria-hidden />
+                    <span className="sr-only">Remove tag {tag.name}</span>
+                  </Button>
+                )}
+              </Badge>
+            ))}
+            {canManageTagsOnRow && (
+              <TagsEditor
+                techniqueId={technique.technique_id}
+                assignedTags={technique.tags}
+                allTags={allTags}
+                onTagAdded={handleTagAdded}
+              />
+            )}
+          </div>
+
           <section className="space-y-3">
             <div className="flex items-center justify-between gap-2">
               <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
@@ -295,49 +338,10 @@ export function TechniqueRow({
             <VideoSection
               techniqueId={technique.technique_id}
               canManage={canEditAll}
+              forStudent={studentId}
+              studentDisplayName={studentDisplayName}
             />
           )}
-
-          {technique.technique_description && (
-            <p className="whitespace-pre-wrap text-sm leading-relaxed text-muted-foreground">
-              {technique.technique_description}
-            </p>
-          )}
-
-          <div className="flex flex-wrap items-center gap-1.5">
-            {technique.tags.map((tag) => (
-              <Badge
-                key={tag.id}
-                variant="secondary"
-                className="gap-1.5 pr-1.5 text-xs"
-              >
-                {tag.name}
-                {canManageTagsOnRow && (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="h-5 w-5 rounded-full text-muted-foreground hover:bg-background hover:text-foreground"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onRequestTagRemoval(technique, tag);
-                    }}
-                  >
-                    <XIcon className="h-3 w-3" aria-hidden />
-                    <span className="sr-only">Remove tag {tag.name}</span>
-                  </Button>
-                )}
-              </Badge>
-            ))}
-            {canManageTagsOnRow && (
-              <TagsEditor
-                techniqueId={technique.technique_id}
-                assignedTags={technique.tags}
-                allTags={allTags}
-                onTagAdded={handleTagAdded}
-              />
-            )}
-          </div>
 
           <FooterMeta
             technique={technique}
@@ -477,9 +481,16 @@ function FooterMeta({
 interface VideoSectionProps {
   techniqueId: number;
   canManage: boolean;
+  forStudent?: number;
+  studentDisplayName?: string;
 }
 
-function VideoSection({ techniqueId, canManage }: VideoSectionProps) {
+function VideoSection({
+  techniqueId,
+  canManage,
+  forStudent,
+  studentDisplayName,
+}: VideoSectionProps) {
   const [reloadKey, setReloadKey] = useState(0);
   return (
     <section className="space-y-2" onClick={(e) => e.stopPropagation()}>
@@ -505,6 +516,8 @@ function VideoSection({ techniqueId, canManage }: VideoSectionProps) {
         techniqueId={techniqueId}
         canManage={canManage}
         reloadKey={reloadKey}
+        forStudent={forStudent}
+        studentDisplayName={studentDisplayName}
       />
     </section>
   );
