@@ -11,6 +11,9 @@ target/
 .secrets.env
 .env
 sqlite.db
+sqlite.db-shm
+sqlite.db-wal
+/data/
 
 # RustRover
 #  JetBrains specific template is maintained in a separate JetBrains.gitignore that can

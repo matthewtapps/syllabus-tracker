@@ -5,6 +5,5 @@
 - Let students tag/pin specific techniques and/or specific videos, with quick access from the dashboard.
 - For QR-code flows (registration QR, claim-link QR, etc.), tap the QR to enlarge to fullscreen for easier scanning; show a small hint near the code. Tap the fullscreen image to dismiss.
 - Videos - select from google drive button, instead of needing a link. Is the same possible for Youtube? Can we validate the permissions on the video and give a specific warning when we do it?
-- Database backup service syncing to blob storage, now that we have that set up for videos!
-- Move the database file onto a volume instead of just running in the container
+- Remove the `VIDEOS_ENABLED` flag now that videos are stable in prod: drop the env var from both env files, construct `VideoStack` unconditionally in `src/main.rs`, drop the `Some(...)` wrap in `src/test/utils.rs`, remove the four `useCapabilities()` checks on the frontend (keep the context + endpoint for future flags), drop `feature.videos.enabled` from `src/telemetry.rs::resource()`.
 - Student view of collections that are assigned to them? Maybe just a filter bubble like the tag bubbles from their student technique list view?

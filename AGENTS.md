@@ -83,14 +83,20 @@ AI agents are not expected to run these commands, ever. They are documented here
 | --- | --- |
 | Local dev (docker) | `just dev` |
 | Stop | `just stop` |
-| Apply schema to local sqlite.db | `just migrate` |
+| Apply schema to local data/sqlite.db | `just migrate` |
 | Apply schema, allow destructive changes | `just migrate-destructive` |
 | Seed demo data | `just seed` |
-| Wipe local sqlite | `just clean` |
+| Wipe local data/ and build artifacts | `just clean` |
 
-`just dev` boots the full stack via docker compose. It chains through `migrate` first so the host's sqlite.db is created and in sync before docker starts the app. `just clean && just dev` (or `just clean && just seed`) is the full reset cycle.
+`just dev` boots the full stack via docker compose. It chains through `migrate` first so the host's `data/sqlite.db` is created and in sync before docker starts the app. `just clean && just dev` (or `just clean && just seed`) is the full reset cycle.
+
+The local SQLite DB lives under `./data/` (parent dir, not a single file) so the WAL sidecars (`sqlite.db-wal`, `sqlite.db-shm`) stay co-located with the main DB. WAL mode is on by default, set via `PRAGMA journal_mode=WAL` in both the app and the migrate binary's pool.
 
 `migrate` and `seed` are implemented as dedicated bins under `src/bin/`. The `migrate` bin also ships in the production image and is invoked by the deploy pipeline's dedicated `migrate_database` job, which dry-runs against a copy of the prod DB then applies against the real one. The main `syllabus-tracker` binary does **not** self-heal or migrate on boot: it panics if the live DB schema does not match `config/schema.sql`. Migration is the migrate binary's job, exclusively.
+
+## Disaster recovery
+
+Production SQLite is replicated continuously to Cloudflare R2 via a Litestream sidecar (`docker-compose.nixos.yml`). See [`docs/BACKUPS.md`](docs/BACKUPS.md) for the architecture, restore procedure, and quarterly drill checklist.
 
 ## Feature flags
 

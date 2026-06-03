@@ -57,12 +57,12 @@ unused-deps:
 # to the macro-bearing crate via `-p syllabus-tracker`.
 [group('verify')]
 sqlx-prepare:
-    DATABASE_URL=sqlite://sqlite.db cargo sqlx prepare --workspace -- -p syllabus-tracker --tests --all-features
+    DATABASE_URL=sqlite://data/sqlite.db cargo sqlx prepare --workspace -- -p syllabus-tracker --tests --all-features
 
 # Fail if the .sqlx/ cache is stale. Used by `just verify`.
 [group('verify')]
 sqlx-check:
-    DATABASE_URL=sqlite://sqlite.db cargo sqlx prepare --check --workspace -- -p syllabus-tracker --tests --all-features
+    DATABASE_URL=sqlite://data/sqlite.db cargo sqlx prepare --check --workspace -- -p syllabus-tracker --tests --all-features
 
 # ---- app / docker ---------------------------------------------------------
 
@@ -148,33 +148,35 @@ fe-install:
 
 # ---- database -------------------------------------------------------------
 
-# Apply config/schema.sql to the local sqlite.db. Creates the DB file if
-# missing. Refuses destructive changes (drops); use `migrate-destructive` for
-# those.
+# Apply config/schema.sql to the local data/sqlite.db. Creates the DB file
+# (and the data/ parent dir) if missing. Refuses destructive changes (drops);
+# use `migrate-destructive` for those.
 [group('db')]
 migrate:
-    SQLX_OFFLINE=true DATABASE_URL=sqlite://sqlite.db SCHEMA_PATH=./config/schema.sql \
+    mkdir -p data
+    SQLX_OFFLINE=true DATABASE_URL=sqlite://data/sqlite.db SCHEMA_PATH=./config/schema.sql \
         cargo run -p migration-engine --bin migrate
 
 # As `migrate`, but permits dropping tables, columns, and indices. Use after
 # a destructive schema change so the app boot doesn't panic on the diff.
 [group('db')]
 migrate-destructive:
+    mkdir -p data
     SQLX_OFFLINE=true ALLOW_DESTRUCTIVE_MIGRATIONS=true \
-        DATABASE_URL=sqlite://sqlite.db SCHEMA_PATH=./config/schema.sql \
+        DATABASE_URL=sqlite://data/sqlite.db SCHEMA_PATH=./config/schema.sql \
         cargo run -p migration-engine --bin migrate
 
 # Idempotent demo seed (users, techniques, collections, assignments, attempts).
 # Runs `migrate` first so a freshly-cleaned DB bootstraps cleanly.
 [group('db')]
 seed: migrate
-    SQLX_OFFLINE=true DATABASE_URL=sqlite://sqlite.db SCHEMA_PATH=./config/schema.sql \
+    SQLX_OFFLINE=true DATABASE_URL=sqlite://data/sqlite.db SCHEMA_PATH=./config/schema.sql \
         cargo run -p syllabus-tracker --bin seed
 
 # Wipe just the attempts table then reseed (keeps users/techniques).
 [group('db')]
 reseed-attempts:
-    sqlite3 sqlite.db "DELETE FROM attempts;"
+    sqlite3 data/sqlite.db "DELETE FROM attempts;"
     just seed
 
 # ---- infra ----------------------------------------------------------------
@@ -208,7 +210,7 @@ tf *cmd="plan":
 # everything.
 [group('housekeeping')]
 clean:
-    rm -f sqlite.db sqlite.db-shm sqlite.db-wal
+    rm -rf data
     rm -rf target frontend/dist
 
 # ---- hooks ----------------------------------------------------------------

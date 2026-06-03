@@ -98,7 +98,11 @@ async fn run() -> Result<()> {
 
     let opts = SqliteConnectOptions::from_str(&database_url)
         .with_context(|| format!("Invalid DATABASE_URL: {}", database_url))?
-        .create_if_missing(true);
+        .create_if_missing(true)
+        .pragma("journal_mode", "WAL")
+        .pragma("synchronous", "NORMAL")
+        .pragma("busy_timeout", "5000")
+        .pragma("foreign_keys", "ON");
     let pool = SqlitePool::connect_with(opts)
         .await
         .context("Failed to connect to database")?;

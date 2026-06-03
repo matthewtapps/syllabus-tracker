@@ -52,6 +52,8 @@ use videos::{
 };
 
 use sqlx::SqlitePool;
+use sqlx::sqlite::SqliteConnectOptions;
+use std::str::FromStr;
 use tracing::{error, info};
 
 #[derive(Debug, Error)]
@@ -95,7 +97,13 @@ async fn rocket() -> _ {
     let database_url =
         dotenvy::var("DATABASE_URL").expect("Failed to get database url from environment");
 
-    let pool = SqlitePool::connect(&database_url)
+    let opts = SqliteConnectOptions::from_str(&database_url)
+        .expect("Failed to parse DATABASE_URL")
+        .pragma("journal_mode", "WAL")
+        .pragma("synchronous", "NORMAL")
+        .pragma("busy_timeout", "5000")
+        .pragma("foreign_keys", "ON");
+    let pool = SqlitePool::connect_with(opts)
         .await
         .expect("Failed to connect to SQLite database");
 

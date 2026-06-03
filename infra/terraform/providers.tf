@@ -22,6 +22,12 @@ variable "app_origin" {
   default     = "https://syllabustracker.matthewtapps.com"
 }
 
+variable "db_backups_bucket_name" {
+  type        = string
+  description = "Bucket name for Litestream database backups."
+  default     = "syllabus-tracker-db-backups-prod"
+}
+
 # The provider reads its API token from $CLOUDFLARE_API_TOKEN; do not put the
 # token in tfvars. Token needs Account > Workers R2 Storage > Edit on this
 # account.

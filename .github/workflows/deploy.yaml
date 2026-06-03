@@ -359,6 +359,8 @@ jobs:
           SECRET_ROCKET_SECRET_KEY: ${{ secrets.ROCKET_SECRET_KEY }}
           SECRET_S3_ACCESS_KEY: ${{ secrets.CLOUDFLARE_R2_ACCESS_KEY_ID }}
           SECRET_S3_SECRET_KEY: ${{ secrets.CLOUDFLARE_R2_SECRET_ACCESS_KEY }}
+          SECRET_LITESTREAM_ACCESS_KEY_ID: ${{ secrets.CLOUDFLARE_R2_BACKUPS_ACCESS_KEY_ID }}
+          SECRET_LITESTREAM_SECRET_ACCESS_KEY: ${{ secrets.CLOUDFLARE_R2_BACKUPS_SECRET_ACCESS_KEY }}
         run: |
           cat > docker_config.json << EOF
           {
@@ -389,7 +391,9 @@ jobs:
              echo 'ROCKET_SECRET_KEY=${SECRET_ROCKET_SECRET_KEY}' >> ${APP_DEPLOY_PATH}/.secrets.env && \
              echo 'VITE_HONEYCOMB_API_KEY=${SECRET_HONEYCOMB_API_KEY}' >> ${APP_DEPLOY_PATH}/.secrets.env && \
              echo 'S3_ACCESS_KEY=${SECRET_S3_ACCESS_KEY}' >> ${APP_DEPLOY_PATH}/.secrets.env && \
-             echo 'S3_SECRET_KEY=${SECRET_S3_SECRET_KEY}' >> ${APP_DEPLOY_PATH}/.secrets.env"
+             echo 'S3_SECRET_KEY=${SECRET_S3_SECRET_KEY}' >> ${APP_DEPLOY_PATH}/.secrets.env && \
+             echo 'LITESTREAM_ACCESS_KEY_ID=${SECRET_LITESTREAM_ACCESS_KEY_ID}' >> ${APP_DEPLOY_PATH}/.secrets.env && \
+             echo 'LITESTREAM_SECRET_ACCESS_KEY=${SECRET_LITESTREAM_SECRET_ACCESS_KEY}' >> ${APP_DEPLOY_PATH}/.secrets.env"
 
       - name: Dry-run migration against copy of prod database
         env:
@@ -418,7 +422,7 @@ jobs:
                 -v "\${SOURCE_VOLUME}:/source:ro" \
                 -v "\${DRY_RUN_VOLUME}:/dest" \
                 alpine:3.23 \
-                sh -c "cp /source/sqlite.db /dest/sqlite.db 2>/dev/null || echo 'no existing sqlite.db (fresh database)'"
+                sh -c "cp /source/sqlite.db* /dest/ 2>/dev/null || echo 'no existing sqlite.db (fresh database)'"
 
               echo "Running migration dry-run against the copy..."
               set +e
@@ -522,6 +526,8 @@ jobs:
           SECRET_ROCKET_SECRET_KEY: ${{ secrets.ROCKET_SECRET_KEY }}
           SECRET_S3_ACCESS_KEY: ${{ secrets.CLOUDFLARE_R2_ACCESS_KEY_ID }}
           SECRET_S3_SECRET_KEY: ${{ secrets.CLOUDFLARE_R2_SECRET_ACCESS_KEY }}
+          SECRET_LITESTREAM_ACCESS_KEY_ID: ${{ secrets.CLOUDFLARE_R2_BACKUPS_ACCESS_KEY_ID }}
+          SECRET_LITESTREAM_SECRET_ACCESS_KEY: ${{ secrets.CLOUDFLARE_R2_BACKUPS_SECRET_ACCESS_KEY }}
         run: |
           cat > docker_config.json << EOF
           {
@@ -554,7 +560,9 @@ jobs:
              echo 'ROCKET_SECRET_KEY=${SECRET_ROCKET_SECRET_KEY}' >> ${APP_DEPLOY_PATH}/.secrets.env && \
              echo 'VITE_HONEYCOMB_API_KEY=${SECRET_HONEYCOMB_API_KEY}' >> ${APP_DEPLOY_PATH}/.secrets.env && \
              echo 'S3_ACCESS_KEY=${SECRET_S3_ACCESS_KEY}' >> ${APP_DEPLOY_PATH}/.secrets.env && \
-             echo 'S3_SECRET_KEY=${SECRET_S3_SECRET_KEY}' >> ${APP_DEPLOY_PATH}/.secrets.env"
+             echo 'S3_SECRET_KEY=${SECRET_S3_SECRET_KEY}' >> ${APP_DEPLOY_PATH}/.secrets.env && \
+             echo 'LITESTREAM_ACCESS_KEY_ID=${SECRET_LITESTREAM_ACCESS_KEY_ID}' >> ${APP_DEPLOY_PATH}/.secrets.env && \
+             echo 'LITESTREAM_SECRET_ACCESS_KEY=${SECRET_LITESTREAM_SECRET_ACCESS_KEY}' >> ${APP_DEPLOY_PATH}/.secrets.env"
 
       - name: Deploy application with Docker Compose
         env:

@@ -1,0 +1,14 @@
+dbs:
+  - path: /data/sqlite.db
+    replicas:
+      - type: s3
+        bucket: ${LITESTREAM_BUCKET}
+        path: db
+        endpoint: ${LITESTREAM_ENDPOINT}
+        region: auto
+        access-key-id: ${LITESTREAM_ACCESS_KEY_ID}
+        secret-access-key: ${LITESTREAM_SECRET_ACCESS_KEY}
+        sync-interval: 60s
+        snapshot-interval: 24h
+        retention: 720h
+        retention-check-interval: 6h
