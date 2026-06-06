@@ -202,3 +202,9 @@ CREATE TABLE IF NOT EXISTS video_privacy_acks (
     user_id INTEGER PRIMARY KEY REFERENCES users (id) ON DELETE CASCADE,
     acked_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+
+-- Litestream-owned bookkeeping tables. Declared here only so the migration
+-- engine recognises them as expected and doesn't try to drop them. Litestream
+-- creates and maintains the rows; the app never reads or writes them.
+CREATE TABLE IF NOT EXISTS _litestream_lock (id INTEGER);
+CREATE TABLE IF NOT EXISTS _litestream_seq (id INTEGER PRIMARY KEY, seq INTEGER);
