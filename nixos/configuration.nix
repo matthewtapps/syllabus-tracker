@@ -40,9 +40,10 @@ let
   serverTargetConfigPath = "/etc/nixos";
 in
 {
-  imports = [
-    ./hardware-configuration.nix
-  ];
+  # hardware-configuration.nix is NOT imported here; the flake's two
+  # nixosConfigurations attach it (for `syllabustracker-nixos`, against the
+  # existing droplet) or disko.nix (for `syllabustracker-fresh`, for new
+  # nixos-anywhere bootstraps) as their disk source-of-truth.
 
   boot.loader.grub.enable = true;
 
