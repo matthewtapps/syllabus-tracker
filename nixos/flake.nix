@@ -23,20 +23,39 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
-    # Closure-based activation with auto-rollback. Replaces the
-    # CI workflow's hand-rolled ssh + rsync + sudo + nixos-rebuild dance.
+    # Closure-based activation with auto-rollback.
     deploy-rs = {
       url = "github:serokell/deploy-rs";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+
+    # Runtime secrets decrypted on the host at activation via sops-nix.
+    # Host SSH ed25519 key is an age recipient (see .sops.yaml at repo root).
+    sops-nix = {
+      url = "github:Mic92/sops-nix";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+
+    # Treat ../infra/tofu as a non-flake input so the existing
+    # infra/tofu/secrets.enc.yaml is the single source of truth for
+    # runtime secrets too (no duplication between an infra-side file and
+    # a nixos-side file).
+    runtime-secrets = {
+      url = "path:../infra/tofu";
+      flake = false;
+    };
   };
 
-  outputs = { self, nixpkgs, nginx-otel, disko, deploy-rs }:
+  outputs = { self, nixpkgs, nginx-otel, disko, deploy-rs, sops-nix, runtime-secrets }:
   let
     system = "x86_64-linux";
     commonModules = [
       ./configuration.nix
       nginx-otel.nixosModules.default
+      sops-nix.nixosModules.sops
+      # Make `runtime-secrets` available to configuration.nix via
+      # specialArgs / module args.
+      ({ ... }: { _module.args.runtimeSecrets = runtime-secrets; })
     ];
   in {
     # Live config for the existing droplet. Uses hardware-configuration.nix

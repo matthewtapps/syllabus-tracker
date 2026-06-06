@@ -1,6 +1,8 @@
 {
   pkgs,
   lib,
+  config,
+  runtimeSecrets,
   ...
 }:
 
@@ -243,6 +245,42 @@ in
     "d /var/www/${domain}/placeholder 0755 root root -" # Nginx usually runs as its own user, but root can create
     "f /var/www/${domain}/placeholder/index.html 0644 root root - \"ACME Initial Setup - OK\""
   ];
+
+  # Runtime secrets via sops-nix. The host's /etc/ssh/ssh_host_ed25519_key
+  # is an age recipient on the SOPS file (see .sops.yaml), so the host
+  # decrypts at activation without any external key material.
+  # The single rendered file at /run/secrets/syllabus-tracker.env mirrors
+  # the env-var names docker-compose.nixos.yml.
+  sops = {
+    defaultSopsFile = "${runtimeSecrets}/secrets.enc.yaml";
+    defaultSopsFormat = "yaml";
+    age.sshKeyPaths = [ "/etc/ssh/ssh_host_ed25519_key" ];
+
+    secrets = {
+      honeycomb_api_key = { };
+      rocket_secret_key = { };
+      r2_videos_access_key_id = { };
+      r2_videos_secret_access_key = { };
+      r2_backups_access_key_id = { };
+      r2_backups_secret_access_key = { };
+    };
+
+    templates."syllabus-tracker.env" = {
+      owner = adminUser;
+      group = "users";
+      mode = "0400";
+      path = "/run/secrets/syllabus-tracker.env";
+      content = ''
+        HONEYCOMB_API_KEY=${config.sops.placeholder.honeycomb_api_key}
+        VITE_HONEYCOMB_API_KEY=${config.sops.placeholder.honeycomb_api_key}
+        ROCKET_SECRET_KEY=${config.sops.placeholder.rocket_secret_key}
+        S3_ACCESS_KEY=${config.sops.placeholder.r2_videos_access_key_id}
+        S3_SECRET_KEY=${config.sops.placeholder.r2_videos_secret_access_key}
+        LITESTREAM_ACCESS_KEY_ID=${config.sops.placeholder.r2_backups_access_key_id}
+        LITESTREAM_SECRET_ACCESS_KEY=${config.sops.placeholder.r2_backups_secret_access_key}
+      '';
+    };
+  };
 
   # System state version
   system.stateVersion = "23.11";

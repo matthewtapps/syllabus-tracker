@@ -37,7 +37,7 @@ services:
     env_file:
       - ./config/common.env
       - ./config/prod.env
-      - ./.secrets.env
+      - /run/secrets/syllabus-tracker.env
     environment:
       - ALLOW_DESTRUCTIVE_MIGRATIONS=${ALLOW_DESTRUCTIVE_MIGRATIONS:-false}
     volumes:
@@ -57,7 +57,7 @@ services:
     env_file:
       - config/common.env
       - config/prod.env
-      - .secrets.env
+      - /run/secrets/syllabus-tracker.env
     depends_on:
       app:
         condition: service_started
@@ -73,7 +73,7 @@ services:
     env_file:
       - ./config/common.env
       - ./config/prod.env
-      - ./.secrets.env
+      - /run/secrets/syllabus-tracker.env
     depends_on:
       app:
         condition: service_started
@@ -101,7 +101,7 @@ services:
     env_file:
       - ./config/common.env
       - ./config/prod.env
-      - ./.secrets.env
+      - /run/secrets/syllabus-tracker.env
     restart: unless-stopped
     networks:
       - internal

@@ -1,20 +1,29 @@
 # SOPS encryption config. Lives at the repo root so it governs every
 # encrypted file under the tree.
 #
-# Recipients are listed as a YAML anchor so adding/removing a key is one
-# edit. Each rule references &recipients via *recipients.
+# Recipients are listed as YAML anchors so adding/removing a key is one
+# edit. Each rule references them by *anchor.
 #
-# laptop-primary: ~/.config/sops/age/keys.txt on matt's main laptop. Used for
-#   day-to-day editing.
-# laptop-backup:  stored only in matt's password manager (1Password etc.).
-#   Disaster-recovery for laptop death. Never on disk in normal operation.
+# laptop_primary:    ~/.config/sops/age/keys.txt on matt's main laptop. Used
+#                    for day-to-day editing.
+# laptop_backup:     stored only in matt's password manager (1Password etc.).
+#                    Disaster-recovery for laptop death. Never on disk in
+#                    normal operation.
+# prod_host_ed25519: age key DERIVED from the syllabustracker-nixos droplet's
+#                    /etc/ssh/ssh_host_ed25519_key (via ssh-to-age). The host
+#                    decrypts its runtime secrets at activation via sops-nix
+#                    (see nixos/configuration.nix). This recipient is added
+#                    ONLY to secrets.enc.yaml (runtime values), NOT to
+#                    bootstrap.enc.env (which contains laptop-only tofu
+#                    bootstrap credentials).
 #
 # To rotate: edit recipients below, then `sops updatekeys <file>` on every
 # encrypted file in the repo. New encryptions use the new set automatically.
 
 keys:
-  - &laptop_primary age1dkmrzjz5zye09w3vdt74kk4q43erjqhau8ce5f0shd9uzuhjwpfqs2ntkm
-  - &laptop_backup  age1nhxka2zhzu4ynjxfq9cqqs3yv4f4k0sts5cc3tvknmzkq3x49dnshglgxv
+  - &laptop_primary    age1dkmrzjz5zye09w3vdt74kk4q43erjqhau8ce5f0shd9uzuhjwpfqs2ntkm
+  - &laptop_backup     age1nhxka2zhzu4ynjxfq9cqqs3yv4f4k0sts5cc3tvknmzkq3x49dnshglgxv
+  - &prod_host_ed25519 age1sxacxdmq7kc0v720nx46glxn67pkfqnn8xh02c95xwvjspxc7pgsnt6pyk
 
 creation_rules:
   - path_regex: infra/tofu/secrets\.enc\.yaml$
@@ -22,6 +31,7 @@ creation_rules:
       - age:
           - *laptop_primary
           - *laptop_backup
+          - *prod_host_ed25519
   - path_regex: infra/tofu/bootstrap\.enc\.env$
     key_groups:
       - age:

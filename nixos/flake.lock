@@ -99,7 +99,41 @@
         "deploy-rs": "deploy-rs",
         "disko": "disko",
         "nginx-otel": "nginx-otel",
-        "nixpkgs": "nixpkgs"
+        "nixpkgs": "nixpkgs",
+        "runtime-secrets": "runtime-secrets",
+        "sops-nix": "sops-nix"
+      }
+    },
+    "runtime-secrets": {
+      "flake": false,
+      "locked": {
+        "path": "../infra/tofu",
+        "type": "path"
+      },
+      "original": {
+        "path": "../infra/tofu",
+        "type": "path"
+      },
+      "parent": []
+    },
+    "sops-nix": {
+      "inputs": {
+        "nixpkgs": [
+          "nixpkgs"
+        ]
+      },
+      "locked": {
+        "lastModified": 1780547341,
+        "narHash": "sha256-Gq8KNx5A7hBB3uGJaj6eQfLDIz5YdLu92gqBcvHvoUo=",
+        "owner": "Mic92",
+        "repo": "sops-nix",
+        "rev": "9ed65852b6257fbeae4355bc24ecfea307ca759a",
+        "type": "github"
+      },
+      "original": {
+        "owner": "Mic92",
+        "repo": "sops-nix",
+        "type": "github"
       }
     },
     "systems": {

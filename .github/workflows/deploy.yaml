@@ -338,14 +338,7 @@ jobs:
           chmod 600 ~/.ssh/id_rsa
           ssh-keyscan -H "${NIXOS_SERVER_IP}" >> ~/.ssh/known_hosts
 
-      - name: Stage config and secrets on server
-        env:
-          SECRET_HONEYCOMB_API_KEY: ${{ secrets.HONEYCOMB_API_KEY }}
-          SECRET_ROCKET_SECRET_KEY: ${{ secrets.ROCKET_SECRET_KEY }}
-          SECRET_S3_ACCESS_KEY: ${{ secrets.R2_VIDEOS_ACCESS_KEY_ID }}
-          SECRET_S3_SECRET_KEY: ${{ secrets.R2_VIDEOS_SECRET_ACCESS_KEY }}
-          SECRET_LITESTREAM_ACCESS_KEY_ID: ${{ secrets.R2_BACKUPS_ACCESS_KEY_ID }}
-          SECRET_LITESTREAM_SECRET_ACCESS_KEY: ${{ secrets.R2_BACKUPS_SECRET_ACCESS_KEY }}
+      - name: Stage config on server
         run: |
           cat > docker_config.json << EOF
           {
@@ -363,22 +356,11 @@ jobs:
           ssh "${NIXOS_SERVER_USER}@${NIXOS_SERVER_IP}" \
             "mkdir -p ${APP_DEPLOY_PATH}/config"
 
-          # Stage just what the migrate binary needs: the config (for schema.sql
-          # + common.env + prod.env) and .secrets.env. The full app rsync still
-          # happens in deploy_application.
+          # Stage what the migrate binary needs: the config (schema.sql,
+          # common.env, prod.env).
           rsync -avz -e "ssh -i ~/.ssh/id_rsa" \
             "${GITHUB_WORKSPACE}/config" \
             "${NIXOS_SERVER_USER}@${NIXOS_SERVER_IP}:${APP_DEPLOY_PATH}"
-
-          ssh -i ~/.ssh/id_rsa \
-            "${NIXOS_SERVER_USER}@${NIXOS_SERVER_IP}" \
-            "echo 'HONEYCOMB_API_KEY=${SECRET_HONEYCOMB_API_KEY}' > ${APP_DEPLOY_PATH}/.secrets.env && \
-             echo 'ROCKET_SECRET_KEY=${SECRET_ROCKET_SECRET_KEY}' >> ${APP_DEPLOY_PATH}/.secrets.env && \
-             echo 'VITE_HONEYCOMB_API_KEY=${SECRET_HONEYCOMB_API_KEY}' >> ${APP_DEPLOY_PATH}/.secrets.env && \
-             echo 'S3_ACCESS_KEY=${SECRET_S3_ACCESS_KEY}' >> ${APP_DEPLOY_PATH}/.secrets.env && \
-             echo 'S3_SECRET_KEY=${SECRET_S3_SECRET_KEY}' >> ${APP_DEPLOY_PATH}/.secrets.env && \
-             echo 'LITESTREAM_ACCESS_KEY_ID=${SECRET_LITESTREAM_ACCESS_KEY_ID}' >> ${APP_DEPLOY_PATH}/.secrets.env && \
-             echo 'LITESTREAM_SECRET_ACCESS_KEY=${SECRET_LITESTREAM_SECRET_ACCESS_KEY}' >> ${APP_DEPLOY_PATH}/.secrets.env"
 
       - name: Dry-run migration against copy of prod database
         env:
@@ -415,7 +397,7 @@ jobs:
                 --entrypoint /app/migrate \
                 --env-file ./config/common.env \
                 --env-file ./config/prod.env \
-                --env-file ./.secrets.env \
+                --env-file /run/secrets/syllabus-tracker.env \
                 -e ALLOW_DESTRUCTIVE_MIGRATIONS="${ALLOW_DESTRUCTIVE_MIGRATIONS}" \
                 -v "\${DRY_RUN_VOLUME}:/app/data" \
                 "\${APP_IMAGE}" \
@@ -454,7 +436,7 @@ jobs:
                 --entrypoint /app/migrate \
                 --env-file ./config/common.env \
                 --env-file ./config/prod.env \
-                --env-file ./.secrets.env \
+                --env-file /run/secrets/syllabus-tracker.env \
                 -e ALLOW_DESTRUCTIVE_MIGRATIONS="${ALLOW_DESTRUCTIVE_MIGRATIONS}" \
                 -v "\${APP_VOLUME}:/app/data" \
                 "\${APP_IMAGE}"
@@ -507,12 +489,6 @@ jobs:
           BACKEND_IMAGE_TAG: ${{ needs.build-backend.outputs.image_tag }}
           FRONTEND_IMAGE_NAME: ${{ needs.build-frontend.outputs.image_name }}
           FRONTEND_IMAGE_TAG: ${{ needs.build-frontend.outputs.image_tag }}
-          SECRET_HONEYCOMB_API_KEY: ${{ secrets.HONEYCOMB_API_KEY }}
-          SECRET_ROCKET_SECRET_KEY: ${{ secrets.ROCKET_SECRET_KEY }}
-          SECRET_S3_ACCESS_KEY: ${{ secrets.R2_VIDEOS_ACCESS_KEY_ID }}
-          SECRET_S3_SECRET_KEY: ${{ secrets.R2_VIDEOS_SECRET_ACCESS_KEY }}
-          SECRET_LITESTREAM_ACCESS_KEY_ID: ${{ secrets.R2_BACKUPS_ACCESS_KEY_ID }}
-          SECRET_LITESTREAM_SECRET_ACCESS_KEY: ${{ secrets.R2_BACKUPS_SECRET_ACCESS_KEY }}
         run: |
           cat > docker_config.json << EOF
           {
@@ -527,27 +503,14 @@ jobs:
           ssh "${NIXOS_SERVER_USER}@${NIXOS_SERVER_IP}" "mkdir -p ~/.docker"
           scp docker_config.json "${NIXOS_SERVER_USER}@${NIXOS_SERVER_IP}:~/.docker/config.json"
 
-          # Ensure application directories exist
           ssh "${NIXOS_SERVER_USER}@${NIXOS_SERVER_IP}" \
             "mkdir -p ${APP_DEPLOY_PATH}/config && mkdir -p ${APP_DEPLOY_PATH}/nginx"
 
-          # Copy application files
           rsync -avz --delete -e "ssh -i ~/.ssh/id_rsa" \
             "${GITHUB_WORKSPACE}/docker-compose.nixos.yml" \
             "${GITHUB_WORKSPACE}/config" \
             "${GITHUB_WORKSPACE}/nginx" \
             "${NIXOS_SERVER_USER}@${NIXOS_SERVER_IP}:${APP_DEPLOY_PATH}"
-
-          # Create secrets file
-          ssh -i ~/.ssh/id_rsa \
-            "${NIXOS_SERVER_USER}@${NIXOS_SERVER_IP}" \
-            "echo 'HONEYCOMB_API_KEY=${SECRET_HONEYCOMB_API_KEY}' > ${APP_DEPLOY_PATH}/.secrets.env && \
-             echo 'ROCKET_SECRET_KEY=${SECRET_ROCKET_SECRET_KEY}' >> ${APP_DEPLOY_PATH}/.secrets.env && \
-             echo 'VITE_HONEYCOMB_API_KEY=${SECRET_HONEYCOMB_API_KEY}' >> ${APP_DEPLOY_PATH}/.secrets.env && \
-             echo 'S3_ACCESS_KEY=${SECRET_S3_ACCESS_KEY}' >> ${APP_DEPLOY_PATH}/.secrets.env && \
-             echo 'S3_SECRET_KEY=${SECRET_S3_SECRET_KEY}' >> ${APP_DEPLOY_PATH}/.secrets.env && \
-             echo 'LITESTREAM_ACCESS_KEY_ID=${SECRET_LITESTREAM_ACCESS_KEY_ID}' >> ${APP_DEPLOY_PATH}/.secrets.env && \
-             echo 'LITESTREAM_SECRET_ACCESS_KEY=${SECRET_LITESTREAM_SECRET_ACCESS_KEY}' >> ${APP_DEPLOY_PATH}/.secrets.env"
 
       - name: Deploy application with Docker Compose
         env:
