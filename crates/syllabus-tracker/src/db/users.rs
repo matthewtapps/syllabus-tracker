@@ -52,7 +52,7 @@ pub async fn update_user_password(
     new_password: &str,
 ) -> Result<(), AppError> {
     info!("Updating user password");
-    let hashed_password = bcrypt::hash(new_password, bcrypt::DEFAULT_COST)?;
+    let hashed_password = bcrypt::hash(new_password, crate::db::BCRYPT_COST)?;
 
     sqlx::query!(
         "UPDATE users SET password = ? WHERE id = ?",
@@ -179,7 +179,7 @@ pub async fn create_user(
         ));
     }
 
-    let hashed_password = bcrypt::hash(password, bcrypt::DEFAULT_COST)?;
+    let hashed_password = bcrypt::hash(password, crate::db::BCRYPT_COST)?;
 
     let res = sqlx::query!(
         "INSERT INTO users (username, display_name, password, role) VALUES (?, ?, ?, ?)",
@@ -333,7 +333,7 @@ pub async fn create_self_registered_user(
         return Err(AppError::Internal("Username already taken".to_string()));
     }
 
-    let hashed = bcrypt::hash(password, bcrypt::DEFAULT_COST)?;
+    let hashed = bcrypt::hash(password, crate::db::BCRYPT_COST)?;
     let display_name = match (first_name, last_name) {
         (Some(f), Some(l)) => format!("{} {}", f, l),
         (Some(f), None) => f.to_string(),

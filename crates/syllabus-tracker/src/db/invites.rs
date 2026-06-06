@@ -93,7 +93,7 @@ pub async fn claim_invite(
         return Err(AppError::Internal("Username already taken".to_string()));
     }
 
-    let hashed = bcrypt::hash(password, bcrypt::DEFAULT_COST)?;
+    let hashed = bcrypt::hash(password, crate::db::BCRYPT_COST)?;
     let now = Utc::now().naive_utc();
 
     // Apply both updates. SQLite single-connection writes are serialized by the

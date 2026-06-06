@@ -36,3 +36,13 @@ pub use crate::models::{
     Collection, DashboardVideoOverview, DashboardVideoRow, StorageObjectRow, StorageOverview,
     StudentWatchActivityRow, VideoStatsSnapshot, WatchAggregateRow,
 };
+
+// Production uses bcrypt's default cost (currently 12). Tests use the minimum
+// (4) because each hash at cost 12 takes ~220ms, which dominates test runtime
+// on suites that create users in setup. Cost 4 is ~250x faster. Gated on the
+// `test-support` feature, not `cfg(test)`, because tests live in the binary
+// crate but call into this library crate; `cfg(test)` is not propagated.
+#[cfg(feature = "test-support")]
+pub(crate) const BCRYPT_COST: u32 = 4;
+#[cfg(not(feature = "test-support"))]
+pub(crate) const BCRYPT_COST: u32 = bcrypt::DEFAULT_COST;

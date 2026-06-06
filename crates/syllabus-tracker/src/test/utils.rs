@@ -17,10 +17,11 @@ pub mod test_utils {
     use serde_json::json;
     use sqlx::{Pool, Sqlite, SqlitePool};
     use std::collections::HashMap;
-    use std::sync::Once;
+    use std::sync::{Once, OnceLock};
     use tracing::log::LevelFilter;
 
     static INIT: Once = Once::new();
+    static SCHEMA: OnceLock<String> = OnceLock::new();
     static STANDARD_PASSWORD: &str = "password123";
 
     #[derive(Default)]
@@ -149,11 +150,13 @@ pub mod test_utils {
 
             let pool = SqlitePool::connect("sqlite::memory:").await?;
 
-            let schema_path = dotenvy::var("SCHEMA_PATH").expect("SCHEMA_PATH not set");
-            let schema = read_schema_file_to_string(std::path::Path::new(&schema_path))
-                .expect("Failed to read schema file");
+            let schema = SCHEMA.get_or_init(|| {
+                let schema_path = dotenvy::var("SCHEMA_PATH").expect("SCHEMA_PATH not set");
+                read_schema_file_to_string(std::path::Path::new(&schema_path))
+                    .expect("Failed to read schema file")
+            });
 
-            migrate_database_declaratively(pool.clone(), &schema, false).await?;
+            migrate_database_declaratively(pool.clone(), schema, false).await?;
 
             let mut user_id_map: HashMap<String, i64> = HashMap::new();
             let mut technique_id_map: HashMap<String, i64> = HashMap::new();
