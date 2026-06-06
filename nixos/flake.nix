@@ -61,23 +61,15 @@
       ];
     };
 
-    # deploy-rs target. Invoked as `nix run github:serokell/deploy-rs -- ./nixos#syllabustracker`
-    # from CI or `deploy .#syllabustracker` from a shell inside this dir
-    # with deploy-rs in PATH. Activation runs as root via syllabusadmin's
-    # NOPASSWD sudo (narrow /nix/store/*/activate + switch-to-configuration
-    # rules in configuration.nix). magicRollback auto-reverts if
-    # reachability can't be confirmed after activation.
-    #
-    # remoteBuild = true ships the flake source to the target and builds
-    # the closure there, so CI runners don't need nix-derivation infra
-    # (just the `nix` CLI to invoke deploy-rs).
+    # SSH and activate as root; CI key authorized in configuration.nix.
+    # remoteBuild = true builds the closure on the target.
     deploy = {
       remoteBuild = true;
       nodes.syllabustracker = {
         hostname = "170.64.159.153";
         profiles.system = {
           user = "root";
-          sshUser = "syllabusadmin";
+          sshUser = "root";
           magicRollback = true;
           path = deploy-rs.lib.${system}.activate.nixos
             self.nixosConfigurations.syllabustracker-nixos;

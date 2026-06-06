@@ -278,11 +278,6 @@ jobs:
           extra-conf: |
             experimental-features = nix-command flakes
 
-      # Caches /nix/store between runs via GHA's built-in cache. First
-      # cached run is still slow (populating); subsequent runs reuse
-      # nixpkgs, flake inputs, deploy-rs, and the activation derivations.
-      # Keyed on the flake.lock hash so unrelated commits hit the same
-      # cache.
       - name: Restore /nix/store cache
         uses: nix-community/cache-nix-action@v5
         with:
@@ -302,15 +297,8 @@ jobs:
           chmod 600 ~/.ssh/id_ed25519
           ssh-keyscan -H "${NIXOS_SERVER_IP}" >> ~/.ssh/known_hosts
 
-      - name: Deploy with deploy-rs (remote-build on target)
-        run: |
-          # remoteBuild = true is set in nixos/flake.nix; deploy-rs ships
-          # the flake source to the target and builds the closure there.
-          # deploy-rs runs `nix flake check` against the flake before
-          # deploying, which exercises the nixosConfigurations and the
-          # deploy-rs schema/activation checks. No separate lint job
-          # needed.
-          nix run github:serokell/deploy-rs -- ./nixos#syllabustracker
+      - name: Deploy with deploy-rs
+        run: nix run github:serokell/deploy-rs -- ./nixos#syllabustracker
 
       - name: Complete NixOS deploy step
         run: |

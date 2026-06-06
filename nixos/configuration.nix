@@ -117,41 +117,13 @@ in
   };
 
   users.users.root.openssh.authorizedKeys.keys = [
+    ciDeployKey
+    laptopAdminKey
     rootRecoveryKey
   ];
 
   security.sudo.wheelNeedsPassword = true;
 
-  # Three narrow NOPASSWD entries for deploy-rs activations. Sudo's
-  # wildcard matching handles /nix/store/* paths (content-addressed,
-  # change every release). Other sudo operations still prompt.
-  #
-  # /activate                   - the deploy-rs activation wrapper script
-  # /bin/switch-to-configuration - NixOS's activation entry point
-  # /bin/activate-rs            - deploy-rs's binary, used by the
-  #                               magicRollback "Creating activation
-  #                               waiter" step that SSHes back in to
-  #                               schedule the rollback timer. Without
-  #                               this rule, CI deploys fail at the
-  #                               waiter setup because no tty for sudo
-  #                               to prompt on.
-  security.sudo.extraRules = [
-    {
-      users = [ adminUser ];
-      commands = [
-        { command = "/nix/store/*/activate"; options = [ "NOPASSWD" ]; }
-        { command = "/nix/store/*/bin/switch-to-configuration"; options = [ "NOPASSWD" ]; }
-        { command = "/nix/store/*/bin/activate-rs"; options = [ "NOPASSWD" ]; }
-      ];
-    }
-  ];
-
-  security.sudo.extraConfig = ''
-    Defaults:${adminUser} !requiretty
-  '';
-
-  # Key-only root SSH. Used as a break-glass path via rootRecoveryKey when
-  # syllabusadmin's sudo is unrecoverable (e.g. no password set).
   services.openssh.settings.PermitRootLogin = "prohibit-password";
 
   environment.systemPackages = with pkgs; [
