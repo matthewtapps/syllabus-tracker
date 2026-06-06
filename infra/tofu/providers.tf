@@ -32,3 +32,17 @@ variable "db_backups_bucket_name" {
 # token in tfvars. Token needs Account > Workers R2 Storage > Edit on this
 # account.
 provider "cloudflare" {}
+
+# Reads $GITHUB_TOKEN. PAT needs `Actions: Read and write` on this repo.
+# See infra/tofu/README.md for the PAT minting flow.
+provider "github" {
+  owner = "matthewtapps"
+}
+
+provider "sops" {}
+
+variable "github_repository" {
+  type        = string
+  description = "Repo name (without owner) for the GHA secret resources."
+  default     = "syllabus-tracker"
+}

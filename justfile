@@ -181,15 +181,15 @@ reseed-attempts:
 
 # ---- infra ----------------------------------------------------------------
 
-# Run terraform in infra/terraform/ with CLOUDFLARE_API_TOKEN sourced from
-# .secrets.env. Default action is `plan`; pass anything else, e.g.
-# `just tf init`, `just tf apply`, `just tf output`.
+# Run OpenTofu in infra/tofu/ with CLOUDFLARE_API_TOKEN and GITHUB_TOKEN
+# sourced from .secrets.env. Default action is `plan`; pass anything else,
+# e.g. `just tf init`, `just tf apply`, `just tf output`.
 [group('infra')]
 tf *cmd="plan":
     #!/usr/bin/env bash
     set -euo pipefail
     if [ ! -f .secrets.env ]; then
-        echo "missing .secrets.env (need CLOUDFLARE_API_TOKEN); see .secrets.template.env" >&2
+        echo "missing .secrets.env (need CLOUDFLARE_API_TOKEN, GITHUB_TOKEN); see .secrets.template.env" >&2
         exit 1
     fi
     set -a
@@ -199,8 +199,19 @@ tf *cmd="plan":
         echo "CLOUDFLARE_API_TOKEN not set in .secrets.env" >&2
         exit 1
     fi
-    cd infra/terraform
-    terraform {{cmd}}
+    if [ -z "${GITHUB_TOKEN:-}" ]; then
+        echo "GITHUB_TOKEN not set in .secrets.env (need a fine-scoped PAT with Actions: Read and write)" >&2
+        exit 1
+    fi
+    cd infra/tofu
+    tofu {{cmd}}
+
+# Open infra/tofu/secrets.enc.yaml in $EDITOR via sops, transparently
+# decrypting on open and re-encrypting on save. Requires an age key at
+# ~/.config/sops/age/keys.txt; see infra/tofu/README.md.
+[group('infra')]
+sops:
+    sops infra/tofu/secrets.enc.yaml
 
 # ---- housekeeping ---------------------------------------------------------
 

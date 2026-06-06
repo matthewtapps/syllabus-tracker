@@ -49,8 +49,10 @@
             sqlfluff
             sqls
             postgresql_16
-            terraform
+            opentofu
             terraform-ls
+            age
+            ssh-to-age
             htmx-lsp
             nodePackages.prettier
             djlint

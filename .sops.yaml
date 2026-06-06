@@ -1,0 +1,15 @@
+# SOPS encryption config. Lives at the repo root so it governs every
+# encrypted file under the tree.
+#
+# To bootstrap:
+#   1. age-keygen -o ~/.config/sops/age/keys.txt
+#   2. Replace AGE_KEY_PLACEHOLDER below with the `# public key:` line printed
+#      by age-keygen (starts with `age1...`).
+#   3. Commit this file. The PUBLIC key is safe to commit; only ~/.config/sops/
+#      contains the private key.
+#
+# See infra/tofu/README.md for the full bootstrap walkthrough.
+
+creation_rules:
+  - path_regex: infra/tofu/secrets\.enc\.yaml$
+    age: AGE_KEY_PLACEHOLDER
