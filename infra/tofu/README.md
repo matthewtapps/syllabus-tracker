@@ -11,9 +11,9 @@ The `tofu` binary comes from the dev shell (`flake.nix`). `terraform` was remove
 
 ### 1. Bootstrap tokens
 
-You need two API tokens before the first `tofu apply`. Both go in `.secrets.env` at the repo root (see `.secrets.template.env`).
+You need two API tokens before the first `tofu apply`. Both go in a SOPS-encrypted env file at `infra/tofu/bootstrap.enc.env`, decrypted in-memory by `just tf` via `sops exec-env`. Plaintext never touches disk.
 
-**Cloudflare**: at https://dash.cloudflare.com/profile/api-tokens, create a token with `Account > Workers R2 Storage > Edit`. Put in `.secrets.env` as `CLOUDFLARE_API_TOKEN`.
+**Cloudflare**: at https://dash.cloudflare.com/profile/api-tokens, create a token with `Account > Workers R2 Storage > Edit`.
 
 **GitHub PAT**: at https://github.com/settings/personal-access-tokens, create a fine-scoped token:
 
@@ -21,26 +21,76 @@ You need two API tokens before the first `tofu apply`. Both go in `.secrets.env`
 - Repository access: `syllabus-tracker` only
 - Permissions: `Repository permissions > Secrets > Read and write`, `Repository permissions > Actions > Read and write`
 
-Put in `.secrets.env` as `GITHUB_TOKEN`.
+Run `just sops-bootstrap`. SOPS creates and opens the file in `$EDITOR`. Paste:
+
+```
+CLOUDFLARE_API_TOKEN=...
+GITHUB_TOKEN=...
+```
+
+Save. SOPS encrypts in place. The encrypted file is safe to commit.
 
 ### 2. Age key for SOPS
 
+Two recipients are configured by default in `.sops.yaml`: the **primary** key on your laptop (used for day-to-day editing) and a **backup** key stored only in your password manager (disaster recovery if the laptop dies). Either key alone can decrypt; both are independent.
+
+**Generate the primary key, passphrase-protected**:
+
 ```sh
 mkdir -p ~/.config/sops/age
-age-keygen -o ~/.config/sops/age/keys.txt
+age-keygen | age -p -a -o ~/.config/sops/age/keys.txt.age
 ```
 
-This generates a key pair. The PUBLIC key (a single line starting with `age1...`) is printed to stderr and also lives as the `# public key:` comment in the file. Copy it.
+This generates a fresh key, immediately wraps it in passphrase encryption, and writes the encrypted form to `~/.config/sops/age/keys.txt.age`. The plaintext key is never written to disk. age prompts for a passphrase during the encryption; use something strong, you'll type it once per shell session.
 
-Replace `AGE_KEY_PLACEHOLDER` in `.sops.yaml` (at the repo root) with the public key:
+Capture the public key (printed to stderr by `age-keygen`) for `.sops.yaml`.
+
+**Generate the backup key** (plain, no passphrase: simplest path):
+
+```sh
+age-keygen
+```
+
+`age-keygen` prints both the public and private (`AGE-SECRET-KEY-1...`) to stdout. **Save the private key into your password manager immediately**, then close the terminal so it's gone from scrollback. Do NOT write it to disk on this laptop. The public key goes into `.sops.yaml`.
+
+**Update `.sops.yaml`** with both public keys (they're committed; pubkeys are safe to publish):
 
 ```yaml
+keys:
+  - &laptop_primary age1abc...xyz   # from age-keygen above
+  - &laptop_backup  age1def...uvw   # from the backup keypair
+
 creation_rules:
   - path_regex: infra/tofu/secrets\.enc\.yaml$
-    age: age1abc...xyz
+    key_groups:
+      - age: [*laptop_primary, *laptop_backup]
+  - path_regex: infra/tofu/bootstrap\.enc\.env$
+    key_groups:
+      - age: [*laptop_primary, *laptop_backup]
 ```
 
-The private key at `~/.config/sops/age/keys.txt` is what decrypts. Back it up (password manager, hardware token, paper). Losing it means re-keying every secret.
+**Per-session unlock**:
+
+```sh
+just unlock
+```
+
+Prompts for the passphrase once, caches the decrypted key in `/dev/shm/sops-age-key-$UID` (RAM-backed tmpfs, never on persistent storage). Subsequent `just tf`, `just sops`, and `just sops-bootstrap` use the cache automatically.
+
+```sh
+just lock
+```
+
+Wipes the cached key. Next invocation prompts again.
+
+Shell-agnostic by design: works the same in bash, zsh, nushell, fish. The cache survives across commands and shell sessions but clears on reboot.
+
+**Recovery (laptop dies)**:
+
+1. On the replacement machine, recover the backup `AGE-SECRET-KEY-1...` from your password manager.
+2. `mkdir -p ~/.config/sops/age && echo "AGE-SECRET-KEY-1..." > ~/.config/sops/age/keys.txt`.
+3. SOPS auto-discovers it at the default path. You can decrypt everything.
+4. Optionally: generate a new primary keypair on the new laptop, add its pubkey to `.sops.yaml`, run `sops updatekeys` on every encrypted file, remove the old primary's pubkey. The backup key can stay or be re-rolled depending on whether you trust it post-incident.
 
 ### 3. Create the encrypted secrets file
 

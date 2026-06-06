@@ -1,15 +1,29 @@
 # SOPS encryption config. Lives at the repo root so it governs every
 # encrypted file under the tree.
 #
-# To bootstrap:
-#   1. age-keygen -o ~/.config/sops/age/keys.txt
-#   2. Replace AGE_KEY_PLACEHOLDER below with the `# public key:` line printed
-#      by age-keygen (starts with `age1...`).
-#   3. Commit this file. The PUBLIC key is safe to commit; only ~/.config/sops/
-#      contains the private key.
+# Recipients are listed as a YAML anchor so adding/removing a key is one
+# edit. Each rule references &recipients via *recipients.
 #
-# See infra/tofu/README.md for the full bootstrap walkthrough.
+# laptop-primary: ~/.config/sops/age/keys.txt on matt's main laptop. Used for
+#   day-to-day editing.
+# laptop-backup:  stored only in matt's password manager (1Password etc.).
+#   Disaster-recovery for laptop death. Never on disk in normal operation.
+#
+# To rotate: edit recipients below, then `sops updatekeys <file>` on every
+# encrypted file in the repo. New encryptions use the new set automatically.
+
+keys:
+  - &laptop_primary age1dkmrzjz5zye09w3vdt74kk4q43erjqhau8ce5f0shd9uzuhjwpfqs2ntkm
+  - &laptop_backup  age1nhxka2zhzu4ynjxfq9cqqs3yv4f4k0sts5cc3tvknmzkq3x49dnshglgxv
 
 creation_rules:
   - path_regex: infra/tofu/secrets\.enc\.yaml$
-    age: age1dkmrzjz5zye09w3vdt74kk4q43erjqhau8ce5f0shd9uzuhjwpfqs2ntkm
+    key_groups:
+      - age:
+          - *laptop_primary
+          - *laptop_backup
+  - path_regex: infra/tofu/bootstrap\.enc\.env$
+    key_groups:
+      - age:
+          - *laptop_primary
+          - *laptop_backup
