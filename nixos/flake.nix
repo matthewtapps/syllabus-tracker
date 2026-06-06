@@ -81,9 +81,10 @@
     };
 
     # SSH and activate as root; CI key authorized in configuration.nix.
-    # remoteBuild = true builds the closure on the target.
+    # Build in CI (warm /nix/store cache, plenty of RAM) and copy the
+    # closure to the droplet.
     deploy = {
-      remoteBuild = true;
+      remoteBuild = false;
       nodes.syllabustracker = {
         hostname = "170.64.159.153";
         profiles.system = {

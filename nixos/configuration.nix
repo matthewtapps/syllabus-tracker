@@ -22,12 +22,6 @@ let
   ciDeployKey     = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBmNW5Q6uU+XoWIzcZrRpl2ClFbMjLoZQ4tkk5xb59D4 ci-deploy@syllabus-tracker";
   rootRecoveryKey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEXmD+68A7qlUOaDXUEF0AbOL3ZMJzqgGZIXw+jNxtCJ root-recovery@syllabus-tracker";
 
-  # Pre-existing keys, kept temporarily so the in-flight CI key rotation can
-  # land before they're removed. Drop in a follow-up commit once the new
-  # ciDeployKey is confirmed working from a real CI run.
-  legacyAdminSshKey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEQG/SNksegRf+4EUWzyInTY09rKR3xOwrX91ZjqIbKe matt@Matt-DESKTOP-NIXOS";
-  legacyDevSshKey   = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPh++awEjCHnVU2eGPSADBgrBzr1h4lGqbSG0ZRotT/W matt@Matt-DESKTOP-NIXOS";
-
   publicIPv4 = "170.64.159.153";
   publicIPv4Prefix = 19;
   gatewayIPv4 = "170.64.128.1";
@@ -112,9 +106,6 @@ in
     ];
     openssh.authorizedKeys.keys = [
       laptopAdminKey
-      ciDeployKey
-      legacyAdminSshKey
-      legacyDevSshKey
     ];
   };
 
