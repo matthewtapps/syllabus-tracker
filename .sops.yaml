@@ -12,4 +12,4 @@
 
 creation_rules:
   - path_regex: infra/tofu/secrets\.enc\.yaml$
-    age: AGE_KEY_PLACEHOLDER
+    age: age1dkmrzjz5zye09w3vdt74kk4q43erjqhau8ce5f0shd9uzuhjwpfqs2ntkm
