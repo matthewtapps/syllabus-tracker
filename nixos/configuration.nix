@@ -202,7 +202,9 @@ in
   # Docker
   virtualisation.docker = {
     enable = true;
-    package = pkgs.docker; # nixos-24.11 ships Docker 27.x
+    # `pkgs.docker` in nixos-25.11 currently points at docker_28, which was
+    # marked insecure (unmaintained since Nov 2025). Pin the next stable major.
+    package = pkgs.docker_29;
   };
 
   # Nginx and ACME (Let's Encrypt) for SSL
