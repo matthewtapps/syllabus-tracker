@@ -11,9 +11,13 @@ data "sops_file" "github_secrets" {
 }
 
 resource "github_actions_secret" "app" {
-  for_each = data.sops_file.github_secrets.data
+  # The whole SOPS data map is sensitive, which makes it illegal as a
+  # for_each argument (keys would leak into resource addresses). The keys
+  # themselves are just secret *names*, not values, so we strip the
+  # sensitivity flag from the key set and look values up at use site.
+  for_each = nonsensitive(toset(keys(data.sops_file.github_secrets.data)))
 
-  repository      = var.github_repository
-  secret_name     = upper(each.key)
-  plaintext_value = each.value
+  repository  = var.github_repository
+  secret_name = upper(each.key)
+  value       = data.sops_file.github_secrets.data[each.key]
 }

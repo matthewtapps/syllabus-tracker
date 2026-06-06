@@ -357,10 +357,10 @@ jobs:
         env:
           SECRET_HONEYCOMB_API_KEY: ${{ secrets.HONEYCOMB_API_KEY }}
           SECRET_ROCKET_SECRET_KEY: ${{ secrets.ROCKET_SECRET_KEY }}
-          SECRET_S3_ACCESS_KEY: ${{ secrets.CLOUDFLARE_R2_ACCESS_KEY_ID }}
-          SECRET_S3_SECRET_KEY: ${{ secrets.CLOUDFLARE_R2_SECRET_ACCESS_KEY }}
-          SECRET_LITESTREAM_ACCESS_KEY_ID: ${{ secrets.CLOUDFLARE_R2_BACKUPS_ACCESS_KEY_ID }}
-          SECRET_LITESTREAM_SECRET_ACCESS_KEY: ${{ secrets.CLOUDFLARE_R2_BACKUPS_SECRET_ACCESS_KEY }}
+          SECRET_S3_ACCESS_KEY: ${{ secrets.R2_VIDEOS_ACCESS_KEY_ID }}
+          SECRET_S3_SECRET_KEY: ${{ secrets.R2_VIDEOS_SECRET_ACCESS_KEY }}
+          SECRET_LITESTREAM_ACCESS_KEY_ID: ${{ secrets.R2_BACKUPS_ACCESS_KEY_ID }}
+          SECRET_LITESTREAM_SECRET_ACCESS_KEY: ${{ secrets.R2_BACKUPS_SECRET_ACCESS_KEY }}
         run: |
           cat > docker_config.json << EOF
           {
@@ -524,10 +524,10 @@ jobs:
           FRONTEND_IMAGE_TAG: ${{ needs.build-frontend.outputs.image_tag }}
           SECRET_HONEYCOMB_API_KEY: ${{ secrets.HONEYCOMB_API_KEY }}
           SECRET_ROCKET_SECRET_KEY: ${{ secrets.ROCKET_SECRET_KEY }}
-          SECRET_S3_ACCESS_KEY: ${{ secrets.CLOUDFLARE_R2_ACCESS_KEY_ID }}
-          SECRET_S3_SECRET_KEY: ${{ secrets.CLOUDFLARE_R2_SECRET_ACCESS_KEY }}
-          SECRET_LITESTREAM_ACCESS_KEY_ID: ${{ secrets.CLOUDFLARE_R2_BACKUPS_ACCESS_KEY_ID }}
-          SECRET_LITESTREAM_SECRET_ACCESS_KEY: ${{ secrets.CLOUDFLARE_R2_BACKUPS_SECRET_ACCESS_KEY }}
+          SECRET_S3_ACCESS_KEY: ${{ secrets.R2_VIDEOS_ACCESS_KEY_ID }}
+          SECRET_S3_SECRET_KEY: ${{ secrets.R2_VIDEOS_SECRET_ACCESS_KEY }}
+          SECRET_LITESTREAM_ACCESS_KEY_ID: ${{ secrets.R2_BACKUPS_ACCESS_KEY_ID }}
+          SECRET_LITESTREAM_SECRET_ACCESS_KEY: ${{ secrets.R2_BACKUPS_SECRET_ACCESS_KEY }}
         run: |
           cat > docker_config.json << EOF
           {

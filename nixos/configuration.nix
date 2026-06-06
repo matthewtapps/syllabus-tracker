@@ -8,10 +8,23 @@ let
   domain = "syllabustracker.matthewtapps.com";
   acmeEmail = "mail@matthewtapps.com";
 
-  adminSshKey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEQG/SNksegRf+4EUWzyInTY09rKR3xOwrX91ZjqIbKe matt@Matt-DESKTOP-NIXOS";
   adminUser = "syllabusadmin";
 
-  devSshKey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPh++awEjCHnVU2eGPSADBgrBzr1h4lGqbSG0ZRotT/W matt@Matt-DESKTOP-NIXOS";
+  # SSH keys with explicit roles. Public halves only; private halves live in:
+  # - laptopAdminKey:   ~/.ssh/id_ed25519 on matt's daily-driver laptop.
+  # - ciDeployKey:      SOPS-encrypted infra/tofu/secrets.enc.yaml, pushed
+  #                     by tofu to the GHA SSH_PRIVATE_KEY secret.
+  # - rootRecoveryKey:  matt's password manager only. Never in CI; never in
+  #                     SOPS. Break-glass for when sudo is unrecoverable.
+  laptopAdminKey  = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIIH6L78sNDUwYIeeubGuD5bSYStc3Z/Tt4d4wvfNxRp0 matt@Matt-THINKPAD-NIXOS";
+  ciDeployKey     = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBmNW5Q6uU+XoWIzcZrRpl2ClFbMjLoZQ4tkk5xb59D4 ci-deploy@syllabus-tracker";
+  rootRecoveryKey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEXmD+68A7qlUOaDXUEF0AbOL3ZMJzqgGZIXw+jNxtCJ root-recovery@syllabus-tracker";
+
+  # Pre-existing keys, kept temporarily so the in-flight CI key rotation can
+  # land before they're removed. Drop in a follow-up commit once the new
+  # ciDeployKey is confirmed working from a real CI run.
+  legacyAdminSshKey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEQG/SNksegRf+4EUWzyInTY09rKR3xOwrX91ZjqIbKe matt@Matt-DESKTOP-NIXOS";
+  legacyDevSshKey   = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPh++awEjCHnVU2eGPSADBgrBzr1h4lGqbSG0ZRotT/W matt@Matt-DESKTOP-NIXOS";
 
   publicIPv4 = "170.64.159.153";
   publicIPv4Prefix = 19;
@@ -97,10 +110,16 @@ in
       "docker"
     ];
     openssh.authorizedKeys.keys = [
-      adminSshKey
-      devSshKey
+      laptopAdminKey
+      ciDeployKey
+      legacyAdminSshKey
+      legacyDevSshKey
     ];
   };
+
+  users.users.root.openssh.authorizedKeys.keys = [
+    rootRecoveryKey
+  ];
 
   # No passwordless sudo for the admin user for better security on a server. They'll need to type their password.
   security.sudo.wheelNeedsPassword = true;
@@ -138,7 +157,9 @@ in
     Defaults:${adminUser} !requiretty
   '';
 
-  services.openssh.settings.PermitRootLogin = "no";
+  # Key-only root SSH. Used as a break-glass path via rootRecoveryKey when
+  # syllabusadmin's sudo is unrecoverable (e.g. no password set).
+  services.openssh.settings.PermitRootLogin = "prohibit-password";
 
   environment.systemPackages = with pkgs; [
     git

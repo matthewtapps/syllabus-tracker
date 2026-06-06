@@ -60,10 +60,10 @@ ssh_private_key: |
   -----BEGIN OPENSSH PRIVATE KEY-----
   REPLACE_ME
   -----END OPENSSH PRIVATE KEY-----
-cloudflare_r2_access_key_id: REPLACE_ME
-cloudflare_r2_secret_access_key: REPLACE_ME
-cloudflare_r2_backups_access_key_id: REPLACE_ME
-cloudflare_r2_backups_secret_access_key: REPLACE_ME
+r2_videos_access_key_id: REPLACE_ME
+r2_videos_secret_access_key: REPLACE_ME
+r2_backups_access_key_id: REPLACE_ME
+r2_backups_secret_access_key: REPLACE_ME
 ```
 
 The keys are lowercase by convention; OpenTofu uppercases them to produce the GHA secret names (`honeycomb_api_key` becomes `HONEYCOMB_API_KEY`).
@@ -92,10 +92,10 @@ SECRETS=(
   nixos_server_ip
   nixos_server_user
   ssh_private_key
-  cloudflare_r2_access_key_id
-  cloudflare_r2_secret_access_key
-  cloudflare_r2_backups_access_key_id
-  cloudflare_r2_backups_secret_access_key
+  r2_videos_access_key_id
+  r2_videos_secret_access_key
+  r2_backups_access_key_id
+  r2_backups_secret_access_key
 )
 for k in "${SECRETS[@]}"; do
   just tf import "github_actions_secret.app[\"$k\"]" "syllabus-tracker/$(echo "$k" | tr a-z A-Z)"
@@ -132,9 +132,9 @@ The app and Litestream each authenticate to R2 with an S3-compatible token that 
 3. Specify bucket: `syllabus-tracker-videos-prod`.
 4. Optional TTL or IP allow-list (skip for now).
 5. Create. **Copy the Access Key ID and Secret Access Key.** The secret is shown exactly once.
-6. `just sops`, paste into `cloudflare_r2_access_key_id` and `cloudflare_r2_secret_access_key`. Save. `just tf apply`.
+6. `just sops`, paste into `r2_videos_access_key_id` and `r2_videos_secret_access_key`. Save. `just tf apply`.
 
-**For the backups bucket:** same flow, but step 3 specifies `syllabus-tracker-db-backups-prod`, and step 6 uses `cloudflare_r2_backups_access_key_id` and `cloudflare_r2_backups_secret_access_key`.
+**For the backups bucket:** same flow, but step 3 specifies `syllabus-tracker-db-backups-prod`, and step 6 uses `r2_backups_access_key_id` and `r2_backups_secret_access_key`.
 
 Do not reuse the videos token for backups, or vice versa. The whole point of separate tokens is blast-radius separation.
 

@@ -38,15 +38,16 @@ The Cloudflare Terraform provider doesn't expose a versioning resource yet. Togg
 2. Permissions: **Object Read & Write**.
 3. Specify bucket: `syllabus-tracker-db-backups-prod`. **Do not** reuse the videos token; the whole point is blast-radius separation.
 4. Create. **Copy the Access Key ID and Secret Access Key.** The secret is shown exactly once.
-5. Set the GitHub Actions secrets:
-   ```sh
-   gh secret set CLOUDFLARE_R2_BACKUPS_ACCESS_KEY_ID         # paste Access Key ID
-   gh secret set CLOUDFLARE_R2_BACKUPS_SECRET_ACCESS_KEY     # paste Secret Access Key
+5. Add to SOPS via `just sops`:
+   ```yaml
+   r2_backups_access_key_id: <paste Access Key ID>
+   r2_backups_secret_access_key: <paste Secret Access Key>
    ```
+   Save. Then `just tf apply` pushes them to GitHub Actions as `R2_BACKUPS_ACCESS_KEY_ID` and `R2_BACKUPS_SECRET_ACCESS_KEY`.
 
 The deploy workflow (`.github/workflows/deploy.yaml`) writes them into `.secrets.env` on the prod host as `LITESTREAM_ACCESS_KEY_ID` and `LITESTREAM_SECRET_ACCESS_KEY` where the Litestream container picks them up via `env_file`.
 
-The non-secret bits (`LITESTREAM_BUCKET`, `LITESTREAM_ENDPOINT`) live in `config/prod.env` and are also Terraform outputs in case they ever need to change.
+The non-secret bits (`LITESTREAM_BUCKET`, `LITESTREAM_ENDPOINT`) live in `config/prod.env` and are also OpenTofu outputs in case they ever need to change.
 
 ### 4. Deploy
 
