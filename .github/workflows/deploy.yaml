@@ -253,10 +253,6 @@ jobs:
 
     env:
       NIXOS_SERVER_IP: ${{ secrets.NIXOS_SERVER_IP }}
-      NIXOS_SERVER_USER: ${{ secrets.NIXOS_SERVER_USER }}
-      NIXOS_CONFIG_REPO_PATH: "nixos"
-      SERVER_TARGET_CONFIG_PATH: "/etc/nixos"
-      SERVER_TEMP_CONFIG_PATH: "/home/${{ secrets.NIXOS_SERVER_USER }}/nixos_config_staging"
 
     steps:
       - uses: honeycombio/gha-buildevents@1dad608d8534ec0fdf57e7503ceb8256b5ddc531 # v4.0.0
@@ -276,44 +272,29 @@ jobs:
         with:
           ref: ${{ github.event.inputs.nixos_config_branch || github.ref }}
 
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@main
+        with:
+          extra-conf: |
+            experimental-features = nix-command flakes
+
       - name: Set up SSH
         run: |
           mkdir -p ~/.ssh
-          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
-          chmod 600 ~/.ssh/id_rsa
+          chmod 700 ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
           ssh-keyscan -H "${NIXOS_SERVER_IP}" >> ~/.ssh/known_hosts
 
-      - name: Copy NixOS configuration to server
+      - name: Deploy with deploy-rs (remote-build on target)
         run: |
-          echo "Staging NixOS files from '${GITHUB_WORKSPACE}/${NIXOS_CONFIG_REPO_PATH}/' to remote '${SERVER_TEMP_CONFIG_PATH}/'"
-          ssh -i ~/.ssh/id_rsa \
-            "${NIXOS_SERVER_USER}@${NIXOS_SERVER_IP}" \
-            "mkdir -p ${SERVER_TEMP_CONFIG_PATH}"
-
-          rsync -avz --delete -e "ssh -i ~/.ssh/id_rsa" \
-            "${GITHUB_WORKSPACE}/${NIXOS_CONFIG_REPO_PATH}/" \
-            "${NIXOS_SERVER_USER}@${NIXOS_SERVER_IP}:${SERVER_TEMP_CONFIG_PATH}/"
-
-      - name: Apply NixOS configuration
-        run: |
-          ssh -i ~/.ssh/id_rsa \
-            "${NIXOS_SERVER_USER}@${NIXOS_SERVER_IP}" \
-            "bash -s" <<EOF
-              set -ex
-              
-              echo "Copying NixOS configuration from staging to ${SERVER_TARGET_CONFIG_PATH}..."
-              sudo cp "${SERVER_TEMP_CONFIG_PATH}/configuration.nix" "${SERVER_TARGET_CONFIG_PATH}/configuration.nix"
-              sudo cp "${SERVER_TEMP_CONFIG_PATH}/hardware-configuration.nix" "${SERVER_TARGET_CONFIG_PATH}/hardware-configuration.nix"
-              sudo cp "${SERVER_TEMP_CONFIG_PATH}/flake.nix" "${SERVER_TARGET_CONFIG_PATH}/flake.nix"
-              sudo cp "${SERVER_TEMP_CONFIG_PATH}/flake.lock" "${SERVER_TARGET_CONFIG_PATH}/flake.lock"
-
-              echo "Running nixos-rebuild switch --flake ${{ github.event.inputs.force_rebuild_options }}..."
-              sudo nixos-rebuild switch \
-                --option max-jobs 1 \
-                --flake "${SERVER_TEMP_CONFIG_PATH}#syllabustracker-nixos" \
-                ${{ github.event.inputs.force_rebuild_options }}
-              echo "NixOS configuration applied."
-          EOF
+          # remoteBuild = true is set in nixos/flake.nix; deploy-rs ships
+          # the flake source to the target and builds the closure there.
+          # deploy-rs runs `nix flake check` against the flake before
+          # deploying, which exercises the nixosConfigurations and the
+          # deploy-rs schema/activation checks. No separate lint job
+          # needed.
+          nix run github:serokell/deploy-rs -- ./nixos#syllabustracker
 
       - name: Complete NixOS deploy step
         run: |

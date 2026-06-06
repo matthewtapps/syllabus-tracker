@@ -36,8 +36,6 @@ let
   privateIPv4_eth1 = "10.126.0.3";
   privateIPv4Prefix_eth1 = 20;
 
-  serverTempConfigPath = "/home/${adminUser}/nixos_config_staging";
-  serverTargetConfigPath = "/etc/nixos";
 in
 {
   # hardware-configuration.nix is NOT imported here; the flake's two
@@ -122,34 +120,17 @@ in
     rootRecoveryKey
   ];
 
-  # No passwordless sudo for the admin user for better security on a server. They'll need to type their password.
   security.sudo.wheelNeedsPassword = true;
 
+  # Two narrow NOPASSWD entries for deploy-rs activations. Sudo's wildcard
+  # matching handles /nix/store/* paths (which are content-addressed and
+  # change every release). Other sudo operations still prompt.
   security.sudo.extraRules = [
     {
       users = [ adminUser ];
       commands = [
-        {
-          # Allow running nixos-rebuild with any arguments (switch, boot, --fast, --upgrade, etc.)
-          command = "/run/current-system/sw/bin/nixos-rebuild *";
-          options = [ "NOPASSWD" ]; # Allow this specific command pattern without a password
-        }
-        {
-          command = "/run/current-system/sw/bin/cp ${serverTempConfigPath}/configuration.nix ${serverTargetConfigPath}/configuration.nix";
-          options = [ "NOPASSWD" ];
-        }
-        {
-          command = "/run/current-system/sw/bin/cp ${serverTempConfigPath}/hardware-configuration.nix ${serverTargetConfigPath}/hardware-configuration.nix";
-          options = [ "NOPASSWD" ];
-        }
-        {
-          command = "/run/current-system/sw/bin/cp ${serverTempConfigPath}/flake.nix ${serverTargetConfigPath}/flake.nix";
-          options = [ "NOPASSWD" ];
-        }
-        {
-          command = "/run/current-system/sw/bin/cp ${serverTempConfigPath}/flake.lock ${serverTargetConfigPath}/flake.lock";
-          options = [ "NOPASSWD" ];
-        }
+        { command = "/nix/store/*/activate"; options = [ "NOPASSWD" ]; }
+        { command = "/nix/store/*/bin/switch-to-configuration"; options = [ "NOPASSWD" ]; }
       ];
     }
   ];
