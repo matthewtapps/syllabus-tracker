@@ -42,8 +42,14 @@ jobs:
     runs-on: ubuntu-latest
     environment: sillybus
     outputs:
-      vm_ip:          ${{ steps.read.outputs.vm_ip }}
-      host_age_ready: ${{ steps.read.outputs.host_age_ready }}
+      vm_ip:               ${{ steps.read.outputs.vm_ip }}
+      host_age_ready:      ${{ steps.read.outputs.host_age_ready }}
+      host_age_recipient:  ${{ steps.read.outputs.host_age_recipient }}
+      # Browser ingest is a job output because build_frontend needs it
+      # at image-build time (Vite bakes VITE_* env into the bundle).
+      # GHA job outputs are masked by default for non-trivial values
+      # passed through ::add-mask::; we explicitly mask just in case.
+      vite_honeycomb_api_key: ${{ steps.read.outputs.vite_honeycomb_api_key }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - uses: opentofu/setup-opentofu@v2
@@ -63,7 +69,11 @@ jobs:
           tofu apply -refresh-only -auto-approve -input=false
           VM_IP=$(tofu output -raw _platform_vm_ip)
           HOST_AGE=$(tofu output -raw _platform_host_age_recipient)
+          VITE_HC=$(tofu output -raw _platform_honeycomb_browser_ingest)
+          echo "::add-mask::$VITE_HC"
           echo "vm_ip=$VM_IP" >> "$GITHUB_OUTPUT"
+          echo "host_age_recipient=$HOST_AGE" >> "$GITHUB_OUTPUT"
+          echo "vite_honeycomb_api_key=$VITE_HC" >> "$GITHUB_OUTPUT"
           if [ -n "$HOST_AGE" ]; then
             echo "host_age_ready=true" >> "$GITHUB_OUTPUT"
           else
@@ -172,6 +182,7 @@ jobs:
           build-args: |
             VITE_API_URL=/api
             VITE_ENVIRONMENT=production
+            VITE_HONEYCOMB_API_KEY=${{ needs.read_platform.outputs.vite_honeycomb_api_key }}
           cache-from: type=gha,scope=sillybus-frontend
           cache-to: type=gha,scope=sillybus-frontend,mode=max
 
@@ -200,15 +211,62 @@ jobs:
           chmod 600 ~/.ssh/id_ed25519
           ssh-keyscan -H "$VM_IP" >> ~/.ssh/known_hosts
 
-      - name: Ship runtime secrets
+      - name: Install sops (for runtime HC env encryption)
+        uses: nhedger/setup-sops@v2
+        with:
+          version: 3.9.4
+
+      - name: Build sillybus-honeycomb.enc.env from platform state
+        # Honeycomb ingest keys live in platform tofu state (minted by
+        # IaC, rotated via `tofu apply -replace`). Pulling them per-deploy
+        # means rotation = one tofu apply + one redeploy, no commit. The
+        # static runtime-secrets-sillybus.enc.env in this repo holds only
+        # the keys that don't change per-deploy (ROCKET_SECRET_KEY, S3_*).
+        env:
+          AWS_ACCESS_KEY_ID:     ${{ secrets.PLATFORM_STATE_R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.PLATFORM_STATE_R2_SECRET_ACCESS_KEY }}
+          HOST_AGE_RECIPIENT:    ${{ needs.read_platform.outputs.host_age_recipient }}
         run: |
+          cd infra-sillybus
+          BACKEND=$(tofu output -raw _platform_honeycomb_backend_ingest)
+          BROWSER=$(tofu output -raw _platform_honeycomb_browser_ingest)
+          # Mask in case anything echoes them downstream.
+          echo "::add-mask::$BACKEND"
+          echo "::add-mask::$BROWSER"
+          # VITE_HONEYCOMB_API_KEY is also written to runtime here even
+          # though the build-time arg already baked it into the frontend
+          # bundle. Belt+braces in case anything (SSR future) reads it.
+          # HONEYCOMB_MARKER_KEY intentionally absent until user click-
+          # mints a Configuration Key with markers:write (see
+          # infra/docs/honeycomb-telemetry.md Path B).
+          install -m 0600 /dev/stdin /tmp/_sb_hc.env <<EOF
+          HONEYCOMB_API_KEY=$BACKEND
+          VITE_HONEYCOMB_API_KEY=$BROWSER
+          EOF
+          # Encrypt to host's age recipient only. File is transient
+          # (regenerated each deploy) so no laptop recipient needed.
+          # --config /dev/null bypasses creation_rules lookup.
+          sops --config /dev/null -e --age "$HOST_AGE_RECIPIENT" \
+            --input-type=dotenv --output-type=dotenv /tmp/_sb_hc.env > /tmp/sillybus-honeycomb.enc.env
+          shred -u /tmp/_sb_hc.env
+
+      - name: Ship runtime secrets (static + Honeycomb)
+        run: |
+          # Static keys (ROCKET_SECRET_KEY, S3_*, LITESTREAM_*) committed
+          # to the repo as runtime-secrets-sillybus.enc.env.
           rsync -avz -e "ssh -i ~/.ssh/id_ed25519" \
             runtime-secrets-sillybus.enc.env \
             "deploy@$VM_IP:/tmp/sillybus.enc.env"
+          # Honeycomb keys built in the prior step, transient per deploy.
+          rsync -avz -e "ssh -i ~/.ssh/id_ed25519" \
+            /tmp/sillybus-honeycomb.enc.env \
+            "deploy@$VM_IP:/tmp/sillybus-honeycomb.enc.env"
           ssh -i ~/.ssh/id_ed25519 "deploy@$VM_IP" '
             sudo install -o root -g root -m 0640 /tmp/sillybus.enc.env /etc/secrets.d/sillybus.enc.env
+            sudo install -o root -g root -m 0640 /tmp/sillybus-honeycomb.enc.env /etc/secrets.d/sillybus-honeycomb.enc.env
             sudo systemctl restart runtime-secrets-decrypt.service
           '
+          shred -u /tmp/sillybus-honeycomb.enc.env
 
       - name: Ship Traefik dynamic config
         run: |

@@ -34,3 +34,18 @@ output "_platform_runtime_r2_secret_access_key" {
   value       = data.terraform_remote_state.platform.outputs.cf_runtime_r2_tokens["sillybus"].secret_access_key
   sensitive   = true
 }
+
+# Honeycomb ingest keys. Backend = in-stack collector (rust app +
+# intra-stack nginx). Browser = baked into Vite bundle, ships to public
+# internet. Both minted in the "sillybus" Honeycomb environment.
+output "_platform_honeycomb_backend_ingest" {
+  description = "Re-exported sillybus-backend Honeycomb ingest key. Used by docker compose otel-collector at runtime."
+  value       = data.terraform_remote_state.platform.outputs.service_honeycomb_keys["sillybus"].backend_ingest
+  sensitive   = true
+}
+
+output "_platform_honeycomb_browser_ingest" {
+  description = "Re-exported sillybus-browser Honeycomb ingest key. Used as Vite build-arg; ends up in the public bundle."
+  value       = data.terraform_remote_state.platform.outputs.service_honeycomb_keys["sillybus"].browser_ingest
+  sensitive   = true
+}

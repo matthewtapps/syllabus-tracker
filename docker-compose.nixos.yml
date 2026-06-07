@@ -41,6 +41,10 @@ services:
       - ./config/common.env
       - ./config/prod.env
       - /run/runtime-secrets/sillybus.env
+      # Honeycomb ingest keys, written by the deploy workflow's
+      # 'Build sillybus-honeycomb.enc.env' step. Split so rotation
+      # is one tofu apply, no commit.
+      - /run/runtime-secrets/sillybus-honeycomb.env
     environment:
       - ALLOW_DESTRUCTIVE_MIGRATIONS=${ALLOW_DESTRUCTIVE_MIGRATIONS:-false}
     volumes:
@@ -61,6 +65,7 @@ services:
       - config/common.env
       - config/prod.env
       - /run/runtime-secrets/sillybus.env
+      - /run/runtime-secrets/sillybus-honeycomb.env
     depends_on:
       app:
         condition: service_started
@@ -77,6 +82,10 @@ services:
       - ./config/common.env
       - ./config/prod.env
       - /run/runtime-secrets/sillybus.env
+      # Honeycomb ingest keys, written by the deploy workflow's
+      # 'Build sillybus-honeycomb.enc.env' step. Split so rotation
+      # is one tofu apply, no commit.
+      - /run/runtime-secrets/sillybus-honeycomb.env
     depends_on:
       app:
         condition: service_started
@@ -105,6 +114,10 @@ services:
       - ./config/common.env
       - ./config/prod.env
       - /run/runtime-secrets/sillybus.env
+      # Honeycomb ingest keys, written by the deploy workflow's
+      # 'Build sillybus-honeycomb.enc.env' step. Split so rotation
+      # is one tofu apply, no commit.
+      - /run/runtime-secrets/sillybus-honeycomb.env
     restart: unless-stopped
     networks:
       - internal
