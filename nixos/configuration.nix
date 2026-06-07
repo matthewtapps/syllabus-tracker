@@ -106,6 +106,7 @@ in
     ];
     openssh.authorizedKeys.keys = [
       laptopAdminKey
+      ciDeployKey
     ];
   };
 
