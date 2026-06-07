@@ -15,8 +15,11 @@ services:
     # Bound on the per-service port the host's Traefik routes to. Stack
     # is portable — anywhere with this port free, the stack runs the
     # same way; nothing about the compose file is Traefik-specific.
+    # NGINX_HOST_PORT parameterized so sibling instances of this stack
+    # (via bootstrap-sibling.yaml) can coexist on different host ports
+    # while Traefik routes by Host header.
     ports:
-      - "127.0.0.1:8001:80"
+      - "127.0.0.1:${NGINX_HOST_PORT:-8001}:80"
     volumes:
       - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
     depends_on:

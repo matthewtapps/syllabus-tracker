@@ -1,0 +1,392 @@
+name: Bootstrap sibling sillybus instance
+
+# Spins up (or tears down) a second instance of the sillybus stack on
+# sugar-glider, alongside the primary sillybus deployment. Used for:
+#
+#   - dry-run validation of the legacy cutover path: restore the legacy
+#     SQLite from its R2 backup into a sibling instance, verify the
+#     restored data behaves correctly, then either promote or tear down.
+#   - sibling environments (staging, per-tenant clones) without
+#     standing up a second VM.
+#
+# The sibling shares the same docker-compose.nixos.yml AND the same
+# platform-tier R2 buckets + ingest keys as the primary sillybus —
+# differentiation is at the compose project name + host port + Traefik
+# routing rule level. Sibling backups go to the SAME R2 bucket; they
+# can be partitioned via litestream's path prefix (LITESTREAM_PATH).
+#
+# Inputs:
+#   action          : "deploy" (default) or "teardown"
+#   sibling_name    : compose project name, e.g. "sillybus-restored".
+#                     becomes the prefix on all containers/volumes/networks.
+#   hostname        : Host header Traefik matches. e.g. "restored.sillybus.app".
+#                     A DNS A record pointing this at sugar-glider IS NOT
+#                     created by this workflow — either add it manually
+#                     in Route 53 OR test with `curl --resolve` (see notes).
+#   host_port       : Loopback port the stack's nginx binds. Must not
+#                     collide with the primary sillybus (default 8001) or
+#                     other siblings. Default 8100.
+#   source_bucket   : optional. If non-empty, litestream restore from
+#                     s3://<source_bucket>/<litestream_path> into the
+#                     sibling's app-data volume BEFORE running migrate.
+#                     e.g. "syllabus-tracker-db-backups-prod" for legacy
+#                     cutover dry-run, OR "sillybus-db-backups-prod"
+#                     for a copy of the current primary.
+#   litestream_path : optional. Path inside source_bucket where the
+#                     litestream replica lives. Default "sqlite.db" which
+#                     matches our standard config.
+#
+# Test plan after a sibling deploy:
+#   curl --resolve restored.sillybus.app:443:168.144.173.84 \
+#     https://restored.sillybus.app/api/health
+#
+# Teardown is destructive: `docker compose down -v` deletes the volume,
+# the Traefik YAML is removed. Run teardown before the next deploy of a
+# sibling with the same name, or use a different sibling_name.
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "deploy or teardown"
+        required: true
+        default: "deploy"
+        type: choice
+        options: [deploy, teardown]
+      sibling_name:
+        description: "Compose project name (also used as the path under /srv/)"
+        required: true
+        default: "sillybus-restored"
+      hostname:
+        description: "Host header that Traefik routes to this sibling"
+        required: true
+        default: "restored.sillybus.app"
+      host_port:
+        description: "Loopback port for the sibling's intra-stack nginx"
+        required: false
+        default: "8100"
+      source_bucket:
+        description: "(deploy only) R2 bucket to restore litestream from. Empty = fresh DB."
+        required: false
+        default: ""
+      litestream_path:
+        description: "(deploy only) Path inside source_bucket. Default sqlite.db"
+        required: false
+        default: "sqlite.db"
+      allow_destructive_migrations:
+        description: "Allow destructive schema migrations on restored DB"
+        required: false
+        default: "false"
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: matthewtapps/syllabus-tracker
+  # Use the latest known-good image, NOT a fresh build. Sibling is a
+  # second instance of the SAME app code.
+  IMAGE_TAG: sillybus-latest
+
+concurrency:
+  group: bootstrap-sibling-${{ github.event.inputs.sibling_name }}
+  cancel-in-progress: false
+
+jobs:
+  read_platform:
+    runs-on: ubuntu-latest
+    environment: sillybus
+    outputs:
+      vm_ip:              ${{ steps.read.outputs.vm_ip }}
+      host_age_recipient: ${{ steps.read.outputs.host_age_recipient }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: opentofu/setup-opentofu@v2
+        with:
+          tofu_version: 1.12.x
+      - name: Read platform state
+        id: read
+        env:
+          AWS_ACCESS_KEY_ID:     ${{ secrets.PLATFORM_STATE_R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.PLATFORM_STATE_R2_SECRET_ACCESS_KEY }}
+        run: |
+          cd infra-sillybus
+          tofu init -input=false
+          tofu apply -refresh-only -auto-approve -input=false
+          VM_IP=$(tofu output -raw _platform_vm_ip)
+          HOST_AGE=$(tofu output -raw _platform_host_age_recipient)
+          echo "vm_ip=$VM_IP" >> "$GITHUB_OUTPUT"
+          echo "host_age_recipient=$HOST_AGE" >> "$GITHUB_OUTPUT"
+
+  do_action:
+    needs: read_platform
+    runs-on: ubuntu-latest
+    environment: sillybus
+    env:
+      VM_IP:           ${{ needs.read_platform.outputs.vm_ip }}
+      SIBLING_NAME:    ${{ github.event.inputs.sibling_name }}
+      HOSTNAME:        ${{ github.event.inputs.hostname }}
+      HOST_PORT:       ${{ github.event.inputs.host_port }}
+      SOURCE_BUCKET:   ${{ github.event.inputs.source_bucket }}
+      LITESTREAM_PATH: ${{ github.event.inputs.litestream_path }}
+      ALLOW_DESTRUCTIVE_MIGRATIONS: ${{ github.event.inputs.allow_destructive_migrations }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: opentofu/setup-opentofu@v2
+        with:
+          tofu_version: 1.12.x
+      - name: Install sops
+        uses: nhedger/setup-sops@v2
+        with:
+          version: 3.9.4
+
+      - name: Pull SSH key
+        env:
+          AWS_ACCESS_KEY_ID:     ${{ secrets.PLATFORM_STATE_R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.PLATFORM_STATE_R2_SECRET_ACCESS_KEY }}
+        run: |
+          cd infra-sillybus
+          tofu init -input=false
+          tofu apply -refresh-only -auto-approve -input=false
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          tofu output -raw _platform_ci_deploy_private_key > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H "$VM_IP" >> ~/.ssh/known_hosts
+
+      # ----------------------------------------------------------------
+      # TEARDOWN: shortest path. compose down -v removes containers AND
+      # volumes (intentional — sibling data is per-test). Traefik YAML
+      # removed so the hostname stops resolving to the dead stack.
+      # ----------------------------------------------------------------
+      - name: Teardown sibling
+        if: github.event.inputs.action == 'teardown'
+        run: |
+          ssh -i ~/.ssh/id_ed25519 "deploy@$VM_IP" "
+            set -e
+            if [ -d /srv/$SIBLING_NAME ]; then
+              cd /srv/$SIBLING_NAME && \
+                docker compose -p $SIBLING_NAME -f docker-compose.nixos.yml down -v --remove-orphans || true
+            fi
+            sudo install -d -o deploy -g users -m 0755 /srv/$SIBLING_NAME 2>/dev/null || true
+            sudo rm -f /srv/platform/traefik-dynamic/$SIBLING_NAME.yml || true
+            sudo rm -f /etc/secrets.d/$SIBLING_NAME.enc.env /etc/secrets.d/$SIBLING_NAME-honeycomb.enc.env
+            sudo systemctl restart runtime-secrets-decrypt.service
+            # Remove the deploy dir; volumes already gone via down -v.
+            sudo rm -rf /srv/$SIBLING_NAME
+          "
+          echo "Sibling $SIBLING_NAME torn down."
+
+      # ----------------------------------------------------------------
+      # DEPLOY: reuses the in-repo runtime-secrets file (static keys),
+      # pulls HC keys from platform state, optionally runs litestream
+      # restore before migrate, then docker compose up -d with the
+      # sibling project name and host port.
+      # ----------------------------------------------------------------
+      - name: Build sibling runtime-secrets
+        if: github.event.inputs.action == 'deploy'
+        env:
+          AWS_ACCESS_KEY_ID:     ${{ secrets.PLATFORM_STATE_R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.PLATFORM_STATE_R2_SECRET_ACCESS_KEY }}
+          HOST_AGE_RECIPIENT:    ${{ needs.read_platform.outputs.host_age_recipient }}
+        run: |
+          cd infra-sillybus
+          BACKEND_HC=$(tofu output -raw _platform_honeycomb_backend_ingest)
+          BROWSER_HC=$(tofu output -raw _platform_honeycomb_browser_ingest)
+          echo "::add-mask::$BACKEND_HC"
+          echo "::add-mask::$BROWSER_HC"
+
+          install -m 0600 /dev/stdin /tmp/_hc.env <<EOF
+          HONEYCOMB_API_KEY=$BACKEND_HC
+          VITE_HONEYCOMB_API_KEY=$BROWSER_HC
+          EOF
+          sops --config /dev/null -e --age "$HOST_AGE_RECIPIENT" \
+            --input-type=dotenv --output-type=dotenv /tmp/_hc.env > /tmp/$SIBLING_NAME-honeycomb.enc.env
+          shred -u /tmp/_hc.env
+
+      - name: Ship runtime-secrets to host
+        if: github.event.inputs.action == 'deploy'
+        run: |
+          # Sibling reuses the in-repo static keys file (S3, Litestream
+          # creds, ROCKET_SECRET_KEY) — those are env-wide values, not
+          # per-instance.
+          rsync -avz -e "ssh -i ~/.ssh/id_ed25519" \
+            runtime-secrets-sillybus.enc.env \
+            "deploy@$VM_IP:/tmp/$SIBLING_NAME.enc.env"
+          rsync -avz -e "ssh -i ~/.ssh/id_ed25519" \
+            /tmp/$SIBLING_NAME-honeycomb.enc.env \
+            "deploy@$VM_IP:/tmp/$SIBLING_NAME-honeycomb.enc.env"
+          ssh -i ~/.ssh/id_ed25519 "deploy@$VM_IP" "
+            sudo install -o root -g root -m 0640 /tmp/$SIBLING_NAME.enc.env /etc/secrets.d/$SIBLING_NAME.enc.env
+            sudo install -o root -g root -m 0640 /tmp/$SIBLING_NAME-honeycomb.enc.env /etc/secrets.d/$SIBLING_NAME-honeycomb.enc.env
+            sudo systemctl restart runtime-secrets-decrypt.service
+          "
+          shred -u /tmp/$SIBLING_NAME-honeycomb.enc.env
+
+      - name: Ship compose stack + config
+        if: github.event.inputs.action == 'deploy'
+        run: |
+          ssh -i ~/.ssh/id_ed25519 "deploy@$VM_IP" "
+            sudo install -d -o deploy -g users -m 0755 /srv/$SIBLING_NAME &&
+            sudo install -d -o deploy -g users -m 0755 /srv/$SIBLING_NAME/config &&
+            sudo install -d -o deploy -g users -m 0755 /srv/$SIBLING_NAME/nginx
+          "
+          rsync -avz --delete -e "ssh -i ~/.ssh/id_ed25519" \
+            docker-compose.nixos.yml \
+            "deploy@$VM_IP:/srv/$SIBLING_NAME/docker-compose.nixos.yml"
+          rsync -avz --delete -e "ssh -i ~/.ssh/id_ed25519" \
+            config/ \
+            "deploy@$VM_IP:/srv/$SIBLING_NAME/config/"
+          rsync -avz --delete -e "ssh -i ~/.ssh/id_ed25519" \
+            nginx/ \
+            "deploy@$VM_IP:/srv/$SIBLING_NAME/nginx/"
+          # Sibling-specific compose override: point env_file entries
+          # at the sibling's runtime-secrets files.
+          cat > /tmp/$SIBLING_NAME-override.yml <<EOF
+          # Auto-generated by bootstrap-sibling.yaml. Overrides env_file
+          # paths so the sibling reads ITS runtime-secrets, not sillybus's.
+          services:
+            app:
+              env_file:
+                - ./config/common.env
+                - ./config/prod.env
+                - /run/runtime-secrets/$SIBLING_NAME.env
+                - /run/runtime-secrets/$SIBLING_NAME-honeycomb.env
+            frontend:
+              env_file:
+                - ./config/common.env
+                - ./config/prod.env
+                - /run/runtime-secrets/$SIBLING_NAME.env
+                - /run/runtime-secrets/$SIBLING_NAME-honeycomb.env
+            litestream:
+              env_file:
+                - ./config/common.env
+                - ./config/prod.env
+                - /run/runtime-secrets/$SIBLING_NAME.env
+                - /run/runtime-secrets/$SIBLING_NAME-honeycomb.env
+            otel-collector:
+              env_file:
+                - ./config/common.env
+                - ./config/prod.env
+                - /run/runtime-secrets/$SIBLING_NAME.env
+                - /run/runtime-secrets/$SIBLING_NAME-honeycomb.env
+          EOF
+          rsync -avz -e "ssh -i ~/.ssh/id_ed25519" \
+            /tmp/$SIBLING_NAME-override.yml \
+            "deploy@$VM_IP:/srv/$SIBLING_NAME/docker-compose.override.yml"
+
+      - name: docker login on host
+        if: github.event.inputs.action == 'deploy'
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GHCR_USER:  ${{ github.actor }}
+        run: |
+          ssh -i ~/.ssh/id_ed25519 "deploy@$VM_IP" \
+            "docker login ghcr.io -u '$GHCR_USER' --password-stdin" <<< "$GHCR_TOKEN"
+
+      - name: Optionally restore DB from litestream backup
+        if: github.event.inputs.action == 'deploy' && github.event.inputs.source_bucket != ''
+        run: |
+          # Sibling's volume is auto-named by compose: <sibling_name>_app-data.
+          # Pre-create it and run litestream restore into it before compose up.
+          IMG="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/app:${{ env.IMAGE_TAG }}"
+          ssh -i ~/.ssh/id_ed25519 "deploy@$VM_IP" "
+            docker volume create ${SIBLING_NAME}_app-data >/dev/null
+            # Litestream restore needs the LITESTREAM_* env vars; pull
+            # from sibling's runtime-secrets file.
+            set -a; . /run/runtime-secrets/$SIBLING_NAME.env; set +a
+            # Override the bucket we restore FROM (LITESTREAM_BUCKET in
+            # static creds points at sillybus-db-backups-prod; for restore
+            # we want the user-specified source).
+            docker run --rm \
+              -v ${SIBLING_NAME}_app-data:/data \
+              -e LITESTREAM_ACCESS_KEY_ID -e LITESTREAM_SECRET_ACCESS_KEY \
+              litestream/litestream:0.3.13 \
+              restore -if-replica-exists \
+                -o /data/sqlite.db \
+                s3://$SOURCE_BUCKET/$LITESTREAM_PATH
+            echo 'litestream restore complete'
+            ls -la /var/lib/docker/volumes/${SIBLING_NAME}_app-data/_data/ 2>/dev/null || true
+          "
+
+      - name: Run migrations on sibling DB
+        if: github.event.inputs.action == 'deploy'
+        run: |
+          IMG="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/app:${{ env.IMAGE_TAG }}"
+          ssh -i ~/.ssh/id_ed25519 "deploy@$VM_IP" "
+            docker pull \"$IMG\" &&
+            docker run --rm \
+              -e ALLOW_DESTRUCTIVE_MIGRATIONS=$ALLOW_DESTRUCTIVE_MIGRATIONS \
+              --env-file /run/runtime-secrets/$SIBLING_NAME.env \
+              --env-file /run/runtime-secrets/$SIBLING_NAME-honeycomb.env \
+              --env-file /srv/$SIBLING_NAME/config/common.env \
+              --env-file /srv/$SIBLING_NAME/config/prod.env \
+              -v ${SIBLING_NAME}_app-data:/app/data \
+              --entrypoint /app/migrate \
+              \"$IMG\"
+          "
+
+      - name: docker compose up
+        if: github.event.inputs.action == 'deploy'
+        run: |
+          ssh -i ~/.ssh/id_ed25519 "deploy@$VM_IP" "
+            cd /srv/$SIBLING_NAME &&
+            REGISTRY='${{ env.REGISTRY }}' \
+            IMAGE_NAME='${{ env.IMAGE_NAME }}' \
+            APP_IMAGE_TAG='${{ env.IMAGE_TAG }}' \
+            FRONTEND_IMAGE_TAG='${{ env.IMAGE_TAG }}' \
+            NGINX_HOST_PORT='$HOST_PORT' \
+            docker compose -p $SIBLING_NAME -f docker-compose.nixos.yml -f docker-compose.override.yml pull &&
+            REGISTRY='${{ env.REGISTRY }}' \
+            IMAGE_NAME='${{ env.IMAGE_NAME }}' \
+            APP_IMAGE_TAG='${{ env.IMAGE_TAG }}' \
+            FRONTEND_IMAGE_TAG='${{ env.IMAGE_TAG }}' \
+            NGINX_HOST_PORT='$HOST_PORT' \
+            docker compose -p $SIBLING_NAME -f docker-compose.nixos.yml -f docker-compose.override.yml up -d --remove-orphans
+          "
+
+      - name: Ship Traefik dynamic config for sibling
+        if: github.event.inputs.action == 'deploy'
+        run: |
+          # Routes the sibling's hostname to the sibling's host port.
+          # Sibling-specific router/service names so it doesn't collide
+          # with the main sillybus.yml routes.
+          #
+          # Sibling is on HTTP-only (web entryPoint, no TLS) so it
+          # doesn't depend on a real DNS A record at $HOSTNAME — let's
+          # encrypt would fail HTTP-01 challenge if the hostname isn't
+          # publicly resolvable. Sibling is for test/dry-run; for prod
+          # promotion, add a DNS A record AND flip entryPoint to
+          # websecure with tls.certResolver = letsencrypt.
+          cat > /tmp/$SIBLING_NAME.yml <<EOF
+          http:
+            routers:
+              $SIBLING_NAME:
+                rule: Host(\`$HOSTNAME\`)
+                service: $SIBLING_NAME
+                entryPoints: [web]
+            services:
+              $SIBLING_NAME:
+                loadBalancer:
+                  servers:
+                    - url: http://host.docker.internal:$HOST_PORT
+          EOF
+          rsync -avz -e "ssh -i ~/.ssh/id_ed25519" \
+            /tmp/$SIBLING_NAME.yml \
+            "deploy@$VM_IP:/tmp/$SIBLING_NAME.yml"
+          ssh -i ~/.ssh/id_ed25519 "deploy@$VM_IP" "
+            sudo install -o root -g root -m 0644 /tmp/$SIBLING_NAME.yml /srv/platform/traefik-dynamic/$SIBLING_NAME.yml
+          "
+
+      - name: Print sibling test commands
+        if: github.event.inputs.action == 'deploy'
+        run: |
+          echo ""
+          echo "Sibling $SIBLING_NAME deployed (HTTP only, no real DNS needed)."
+          echo ""
+          echo "To test via DNS bypass:"
+          echo "  curl --resolve $HOSTNAME:80:$VM_IP http://$HOSTNAME/api/health"
+          echo ""
+          echo "Promote to HTTPS:"
+          echo "  1. add a Route 53 A record for $HOSTNAME pointing at $VM_IP"
+          echo "  2. edit /srv/platform/traefik-dynamic/$SIBLING_NAME.yml on the host:"
+          echo "     entryPoints: [websecure]; add tls.certResolver = letsencrypt"
+          echo ""
+          echo "To tear down:"
+          echo "  gh workflow run bootstrap-sibling.yaml -f action=teardown -f sibling_name=$SIBLING_NAME -f hostname=$HOSTNAME"
