@@ -18,11 +18,6 @@ on:
         description: "Allow destructive schema migrations (data loss possible)"
         required: false
         default: "false"
-    inputs:
-      allow_destructive_migrations:
-        description: "Allow destructive schema migrations (data loss possible)"
-        required: false
-        default: "false"
 
 env:
   REGISTRY: ghcr.io
