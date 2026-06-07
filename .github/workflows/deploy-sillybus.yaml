@@ -287,21 +287,6 @@ jobs:
             docker compose -f docker-compose.nixos.yml up -d --remove-orphans
           "
 
-      - name: Restart nginx to pick up config + flush upstream DNS cache
-        # nginx caches upstream IPs at config-load time. A `compose up`
-        # that recreates `app` or `frontend` (new image SHA) gives them
-        # new IPs, but nginx's image/env/depends didn't change so compose
-        # leaves it alone, and the cached IPs are stale. The resolver
-        # directive in nginx/default.conf makes this self-healing for
-        # request-time resolution, but an explicit restart is also the
-        # only way to pick up edits to default.conf itself (volume
-        # mount content changes don't trigger recreate). Cheap (~2s).
-        run: |
-          ssh -i ~/.ssh/id_ed25519 "deploy@$VM_IP" "
-            cd /srv/sillybus &&
-            docker compose -f docker-compose.nixos.yml restart nginx
-          "
-
   verify:
     needs: deploy
     runs-on: ubuntu-latest
