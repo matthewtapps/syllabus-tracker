@@ -1,0 +1,219 @@
+name: Deploy to sillybus environment
+
+# Deploys the sillybus instance to sugar-glider. Pulls all provider
+# credentials and the SSH key fresh from platform tofu state on every
+# run (Path 3 cross-repo model). The only GHA-resident secrets are the
+# two PLATFORM_STATE_R2_* values needed to read platform state.
+#
+# Triggers:
+#   - push to feat/sillybus-app
+#   - manual workflow_dispatch
+
+on:
+  push:
+    branches: [feat/sillybus-app]
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: matthewtapps/syllabus-tracker
+
+concurrency:
+  group: deploy-sillybus
+  cancel-in-progress: false
+
+jobs:
+  # Read platform state, expose VM_IP + host_age_ready flag.
+  # host_age_ready=false means sugar-glider hasn't been bootstrapped via
+  # nixos-anywhere yet, so the deploy job no-ops.
+  read_platform:
+    runs-on: ubuntu-latest
+    environment: sillybus
+    outputs:
+      vm_ip:          ${{ steps.read.outputs.vm_ip }}
+      host_age_ready: ${{ steps.read.outputs.host_age_ready }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: opentofu/setup-opentofu@v1
+        with:
+          tofu_version: 1.12.x
+      - name: Read platform state
+        id: read
+        env:
+          AWS_ACCESS_KEY_ID:     ${{ secrets.PLATFORM_STATE_R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.PLATFORM_STATE_R2_SECRET_ACCESS_KEY }}
+        run: |
+          cd infra-sillybus
+          tofu init -input=false
+          # Query the remote state data source via `tofu console`.
+          VM_IP=$(echo 'data.terraform_remote_state.platform.outputs.host_ips["sugar_glider"]' \
+                  | tofu console | tr -d '"')
+          HOST_AGE=$(echo 'data.terraform_remote_state.platform.outputs.host_age_recipients["sugar_glider"]' \
+                  | tofu console | tr -d '"')
+          echo "vm_ip=$VM_IP" >> "$GITHUB_OUTPUT"
+          if [ -n "$HOST_AGE" ]; then
+            echo "host_age_ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "host_age_ready=false" >> "$GITHUB_OUTPUT"
+          fi
+          echo "VM_IP=$VM_IP, host_age_ready=$([ -n \"$HOST_AGE\" ] && echo true || echo false)"
+
+  apply_tofu:
+    needs: read_platform
+    if: needs.read_platform.outputs.host_age_ready == 'true'
+    runs-on: ubuntu-latest
+    environment: sillybus
+    steps:
+      - uses: actions/checkout@v4
+      - uses: opentofu/setup-opentofu@v1
+        with:
+          tofu_version: 1.12.x
+      - name: tofu apply
+        env:
+          AWS_ACCESS_KEY_ID:     ${{ secrets.PLATFORM_STATE_R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.PLATFORM_STATE_R2_SECRET_ACCESS_KEY }}
+        run: |
+          cd infra-sillybus
+          tofu init -input=false
+          tofu apply -auto-approve -input=false
+
+  build_backend:
+    needs: read_platform
+    if: needs.read_platform.outputs.host_age_ready == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/app:${{ github.sha }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/app:sillybus-latest
+          cache-from: type=gha,scope=sillybus-backend
+          cache-to: type=gha,scope=sillybus-backend,mode=max
+
+  build_frontend:
+    needs: read_platform
+    if: needs.read_platform.outputs.host_age_ready == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: ./frontend
+          file: ./frontend/Dockerfile
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/frontend:${{ github.sha }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/frontend:sillybus-latest
+          build-args: |
+            VITE_API_URL=/api
+            VITE_ENVIRONMENT=production
+          cache-from: type=gha,scope=sillybus-frontend
+          cache-to: type=gha,scope=sillybus-frontend,mode=max
+
+  deploy:
+    needs: [read_platform, apply_tofu, build_backend, build_frontend]
+    runs-on: ubuntu-latest
+    environment: sillybus
+    env:
+      VM_IP: ${{ needs.read_platform.outputs.vm_ip }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: opentofu/setup-opentofu@v1
+        with:
+          tofu_version: 1.12.x
+
+      - name: Pull SSH key from platform state
+        env:
+          AWS_ACCESS_KEY_ID:     ${{ secrets.PLATFORM_STATE_R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.PLATFORM_STATE_R2_SECRET_ACCESS_KEY }}
+        run: |
+          cd infra-sillybus
+          tofu init -input=false
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          echo 'data.terraform_remote_state.platform.outputs.ci_deploy_private_key' | \
+            tofu console | tr -d '"' | sed 's/\\n/\n/g' > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H "$VM_IP" >> ~/.ssh/known_hosts
+
+      - name: Ship runtime secrets
+        run: |
+          rsync -avz -e "ssh -i ~/.ssh/id_ed25519" \
+            runtime-secrets-sillybus.enc.env \
+            "syllabusadmin@$VM_IP:/tmp/sillybus.enc.env"
+          ssh -i ~/.ssh/id_ed25519 "syllabusadmin@$VM_IP" '
+            sudo install -o root -g root -m 0640 /tmp/sillybus.enc.env /etc/secrets.d/sillybus.enc.env
+            sudo systemctl restart runtime-secrets-decrypt.service
+          '
+
+      - name: Ship Traefik dynamic config
+        run: |
+          rsync -avz -e "ssh -i ~/.ssh/id_ed25519" \
+            traefik-dynamic/sillybus.yml \
+            "syllabusadmin@$VM_IP:/tmp/sillybus.yml"
+          ssh -i ~/.ssh/id_ed25519 "syllabusadmin@$VM_IP" '
+            sudo install -o root -g root -m 0644 /tmp/sillybus.yml /srv/platform/traefik-dynamic/sillybus.yml
+          '
+
+      - name: Ship compose stack + config
+        run: |
+          ssh -i ~/.ssh/id_ed25519 "syllabusadmin@$VM_IP" 'mkdir -p /srv/sillybus/config'
+          rsync -avz --delete -e "ssh -i ~/.ssh/id_ed25519" \
+            docker-compose.nixos.yml \
+            "syllabusadmin@$VM_IP:/srv/sillybus/docker-compose.nixos.yml"
+          rsync -avz --delete -e "ssh -i ~/.ssh/id_ed25519" \
+            config/ nginx/ \
+            "syllabusadmin@$VM_IP:/srv/sillybus/"
+
+      - name: docker compose up
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GHCR_USER:  ${{ github.actor }}
+        run: |
+          # Pass GHCR token via stdin (not command line; not in ps).
+          ssh -i ~/.ssh/id_ed25519 "syllabusadmin@$VM_IP" \
+            "docker login ghcr.io -u '$GHCR_USER' --password-stdin" <<< "$GHCR_TOKEN"
+
+          ssh -i ~/.ssh/id_ed25519 "syllabusadmin@$VM_IP" "
+            cd /srv/sillybus &&
+            REGISTRY='${{ env.REGISTRY }}' \
+            IMAGE_NAME='${{ env.IMAGE_NAME }}' \
+            APP_IMAGE_TAG='${{ github.sha }}' \
+            FRONTEND_IMAGE_TAG='${{ github.sha }}' \
+            docker compose -f docker-compose.nixos.yml pull &&
+            REGISTRY='${{ env.REGISTRY }}' \
+            IMAGE_NAME='${{ env.IMAGE_NAME }}' \
+            APP_IMAGE_TAG='${{ github.sha }}' \
+            FRONTEND_IMAGE_TAG='${{ github.sha }}' \
+            docker compose -f docker-compose.nixos.yml up -d --remove-orphans
+          "
+
+  verify:
+    needs: deploy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Health check
+        run: |
+          for i in {1..30}; do
+            if curl -fsSL https://sillybus.app/api/health; then
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "health check timed out"
+          exit 1
