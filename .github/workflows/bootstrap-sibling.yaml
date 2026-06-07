@@ -110,6 +110,7 @@ jobs:
         env:
           AWS_ACCESS_KEY_ID:     ${{ secrets.PLATFORM_STATE_R2_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.PLATFORM_STATE_R2_SECRET_ACCESS_KEY }}
+          AWS_MAX_ATTEMPTS:      "5"
         run: |
           cd infra-sillybus
           tofu init -input=false
@@ -138,14 +139,18 @@ jobs:
         with:
           tofu_version: 1.12.x
       - name: Install sops
-        uses: nhedger/setup-sops@v2
-        with:
-          version: 3.9.4
+        # Inline curl install: nhedger/setup-sops is on Node 20.
+        run: |
+          SOPS_VERSION=3.9.4
+          curl -sLo /tmp/sops "https://github.com/getsops/sops/releases/download/v${SOPS_VERSION}/sops-v${SOPS_VERSION}.linux.amd64"
+          sudo install -m 0755 /tmp/sops /usr/local/bin/sops
+          sops --version
 
       - name: Pull SSH key
         env:
           AWS_ACCESS_KEY_ID:     ${{ secrets.PLATFORM_STATE_R2_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.PLATFORM_STATE_R2_SECRET_ACCESS_KEY }}
+          AWS_MAX_ATTEMPTS:      "5"
         run: |
           cd infra-sillybus
           tofu init -input=false
@@ -189,6 +194,7 @@ jobs:
         env:
           AWS_ACCESS_KEY_ID:     ${{ secrets.PLATFORM_STATE_R2_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.PLATFORM_STATE_R2_SECRET_ACCESS_KEY }}
+          AWS_MAX_ATTEMPTS:      "5"
           HOST_AGE_RECIPIENT:    ${{ needs.read_platform.outputs.host_age_recipient }}
         run: |
           cd infra-sillybus
