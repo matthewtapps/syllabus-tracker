@@ -1,3 +1,13 @@
+# check=skip=SecretsUsedInArgOrEnv
+# The directive above must be the very first line — parser directives
+# stop being recognised after any non-directive content. It silences
+# the BuildKit check that flags `VITE_HONEYCOMB_API_KEY` as a secret
+# in ARG/ENV. VITE_HONEYCOMB_API_KEY is a Honeycomb browser ingest key
+# that is intentionally embedded in the public Vite bundle and ships
+# to end users; not a secret in any meaningful sense. The per-service
+# browser ingest key minted by platform tofu has create_datasets=false
+# specifically because anyone loading the page can read it.
+
 FROM node:22.22.2-alpine AS base
 RUN npm install -g pnpm@10.8.0
 
