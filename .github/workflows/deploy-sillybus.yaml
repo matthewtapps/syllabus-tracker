@@ -163,8 +163,8 @@ jobs:
         run: |
           rsync -avz -e "ssh -i ~/.ssh/id_ed25519" \
             runtime-secrets-sillybus.enc.env \
-            "syllabusadmin@$VM_IP:/tmp/sillybus.enc.env"
-          ssh -i ~/.ssh/id_ed25519 "syllabusadmin@$VM_IP" '
+            "deploy@$VM_IP:/tmp/sillybus.enc.env"
+          ssh -i ~/.ssh/id_ed25519 "deploy@$VM_IP" '
             sudo install -o root -g root -m 0640 /tmp/sillybus.enc.env /etc/secrets.d/sillybus.enc.env
             sudo systemctl restart runtime-secrets-decrypt.service
           '
@@ -173,20 +173,30 @@ jobs:
         run: |
           rsync -avz -e "ssh -i ~/.ssh/id_ed25519" \
             traefik-dynamic/sillybus.yml \
-            "syllabusadmin@$VM_IP:/tmp/sillybus.yml"
-          ssh -i ~/.ssh/id_ed25519 "syllabusadmin@$VM_IP" '
+            "deploy@$VM_IP:/tmp/sillybus.yml"
+          ssh -i ~/.ssh/id_ed25519 "deploy@$VM_IP" '
             sudo install -o root -g root -m 0644 /tmp/sillybus.yml /srv/platform/traefik-dynamic/sillybus.yml
           '
 
       - name: Ship compose stack + config
         run: |
-          ssh -i ~/.ssh/id_ed25519 "syllabusadmin@$VM_IP" 'mkdir -p /srv/sillybus/config'
+          # Use the sudoers-allowed install rule to create the service
+          # dir tree. Owned by `deploy` so subsequent rsync (running as
+          # deploy without sudo) writes through.
+          ssh -i ~/.ssh/id_ed25519 "deploy@$VM_IP" '
+            sudo install -d -o deploy -g users -m 0755 /srv/sillybus &&
+            sudo install -d -o deploy -g users -m 0755 /srv/sillybus/config &&
+            sudo install -d -o deploy -g users -m 0755 /srv/sillybus/nginx
+          '
           rsync -avz --delete -e "ssh -i ~/.ssh/id_ed25519" \
             docker-compose.nixos.yml \
-            "syllabusadmin@$VM_IP:/srv/sillybus/docker-compose.nixos.yml"
+            "deploy@$VM_IP:/srv/sillybus/docker-compose.nixos.yml"
           rsync -avz --delete -e "ssh -i ~/.ssh/id_ed25519" \
-            config/ nginx/ \
-            "syllabusadmin@$VM_IP:/srv/sillybus/"
+            config/ \
+            "deploy@$VM_IP:/srv/sillybus/config/"
+          rsync -avz --delete -e "ssh -i ~/.ssh/id_ed25519" \
+            nginx/ \
+            "deploy@$VM_IP:/srv/sillybus/nginx/"
 
       - name: docker compose up
         env:
@@ -194,10 +204,10 @@ jobs:
           GHCR_USER:  ${{ github.actor }}
         run: |
           # Pass GHCR token via stdin (not command line; not in ps).
-          ssh -i ~/.ssh/id_ed25519 "syllabusadmin@$VM_IP" \
+          ssh -i ~/.ssh/id_ed25519 "deploy@$VM_IP" \
             "docker login ghcr.io -u '$GHCR_USER' --password-stdin" <<< "$GHCR_TOKEN"
 
-          ssh -i ~/.ssh/id_ed25519 "syllabusadmin@$VM_IP" "
+          ssh -i ~/.ssh/id_ed25519 "deploy@$VM_IP" "
             cd /srv/sillybus &&
             REGISTRY='${{ env.REGISTRY }}' \
             IMAGE_NAME='${{ env.IMAGE_NAME }}' \
