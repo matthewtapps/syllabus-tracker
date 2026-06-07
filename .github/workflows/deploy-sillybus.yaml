@@ -45,11 +45,12 @@ jobs:
         run: |
           cd infra-sillybus
           tofu init -input=false
-          # Query the remote state data source via `tofu console`.
-          VM_IP=$(echo 'data.terraform_remote_state.platform.outputs.host_ips["sugar_glider"]' \
-                  | tofu console | tr -d '"')
-          HOST_AGE=$(echo 'data.terraform_remote_state.platform.outputs.host_age_recipients["sugar_glider"]' \
-                  | tofu console | tr -d '"')
+          # Refresh-only persists data source values + outputs to state
+          # without creating any resources. Then `tofu output -raw` is
+          # reliable (avoids `tofu console`'s EOF-handling quirks).
+          tofu apply -refresh-only -auto-approve -input=false
+          VM_IP=$(tofu output -raw _platform_vm_ip)
+          HOST_AGE=$(tofu output -raw _platform_host_age_recipient)
           echo "vm_ip=$VM_IP" >> "$GITHUB_OUTPUT"
           if [ -n "$HOST_AGE" ]; then
             echo "host_age_ready=true" >> "$GITHUB_OUTPUT"
@@ -145,9 +146,9 @@ jobs:
         run: |
           cd infra-sillybus
           tofu init -input=false
+          tofu apply -refresh-only -auto-approve -input=false
           mkdir -p ~/.ssh && chmod 700 ~/.ssh
-          echo 'data.terraform_remote_state.platform.outputs.ci_deploy_private_key' | \
-            tofu console | tr -d '"' | sed 's/\\n/\n/g' > ~/.ssh/id_ed25519
+          tofu output -raw _platform_ci_deploy_private_key > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
           ssh-keyscan -H "$VM_IP" >> ~/.ssh/known_hosts
 
