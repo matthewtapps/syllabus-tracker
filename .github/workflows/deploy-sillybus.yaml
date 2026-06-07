@@ -13,6 +13,16 @@ on:
   push:
     branches: [feat/sillybus-app]
   workflow_dispatch:
+    inputs:
+      allow_destructive_migrations:
+        description: "Allow destructive schema migrations (data loss possible)"
+        required: false
+        default: "false"
+    inputs:
+      allow_destructive_migrations:
+        description: "Allow destructive schema migrations (data loss possible)"
+        required: false
+        default: "false"
 
 env:
   REGISTRY: ghcr.io
@@ -66,6 +76,42 @@ jobs:
           fi
           echo "VM_IP=$VM_IP, host_age_ready=$([ -n \"$HOST_AGE\" ] && echo true || echo false)"
 
+  # Lint + test run unconditionally on every push. They don't need the
+  # platform state (no host or DNS interaction); they gate build_backend
+  # and build_frontend so a broken-build SHA never gets pushed to GHCR.
+  # Mirrors the legacy main `lint` + `test` jobs in deploy.yaml verbatim
+  # minus the buildevents wrappers (re-added when Honeycomb tracing is
+  # wired in via infra/docs/honeycomb-telemetry.md).
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+        with:
+          toolchain: 1.86
+          components: rustfmt, clippy
+      - uses: swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+      - name: Run clippy
+        run: cargo clippy --all-targets --all-features -- -D warnings
+        env:
+          SQLX_OFFLINE: "true"
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+        with:
+          toolchain: 1.86
+      - uses: swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+      - uses: taiki-e/install-action@50b4a718b59c718df4ef27a3b445f86cd57b9f00 # v2.80.0
+        with:
+          tool: cargo-nextest
+      - name: Run cargo nextest
+        run: cargo nextest run --all-features
+        env:
+          SQLX_OFFLINE: "true"
+
   apply_tofu:
     needs: read_platform
     if: needs.read_platform.outputs.host_age_ready == 'true'
@@ -86,7 +132,7 @@ jobs:
           tofu apply -auto-approve -input=false
 
   build_backend:
-    needs: read_platform
+    needs: [read_platform, lint, test]
     if: needs.read_platform.outputs.host_age_ready == 'true'
     runs-on: ubuntu-latest
     steps:
@@ -109,7 +155,7 @@ jobs:
           cache-to: type=gha,scope=sillybus-backend,mode=max
 
   build_frontend:
-    needs: read_platform
+    needs: [read_platform, lint, test]
     if: needs.read_platform.outputs.host_age_ready == 'true'
     runs-on: ubuntu-latest
     steps:
@@ -198,15 +244,40 @@ jobs:
             nginx/ \
             "deploy@$VM_IP:/srv/sillybus/nginx/"
 
-      - name: docker compose up
+      - name: docker login (so migrate + compose can pull)
         env:
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GHCR_USER:  ${{ github.actor }}
         run: |
-          # Pass GHCR token via stdin (not command line; not in ps).
           ssh -i ~/.ssh/id_ed25519 "deploy@$VM_IP" \
             "docker login ghcr.io -u '$GHCR_USER' --password-stdin" <<< "$GHCR_TOKEN"
 
+      - name: Run database migrations
+        env:
+          # Defaults to "false" on push triggers (the input default only
+          # applies to workflow_dispatch). The migrate binary refuses
+          # destructive changes unless this is "true", matching legacy.
+          ALLOW_DESTRUCTIVE_MIGRATIONS: ${{ github.event.inputs.allow_destructive_migrations || 'false' }}
+        run: |
+          # /app/migrate has create_if_missing(true); /app/syllabus-tracker
+          # does not. On a fresh sillybus volume the file doesn't exist,
+          # so we must run migrate first or the app panics on boot.
+          # Same image as the app, just a different entrypoint.
+          IMG="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/app:${{ github.sha }}"
+          ssh -i ~/.ssh/id_ed25519 "deploy@$VM_IP" "
+            docker pull \"$IMG\" &&
+            docker run --rm \
+              -e ALLOW_DESTRUCTIVE_MIGRATIONS='$ALLOW_DESTRUCTIVE_MIGRATIONS' \
+              --env-file /run/runtime-secrets/sillybus.env \
+              --env-file /srv/sillybus/config/common.env \
+              --env-file /srv/sillybus/config/prod.env \
+              -v sillybus_app-data:/app/data \
+              --entrypoint /app/migrate \
+              \"$IMG\"
+          "
+
+      - name: docker compose up
+        run: |
           ssh -i ~/.ssh/id_ed25519 "deploy@$VM_IP" "
             cd /srv/sillybus &&
             REGISTRY='${{ env.REGISTRY }}' \
