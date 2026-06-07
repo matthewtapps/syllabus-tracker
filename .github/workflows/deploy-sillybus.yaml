@@ -18,9 +18,16 @@ env:
   REGISTRY: ghcr.io
   IMAGE_NAME: matthewtapps/syllabus-tracker
 
+# Default GITHUB_TOKEN in env-scoped jobs has restricted scopes; need
+# to grant packages:write explicitly so docker push to GHCR works.
+# contents:read is the default but we set it explicitly for clarity.
+permissions:
+  contents: read
+  packages: write
+
 concurrency:
   group: deploy-sillybus
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   # Read platform state, expose VM_IP + host_age_ready flag.
