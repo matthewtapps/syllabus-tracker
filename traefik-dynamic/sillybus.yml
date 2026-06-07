@@ -1,0 +1,14 @@
+"http":
+  "routers":
+    "sillybus":
+      "entryPoints":
+      - "websecure"
+      "rule": "Host(`sillybus.app`) || Host(`www.sillybus.app`)"
+      "service": "sillybus"
+      "tls":
+        "certResolver": "letsencrypt"
+  "services":
+    "sillybus":
+      "loadBalancer":
+        "servers":
+        - "url": "http://127.0.0.1:8001"

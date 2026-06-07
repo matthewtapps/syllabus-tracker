@@ -8,6 +8,5 @@ provider "aws" {
   secret_key = data.terraform_remote_state.platform.outputs.aws_dns_access_keys["sillybus"].secret
 }
 
-provider "cloudflare" {
-  api_token = data.terraform_remote_state.platform.outputs.cf_r2_admin_tokens["sillybus"]
-}
+# Cloudflare provider no longer needed — buckets and runtime token live
+# in platform tofu. Service consumes them via remote_state outputs.
