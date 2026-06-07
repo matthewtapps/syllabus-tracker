@@ -65,14 +65,18 @@ on:
         description: "Loopback port for the sibling's intra-stack nginx"
         required: false
         default: "8100"
+      otel_collector_port:
+        description: "Loopback port for sibling's otel-collector OTLP/gRPC. Primary uses 4317, platform-host uses 14317, default 24317."
+        required: false
+        default: "24317"
       source_bucket:
         description: "(deploy only) R2 bucket to restore litestream from. Empty = fresh DB."
         required: false
         default: ""
       litestream_path:
-        description: "(deploy only) Path inside source_bucket. Default sqlite.db"
+        description: "(deploy only) Path inside source_bucket. Default 'db' matches config/litestream.yml's replicas[0].path"
         required: false
-        default: "sqlite.db"
+        default: "db"
       allow_destructive_migrations:
         description: "Allow destructive schema migrations on restored DB"
         required: false
@@ -120,12 +124,13 @@ jobs:
     runs-on: ubuntu-latest
     environment: sillybus
     env:
-      VM_IP:           ${{ needs.read_platform.outputs.vm_ip }}
-      SIBLING_NAME:    ${{ github.event.inputs.sibling_name }}
-      HOSTNAME:        ${{ github.event.inputs.hostname }}
-      HOST_PORT:       ${{ github.event.inputs.host_port }}
-      SOURCE_BUCKET:   ${{ github.event.inputs.source_bucket }}
-      LITESTREAM_PATH: ${{ github.event.inputs.litestream_path }}
+      VM_IP:               ${{ needs.read_platform.outputs.vm_ip }}
+      SIBLING_NAME:        ${{ github.event.inputs.sibling_name }}
+      HOSTNAME:            ${{ github.event.inputs.hostname }}
+      HOST_PORT:           ${{ github.event.inputs.host_port }}
+      OTEL_COLLECTOR_PORT: ${{ github.event.inputs.otel_collector_port }}
+      SOURCE_BUCKET:       ${{ github.event.inputs.source_bucket }}
+      LITESTREAM_PATH:     ${{ github.event.inputs.litestream_path }}
       ALLOW_DESTRUCTIVE_MIGRATIONS: ${{ github.event.inputs.allow_destructive_migrations }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -255,6 +260,10 @@ jobs:
                 - /run/runtime-secrets/$SIBLING_NAME.env
                 - /run/runtime-secrets/$SIBLING_NAME-honeycomb.env
             litestream:
+              # docker-compose.nixos.yml hardcodes container_name:
+              # syllabus-tracker-litestream which collides with the
+              # primary sillybus's litestream container. Override.
+              container_name: $SIBLING_NAME-litestream
               env_file:
                 - ./config/common.env
                 - ./config/prod.env
@@ -283,26 +292,36 @@ jobs:
       - name: Optionally restore DB from litestream backup
         if: github.event.inputs.action == 'deploy' && github.event.inputs.source_bucket != ''
         run: |
-          # Sibling's volume is auto-named by compose: <sibling_name>_app-data.
-          # Pre-create it and run litestream restore into it before compose up.
-          IMG="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/app:${{ env.IMAGE_TAG }}"
-          ssh -i ~/.ssh/id_ed25519 "deploy@$VM_IP" "
+          # litestream CLI restore needs the S3 endpoint + region + creds
+          # to find the replica. The cleanest path is a config file
+          # (matches what the litestream container uses at runtime). The
+          # CLI's bare s3://bucket/path URL form tries to call AWS
+          # GetBucketLocation, which doesn't exist in R2 and fails
+          # before even attempting the restore.
+          ssh -i ~/.ssh/id_ed25519 "root@$VM_IP" "
+            set -e
             docker volume create ${SIBLING_NAME}_app-data >/dev/null
-            # Litestream restore needs the LITESTREAM_* env vars; pull
-            # from sibling's runtime-secrets file.
+            cat > /srv/$SIBLING_NAME/config/litestream-restore.yml <<INNER
+          dbs:
+            - path: /data/sqlite.db
+              replicas:
+                - type: s3
+                  bucket: $SOURCE_BUCKET
+                  path: $LITESTREAM_PATH
+                  endpoint: https://ea9e8573831e597fc41f865267b8fd35.r2.cloudflarestorage.com
+                  region: auto
+                  access-key-id: \\\${LITESTREAM_ACCESS_KEY_ID}
+                  secret-access-key: \\\${LITESTREAM_SECRET_ACCESS_KEY}
+          INNER
             set -a; . /run/runtime-secrets/$SIBLING_NAME.env; set +a
-            # Override the bucket we restore FROM (LITESTREAM_BUCKET in
-            # static creds points at sillybus-db-backups-prod; for restore
-            # we want the user-specified source).
             docker run --rm \
               -v ${SIBLING_NAME}_app-data:/data \
+              -v /srv/$SIBLING_NAME/config/litestream-restore.yml:/etc/litestream.yml:ro \
               -e LITESTREAM_ACCESS_KEY_ID -e LITESTREAM_SECRET_ACCESS_KEY \
               litestream/litestream:0.3.13 \
-              restore -if-replica-exists \
-                -o /data/sqlite.db \
-                s3://$SOURCE_BUCKET/$LITESTREAM_PATH
+              restore -config /etc/litestream.yml /data/sqlite.db
             echo 'litestream restore complete'
-            ls -la /var/lib/docker/volumes/${SIBLING_NAME}_app-data/_data/ 2>/dev/null || true
+            ls -la /var/lib/docker/volumes/${SIBLING_NAME}_app-data/_data/
           "
 
       - name: Run migrations on sibling DB
@@ -332,12 +351,14 @@ jobs:
             APP_IMAGE_TAG='${{ env.IMAGE_TAG }}' \
             FRONTEND_IMAGE_TAG='${{ env.IMAGE_TAG }}' \
             NGINX_HOST_PORT='$HOST_PORT' \
+            OTEL_COLLECTOR_HOST_PORT='$OTEL_COLLECTOR_PORT' \
             docker compose -p $SIBLING_NAME -f docker-compose.nixos.yml -f docker-compose.override.yml pull &&
             REGISTRY='${{ env.REGISTRY }}' \
             IMAGE_NAME='${{ env.IMAGE_NAME }}' \
             APP_IMAGE_TAG='${{ env.IMAGE_TAG }}' \
             FRONTEND_IMAGE_TAG='${{ env.IMAGE_TAG }}' \
             NGINX_HOST_PORT='$HOST_PORT' \
+            OTEL_COLLECTOR_HOST_PORT='$OTEL_COLLECTOR_PORT' \
             docker compose -p $SIBLING_NAME -f docker-compose.nixos.yml -f docker-compose.override.yml up -d --remove-orphans
           "
 
@@ -354,6 +375,10 @@ jobs:
           # publicly resolvable. Sibling is for test/dry-run; for prod
           # promotion, add a DNS A record AND flip entryPoint to
           # websecure with tls.certResolver = letsencrypt.
+          # Traefik runs on the host (NixOS systemd, NOT in docker), so
+          # "host.docker.internal" doesn't resolve in Traefik's context.
+          # The sibling's nginx is bound at 127.0.0.1:$HOST_PORT — use
+          # that loopback URL directly.
           cat > /tmp/$SIBLING_NAME.yml <<EOF
           http:
             routers:
@@ -365,7 +390,7 @@ jobs:
               $SIBLING_NAME:
                 loadBalancer:
                   servers:
-                    - url: http://host.docker.internal:$HOST_PORT
+                    - url: http://127.0.0.1:$HOST_PORT
           EOF
           rsync -avz -e "ssh -i ~/.ssh/id_ed25519" \
             /tmp/$SIBLING_NAME.yml \
