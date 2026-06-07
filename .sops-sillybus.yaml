@@ -10,7 +10,7 @@
 keys:
   - &laptop_primary    age1dkmrzjz5zye09w3vdt74kk4q43erjqhau8ce5f0shd9uzuhjwpfqs2ntkm
   - &laptop_backup     age1nhxka2zhzu4ynjxfq9cqqs3yv4f4k0sts5cc3tvknmzkq3x49dnshglgxv
-  - &sugar_glider_host age1w06lg82pt4erx5nqtaeqx8pf45wrjyh0rr77d3jrqjhj8zl0fctstm2nu3
+  - &sugar_glider_host age1u42pq9luszczqta7xt407gz2eac9kmf3whnpy6rzl6u7pc2rdv5syrn5c5
 
 creation_rules:
   - path_regex: runtime-secrets-sillybus\.enc\.env$
