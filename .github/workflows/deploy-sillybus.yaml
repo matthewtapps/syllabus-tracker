@@ -224,8 +224,16 @@ jobs:
           cache-from: type=gha,scope=sillybus-frontend
           cache-to: type=gha,scope=sillybus-frontend,mode=max
 
-  deploy:
-    needs: [read_platform, apply_tofu, build_backend, build_frontend]
+  # Stage everything the host needs for restore + migrate + deploy:
+  # encrypted runtime-secrets (static + per-deploy Honeycomb),
+  # Traefik dynamic config, compose + config + nginx files, docker
+  # login for ghcr.io. After this job: /run/runtime-secrets/sillybus.env
+  # + /run/runtime-secrets/sillybus-honeycomb.env are decrypted on
+  # the host, /srv/sillybus/ has the latest compose + config, and
+  # ghcr.io creds are cached. The downstream jobs (restore, migrate,
+  # deploy) operate against this prepared state.
+  prep_host:
+    needs: [read_platform, apply_tofu]
     runs-on: ubuntu-latest
     environment: sillybus
     env:
@@ -236,11 +244,11 @@ jobs:
         with:
           extra_nix_config: |
             experimental-features = nix-command flakes
-      - name: Install opentofu via nix
-        # nix cache is independent of github releases CDN
+      - name: Install opentofu + sops via nix
         run: |
-          nix profile install nixpkgs#opentofu
+          nix profile install nixpkgs#opentofu nixpkgs#sops
           tofu version
+          sops --version
 
       - name: Pull SSH key from platform state
         env:
@@ -255,14 +263,6 @@ jobs:
           tofu output -raw _platform_ci_deploy_private_key > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
           ssh-keyscan -H "$VM_IP" >> ~/.ssh/known_hosts
-
-      - name: Install sops (for runtime HC env encryption)
-        # Inline curl install: nhedger/setup-sops is on Node 20.
-        run: |
-          SOPS_VERSION=3.9.4
-          curl -sLo /tmp/sops "https://github.com/getsops/sops/releases/download/v${SOPS_VERSION}/sops-v${SOPS_VERSION}.linux.amd64"
-          sudo install -m 0755 /tmp/sops /usr/local/bin/sops
-          sops --version
 
       - name: Build sillybus-honeycomb.enc.env from platform state
         # Honeycomb ingest keys live in platform tofu state (minted by
@@ -279,34 +279,21 @@ jobs:
           cd infra-sillybus
           BACKEND=$(tofu output -raw _platform_honeycomb_backend_ingest)
           BROWSER=$(tofu output -raw _platform_honeycomb_browser_ingest)
-          # Mask in case anything echoes them downstream.
           echo "::add-mask::$BACKEND"
           echo "::add-mask::$BROWSER"
-          # VITE_HONEYCOMB_API_KEY is also written to runtime here even
-          # though the build-time arg already baked it into the frontend
-          # bundle. Belt+braces in case anything (SSR future) reads it.
-          # HONEYCOMB_MARKER_KEY intentionally absent until user click-
-          # mints a Configuration Key with markers:write (see
-          # infra/docs/honeycomb-telemetry.md Path B).
           install -m 0600 /dev/stdin /tmp/_sb_hc.env <<EOF
           HONEYCOMB_API_KEY=$BACKEND
           VITE_HONEYCOMB_API_KEY=$BROWSER
           EOF
-          # Encrypt to host's age recipient only. File is transient
-          # (regenerated each deploy) so no laptop recipient needed.
-          # --config /dev/null bypasses creation_rules lookup.
           sops --config /dev/null -e --age "$HOST_AGE_RECIPIENT" \
             --input-type=dotenv --output-type=dotenv /tmp/_sb_hc.env > /tmp/sillybus-honeycomb.enc.env
           shred -u /tmp/_sb_hc.env
 
       - name: Ship runtime secrets (static + Honeycomb)
         run: |
-          # Static keys (ROCKET_SECRET_KEY, S3_*, LITESTREAM_*) committed
-          # to the repo as runtime-secrets-sillybus.enc.env.
           rsync -avz -e "ssh -i ~/.ssh/id_ed25519" \
             runtime-secrets-sillybus.enc.env \
             "deploy@$VM_IP:/tmp/sillybus.enc.env"
-          # Honeycomb keys built in the prior step, transient per deploy.
           rsync -avz -e "ssh -i ~/.ssh/id_ed25519" \
             /tmp/sillybus-honeycomb.enc.env \
             "deploy@$VM_IP:/tmp/sillybus-honeycomb.enc.env"
@@ -328,9 +315,6 @@ jobs:
 
       - name: Ship compose stack + config
         run: |
-          # Use the sudoers-allowed install rule to create the service
-          # dir tree. Owned by `deploy` so subsequent rsync (running as
-          # deploy without sudo) writes through.
           ssh -i ~/.ssh/id_ed25519 "deploy@$VM_IP" '
             sudo install -d -o deploy -g users -m 0755 /srv/sillybus &&
             sudo install -d -o deploy -g users -m 0755 /srv/sillybus/config &&
@@ -346,7 +330,7 @@ jobs:
             nginx/ \
             "deploy@$VM_IP:/srv/sillybus/nginx/"
 
-      - name: docker login (so migrate + compose can pull)
+      - name: docker login (so subsequent jobs' docker run + compose pull)
         env:
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GHCR_USER:  ${{ github.actor }}
@@ -354,21 +338,168 @@ jobs:
           ssh -i ~/.ssh/id_ed25519 "deploy@$VM_IP" \
             "docker login ghcr.io -u '$GHCR_USER' --password-stdin" <<< "$GHCR_TOKEN"
 
-      - name: docker compose up
+  # Restore /app/data/sqlite.db in the sillybus_app-data named volume
+  # from $LITESTREAM_BUCKET if missing. This is the first thing that
+  # touches the volume on a fresh deploy -- migrate + app start after
+  # this exits successfully. If the bucket has no replica yet (truly
+  # fresh deployment), creates an empty file so migrate can write the
+  # schema. Operates via `docker run`, not compose, so it runs against
+  # the named volume before the runtime stack comes up.
+  #
+  # Fails the job (and the workflow) if litestream restore errors for
+  # any reason other than "no replica" -- worth halting the deploy on
+  # rather than risking a downstream clobber.
+  restore_litestream:
+    needs: [read_platform, prep_host]
+    runs-on: ubuntu-latest
+    environment: sillybus
+    env:
+      VM_IP: ${{ needs.read_platform.outputs.vm_ip }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: cachix/install-nix-action@v27
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+      - name: Install opentofu via nix
+        run: |
+          nix profile install nixpkgs#opentofu
+          tofu version
+
+      - name: Pull SSH key from platform state
         env:
-          # Migrations now run as a compose `migrate` service ordered
-          # after litestream-restore (docker-compose.nixos.yml). The
-          # standalone `docker run --entrypoint /app/migrate` step that
-          # lived here was racing against litestream-restore: it pre-
-          # populated /app/data with a fresh empty sqlite.db, then
-          # litestream-restore saw the file present and skipped its R2
-          # restore, then litestream replicate clobbered the bucket
-          # with empty WAL. Bit us on the 2026-06-08 cattle verify.
-          #
-          # Default false on push (input default only applies to
-          # workflow_dispatch); migrate refuses destructive changes
-          # unless explicitly enabled.
+          AWS_ACCESS_KEY_ID:     ${{ secrets.PLATFORM_STATE_R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.PLATFORM_STATE_R2_SECRET_ACCESS_KEY }}
+          AWS_MAX_ATTEMPTS:      "5"
+        run: |
+          cd infra-sillybus
+          i=0; until tofu init -input=false; do i=$((i+1)); [ $i -ge 30 ] && { echo "::error::tofu init failed after 30 attempts"; exit 1; }; echo "tofu init attempt $i failed; sleeping 30s"; sleep 30; done
+          tofu apply -refresh-only -auto-approve -input=false -lock=false
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          tofu output -raw _platform_ci_deploy_private_key > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H "$VM_IP" >> ~/.ssh/known_hosts
+
+      - name: Restore litestream from R2 (or noop if local DB present)
+        run: |
+          ssh -i ~/.ssh/id_ed25519 "deploy@$VM_IP" '
+            set -e
+            docker run --rm \
+              -v sillybus_app-data:/data:rw \
+              -v /srv/sillybus/config/litestream.yml:/etc/litestream.yml:ro \
+              --env-file /run/runtime-secrets/sillybus.env \
+              litestream/litestream:0.3.13 \
+              /bin/sh -c "
+                set -e
+                if [ -f /data/sqlite.db ]; then
+                  echo \"[restore] /data/sqlite.db already present in volume; skipping\"
+                  exit 0
+                fi
+                echo \"[restore] no local DB; restoring from \$LITESTREAM_BUCKET\"
+                if litestream restore -config /etc/litestream.yml /data/sqlite.db; then
+                  echo \"[restore] restored from R2 (\$(du -h /data/sqlite.db | cut -f1))\"
+                else
+                  echo \"[restore] no replica in bucket; creating empty DB so migrate can init schema\"
+                  : > /data/sqlite.db
+                  chmod 0660 /data/sqlite.db
+                fi
+              "
+          '
+
+  # Run DB schema migrations against the restored (or empty) sqlite.db.
+  # Idempotent: applies any new schema deltas atop existing data; creates
+  # the schema from scratch on a fresh DB.
+  #
+  # ALLOW_DESTRUCTIVE_MIGRATIONS defaults to "false" so destructive
+  # changes (DROP, ALTER) require an explicit workflow_dispatch input.
+  # Failing here halts the workflow before deploy -- the existing
+  # running stack on the host is unaffected (this job mutates the
+  # volume in place but the live app keeps using its own connections;
+  # deploy is what rotates containers).
+  migrate:
+    needs: [read_platform, restore_litestream, build_backend]
+    runs-on: ubuntu-latest
+    environment: sillybus
+    env:
+      VM_IP: ${{ needs.read_platform.outputs.vm_ip }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: cachix/install-nix-action@v27
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+      - name: Install opentofu via nix
+        run: |
+          nix profile install nixpkgs#opentofu
+          tofu version
+
+      - name: Pull SSH key from platform state
+        env:
+          AWS_ACCESS_KEY_ID:     ${{ secrets.PLATFORM_STATE_R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.PLATFORM_STATE_R2_SECRET_ACCESS_KEY }}
+          AWS_MAX_ATTEMPTS:      "5"
+        run: |
+          cd infra-sillybus
+          i=0; until tofu init -input=false; do i=$((i+1)); [ $i -ge 30 ] && { echo "::error::tofu init failed after 30 attempts"; exit 1; }; echo "tofu init attempt $i failed; sleeping 30s"; sleep 30; done
+          tofu apply -refresh-only -auto-approve -input=false -lock=false
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          tofu output -raw _platform_ci_deploy_private_key > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H "$VM_IP" >> ~/.ssh/known_hosts
+
+      - name: Run DB migrations
+        env:
           ALLOW_DESTRUCTIVE_MIGRATIONS: ${{ github.event.inputs.allow_destructive_migrations || 'false' }}
+        run: |
+          IMG="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/app:${{ github.sha }}"
+          ssh -i ~/.ssh/id_ed25519 "deploy@$VM_IP" "
+            set -e
+            docker pull '$IMG'
+            docker run --rm \
+              -e ALLOW_DESTRUCTIVE_MIGRATIONS='$ALLOW_DESTRUCTIVE_MIGRATIONS' \
+              --env-file /run/runtime-secrets/sillybus.env \
+              --env-file /srv/sillybus/config/common.env \
+              --env-file /srv/sillybus/config/prod.env \
+              -v sillybus_app-data:/app/data \
+              --entrypoint /app/migrate \
+              '$IMG'
+          "
+
+  # Bring up the runtime stack. docker-compose.nixos.yml contains only
+  # the long-running services (app, frontend, nginx, litestream
+  # replicate, otel-collector). Restore + migrate are already done.
+  deploy:
+    needs: [read_platform, migrate, build_frontend]
+    runs-on: ubuntu-latest
+    environment: sillybus
+    env:
+      VM_IP: ${{ needs.read_platform.outputs.vm_ip }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: cachix/install-nix-action@v27
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+      - name: Install opentofu via nix
+        run: |
+          nix profile install nixpkgs#opentofu
+          tofu version
+
+      - name: Pull SSH key from platform state
+        env:
+          AWS_ACCESS_KEY_ID:     ${{ secrets.PLATFORM_STATE_R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.PLATFORM_STATE_R2_SECRET_ACCESS_KEY }}
+          AWS_MAX_ATTEMPTS:      "5"
+        run: |
+          cd infra-sillybus
+          i=0; until tofu init -input=false; do i=$((i+1)); [ $i -ge 30 ] && { echo "::error::tofu init failed after 30 attempts"; exit 1; }; echo "tofu init attempt $i failed; sleeping 30s"; sleep 30; done
+          tofu apply -refresh-only -auto-approve -input=false -lock=false
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          tofu output -raw _platform_ci_deploy_private_key > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H "$VM_IP" >> ~/.ssh/known_hosts
+
+      - name: docker compose up
         run: |
           ssh -i ~/.ssh/id_ed25519 "deploy@$VM_IP" "
             cd /srv/sillybus &&
@@ -376,13 +507,11 @@ jobs:
             IMAGE_NAME='${{ env.IMAGE_NAME }}' \
             APP_IMAGE_TAG='${{ github.sha }}' \
             FRONTEND_IMAGE_TAG='${{ github.sha }}' \
-            ALLOW_DESTRUCTIVE_MIGRATIONS='$ALLOW_DESTRUCTIVE_MIGRATIONS' \
             docker compose -f docker-compose.nixos.yml pull &&
             REGISTRY='${{ env.REGISTRY }}' \
             IMAGE_NAME='${{ env.IMAGE_NAME }}' \
             APP_IMAGE_TAG='${{ github.sha }}' \
             FRONTEND_IMAGE_TAG='${{ github.sha }}' \
-            ALLOW_DESTRUCTIVE_MIGRATIONS='$ALLOW_DESTRUCTIVE_MIGRATIONS' \
             docker compose -f docker-compose.nixos.yml up -d --remove-orphans
           "
 

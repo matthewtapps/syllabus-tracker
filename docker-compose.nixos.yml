@@ -1,5 +1,14 @@
 name: sillybus
 
+# Runtime stack only. The litestream restore + DB migrations are
+# operated as their own GHA jobs (`litestream_restore`, `migrate`)
+# in deploy-sillybus.yaml so failures gate the deploy explicitly at
+# the workflow level. Both jobs operate on the `sillybus_app-data`
+# named volume directly via `docker run`, before this stack comes
+# up. By the time `docker compose up` runs here, /app/data/sqlite.db
+# is the canonical state (restored from R2, migrated to current
+# schema) and app + litestream-replicate can start.
+
 services:
   nginx:
     image: nginx:1.31-alpine-otel
@@ -37,79 +46,6 @@ services:
       retries: 3
       start_period: 5s
 
-  # One-shot init container: restore /data/sqlite.db from $LITESTREAM_BUCKET
-  # if the local volume is empty. Exits successfully whether a replica was
-  # found (restored) or not (empty bucket -> fresh deployment, app creates
-  # schema). app + litestream depend on this completing.
-  #
-  # This is the canonical "restore on start" mechanism. It runs on:
-  # - First deployment in a fresh volume (empty bucket: no-op; existing
-  #   bucket: restore from R2).
-  # - Cattle rebuild of the host (fresh volume, bucket has data: restore).
-  # - Spinning up a sibling stack pointed at a different bucket (set
-  #   LITESTREAM_BUCKET to the source service's bucket via runtime secrets;
-  #   for true forks, R2-to-R2 copy the source bucket into the sibling's
-  #   own bucket first).
-  litestream-restore:
-    image: litestream/litestream:0.3.13
-    restart: "no"
-    entrypoint: ["/bin/sh", "-c"]
-    command:
-      - |
-        set -e
-        if [ -f /data/sqlite.db ]; then
-          echo "[litestream-restore] /data/sqlite.db already present; skipping"
-          exit 0
-        fi
-        echo "[litestream-restore] no local DB; attempting restore from $${LITESTREAM_BUCKET}"
-        if litestream restore -config /etc/litestream.yml /data/sqlite.db; then
-          echo "[litestream-restore] restored from R2 ($$( du -h /data/sqlite.db | cut -f1 ))"
-        else
-          echo "[litestream-restore] no replica found in bucket; creating empty DB so app can initialize schema"
-          : > /data/sqlite.db
-          chmod 0660 /data/sqlite.db
-        fi
-    volumes:
-      - app-data:/data:rw
-      - ./config/litestream.yml:/etc/litestream.yml:ro
-    env_file:
-      - ./config/common.env
-      - ./config/prod.env
-      - /run/runtime-secrets/sillybus.env
-    networks:
-      - internal
-
-  # Run database migrations after litestream-restore has populated the
-  # volume. This was previously a standalone `docker run --entrypoint
-  # /app/migrate` step in the deploy workflow, but THAT ran BEFORE
-  # litestream-restore could see the volume, pre-populating sqlite.db
-  # with a fresh empty schema; litestream-restore then saw the file
-  # and skipped the restore, app started with empty schema, and
-  # litestream replicate clobbered the bucket with empty WAL. Moving
-  # migrate into compose lets us serialize: restore -> migrate -> app.
-  #
-  # `migrate` is idempotent and uses `create_if_missing(true)`, so it
-  # works in both cases: restored bucket data (apply new schema deltas
-  # on top of existing data) and truly empty bucket (create schema
-  # from scratch).
-  migrate:
-    image: ${REGISTRY}/${IMAGE_NAME}/app:${APP_IMAGE_TAG:-latest}
-    restart: "no"
-    entrypoint: ["/app/migrate"]
-    environment:
-      - ALLOW_DESTRUCTIVE_MIGRATIONS=${ALLOW_DESTRUCTIVE_MIGRATIONS:-false}
-    env_file:
-      - ./config/common.env
-      - ./config/prod.env
-      - /run/runtime-secrets/sillybus.env
-    volumes:
-      - app-data:/app/data
-    networks:
-      - internal
-    depends_on:
-      litestream-restore:
-        condition: service_completed_successfully
-
   app:
     image: ${REGISTRY}/${IMAGE_NAME}/app:${APP_IMAGE_TAG:-latest}
     restart: unless-stopped
@@ -129,12 +65,6 @@ services:
       - internal
     expose:
       - "8000"
-    # Wait for migrate -> litestream-restore chain to complete. App
-    # creates DB connections with create_if_missing(false), so the
-    # file must exist with the right schema before app starts.
-    depends_on:
-      migrate:
-        condition: service_completed_successfully
 
   frontend:
     image: ${REGISTRY}/${IMAGE_NAME}/frontend:${FRONTEND_IMAGE_TAG:-latest}
@@ -168,11 +98,9 @@ services:
       # 'Build sillybus-honeycomb.enc.env' step. Split so rotation
       # is one tofu apply, no commit.
       - /run/runtime-secrets/sillybus-honeycomb.env
-    # Wait for migrate (which waits for litestream-restore) so the
-    # initial state is settled before replicate starts streaming WALs.
     depends_on:
-      migrate:
-        condition: service_completed_successfully
+      app:
+        condition: service_started
     networks:
       - internal
 
