@@ -102,9 +102,15 @@ jobs:
       host_age_recipient: ${{ steps.read.outputs.host_age_recipient }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-      - uses: opentofu/setup-opentofu@v2
+      - uses: cachix/install-nix-action@v27
         with:
-          tofu_version: 1.12.x
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+      - name: Install opentofu via nix
+        # nix cache is independent of github releases CDN
+        run: |
+          nix profile install nixpkgs#opentofu
+          tofu version
       - name: Read platform state
         id: read
         env:
@@ -135,9 +141,15 @@ jobs:
       ALLOW_DESTRUCTIVE_MIGRATIONS: ${{ github.event.inputs.allow_destructive_migrations }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-      - uses: opentofu/setup-opentofu@v2
+      - uses: cachix/install-nix-action@v27
         with:
-          tofu_version: 1.12.x
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+      - name: Install opentofu via nix
+        # nix cache is independent of github releases CDN
+        run: |
+          nix profile install nixpkgs#opentofu
+          tofu version
       - name: Install sops
         # Inline curl install: nhedger/setup-sops is on Node 20.
         run: |
