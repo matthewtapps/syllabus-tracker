@@ -66,7 +66,7 @@ jobs:
           # Refresh-only persists data source values + outputs to state
           # without creating any resources. Then `tofu output -raw` is
           # reliable (avoids `tofu console`'s EOF-handling quirks).
-          tofu apply -refresh-only -auto-approve -input=false
+          tofu apply -refresh-only -auto-approve -input=false -lock=false
           VM_IP=$(tofu output -raw _platform_vm_ip)
           HOST_AGE=$(tofu output -raw _platform_host_age_recipient)
           echo "vm_ip=$VM_IP" >> "$GITHUB_OUTPUT"
@@ -180,7 +180,7 @@ jobs:
         run: |
           cd infra-sillybus
           i=0; until tofu init -input=false; do i=$((i+1)); [ $i -ge 10 ] && { echo "::error::tofu init failed after 10 attempts"; exit 1; }; echo "tofu init attempt $i failed; sleeping 30s"; sleep 30; done
-          tofu apply -refresh-only -auto-approve -input=false
+          tofu apply -refresh-only -auto-approve -input=false -lock=false
           VITE_HC=$(tofu output -raw _platform_honeycomb_browser_ingest)
           echo "::add-mask::$VITE_HC"
           # Step output stays within the job; doesn't cross boundary.
@@ -226,7 +226,7 @@ jobs:
         run: |
           cd infra-sillybus
           i=0; until tofu init -input=false; do i=$((i+1)); [ $i -ge 10 ] && { echo "::error::tofu init failed after 10 attempts"; exit 1; }; echo "tofu init attempt $i failed; sleeping 30s"; sleep 30; done
-          tofu apply -refresh-only -auto-approve -input=false
+          tofu apply -refresh-only -auto-approve -input=false -lock=false
           mkdir -p ~/.ssh && chmod 700 ~/.ssh
           tofu output -raw _platform_ci_deploy_private_key > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
