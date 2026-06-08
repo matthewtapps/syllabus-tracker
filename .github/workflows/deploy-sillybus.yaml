@@ -68,7 +68,7 @@ jobs:
           AWS_MAX_ATTEMPTS:      "5"
         run: |
           cd infra-sillybus
-          i=0; until tofu init -input=false; do i=$((i+1)); [ $i -ge 10 ] && { echo "::error::tofu init failed after 10 attempts"; exit 1; }; echo "tofu init attempt $i failed; sleeping 30s"; sleep 30; done
+          i=0; until tofu init -input=false; do i=$((i+1)); [ $i -ge 30 ] && { echo "::error::tofu init failed after 30 attempts"; exit 1; }; echo "tofu init attempt $i failed; sleeping 30s"; sleep 30; done
           # Refresh-only persists data source values + outputs to state
           # without creating any resources. Then `tofu output -raw` is
           # reliable (avoids `tofu console`'s EOF-handling quirks).
@@ -143,7 +143,7 @@ jobs:
           AWS_MAX_ATTEMPTS:      "5"
         run: |
           cd infra-sillybus
-          i=0; until tofu init -input=false; do i=$((i+1)); [ $i -ge 10 ] && { echo "::error::tofu init failed after 10 attempts"; exit 1; }; echo "tofu init attempt $i failed; sleeping 30s"; sleep 30; done
+          i=0; until tofu init -input=false; do i=$((i+1)); [ $i -ge 30 ] && { echo "::error::tofu init failed after 30 attempts"; exit 1; }; echo "tofu init attempt $i failed; sleeping 30s"; sleep 30; done
           tofu apply -auto-approve -input=false
 
   build_backend:
@@ -197,7 +197,7 @@ jobs:
           AWS_MAX_ATTEMPTS:      "5"
         run: |
           cd infra-sillybus
-          i=0; until tofu init -input=false; do i=$((i+1)); [ $i -ge 10 ] && { echo "::error::tofu init failed after 10 attempts"; exit 1; }; echo "tofu init attempt $i failed; sleeping 30s"; sleep 30; done
+          i=0; until tofu init -input=false; do i=$((i+1)); [ $i -ge 30 ] && { echo "::error::tofu init failed after 30 attempts"; exit 1; }; echo "tofu init attempt $i failed; sleeping 30s"; sleep 30; done
           tofu apply -refresh-only -auto-approve -input=false -lock=false
           VITE_HC=$(tofu output -raw _platform_honeycomb_browser_ingest)
           echo "::add-mask::$VITE_HC"
@@ -249,7 +249,7 @@ jobs:
           AWS_MAX_ATTEMPTS:      "5"
         run: |
           cd infra-sillybus
-          i=0; until tofu init -input=false; do i=$((i+1)); [ $i -ge 10 ] && { echo "::error::tofu init failed after 10 attempts"; exit 1; }; echo "tofu init attempt $i failed; sleeping 30s"; sleep 30; done
+          i=0; until tofu init -input=false; do i=$((i+1)); [ $i -ge 30 ] && { echo "::error::tofu init failed after 30 attempts"; exit 1; }; echo "tofu init attempt $i failed; sleeping 30s"; sleep 30; done
           tofu apply -refresh-only -auto-approve -input=false -lock=false
           mkdir -p ~/.ssh && chmod 700 ~/.ssh
           tofu output -raw _platform_ci_deploy_private_key > ~/.ssh/id_ed25519
