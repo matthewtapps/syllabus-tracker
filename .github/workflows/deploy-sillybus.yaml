@@ -382,11 +382,15 @@ jobs:
           # --entrypoint /bin/sh overrides the litestream image's default
           # `litestream` entrypoint so we can wrap the call in shell
           # logic (check for existing file, fall through on no-replica).
+          # config/prod.env supplies LITESTREAM_BUCKET + LITESTREAM_ENDPOINT
+          # (the compose stack picks it up automatically; standalone docker
+          # run needs it explicitly).
           ssh -i ~/.ssh/id_ed25519 "deploy@$VM_IP" '
             set -e
             docker run --rm \
               -v sillybus_app-data:/data:rw \
               -v /srv/sillybus/config/litestream.yml:/etc/litestream.yml:ro \
+              --env-file /srv/sillybus/config/prod.env \
               --env-file /run/runtime-secrets/sillybus.env \
               --entrypoint /bin/sh \
               litestream/litestream:0.3.13 \
@@ -395,6 +399,10 @@ jobs:
                 if [ -f /data/sqlite.db ]; then
                   echo \"[restore] /data/sqlite.db already present in volume; skipping\"
                   exit 0
+                fi
+                if [ -z \"\$LITESTREAM_BUCKET\" ]; then
+                  echo \"[restore] FATAL: LITESTREAM_BUCKET is empty; refusing to silently create an empty DB\" >&2
+                  exit 1
                 fi
                 echo \"[restore] no local DB; restoring from \$LITESTREAM_BUCKET\"
                 if litestream restore -config /etc/litestream.yml /data/sqlite.db; then
