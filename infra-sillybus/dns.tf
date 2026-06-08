@@ -23,15 +23,3 @@ resource "aws_route53_record" "sillybus_www" {
   ttl     = 300
   records = [local.vm_ip]
 }
-
-# Staged-trial sibling for legacy cutover validation. Points at
-# sugar-glider; Traefik routes Host(restored.sillybus.app) to the
-# sibling stack's port (via /srv/platform/traefik-dynamic/test-sibling.yml
-# or similar). Remove after legacy cutover is complete.
-resource "aws_route53_record" "sillybus_restored" {
-  zone_id = data.terraform_remote_state.platform.outputs.zone_ids["sillybus.app"]
-  name    = "restored.sillybus.app"
-  type    = "A"
-  ttl     = 60
-  records = [local.vm_ip]
-}
