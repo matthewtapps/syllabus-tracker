@@ -79,6 +79,37 @@ services:
     networks:
       - internal
 
+  # Run database migrations after litestream-restore has populated the
+  # volume. This was previously a standalone `docker run --entrypoint
+  # /app/migrate` step in the deploy workflow, but THAT ran BEFORE
+  # litestream-restore could see the volume, pre-populating sqlite.db
+  # with a fresh empty schema; litestream-restore then saw the file
+  # and skipped the restore, app started with empty schema, and
+  # litestream replicate clobbered the bucket with empty WAL. Moving
+  # migrate into compose lets us serialize: restore -> migrate -> app.
+  #
+  # `migrate` is idempotent and uses `create_if_missing(true)`, so it
+  # works in both cases: restored bucket data (apply new schema deltas
+  # on top of existing data) and truly empty bucket (create schema
+  # from scratch).
+  migrate:
+    image: ${REGISTRY}/${IMAGE_NAME}/app:${APP_IMAGE_TAG:-latest}
+    restart: "no"
+    entrypoint: ["/app/migrate"]
+    environment:
+      - ALLOW_DESTRUCTIVE_MIGRATIONS=${ALLOW_DESTRUCTIVE_MIGRATIONS:-false}
+    env_file:
+      - ./config/common.env
+      - ./config/prod.env
+      - /run/runtime-secrets/sillybus.env
+    volumes:
+      - app-data:/app/data
+    networks:
+      - internal
+    depends_on:
+      litestream-restore:
+        condition: service_completed_successfully
+
   app:
     image: ${REGISTRY}/${IMAGE_NAME}/app:${APP_IMAGE_TAG:-latest}
     restart: unless-stopped
@@ -98,11 +129,11 @@ services:
       - internal
     expose:
       - "8000"
-    # Wait for litestream-restore to have populated (or no-op'd) the volume
-    # before booting; otherwise app would create a fresh schema and clobber
-    # the restored DB on first write.
+    # Wait for migrate -> litestream-restore chain to complete. App
+    # creates DB connections with create_if_missing(false), so the
+    # file must exist with the right schema before app starts.
     depends_on:
-      litestream-restore:
+      migrate:
         condition: service_completed_successfully
 
   frontend:
@@ -137,10 +168,10 @@ services:
       # 'Build sillybus-honeycomb.enc.env' step. Split so rotation
       # is one tofu apply, no commit.
       - /run/runtime-secrets/sillybus-honeycomb.env
-    # Wait for litestream-restore to finish so we don't race against the
-    # restore on a cattle rebuild. app starts on the same gate.
+    # Wait for migrate (which waits for litestream-restore) so the
+    # initial state is settled before replicate starts streaming WALs.
     depends_on:
-      litestream-restore:
+      migrate:
         condition: service_completed_successfully
     networks:
       - internal

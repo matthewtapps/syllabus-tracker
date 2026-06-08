@@ -354,31 +354,21 @@ jobs:
           ssh -i ~/.ssh/id_ed25519 "deploy@$VM_IP" \
             "docker login ghcr.io -u '$GHCR_USER' --password-stdin" <<< "$GHCR_TOKEN"
 
-      - name: Run database migrations
-        env:
-          # Defaults to "false" on push triggers (the input default only
-          # applies to workflow_dispatch). The migrate binary refuses
-          # destructive changes unless this is "true", matching legacy.
-          ALLOW_DESTRUCTIVE_MIGRATIONS: ${{ github.event.inputs.allow_destructive_migrations || 'false' }}
-        run: |
-          # /app/migrate has create_if_missing(true); /app/syllabus-tracker
-          # does not. On a fresh sillybus volume the file doesn't exist,
-          # so we must run migrate first or the app panics on boot.
-          # Same image as the app, just a different entrypoint.
-          IMG="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/app:${{ github.sha }}"
-          ssh -i ~/.ssh/id_ed25519 "deploy@$VM_IP" "
-            docker pull \"$IMG\" &&
-            docker run --rm \
-              -e ALLOW_DESTRUCTIVE_MIGRATIONS='$ALLOW_DESTRUCTIVE_MIGRATIONS' \
-              --env-file /run/runtime-secrets/sillybus.env \
-              --env-file /srv/sillybus/config/common.env \
-              --env-file /srv/sillybus/config/prod.env \
-              -v sillybus_app-data:/app/data \
-              --entrypoint /app/migrate \
-              \"$IMG\"
-          "
-
       - name: docker compose up
+        env:
+          # Migrations now run as a compose `migrate` service ordered
+          # after litestream-restore (docker-compose.nixos.yml). The
+          # standalone `docker run --entrypoint /app/migrate` step that
+          # lived here was racing against litestream-restore: it pre-
+          # populated /app/data with a fresh empty sqlite.db, then
+          # litestream-restore saw the file present and skipped its R2
+          # restore, then litestream replicate clobbered the bucket
+          # with empty WAL. Bit us on the 2026-06-08 cattle verify.
+          #
+          # Default false on push (input default only applies to
+          # workflow_dispatch); migrate refuses destructive changes
+          # unless explicitly enabled.
+          ALLOW_DESTRUCTIVE_MIGRATIONS: ${{ github.event.inputs.allow_destructive_migrations || 'false' }}
         run: |
           ssh -i ~/.ssh/id_ed25519 "deploy@$VM_IP" "
             cd /srv/sillybus &&
@@ -386,11 +376,13 @@ jobs:
             IMAGE_NAME='${{ env.IMAGE_NAME }}' \
             APP_IMAGE_TAG='${{ github.sha }}' \
             FRONTEND_IMAGE_TAG='${{ github.sha }}' \
+            ALLOW_DESTRUCTIVE_MIGRATIONS='$ALLOW_DESTRUCTIVE_MIGRATIONS' \
             docker compose -f docker-compose.nixos.yml pull &&
             REGISTRY='${{ env.REGISTRY }}' \
             IMAGE_NAME='${{ env.IMAGE_NAME }}' \
             APP_IMAGE_TAG='${{ github.sha }}' \
             FRONTEND_IMAGE_TAG='${{ github.sha }}' \
+            ALLOW_DESTRUCTIVE_MIGRATIONS='$ALLOW_DESTRUCTIVE_MIGRATIONS' \
             docker compose -f docker-compose.nixos.yml up -d --remove-orphans
           "
 
