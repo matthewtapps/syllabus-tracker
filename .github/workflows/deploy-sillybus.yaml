@@ -330,13 +330,10 @@ jobs:
             nginx/ \
             "deploy@$VM_IP:/srv/sillybus/nginx/"
 
-      - name: docker login (so subsequent jobs' docker run + compose pull)
-        env:
-          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GHCR_USER:  ${{ github.actor }}
-        run: |
-          ssh -i ~/.ssh/id_ed25519 "deploy@$VM_IP" \
-            "docker login ghcr.io -u '$GHCR_USER' --password-stdin" <<< "$GHCR_TOKEN"
+      # docker login is intentionally NOT done here: GITHUB_TOKEN is
+      # per-job and gets revoked when prep_host ends, so a login here
+      # would leave stale creds for downstream jobs. migrate + deploy
+      # each do their own docker login with their job's own token.
 
   # Restore /app/data/sqlite.db in the sillybus_app-data named volume
   # from $LITESTREAM_BUCKET if missing. This is the first thing that
@@ -451,6 +448,14 @@ jobs:
           chmod 600 ~/.ssh/id_ed25519
           ssh-keyscan -H "$VM_IP" >> ~/.ssh/known_hosts
 
+      - name: docker login (this job's GITHUB_TOKEN)
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GHCR_USER:  ${{ github.actor }}
+        run: |
+          ssh -i ~/.ssh/id_ed25519 "deploy@$VM_IP" \
+            "docker login ghcr.io -u '$GHCR_USER' --password-stdin" <<< "$GHCR_TOKEN"
+
       - name: Run DB migrations
         env:
           ALLOW_DESTRUCTIVE_MIGRATIONS: ${{ github.event.inputs.allow_destructive_migrations || 'false' }}
@@ -502,6 +507,14 @@ jobs:
           tofu output -raw _platform_ci_deploy_private_key > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
           ssh-keyscan -H "$VM_IP" >> ~/.ssh/known_hosts
+
+      - name: docker login (this job's GITHUB_TOKEN)
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GHCR_USER:  ${{ github.actor }}
+        run: |
+          ssh -i ~/.ssh/id_ed25519 "deploy@$VM_IP" \
+            "docker login ghcr.io -u '$GHCR_USER' --password-stdin" <<< "$GHCR_TOKEN"
 
       - name: docker compose up
         run: |
