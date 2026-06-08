@@ -382,14 +382,18 @@ jobs:
 
       - name: Restore litestream from R2 (or noop if local DB present)
         run: |
+          # --entrypoint /bin/sh overrides the litestream image's default
+          # `litestream` entrypoint so we can wrap the call in shell
+          # logic (check for existing file, fall through on no-replica).
           ssh -i ~/.ssh/id_ed25519 "deploy@$VM_IP" '
             set -e
             docker run --rm \
               -v sillybus_app-data:/data:rw \
               -v /srv/sillybus/config/litestream.yml:/etc/litestream.yml:ro \
               --env-file /run/runtime-secrets/sillybus.env \
+              --entrypoint /bin/sh \
               litestream/litestream:0.3.13 \
-              /bin/sh -c "
+              -c "
                 set -e
                 if [ -f /data/sqlite.db ]; then
                   echo \"[restore] /data/sqlite.db already present in volume; skipping\"
