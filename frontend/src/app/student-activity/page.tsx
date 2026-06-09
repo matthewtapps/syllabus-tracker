@@ -43,7 +43,23 @@ export default function ActivityPage({ user }: ActivityPageProps) {
   const isOwnView = studentId === user.id;
   const canViewOthers = isCoachOrAdmin(user);
 
-  const feedQuery = useStudentFeed(studentId);
+  // Multi-select kind filter (URL: ?kinds=technique,rank_change). Pulled
+  // out so we can scope BOTH the network fetch (?kinds= on the API) and
+  // the client filter to the same selection.
+  const activeKindsList = useMemo<FeedItemKind[]>(() => {
+    const raw = searchParams.get('kinds');
+    if (!raw) return [];
+    const out: FeedItemKind[] = [];
+    for (const part of raw.split(',')) {
+      const v = part.trim();
+      if (v === 'technique' || v === 'rank_change') out.push(v);
+    }
+    return out;
+  }, [searchParams]);
+  const feedQuery = useStudentFeed(
+    studentId,
+    activeKindsList.length > 0 ? activeKindsList : undefined,
+  );
   // For the title chrome; the optimization to a dedicated profile-only
   // endpoint lives in a follow-up. Mirrors how /pins fetches the student
   // record today.
@@ -59,19 +75,11 @@ export default function ActivityPage({ user }: ActivityPageProps) {
     return map;
   }, [libraryQuery.data]);
 
-  // Multi-select kind filter. URL state via ?kinds=technique,rank_change.
-  // Empty array = no filter (show all). Pulled forward from M18 to land
-  // alongside the activity feed extraction.
-  const activeKinds = useMemo<Set<FeedItemKind>>(() => {
-    const raw = searchParams.get('kinds');
-    if (!raw) return new Set();
-    const out = new Set<FeedItemKind>();
-    for (const part of raw.split(',')) {
-      const v = part.trim();
-      if (v === 'technique' || v === 'rank_change') out.add(v);
-    }
-    return out;
-  }, [searchParams]);
+  // Same set as activeKindsList, just in Set form for O(1) chip lookups.
+  const activeKinds = useMemo<Set<FeedItemKind>>(
+    () => new Set(activeKindsList),
+    [activeKindsList],
+  );
 
   function toggleKind(kind: FeedItemKind) {
     setSearchParams(

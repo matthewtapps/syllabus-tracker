@@ -40,7 +40,13 @@ export const qk = {
     forStudent: number | null = null,
     ctx: string | null = null,
   ) => ["technique", techniqueId, "videos", forStudent, ctx] as const,
-  studentFeed: (studentId: number) => ["student", studentId, "feed"] as const,
+  studentFeed: (studentId: number, kinds?: readonly string[]) =>
+    [
+      "student",
+      studentId,
+      "feed",
+      kinds && kinds.length > 0 ? kinds.slice().sort().join(",") : null,
+    ] as const,
   studentPins: (studentId: number) => ["student", studentId, "pins"] as const,
   // Prefix matcher for all `techniqueVideos` cache buckets for a technique,
   // regardless of `forStudent`. Use when invalidating after a mutation that

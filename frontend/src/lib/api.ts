@@ -876,8 +876,12 @@ export interface StudentFeedResponse {
   items: FeedItem[];
 }
 
-export async function getStudentFeed(studentId: number): Promise<StudentFeedResponse> {
-  const response = await fetch(`/api/student/${studentId}/feed`, {
+export async function getStudentFeed(
+  studentId: number,
+  kinds?: readonly string[],
+): Promise<StudentFeedResponse> {
+  const qs = kinds && kinds.length > 0 ? `?kinds=${kinds.join(",")}` : "";
+  const response = await fetch(`/api/student/${studentId}/feed${qs}`, {
     credentials: "include",
   });
   if (!response.ok) throw response;

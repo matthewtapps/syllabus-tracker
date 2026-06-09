@@ -972,16 +972,36 @@ pub async fn api_set_student_rank(
 /// top-level item, reverse-chronological by latest activity. Item
 /// kinds in v1: `technique` and `rank_change`. Coaches can read any
 /// student's feed (CX-015); students can only read their own.
-#[get("/student/<id>/feed")]
+///
+/// `kinds`: optional comma-separated kind filter (e.g. `?kinds=technique`).
+/// When supplied, only items matching one of the listed kinds are returned.
+/// Unknown kinds are silently dropped so a stale frontend doesn't 400.
+#[get("/student/<id>/feed?<kinds>")]
 pub async fn api_get_student_feed(
     id: i64,
+    kinds: Option<String>,
     user: User,
     db: &State<Pool<Sqlite>>,
 ) -> ApiResult<Json<crate::db::feed::StudentFeedResponse>> {
     if user.id != id && !user.has_permission(Permission::ViewAllStudents) {
         return Err(Status::Forbidden.into());
     }
-    let items = crate::db::get_student_feed(db, id).await?;
+    let kind_filter: Option<std::collections::HashSet<String>> = kinds.map(|raw| {
+        raw.split(',')
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect()
+    });
+    let mut items = crate::db::get_student_feed(db, id).await?;
+    if let Some(kinds) = kind_filter {
+        items.retain(|item| {
+            let k = match item {
+                crate::db::feed::FeedItem::Technique(_) => "technique",
+                crate::db::feed::FeedItem::RankChange(_) => "rank_change",
+            };
+            kinds.contains(k)
+        });
+    }
     Ok(Json(crate::db::feed::StudentFeedResponse { items }))
 }
 

@@ -209,12 +209,15 @@ export function useLibraryTechniqueStats(
   });
 }
 
-export function useStudentFeed(studentId: number | undefined) {
+export function useStudentFeed(
+  studentId: number | undefined,
+  kinds?: readonly string[],
+) {
   return useQuery({
-    queryKey: qk.studentFeed(studentId ?? 0),
+    queryKey: qk.studentFeed(studentId ?? 0, kinds),
     queryFn:
       typeof studentId === "number" && Number.isFinite(studentId)
-        ? () => getStudentFeed(studentId)
+        ? () => getStudentFeed(studentId, kinds)
         : skipToken,
     staleTime: 0,
     refetchOnWindowFocus: true,
