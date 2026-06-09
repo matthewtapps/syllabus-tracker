@@ -1,0 +1,450 @@
+name: Staging sibling
+
+# Deploys a parallel ("sibling") stack on sugar-glider for inspecting
+# WIP roadmap work BEFORE it merges to main. Triggered manually via
+# workflow_dispatch with a branch input — the workflow builds backend
+# and frontend images from that branch and deploys them to
+# https://staging.sillybus.app.
+#
+# Differs from bootstrap-sibling.yaml in three ways:
+#   1. Builds images from a named branch instead of using :latest.
+#   2. Hardcodes the staging hostname + cert resolver (HTTPS via
+#      Let's Encrypt) so it just works in any browser.
+#   3. Wipes the videos.* tables after restoring the DB fork from
+#      sillybus-db-backups-prod, so a staging viewer can't trigger
+#      playback against prod S3 objects.
+#
+# On first run, the staging.sillybus.app DNS A record (in infra/dns.tf)
+# must already exist — Let's Encrypt HTTP-01 challenge needs public
+# resolution. The deploy.yaml workflow's apply_tofu job creates that
+# record when this branch lands on main.
+
+on:
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: "Branch to build and deploy"
+        required: true
+        default: main
+      refresh_db:
+        description: "Wipe the staging DB and re-fork from prod backups"
+        required: true
+        default: "false"
+        type: choice
+        options: ["false", "true"]
+      allow_destructive_migrations:
+        description: "Allow destructive schema migrations against the staged DB"
+        required: true
+        default: "true"
+        type: choice
+        options: ["false", "true"]
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: matthewtapps/syllabus-tracker
+  SIBLING_NAME: sillybus-staging
+  HOSTNAME: staging.sillybus.app
+  HOST_PORT: "8200"
+  OTEL_COLLECTOR_PORT: "34317"
+  SOURCE_BUCKET: sillybus-db-backups-prod
+  LITESTREAM_PATH: db
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: staging-sibling
+  cancel-in-progress: false
+
+jobs:
+  read_platform:
+    runs-on: ubuntu-latest
+    environment: production
+    outputs:
+      vm_ip:              ${{ steps.read.outputs.vm_ip }}
+      host_age_recipient: ${{ steps.read.outputs.host_age_recipient }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: cachix/install-nix-action@v27
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+      - name: Install opentofu via nix
+        run: |
+          nix profile install nixpkgs#opentofu
+          tofu version
+      - name: Read platform state
+        id: read
+        env:
+          AWS_ACCESS_KEY_ID:     ${{ secrets.PLATFORM_STATE_R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.PLATFORM_STATE_R2_SECRET_ACCESS_KEY }}
+          AWS_MAX_ATTEMPTS:      "5"
+        run: |
+          cd infra
+          i=0; until tofu init -input=false; do i=$((i+1)); [ $i -ge 30 ] && { echo "::error::tofu init failed after 30 attempts"; exit 1; }; echo "tofu init attempt $i failed; sleeping 30s"; sleep 30; done
+          tofu apply -refresh-only -auto-approve -input=false -lock=false
+          VM_IP=$(tofu output -raw _platform_vm_ip)
+          HOST_AGE=$(tofu output -raw _platform_host_age_recipient)
+          echo "vm_ip=$VM_IP" >> "$GITHUB_OUTPUT"
+          echo "host_age_recipient=$HOST_AGE" >> "$GITHUB_OUTPUT"
+          echo "VM_IP=$VM_IP"
+
+  build_backend:
+    runs-on: ubuntu-latest
+    outputs:
+      sha: ${{ steps.sha.outputs.short }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ github.event.inputs.branch }}
+      - name: Resolve branch HEAD SHA
+        id: sha
+        run: |
+          SHORT=$(git rev-parse --short HEAD)
+          echo "short=$SHORT" >> "$GITHUB_OUTPUT"
+          echo "Building backend from ${{ github.event.inputs.branch }} @ $SHORT"
+      - uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
+      - uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7.1.0
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/app:staging-${{ steps.sha.outputs.short }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/app:staging-latest
+          cache-from: type=gha,scope=backend
+          cache-to: type=gha,scope=backend-staging,mode=max
+
+  build_frontend:
+    runs-on: ubuntu-latest
+    environment: production
+    outputs:
+      sha: ${{ steps.sha.outputs.short }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ github.event.inputs.branch }}
+      - name: Resolve branch HEAD SHA
+        id: sha
+        run: |
+          SHORT=$(git rev-parse --short HEAD)
+          echo "short=$SHORT" >> "$GITHUB_OUTPUT"
+          echo "Building frontend from ${{ github.event.inputs.branch }} @ $SHORT"
+      - uses: cachix/install-nix-action@v27
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+      - name: Install opentofu via nix
+        run: |
+          nix profile install nixpkgs#opentofu
+          tofu version
+      - name: Pull VITE_HONEYCOMB_API_KEY from platform state
+        id: hc
+        env:
+          AWS_ACCESS_KEY_ID:     ${{ secrets.PLATFORM_STATE_R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.PLATFORM_STATE_R2_SECRET_ACCESS_KEY }}
+          AWS_MAX_ATTEMPTS:      "5"
+        run: |
+          cd infra
+          i=0; until tofu init -input=false; do i=$((i+1)); [ $i -ge 30 ] && { echo "::error::tofu init failed after 30 attempts"; exit 1; }; echo "tofu init attempt $i failed; sleeping 30s"; sleep 30; done
+          tofu apply -refresh-only -auto-approve -input=false -lock=false
+          VITE_HC=$(tofu output -raw _platform_honeycomb_browser_ingest)
+          echo "::add-mask::$VITE_HC"
+          echo "vite_key=$VITE_HC" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
+      - uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7.1.0
+        with:
+          context: ./frontend
+          file: ./frontend/Dockerfile
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/frontend:staging-${{ steps.sha.outputs.short }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/frontend:staging-latest
+          build-args: |
+            VITE_API_URL=/api
+            VITE_ENVIRONMENT=staging
+            VITE_HONEYCOMB_API_KEY=${{ steps.hc.outputs.vite_key }}
+          cache-from: type=gha,scope=frontend
+          cache-to: type=gha,scope=frontend-staging,mode=max
+
+  deploy:
+    needs: [read_platform, build_backend, build_frontend]
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      VM_IP: ${{ needs.read_platform.outputs.vm_ip }}
+      APP_TAG: staging-${{ needs.build_backend.outputs.sha }}
+      FRONTEND_TAG: staging-${{ needs.build_frontend.outputs.sha }}
+      REFRESH_DB: ${{ github.event.inputs.refresh_db }}
+      ALLOW_DESTRUCTIVE_MIGRATIONS: ${{ github.event.inputs.allow_destructive_migrations }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ github.event.inputs.branch }}
+      - uses: cachix/install-nix-action@v27
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+      - name: Install opentofu + sops via nix
+        run: |
+          nix profile install nixpkgs#opentofu nixpkgs#sops
+          tofu version
+          sops --version
+
+      - name: Pull SSH key from platform state
+        env:
+          AWS_ACCESS_KEY_ID:     ${{ secrets.PLATFORM_STATE_R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.PLATFORM_STATE_R2_SECRET_ACCESS_KEY }}
+          AWS_MAX_ATTEMPTS:      "5"
+        run: |
+          cd infra
+          i=0; until tofu init -input=false; do i=$((i+1)); [ $i -ge 30 ] && { echo "::error::tofu init failed after 30 attempts"; exit 1; }; echo "tofu init attempt $i failed; sleeping 30s"; sleep 30; done
+          tofu apply -refresh-only -auto-approve -input=false -lock=false
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          tofu output -raw _platform_ci_deploy_private_key > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H "$VM_IP" >> ~/.ssh/known_hosts
+
+      - name: Build runtime-secrets for staging sibling
+        env:
+          AWS_ACCESS_KEY_ID:     ${{ secrets.PLATFORM_STATE_R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.PLATFORM_STATE_R2_SECRET_ACCESS_KEY }}
+          AWS_MAX_ATTEMPTS:      "5"
+          HOST_AGE_RECIPIENT:    ${{ needs.read_platform.outputs.host_age_recipient }}
+        run: |
+          cd infra
+          BACKEND_HC=$(tofu output -raw _platform_honeycomb_backend_ingest)
+          BROWSER_HC=$(tofu output -raw _platform_honeycomb_browser_ingest)
+          echo "::add-mask::$BACKEND_HC"
+          echo "::add-mask::$BROWSER_HC"
+
+          install -m 0600 /dev/stdin /tmp/_hc.env <<EOF
+          HONEYCOMB_API_KEY=$BACKEND_HC
+          VITE_HONEYCOMB_API_KEY=$BROWSER_HC
+          EOF
+          sops --config /dev/null -e --age "$HOST_AGE_RECIPIENT" \
+            --input-type=dotenv --output-type=dotenv /tmp/_hc.env > /tmp/${SIBLING_NAME}-honeycomb.enc.env
+          shred -u /tmp/_hc.env
+
+      - name: Ship runtime-secrets to host
+        run: |
+          rsync -avz -e "ssh -i ~/.ssh/id_ed25519" \
+            runtime-secrets.enc.env \
+            "deploy@$VM_IP:/tmp/${SIBLING_NAME}.enc.env"
+          rsync -avz -e "ssh -i ~/.ssh/id_ed25519" \
+            /tmp/${SIBLING_NAME}-honeycomb.enc.env \
+            "deploy@$VM_IP:/tmp/${SIBLING_NAME}-honeycomb.enc.env"
+          ssh -i ~/.ssh/id_ed25519 "deploy@$VM_IP" "
+            sudo install -o root -g root -m 0640 /tmp/${SIBLING_NAME}.enc.env /etc/secrets.d/${SIBLING_NAME}.enc.env
+            sudo install -o root -g root -m 0640 /tmp/${SIBLING_NAME}-honeycomb.enc.env /etc/secrets.d/${SIBLING_NAME}-honeycomb.enc.env
+            sudo systemctl restart runtime-secrets-decrypt.service
+          "
+          shred -u /tmp/${SIBLING_NAME}-honeycomb.enc.env
+
+      - name: Ship compose stack + config
+        run: |
+          ssh -i ~/.ssh/id_ed25519 "deploy@$VM_IP" "
+            sudo install -d -o deploy -g users -m 0755 /srv/${SIBLING_NAME} &&
+            sudo install -d -o deploy -g users -m 0755 /srv/${SIBLING_NAME}/config &&
+            sudo install -d -o deploy -g users -m 0755 /srv/${SIBLING_NAME}/nginx
+          "
+          rsync -avz --delete -e "ssh -i ~/.ssh/id_ed25519" \
+            docker-compose.nixos.yml \
+            "deploy@$VM_IP:/srv/${SIBLING_NAME}/docker-compose.nixos.yml"
+          rsync -avz --delete -e "ssh -i ~/.ssh/id_ed25519" \
+            config/ \
+            "deploy@$VM_IP:/srv/${SIBLING_NAME}/config/"
+          rsync -avz --delete -e "ssh -i ~/.ssh/id_ed25519" \
+            nginx/ \
+            "deploy@$VM_IP:/srv/${SIBLING_NAME}/nginx/"
+          cat > /tmp/${SIBLING_NAME}-override.yml <<EOF
+          # Auto-generated by staging.yml. Points env_file at the
+          # staging sibling's runtime-secrets and renames the
+          # litestream container to avoid collision with the primary.
+          services:
+            app:
+              env_file:
+                - ./config/common.env
+                - ./config/prod.env
+                - /run/runtime-secrets/${SIBLING_NAME}.env
+                - /run/runtime-secrets/${SIBLING_NAME}-honeycomb.env
+            frontend:
+              env_file:
+                - ./config/common.env
+                - ./config/prod.env
+                - /run/runtime-secrets/${SIBLING_NAME}.env
+                - /run/runtime-secrets/${SIBLING_NAME}-honeycomb.env
+            litestream:
+              container_name: ${SIBLING_NAME}-litestream
+              env_file:
+                - ./config/common.env
+                - ./config/prod.env
+                - /run/runtime-secrets/${SIBLING_NAME}.env
+                - /run/runtime-secrets/${SIBLING_NAME}-honeycomb.env
+            otel-collector:
+              env_file:
+                - ./config/common.env
+                - ./config/prod.env
+                - /run/runtime-secrets/${SIBLING_NAME}.env
+                - /run/runtime-secrets/${SIBLING_NAME}-honeycomb.env
+          EOF
+          rsync -avz -e "ssh -i ~/.ssh/id_ed25519" \
+            /tmp/${SIBLING_NAME}-override.yml \
+            "deploy@$VM_IP:/srv/${SIBLING_NAME}/docker-compose.override.yml"
+
+      - name: docker login on host
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GHCR_USER:  ${{ github.actor }}
+        run: |
+          ssh -i ~/.ssh/id_ed25519 "deploy@$VM_IP" \
+            "docker login ghcr.io -u '$GHCR_USER' --password-stdin" <<< "$GHCR_TOKEN"
+
+      - name: Wipe the staging volume if refresh_db requested
+        if: ${{ github.event.inputs.refresh_db == 'true' }}
+        run: |
+          ssh -i ~/.ssh/id_ed25519 "deploy@$VM_IP" "
+            set -e
+            if [ -d /srv/${SIBLING_NAME} ]; then
+              cd /srv/${SIBLING_NAME} && \
+                docker compose -p ${SIBLING_NAME} -f docker-compose.nixos.yml down -v --remove-orphans || true
+            fi
+            docker volume rm ${SIBLING_NAME}_app-data || true
+          "
+
+      - name: Restore DB from production litestream backup (if volume empty)
+        run: |
+          ssh -i ~/.ssh/id_ed25519 "root@$VM_IP" "
+            set -e
+            docker volume create ${SIBLING_NAME}_app-data >/dev/null
+            VOL_DATA=/var/lib/docker/volumes/${SIBLING_NAME}_app-data/_data
+            if [ -f \"\$VOL_DATA/sqlite.db\" ] && [ -s \"\$VOL_DATA/sqlite.db\" ]; then
+              echo '[restore] sqlite.db already present in volume; skipping fork'
+              exit 0
+            fi
+            cat > /srv/${SIBLING_NAME}/config/litestream-restore.yml <<INNER
+          dbs:
+            - path: /data/sqlite.db
+              replicas:
+                - type: s3
+                  bucket: ${SOURCE_BUCKET}
+                  path: ${LITESTREAM_PATH}
+                  endpoint: https://ea9e8573831e597fc41f865267b8fd35.r2.cloudflarestorage.com
+                  region: auto
+                  access-key-id: \\\${LITESTREAM_ACCESS_KEY_ID}
+                  secret-access-key: \\\${LITESTREAM_SECRET_ACCESS_KEY}
+          INNER
+            set -a; . /run/runtime-secrets/${SIBLING_NAME}.env; set +a
+            docker run --rm \
+              -v ${SIBLING_NAME}_app-data:/data \
+              -v /srv/${SIBLING_NAME}/config/litestream-restore.yml:/etc/litestream.yml:ro \
+              -e LITESTREAM_ACCESS_KEY_ID -e LITESTREAM_SECRET_ACCESS_KEY \
+              litestream/litestream:0.3.13 \
+              restore -config /etc/litestream.yml /data/sqlite.db
+            echo '[restore] fork from production complete'
+          "
+
+      - name: Wipe videos.* rows so staging can't trigger prod S3 reads
+        # User asked to "ignore videos" on staging. The forked DB
+        # has the rows but the storage_key fields point at the prod
+        # bucket; with the shared S3 creds in runtime-secrets the
+        # sibling could fetch them. Easier to nuke the rows than to
+        # rotate creds for one sibling.
+        run: |
+          ssh -i ~/.ssh/id_ed25519 "root@$VM_IP" "
+            set -e
+            VOL_DATA=/var/lib/docker/volumes/${SIBLING_NAME}_app-data/_data
+            docker run --rm \
+              -v ${SIBLING_NAME}_app-data:/data \
+              keinos/sqlite3:latest \
+              sqlite3 /data/sqlite.db \"DELETE FROM video_watch_events; DELETE FROM video_watch_aggregates; DELETE FROM video_student_visibility; DELETE FROM videos;\"
+            echo '[wipe] videos tables emptied on staging DB'
+          "
+
+      - name: Run migrations on staging DB
+        run: |
+          IMG="${REGISTRY}/${IMAGE_NAME}/app:${APP_TAG}"
+          ssh -i ~/.ssh/id_ed25519 "deploy@$VM_IP" "
+            docker pull '$IMG' &&
+            docker run --rm \
+              -e ALLOW_DESTRUCTIVE_MIGRATIONS=$ALLOW_DESTRUCTIVE_MIGRATIONS \
+              --env-file /run/runtime-secrets/${SIBLING_NAME}.env \
+              --env-file /run/runtime-secrets/${SIBLING_NAME}-honeycomb.env \
+              --env-file /srv/${SIBLING_NAME}/config/common.env \
+              --env-file /srv/${SIBLING_NAME}/config/prod.env \
+              -v ${SIBLING_NAME}_app-data:/app/data \
+              --entrypoint /app/migrate \
+              '$IMG'
+          "
+
+      - name: docker compose up
+        run: |
+          ssh -i ~/.ssh/id_ed25519 "deploy@$VM_IP" "
+            cd /srv/${SIBLING_NAME} &&
+            REGISTRY='${REGISTRY}' \
+            IMAGE_NAME='${IMAGE_NAME}' \
+            APP_IMAGE_TAG='${APP_TAG}' \
+            FRONTEND_IMAGE_TAG='${FRONTEND_TAG}' \
+            NGINX_HOST_PORT='${HOST_PORT}' \
+            OTEL_COLLECTOR_HOST_PORT='${OTEL_COLLECTOR_PORT}' \
+            docker compose -p ${SIBLING_NAME} -f docker-compose.nixos.yml -f docker-compose.override.yml pull &&
+            REGISTRY='${REGISTRY}' \
+            IMAGE_NAME='${IMAGE_NAME}' \
+            APP_IMAGE_TAG='${APP_TAG}' \
+            FRONTEND_IMAGE_TAG='${FRONTEND_TAG}' \
+            NGINX_HOST_PORT='${HOST_PORT}' \
+            OTEL_COLLECTOR_HOST_PORT='${OTEL_COLLECTOR_PORT}' \
+            docker compose -p ${SIBLING_NAME} -f docker-compose.nixos.yml -f docker-compose.override.yml up -d --remove-orphans
+          "
+
+      - name: Ship Traefik dynamic config (HTTPS via Let's Encrypt)
+        run: |
+          cat > /tmp/${SIBLING_NAME}.yml <<EOF
+          http:
+            routers:
+              ${SIBLING_NAME}:
+                rule: Host(\`${HOSTNAME}\`)
+                service: ${SIBLING_NAME}
+                entryPoints: [websecure]
+                tls:
+                  certResolver: letsencrypt
+            services:
+              ${SIBLING_NAME}:
+                loadBalancer:
+                  servers:
+                    - url: http://127.0.0.1:${HOST_PORT}
+          EOF
+          rsync -avz -e "ssh -i ~/.ssh/id_ed25519" \
+            /tmp/${SIBLING_NAME}.yml \
+            "deploy@$VM_IP:/tmp/${SIBLING_NAME}.yml"
+          ssh -i ~/.ssh/id_ed25519 "deploy@$VM_IP" "
+            sudo install -o root -g root -m 0644 /tmp/${SIBLING_NAME}.yml /srv/platform/traefik-dynamic/${SIBLING_NAME}.yml
+          "
+
+      - name: Verify staging is reachable
+        run: |
+          echo "Waiting up to 90s for https://${HOSTNAME}/api/health to come up..."
+          for i in {1..18}; do
+            if curl -fsSL --max-time 5 https://${HOSTNAME}/api/health; then
+              echo ""
+              echo "Staging deployed: https://${HOSTNAME}"
+              echo "  branch:   ${{ github.event.inputs.branch }}"
+              echo "  app:      ${REGISTRY}/${IMAGE_NAME}/app:${APP_TAG}"
+              echo "  frontend: ${REGISTRY}/${IMAGE_NAME}/frontend:${FRONTEND_TAG}"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "::warning::Health check did not respond within 90s. Let's Encrypt cert may still be issuing; retry in a minute."
+          exit 1
