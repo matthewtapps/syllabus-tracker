@@ -14,6 +14,121 @@ This is a living document. Re-read it before starting each milestone; mark miles
 
 ---
 
+## Plan amendment: 2026-06-10 — Top-level pages + shared row component
+
+> Captured after PR #25 shipped a shared `LibraryTechniqueRow` component and lifted Pins to its own page. Further product feedback during that session reshapes the IA the original [2026-06-09 amendment](#plan-amendment-2026-06-09--ia--data-model-reframe) sketched. **This amendment overrides** the M5b chip-filter framing and the "filter chips replace tabs" decision (#16) where they conflict.
+
+### What changes
+
+**The student-facing app is six top-level routes, not a tabbed profile.**
+
+- `/dashboard` (existing) — coach/student landing
+- `/syllabuses` and `/syllabuses/<id>` (existing, M4.5) — list + detail
+- `/library` (existing) — the global technique library
+- `/pins` (NEW, current user) + `/student/:id/pins` (NEW, coach view) — shipped in PR #25
+- `/activity` (NEW, current user) + `/student/:id/activity` (NEW, coach view) — the activity feed
+- `/student/:id/syllabus` (NEW) — the per-student syllabus content the 2026-06-09 amendment already moved out of the profile
+
+Syllabuses / Library / Pins each render full technique details (expanded rows with notes, videos, syllabus context badges). Activity Feed renders activity-context snippets via a wrapper card concept (below). The previously-planned filter chips on the feed page (M5b3) cease to make sense as "Activity / Pinned / Camps switchers" because Pinned and Camps lift to their own routes; chips on the feed are reduced to **item-kind filters within the activity feed itself** (techniques / rank changes / threads / etc), not view switchers.
+
+**`TechniqueRow` is the shared base; surfaces overlay context.**
+
+- The component lives at `frontend/src/components/library-technique-row.tsx` (shipped in PR #25). It supports a list-mode expanded-in-place layout where the collapsed meta disappears on expand instead of repeating above the body.
+- Library, Pins, and (followup) the Syllabus page all consume the same row. Surface-specific info (syllabus status badge on a pin, attempt-log surface on a syllabus row, etc.) overlays via the existing `badges` prop and a small number of new opt-in sections in the expanded body.
+- The current `TechniqueRow` in `student-techniques/components/technique-row.tsx` (used by the syllabus tab) is a separate component with a different data shape (`Technique` = `StudentTechnique`). Consolidating into one shared base is a follow-up refactor (M5d below); the immediate work uses two adjacent components that follow the same UX pattern.
+
+**Activity feed cards become `ActivityFeedItem` wrappers.**
+
+- The activity feed is a list of cards. Each card = an `ActivityFeedItem` wrapper around one or more child component(s): a technique, a camp, a video, a thread.
+- Children render in **slim mode** when nested inside a feed card: expanded by default, minimal chrome, focused on "the item plus the activity snippet that triggered the card." For a technique that's slim mode = technique name + relevant context (which syllabus / which video / which thread tripped it), NOT the full library expanded body.
+- Example: "Student commented on this video on this technique" → one feed card showing the technique slim, the video open at the relevant moment, the thread underneath.
+- This supersedes the M5b2 "FeedCard family" framing (per-kind card components) with a wrapper-plus-children model. M5b2's per-kind cards become **slim-mode renderers** for each item kind, composed inside `ActivityFeedItem`.
+
+**The student profile page (`/student/:id`) goes away as a tab container.**
+
+- Today: `/student/:id` is a 4-tab page (Activity / Syllabus / Pinned / Camps). Pinned already redirects to `/pins` (PR #25).
+- Target: `/student/:id` redirects to `/student/:id/activity` (the new activity feed route). Coach navigation flows through that. Student rank header strip + footage badge etc. become a small wrapper component the activity / syllabus pages share, not a "profile page."
+
+### What this does to existing milestones
+
+- **M5a** (already shipped GH PRs #12+#13): the 4-tab scaffold is officially superseded by separate routes. The scaffold doesn't get removed until each tab lifts out. Order: Pinned (PR #25, ✅ shipped), Activity (M5b2'), Syllabus (M5b1 already plans this), then drop the tabs container.
+- **M5b1**: Syllabus extraction unchanged in intent. Route name becomes `/student/:id/syllabus` (was that already).
+- **M5b2** (FeedCard family): superseded — reshaped into the `ActivityFeedItem` wrapper + slim children model. Activity feed extraction (the new `/student/:id/activity` route) is the operative work; per-kind cards become slim-mode child components.
+- **M5b3** (filter chips on feed): scope shrinks. Filter chips remain useful WITHIN the activity feed for kind filters, but they no longer replace "view-switching tabs" since pinned / camps are separate pages now.
+- **M6 PR 4** (Pinned tab content + syllabus-context surfacing + profile header strip): ✅ shipped as PR #21 + lifted further to /pins in PR #25.
+- **M18** (activity feed polish): kind-filter chips and unseen divider remain. Item-priority styling, free-text search remain.
+
+### What stays unchanged
+
+- M5c atomic data-model cutover stays as planned. The shape of `student_syllabuses` / `student_syllabus_techniques` doesn't change; only the surfaces that consume them flip from tabs to routes.
+- M6's pin/unpin endpoints, `technique_notes` table, dual-read shim, writer cutover, graduated read-only — all shipped (PRs #18 / #19 / #20 / #21 / #22).
+- M7 schema + videos.rs query cutover (PRs #23 / #24) — shipped.
+- Pending decisions #17–#23 from the prior amendment stay valid except #22 (one card per (student, technique)) which now reads in the context of the `ActivityFeedItem` wrapper: one wrapper per (student, technique) event, child renderers may include multiple syllabuses' worth of badges inside the slim technique view.
+
+### New pending decisions
+
+| # | Decision | Pick | Why |
+|---|---|---|---|
+| 24 | Where the student rank / footage badge header lives once the profile-tabs container goes away | A small `<StudentHeaderStrip>` component the `/student/:id/activity` and `/student/:id/syllabus` pages both render at the top. Coach-only views (`/student/:id/pins` already does this) get the same component. | Avoids creating a fourth surface that's "just the profile header." Keeps the chrome where the user is actually working. |
+| 25 | Default landing when navigating to `/student/:id` (legacy URL) | Redirect to `/student/:id/activity`. | Mirrors the user's mental model: "this person's recent activity" is the entry point. Coaches who want syllabus tap "Syllabus" from there. |
+| 26 | Shared row component scope | Two adjacent components for now: `LibraryTechniqueRow` (used by library + pins + future activity-slim) and the existing syllabus-side `TechniqueRow` (used by syllabus page). M5d below introduces the unified base extraction. | The data shapes are genuinely different — `LibraryTechniqueRow` data has student / video counts; `StudentTechnique` has status / attempts / notes. Forcing one component to handle both now would require a normalized intermediate type AND porting the syllabus row's StatusToggle / NotesEditor / AttemptsList plumbing. Defer to a focused refactor. |
+| 27 | Activity feed slim-mode renderer location | A new directory `frontend/src/components/feed/` with one file per kind (`technique-slim.tsx`, `rank-change-slim.tsx`, etc) plus `activity-feed-item.tsx` as the wrapper. Slim renderers compose the shared base row in a different mode rather than duplicating layout. | Keeps the activity feed's special-case rendering separated from the row component itself (which serves the full-detail surfaces). Each slim renderer is small (< 100 lines) and contains the activity-context formatting for its kind. |
+| 28 | Filter-chip scope on the activity feed | Chips filter by item kind only (technique / rank_change / future kinds). They do NOT switch to other top-level routes. | Pinned / Camps / etc are their own pages now. Filtering the activity feed by what KIND of activity remains a useful concept. |
+
+### What we add to the roadmap
+
+A new sub-milestone M5d covers the cleanup pass:
+
+- **M5b2'** (renamed from M5b2): Activity feed extraction to `/student/:id/activity` + `/activity` (own view). Use the existing `activity-feed.tsx` content lifted out of the profile tab. Each item becomes wrapped in an `ActivityFeedItem` card with the technique / rank slim-mode child renderer.
+- **M5b3'**: drop the profile tabs container. `/student/:id` redirects to `/student/:id/activity`. Rank / footage strip becomes a shared `<StudentHeaderStrip>` component used by `/activity`, `/syllabus`, `/pins`, `/camps` (future) variants.
+- **M5d** (NEW): Unified `TechniqueRow` base — focused refactor that merges the syllabus-side `TechniqueRow` and the library-side `LibraryTechniqueRow` into one base. Surfaces flip to it in one PR each.
+
+These slot in before M5c (atomic data-model cutover). M5c is unaffected at the data layer; only the consumer rewrites in M5c change to target the new routes instead of the old tab content.
+
+### Rubber-duck review (2026-06-10)
+
+Senior-engineer pass before kickoff. The amendment is implementable but has a handful of technical gotchas worth naming:
+
+**1. `StudentHeaderStrip` data source.**
+Today the rank strip pulls fields from `useStudentTechniques(id).data.student`, which loads ALL the student's techniques as a side effect. With the syllabus / activity / pins each on its own route, having all three pages fetch `useStudentTechniques` just for the header is wasteful. Decision: extract a `useStudentProfile(id)` hook returning the minimal header fields (display name, rank, footage badge, graduated_at). The existing `users` endpoint likely has the data; verify the response shape and add the hook before M5b2' extracts the strip.
+
+**2. Bottom nav slot pressure.**
+After M5b2' lands Activity and PR #25 already added Pins, the student bottom nav balloons to: Dashboard / My techniques / Library / Pins / Activity / More. Six slots on a mobile bar is too many. The "My techniques" entry (which today points at `/student/<myId>` = the syllabus tab) becomes redundant once Syllabus is at `/student/<myId>/syllabus`. Decision: in M5b2', replace "My techniques" with "Activity" as the student's primary landing; "Syllabus" is reachable via Activity's "View syllabus" button and via Library → syllabus drill-in. Final student nav: Dashboard / Activity / Library / Pins / More.
+
+**3. Legacy URL preservation.**
+`/student/:id?focus=42&profile_tab=syllabus` URLs exist in coach bookmarks, M5a feed deep-links, and dashboard rows. The redirect from `/student/:id` to `/student/:id/activity` needs a sniff for legacy query params: if `profile_tab=syllabus` or `focus=` is present, redirect to `/student/:id/syllabus?focus=...` instead. Drop the `profile_tab` param after rewriting. Cover this in the M5b3' PR.
+
+**4. `ActivityFeedItem` wrapper's child composition story.**
+The amendment says "wrapper around one or more children." Today's feed kinds are `technique` and `rank_change` — each card has ONE child. Composite cards (technique + video + thread for "student commented on this video on this technique") only become possible when the backend feed item carries cross-references to videos / threads. That's M13 / M14 / M16 work. For M5b2', wrap one child per item; the API is the same, just nothing composes yet. Note the multi-child invariant in the wrapper component's prop type so future kinds slot in cleanly.
+
+**5. Slim technique renderer vs library row reuse.**
+Tempting: have `TechniqueSlim` BE `LibraryTechniqueRow` in a "slim" mode so the user sees one consistent visual treatment. Cost: forces the activity feed to fetch full `LibraryTechniqueRow` data for every technique item, which is N extra queries per feed. Decision: for M5b2', `TechniqueSlim` is a small purpose-built component that consumes feed item data only (technique_id / title / status / latest_activity_at). Visual style mirrors the library row's collapsed appearance. When M5d consolidates rows, slim mode becomes a prop on the unified base AND the activity feed query gets denormalized to carry the extra fields slim mode needs — that's the right time to optimize, not now.
+
+**6. Profile-tabs deletion timing.**
+M5b3' deletes the `<Tabs>` container. Files affected:
+- `student-techniques/page.tsx` (~1000 lines today) shrinks to a redirect.
+- `student-techniques/components/activity-feed.tsx` retires.
+- `student-techniques/components/technique-filters.tsx` (syllabus-side filter chips) moves to the syllabus page during M5b1's syllabus extraction — NOT deleted here.
+- `student-techniques/components/technique-row.tsx` stays (used by syllabus page) until M5d consolidates.
+
+Order matters: lift activity (M5b2'), lift syllabus (M5b1, sequenced earlier), THEN delete tabs (M5b3'). If syllabus lift slips, M5b3' blocks.
+
+**7. PR #25's `LibraryTechniqueRow` already lives at `components/library-technique-row.tsx`.**
+The M5d consolidation lands the unified base at `components/technique-row.tsx`. That conflicts with the syllabus-side `student-techniques/components/technique-row.tsx`. Sequencing: M5d PR 1 lands the new base at a fresh path like `components/technique-row-base.tsx`, surfaces flip, then the legacy paths get deleted in the last PR of M5d. Or pick a different final name to avoid the path conflict entirely.
+
+**8. `/student/:id/activity` permissions match `/student/:id/pins`.**
+Already enforced in `student-pins/page.tsx`: own view always allowed; viewing others requires `isCoachOrAdmin(user)`. Mirror exactly. Don't introduce a new permission for activity-feed-viewing — the M5a feed endpoint's per-route guard is what backs this.
+
+**9. `data-expanded={expanded}` styling in PR #25.**
+The new `LibraryTechniqueRow` uses `data-[expanded=true]:border-l-primary data-[expanded=true]:bg-muted/20` for the expanded affordance. Tailwind's `data-[*=*]` selector requires the JIT compiler to see those classes statically — they are, so this works. Confirmed via PR #25's clean build, just noting it for anyone reviewing.
+
+**10. Test coverage.**
+The activity feed extraction touches the same UI tested implicitly via the dashboard / dot-tests in `test/api.rs`. None of those hit the activity feed surface directly. Manual verification on staging is the ground truth. If we want a feed regression test, add one in M5b2' alongside the new route.
+
+No blocker found. Sequencing: M5b1 (syllabus extraction) → M5b2' (activity extraction) → M5b3' (delete tabs). M5d (unified row) is parallel-safe and can land any time after M5b2'.
+
+---
+
 ## Plan amendment: 2026-06-09 — IA + data model reframe
 
 After M5's first pieces shipped (GH PRs #12 + #13), product feedback redirected several of the foundational assumptions in this document. The changes below **override** the corresponding sections later on; treat this amendment as load-bearing.
@@ -347,9 +462,53 @@ Any coach role can read any student's feed (CX-015); students can only read thei
 
 **PR breakdown** (~2): (1) FeedCard family extraction + card components. (2) Drop tabs container + flatten profile root.
 
-### M5b3 — Filter chips + infinite scroll + Framer Motion
+> ⚠️ **Superseded by 2026-06-10 amendment.** The "FeedCard family" framing is replaced by `ActivityFeedItem` wrapper cards with slim-mode child renderers. See M5b2' below for the operative work; M5b2's "Drop tabs container + flatten profile root" step survives there as M5b3'.
 
-**Goal**: Add filter chips above the feed and wire up infinite scroll. Framer Motion ships as a project dependency (per decision #23) for chip-toggle card animations.
+### M5b2' — Activity feed extraction to its own route (introduced by 2026-06-10 amendment)
+
+**Goal**: Lift the activity feed out of the profile tab into its own top-level route. Introduce the `ActivityFeedItem` wrapper card concept with kind-specific slim-mode child renderers.
+
+**Routes**:
+- `/activity` — current user's activity feed (students land here from the bottom nav).
+- `/student/:id/activity` — coach view of any student's feed. Internally same page, different `id` from URL params.
+- `/student/:id` (legacy) — redirects to `/student/:id/activity` per decision #25.
+
+**Frontend**:
+- New `frontend/src/app/activity/page.tsx` (or `student-activity/page.tsx` mirroring `student-pins/`). Renders `<StudentHeaderStrip>` (decision #24) at top + feed body.
+- New `frontend/src/components/feed/activity-feed-item.tsx` — the wrapper card. Uses shadcn `Card` primitives. Composes one or more child components via children prop or per-kind dispatch.
+- New `frontend/src/components/feed/technique-slim.tsx` — slim renderer for a technique-kind feed item. Reuses the shared base data shape; renders technique name + activity-relevant context (which syllabus / video / thread tripped the item). Does NOT render the full library expanded body.
+- New `frontend/src/components/feed/rank-change-slim.tsx` — slim renderer for rank-change items.
+- Existing `student-techniques/components/activity-feed.tsx` (in the profile tab) gets retired as part of this PR; the new page picks up its content and rewrites it through `<ActivityFeedItem>`.
+- Bottom-nav for students gains an Activity entry (between Library and Pins or in front of Library, design TBD).
+
+**Backend**: no changes for slim-mode rendering. `GET /api/student/<id>/feed` already returns item-kind. Pagination plumbing (cursor) lifted from M5b1 stays as-is.
+
+**Auth**: same model as `/pins` — own view always allowed; viewing another's activity requires coach/admin. The page guards with `isCoachOrAdmin(user)` when the URL `id` differs from `user.id`, matching `student-pins/page.tsx`.
+
+**PR breakdown** (~3): (1) New route + page skeleton + `<StudentHeaderStrip>` extraction; redirect `/student/:id` → `/student/:id/activity`. (2) `<ActivityFeedItem>` wrapper + technique-slim + rank-change-slim renderers. (3) Bottom-nav Activity entry + retire the profile-tab `activity-feed.tsx` usage.
+
+**Verify**: Student logs in, lands on dashboard, taps Activity in bottom nav, sees their feed as cards. Coach navigates from a student row to `/student/:id/activity`, sees the same feed. Tapping a feed card lands on the syllabus / video / thread the item was about.
+
+### M5b3' — Drop the profile-tabs container (introduced by 2026-06-10 amendment)
+
+**Goal**: Remove the `<Tabs>` container from `/student/:id` entirely. The page exists only as a redirect to `/student/:id/activity`.
+
+**Frontend**:
+- `student-techniques/page.tsx` becomes a thin redirect component, OR the route registration changes to use `<Navigate>` directly.
+- Existing tabs (Activity / Syllabus / Pinned / Camps) all have their own routes by this point. The Camps tab (still a placeholder) gets dropped — Camps page lands in M8.
+- Shared `StudentHeaderStrip` from M5b2' is reused by `/student/:id/syllabus`, `/student/:id/pins`, `/student/:id/activity` so chrome stays consistent.
+- Drop the in-profile `useStudentTechniques` / `useStudentFeed` calls that the tabs used; each new route owns its own data loading.
+
+**PR breakdown** (~2): (1) Convert `/student/:id` to a redirect; pull the rank strip out of the tabbed page. (2) Delete the Tabs scaffold + tab-content components no longer used; verify no dead imports.
+
+**Verify**:
+- Navigating to `/student/:id` lands on `/student/:id/activity`.
+- Deep links like `/student/:id?focus=42` legacy URLs redirect with the query preserved (so the syllabus tab focus still works after redirect to `/student/:id/syllabus?focus=42`). The redirect logic checks for legacy `?profile_tab=` / `?focus=` query params and rewrites accordingly.
+- The page is otherwise unreachable; bottom nav for students still has Dashboard / My techniques / Library / Pins / Activity (or whatever order is final after M5b2' design).
+
+### M5b3 (original — chips + infinite scroll) — scope-shrunk
+
+> ⚠️ **Amended 2026-06-10**: filter chips no longer function as "view-switching tabs" — pinned / camps lifted to their own routes. Chips are kept as kind filters WITHIN the activity feed (techniques / rank changes / future kinds). Infinite scroll and Framer Motion stay.
 
 **Backend**:
 - Extend `GET /api/student/<id>/feed?kinds=technique,rank_change` to accept a comma-separated kind filter. Multi-select OR semantics.
@@ -358,20 +517,27 @@ Any coach role can read any student's feed (CX-015); students can only read thei
 - Add `framer-motion` to `frontend/package.json`. Reuse later for M19 / M20.
 - New `useInfiniteFeed(studentId, {kinds})` hook wrapping TanStack's `useInfiniteQuery`. Cursor field is `latest_activity_at`. `getNextPageParam` returns `lastPage.next_cursor || undefined`.
 - New `InfiniteList<T>` component (or hook) wrapping `IntersectionObserver` for the "load more on scroll" trigger. Reusable for future card lists (camps, threads, etc).
-- Filter chip row above the feed using shadcn `Badge` with active/inactive variants (precedent at `student-techniques/page.tsx:773-810`). URL state via `?kinds=` searchParam.
+- Filter chip row above the feed using shadcn `Badge` with active/inactive variants. URL state via `?kinds=` searchParam.
 - Chip toggle animation: `motion.div` wrapping each card with `layout` and `animate={{ opacity: 1 }} initial={{ opacity: 0 }} exit={{ opacity: 0 }}`.
 
-**Query key** update: `qk.studentFeed(studentId, {kinds, cursor})` — extend M5a's key to carry the new params. **Important**: today's `query-keys.ts:48` is `studentFeed: (studentId) => ["student", studentId, "feed"]` — needs the params slot.
+**Query key** update: `qk.studentFeed(studentId, {kinds, cursor})` — extend M5a's key to carry the new params.
 
 **PR breakdown** (~3): (1) Framer Motion dep + `useInfiniteFeed` hook + backend `?kinds=` filter. (2) Filter chip row + URL state plumbing. (3) Chip-toggle animation + verify pass on mobile viewports.
 
-**Verify (M5b overall)**:
-- `/student/<id>` lands on the feed (cards, infinite scroll, chips). Toggling chips smoothly fades non-matching cards.
-- `/student/<id>/syllabus` shows the techniques list with all existing controls (filters, expansion, attempts, edit dialogs).
-- `?focus=` deep links on technique feed cards land on the syllabus page.
-- `?profile_tab=syllabus` legacy URLs from M5a redirect to `/student/<id>/syllabus`.
-- Coaches read any student's feed and syllabus (CX-015 holds).
-- Issued-claim-link panel reachable from `/student/<id>` (profile root), not buried in the syllabus page.
+### M5d — Unified TechniqueRow base component (introduced by 2026-06-10 amendment)
+
+**Goal**: Merge the syllabus-side `TechniqueRow` (in `student-techniques/components/technique-row.tsx`) and the library-side `LibraryTechniqueRow` (in `components/library-technique-row.tsx`) into a single shared component the surfaces overlay context onto.
+
+**Why M5d, not now**: the data shapes are different — `LibraryTechniqueRow` data has student / video counts; `Technique` (= `StudentTechnique`) has status / attempts / notes plumbing. A unified component needs a normalized intermediate type plus a refactor of the syllabus row's `StatusToggle` / `NotesEditor` / `AttemptsList` to participate in the base. The PR #25 work uses two adjacent components that follow the same UX pattern; this milestone finishes the consolidation.
+
+**Frontend**:
+- Define a `TechniqueCardData` shape that's the union of fields any surface might need. Library rows omit `student_technique` data; syllabus rows include it; pinned rows include partial student_technique data if there's a syllabus assignment for the pair.
+- New base component at `frontend/src/components/technique-row.tsx` (consolidates the existing two). Renders a header + expandable body with overlay sections gated by which fields exist on the data.
+- Library page, Pins page, Syllabus page all consume the new base. Existing surfaces fall over via incremental adoption — one surface per PR, with a feature flag toggle if needed for safety.
+
+**PR breakdown** (~4): (1) Define the unified data shape + a new base component without flipping any consumers. (2) Library page flips to it. (3) Pins page flips to it. (4) Syllabus page (the gnarliest, has StatusToggle / NotesEditor / AttemptsList) flips to it. Drop the two legacy components.
+
+**Verify**: Each surface looks pixel-identical to its pre-flip state for at least the screenshot path the user has provided feedback on. No behaviour regressions on attempts logging / status changes / notes editing in the syllabus page.
 
 ---
 
