@@ -145,6 +145,30 @@ async fn run() -> Result<()> {
         .await
         .map_err(|e| anyhow::anyhow!("Migration failed: {:?}", e))?;
 
+    run_post_migration_backfills(&pool).await?;
+
+    Ok(())
+}
+
+/// Post-migration data backfills the declarative engine can't express.
+/// All steps are idempotent — re-running is a no-op once the data is in
+/// shape. Add new steps with the milestone tag that introduced them.
+async fn run_post_migration_backfills(pool: &SqlitePool) -> Result<()> {
+    // M7 / CX-018: video parent polymorphism. Mirror `technique_id` into
+    // `parent_id` for rows that pre-date the new columns. New uploads land
+    // with `parent_id` populated directly; this only catches the migration
+    // window. parent_kind defaults to 'technique' for technique-anchored
+    // rows.
+    sqlx::query(
+        "UPDATE videos
+         SET parent_id = technique_id
+         WHERE parent_id IS NULL
+           AND parent_kind = 'technique'
+           AND technique_id IS NOT NULL",
+    )
+    .execute(pool)
+    .await
+    .context("Failed to backfill videos.parent_id from videos.technique_id")?;
     Ok(())
 }
 

@@ -204,7 +204,16 @@ CREATE TABLE IF NOT EXISTS videos (
     -- Global hide. When set, students don't see the video at all (unless
     -- they have an explicit per-student override row pointing the other
     -- way). Coaches still see the video, badged "Hidden".
-    hidden_at TIMESTAMP
+    hidden_at TIMESTAMP,
+    -- M7 video parent polymorphism (CX-018). Until M16 cleanup, both
+    -- `technique_id` (legacy) and `(parent_kind, parent_id)` are kept in
+    -- sync so legacy read paths still work while new ones (camps, matches,
+    -- threads, profile, loose) flow through the polymorphic columns.
+    -- parent_kind ∈ {technique, camp, match, profile, thread, loose}.
+    -- parent_id is NULL only for `loose`. The migrate binary backfills
+    -- `parent_id = technique_id` after the columns land.
+    parent_kind TEXT NOT NULL DEFAULT 'technique',
+    parent_id INTEGER
 );
 CREATE INDEX IF NOT EXISTS idx_videos_technique_position
     ON videos (technique_id, position);
@@ -212,6 +221,13 @@ CREATE INDEX IF NOT EXISTS idx_videos_status
     ON videos (processing_status);
 CREATE INDEX IF NOT EXISTS idx_videos_alive_by_technique
     ON videos (technique_id) WHERE deleted_at IS NULL;
+-- Per-kind indexes for the polymorphic parent. The legacy
+-- `idx_videos_technique_position` / `idx_videos_alive_by_technique` indexes
+-- above stay until the M16 cleanup drops `videos.technique_id`.
+CREATE INDEX IF NOT EXISTS idx_videos_parent_position
+    ON videos (parent_kind, parent_id, position);
+CREATE INDEX IF NOT EXISTS idx_videos_alive_by_parent
+    ON videos (parent_kind, parent_id) WHERE deleted_at IS NULL;
 
 -- Per-student visibility override for a single video. A row exists only
 -- when a coach has explicitly set a non-default visibility for that
