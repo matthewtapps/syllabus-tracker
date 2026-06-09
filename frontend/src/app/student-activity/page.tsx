@@ -6,7 +6,7 @@ import {
   type FeedItem,
   type User,
 } from '@/lib/api';
-import { useStudentFeed, useStudentTechniques } from '@/lib/queries';
+import { useLibraryTechniques, useStudentFeed, useStudentTechniques } from '@/lib/queries';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/empty-state';
@@ -48,6 +48,16 @@ export default function ActivityPage({ user }: ActivityPageProps) {
   // endpoint lives in a follow-up. Mirrors how /pins fetches the student
   // record today.
   const studentTechniquesQuery = useStudentTechniques(studentId);
+  // Hydrates technique cards with library data so they can expand inline
+  // (description / tags / videos / pin) instead of only acting as a
+  // navigation link. Cached across pages, so visiting /library or /pins
+  // first warms this fetch.
+  const libraryQuery = useLibraryTechniques();
+  const libraryById = useMemo(() => {
+    const map = new Map<number, NonNullable<typeof libraryQuery.data>[number]>();
+    (libraryQuery.data ?? []).forEach((t) => map.set(t.id, t));
+    return map;
+  }, [libraryQuery.data]);
 
   // Multi-select kind filter. URL state via ?kinds=technique,rank_change.
   // Empty array = no filter (show all). Pulled forward from M18 to land
@@ -221,7 +231,12 @@ export default function ActivityPage({ user }: ActivityPageProps) {
                 }
               >
                 {item.kind === 'technique' ? (
-                  <TechniqueSlim item={item} studentId={studentId} />
+                  <TechniqueSlim
+                    item={item}
+                    studentId={studentId}
+                    libraryRow={libraryById.get(item.technique_id)}
+                    user={user}
+                  />
                 ) : (
                   <RankChangeSlim item={item} />
                 )}

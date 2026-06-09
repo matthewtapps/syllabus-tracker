@@ -159,7 +159,7 @@ function CollapsedMeta({ row }: { row: LibraryTechniqueRowData }) {
   );
 }
 
-interface ExpandedBodyProps {
+export interface LibraryTechniqueExpandedBodyProps {
   technique: LibraryTechniqueRowData;
   canEdit: boolean;
   isStudentLike: boolean;
@@ -167,6 +167,16 @@ interface ExpandedBodyProps {
   badges?: React.ReactNode;
   scrollToVideoId?: number | null;
   onVideoScrolled?: () => void;
+}
+
+/// The shared expanded-body of a library-technique row. Library + Pins use
+/// it directly via `LibraryTechniqueRow`; the activity feed composes it inside
+/// `ActivityFeedItem` so feed cards expand to show the full technique
+/// context (description, tags, pin, videos) without leaving the feed.
+export function LibraryTechniqueExpandedBody(
+  props: LibraryTechniqueExpandedBodyProps,
+) {
+  return <ExpandedBody {...props} />;
 }
 
 function ExpandedBody({
@@ -177,7 +187,7 @@ function ExpandedBody({
   badges,
   scrollToVideoId,
   onVideoScrolled,
-}: ExpandedBodyProps) {
+}: LibraryTechniqueExpandedBodyProps) {
   const [editing, setEditing] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
   const statsQuery = useLibraryTechniqueStats(technique.id, canEdit);
