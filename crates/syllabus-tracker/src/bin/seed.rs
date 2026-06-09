@@ -1,5 +1,5 @@
 //! Idempotent demo seed. Inserts a coach, an admin, ~25 techniques, ~12
-//! students, a "Blue Belt Fundamentals" collection, and a spread of
+//! students, a "Blue Belt Fundamentals" syllabus, and a spread of
 //! assignments + attempts so the UI has something to render. All seed
 //! entities use `demo_` username/tag prefixes so they're easy to spot and
 //! remove. Safe to re-run: existing rows are detected and left alone.
@@ -16,8 +16,8 @@ use sqlx::SqlitePool;
 use sqlx::sqlite::SqliteConnectOptions;
 use syllabus_tracker::auth::Role;
 use syllabus_tracker::db::{
-    add_tag_to_technique, add_technique_to_collection, assign_technique_to_student,
-    create_collection, create_tag, create_technique, create_user, find_user_by_username,
+    add_tag_to_technique, add_technique_to_syllabus, assign_technique_to_student,
+    create_syllabus, create_tag, create_technique, create_user, find_user_by_username,
     get_tag_by_name, update_user_rank,
 };
 use syllabus_tracker::env;
@@ -316,7 +316,7 @@ async fn run() -> Result<()> {
         "Ensuring admin user",
         "Seeding tags",
         "Seeding techniques",
-        "Seeding Blue Belt Fundamentals collection",
+        "Seeding Blue Belt Fundamentals syllabus",
         "Seeding students",
         "Backfilling student ranks",
         "Assigning techniques to students",
@@ -383,7 +383,8 @@ async fn run() -> Result<()> {
     }
     reporter.phase_finished();
 
-    // 3.5 Collection: "Blue Belt Fundamentals" with the first ~12 techniques
+    // 3.5 Syllabus: "Blue Belt Fundamentals" with the first ~12 techniques
+    // SQL identifier `collections` is the legacy table name (M4.5 / decision #19).
     reporter.phase_started(phases[5], Some(1));
     let (blue_belt_id, outcome) = {
         let existing: Option<(i64,)> =
@@ -394,7 +395,7 @@ async fn run() -> Result<()> {
         match existing {
             Some((id,)) => (id, ItemOutcome::Existed),
             None => {
-                let id = create_collection(
+                let id = create_syllabus(
                     &pool,
                     "Blue Belt Fundamentals",
                     "Core syllabus for blue belt students.",
@@ -402,7 +403,7 @@ async fn run() -> Result<()> {
                 )
                 .await?;
                 for &tid in technique_ids.iter().take(12) {
-                    add_technique_to_collection(&pool, id, tid).await?;
+                    add_technique_to_syllabus(&pool, id, tid).await?;
                 }
                 (id, ItemOutcome::Created)
             }
@@ -498,9 +499,9 @@ async fn run() -> Result<()> {
 
         for (assigned_n, &tech_idx) in technique_indices.iter().enumerate() {
             let technique_id = technique_ids[tech_idx];
-            // Techniques in the Blue Belt collection (indices 0-11) get
+            // Techniques in the Blue Belt syllabus (indices 0-11) get
             // filed under it for subscribed students. Others are loose.
-            let collection_id = if on_blue_belt && tech_idx < 12 {
+            let syllabus_id = if on_blue_belt && tech_idx < 12 {
                 Some(blue_belt_id)
             } else {
                 None
@@ -526,7 +527,7 @@ async fn run() -> Result<()> {
                 &pool,
                 technique_id,
                 student_id,
-                collection_id,
+                syllabus_id,
                 coach_id,
             )
             .await?;

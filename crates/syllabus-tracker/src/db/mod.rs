@@ -5,12 +5,12 @@
 //! names through this `mod.rs` so call sites stay flat (`crate::db::foo`).
 
 mod attempts;
-mod collections;
 pub mod feed;
 mod invites;
 mod reporting;
 mod sessions;
 mod student_techniques;
+mod syllabuses;
 mod tags;
 mod techniques;
 mod users;
@@ -18,12 +18,12 @@ mod videos;
 mod watch;
 
 pub use attempts::*;
-pub use collections::*;
 pub use feed::*;
 pub use invites::*;
 pub use reporting::*;
 pub use sessions::*;
 pub use student_techniques::*;
+pub use syllabuses::*;
 pub use tags::*;
 pub use techniques::*;
 pub use users::*;
@@ -35,8 +35,8 @@ pub use watch::*;
 // shim keeps the call sites unchanged.
 pub use crate::models::{
     AttemptBucket, AttemptCreateResult, AttemptListItem, AttemptSuggestion, AttemptSummary,
-    Collection, DashboardVideoOverview, DashboardVideoRow, StorageObjectRow, StorageOverview,
-    StudentWatchActivityRow, VideoStatsSnapshot, WatchAggregateRow,
+    DashboardVideoOverview, DashboardVideoRow, StorageObjectRow, StorageOverview,
+    StudentWatchActivityRow, Syllabus, VideoStatsSnapshot, WatchAggregateRow,
 };
 
 // Production uses bcrypt's default cost (currently 12). Tests use the minimum

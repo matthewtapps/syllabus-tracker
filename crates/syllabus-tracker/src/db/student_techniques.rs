@@ -15,7 +15,7 @@ pub async fn assign_technique_to_student(
     pool: &Pool<Sqlite>,
     technique_id: i64,
     student_id: i64,
-    collection_id: Option<i64>,
+    syllabus_id: Option<i64>,
     actor_id: i64,
 ) -> Result<i64, AppError> {
     info!("Assigning technique to student");
@@ -33,13 +33,14 @@ pub async fn assign_technique_to_student(
     .await?;
 
     if let Some(row) = exists {
-        // If the caller is assigning into a specific collection, move the
-        // existing assignment into that collection. Status and notes are
-        // preserved. Loose-assign (collection_id = None) leaves it alone.
-        if let Some(cid) = collection_id {
+        // If the caller is assigning into a specific syllabus, move the
+        // existing assignment into that syllabus. Status and notes are
+        // preserved. Loose-assign (syllabus_id = None) leaves it alone.
+        // SQL column `collection_id` is the legacy name (M4.5 / decision #19).
+        if let Some(sid) = syllabus_id {
             sqlx::query!(
                 "UPDATE student_techniques SET collection_id = ? WHERE id = ?",
-                cid,
+                sid,
                 row.id
             )
             .execute(pool)
@@ -58,7 +59,7 @@ pub async fn assign_technique_to_student(
      SELECT ?, '', '', t.id, t.name, t.description, ?, ?, ?
      FROM techniques t WHERE t.id = ?",
         student_id,
-        collection_id,
+        syllabus_id,
         now,
         actor_id,
         technique_id
@@ -84,12 +85,12 @@ pub async fn get_student_techniques(
                st.created_at, st.updated_at,
                st.last_coach_update_at, st.last_coach_update_by_id,
                st.last_student_update_at, st.last_student_update_by_id,
-               st.collection_id,
+               st.collection_id as "syllabus_id?",
                cu.display_name as coach_updater_display_name,
                cu.username as coach_updater_username,
                su.display_name as student_updater_display_name,
                su.username as student_updater_username,
-               coll.name as "collection_name?",
+               coll.name as "syllabus_name?",
                tag.id as "tag_id?: i64", tag.name as "tag_name?: String",
                COALESCE(att.attempt_count, 0) as "attempt_count!: i64",
                att.last_attempt_at as "last_attempt_at?: NaiveDateTime",
@@ -97,6 +98,7 @@ pub async fn get_student_techniques(
         FROM student_techniques st
         LEFT JOIN users cu ON st.last_coach_update_by_id = cu.id
         LEFT JOIN users su ON st.last_student_update_by_id = su.id
+        -- SQL identifier `collections` is the legacy table name (M4.5 / decision #19).
         LEFT JOIN collections coll ON st.collection_id = coll.id
         LEFT JOIN technique_tags tt ON st.technique_id = tt.technique_id
         LEFT JOIN tags tag ON tt.tag_id = tag.id
@@ -150,8 +152,8 @@ pub async fn get_student_techniques(
                 last_student_update_at: row.last_student_update_at.map(naive_to_utc),
                 last_student_update_by_id: row.last_student_update_by_id,
                 last_student_update_by_name: student_updater_name,
-                collection_id: row.collection_id,
-                collection_name: row.collection_name,
+                syllabus_id: row.syllabus_id,
+                syllabus_name: row.syllabus_name,
                 tags: Vec::new(),
                 attempt_count: row.attempt_count,
                 last_attempt_at: row.last_attempt_at.map(naive_to_utc),
@@ -191,9 +193,17 @@ pub async fn get_student_technique(
 ) -> Result<StudentTechnique, AppError> {
     info!("Getting student technique with tags");
 
+    // SQL column `collection_id` is the legacy name (M4.5 / decision #19);
+    // aliased on the way out so `SELECT *` order would otherwise drop the
+    // field — list columns explicitly instead.
     let row = sqlx::query_as!(
         DbStudentTechnique,
-        "SELECT * FROM student_techniques WHERE id = ?",
+        r#"SELECT id, technique_id, student_id, technique_name, technique_description,
+                  status, student_notes, coach_notes, created_at, updated_at,
+                  last_coach_update_at, last_coach_update_by_id,
+                  last_student_update_at, last_student_update_by_id,
+                  collection_id AS "syllabus_id?"
+           FROM student_techniques WHERE id = ?"#,
         student_technique_id
     )
     .fetch_one(pool)
@@ -411,12 +421,12 @@ pub async fn add_techniques_to_student(
     pool: &Pool<Sqlite>,
     student_id: i64,
     technique_ids: Vec<i64>,
-    collection_id: Option<i64>,
+    syllabus_id: Option<i64>,
     actor_id: i64,
 ) -> Result<(), AppError> {
     info!("Adding techniques to student");
     for technique_id in technique_ids {
-        assign_technique_to_student(pool, technique_id, student_id, collection_id, actor_id)
+        assign_technique_to_student(pool, technique_id, student_id, syllabus_id, actor_id)
             .await?;
     }
 

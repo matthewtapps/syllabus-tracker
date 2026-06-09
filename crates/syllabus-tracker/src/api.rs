@@ -17,22 +17,21 @@ use validator::ValidationErrors;
 use crate::auth::UserSession;
 use crate::auth::{Permission, User};
 use crate::db::{
-    add_tag_to_technique, add_techniques_to_collection, add_techniques_to_student, approve_user,
-    assign_collection_to_student, attempt_buckets_for_student, attempt_summary_for_student,
+    add_tag_to_technique, add_techniques_to_student, add_techniques_to_syllabus, approve_user,
+    assign_syllabus_to_student, attempt_buckets_for_student, attempt_summary_for_student,
     attempt_weekly_buckets_for_technique, authenticate_user, claim_invite, count_techniques,
-    create_and_assign_technique, create_attempt, create_collection, create_invite_token,
-    create_self_registered_user, create_tag, create_technique_in_collection, create_user,
-    create_user_session, create_user_stub, delete_attempt, delete_collection, delete_tag,
-    find_user_by_username, find_valid_invite_token, get_all_collections, get_all_tags,
-    get_all_users, get_collection, get_student_technique, get_student_techniques,
-    get_students_by_recent_updates, get_students_with_collection, get_tags_for_technique,
-    get_unassigned_techniques, get_user, invalidate_session, list_attempts,
-    list_recent_attempts_for_student, mark_student_technique_seen, remove_tag_from_technique,
-    remove_technique_from_collection, request_password_reset, reset_user_claim, set_user_archived,
-    set_user_graduated, update_attempt_note, update_attempt_timestamp, update_collection,
-    update_student_notes, update_student_technique, update_technique, update_user_display_name,
-    update_user_password, update_user_rank, update_user_role, update_username, AttemptSuggestion,
-    Collection,
+    create_and_assign_technique, create_attempt, create_invite_token, create_self_registered_user,
+    create_syllabus, create_tag, create_technique_in_syllabus, create_user, create_user_session,
+    create_user_stub, delete_attempt, delete_syllabus, delete_tag, find_user_by_username,
+    find_valid_invite_token, get_all_syllabuses, get_all_tags, get_all_users, get_student_technique,
+    get_student_techniques, get_students_by_recent_updates, get_students_with_syllabus,
+    get_syllabus, get_tags_for_technique, get_unassigned_techniques, get_user, invalidate_session,
+    list_attempts, list_recent_attempts_for_student, mark_student_technique_seen,
+    remove_tag_from_technique, remove_technique_from_syllabus, request_password_reset,
+    reset_user_claim, set_user_archived, set_user_graduated, update_attempt_note,
+    update_attempt_timestamp, update_student_notes, update_student_technique, update_syllabus,
+    update_technique, update_user_display_name, update_user_password, update_user_rank,
+    update_user_role, update_username, AttemptSuggestion, Syllabus,
 };
 use crate::error::AppError;
 use crate::models::Tag;
@@ -316,8 +315,8 @@ pub struct TechniqueResponse {
     pub last_student_update_at: Option<String>,
     pub last_student_update_by_name: Option<String>,
     pub has_unseen_activity: bool,
-    pub collection_id: Option<i64>,
-    pub collection_name: Option<String>,
+    pub syllabus_id: Option<i64>,
+    pub syllabus_name: Option<String>,
     pub tags: Vec<TagResponse>,
     pub attempt_count: i64,
     pub last_attempt_at: Option<String>,
@@ -387,8 +386,8 @@ pub async fn api_get_student_techniques(
                 last_student_update_at: t.last_student_update_at.map(|d| d.to_rfc3339()),
                 last_student_update_by_name: t.last_student_update_by_name,
                 has_unseen_activity,
-                collection_id: t.collection_id,
-                collection_name: t.collection_name,
+                syllabus_id: t.syllabus_id,
+                syllabus_name: t.syllabus_name,
                 tags: t.tags.into_iter().map(TagResponse::from).collect(),
                 attempt_count: t.attempt_count,
                 last_attempt_at: t.last_attempt_at.map(|d| d.to_rfc3339()),
@@ -537,7 +536,7 @@ pub async fn api_get_unassigned_techniques(
 pub struct AssignTechniquesRequest {
     #[validate(length(min = 1, message = "At least one technique must be selected"))]
     technique_ids: Vec<i64>,
-    collection_id: Option<i64>,
+    syllabus_id: Option<i64>,
 }
 
 #[post("/student/<student_id>/add_techniques", data = "<request>")]
@@ -555,7 +554,7 @@ pub async fn api_assign_techniques(
         db,
         student_id,
         request.technique_ids.clone(),
-        request.collection_id,
+        request.syllabus_id,
         user.id,
     )
     .await?;
@@ -573,7 +572,7 @@ pub struct CreateTechniqueRequest {
     name: String,
     #[validate(length(min = 1, message = "Description cannot be empty"))]
     description: String,
-    collection_id: Option<i64>,
+    syllabus_id: Option<i64>,
 }
 
 #[post("/student/<student_id>/create_technique", data = "<request>")]
@@ -592,7 +591,7 @@ pub async fn api_create_and_assign_technique(
         student_id,
         &request.name,
         &request.description,
-        request.collection_id,
+        request.syllabus_id,
     )
     .await?;
 
@@ -1332,10 +1331,10 @@ pub async fn api_reset_user_claim(
     }))
 }
 
-// ---- Collections / syllabuses ----
+// ---- Syllabuses ----
 
 #[derive(Serialize, Deserialize, Debug)]
-pub struct CollectionResponse {
+pub struct SyllabusResponse {
     pub id: i64,
     pub name: String,
     pub description: String,
@@ -1357,16 +1356,16 @@ pub struct TechniqueLibraryResponse {
     pub coach_name: String,
 }
 
-fn collection_to_response(c: Collection, user: &User) -> CollectionResponse {
-    CollectionResponse {
-        id: c.id,
-        name: c.name,
-        description: c.description,
-        coach_id: c.coach_id,
-        created_at: c.created_at.to_rfc3339(),
-        technique_count: c.technique_count,
-        student_count: c.student_count,
-        techniques: c
+fn syllabus_to_response(s: Syllabus, user: &User) -> SyllabusResponse {
+    SyllabusResponse {
+        id: s.id,
+        name: s.name,
+        description: s.description,
+        coach_id: s.coach_id,
+        created_at: s.created_at.to_rfc3339(),
+        technique_count: s.technique_count,
+        student_count: s.student_count,
+        techniques: s
             .techniques
             .into_iter()
             .map(|t| TechniqueLibraryResponse {
@@ -1382,68 +1381,68 @@ fn collection_to_response(c: Collection, user: &User) -> CollectionResponse {
     }
 }
 
-#[get("/collections")]
-pub async fn api_get_collections(
+#[get("/syllabuses")]
+pub async fn api_get_syllabuses(
     user: User,
     db: &State<Pool<Sqlite>>,
-) -> ApiResult<Json<Vec<CollectionResponse>>> {
+) -> ApiResult<Json<Vec<SyllabusResponse>>> {
     user.require_permission(Permission::BrowseLibrary)?;
-    let collections = get_all_collections(db).await?;
+    let syllabuses = get_all_syllabuses(db).await?;
     Ok(Json(
-        collections
+        syllabuses
             .into_iter()
-            .map(|c| collection_to_response(c, &user))
+            .map(|s| syllabus_to_response(s, &user))
             .collect(),
     ))
 }
 
-#[get("/collections/<id>")]
-pub async fn api_get_collection(
+#[get("/syllabuses/<id>")]
+pub async fn api_get_syllabus(
     id: i64,
     user: User,
     db: &State<Pool<Sqlite>>,
-) -> ApiResult<Json<CollectionResponse>> {
+) -> ApiResult<Json<SyllabusResponse>> {
     user.require_permission(Permission::BrowseLibrary)?;
-    let collection = get_collection(db, id).await?;
-    Ok(Json(collection_to_response(collection, &user)))
+    let syllabus = get_syllabus(db, id).await?;
+    Ok(Json(syllabus_to_response(syllabus, &user)))
 }
 
 #[derive(Deserialize, Validate, Clone)]
-pub struct CollectionUpsertRequest {
+pub struct SyllabusUpsertRequest {
     #[validate(length(min = 1, max = 100, message = "Name is required"))]
     name: String,
     description: Option<String>,
 }
 
-#[post("/collections", data = "<body>")]
-pub async fn api_create_collection(
-    body: Json<CollectionUpsertRequest>,
+#[post("/syllabuses", data = "<body>")]
+pub async fn api_create_syllabus(
+    body: Json<SyllabusUpsertRequest>,
     user: User,
     db: &State<Pool<Sqlite>>,
-) -> ApiResult<Json<CollectionResponse>> {
+) -> ApiResult<Json<SyllabusResponse>> {
     body.validate()?;
     user.require_permission(Permission::CreateTechniques)?;
-    let id = create_collection(
+    let id = create_syllabus(
         db,
         &body.name,
         body.description.as_deref().unwrap_or(""),
         user.id,
     )
     .await?;
-    let collection = get_collection(db, id).await?;
-    Ok(Json(collection_to_response(collection, &user)))
+    let syllabus = get_syllabus(db, id).await?;
+    Ok(Json(syllabus_to_response(syllabus, &user)))
 }
 
-#[put("/collections/<id>", data = "<body>")]
-pub async fn api_update_collection(
+#[put("/syllabuses/<id>", data = "<body>")]
+pub async fn api_update_syllabus(
     id: i64,
-    body: Json<CollectionUpsertRequest>,
+    body: Json<SyllabusUpsertRequest>,
     user: User,
     db: &State<Pool<Sqlite>>,
 ) -> ApiResult<Status> {
     body.validate()?;
     user.require_permission(Permission::CreateTechniques)?;
-    update_collection(
+    update_syllabus(
         db,
         id,
         &body.name,
@@ -1453,36 +1452,36 @@ pub async fn api_update_collection(
     Ok(Status::Ok)
 }
 
-#[delete("/collections/<id>")]
-pub async fn api_delete_collection(
+#[delete("/syllabuses/<id>")]
+pub async fn api_delete_syllabus(
     id: i64,
     user: User,
     db: &State<Pool<Sqlite>>,
 ) -> ApiResult<Status> {
     user.require_permission(Permission::CreateTechniques)?;
-    delete_collection(db, id).await?;
+    delete_syllabus(db, id).await?;
     Ok(Status::Ok)
 }
 
 #[derive(Deserialize, Clone)]
-pub struct AddTechniquesToCollectionRequest {
+pub struct AddTechniquesToSyllabusRequest {
     technique_ids: Vec<i64>,
 }
 
-#[post("/collections/<id>/techniques", data = "<body>")]
-pub async fn api_add_techniques_to_collection(
+#[post("/syllabuses/<id>/techniques", data = "<body>")]
+pub async fn api_add_techniques_to_syllabus(
     id: i64,
-    body: Json<AddTechniquesToCollectionRequest>,
+    body: Json<AddTechniquesToSyllabusRequest>,
     user: User,
     db: &State<Pool<Sqlite>>,
 ) -> ApiResult<Status> {
     user.require_permission(Permission::CreateTechniques)?;
-    add_techniques_to_collection(db, id, body.technique_ids.clone()).await?;
+    add_techniques_to_syllabus(db, id, body.technique_ids.clone()).await?;
     Ok(Status::Ok)
 }
 
 #[derive(Deserialize, Validate, Clone)]
-pub struct CreateTechniqueInCollectionRequest {
+pub struct CreateTechniqueInSyllabusRequest {
     #[validate(length(
         min = 1,
         max = 100,
@@ -1493,17 +1492,17 @@ pub struct CreateTechniqueInCollectionRequest {
     description: String,
 }
 
-#[post("/collections/<id>/create_technique", data = "<body>")]
-pub async fn api_create_technique_in_collection(
+#[post("/syllabuses/<id>/create_technique", data = "<body>")]
+pub async fn api_create_technique_in_syllabus(
     id: i64,
-    body: Json<CreateTechniqueInCollectionRequest>,
+    body: Json<CreateTechniqueInSyllabusRequest>,
     user: User,
     db: &State<Pool<Sqlite>>,
 ) -> ApiResult<Json<TechniqueLibraryResponse>> {
     body.validate()?;
     user.require_permission(Permission::CreateTechniques)?;
     let technique_id =
-        create_technique_in_collection(db, user.id, id, &body.name, &body.description).await?;
+        create_technique_in_syllabus(db, user.id, id, &body.name, &body.description).await?;
     let coach_name = if user.display_name.is_empty() {
         user.username.clone()
     } else {
@@ -1518,15 +1517,15 @@ pub async fn api_create_technique_in_collection(
     }))
 }
 
-#[delete("/collections/<id>/techniques/<technique_id>")]
-pub async fn api_remove_technique_from_collection(
+#[delete("/syllabuses/<id>/techniques/<technique_id>")]
+pub async fn api_remove_technique_from_syllabus(
     id: i64,
     technique_id: i64,
     user: User,
     db: &State<Pool<Sqlite>>,
 ) -> ApiResult<Status> {
     user.require_permission(Permission::CreateTechniques)?;
-    remove_technique_from_collection(db, id, technique_id).await?;
+    remove_technique_from_syllabus(db, id, technique_id).await?;
     Ok(Status::Ok)
 }
 
@@ -1555,26 +1554,26 @@ pub async fn api_update_library_technique(
     Ok(Status::Ok)
 }
 
-#[get("/collections/<id>/students")]
-pub async fn api_get_collection_students(
+#[get("/syllabuses/<id>/students")]
+pub async fn api_get_syllabus_students(
     id: i64,
     user: User,
     db: &State<Pool<Sqlite>>,
 ) -> ApiResult<Json<Vec<UserData>>> {
     user.require_permission(Permission::ViewAllStudents)?;
-    let students = get_students_with_collection(db, id).await?;
+    let students = get_students_with_syllabus(db, id).await?;
     Ok(Json(students.into_iter().map(UserData::from).collect()))
 }
 
-#[post("/student/<student_id>/assign_collection/<collection_id>")]
-pub async fn api_assign_collection(
+#[post("/student/<student_id>/assign_syllabus/<syllabus_id>")]
+pub async fn api_assign_syllabus(
     student_id: i64,
-    collection_id: i64,
+    syllabus_id: i64,
     user: User,
     db: &State<Pool<Sqlite>>,
 ) -> ApiResult<Status> {
     user.require_permission(Permission::AssignTechniques)?;
-    assign_collection_to_student(db, student_id, collection_id, user.id).await?;
+    assign_syllabus_to_student(db, student_id, syllabus_id, user.id).await?;
     Ok(Status::Ok)
 }
 
@@ -1685,8 +1684,8 @@ pub async fn api_get_single_student_technique(
         last_student_update_at: st.last_student_update_at.map(|d| d.to_rfc3339()),
         last_student_update_by_name: st.last_student_update_by_name,
         has_unseen_activity,
-        collection_id: st.collection_id,
-        collection_name: st.collection_name,
+        syllabus_id: st.syllabus_id,
+        syllabus_name: st.syllabus_name,
         tags: st.tags.into_iter().map(TagResponse::from).collect(),
         attempt_count: st.attempt_count,
         last_attempt_at: st.last_attempt_at.map(|d| d.to_rfc3339()),

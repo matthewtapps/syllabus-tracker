@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT * FROM student_techniques WHERE id = ?",
+  "query": "SELECT id, technique_id, student_id, technique_name, technique_description,\n                  status, student_notes, coach_notes, created_at, updated_at,\n                  last_coach_update_at, last_coach_update_by_id,\n                  last_student_update_at, last_student_update_by_id,\n                  collection_id AS \"syllabus_id?\"\n           FROM student_techniques WHERE id = ?",
   "describe": {
     "columns": [
       {
@@ -14,19 +14,19 @@
         "type_info": "Integer"
       },
       {
-        "name": "technique_name",
+        "name": "student_id",
         "ordinal": 2,
-        "type_info": "Text"
+        "type_info": "Integer"
       },
       {
-        "name": "technique_description",
+        "name": "technique_name",
         "ordinal": 3,
         "type_info": "Text"
       },
       {
-        "name": "student_id",
+        "name": "technique_description",
         "ordinal": 4,
-        "type_info": "Integer"
+        "type_info": "Text"
       },
       {
         "name": "status",
@@ -74,7 +74,7 @@
         "type_info": "Integer"
       },
       {
-        "name": "collection_id",
+        "name": "syllabus_id?",
         "ordinal": 14,
         "type_info": "Integer"
       }
@@ -100,5 +100,5 @@
       true
     ]
   },
-  "hash": "9a815dd812e50ee96a94ca4bd98bd76137fec7b9e6c3a5da2869cdb9c32606ff"
+  "hash": "eafdd43f8465519e407bfce4a9819f01f11ba4e99ad209baa70379b628425c66"
 }

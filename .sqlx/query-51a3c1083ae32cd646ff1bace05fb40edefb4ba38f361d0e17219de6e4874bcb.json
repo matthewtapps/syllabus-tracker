@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT technique_id AS \"technique_id!: i64\",\n                  collection_id AS \"collection_id!: i64\"\n           FROM collection_techniques",
+  "query": "SELECT technique_id AS \"technique_id!: i64\",\n                  collection_id AS \"syllabus_id!: i64\"\n           FROM collection_techniques",
   "describe": {
     "columns": [
       {
@@ -9,7 +9,7 @@
         "type_info": "Integer"
       },
       {
-        "name": "collection_id!: i64",
+        "name": "syllabus_id!: i64",
         "ordinal": 1,
         "type_info": "Integer"
       }
@@ -22,5 +22,5 @@
       false
     ]
   },
-  "hash": "a81c6aff07091e09df288865ef2b2a80c607ac40a5421ebeece0f0a1597e3f70"
+  "hash": "51a3c1083ae32cd646ff1bace05fb40edefb4ba38f361d0e17219de6e4874bcb"
 }

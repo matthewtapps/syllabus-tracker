@@ -51,8 +51,11 @@ pub struct StudentTechnique {
     pub last_student_update_at: Option<DateTime<Utc>>,
     pub last_student_update_by_id: Option<i64>,
     pub last_student_update_by_name: Option<String>,
-    pub collection_id: Option<i64>,
-    pub collection_name: Option<String>,
+    // Renamed from `collection_id` / `collection_name` per M4.5 / decision #19.
+    // The underlying SQL column `student_techniques.collection_id` keeps its
+    // legacy name until M5c bundles the table rename with the data-model cutover.
+    pub syllabus_id: Option<i64>,
+    pub syllabus_name: Option<String>,
     pub tags: Vec<Tag>,
     pub attempt_count: i64,
     pub last_attempt_at: Option<DateTime<Utc>>,
@@ -78,7 +81,8 @@ pub struct DbStudentTechnique {
     pub last_coach_update_by_id: Option<i64>,
     pub last_student_update_at: Option<NaiveDateTime>,
     pub last_student_update_by_id: Option<i64>,
-    pub collection_id: Option<i64>,
+    // Mapped from `student_techniques.collection_id` (legacy SQL column).
+    pub syllabus_id: Option<i64>,
 }
 
 pub fn naive_to_utc(dt: NaiveDateTime) -> DateTime<Utc> {
@@ -104,8 +108,8 @@ impl From<DbStudentTechnique> for StudentTechnique {
             last_student_update_at: db.last_student_update_at.map(naive_to_utc),
             last_student_update_by_id: db.last_student_update_by_id,
             last_student_update_by_name: None,
-            collection_id: db.collection_id,
-            collection_name: None,
+            syllabus_id: db.syllabus_id,
+            syllabus_name: None,
             tags: Vec::new(),
             attempt_count: 0,
             last_attempt_at: None,
@@ -292,8 +296,11 @@ impl From<DbTag> for Tag {
     }
 }
 
+/// Renamed from `Collection` per M4.5 / decision #19. The underlying
+/// SQL table `collections` keeps its legacy name until M5c bundles the
+/// table rename with the data-model cutover.
 #[derive(Debug, Serialize, Clone)]
-pub struct Collection {
+pub struct Syllabus {
     pub id: i64,
     pub name: String,
     pub description: String,

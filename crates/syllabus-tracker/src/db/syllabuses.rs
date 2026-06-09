@@ -1,18 +1,26 @@
+//! Syllabus CRUD and association queries.
+//!
+//! SQL identifiers (`collections`, `collection_techniques`,
+//! `student_techniques.collection_id`) keep their legacy names per
+//! M4.5's naming policy — the SQL rename ships atomically with the
+//! M5c data-model cutover. Rust fn parameters, struct fields, and API
+//! surfaces all use `syllabus_*` to match the user-facing concept.
+
 use sqlx::{Pool, Sqlite};
 use tracing::{info, instrument};
 
 use crate::auth::{DbUser, User};
 use crate::error::AppError;
-use crate::models::{Collection, Technique, naive_to_utc};
+use crate::models::{Syllabus, Technique, naive_to_utc};
 
 #[instrument]
-pub async fn create_collection(
+pub async fn create_syllabus(
     pool: &Pool<Sqlite>,
     name: &str,
     description: &str,
     coach_id: i64,
 ) -> Result<i64, AppError> {
-    info!("Creating collection");
+    info!("Creating syllabus");
     let res = sqlx::query!(
         "INSERT INTO collections (name, description, coach_id) VALUES (?, ?, ?)",
         name,
@@ -25,18 +33,18 @@ pub async fn create_collection(
 }
 
 #[instrument]
-pub async fn update_collection(
+pub async fn update_syllabus(
     pool: &Pool<Sqlite>,
-    collection_id: i64,
+    syllabus_id: i64,
     name: &str,
     description: &str,
 ) -> Result<(), AppError> {
-    info!("Updating collection");
+    info!("Updating syllabus");
     sqlx::query!(
         "UPDATE collections SET name = ?, description = ? WHERE id = ?",
         name,
         description,
-        collection_id
+        syllabus_id
     )
     .execute(pool)
     .await?;
@@ -44,25 +52,26 @@ pub async fn update_collection(
 }
 
 #[instrument]
-pub async fn delete_collection(pool: &Pool<Sqlite>, collection_id: i64) -> Result<(), AppError> {
-    info!("Deleting collection");
-    // Existing student assignments in this collection become "loose" rather
+pub async fn delete_syllabus(pool: &Pool<Sqlite>, syllabus_id: i64) -> Result<(), AppError> {
+    info!("Deleting syllabus");
+    // Existing student assignments in this syllabus become "loose" rather
     // than disappear (preserves the student's history).
     sqlx::query!(
+        // SQL identifier `collection_id` is the legacy name (M4.5 / decision #19).
         "UPDATE student_techniques SET collection_id = NULL WHERE collection_id = ?",
-        collection_id
+        syllabus_id
     )
     .execute(pool)
     .await?;
-    sqlx::query!("DELETE FROM collections WHERE id = ?", collection_id)
+    sqlx::query!("DELETE FROM collections WHERE id = ?", syllabus_id)
         .execute(pool)
         .await?;
     Ok(())
 }
 
 #[instrument]
-pub async fn get_all_collections(pool: &Pool<Sqlite>) -> Result<Vec<Collection>, AppError> {
-    info!("Listing collections");
+pub async fn get_all_syllabuses(pool: &Pool<Sqlite>) -> Result<Vec<Syllabus>, AppError> {
+    info!("Listing syllabuses");
     let rows = sqlx::query!(
         r#"
         SELECT
@@ -81,7 +90,7 @@ pub async fn get_all_collections(pool: &Pool<Sqlite>) -> Result<Vec<Collection>,
 
     Ok(rows
         .into_iter()
-        .map(|r| Collection {
+        .map(|r| Syllabus {
             id: r.id,
             name: r.name,
             description: r.description.unwrap_or_default(),
@@ -98,11 +107,8 @@ pub async fn get_all_collections(pool: &Pool<Sqlite>) -> Result<Vec<Collection>,
 }
 
 #[instrument]
-pub async fn get_collection(
-    pool: &Pool<Sqlite>,
-    collection_id: i64,
-) -> Result<Collection, AppError> {
-    info!("Getting collection");
+pub async fn get_syllabus(pool: &Pool<Sqlite>, syllabus_id: i64) -> Result<Syllabus, AppError> {
+    info!("Getting syllabus");
     let row = sqlx::query!(
         r#"
         SELECT
@@ -115,11 +121,11 @@ pub async fn get_collection(
         FROM collections c
         WHERE c.id = ?
         "#,
-        collection_id
+        syllabus_id
     )
     .fetch_optional(pool)
     .await?
-    .ok_or_else(|| AppError::NotFound(format!("Collection {} not found", collection_id)))?;
+    .ok_or_else(|| AppError::NotFound(format!("Syllabus {} not found", syllabus_id)))?;
 
     let technique_rows = sqlx::query!(
         r#"
@@ -129,7 +135,7 @@ pub async fn get_collection(
         WHERE ct.collection_id = ?
         ORDER BY ct.position, t.name
         "#,
-        collection_id
+        syllabus_id
     )
     .fetch_all(pool)
     .await?;
@@ -146,7 +152,7 @@ pub async fn get_collection(
         })
         .collect();
 
-    Ok(Collection {
+    Ok(Syllabus {
         id: row.id,
         name: row.name,
         description: row.description.unwrap_or_default(),
@@ -162,19 +168,19 @@ pub async fn get_collection(
 }
 
 #[instrument]
-pub async fn add_technique_to_collection(
+pub async fn add_technique_to_syllabus(
     pool: &Pool<Sqlite>,
-    collection_id: i64,
+    syllabus_id: i64,
     technique_id: i64,
 ) -> Result<(), AppError> {
-    info!("Adding technique to collection");
+    info!("Adding technique to syllabus");
     sqlx::query!(
         "INSERT OR IGNORE INTO collection_techniques (collection_id, technique_id, position)
          VALUES (?, ?,
             (SELECT COALESCE(MAX(position), -1) + 1 FROM collection_techniques WHERE collection_id = ?))",
-        collection_id,
+        syllabus_id,
         technique_id,
-        collection_id
+        syllabus_id
     )
     .execute(pool)
     .await?;
@@ -182,53 +188,53 @@ pub async fn add_technique_to_collection(
 }
 
 #[instrument]
-pub async fn add_techniques_to_collection(
+pub async fn add_techniques_to_syllabus(
     pool: &Pool<Sqlite>,
-    collection_id: i64,
+    syllabus_id: i64,
     technique_ids: Vec<i64>,
 ) -> Result<(), AppError> {
-    info!("Adding techniques to collection");
+    info!("Adding techniques to syllabus");
     for technique_id in technique_ids {
-        add_technique_to_collection(pool, collection_id, technique_id).await?;
+        add_technique_to_syllabus(pool, syllabus_id, technique_id).await?;
     }
     Ok(())
 }
 
 #[instrument]
-pub async fn create_technique_in_collection(
+pub async fn create_technique_in_syllabus(
     pool: &Pool<Sqlite>,
     coach_id: i64,
-    collection_id: i64,
+    syllabus_id: i64,
     name: &str,
     description: &str,
 ) -> Result<i64, AppError> {
-    info!("Creating technique in collection");
+    info!("Creating technique in syllabus");
     let technique_id = super::create_technique(pool, name, description, coach_id).await?;
-    add_technique_to_collection(pool, collection_id, technique_id).await?;
+    add_technique_to_syllabus(pool, syllabus_id, technique_id).await?;
     Ok(technique_id)
 }
 
 #[instrument]
-pub async fn remove_technique_from_collection(
+pub async fn remove_technique_from_syllabus(
     pool: &Pool<Sqlite>,
-    collection_id: i64,
+    syllabus_id: i64,
     technique_id: i64,
 ) -> Result<(), AppError> {
-    info!("Removing technique from collection");
+    info!("Removing technique from syllabus");
     sqlx::query!(
         "DELETE FROM collection_techniques WHERE collection_id = ? AND technique_id = ?",
-        collection_id,
+        syllabus_id,
         technique_id
     )
     .execute(pool)
     .await?;
     // Detach the technique from any student assignments that were filed under
-    // this collection (set collection_id to NULL, preserves the assignment).
+    // this syllabus (set collection_id to NULL, preserves the assignment).
     sqlx::query!(
         "UPDATE student_techniques
          SET collection_id = NULL
          WHERE collection_id = ? AND technique_id = ?",
-        collection_id,
+        syllabus_id,
         technique_id
     )
     .execute(pool)
@@ -236,21 +242,21 @@ pub async fn remove_technique_from_collection(
     Ok(())
 }
 
-/// Bulk-assign every technique in a collection to a student. Idempotent:
-/// techniques the student already has are moved into this collection
+/// Bulk-assign every technique in a syllabus to a student. Idempotent:
+/// techniques the student already has are moved into this syllabus
 /// (collection_id update), techniques they don't have are inserted. Returns
 /// the number of NEW assignments created.
 #[instrument]
-pub async fn assign_collection_to_student(
+pub async fn assign_syllabus_to_student(
     pool: &Pool<Sqlite>,
     student_id: i64,
-    collection_id: i64,
+    syllabus_id: i64,
     actor_id: i64,
 ) -> Result<usize, AppError> {
-    info!("Assigning collection to student");
+    info!("Assigning syllabus to student");
     let technique_ids: Vec<i64> = sqlx::query_scalar!(
         "SELECT technique_id FROM collection_techniques WHERE collection_id = ? ORDER BY position",
-        collection_id
+        syllabus_id
     )
     .fetch_all(pool)
     .await?;
@@ -263,7 +269,7 @@ pub async fn assign_collection_to_student(
     .await?;
 
     for tid in technique_ids {
-        super::assign_technique_to_student(pool, tid, student_id, Some(collection_id), actor_id)
+        super::assign_technique_to_student(pool, tid, student_id, Some(syllabus_id), actor_id)
             .await?;
     }
 
@@ -278,11 +284,11 @@ pub async fn assign_collection_to_student(
 }
 
 #[instrument]
-pub async fn get_students_with_collection(
+pub async fn get_students_with_syllabus(
     pool: &Pool<Sqlite>,
-    collection_id: i64,
+    syllabus_id: i64,
 ) -> Result<Vec<User>, AppError> {
-    info!("Listing students with collection");
+    info!("Listing students with syllabus");
     let rows = sqlx::query_as!(
         DbUser,
         r#"
@@ -300,7 +306,7 @@ pub async fn get_students_with_collection(
         WHERE st.collection_id = ?
         ORDER BY u.display_name, u.username
         "#,
-        collection_id
+        syllabus_id
     )
     .fetch_all(pool)
     .await?;

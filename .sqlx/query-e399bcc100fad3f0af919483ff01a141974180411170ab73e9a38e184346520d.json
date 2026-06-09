@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "\n        SELECT st.id, st.technique_id, st.technique_name, st.technique_description,\n               st.student_id, st.status, st.student_notes, st.coach_notes,\n               st.created_at, st.updated_at,\n               st.last_coach_update_at, st.last_coach_update_by_id,\n               st.last_student_update_at, st.last_student_update_by_id,\n               st.collection_id,\n               cu.display_name as coach_updater_display_name,\n               cu.username as coach_updater_username,\n               su.display_name as student_updater_display_name,\n               su.username as student_updater_username,\n               coll.name as \"collection_name?\",\n               tag.id as \"tag_id?: i64\", tag.name as \"tag_name?: String\",\n               COALESCE(att.attempt_count, 0) as \"attempt_count!: i64\",\n               att.last_attempt_at as \"last_attempt_at?: NaiveDateTime\",\n               stv.seen_at as \"viewer_seen_at?: NaiveDateTime\"\n        FROM student_techniques st\n        LEFT JOIN users cu ON st.last_coach_update_by_id = cu.id\n        LEFT JOIN users su ON st.last_student_update_by_id = su.id\n        LEFT JOIN collections coll ON st.collection_id = coll.id\n        LEFT JOIN technique_tags tt ON st.technique_id = tt.technique_id\n        LEFT JOIN tags tag ON tt.tag_id = tag.id\n        LEFT JOIN (\n            SELECT student_technique_id,\n                   COUNT(*) AS attempt_count,\n                   MAX(attempted_at) AS last_attempt_at\n            FROM attempts\n            GROUP BY student_technique_id\n        ) att ON att.student_technique_id = st.id\n        LEFT JOIN student_technique_views stv\n               ON stv.student_technique_id = st.id AND stv.user_id = ?\n        WHERE st.student_id = ?\n        ORDER BY st.updated_at DESC\n        ",
+  "query": "\n        SELECT st.id, st.technique_id, st.technique_name, st.technique_description,\n               st.student_id, st.status, st.student_notes, st.coach_notes,\n               st.created_at, st.updated_at,\n               st.last_coach_update_at, st.last_coach_update_by_id,\n               st.last_student_update_at, st.last_student_update_by_id,\n               st.collection_id as \"syllabus_id?\",\n               cu.display_name as coach_updater_display_name,\n               cu.username as coach_updater_username,\n               su.display_name as student_updater_display_name,\n               su.username as student_updater_username,\n               coll.name as \"syllabus_name?\",\n               tag.id as \"tag_id?: i64\", tag.name as \"tag_name?: String\",\n               COALESCE(att.attempt_count, 0) as \"attempt_count!: i64\",\n               att.last_attempt_at as \"last_attempt_at?: NaiveDateTime\",\n               stv.seen_at as \"viewer_seen_at?: NaiveDateTime\"\n        FROM student_techniques st\n        LEFT JOIN users cu ON st.last_coach_update_by_id = cu.id\n        LEFT JOIN users su ON st.last_student_update_by_id = su.id\n        -- SQL identifier `collections` is the legacy table name (M4.5 / decision #19).\n        LEFT JOIN collections coll ON st.collection_id = coll.id\n        LEFT JOIN technique_tags tt ON st.technique_id = tt.technique_id\n        LEFT JOIN tags tag ON tt.tag_id = tag.id\n        LEFT JOIN (\n            SELECT student_technique_id,\n                   COUNT(*) AS attempt_count,\n                   MAX(attempted_at) AS last_attempt_at\n            FROM attempts\n            GROUP BY student_technique_id\n        ) att ON att.student_technique_id = st.id\n        LEFT JOIN student_technique_views stv\n               ON stv.student_technique_id = st.id AND stv.user_id = ?\n        WHERE st.student_id = ?\n        ORDER BY st.updated_at DESC\n        ",
   "describe": {
     "columns": [
       {
@@ -74,7 +74,7 @@
         "type_info": "Integer"
       },
       {
-        "name": "collection_id",
+        "name": "syllabus_id?",
         "ordinal": 14,
         "type_info": "Integer"
       },
@@ -99,7 +99,7 @@
         "type_info": "Text"
       },
       {
-        "name": "collection_name?",
+        "name": "syllabus_name?",
         "ordinal": 19,
         "type_info": "Text"
       },
@@ -160,5 +160,5 @@
       true
     ]
   },
-  "hash": "25f0428c25d7ae7e2a10322c1ed0f0a150188c03635f6e334c7d213e376d334b"
+  "hash": "e399bcc100fad3f0af919483ff01a141974180411170ab73e9a38e184346520d"
 }

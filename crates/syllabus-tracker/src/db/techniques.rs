@@ -8,7 +8,7 @@ use tracing::{info, instrument};
 use crate::error::AppError;
 use crate::models::{AttemptBucket, Tag, Technique};
 
-/// One row in the library / full-techniques admin list. Aggregates collection
+/// One row in the library / full-techniques admin list. Aggregates syllabus
 /// membership count, how many students have the technique assigned, and the
 /// most recent activity on any of those assignments.
 #[derive(Debug, Serialize)]
@@ -17,12 +17,12 @@ pub struct LibraryTechniqueRow {
     pub name: String,
     pub description: String,
     pub tags: Vec<Tag>,
-    /// IDs of the collections this technique belongs to. Sent alongside
-    /// `collection_count` so the frontend can render bubble filters that
-    /// scope the list to "techniques in collection X" without an extra
+    /// IDs of the syllabuses this technique belongs to. Sent alongside
+    /// `syllabus_count` so the frontend can render bubble filters that
+    /// scope the list to "techniques in syllabus X" without an extra
     /// per-row fetch.
-    pub collection_ids: Vec<i64>,
-    pub collection_count: i64,
+    pub syllabus_ids: Vec<i64>,
+    pub syllabus_count: i64,
     pub student_count: i64,
     pub video_count: i64,
     pub last_activity_at: Option<String>,
@@ -40,7 +40,8 @@ pub async fn list_library_techniques(
             t.id AS "id!: i64",
             t.name,
             t.description,
-            COALESCE((SELECT COUNT(*) FROM collection_techniques ct WHERE ct.technique_id = t.id), 0) AS "collection_count!: i64",
+            -- SQL identifier `collection_techniques` is the legacy table name (M4.5 / decision #19).
+            COALESCE((SELECT COUNT(*) FROM collection_techniques ct WHERE ct.technique_id = t.id), 0) AS "syllabus_count!: i64",
             COALESCE((SELECT COUNT(DISTINCT st.student_id) FROM student_techniques st WHERE st.technique_id = t.id), 0) AS "student_count!: i64",
             COALESCE((SELECT COUNT(*) FROM videos v WHERE v.technique_id = t.id AND v.deleted_at IS NULL), 0) AS "video_count!: i64",
             (SELECT MAX(st.updated_at) FROM student_techniques st WHERE st.technique_id = t.id) AS "last_activity_at?: NaiveDateTime"
@@ -73,19 +74,21 @@ pub async fn list_library_techniques(
             });
     }
 
-    let collection_rows = sqlx::query!(
+    let syllabus_rows = sqlx::query!(
+        // SQL identifiers `collection_techniques` / `collection_id` are legacy
+        // table / column names (M4.5 / decision #19); aliased on the way out.
         r#"SELECT technique_id AS "technique_id!: i64",
-                  collection_id AS "collection_id!: i64"
+                  collection_id AS "syllabus_id!: i64"
            FROM collection_techniques"#
     )
     .fetch_all(pool)
     .await?;
-    let mut collections_by_technique: HashMap<i64, Vec<i64>> = HashMap::new();
-    for row in collection_rows {
-        collections_by_technique
+    let mut syllabuses_by_technique: HashMap<i64, Vec<i64>> = HashMap::new();
+    for row in syllabus_rows {
+        syllabuses_by_technique
             .entry(row.technique_id)
             .or_default()
-            .push(row.collection_id);
+            .push(row.syllabus_id);
     }
 
     Ok(rows
@@ -93,10 +96,10 @@ pub async fn list_library_techniques(
         .map(|r| LibraryTechniqueRow {
             id: r.id,
             tags: tags_by_technique.remove(&r.id).unwrap_or_default(),
-            collection_ids: collections_by_technique.remove(&r.id).unwrap_or_default(),
+            syllabus_ids: syllabuses_by_technique.remove(&r.id).unwrap_or_default(),
             name: r.name,
             description: r.description.unwrap_or_default(),
-            collection_count: r.collection_count,
+            syllabus_count: r.syllabus_count,
             student_count: r.student_count,
             video_count: r.video_count,
             last_activity_at: r.last_activity_at.map(|dt| {
@@ -162,9 +165,9 @@ pub async fn get_all_techniques(pool: &Pool<Sqlite>) -> Result<Vec<Technique>, A
     Ok(techniques)
 }
 
-/// Collection reference shown on the library expanded row.
+/// Syllabus reference shown on the library expanded row.
 #[derive(Debug, Serialize)]
-pub struct LibraryTechniqueCollectionRef {
+pub struct LibraryTechniqueSyllabusRef {
     pub id: i64,
     pub name: String,
 }
@@ -180,7 +183,7 @@ pub struct LibraryTechniqueStatusCounts {
 /// Everything needed to render the expanded library row's stats strip.
 #[derive(Debug, Serialize)]
 pub struct LibraryTechniqueStats {
-    pub collections: Vec<LibraryTechniqueCollectionRef>,
+    pub syllabuses: Vec<LibraryTechniqueSyllabusRef>,
     pub status_counts: LibraryTechniqueStatusCounts,
     pub attempts_30d: i64,
     pub attempts_weekly_buckets: Vec<AttemptBucket>,
@@ -192,7 +195,9 @@ pub async fn library_technique_stats(
     pool: &Pool<Sqlite>,
     technique_id: i64,
 ) -> Result<LibraryTechniqueStats, AppError> {
-    let collections_rows = sqlx::query!(
+    // SQL identifiers `collection_techniques` / `collections` / `collection_id`
+    // are legacy table / column names (M4.5 / decision #19).
+    let syllabus_rows = sqlx::query!(
         r#"SELECT c.id AS "id!: i64", c.name AS "name!: String"
            FROM collection_techniques ct
            JOIN collections c ON c.id = ct.collection_id
@@ -202,9 +207,9 @@ pub async fn library_technique_stats(
     )
     .fetch_all(pool)
     .await?;
-    let collections = collections_rows
+    let syllabuses = syllabus_rows
         .into_iter()
-        .map(|r| LibraryTechniqueCollectionRef {
+        .map(|r| LibraryTechniqueSyllabusRef {
             id: r.id,
             name: r.name,
         })
@@ -273,7 +278,7 @@ pub async fn library_technique_stats(
     .await?;
 
     Ok(LibraryTechniqueStats {
-        collections,
+        syllabuses,
         status_counts,
         attempts_30d: attempts_30d_row.count,
         attempts_weekly_buckets,
@@ -341,13 +346,13 @@ pub async fn create_and_assign_technique(
     student_id: i64,
     technique_name: &str,
     technique_description: &str,
-    collection_id: Option<i64>,
+    syllabus_id: Option<i64>,
 ) -> Result<(), AppError> {
     info!("Creating and assigning technique to student");
     let technique_id =
         create_technique(pool, technique_name, technique_description, coach_id).await?;
 
-    super::assign_technique_to_student(pool, technique_id, student_id, collection_id, coach_id)
+    super::assign_technique_to_student(pool, technique_id, student_id, syllabus_id, coach_id)
         .await?;
 
     Ok(())
