@@ -215,9 +215,9 @@ export default function StudentTechniqueDetail({
   const backToSyllabus = (() => {
     const next = new URLSearchParams();
     const fromTab = searchParams.get("from_tab");
-    const fromCollection = searchParams.get("from_collection");
+    const fromSyllabus = searchParams.get("from_syllabus");
     if (fromTab) next.set("tab", fromTab);
-    if (fromCollection) next.set("collection", fromCollection);
+    if (fromSyllabus) next.set("syllabus", fromSyllabus);
     next.set("expanded", String(technique.id));
     return `/student/${studentId}?${next.toString()}`;
   })();

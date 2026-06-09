@@ -46,7 +46,7 @@ function buildTabs(user: User): Tab[] {
       to: '/library',
       label: 'Techniques',
       icon: Library,
-      alsoActiveOn: ['/collections'],
+      alsoActiveOn: ['/syllabuses'],
     });
   } else {
     tabs.push({ to: `/student/${user.id}`, label: 'My techniques', icon: Library });
@@ -55,7 +55,7 @@ function buildTabs(user: User): Tab[] {
       to: '/library',
       label: 'Library',
       icon: Library,
-      alsoActiveOn: ['/collections'],
+      alsoActiveOn: ['/syllabuses'],
     });
   }
   return tabs;

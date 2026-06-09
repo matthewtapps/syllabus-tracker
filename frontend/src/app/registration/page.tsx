@@ -5,11 +5,11 @@ import { Link as LinkIcon, QrCode } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { toast } from 'sonner';
 import {
-  assignCollectionToStudent,
-  getCollections,
+  assignSyllabusToStudent,
+  getSyllabuses,
   inviteUser,
   isAdmin,
-  type Collection,
+  type Syllabus,
   type InviteResponse,
   type User,
 } from '@/lib/api';
@@ -43,7 +43,7 @@ import {
 import { TracedForm } from '@/components/traced-form';
 import { handleApiFormError, useFormWithValidation } from '@/components/hooks/useFormErrors';
 
-const NO_COLLECTION = 'none';
+const NO_SYLLABUS = 'none';
 
 const inviteSchema = z.object({
   display_name: z
@@ -51,7 +51,7 @@ const inviteSchema = z.object({
     .min(1, 'Display name is required')
     .max(100, 'Display name is too long'),
   role: z.enum(['student', 'coach', 'admin']),
-  collection_id: z.string().optional(),
+  syllabus_id: z.string().optional(),
 });
 
 type InviteFormValues = z.infer<typeof inviteSchema>;
@@ -65,7 +65,7 @@ export default function AddUserPage({ user }: AddUserPageProps) {
     displayName: string;
     url: string;
   } | null>(null);
-  const [collections, setCollections] = useState<Collection[]>([]);
+  const [syllabuses, setSyllabuses] = useState<Syllabus[]>([]);
   const admin = isAdmin(user ?? null);
 
   const form = useFormWithValidation<InviteFormValues>({
@@ -73,7 +73,7 @@ export default function AddUserPage({ user }: AddUserPageProps) {
     defaultValues: {
       display_name: '',
       role: 'student',
-      collection_id: NO_COLLECTION,
+      syllabus_id: NO_SYLLABUS,
     },
   });
 
@@ -81,8 +81,8 @@ export default function AddUserPage({ user }: AddUserPageProps) {
     let cancelled = false;
     async function load() {
       try {
-        const cols = await getCollections();
-        if (!cancelled) setCollections(cols);
+        const list = await getSyllabuses();
+        if (!cancelled) setSyllabuses(list);
       } catch {
         // Non-fatal: the form still works without the picker.
       }
@@ -94,7 +94,7 @@ export default function AddUserPage({ user }: AddUserPageProps) {
   }, []);
 
   const watchedRole = form.watch('role');
-  const showCollectionPicker = watchedRole === 'student' && collections.length > 0;
+  const showSyllabusPicker = watchedRole === 'student' && syllabuses.length > 0;
 
   async function handleSubmit(data: InviteFormValues) {
     try {
@@ -105,18 +105,18 @@ export default function AddUserPage({ user }: AddUserPageProps) {
       if (!response.ok) throw response;
       const invite: InviteResponse = await response.json();
 
-      // Optional: bulk-assign a collection so the new student lands fully set up.
+      // Optional: bulk-assign a syllabus so the new student lands fully set up.
       if (
         data.role === 'student' &&
-        data.collection_id &&
-        data.collection_id !== NO_COLLECTION
+        data.syllabus_id &&
+        data.syllabus_id !== NO_SYLLABUS
       ) {
-        const parsed = parseInt(data.collection_id, 10);
+        const parsed = parseInt(data.syllabus_id, 10);
         if (Number.isFinite(parsed)) {
           try {
-            await assignCollectionToStudent(invite.user_id, parsed);
+            await assignSyllabusToStudent(invite.user_id, parsed);
           } catch {
-            toast.error("Created the user, but couldn't assign the collection");
+            toast.error("Created the user, but couldn't assign the syllabus");
           }
         }
       }
@@ -126,7 +126,7 @@ export default function AddUserPage({ user }: AddUserPageProps) {
       form.reset({
         display_name: '',
         role: data.role,
-        collection_id: data.collection_id ?? NO_COLLECTION,
+        syllabus_id: data.syllabus_id ?? NO_SYLLABUS,
       });
     } catch (err) {
       const handled = await handleApiFormError(
@@ -188,15 +188,15 @@ export default function AddUserPage({ user }: AddUserPageProps) {
               )}
             />
 
-            {showCollectionPicker && (
+            {showSyllabusPicker && (
               <FormField
                 control={form.control}
-                name="collection_id"
+                name="syllabus_id"
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>Start them on</FormLabel>
                     <Select
-                      value={field.value ?? NO_COLLECTION}
+                      value={field.value ?? NO_SYLLABUS}
                       onValueChange={field.onChange}
                     >
                       <FormControl>
@@ -205,18 +205,18 @@ export default function AddUserPage({ user }: AddUserPageProps) {
                         </SelectTrigger>
                       </FormControl>
                       <SelectContent>
-                        <SelectItem value={NO_COLLECTION}>
+                        <SelectItem value={NO_SYLLABUS}>
                           None (just create the account)
                         </SelectItem>
-                        {collections.map((c) => (
-                          <SelectItem key={c.id} value={String(c.id)}>
-                            {c.name} ({c.technique_count})
+                        {syllabuses.map((s) => (
+                          <SelectItem key={s.id} value={String(s.id)}>
+                            {s.name} ({s.technique_count})
                           </SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
                     <FormDescription>
-                      Bulk-assigns the collection's techniques to this new
+                      Bulk-assigns the syllabus's techniques to this new
                       student.
                     </FormDescription>
                     <FormMessage />

@@ -7,9 +7,9 @@ import {
   getAttemptSparkline,
   getAttemptSummary,
   getCapabilities,
-  getCollection,
-  getCollectionStudents,
-  getCollections,
+  getSyllabus,
+  getSyllabusStudents,
+  getSyllabuses,
   getCurrentUser,
   getDashboardVideoOverview,
   getLibraryStats,
@@ -155,26 +155,26 @@ export function useAllTags() {
   });
 }
 
-// ---- Collections ----
+// ---- Syllabuses ----
 
-export function useCollections() {
+export function useSyllabuses() {
   return useQuery({
-    queryKey: qk.collections(),
-    queryFn: getCollections,
+    queryKey: qk.syllabuses(),
+    queryFn: getSyllabuses,
   });
 }
 
-export function useCollection(id: number | undefined) {
+export function useSyllabus(id: number | undefined) {
   return useQuery({
-    queryKey: qk.collection(id ?? 0),
-    queryFn: whenId(id, getCollection),
+    queryKey: qk.syllabus(id ?? 0),
+    queryFn: whenId(id, getSyllabus),
   });
 }
 
-export function useCollectionStudents(collectionId: number | undefined) {
+export function useSyllabusStudents(syllabusId: number | undefined) {
   return useQuery({
-    queryKey: qk.collectionStudents(collectionId ?? 0),
-    queryFn: whenId(collectionId, getCollectionStudents),
+    queryKey: qk.syllabusStudents(syllabusId ?? 0),
+    queryFn: whenId(syllabusId, getSyllabusStudents),
   });
 }
 

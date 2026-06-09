@@ -24,7 +24,7 @@ import {
 } from '@/lib/api';
 import {
   useAllTags,
-  useCollections,
+  useSyllabuses,
   useLibraryTechniqueStats,
   useLibraryTechniques,
 } from '@/lib/queries';
@@ -106,13 +106,13 @@ export default function LibraryPage({ user }: LibraryPageProps) {
     });
   }, [searchParams, setSearchParams, techniques]);
   // Multi-select with OR semantics, matching the bubble UX the user
-  // described. `null` is the sentinel for "not in any collection".
-  const [activeCollections, setActiveCollections] = useState<(number | null)[]>(
+  // described. `null` is the sentinel for "not in any syllabus".
+  const [activeSyllabuses, setActiveSyllabuses] = useState<(number | null)[]>(
     [],
   );
 
-  const collectionsQuery = useCollections();
-  const collections = collectionsQuery.data ?? [];
+  const syllabusesQuery = useSyllabuses();
+  const syllabuses = syllabusesQuery.data ?? [];
 
   const availableTags = useMemo(() => {
     const set = new Set<string>();
@@ -131,16 +131,16 @@ export default function LibraryPage({ user }: LibraryPageProps) {
       const matchesTags =
         activeTags.length === 0 ||
         activeTags.every((tag) => t.tags.some((x) => x.name === tag));
-      const matchesCollection =
-        activeCollections.length === 0 ||
-        activeCollections.some((c) =>
-          c === null
-            ? t.collection_ids.length === 0
-            : t.collection_ids.includes(c),
+      const matchesSyllabus =
+        activeSyllabuses.length === 0 ||
+        activeSyllabuses.some((s) =>
+          s === null
+            ? t.syllabus_ids.length === 0
+            : t.syllabus_ids.includes(s),
         );
-      return matchesText && matchesTags && matchesCollection;
+      return matchesText && matchesTags && matchesSyllabus;
     });
-  }, [techniques, search, activeTags, activeCollections]);
+  }, [techniques, search, activeTags, activeSyllabuses]);
 
   function toggleTag(tag: string) {
     setActiveTags((prev) =>
@@ -153,13 +153,13 @@ export default function LibraryPage({ user }: LibraryPageProps) {
       <Tabs
         value="library"
         onValueChange={(v) => {
-          if (v === 'collections') navigate('/collections');
+          if (v === 'syllabuses') navigate('/syllabuses');
         }}
         className="mb-4"
       >
         <TabsList>
           <TabsTrigger value="library">All techniques</TabsTrigger>
-          <TabsTrigger value="collections">Collections</TabsTrigger>
+          <TabsTrigger value="syllabuses">Syllabuses</TabsTrigger>
         </TabsList>
       </Tabs>
 
@@ -205,57 +205,57 @@ export default function LibraryPage({ user }: LibraryPageProps) {
         </div>
       )}
 
-      {collections.length > 0 && availableTags.length > 0 && (
+      {syllabuses.length > 0 && availableTags.length > 0 && (
         <Separator className="mb-3" />
       )}
 
-      {collections.length > 0 && (
+      {syllabuses.length > 0 && (
         <div className="mb-4 flex flex-wrap gap-1.5">
-          {collections.map((c) => {
-            const active = activeCollections.includes(c.id);
+          {syllabuses.map((s) => {
+            const active = activeSyllabuses.includes(s.id);
             return (
               <Badge
-                key={c.id}
+                key={s.id}
                 variant={active ? 'default' : 'outline'}
                 className="cursor-pointer select-none"
                 onClick={() =>
-                  setActiveCollections((prev) =>
+                  setActiveSyllabuses((prev) =>
                     active
-                      ? prev.filter((x) => x !== c.id)
-                      : [...prev, c.id],
+                      ? prev.filter((x) => x !== s.id)
+                      : [...prev, s.id],
                   )
                 }
               >
-                {c.name}
+                {s.name}
               </Badge>
             );
           })}
           {(() => {
-            const active = activeCollections.includes(null);
+            const active = activeSyllabuses.includes(null);
             return (
               <Badge
-                key="__no_collection"
+                key="__no_syllabus"
                 variant={active ? 'default' : 'outline'}
                 className="cursor-pointer select-none"
                 onClick={() =>
-                  setActiveCollections((prev) =>
+                  setActiveSyllabuses((prev) =>
                     active
                       ? prev.filter((x) => x !== null)
                       : [...prev, null],
                   )
                 }
               >
-                No collection
+                No syllabus
               </Badge>
             );
           })()}
-          {activeCollections.length > 0 && (
+          {activeSyllabuses.length > 0 && (
             <Button
               type="button"
               variant="ghost"
               size="sm"
               className="h-6 px-2 text-xs"
-              onClick={() => setActiveCollections([])}
+              onClick={() => setActiveSyllabuses([])}
             >
               Clear
             </Button>
@@ -290,7 +290,7 @@ export default function LibraryPage({ user }: LibraryPageProps) {
           <EmptyState
             icon={BookOpen}
             title="No techniques yet"
-            description="Assign a technique to a student or build a collection to start the library."
+            description="Assign a technique to a student or build a syllabus to start the library."
           />
         ) : filtered.length === 0 ? (
           <p className="px-6 py-10 text-center text-sm text-muted-foreground">
@@ -366,7 +366,7 @@ function CollapsedMeta({ row }: { row: LibraryTechniqueRow }) {
       <span>{row.student_count}</span>
       <span aria-hidden>·</span>
       <FolderOpen className="h-3 w-3 shrink-0" aria-hidden />
-      <span>{row.collection_count}</span>
+      <span>{row.syllabus_count}</span>
       <span aria-hidden>·</span>
       <PlayIcon className="h-3 w-3 shrink-0" aria-hidden />
       <span>{row.video_count}</span>
@@ -411,7 +411,7 @@ function ExpandedPanel({
 
       <TagsRow technique={technique} canEdit={canEdit} />
 
-      {canEdit && <CollectionsRow stats={stats} />}
+      {canEdit && <SyllabusesRow stats={stats} />}
 
       {canEdit && <StatsStrip stats={stats} loading={statsQuery.isLoading} />}
 
@@ -656,25 +656,25 @@ function TagsRow({
   );
 }
 
-function CollectionsRow({ stats }: { stats: LibraryTechniqueStats | null }) {
+function SyllabusesRow({ stats }: { stats: LibraryTechniqueStats | null }) {
   return (
     <section className="space-y-2">
       <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-        Collections
+        Syllabuses
       </h3>
       {stats === null ? (
         <p className="text-xs text-muted-foreground">Loading...</p>
-      ) : stats.collections.length === 0 ? (
+      ) : stats.syllabuses.length === 0 ? (
         <p className="text-xs italic text-muted-foreground">
-          Not in any collection yet.
+          Not in any syllabus yet.
         </p>
       ) : (
         <div className="flex flex-wrap gap-1.5">
-          {stats.collections.map((c) => (
-            <Badge key={c.id} variant="outline" asChild>
-              <Link to={`/collections/${c.id}`} className="cursor-pointer">
+          {stats.syllabuses.map((s) => (
+            <Badge key={s.id} variant="outline" asChild>
+              <Link to={`/syllabuses/${s.id}`} className="cursor-pointer">
                 <FolderOpen className="mr-1 h-3 w-3" aria-hidden />
-                {c.name}
+                {s.name}
               </Link>
             </Badge>
           ))}

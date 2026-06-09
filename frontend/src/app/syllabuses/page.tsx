@@ -4,9 +4,9 @@ import { BookOpen, ChevronRight, Plus, Search, Users } from 'lucide-react';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { toast } from 'sonner';
-import { isCoachOrAdmin, type Collection, type User } from '@/lib/api';
-import { useCollections } from '@/lib/queries';
-import { useCreateCollection } from '@/lib/mutations';
+import { isCoachOrAdmin, type Syllabus, type User } from '@/lib/api';
+import { useSyllabuses } from '@/lib/queries';
+import { useCreateSyllabus } from '@/lib/mutations';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -33,67 +33,67 @@ import { SkeletonListRow } from '@/components/skeleton-row';
 import { TracedForm } from '@/components/traced-form';
 import { handleApiFormError, useFormWithValidation } from '@/components/hooks/useFormErrors';
 
-const newCollectionSchema = z.object({
+const newSyllabusSchema = z.object({
   name: z.string().min(1, 'Name is required').max(100, 'Name is too long'),
   description: z.string().optional(),
 });
-type NewCollectionValues = z.infer<typeof newCollectionSchema>;
+type NewSyllabusValues = z.infer<typeof newSyllabusSchema>;
 
-interface CollectionsPageProps {
+interface SyllabusesPageProps {
   user: User;
 }
 
-export default function CollectionsPage({ user }: CollectionsPageProps) {
+export default function SyllabusesPage({ user }: SyllabusesPageProps) {
   const canEdit = isCoachOrAdmin(user);
   const navigate = useNavigate();
-  const collectionsQuery = useCollections();
-  const createMutation = useCreateCollection();
-  const collections = collectionsQuery.data ?? null;
-  const error = collectionsQuery.error ? 'Failed to load collections.' : null;
+  const syllabusesQuery = useSyllabuses();
+  const createMutation = useCreateSyllabus();
+  const syllabuses = syllabusesQuery.data ?? null;
+  const error = syllabusesQuery.error ? 'Failed to load syllabuses.' : null;
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [search, setSearch] = useState('');
 
-  const filteredCollections = useMemo(() => {
-    if (!collections) return null;
+  const filteredSyllabuses = useMemo(() => {
+    if (!syllabuses) return null;
     const needle = search.trim().toLowerCase();
-    if (!needle) return collections;
-    return collections.filter(
-      (c) =>
-        c.name.toLowerCase().includes(needle) ||
-        (c.description?.toLowerCase().includes(needle) ?? false),
+    if (!needle) return syllabuses;
+    return syllabuses.filter(
+      (s) =>
+        s.name.toLowerCase().includes(needle) ||
+        (s.description?.toLowerCase().includes(needle) ?? false),
     );
-  }, [collections, search]);
+  }, [syllabuses, search]);
 
-  const form = useFormWithValidation<NewCollectionValues>({
-    resolver: zodResolver(newCollectionSchema),
+  const form = useFormWithValidation<NewSyllabusValues>({
+    resolver: zodResolver(newSyllabusSchema),
     defaultValues: { name: '', description: '' },
   });
 
-  async function handleCreate(values: NewCollectionValues) {
+  async function handleCreate(values: NewSyllabusValues) {
     try {
       const response = await createMutation.mutateAsync({
         name: values.name,
         description: values.description,
       });
-      const created: Collection = await response.json();
+      const created: Syllabus = await response.json();
       setCreateDialogOpen(false);
       form.reset();
-      toast.success('Collection created');
-      navigate(`/collections/${created.id}`);
+      toast.success('Syllabus created');
+      navigate(`/syllabuses/${created.id}`);
     } catch (err) {
       const handled = await handleApiFormError(
         err,
         form.setError,
         Object.keys(form.getValues()),
       );
-      if (!handled) toast.error(err instanceof Error ? err.message : 'Failed to create collection');
+      if (!handled) toast.error(err instanceof Error ? err.message : 'Failed to create syllabus');
     }
   }
 
   return (
     <div className="container mx-auto px-4 py-6 sm:px-6 md:py-8">
       <Tabs
-        value="collections"
+        value="syllabuses"
         onValueChange={(v) => {
           if (v === 'library') navigate('/library');
         }}
@@ -101,7 +101,7 @@ export default function CollectionsPage({ user }: CollectionsPageProps) {
       >
         <TabsList>
           <TabsTrigger value="library">All techniques</TabsTrigger>
-          <TabsTrigger value="collections">Collections</TabsTrigger>
+          <TabsTrigger value="syllabuses">Syllabuses</TabsTrigger>
         </TabsList>
       </Tabs>
 
@@ -112,7 +112,7 @@ export default function CollectionsPage({ user }: CollectionsPageProps) {
             aria-hidden
           />
           <Input
-            placeholder="Search collections"
+            placeholder="Search syllabuses"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="pl-9"
@@ -123,14 +123,14 @@ export default function CollectionsPage({ user }: CollectionsPageProps) {
             <DialogTrigger asChild>
               <Button className="shrink-0">
                 <Plus className="mr-2 h-4 w-4" aria-hidden />
-                <span className="hidden sm:inline">New collection</span>
+                <span className="hidden sm:inline">New syllabus</span>
                 <span className="sm:hidden">New</span>
               </Button>
             </DialogTrigger>
           )}
           <DialogContent className="w-[calc(100vw-1rem)] max-w-md p-4 sm:p-6">
             <DialogHeader>
-              <DialogTitle>New collection</DialogTitle>
+              <DialogTitle>New syllabus</DialogTitle>
               <DialogDescription>
                 Give it a name and a short description. You'll add techniques
                 on the next screen.
@@ -138,7 +138,7 @@ export default function CollectionsPage({ user }: CollectionsPageProps) {
             </DialogHeader>
             <Form {...form}>
               <TracedForm
-                id="create_collection"
+                id="create_syllabus"
                 onSubmit={form.handleSubmit(handleCreate)}
                 className="space-y-4"
               >
@@ -168,7 +168,7 @@ export default function CollectionsPage({ user }: CollectionsPageProps) {
                       <FormControl>
                         <Textarea
                           {...field}
-                          placeholder="What does this collection cover?"
+                          placeholder="What does this syllabus cover?"
                           className="min-h-24"
                         />
                       </FormControl>
@@ -198,7 +198,7 @@ export default function CollectionsPage({ user }: CollectionsPageProps) {
       </div>
 
       <div className="overflow-hidden rounded-lg border border-border bg-card">
-        {collections === null && !error ? (
+        {syllabuses === null && !error ? (
           <div className="divide-y divide-border">
             {Array.from({ length: 3 }).map((_, i) => (
               <SkeletonListRow key={i} />
@@ -207,57 +207,57 @@ export default function CollectionsPage({ user }: CollectionsPageProps) {
         ) : error ? (
           <div className="flex flex-col items-center gap-3 px-6 py-12 text-center">
             <p className="text-sm text-destructive">{error}</p>
-            <Button variant="outline" onClick={() => collectionsQuery.refetch()}>
+            <Button variant="outline" onClick={() => syllabusesQuery.refetch()}>
               Try again
             </Button>
           </div>
-        ) : collections && collections.length === 0 ? (
+        ) : syllabuses && syllabuses.length === 0 ? (
           <EmptyState
             icon={BookOpen}
-            title="No collections yet"
+            title="No syllabuses yet"
             description={
               canEdit
-                ? 'Create your first collection to bundle techniques together.'
-                : 'Your coach hasn’t built any collections yet.'
+                ? 'Create your first syllabus to bundle techniques together.'
+                : 'Your coach hasn’t built any syllabuses yet.'
             }
             action={
               canEdit ? (
                 <Button onClick={() => setCreateDialogOpen(true)}>
                   <Plus className="mr-2 h-4 w-4" aria-hidden />
-                  New collection
+                  New syllabus
                 </Button>
               ) : undefined
             }
           />
-        ) : filteredCollections && filteredCollections.length === 0 ? (
+        ) : filteredSyllabuses && filteredSyllabuses.length === 0 ? (
           <p className="px-6 py-10 text-center text-sm text-muted-foreground">
-            No collections match the current search.
+            No syllabuses match the current search.
           </p>
         ) : (
           <ul className="divide-y divide-border">
-            {filteredCollections!.map((c) => (
-              <li key={c.id}>
+            {filteredSyllabuses!.map((s) => (
+              <li key={s.id}>
                 <Link
-                  to={`/collections/${c.id}`}
+                  to={`/syllabuses/${s.id}`}
                   className="flex items-center gap-4 px-4 py-4 transition-colors hover:bg-muted/40"
                 >
                   <div className="min-w-0 flex-1 space-y-1">
-                    <p className="font-medium">{c.name}</p>
-                    {c.description && (
+                    <p className="font-medium">{s.name}</p>
+                    {s.description && (
                       <p className="line-clamp-1 text-sm text-muted-foreground">
-                        {c.description}
+                        {s.description}
                       </p>
                     )}
                     <div className="flex items-center gap-3 text-xs text-muted-foreground">
                       <span className="inline-flex items-center gap-1">
                         <BookOpen className="h-3 w-3" aria-hidden />
-                        {c.technique_count}{' '}
-                        {c.technique_count === 1 ? 'technique' : 'techniques'}
+                        {s.technique_count}{' '}
+                        {s.technique_count === 1 ? 'technique' : 'techniques'}
                       </span>
                       <span className="inline-flex items-center gap-1">
                         <Users className="h-3 w-3" aria-hidden />
-                        {c.student_count}{' '}
-                        {c.student_count === 1 ? 'student' : 'students'}
+                        {s.student_count}{' '}
+                        {s.student_count === 1 ? 'student' : 'students'}
                       </span>
                     </div>
                   </div>

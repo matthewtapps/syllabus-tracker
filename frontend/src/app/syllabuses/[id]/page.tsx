@@ -15,19 +15,19 @@ import { toast } from 'sonner';
 import {
   getTechniquesForAssignment,
   isCoachOrAdmin,
-  type Collection,
+  type Syllabus,
   type LibraryTechnique,
   type Tag,
   type User,
 } from '@/lib/api';
 import {
-  useCollection,
-  useCollectionStudents,
+  useSyllabus,
+  useSyllabusStudents,
 } from '@/lib/queries';
 import {
-  useDeleteCollection,
-  useRemoveTechniqueFromCollection,
-  useUpdateCollection,
+  useDeleteSyllabus,
+  useRemoveTechniqueFromSyllabus,
+  useUpdateSyllabus,
 } from '@/lib/mutations';
 import { qk } from '@/lib/query-keys';
 import { Button } from '@/components/ui/button';
@@ -45,7 +45,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { EmptyState } from '@/components/empty-state';
-import AddTechniquesToCollectionDialog from '@/components/add-techniques-to-collection-dialog';
+import AddTechniquesToSyllabusDialog from '@/components/add-techniques-to-syllabus-dialog';
 import TechniqueDetailsDialog from '@/components/technique-details-dialog';
 
 interface LibraryRow {
@@ -64,27 +64,27 @@ function initials(label: string): string {
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
 }
 
-interface CollectionDetailPageProps {
+interface SyllabusDetailPageProps {
   user: User;
 }
 
-export default function CollectionDetailPage({ user }: CollectionDetailPageProps) {
+export default function SyllabusDetailPage({ user }: SyllabusDetailPageProps) {
   const canEdit = isCoachOrAdmin(user);
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const collectionId = id ? parseInt(id, 10) : 0;
+  const syllabusId = id ? parseInt(id, 10) : 0;
   const qc = useQueryClient();
 
-  const collectionQuery = useCollection(collectionId);
-  // Roster of students assigned this collection -- a privacy concern
+  const syllabusQuery = useSyllabus(syllabusId);
+  // Roster of students subscribed to this syllabus -- a privacy concern
   // for student viewers, so only fetched for coach / admin.
-  const studentsQuery = useCollectionStudents(canEdit ? collectionId : 0);
-  const collection = collectionQuery.data ?? null;
+  const studentsQuery = useSyllabusStudents(canEdit ? syllabusId : 0);
+  const syllabus = syllabusQuery.data ?? null;
   const students = studentsQuery.data ?? [];
-  const error = collectionQuery.error ? 'Failed to load collection.' : null;
-  const updateMutation = useUpdateCollection();
-  const removeTechniqueMutation = useRemoveTechniqueFromCollection();
-  const deleteMutation = useDeleteCollection();
+  const error = syllabusQuery.error ? 'Failed to load syllabus.' : null;
+  const updateMutation = useUpdateSyllabus();
+  const removeTechniqueMutation = useRemoveTechniqueFromSyllabus();
+  const deleteMutation = useDeleteSyllabus();
 
   const [editingMeta, setEditingMeta] = useState(false);
   const [name, setName] = useState('');
@@ -99,16 +99,16 @@ export default function CollectionDetailPage({ user }: CollectionDetailPageProps
   );
   const [detailsMode, setDetailsMode] = useState<'view' | 'edit'>('view');
 
-  // Sync local name/description form state when the collection arrives or refreshes.
+  // Sync local name/description form state when the syllabus arrives or refreshes.
   useEffect(() => {
-    if (collection && !editingMeta) {
-      setName(collection.name);
-      setDescription(collection.description);
+    if (syllabus && !editingMeta) {
+      setName(syllabus.name);
+      setDescription(syllabus.description);
     }
-  }, [collection, editingMeta]);
+  }, [syllabus, editingMeta]);
 
-  function patchCollection(updater: (prev: Collection) => Collection) {
-    qc.setQueryData<Collection>(qk.collection(collectionId), (prev) =>
+  function patchSyllabus(updater: (prev: Syllabus) => Syllabus) {
+    qc.setQueryData<Syllabus>(qk.syllabus(syllabusId), (prev) =>
       prev ? updater(prev) : prev,
     );
   }
@@ -129,8 +129,8 @@ export default function CollectionDetailPage({ user }: CollectionDetailPageProps
   }, []);
 
   const assignedIds = useMemo(
-    () => new Set(collection?.techniques.map((t) => t.id) ?? []),
-    [collection],
+    () => new Set(syllabus?.techniques.map((t) => t.id) ?? []),
+    [syllabus],
   );
 
   const tagsByTechniqueId = useMemo(() => {
@@ -140,14 +140,14 @@ export default function CollectionDetailPage({ user }: CollectionDetailPageProps
   }, [library]);
 
   async function handleSaveMeta() {
-    if (!collection) return;
+    if (!syllabus) return;
     setSavingMeta(true);
     try {
       await updateMutation.mutateAsync({
-        id: collection.id,
+        id: syllabus.id,
         data: { name, description },
       });
-      patchCollection((prev) => ({ ...prev, name, description }));
+      patchSyllabus((prev) => ({ ...prev, name, description }));
       setEditingMeta(false);
       toast.success('Saved');
     } catch {
@@ -158,11 +158,11 @@ export default function CollectionDetailPage({ user }: CollectionDetailPageProps
   }
 
   function handleTechniquesAdded(added: LibraryTechnique[]) {
-    if (!collection || added.length === 0) return;
-    const existingIds = new Set(collection.techniques.map((t) => t.id));
+    if (!syllabus || added.length === 0) return;
+    const existingIds = new Set(syllabus.techniques.map((t) => t.id));
     const fresh = added.filter((t) => !existingIds.has(t.id));
     if (fresh.length === 0) return;
-    patchCollection((prev) => ({
+    patchSyllabus((prev) => ({
       ...prev,
       techniques: [...prev.techniques, ...fresh],
       technique_count: prev.technique_count + fresh.length,
@@ -170,7 +170,7 @@ export default function CollectionDetailPage({ user }: CollectionDetailPageProps
   }
 
   function handleTechniqueSaved(updated: LibraryTechnique) {
-    patchCollection((prev) => ({
+    patchSyllabus((prev) => ({
       ...prev,
       techniques: prev.techniques.map((t) =>
         t.id === updated.id ? { ...t, ...updated } : t,
@@ -180,13 +180,13 @@ export default function CollectionDetailPage({ user }: CollectionDetailPageProps
   }
 
   async function handleRemoveTechnique(techId: number) {
-    if (!collection) return;
+    if (!syllabus) return;
     try {
       await removeTechniqueMutation.mutateAsync({
-        collectionId: collection.id,
+        syllabusId: syllabus.id,
         techniqueId: techId,
       });
-      patchCollection((prev) => ({
+      patchSyllabus((prev) => ({
         ...prev,
         techniques: prev.techniques.filter((t) => t.id !== techId),
         technique_count: Math.max(0, prev.technique_count - 1),
@@ -199,11 +199,11 @@ export default function CollectionDetailPage({ user }: CollectionDetailPageProps
   }
 
   async function handleDelete() {
-    if (!collection) return;
+    if (!syllabus) return;
     try {
-      await deleteMutation.mutateAsync(collection.id);
-      toast.success('Collection deleted');
-      navigate('/collections');
+      await deleteMutation.mutateAsync(syllabus.id);
+      toast.success('Syllabus deleted');
+      navigate('/syllabuses');
     } catch (err) {
       console.error(err);
       toast.error('Failed to delete');
@@ -219,9 +219,9 @@ export default function CollectionDetailPage({ user }: CollectionDetailPageProps
           size="sm"
           className="-ml-3 h-8 gap-1.5 text-muted-foreground"
         >
-          <Link to="/collections">
+          <Link to="/syllabuses">
             <ArrowLeft className="h-4 w-4" aria-hidden />
-            Back to collections
+            Back to syllabuses
           </Link>
         </Button>
       </div>
@@ -232,7 +232,7 @@ export default function CollectionDetailPage({ user }: CollectionDetailPageProps
         </div>
       )}
 
-      {collection && (
+      {syllabus && (
         <>
           <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
             {editingMeta ? (
@@ -257,8 +257,8 @@ export default function CollectionDetailPage({ user }: CollectionDetailPageProps
                     variant="outline"
                     onClick={() => {
                       setEditingMeta(false);
-                      setName(collection.name);
-                      setDescription(collection.description);
+                      setName(syllabus.name);
+                      setDescription(syllabus.description);
                     }}
                   >
                     Cancel
@@ -268,23 +268,23 @@ export default function CollectionDetailPage({ user }: CollectionDetailPageProps
             ) : (
               <div className="space-y-2">
                 <h1 className="text-3xl font-bold tracking-tight sm:text-4xl">
-                  {collection.name}
+                  {syllabus.name}
                 </h1>
-                {collection.description && (
+                {syllabus.description && (
                   <p className="max-w-2xl text-sm text-muted-foreground sm:text-base">
-                    {collection.description}
+                    {syllabus.description}
                   </p>
                 )}
                 <div className="flex items-center gap-4 text-xs text-muted-foreground">
                   <span className="inline-flex items-center gap-1">
                     <BookOpen className="h-3 w-3" aria-hidden />
-                    {collection.technique_count}{' '}
-                    {collection.technique_count === 1 ? 'technique' : 'techniques'}
+                    {syllabus.technique_count}{' '}
+                    {syllabus.technique_count === 1 ? 'technique' : 'techniques'}
                   </span>
                   <span className="inline-flex items-center gap-1">
                     <Users className="h-3 w-3" aria-hidden />
-                    {collection.student_count}{' '}
-                    {collection.student_count === 1 ? 'student' : 'students'}
+                    {syllabus.student_count}{' '}
+                    {syllabus.student_count === 1 ? 'student' : 'students'}
                   </span>
                 </div>
               </div>
@@ -314,7 +314,7 @@ export default function CollectionDetailPage({ user }: CollectionDetailPageProps
           <section className="mb-8 space-y-3">
             <div className="flex items-center justify-between">
               <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-                Techniques in this collection
+                Techniques in this syllabus
               </h2>
               {canEdit && (
                 <Button
@@ -330,15 +330,15 @@ export default function CollectionDetailPage({ user }: CollectionDetailPageProps
             </div>
 
             <div className="overflow-hidden rounded-lg border border-border bg-card">
-              {collection.techniques.length === 0 ? (
+              {syllabus.techniques.length === 0 ? (
                 <EmptyState
                   icon={BookOpen}
                   title="No techniques yet"
-                  description="Add techniques to this collection from the library."
+                  description="Add techniques to this syllabus from the library."
                 />
               ) : (
                 <ul className="divide-y divide-border">
-                  {collection.techniques.map((t) => (
+                  {syllabus.techniques.map((t) => (
                     <li
                       key={t.id}
                       className="flex items-center gap-1 px-4 py-3 sm:gap-2"
@@ -370,7 +370,7 @@ export default function CollectionDetailPage({ user }: CollectionDetailPageProps
                         <Eye className="h-4 w-4" aria-hidden />
                         <span className="sr-only">View {t.name}</span>
                       </Button>
-                      {collection.can_edit_all_techniques && (
+                      {syllabus.can_edit_all_techniques && (
                         <Button
                           variant="ghost"
                           size="icon"
@@ -405,14 +405,14 @@ export default function CollectionDetailPage({ user }: CollectionDetailPageProps
           {canEdit && (
           <section className="space-y-3">
             <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-              Assigned students
+              Subscribed students
             </h2>
             <div className="overflow-hidden rounded-lg border border-border bg-card">
               {students.length === 0 ? (
                 <EmptyState
                   icon={Users}
-                  title="No students on this collection yet"
-                  description="Open a student's techniques and use the Add techniques dialog to assign this collection to them."
+                  title="No students on this syllabus yet"
+                  description="Open a student's techniques and use the Add techniques dialog to assign this syllabus to them."
                 />
               ) : (
                 <ul className="divide-y divide-border">
@@ -449,19 +449,19 @@ export default function CollectionDetailPage({ user }: CollectionDetailPageProps
         </>
       )}
 
-      {collection && (
-        <AddTechniquesToCollectionDialog
+      {syllabus && (
+        <AddTechniquesToSyllabusDialog
           open={addOpen}
           onOpenChange={setAddOpen}
-          collectionId={collection.id}
-          collectionName={collection.name}
+          syllabusId={syllabus.id}
+          syllabusName={syllabus.name}
           alreadyAssignedIds={assignedIds}
-          canCreate={collection.can_create_techniques}
+          canCreate={syllabus.can_create_techniques}
           onAdded={handleTechniquesAdded}
         />
       )}
 
-      {collection && detailsTechnique && (
+      {syllabus && detailsTechnique && (
         <TechniqueDetailsDialog
           open={!!detailsTechnique}
           onOpenChange={(o) => {
@@ -469,7 +469,7 @@ export default function CollectionDetailPage({ user }: CollectionDetailPageProps
           }}
           technique={detailsTechnique}
           tags={tagsByTechniqueId.get(detailsTechnique.id) ?? []}
-          canEdit={collection.can_edit_all_techniques}
+          canEdit={syllabus.can_edit_all_techniques}
           initialMode={detailsMode}
           onSaved={handleTechniqueSaved}
         />
@@ -478,10 +478,10 @@ export default function CollectionDetailPage({ user }: CollectionDetailPageProps
       <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
         <AlertDialogContent className="w-[calc(100vw-1rem)] max-w-sm p-4 sm:p-6">
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete this collection?</AlertDialogTitle>
+            <AlertDialogTitle>Delete this syllabus?</AlertDialogTitle>
             <AlertDialogDescription>
-              The collection will be removed. Students' assigned techniques
-              stay where they are, just no longer grouped under this collection.
+              The syllabus will be removed. Students' assigned techniques
+              stay where they are, just no longer grouped under this syllabus.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

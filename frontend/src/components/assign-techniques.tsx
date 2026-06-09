@@ -13,13 +13,13 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { type Collection } from '@/lib/api';
+import { type Syllabus } from '@/lib/api';
 import {
-  useCollections,
+  useSyllabuses,
   useStudentUnassignedTechniques,
 } from '@/lib/queries';
 import {
-  useAssignCollectionToStudent,
+  useAssignSyllabusToStudent,
   useAssignTechniquesToStudent,
   useCreateAndAssignTechnique,
 } from '@/lib/mutations';
@@ -31,11 +31,11 @@ interface AssignTechniquesProps {
   studentId: number;
   canCreateTechniques: boolean;
   /**
-   * If the dialog is opened in the context of a specific collection (e.g. when
-   * the page is filtered to that collection), default new assignments to file
+   * If the dialog is opened in the context of a specific syllabus (e.g. when
+   * the page is filtered to that syllabus), default new assignments to file
    * under it. Use `null` for "Loose".
    */
-  defaultCollectionId?: number | null;
+  defaultSyllabusId?: number | null;
   onAssignComplete: () => void;
 }
 
@@ -53,24 +53,24 @@ const LOOSE_VALUE = 'loose';
 export default function AssignTechniques({
   studentId,
   canCreateTechniques,
-  defaultCollectionId,
+  defaultSyllabusId,
   onAssignComplete,
 }: AssignTechniquesProps) {
   const unassignedQuery = useStudentUnassignedTechniques(studentId);
-  const collectionsQuery = useCollections();
+  const syllabusesQuery = useSyllabuses();
   const unassignedTechniques = useMemo(
     () => unassignedQuery.data ?? [],
     [unassignedQuery.data],
   );
-  const collections: Collection[] = useMemo(
-    () => collectionsQuery.data ?? [],
-    [collectionsQuery.data],
+  const syllabuses: Syllabus[] = useMemo(
+    () => syllabusesQuery.data ?? [],
+    [syllabusesQuery.data],
   );
   const loading = unassignedQuery.isLoading;
   const error = unassignedQuery.error ? 'Failed to load available techniques.' : null;
   const assignMutation = useAssignTechniquesToStudent();
   const createMutation = useCreateAndAssignTechnique();
-  const assignCollectionMutation = useAssignCollectionToStudent();
+  const assignSyllabusMutation = useAssignSyllabusToStudent();
   const [filterText, setFilterText] = useState('');
   const [tagFilter, setTagFilter] = useState<string[]>([]);
   const availableTags = useMemo(() => {
@@ -78,12 +78,12 @@ export default function AssignTechniques({
     unassignedTechniques.forEach((t) => t.tags.forEach((tag) => set.add(tag.name)));
     return Array.from(set).sort();
   }, [unassignedTechniques]);
-  const [tab, setTab] = useState<'assign' | 'create' | 'collection'>('assign');
-  const [collectionChoice, setCollectionChoice] = useState<string>(
-    defaultCollectionId ? String(defaultCollectionId) : LOOSE_VALUE,
+  const [tab, setTab] = useState<'assign' | 'create' | 'syllabus'>('assign');
+  const [syllabusChoice, setSyllabusChoice] = useState<string>(
+    defaultSyllabusId ? String(defaultSyllabusId) : LOOSE_VALUE,
   );
-  const [bulkCollectionId, setBulkCollectionId] = useState<string>('');
-  const [assigningCollection, setAssigningCollection] = useState(false);
+  const [bulkSyllabusId, setBulkSyllabusId] = useState<string>('');
+  const [assigningSyllabus, setAssigningSyllabus] = useState(false);
 
   const createTechniqueForm = useFormWithValidation<CreateTechniqueFormValues>({
     defaultValues: { name: '', description: '' },
@@ -110,9 +110,9 @@ export default function AssignTechniques({
     });
   }, [unassignedTechniques, filterText, tagFilter]);
 
-  function chosenCollectionId(): number | null {
-    if (collectionChoice === LOOSE_VALUE) return null;
-    const parsed = parseInt(collectionChoice, 10);
+  function chosenSyllabusId(): number | null {
+    if (syllabusChoice === LOOSE_VALUE) return null;
+    const parsed = parseInt(syllabusChoice, 10);
     return Number.isFinite(parsed) ? parsed : null;
   }
 
@@ -154,7 +154,7 @@ export default function AssignTechniques({
       await assignMutation.mutateAsync({
         studentId,
         techniqueIds: data.selected_technique_ids,
-        collectionId: chosenCollectionId(),
+        syllabusId: chosenSyllabusId(),
       });
       assignForm.reset();
       onAssignComplete();
@@ -175,7 +175,7 @@ export default function AssignTechniques({
         studentId,
         name: data.name,
         description: data.description,
-        collectionId: chosenCollectionId(),
+        syllabusId: chosenSyllabusId(),
       });
       createTechniqueForm.reset();
       onAssignComplete();
@@ -189,20 +189,20 @@ export default function AssignTechniques({
     }
   }
 
-  async function handleAssignCollection() {
-    const id = parseInt(bulkCollectionId, 10);
+  async function handleAssignSyllabus() {
+    const id = parseInt(bulkSyllabusId, 10);
     if (!Number.isFinite(id)) return;
-    setAssigningCollection(true);
+    setAssigningSyllabus(true);
     try {
-      await assignCollectionMutation.mutateAsync({
+      await assignSyllabusMutation.mutateAsync({
         studentId,
-        collectionId: id,
+        syllabusId: id,
       });
       onAssignComplete();
     } catch {
-      toast.error('Failed to assign collection');
+      toast.error('Failed to assign syllabus');
     } finally {
-      setAssigningCollection(false);
+      setAssigningSyllabus(false);
     }
   }
 
@@ -219,25 +219,25 @@ export default function AssignTechniques({
 
   const fileUnderField = (
     <div className="space-y-2">
-      <Label htmlFor="collection-choice" className="text-sm">
+      <Label htmlFor="syllabus-choice" className="text-sm">
         File under
       </Label>
-      <Select value={collectionChoice} onValueChange={setCollectionChoice}>
-        <SelectTrigger id="collection-choice">
+      <Select value={syllabusChoice} onValueChange={setSyllabusChoice}>
+        <SelectTrigger id="syllabus-choice">
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
-          <SelectItem value={LOOSE_VALUE}>Loose (no collection)</SelectItem>
-          {collections.map((c) => (
-            <SelectItem key={c.id} value={String(c.id)}>
-              {c.name}
+          <SelectItem value={LOOSE_VALUE}>Loose (no syllabus)</SelectItem>
+          {syllabuses.map((s) => (
+            <SelectItem key={s.id} value={String(s.id)}>
+              {s.name}
             </SelectItem>
           ))}
         </SelectContent>
       </Select>
       <p className="text-xs text-muted-foreground">
-        Files these techniques under a collection on this student's syllabus.
-        Pick "Loose (no collection)" to leave them unfiled.
+        Files these techniques under a syllabus on this student's profile.
+        Pick "Loose (no syllabus)" to leave them unfiled.
       </p>
     </div>
   );
@@ -245,7 +245,7 @@ export default function AssignTechniques({
   return (
     <Tabs
       value={tab}
-      onValueChange={(v) => setTab(v as 'assign' | 'create' | 'collection')}
+      onValueChange={(v) => setTab(v as 'assign' | 'create' | 'syllabus')}
       className="flex min-h-0 flex-1 flex-col"
     >
         <TabsList className="w-full">
@@ -257,8 +257,8 @@ export default function AssignTechniques({
               Create
             </TabsTrigger>
           )}
-          <TabsTrigger value="collection" className="flex-1 min-w-0 px-2 sm:px-3">
-            Collection
+          <TabsTrigger value="syllabus" className="flex-1 min-w-0 px-2 sm:px-3">
+            Syllabus
           </TabsTrigger>
         </TabsList>
 
@@ -428,41 +428,41 @@ export default function AssignTechniques({
           </TabsContent>
         )}
 
-        <TabsContent value="collection" className="mt-4 min-h-0 space-y-4 overflow-y-auto">
-          {collections.length === 0 ? (
+        <TabsContent value="syllabus" className="mt-4 min-h-0 space-y-4 overflow-y-auto">
+          {syllabuses.length === 0 ? (
             <p className="py-6 text-center text-sm text-muted-foreground">
-              No collections yet. Create one from the Collections page.
+              No syllabuses yet. Create one from the Syllabuses page.
             </p>
           ) : (
             <>
               <div className="space-y-2">
-                <Label htmlFor="bulk-collection">Collection</Label>
-                <Select value={bulkCollectionId} onValueChange={setBulkCollectionId}>
-                  <SelectTrigger id="bulk-collection">
-                    <SelectValue placeholder="Pick a collection" />
+                <Label htmlFor="bulk-syllabus">Syllabus</Label>
+                <Select value={bulkSyllabusId} onValueChange={setBulkSyllabusId}>
+                  <SelectTrigger id="bulk-syllabus">
+                    <SelectValue placeholder="Pick a syllabus" />
                   </SelectTrigger>
                   <SelectContent>
-                    {collections.map((c) => (
-                      <SelectItem key={c.id} value={String(c.id)}>
-                        {c.name} ({c.technique_count}{' '}
-                        {c.technique_count === 1 ? 'technique' : 'techniques'})
+                    {syllabuses.map((s) => (
+                      <SelectItem key={s.id} value={String(s.id)}>
+                        {s.name} ({s.technique_count}{' '}
+                        {s.technique_count === 1 ? 'technique' : 'techniques'})
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
                 <p className="text-xs text-muted-foreground">
-                  Assigns every technique in this collection to the student,
+                  Assigns every technique in this syllabus to the student,
                   filed under it. Techniques the student already has are moved
-                  into this collection (progress is preserved).
+                  into this syllabus (progress is preserved).
                 </p>
               </div>
               <div className="flex justify-end">
                 <Button
                   type="button"
-                  onClick={handleAssignCollection}
-                  disabled={!bulkCollectionId || assigningCollection}
+                  onClick={handleAssignSyllabus}
+                  disabled={!bulkSyllabusId || assigningSyllabus}
                 >
-                  {assigningCollection ? 'Assigning...' : 'Assign collection'}
+                  {assigningSyllabus ? 'Assigning...' : 'Assign syllabus'}
                 </Button>
               </div>
             </>

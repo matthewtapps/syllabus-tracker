@@ -37,7 +37,7 @@ interface TechniqueRowProps {
   currentUserId: number;
   expanded: boolean;
   onToggle: () => void;
-  showCollectionChip?: boolean;
+  showSyllabusChip?: boolean;
   allTags: Tag[];
   selectedTagFilter: string[];
   onTechniqueUpdate: (technique: Technique) => void;
@@ -58,7 +58,7 @@ export function TechniqueRow({
   currentUserId,
   expanded,
   onToggle,
-  showCollectionChip = false,
+  showSyllabusChip = false,
   allTags,
   selectedTagFilter,
   onTechniqueUpdate,
@@ -141,7 +141,7 @@ export function TechniqueRow({
 
   const metaParts = buildMetaParts({
     technique,
-    showCollectionChip,
+    showSyllabusChip,
     selectedTagFilter,
   });
 
@@ -349,9 +349,9 @@ export function TechniqueRow({
             onViewDetails={() => {
               const next = new URLSearchParams();
               const tab = searchParams.get('tab');
-              const collection = searchParams.get('collection');
+              const syllabus = searchParams.get('syllabus');
               if (tab) next.set('from_tab', tab);
-              if (collection) next.set('from_collection', collection);
+              if (syllabus) next.set('from_syllabus', syllabus);
               const qs = next.toString();
               navigate(
                 `/student/${studentId}/technique/${technique.id}${
@@ -371,13 +371,13 @@ export function TechniqueRow({
 
 interface MetaArgs {
   technique: Technique;
-  showCollectionChip: boolean;
+  showSyllabusChip: boolean;
   selectedTagFilter: string[];
 }
 
 function buildMetaParts({
   technique,
-  showCollectionChip,
+  showSyllabusChip,
 }: MetaArgs): string[] {
   const parts: string[] = [];
   if (technique.attempt_count > 0) {
@@ -385,8 +385,8 @@ function buildMetaParts({
       `${technique.attempt_count} ${technique.attempt_count === 1 ? "attempt" : "attempts"}`,
     );
   }
-  if (showCollectionChip && technique.collection_name) {
-    parts.push(technique.collection_name);
+  if (showSyllabusChip && technique.syllabus_name) {
+    parts.push(technique.syllabus_name);
   }
   const tagNames = technique.tags.map((t) => t.name);
   parts.push(...tagNames.slice(0, META_TAG_LIMIT));

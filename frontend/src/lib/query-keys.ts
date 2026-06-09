@@ -26,9 +26,9 @@ export const qk = {
 
   tags: () => ["tags"] as const,
 
-  collections: () => ["collections"] as const,
-  collection: (id: number) => ["collection", id] as const,
-  collectionStudents: (id: number) => ["collection", id, "students"] as const,
+  syllabuses: () => ["syllabuses"] as const,
+  syllabus: (id: number) => ["syllabus", id] as const,
+  syllabusStudents: (id: number) => ["syllabus", id, "students"] as const,
 
   libraryStats: () => ["libraryStats"] as const,
   libraryTechniques: () => ["libraryTechniques"] as const,
@@ -62,7 +62,7 @@ export const qk = {
     anyStudentTechniqueScope: (q: Query) =>
       (q.queryKey[0] === "student" && q.queryKey[2] === "techniques") ||
       q.queryKey[0] === "studentTechnique",
-    anyCollection: (q: Query) => q.queryKey[0] === "collection",
+    anySyllabus: (q: Query) => q.queryKey[0] === "syllabus",
     anyTechniqueVideos: (q: Query) =>
       q.queryKey[0] === "technique" && q.queryKey[2] === "videos",
   },

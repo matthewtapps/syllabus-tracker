@@ -230,28 +230,28 @@ export default function StudentTechniques({ user }: StudentTechniquesProps) {
       return params;
     }, { replace: true });
   }
-  // Multi-select collection filter with OR semantics. Each entry is a
-  // numeric collection id or the sentinel string 'other' for techniques
-  // not in any collection. Empty array = no filter (show all). Encoded
-  // in the URL as a comma-separated `collections=` param.
-  const collectionFilters = useMemo<string[]>(() => {
-    const raw = searchParams.get('collections');
+  // Multi-select syllabus filter with OR semantics. Each entry is a
+  // numeric syllabus id or the sentinel string 'other' for techniques
+  // not in any syllabus. Empty array = no filter (show all). Encoded
+  // in the URL as a comma-separated `syllabuses=` param.
+  const syllabusFilters = useMemo<string[]>(() => {
+    const raw = searchParams.get('syllabuses');
     if (!raw) return [];
     return raw.split(',').map((s) => s.trim()).filter(Boolean);
   }, [searchParams]);
-  function setCollectionFilters(next: string[]) {
+  function setSyllabusFilters(next: string[]) {
     setSearchParams((prev) => {
       const params = new URLSearchParams(prev);
-      if (next.length === 0) params.delete('collections');
-      else params.set('collections', next.join(','));
+      if (next.length === 0) params.delete('syllabuses');
+      else params.set('syllabuses', next.join(','));
       return params;
     }, { replace: true });
   }
-  function toggleCollectionFilter(value: string) {
-    setCollectionFilters(
-      collectionFilters.includes(value)
-        ? collectionFilters.filter((v) => v !== value)
-        : [...collectionFilters, value],
+  function toggleSyllabusFilter(value: string) {
+    setSyllabusFilters(
+      syllabusFilters.includes(value)
+        ? syllabusFilters.filter((v) => v !== value)
+        : [...syllabusFilters, value],
     );
   }
 
@@ -309,36 +309,36 @@ export default function StudentTechniques({ user }: StudentTechniquesProps) {
     });
   }, [data, expandedSet]);
 
-  // Unique collections the student has assignments in (drives the selector
-  // visibility). "Loose" is added if any technique has no collection.
-  const studentCollections = useMemo(() => {
+  // Unique syllabuses the student has assignments in (drives the selector
+  // visibility). "Loose" is added if any technique has no syllabus.
+  const studentSyllabuses = useMemo(() => {
     if (!data) return [] as { id: number; name: string }[];
     const seen = new Map<number, string>();
     for (const t of data.techniques) {
-      if (t.collection_id && !seen.has(t.collection_id)) {
-        seen.set(t.collection_id, t.collection_name ?? 'Untitled');
+      if (t.syllabus_id && !seen.has(t.syllabus_id)) {
+        seen.set(t.syllabus_id, t.syllabus_name ?? 'Untitled');
       }
     }
     return Array.from(seen.entries()).map(([id, name]) => ({ id, name }));
   }, [data]);
 
   const hasLooseAssignments = useMemo(
-    () => !!data && data.techniques.some((t) => !t.collection_id),
+    () => !!data && data.techniques.some((t) => !t.syllabus_id),
     [data],
   );
 
-  // Render the collection filter as soon as the student has any
-  // collection assignment (even a single one) so coaches and students can
-  // narrow the list to that collection. The selector hides only when
-  // there are no collections at all.
-  const showCollectionSelector = studentCollections.length > 0;
+  // Render the syllabus filter as soon as the student has any
+  // syllabus assignment (even a single one) so coaches and students can
+  // narrow the list to that syllabus. The selector hides only when
+  // there are no syllabuses at all.
+  const showSyllabusSelector = studentSyllabuses.length > 0;
 
-  function matchesCollection(t: Technique): boolean {
-    if (collectionFilters.length === 0) return true;
-    return collectionFilters.some((value) => {
-      if (value === 'other') return !t.collection_id;
+  function matchesSyllabus(t: Technique): boolean {
+    if (syllabusFilters.length === 0) return true;
+    return syllabusFilters.some((value) => {
+      if (value === 'other') return !t.syllabus_id;
       const parsed = parseInt(value, 10);
-      return Number.isFinite(parsed) && t.collection_id === parsed;
+      return Number.isFinite(parsed) && t.syllabus_id === parsed;
     });
   }
 
@@ -359,14 +359,14 @@ export default function StudentTechniques({ user }: StudentTechniquesProps) {
     };
     if (!data) return base;
     for (const t of data.techniques) {
-      if (!matchesCollection(t)) continue;
+      if (!matchesSyllabus(t)) continue;
       base.all += 1;
       base[t.status as Status] += 1;
       if (t.has_unseen_activity) base.new_activity += 1;
     }
     return base;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data, collectionFilters]);
+  }, [data, syllabusFilters]);
 
   const filteredTechniques = useMemo<Technique[]>(() => {
     if (!data) return [];
@@ -376,7 +376,7 @@ export default function StudentTechniques({ user }: StudentTechniquesProps) {
       // the user when the active filter would now exclude them (e.g. status
       // change in detail page, or status change inline within the row).
       if (expandedSet.has(t.id)) return true;
-      if (!matchesCollection(t)) return false;
+      if (!matchesSyllabus(t)) return false;
       if (activeTab === 'new_activity' && !t.has_unseen_activity) return false;
       if (activeTab !== 'all' && activeTab !== 'new_activity' && t.status !== activeTab)
         return false;
@@ -393,7 +393,7 @@ export default function StudentTechniques({ user }: StudentTechniquesProps) {
       );
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data, filterText, activeTab, selectedTags, collectionFilters, expandedSet]);
+  }, [data, filterText, activeTab, selectedTags, syllabusFilters, expandedSet]);
 
   function toggleTagFilter(tagName: string) {
     setSelectedTags((prev) =>
@@ -728,16 +728,16 @@ export default function StudentTechniques({ user }: StudentTechniquesProps) {
                       <DialogDescription>
                         Assign existing techniques or create new ones for{' '}
                         {data.student.display_name || data.student.username}.
-                        Collections are folders for a student's techniques: a
-                        technique can sit in a collection or stay loose.
+                        Syllabuses are folders for a student's techniques: a
+                        technique can sit in a syllabus or stay loose.
                       </DialogDescription>
                     </DialogHeader>
                     <AssignTechniques
                       studentId={data.student.id}
                       canCreateTechniques={data.can_create_techniques}
-                      defaultCollectionId={(() => {
-                        if (collectionFilters.length !== 1) return null;
-                        const only = collectionFilters[0];
+                      defaultSyllabusId={(() => {
+                        if (syllabusFilters.length !== 1) return null;
+                        const only = syllabusFilters[0];
                         if (only === 'other') return null;
                         const parsed = parseInt(only, 10);
                         return Number.isFinite(parsed) ? parsed : null;
@@ -762,45 +762,45 @@ export default function StudentTechniques({ user }: StudentTechniquesProps) {
             onToggleTag={toggleTagFilter}
             counts={counts}
           />
-          {showCollectionSelector && availableTags.length > 0 && (
+          {showSyllabusSelector && availableTags.length > 0 && (
             <Separator />
           )}
-          {showCollectionSelector && (
+          {showSyllabusSelector && (
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-xs uppercase tracking-wide text-muted-foreground">
-                Collections
+                Syllabuses
               </span>
               <div className="flex flex-wrap gap-1.5">
-                {studentCollections.map((c) => {
-                  const value = String(c.id);
-                  const active = collectionFilters.includes(value);
+                {studentSyllabuses.map((s) => {
+                  const value = String(s.id);
+                  const active = syllabusFilters.includes(value);
                   return (
                     <Badge
-                      key={c.id}
+                      key={s.id}
                       variant={active ? 'default' : 'outline'}
                       className="cursor-pointer select-none"
-                      onClick={() => toggleCollectionFilter(value)}
+                      onClick={() => toggleSyllabusFilter(value)}
                     >
-                      {c.name}
+                      {s.name}
                     </Badge>
                   );
                 })}
                 {hasLooseAssignments && (
                   <Badge
-                    variant={collectionFilters.includes('other') ? 'default' : 'outline'}
+                    variant={syllabusFilters.includes('other') ? 'default' : 'outline'}
                     className="cursor-pointer select-none"
-                    onClick={() => toggleCollectionFilter('other')}
+                    onClick={() => toggleSyllabusFilter('other')}
                   >
-                    No collection
+                    No syllabus
                   </Badge>
                 )}
-                {collectionFilters.length > 0 && (
+                {syllabusFilters.length > 0 && (
                   <Button
                     type="button"
                     variant="ghost"
                     size="sm"
                     className="h-6 px-2 text-xs"
-                    onClick={() => setCollectionFilters([])}
+                    onClick={() => setSyllabusFilters([])}
                   >
                     Clear
                   </Button>
@@ -881,7 +881,7 @@ export default function StudentTechniques({ user }: StudentTechniquesProps) {
                   expandedSet.has(technique.id) || technique.id === focusId
                 }
                 onToggle={() => toggleExpandedId(technique.id)}
-                showCollectionChip={showCollectionSelector && collectionFilters.length === 0}
+                showSyllabusChip={showSyllabusSelector && syllabusFilters.length === 0}
                 allTags={allTags}
                 selectedTagFilter={selectedTags}
                 onTechniqueUpdate={updateTechniqueLocally}

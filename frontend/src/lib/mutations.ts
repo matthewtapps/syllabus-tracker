@@ -1,24 +1,24 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   addTagToTechnique,
-  addTechniquesToCollection,
-  assignCollectionToStudent,
+  addTechniquesToSyllabus,
+  assignSyllabusToStudent,
   assignTechniquesToStudent,
   approveUser,
   createAndAssignTechnique,
   createAttempt,
-  createCollection,
+  createSyllabus,
   createTag,
-  createTechniqueInCollection,
+  createTechniqueInSyllabus,
   deleteAttempt,
-  deleteCollection,
+  deleteSyllabus,
   deleteTag,
   deleteVideo,
   inviteUser,
   linkVideo,
   markStudentTechniqueSeen,
   removeTagFromTechnique,
-  removeTechniqueFromCollection,
+  removeTechniqueFromSyllabus,
   reorderVideos,
   resetUserClaim,
   setFootageSubmitter,
@@ -27,7 +27,7 @@ import {
   setVideoGlobalHidden,
   setVideoStudentVisibility,
   updateAttempt,
-  updateCollection,
+  updateSyllabus,
   updateLibraryTechnique,
   updatePassword,
   updateTechnique,
@@ -448,13 +448,13 @@ export function useAssignTechniquesToStudent() {
     mutationFn: async (vars: {
       studentId: number;
       techniqueIds: number[];
-      collectionId?: number | null;
+      syllabusId?: number | null;
     }) =>
       unwrap(
         await assignTechniquesToStudent(
           vars.studentId,
           vars.techniqueIds,
-          vars.collectionId,
+          vars.syllabusId,
         ),
       ),
     onSuccess: (_res, { studentId }) =>
@@ -473,14 +473,14 @@ export function useCreateAndAssignTechnique() {
       studentId: number;
       name: string;
       description: string;
-      collectionId?: number | null;
+      syllabusId?: number | null;
     }) =>
       unwrap(
         await createAndAssignTechnique(
           vars.studentId,
           vars.name,
           vars.description,
-          vars.collectionId,
+          vars.syllabusId,
         ),
       ),
     onSuccess: (_res, { studentId }) =>
@@ -488,95 +488,95 @@ export function useCreateAndAssignTechnique() {
         qc.invalidateQueries({ queryKey: qk.studentTechniques(studentId) }),
         qc.invalidateQueries({ queryKey: qk.studentUnassigned(studentId) }),
         qc.invalidateQueries({ queryKey: qk.libraryStats() }),
-        qc.invalidateQueries({ queryKey: qk.collections() }),
+        qc.invalidateQueries({ queryKey: qk.syllabuses() }),
         qc.invalidateQueries({ queryKey: ["students"] }),
       ]),
   });
 }
 
-export function useAssignCollectionToStudent() {
+export function useAssignSyllabusToStudent() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (vars: { studentId: number; collectionId: number }) =>
-      unwrap(await assignCollectionToStudent(vars.studentId, vars.collectionId)),
-    onSuccess: (_res, { studentId, collectionId }) =>
+    mutationFn: async (vars: { studentId: number; syllabusId: number }) =>
+      unwrap(await assignSyllabusToStudent(vars.studentId, vars.syllabusId)),
+    onSuccess: (_res, { studentId, syllabusId }) =>
       Promise.all([
         qc.invalidateQueries({ queryKey: qk.studentTechniques(studentId) }),
         qc.invalidateQueries({ queryKey: qk.studentUnassigned(studentId) }),
-        qc.invalidateQueries({ queryKey: qk.collection(collectionId) }),
-        qc.invalidateQueries({ queryKey: qk.collectionStudents(collectionId) }),
+        qc.invalidateQueries({ queryKey: qk.syllabus(syllabusId) }),
+        qc.invalidateQueries({ queryKey: qk.syllabusStudents(syllabusId) }),
         qc.invalidateQueries({ queryKey: ["students"] }),
       ]),
   });
 }
 
 // ============================================================
-// Collections
+// Syllabuses
 // ============================================================
 
-export function useCreateCollection() {
+export function useCreateSyllabus() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (data: { name: string; description?: string }) =>
-      unwrap(await createCollection(data)),
-    onSuccess: () => qc.invalidateQueries({ queryKey: qk.collections() }),
+      unwrap(await createSyllabus(data)),
+    onSuccess: () => qc.invalidateQueries({ queryKey: qk.syllabuses() }),
   });
 }
 
-export function useUpdateCollection() {
+export function useUpdateSyllabus() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (vars: {
       id: number;
       data: { name: string; description?: string };
-    }) => unwrap(await updateCollection(vars.id, vars.data)),
+    }) => unwrap(await updateSyllabus(vars.id, vars.data)),
     onSuccess: (_res, { id }) => {
-      qc.invalidateQueries({ queryKey: qk.collections() });
-      qc.invalidateQueries({ queryKey: qk.collection(id) });
+      qc.invalidateQueries({ queryKey: qk.syllabuses() });
+      qc.invalidateQueries({ queryKey: qk.syllabus(id) });
     },
   });
 }
 
-export function useDeleteCollection() {
+export function useDeleteSyllabus() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (id: number) => unwrap(await deleteCollection(id)),
-    onSuccess: () => qc.invalidateQueries({ queryKey: qk.collections() }),
+    mutationFn: async (id: number) => unwrap(await deleteSyllabus(id)),
+    onSuccess: () => qc.invalidateQueries({ queryKey: qk.syllabuses() }),
   });
 }
 
-export function useAddTechniquesToCollection() {
+export function useAddTechniquesToSyllabus() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (vars: { collectionId: number; techniqueIds: number[] }) =>
+    mutationFn: async (vars: { syllabusId: number; techniqueIds: number[] }) =>
       unwrap(
-        await addTechniquesToCollection(vars.collectionId, vars.techniqueIds),
+        await addTechniquesToSyllabus(vars.syllabusId, vars.techniqueIds),
       ),
-    onSuccess: (_res, { collectionId }) => {
-      qc.invalidateQueries({ queryKey: qk.collection(collectionId) });
-      qc.invalidateQueries({ queryKey: qk.collections() });
+    onSuccess: (_res, { syllabusId }) => {
+      qc.invalidateQueries({ queryKey: qk.syllabus(syllabusId) });
+      qc.invalidateQueries({ queryKey: qk.syllabuses() });
     },
   });
 }
 
-export function useCreateTechniqueInCollection() {
+export function useCreateTechniqueInSyllabus() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (vars: {
-      collectionId: number;
+      syllabusId: number;
       name: string;
       description: string;
     }) =>
       unwrap(
-        await createTechniqueInCollection(
-          vars.collectionId,
+        await createTechniqueInSyllabus(
+          vars.syllabusId,
           vars.name,
           vars.description,
         ),
       ),
-    onSuccess: (_res, { collectionId }) => {
-      qc.invalidateQueries({ queryKey: qk.collection(collectionId) });
-      qc.invalidateQueries({ queryKey: qk.collections() });
+    onSuccess: (_res, { syllabusId }) => {
+      qc.invalidateQueries({ queryKey: qk.syllabus(syllabusId) });
+      qc.invalidateQueries({ queryKey: qk.syllabuses() });
       qc.invalidateQueries({ queryKey: qk.libraryStats() });
     },
   });
@@ -590,24 +590,24 @@ export function useUpdateLibraryTechnique() {
       data: { name: string; description: string };
     }) => unwrap(await updateLibraryTechnique(vars.techniqueId, vars.data)),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: qk.collections() });
-      qc.invalidateQueries({ predicate: qk.matches.anyCollection });
+      qc.invalidateQueries({ queryKey: qk.syllabuses() });
+      qc.invalidateQueries({ predicate: qk.matches.anySyllabus });
       qc.invalidateQueries({ queryKey: qk.libraryTechniques() });
       qc.invalidateQueries({ predicate: qk.matches.anyStudentTechniqueScope });
     },
   });
 }
 
-export function useRemoveTechniqueFromCollection() {
+export function useRemoveTechniqueFromSyllabus() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (vars: { collectionId: number; techniqueId: number }) =>
+    mutationFn: async (vars: { syllabusId: number; techniqueId: number }) =>
       unwrap(
-        await removeTechniqueFromCollection(vars.collectionId, vars.techniqueId),
+        await removeTechniqueFromSyllabus(vars.syllabusId, vars.techniqueId),
       ),
-    onSuccess: (_res, { collectionId }) => {
-      qc.invalidateQueries({ queryKey: qk.collection(collectionId) });
-      qc.invalidateQueries({ queryKey: qk.collections() });
+    onSuccess: (_res, { syllabusId }) => {
+      qc.invalidateQueries({ queryKey: qk.syllabus(syllabusId) });
+      qc.invalidateQueries({ queryKey: qk.syllabuses() });
     },
   });
 }

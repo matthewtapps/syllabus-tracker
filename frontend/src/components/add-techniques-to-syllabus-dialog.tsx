@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import {
-  addTechniquesToCollection,
-  createTechniqueInCollection,
+  addTechniquesToSyllabus,
+  createTechniqueInSyllabus,
   getTechniquesForAssignment,
   type LibraryTechnique,
 } from '@/lib/api';
@@ -23,11 +23,11 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { handleApiFormError, useFormWithValidation } from './hooks/useFormErrors';
 import { TracedForm } from './traced-form';
 
-interface AddTechniquesToCollectionDialogProps {
+interface AddTechniquesToSyllabusDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  collectionId: number;
-  collectionName: string;
+  syllabusId: number;
+  syllabusName: string;
   alreadyAssignedIds: Set<number>;
   canCreate: boolean;
   onAdded: (techniques: LibraryTechnique[]) => void;
@@ -47,15 +47,15 @@ interface CreateValues {
   description: string;
 }
 
-export default function AddTechniquesToCollectionDialog({
+export default function AddTechniquesToSyllabusDialog({
   open,
   onOpenChange,
-  collectionId,
-  collectionName,
+  syllabusId,
+  syllabusName,
   alreadyAssignedIds,
   canCreate,
   onAdded,
-}: AddTechniquesToCollectionDialogProps) {
+}: AddTechniquesToSyllabusDialogProps) {
   const [tab, setTab] = useState<'pick' | 'create'>('pick');
   const [library, setLibrary] = useState<LibraryRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -158,7 +158,7 @@ export default function AddTechniquesToCollectionDialog({
     if (selectedIds.length === 0) return;
     setSubmittingPick(true);
     try {
-      const response = await addTechniquesToCollection(collectionId, selectedIds);
+      const response = await addTechniquesToSyllabus(syllabusId, selectedIds);
       if (!response.ok) {
         toast.error('Failed to add techniques');
         return;
@@ -185,8 +185,8 @@ export default function AddTechniquesToCollectionDialog({
   async function handleCreateSubmit(values: CreateValues) {
     if (!values.name.trim() || !values.description.trim()) return;
     try {
-      const response = await createTechniqueInCollection(
-        collectionId,
+      const response = await createTechniqueInSyllabus(
+        syllabusId,
         values.name,
         values.description,
       );
@@ -212,7 +212,7 @@ export default function AddTechniquesToCollectionDialog({
           <DialogTitle>Add techniques</DialogTitle>
           <DialogDescription>
             Pick existing techniques or create a brand new one inside{' '}
-            <span className="font-medium">{collectionName}</span>.
+            <span className="font-medium">{syllabusName}</span>.
           </DialogDescription>
         </DialogHeader>
 
@@ -237,7 +237,7 @@ export default function AddTechniquesToCollectionDialog({
               <p className="py-6 text-center text-sm text-destructive">{error}</p>
             ) : candidates.length === 0 ? (
               <p className="py-6 text-center text-sm text-muted-foreground">
-                Every technique in your library is already in this collection.
+                Every technique in your library is already in this syllabus.
               </p>
             ) : (
               <>
@@ -342,16 +342,16 @@ export default function AddTechniquesToCollectionDialog({
           {canCreate && (
             <TabsContent value="create" className="mt-4">
               <TracedForm
-                id="create_technique_in_collection"
+                id="create_technique_in_syllabus"
                 onSubmit={createForm.handleSubmit(handleCreateSubmit)}
                 className="space-y-4"
               >
                 <div className="space-y-2">
-                  <Label htmlFor="new-collection-technique-name">
+                  <Label htmlFor="new-syllabus-technique-name">
                     Technique name
                   </Label>
                   <Input
-                    id="new-collection-technique-name"
+                    id="new-syllabus-technique-name"
                     {...createForm.register('name')}
                     placeholder="e.g. Armbar from closed guard"
                     aria-invalid={!!createForm.formState.errors.name}
@@ -366,11 +366,11 @@ export default function AddTechniquesToCollectionDialog({
                   )}
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="new-collection-technique-description">
+                  <Label htmlFor="new-syllabus-technique-description">
                     Description
                   </Label>
                   <Textarea
-                    id="new-collection-technique-description"
+                    id="new-syllabus-technique-description"
                     {...createForm.register('description')}
                     placeholder="How to execute it, common mistakes, finishing details..."
                     className="min-h-24 max-h-72"
@@ -387,7 +387,7 @@ export default function AddTechniquesToCollectionDialog({
                 </div>
                 <p className="text-xs text-muted-foreground">
                   Creates a global technique in your library and files it under{' '}
-                  <span className="font-medium">{collectionName}</span>. The form
+                  <span className="font-medium">{syllabusName}</span>. The form
                   stays open so you can add a few in a row.
                 </p>
                 <div className="flex justify-end">

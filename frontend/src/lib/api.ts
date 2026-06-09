@@ -221,14 +221,14 @@ export async function getTechniquesForAssignment(
 export async function assignTechniquesToStudent(
   studentId: number,
   techniqueIds: number[],
-  collectionId?: number | null,
+  syllabusId?: number | null,
 ): Promise<Response> {
   return await fetch(`/api/student/${studentId}/add_techniques`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       technique_ids: techniqueIds,
-      collection_id: collectionId ?? null,
+      syllabus_id: syllabusId ?? null,
     }),
     credentials: "include",
   });
@@ -238,7 +238,7 @@ export async function createAndAssignTechnique(
   studentId: number,
   name: string,
   description: string,
-  collectionId?: number | null,
+  syllabusId?: number | null,
 ): Promise<Response> {
   return await fetch(`/api/student/${studentId}/create_technique`, {
     method: "POST",
@@ -246,7 +246,7 @@ export async function createAndAssignTechnique(
     body: JSON.stringify({
       name,
       description,
-      collection_id: collectionId ?? null,
+      syllabus_id: syllabusId ?? null,
     }),
     credentials: "include",
   });
@@ -267,8 +267,8 @@ export interface Technique {
   last_student_update_at: string | null;
   last_student_update_by_name: string | null;
   has_unseen_activity: boolean;
-  collection_id: number | null;
-  collection_name: string | null;
+  syllabus_id: number | null;
+  syllabus_name: string | null;
   tags: Tag[];
   attempt_count: number;
   last_attempt_at: string | null;
@@ -288,7 +288,7 @@ export interface AssignableTechnique extends LibraryTechnique {
   tags: Tag[];
 }
 
-export interface Collection {
+export interface Syllabus {
   id: number;
   name: string;
   description: string;
@@ -301,25 +301,25 @@ export interface Collection {
   can_edit_all_techniques: boolean;
 }
 
-export async function getCollections(): Promise<Collection[]> {
-  const response = await fetch("/api/collections", { credentials: "include" });
-  if (!response.ok) throw new Error("Failed to fetch collections");
+export async function getSyllabuses(): Promise<Syllabus[]> {
+  const response = await fetch("/api/syllabuses", { credentials: "include" });
+  if (!response.ok) throw new Error("Failed to fetch syllabuses");
   return await response.json();
 }
 
-export async function getCollection(id: number): Promise<Collection> {
-  const response = await fetch(`/api/collections/${id}`, {
+export async function getSyllabus(id: number): Promise<Syllabus> {
+  const response = await fetch(`/api/syllabuses/${id}`, {
     credentials: "include",
   });
-  if (!response.ok) throw new Error("Failed to fetch collection");
+  if (!response.ok) throw new Error("Failed to fetch syllabus");
   return await response.json();
 }
 
-export async function createCollection(data: {
+export async function createSyllabus(data: {
   name: string;
   description?: string;
 }): Promise<Response> {
-  return await fetch("/api/collections", {
+  return await fetch("/api/syllabuses", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(data),
@@ -327,11 +327,11 @@ export async function createCollection(data: {
   });
 }
 
-export async function updateCollection(
+export async function updateSyllabus(
   id: number,
   data: { name: string; description?: string },
 ): Promise<Response> {
-  return await fetch(`/api/collections/${id}`, {
+  return await fetch(`/api/syllabuses/${id}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(data),
@@ -339,18 +339,18 @@ export async function updateCollection(
   });
 }
 
-export async function deleteCollection(id: number): Promise<Response> {
-  return await fetch(`/api/collections/${id}`, {
+export async function deleteSyllabus(id: number): Promise<Response> {
+  return await fetch(`/api/syllabuses/${id}`, {
     method: "DELETE",
     credentials: "include",
   });
 }
 
-export async function addTechniquesToCollection(
-  collectionId: number,
+export async function addTechniquesToSyllabus(
+  syllabusId: number,
   techniqueIds: number[],
 ): Promise<Response> {
-  return await fetch(`/api/collections/${collectionId}/techniques`, {
+  return await fetch(`/api/syllabuses/${syllabusId}/techniques`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ technique_ids: techniqueIds }),
@@ -358,12 +358,12 @@ export async function addTechniquesToCollection(
   });
 }
 
-export async function createTechniqueInCollection(
-  collectionId: number,
+export async function createTechniqueInSyllabus(
+  syllabusId: number,
   name: string,
   description: string,
 ): Promise<Response> {
-  return await fetch(`/api/collections/${collectionId}/create_technique`, {
+  return await fetch(`/api/syllabuses/${syllabusId}/create_technique`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ name, description }),
@@ -383,12 +383,12 @@ export async function updateLibraryTechnique(
   });
 }
 
-export async function removeTechniqueFromCollection(
-  collectionId: number,
+export async function removeTechniqueFromSyllabus(
+  syllabusId: number,
   techniqueId: number,
 ): Promise<Response> {
   return await fetch(
-    `/api/collections/${collectionId}/techniques/${techniqueId}`,
+    `/api/syllabuses/${syllabusId}/techniques/${techniqueId}`,
     {
       method: "DELETE",
       credentials: "include",
@@ -396,22 +396,22 @@ export async function removeTechniqueFromCollection(
   );
 }
 
-export async function getCollectionStudents(
-  collectionId: number,
+export async function getSyllabusStudents(
+  syllabusId: number,
 ): Promise<User[]> {
-  const response = await fetch(`/api/collections/${collectionId}/students`, {
+  const response = await fetch(`/api/syllabuses/${syllabusId}/students`, {
     credentials: "include",
   });
-  if (!response.ok) throw new Error("Failed to fetch collection students");
+  if (!response.ok) throw new Error("Failed to fetch syllabus students");
   return await response.json();
 }
 
-export async function assignCollectionToStudent(
+export async function assignSyllabusToStudent(
   studentId: number,
-  collectionId: number,
+  syllabusId: number,
 ): Promise<Response> {
   return await fetch(
-    `/api/student/${studentId}/assign_collection/${collectionId}`,
+    `/api/student/${studentId}/assign_syllabus/${syllabusId}`,
     {
       method: "POST",
       credentials: "include",
@@ -878,9 +878,9 @@ export interface LibraryTechniqueRow {
   name: string;
   description: string;
   tags: Tag[];
-  /** IDs of every collection this technique belongs to. */
-  collection_ids: number[];
-  collection_count: number;
+  /** IDs of every syllabus this technique belongs to. */
+  syllabus_ids: number[];
+  syllabus_count: number;
   student_count: number;
   video_count: number;
   last_activity_at: string | null;
@@ -896,7 +896,7 @@ export async function getLibraryTechniques(): Promise<LibraryTechniqueRow[]> {
   return await response.json();
 }
 
-export interface LibraryTechniqueCollectionRef {
+export interface LibraryTechniqueSyllabusRef {
   id: number;
   name: string;
 }
@@ -907,7 +907,7 @@ export interface AttemptWeekBucket {
 }
 
 export interface LibraryTechniqueStats {
-  collections: LibraryTechniqueCollectionRef[];
+  syllabuses: LibraryTechniqueSyllabusRef[];
   status_counts: { red: number; amber: number; green: number };
   attempts_30d: number;
   attempts_weekly_buckets: AttemptWeekBucket[];

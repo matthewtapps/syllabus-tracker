@@ -23,9 +23,9 @@ const Dashboard = lazy(() => import('./app/dashboard/page'));
 const ProfilePage = lazy(() => import('./app/profile/page'));
 const RegisterUserPage = lazy(() => import('./app/registration/page'));
 const AdminPage = lazy(() => import('./app/admin/page'));
-const CollectionsPage = lazy(() => import('./app/collections/page'));
+const SyllabusesPage = lazy(() => import('./app/syllabuses/page'));
 const LibraryPage = lazy(() => import('./app/library/page'));
-const CollectionDetailPage = lazy(() => import('./app/collections/[id]/page'));
+const SyllabusDetailPage = lazy(() => import('./app/syllabuses/[id]/page'));
 const InvitePage = lazy(() => import('./app/invite/page'));
 const RegisterPage = lazy(() => import('./app/register/page'));
 const PendingApprovalPage = lazy(() => import('./app/pending/page'));
@@ -206,18 +206,18 @@ function AppShell() {
               }
             />
             <Route
-              path="/collections"
+              path="/syllabuses"
               element={
                 <RequireAuth>
-                  <CollectionsPage user={user!} />
+                  <SyllabusesPage user={user!} />
                 </RequireAuth>
               }
             />
             <Route
-              path="/collections/:id"
+              path="/syllabuses/:id"
               element={
                 <RequireAuth>
-                  <CollectionDetailPage user={user!} />
+                  <SyllabusDetailPage user={user!} />
                 </RequireAuth>
               }
             />
