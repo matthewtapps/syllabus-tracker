@@ -33,6 +33,44 @@ CREATE TABLE IF NOT EXISTS rank_audit (
 CREATE INDEX IF NOT EXISTS idx_rank_audit_user_changed
     ON rank_audit(user_id, changed_at DESC);
 
+-- Pinned techniques (M6 / SD-003). A student "pins" a global library
+-- technique to their personal working-on list, independent of any
+-- syllabus assignment. `unpinned_at` is the soft-delete column so
+-- threads and comments tied to a pinned context survive an unpin
+-- (re-pinning later restores the row by setting unpinned_at = NULL).
+CREATE TABLE IF NOT EXISTS pinned_techniques (
+    id INTEGER PRIMARY KEY,
+    student_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    technique_id INTEGER NOT NULL REFERENCES techniques(id) ON DELETE CASCADE,
+    pinned_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    unpinned_at TIMESTAMP,
+    UNIQUE (student_id, technique_id)
+);
+CREATE INDEX IF NOT EXISTS idx_pinned_techniques_student_active
+    ON pinned_techniques(student_id, pinned_at DESC) WHERE unpinned_at IS NULL;
+
+-- Shared (student, technique) notes (M6 / SD-004). Notes are keyed by
+-- the pair, not by the syllabus assignment row, so the same text
+-- appears across syllabus / pinned / camp views of the same technique
+-- for the same student. Dual-read during the M6 migration window:
+-- callers read from here first, fall back to the legacy
+-- student_techniques.{student,coach}_notes columns when the row is
+-- absent, and write to BOTH until the M16 cleanup drops the legacy
+-- columns.
+CREATE TABLE IF NOT EXISTS technique_notes (
+    student_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    technique_id INTEGER NOT NULL REFERENCES techniques(id) ON DELETE CASCADE,
+    student_notes TEXT,
+    coach_notes TEXT,
+    last_coach_update_at TIMESTAMP,
+    last_coach_update_by_id INTEGER REFERENCES users(id),
+    last_student_update_at TIMESTAMP,
+    last_student_update_by_id INTEGER REFERENCES users(id),
+    PRIMARY KEY (student_id, technique_id)
+);
+CREATE INDEX IF NOT EXISTS idx_technique_notes_student_coach_update
+    ON technique_notes(student_id, last_coach_update_at DESC);
+
 CREATE TABLE IF NOT EXISTS techniques (
     id INTEGER PRIMARY KEY,
     name TEXT NOT NULL,
