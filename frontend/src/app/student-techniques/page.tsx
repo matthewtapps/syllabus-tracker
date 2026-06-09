@@ -76,7 +76,6 @@ import { GraduateConfirmDialog } from '@/components/graduate-confirm-dialog';
 import TechniqueEditForm from '@/components/technique-edit-form';
 import AssignTechniques from '@/components/assign-techniques';
 import { RankStrip } from '@/components/rank-strip';
-import { ActivityFeed } from './components/activity-feed';
 import { TechniqueRow } from './components/technique-row';
 import {
   TechniqueFilters,
@@ -605,10 +604,22 @@ export default function StudentTechniques({ user }: StudentTechniquesProps) {
           </TabsList>
 
           <TabsContent value="activity" className="mt-0">
-            <ActivityFeed
-              studentId={data.student.id}
-              isOwnView={isOwnView}
-              studentName={studentName}
+            <EmptyState
+              icon={Sparkles}
+              title="Activity lives on its own page now"
+              description={
+                isOwnView
+                  ? 'Your activity feed moved to /activity so it sits beside Library, Pins, and Syllabus instead of being hidden behind a profile tab.'
+                  : `${studentName}'s activity moved to their own page so it sits beside Library, Pins, and Syllabus.`
+              }
+              action={
+                <Button asChild>
+                  <Link to={isOwnView ? '/activity' : `/student/${data.student.id}/activity`}>
+                    <Sparkles className="mr-2 h-4 w-4" aria-hidden />
+                    Open activity
+                  </Link>
+                </Button>
+              }
             />
           </TabsContent>
 

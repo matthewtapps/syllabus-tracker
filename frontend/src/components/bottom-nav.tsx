@@ -8,6 +8,7 @@ import {
   LogOut,
   Pin,
   Shield,
+  Sparkles,
   UserPlus,
   UserRound,
   Users,
@@ -50,8 +51,16 @@ function buildTabs(user: User): Tab[] {
       alsoActiveOn: ['/syllabuses'],
     });
   } else {
-    tabs.push({ to: `/student/${user.id}`, label: 'My techniques', icon: Library });
-    // Students now browse the global library read-only (M4).
+    // Student bottom nav after M5b2': Activity is the landing surface that
+    // replaces the old "My techniques" entry (which pointed at the now-
+    // deprecated profile tabs page). Syllabus is reachable from Activity's
+    // "View syllabus" button and via Library → syllabus drill-in.
+    tabs.push({
+      to: '/activity',
+      label: 'Activity',
+      icon: Sparkles,
+      alsoActiveOn: [`/student/${user.id}/activity`, `/student/${user.id}`],
+    });
     tabs.push({
       to: '/library',
       label: 'Library',
