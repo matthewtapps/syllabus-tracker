@@ -182,9 +182,9 @@ reseed-attempts:
 # ---- infra ----------------------------------------------------------------
 
 # Decrypt the passphrase-protected age key and cache it in tmpfs
-# (/dev/shm) for the rest of the boot. Subsequent `just tf`, `just sops`,
-# and `just sops-bootstrap` use the cache automatically. Shell-agnostic:
-# works the same in bash, zsh, nushell, fish.
+# (/dev/shm) for the rest of the boot. Subsequent sops invocations
+# pick the cache up automatically. Shell-agnostic: works the same in
+# bash, zsh, nushell, fish.
 #
 # Cache file is 600-perm and lives in RAM only (gone on reboot, gone on
 # `just lock`). Never written to persistent storage.
@@ -196,62 +196,11 @@ unlock:
     chmod 600 /dev/shm/sops-age-key-$(id -u)
     echo "unlocked at /dev/shm/sops-age-key-$(id -u); run \`just lock\` to clear"
 
-# Wipe the cached age key from /dev/shm. Next sops/tofu call will prompt
+# Wipe the cached age key from /dev/shm. Next sops call will prompt
 # for the passphrase again.
 [group('infra')]
 lock:
     @rm -f /dev/shm/sops-age-key-$(id -u) 2>/dev/null && echo "locked" || echo "already locked"
-
-# Run OpenTofu in infra/tofu/, with bootstrap credentials decrypted from
-# infra/tofu/bootstrap.enc.env via `sops exec-env` (plaintext never touches
-# disk). Default action is `plan`; pass anything else, e.g. `just tf init`,
-# `just tf apply`, `just tf output`.
-#
-# Uses /dev/shm cached key if `just unlock` was run; otherwise prompts.
-[group('infra')]
-tf *cmd="plan":
-    #!/usr/bin/env bash
-    set -euo pipefail
-    if [ ! -f infra/tofu/bootstrap.enc.env ]; then
-        echo "missing infra/tofu/bootstrap.enc.env; populate via \`just sops-bootstrap\`" >&2
-        exit 1
-    fi
-    CACHE="/dev/shm/sops-age-key-$(id -u)"
-    if [ -f "$CACHE" ]; then
-        export SOPS_AGE_KEY_FILE="$CACHE"
-    else
-        export SOPS_AGE_KEY=$(age -d ~/.config/sops/age/keys.txt.age)
-    fi
-    sops exec-env infra/tofu/bootstrap.enc.env "cd infra/tofu && tofu {{cmd}}"
-
-# Open infra/tofu/secrets.enc.yaml in $EDITOR via sops, transparently
-# decrypting on open and re-encrypting on save. Uses /dev/shm cached key
-# if available; otherwise prompts for the passphrase.
-[group('infra')]
-sops:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    CACHE="/dev/shm/sops-age-key-$(id -u)"
-    if [ -f "$CACHE" ]; then
-        export SOPS_AGE_KEY_FILE="$CACHE"
-    else
-        export SOPS_AGE_KEY=$(age -d ~/.config/sops/age/keys.txt.age)
-    fi
-    sops infra/tofu/secrets.enc.yaml
-
-# Edit the encrypted bootstrap env (CLOUDFLARE_API_TOKEN, GITHUB_TOKEN).
-# These never sit plaintext on disk; `just tf` decrypts in-memory at run time.
-[group('infra')]
-sops-bootstrap:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    CACHE="/dev/shm/sops-age-key-$(id -u)"
-    if [ -f "$CACHE" ]; then
-        export SOPS_AGE_KEY_FILE="$CACHE"
-    else
-        export SOPS_AGE_KEY=$(age -d ~/.config/sops/age/keys.txt.age)
-    fi
-    sops infra/tofu/bootstrap.enc.env
 
 # ---- housekeeping ---------------------------------------------------------
 
