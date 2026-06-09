@@ -12,7 +12,7 @@ pub async fn get_user(pool: &Pool<Sqlite>, id: i64) -> Result<User, AppError> {
     info!("Fetching user by ID");
     let row = sqlx::query_as!(
         DbUser,
-        "SELECT id, username, role, display_name, archived, graduated_at, email, claimed_at, approved_at, first_name, last_name, reset_requested_at FROM users WHERE id=?",
+        "SELECT id, username, role, display_name, archived, graduated_at, email, claimed_at, approved_at, first_name, last_name, reset_requested_at, belt, stripes, last_graded_at FROM users WHERE id=?",
         id
     )
     .fetch_optional(pool)
@@ -105,11 +105,12 @@ pub async fn authenticate_user(
 ) -> Result<Option<User>, AppError> {
     let user_auth = sqlx::query!(
         r#"SELECT id, username, password, role, display_name, archived,
-                  email, first_name, last_name,
+                  email, first_name, last_name, belt, stripes,
                   graduated_at as "graduated_at?: chrono::NaiveDateTime",
                   claimed_at as "claimed_at?: chrono::NaiveDateTime",
                   approved_at as "approved_at?: chrono::NaiveDateTime",
-                  reset_requested_at as "reset_requested_at?: chrono::NaiveDateTime"
+                  reset_requested_at as "reset_requested_at?: chrono::NaiveDateTime",
+                  last_graded_at as "last_graded_at?: chrono::NaiveDateTime"
            FROM users WHERE username = ?"#,
         username
     )
@@ -140,6 +141,9 @@ pub async fn authenticate_user(
                     first_name: user.first_name,
                     last_name: user.last_name,
                     reset_requested_at: user.reset_requested_at.map(to_iso),
+                    belt: user.belt,
+                    stripes: user.stripes,
+                    last_graded_at: user.last_graded_at.map(to_iso),
                     last_update: None,
                     last_coach_update_at: None,
                     total_techniques: None,
@@ -200,7 +204,7 @@ pub async fn find_user_by_username(
 ) -> Result<Option<User>, AppError> {
     let row = sqlx::query_as!(
         DbUser,
-        "SELECT id, username, role, display_name, archived, graduated_at, email, claimed_at, approved_at, first_name, last_name, reset_requested_at FROM users WHERE username = ?",
+        "SELECT id, username, role, display_name, archived, graduated_at, email, claimed_at, approved_at, first_name, last_name, reset_requested_at, belt, stripes, last_graded_at FROM users WHERE username = ?",
         username
     )
     .fetch_optional(pool)
@@ -218,9 +222,9 @@ pub async fn get_users_by_role(
     info!(role = %role, show_archived = %show_archived, "Getting users by role");
 
     let query = if show_archived {
-        "SELECT id, username, role, display_name, archived, graduated_at, email, claimed_at, approved_at, first_name, last_name, reset_requested_at FROM users WHERE role = ?"
+        "SELECT id, username, role, display_name, archived, graduated_at, email, claimed_at, approved_at, first_name, last_name, reset_requested_at, belt, stripes, last_graded_at FROM users WHERE role = ?"
     } else {
-        "SELECT id, username, role, display_name, archived, graduated_at, email, claimed_at, approved_at, first_name, last_name, reset_requested_at FROM users WHERE role = ? AND archived IS 0"
+        "SELECT id, username, role, display_name, archived, graduated_at, email, claimed_at, approved_at, first_name, last_name, reset_requested_at, belt, stripes, last_graded_at FROM users WHERE role = ? AND archived IS 0"
     };
 
     let rows = sqlx::query_as::<_, DbUser>(query)
@@ -449,5 +453,48 @@ pub async fn update_user_role(
         .execute(pool)
         .await?;
 
+    Ok(())
+}
+
+/// Update a student's belt + stripes + last graded date, and append a
+/// `rank_audit` row in the same transaction. Read by the activity feed
+/// (M5) as one-off `rank_change` items and as a record of which coach
+/// awarded each grading.
+#[instrument]
+pub async fn update_user_rank(
+    pool: &Pool<Sqlite>,
+    user_id: i64,
+    belt: Option<&str>,
+    stripes: Option<i64>,
+    last_graded_at: Option<chrono::NaiveDateTime>,
+    changed_by_id: i64,
+) -> Result<(), AppError> {
+    info!("Updating user rank");
+
+    let mut tx = pool.begin().await?;
+
+    sqlx::query!(
+        "UPDATE users SET belt = ?, stripes = ?, last_graded_at = ? WHERE id = ?",
+        belt,
+        stripes,
+        last_graded_at,
+        user_id,
+    )
+    .execute(&mut *tx)
+    .await?;
+
+    sqlx::query!(
+        "INSERT INTO rank_audit (user_id, belt, stripes, last_graded_at, changed_by_id)
+         VALUES (?, ?, ?, ?, ?)",
+        user_id,
+        belt,
+        stripes,
+        last_graded_at,
+        changed_by_id,
+    )
+    .execute(&mut *tx)
+    .await?;
+
+    tx.commit().await?;
     Ok(())
 }

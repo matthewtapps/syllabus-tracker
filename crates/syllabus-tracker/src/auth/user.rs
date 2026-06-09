@@ -20,6 +20,9 @@ pub struct User {
     pub first_name: Option<String>,
     pub last_name: Option<String>,
     pub reset_requested_at: Option<String>,
+    pub belt: Option<String>,
+    pub stripes: Option<i64>,
+    pub last_graded_at: Option<String>,
     pub last_update: Option<String>,
     pub last_coach_update_at: Option<String>,
     pub total_techniques: Option<i64>,
@@ -46,6 +49,9 @@ pub struct DbUser {
     pub first_name: Option<String>,
     pub last_name: Option<String>,
     pub reset_requested_at: Option<chrono::NaiveDateTime>,
+    pub belt: Option<String>,
+    pub stripes: Option<i64>,
+    pub last_graded_at: Option<chrono::NaiveDateTime>,
 }
 
 fn naive_to_iso(dt: chrono::NaiveDateTime) -> String {
@@ -67,6 +73,9 @@ impl From<DbUser> for User {
             first_name: user.first_name,
             last_name: user.last_name,
             reset_requested_at: user.reset_requested_at.map(naive_to_iso),
+            belt: user.belt,
+            stripes: user.stripes,
+            last_graded_at: user.last_graded_at.map(naive_to_iso),
             last_update: None,
             last_coach_update_at: None,
             total_techniques: None,

@@ -36,6 +36,9 @@ struct UserWithActivityDto {
     pub first_name: Option<String>,
     pub last_name: Option<String>,
     pub reset_requested_at: Option<NaiveDateTime>,
+    pub belt: Option<String>,
+    pub stripes: Option<i64>,
+    pub last_graded_at: Option<NaiveDateTime>,
     pub last_update: Option<NaiveDateTime>,
     pub last_coach_update_at: Option<NaiveDateTime>,
     pub total_techniques: Option<i64>,
@@ -74,6 +77,9 @@ pub async fn get_students_by_recent_updates(
             u.first_name,
             u.last_name,
             u.reset_requested_at as "reset_requested_at?: NaiveDateTime",
+            u.belt,
+            u.stripes,
+            u.last_graded_at as "last_graded_at?: NaiveDateTime",
             MAX(st.updated_at) as "last_update?: NaiveDateTime",
             MAX(st.last_coach_update_at) as "last_coach_update_at?: NaiveDateTime",
             COUNT(st.id) as "total_techniques?: i64",
@@ -146,6 +152,9 @@ pub async fn get_students_by_recent_updates(
                 reset_requested_at: dto
                     .reset_requested_at
                     .map(|dt| naive_to_utc(dt).to_rfc3339()),
+                belt: dto.belt,
+                stripes: dto.stripes,
+                last_graded_at: dto.last_graded_at.map(|dt| naive_to_utc(dt).to_rfc3339()),
                 last_update: dto.last_update.map(|dt| naive_to_utc(dt).to_rfc3339()),
                 last_coach_update_at: dto
                     .last_coach_update_at

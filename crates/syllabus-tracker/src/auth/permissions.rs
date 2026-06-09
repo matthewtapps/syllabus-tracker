@@ -28,6 +28,8 @@ pub enum Permission {
     ManageVideoVisibility,
     ViewWatchStats,
     ViewStorageStats,
+
+    EditStudentRank,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -64,6 +66,8 @@ static COACH_PERMISSIONS: Lazy<HashSet<Permission>> = Lazy::new(|| {
     permissions.insert(Permission::DeleteVideos);
     permissions.insert(Permission::ManageVideoVisibility);
     permissions.insert(Permission::ViewWatchStats);
+
+    permissions.insert(Permission::EditStudentRank);
 
     permissions
 });

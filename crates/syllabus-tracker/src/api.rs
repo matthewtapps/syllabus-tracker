@@ -31,7 +31,8 @@ use crate::db::{
     remove_technique_from_collection, request_password_reset, reset_user_claim, set_user_archived,
     set_user_graduated, update_attempt_note, update_attempt_timestamp, update_collection,
     update_student_notes, update_student_technique, update_technique, update_user_display_name,
-    update_user_password, update_user_role, update_username, AttemptSuggestion, Collection,
+    update_user_password, update_user_rank, update_user_role, update_username, AttemptSuggestion,
+    Collection,
 };
 use crate::error::AppError;
 use crate::models::Tag;
@@ -869,6 +870,69 @@ pub async fn api_set_student_graduated(
     }
 
     set_user_graduated(db, id, body.graduated, Some(user.id)).await?;
+    Ok(Status::Ok)
+}
+
+#[derive(Deserialize, Clone)]
+pub struct RankUpdateRequest {
+    // Client always sends all three fields. `null` means "clear".
+    pub belt: Option<String>,
+    pub stripes: Option<i64>,
+    pub last_graded_at: Option<chrono::NaiveDateTime>,
+}
+
+const ALLOWED_BELTS: &[&str] = &["white", "blue", "purple", "brown", "black", "coral"];
+
+fn validate_rank_request(body: &RankUpdateRequest) -> Result<(), ValidationErrors> {
+    let mut errors = ValidationErrors::new();
+    if let Some(belt) = &body.belt {
+        if !ALLOWED_BELTS.contains(&belt.as_str()) {
+            errors.add("belt", validator::ValidationError::new("belt_not_allowed"));
+        }
+    }
+    if let Some(stripes) = body.stripes {
+        if !(0..=4).contains(&stripes) {
+            errors.add(
+                "stripes",
+                validator::ValidationError::new("stripes_out_of_range"),
+            );
+        }
+    }
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        Err(errors)
+    }
+}
+
+/// Coach-accessible endpoint to set a student's belt, stripes, and last
+/// grading date. Writes the new values to `users` and appends a row to
+/// `rank_audit` in the same transaction. Clients always send all three
+/// fields; null means "clear".
+#[post("/student/<id>/rank", data = "<body>")]
+pub async fn api_set_student_rank(
+    id: i64,
+    body: Json<RankUpdateRequest>,
+    user: User,
+    db: &State<Pool<Sqlite>>,
+) -> ApiResult<Status> {
+    validate_rank_request(&body)?;
+    user.require_permission(Permission::EditStudentRank)?;
+
+    let target = get_user(db, id).await?;
+    if !matches!(target.role, crate::auth::Role::Student) {
+        return Err(Status::BadRequest.into());
+    }
+
+    update_user_rank(
+        db,
+        id,
+        body.belt.as_deref(),
+        body.stripes,
+        body.last_graded_at,
+        user.id,
+    )
+    .await?;
     Ok(Status::Ok)
 }
 

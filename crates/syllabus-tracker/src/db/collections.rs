@@ -292,7 +292,9 @@ pub async fn get_students_with_collection(
                u.claimed_at as "claimed_at: chrono::NaiveDateTime",
                u.approved_at as "approved_at: chrono::NaiveDateTime",
                u.first_name, u.last_name,
-               u.reset_requested_at as "reset_requested_at: chrono::NaiveDateTime"
+               u.reset_requested_at as "reset_requested_at: chrono::NaiveDateTime",
+               u.belt, u.stripes,
+               u.last_graded_at as "last_graded_at: chrono::NaiveDateTime"
         FROM users u
         JOIN student_techniques st ON st.student_id = u.id
         WHERE st.collection_id = ?
