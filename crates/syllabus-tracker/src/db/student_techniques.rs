@@ -276,6 +276,140 @@ pub async fn get_student_technique(
     Ok(technique)
 }
 
+/// Look up the (student_id, technique_id) pair owned by a `student_techniques`
+/// row. M6 writers need this pair to address the shared `technique_notes` row.
+async fn lookup_student_technique_keys(
+    pool: &Pool<Sqlite>,
+    student_technique_id: i64,
+) -> Result<(i64, i64), AppError> {
+    let row = sqlx::query!(
+        "SELECT student_id, technique_id FROM student_techniques WHERE id = ?",
+        student_technique_id
+    )
+    .fetch_optional(pool)
+    .await?
+    .ok_or_else(|| {
+        AppError::NotFound(format!("student_technique {}", student_technique_id))
+    })?;
+    let student_id = row.student_id.ok_or_else(|| {
+        AppError::Internal("student_technique row is missing student_id".into())
+    })?;
+    let technique_id = row.technique_id.ok_or_else(|| {
+        AppError::Internal("student_technique row is missing technique_id".into())
+    })?;
+    Ok((student_id, technique_id))
+}
+
+/// Upsert the shared `technique_notes` row for a (student, technique) pair,
+/// writing notes and stamping the actor's per-role activity slot. M6 writer
+/// cutover (SD-004): legacy `student_techniques.{student,coach}_notes` and
+/// `last_*_update_*` columns are NOT touched here. The dual-read shim added
+/// in PR #18 means existing readers automatically pick this up.
+pub(crate) async fn upsert_technique_notes(
+    pool: &Pool<Sqlite>,
+    student_id: i64,
+    technique_id: i64,
+    actor: &User,
+    student_notes: &str,
+    coach_notes: &str,
+    now: NaiveDateTime,
+) -> Result<(), AppError> {
+    let actor_id = actor.id;
+    match actor.role {
+        Role::Coach | Role::Admin => {
+            sqlx::query!(
+                "INSERT INTO technique_notes
+                     (student_id, technique_id, student_notes, coach_notes,
+                      last_coach_update_at, last_coach_update_by_id)
+                 VALUES (?, ?, ?, ?, ?, ?)
+                 ON CONFLICT(student_id, technique_id) DO UPDATE SET
+                     student_notes = excluded.student_notes,
+                     coach_notes = excluded.coach_notes,
+                     last_coach_update_at = excluded.last_coach_update_at,
+                     last_coach_update_by_id = excluded.last_coach_update_by_id",
+                student_id,
+                technique_id,
+                student_notes,
+                coach_notes,
+                now,
+                actor_id,
+            )
+            .execute(pool)
+            .await?;
+        }
+        Role::Student | Role::FootageSubmitterStudent => {
+            sqlx::query!(
+                "INSERT INTO technique_notes
+                     (student_id, technique_id, student_notes, coach_notes,
+                      last_student_update_at, last_student_update_by_id)
+                 VALUES (?, ?, ?, ?, ?, ?)
+                 ON CONFLICT(student_id, technique_id) DO UPDATE SET
+                     student_notes = excluded.student_notes,
+                     coach_notes = excluded.coach_notes,
+                     last_student_update_at = excluded.last_student_update_at,
+                     last_student_update_by_id = excluded.last_student_update_by_id",
+                student_id,
+                technique_id,
+                student_notes,
+                coach_notes,
+                now,
+                actor_id,
+            )
+            .execute(pool)
+            .await?;
+        }
+    }
+    Ok(())
+}
+
+/// Stamp only the activity timestamp on the shared `technique_notes` row,
+/// without touching the notes text. Used by attempt-create / -update where
+/// activity bumps don't carry note edits.
+pub(crate) async fn bump_technique_notes_activity_tx(
+    tx: &mut sqlx::Transaction<'_, Sqlite>,
+    student_id: i64,
+    technique_id: i64,
+    actor: &User,
+    now: NaiveDateTime,
+) -> Result<(), AppError> {
+    let actor_id = actor.id;
+    match actor.role {
+        Role::Coach | Role::Admin => {
+            sqlx::query!(
+                "INSERT INTO technique_notes
+                     (student_id, technique_id, last_coach_update_at, last_coach_update_by_id)
+                 VALUES (?, ?, ?, ?)
+                 ON CONFLICT(student_id, technique_id) DO UPDATE SET
+                     last_coach_update_at = excluded.last_coach_update_at,
+                     last_coach_update_by_id = excluded.last_coach_update_by_id",
+                student_id,
+                technique_id,
+                now,
+                actor_id,
+            )
+            .execute(&mut **tx)
+            .await?;
+        }
+        Role::Student | Role::FootageSubmitterStudent => {
+            sqlx::query!(
+                "INSERT INTO technique_notes
+                     (student_id, technique_id, last_student_update_at, last_student_update_by_id)
+                 VALUES (?, ?, ?, ?)
+                 ON CONFLICT(student_id, technique_id) DO UPDATE SET
+                     last_student_update_at = excluded.last_student_update_at,
+                     last_student_update_by_id = excluded.last_student_update_by_id",
+                student_id,
+                technique_id,
+                now,
+                actor_id,
+            )
+            .execute(&mut **tx)
+            .await?;
+        }
+    }
+    Ok(())
+}
+
 #[instrument(skip(actor))]
 pub async fn update_student_technique(
     pool: &Pool<Sqlite>,
@@ -287,44 +421,23 @@ pub async fn update_student_technique(
 ) -> Result<(), AppError> {
     info!("Updating student technique");
     let now = Utc::now().naive_utc();
-    let actor_id = actor.id;
+    let (student_id, technique_id) = lookup_student_technique_keys(pool, id).await?;
 
-    match actor.role {
-        Role::Coach | Role::Admin => {
-            sqlx::query!(
-                "UPDATE student_techniques
-                 SET status = ?, student_notes = ?, coach_notes = ?, updated_at = ?,
-                     last_coach_update_at = ?, last_coach_update_by_id = ?
-                 WHERE id = ?",
-                status,
-                student_notes,
-                coach_notes,
-                now,
-                now,
-                actor_id,
-                id
-            )
-            .execute(pool)
-            .await?;
-        }
-        Role::Student | Role::FootageSubmitterStudent => {
-            sqlx::query!(
-                "UPDATE student_techniques
-                 SET status = ?, student_notes = ?, coach_notes = ?, updated_at = ?,
-                     last_student_update_at = ?, last_student_update_by_id = ?
-                 WHERE id = ?",
-                status,
-                student_notes,
-                coach_notes,
-                now,
-                now,
-                actor_id,
-                id
-            )
-            .execute(pool)
-            .await?;
-        }
-    }
+    // Status + updated_at live on student_techniques. Notes + per-actor
+    // activity stamps moved to the shared technique_notes row (M6 cutover).
+    sqlx::query!(
+        "UPDATE student_techniques
+         SET status = ?, updated_at = ?
+         WHERE id = ?",
+        status,
+        now,
+        id,
+    )
+    .execute(pool)
+    .await?;
+
+    upsert_technique_notes(pool, student_id, technique_id, actor, student_notes, coach_notes, now)
+        .await?;
 
     Ok(())
 }
@@ -338,40 +451,32 @@ pub async fn update_student_notes(
 ) -> Result<(), AppError> {
     info!("Updating student notes");
     let now = Utc::now().naive_utc();
-    let actor_id = actor.id;
+    let (student_id, technique_id) = lookup_student_technique_keys(pool, id).await?;
 
-    match actor.role {
-        Role::Coach | Role::Admin => {
-            sqlx::query!(
-                "UPDATE student_techniques
-                 SET student_notes = ?, updated_at = ?,
-                     last_coach_update_at = ?, last_coach_update_by_id = ?
-                 WHERE id = ?",
-                student_notes,
-                now,
-                now,
-                actor_id,
-                id
-            )
-            .execute(pool)
-            .await?;
-        }
-        Role::Student | Role::FootageSubmitterStudent => {
-            sqlx::query!(
-                "UPDATE student_techniques
-                 SET student_notes = ?, updated_at = ?,
-                     last_student_update_at = ?, last_student_update_by_id = ?
-                 WHERE id = ?",
-                student_notes,
-                now,
-                now,
-                actor_id,
-                id
-            )
-            .execute(pool)
-            .await?;
-        }
-    }
+    // Preserve coach_notes when the caller only sends new student_notes. Read
+    // through dual-read so we pick up whatever side currently owns it.
+    let existing = sqlx::query!(
+        r#"SELECT COALESCE(tn.coach_notes, st.coach_notes) AS coach_notes
+           FROM student_techniques st
+           LEFT JOIN technique_notes tn
+                  ON tn.student_id = st.student_id AND tn.technique_id = st.technique_id
+           WHERE st.id = ?"#,
+        id,
+    )
+    .fetch_one(pool)
+    .await?;
+    let coach_notes = existing.coach_notes.unwrap_or_default();
+
+    sqlx::query!(
+        "UPDATE student_techniques SET updated_at = ? WHERE id = ?",
+        now,
+        id,
+    )
+    .execute(pool)
+    .await?;
+
+    upsert_technique_notes(pool, student_id, technique_id, actor, student_notes, &coach_notes, now)
+        .await?;
 
     Ok(())
 }

@@ -1,0 +1,26 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT student_id, technique_id FROM student_techniques WHERE id = ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "student_id",
+        "ordinal": 0,
+        "type_info": "Integer"
+      },
+      {
+        "name": "technique_id",
+        "ordinal": 1,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      true,
+      true
+    ]
+  },
+  "hash": "9752048a95dd50663d90aa75fe43e74e7f10da95febc31e4cc54217da4e008ee"
+}

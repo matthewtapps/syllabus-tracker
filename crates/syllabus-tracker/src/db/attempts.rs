@@ -44,48 +44,40 @@ fn prefer_display_name(display: Option<String>, username: Option<String>) -> Opt
     display.filter(|s| !s.is_empty()).or(username)
 }
 
-/// Bump the parent student_technique's activity timestamps to "now" using
-/// the actor's role to pick the right slot. Mirrors how note edits via
-/// `update_student_technique` track activity.
+/// Bump the parent student_technique's activity timestamps to "now". The
+/// `updated_at` column stays on `student_techniques`; per-actor activity
+/// stamps moved to the shared `technique_notes` row (M6 cutover / SD-004).
 async fn bump_student_technique_activity(
     tx: &mut sqlx::Transaction<'_, Sqlite>,
     student_technique_id: i64,
     actor: &User,
 ) -> Result<(), AppError> {
     let now = Utc::now().naive_utc();
-    let actor_id = actor.id;
-    match actor.role {
-        Role::Coach | Role::Admin => {
-            sqlx::query!(
-                "UPDATE student_techniques
-                 SET updated_at = ?,
-                     last_coach_update_at = ?,
-                     last_coach_update_by_id = ?
-                 WHERE id = ?",
-                now,
-                now,
-                actor_id,
-                student_technique_id,
-            )
-            .execute(&mut **tx)
-            .await?;
-        }
-        Role::Student | Role::FootageSubmitterStudent => {
-            sqlx::query!(
-                "UPDATE student_techniques
-                 SET updated_at = ?,
-                     last_student_update_at = ?,
-                     last_student_update_by_id = ?
-                 WHERE id = ?",
-                now,
-                now,
-                actor_id,
-                student_technique_id,
-            )
-            .execute(&mut **tx)
-            .await?;
-        }
-    }
+    let row = sqlx::query!(
+        "SELECT student_id, technique_id FROM student_techniques WHERE id = ?",
+        student_technique_id,
+    )
+    .fetch_optional(&mut **tx)
+    .await?
+    .ok_or_else(|| {
+        AppError::NotFound(format!("student_technique {}", student_technique_id))
+    })?;
+    let student_id = row
+        .student_id
+        .ok_or_else(|| AppError::Internal("student_technique row missing student_id".into()))?;
+    let technique_id = row
+        .technique_id
+        .ok_or_else(|| AppError::Internal("student_technique row missing technique_id".into()))?;
+
+    sqlx::query!(
+        "UPDATE student_techniques SET updated_at = ? WHERE id = ?",
+        now,
+        student_technique_id,
+    )
+    .execute(&mut **tx)
+    .await?;
+
+    super::bump_technique_notes_activity_tx(tx, student_id, technique_id, actor, now).await?;
     Ok(())
 }
 

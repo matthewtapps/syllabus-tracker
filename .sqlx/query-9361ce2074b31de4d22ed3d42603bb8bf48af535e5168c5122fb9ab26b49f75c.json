@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO technique_notes\n                     (student_id, technique_id, student_notes, coach_notes,\n                      last_student_update_at, last_student_update_by_id)\n                 VALUES (?, ?, ?, ?, ?, ?)\n                 ON CONFLICT(student_id, technique_id) DO UPDATE SET\n                     student_notes = excluded.student_notes,\n                     coach_notes = excluded.coach_notes,\n                     last_student_update_at = excluded.last_student_update_at,\n                     last_student_update_by_id = excluded.last_student_update_by_id",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 6
+    },
+    "nullable": []
+  },
+  "hash": "9361ce2074b31de4d22ed3d42603bb8bf48af535e5168c5122fb9ab26b49f75c"
+}

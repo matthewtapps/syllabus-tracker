@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT COALESCE(tn.coach_notes, st.coach_notes) AS coach_notes\n           FROM student_techniques st\n           LEFT JOIN technique_notes tn\n                  ON tn.student_id = st.student_id AND tn.technique_id = st.technique_id\n           WHERE st.id = ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "coach_notes",
+        "ordinal": 0,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "a857950c8f211a975b6e06f10ddb533c27640334774c522e5a456aaf58a972b0"
+}
