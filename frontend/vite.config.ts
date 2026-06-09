@@ -10,7 +10,7 @@ export default defineConfig({
     react(),
     tailwindcss(),
     VitePWA({
-      registerType: "autoUpdate",
+      registerType: "prompt",
       includeAssets: [
         "favicon/favicon.ico",
         "favicon/favicon-32x32.png",
@@ -52,6 +52,9 @@ export default defineConfig({
         navigateFallback: "/index.html",
         // Don't intercept API calls or the SPA's auth redirects.
         navigateFallbackDenylist: [/^\/api/],
+        // Evict the previous build's precache entries once the new SW activates.
+        // Without this, stale hashed assets linger in CacheStorage forever.
+        cleanupOutdatedCaches: true,
         runtimeCaching: [
           {
             urlPattern: ({ url }) => url.pathname.startsWith("/api/"),

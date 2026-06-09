@@ -7,6 +7,7 @@ import {
 } from '@tanstack/react-query';
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 import { Layout } from './components/layout';
+import { SwUpdateToast } from './components/sw-update-toast';
 import LoginPage from './app/login/page';
 import StudentTechniques from './app/student-techniques/page';
 import StudentTechniqueDetail from './app/student-techniques/[techniqueId]/page';
@@ -189,6 +190,7 @@ function AppShell() {
           </Routes>
         </Layout>
         </CapabilitiesProvider>
+        <SwUpdateToast />
         <Toaster
           position="top-center"
           closeButton
