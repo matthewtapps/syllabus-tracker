@@ -318,6 +318,9 @@ pub struct StudentResponse {
     pub display_name: String,
     pub archived: bool,
     pub graduated_at: Option<String>,
+    pub belt: Option<String>,
+    pub stripes: Option<i64>,
+    pub last_graded_at: Option<String>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -328,6 +331,7 @@ pub struct StudentTechniquesResponse {
     pub can_assign_techniques: bool,
     pub can_create_techniques: bool,
     pub can_manage_tags: bool,
+    pub can_edit_student_rank: bool,
 }
 
 #[get("/student/<id>/techniques")]
@@ -385,12 +389,16 @@ pub async fn api_get_student_techniques(
             display_name: student.display_name,
             archived: student.archived,
             graduated_at: student.graduated_at,
+            belt: student.belt,
+            stripes: student.stripes,
+            last_graded_at: student.last_graded_at,
         },
         techniques: technique_responses,
         can_edit_all_techniques: user.has_permission(Permission::EditAllTechniques),
         can_assign_techniques: user.has_permission(Permission::AssignTechniques),
         can_create_techniques: user.has_permission(Permission::CreateTechniques),
         can_manage_tags: user.has_permission(Permission::ManageTags),
+        can_edit_student_rank: user.has_permission(Permission::EditStudentRank),
     }))
 }
 
@@ -1624,6 +1632,9 @@ pub async fn api_get_single_student_technique(
             display_name: student.display_name,
             archived: student.archived,
             graduated_at: student.graduated_at,
+            belt: student.belt,
+            stripes: student.stripes,
+            last_graded_at: student.last_graded_at,
         },
         can_edit_all_techniques: user.has_permission(Permission::EditAllTechniques),
         can_manage_tags: user.has_permission(Permission::ManageTags),

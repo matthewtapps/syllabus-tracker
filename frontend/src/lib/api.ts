@@ -72,6 +72,8 @@ export function isAdmin(user: User | null): user is User & { role: "admin" } {
   return !!user && user.role === "admin";
 }
 
+export type Belt = "white" | "blue" | "purple" | "brown" | "black" | "coral";
+
 export interface User {
   id: number;
   username: string;
@@ -86,6 +88,9 @@ export interface User {
   first_name?: string | null;
   last_name?: string | null;
   reset_requested_at?: string | null;
+  belt?: Belt | null;
+  stripes?: number | null;
+  last_graded_at?: string | null;
   last_coach_update_at?: string | null;
   total_techniques?: number | null;
   red_count?: number | null;
@@ -360,6 +365,7 @@ export interface StudentTechniques {
   can_assign_techniques: boolean;
   can_create_techniques: boolean;
   can_manage_tags: boolean;
+  can_edit_student_rank: boolean;
 }
 
 export interface SingleStudentTechnique {
@@ -712,6 +718,27 @@ export async function setStudentGraduated(
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ graduated }),
+    credentials: "include",
+  });
+}
+
+export interface RankUpdate {
+  belt: Belt | null;
+  stripes: number | null;
+  // The backend's chrono::NaiveDateTime serializes as "%F %T%.f" (with a
+  // 'T' separator on the way in via JSON). We send dates as midnight UTC
+  // since the field only tracks the day, not a time.
+  last_graded_at: string | null;
+}
+
+export async function setStudentRank(
+  studentId: number,
+  rank: RankUpdate,
+): Promise<Response> {
+  return await fetch(`/api/student/${studentId}/rank`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(rank),
     credentials: "include",
   });
 }
