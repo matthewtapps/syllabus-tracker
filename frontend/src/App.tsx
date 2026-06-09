@@ -26,6 +26,7 @@ const AdminPage = lazy(() => import('./app/admin/page'));
 const SyllabusesPage = lazy(() => import('./app/syllabuses/page'));
 const LibraryPage = lazy(() => import('./app/library/page'));
 const SyllabusDetailPage = lazy(() => import('./app/syllabuses/[id]/page'));
+const PinsPage = lazy(() => import('./app/student-pins/page'));
 const InvitePage = lazy(() => import('./app/invite/page'));
 const RegisterPage = lazy(() => import('./app/register/page'));
 const PendingApprovalPage = lazy(() => import('./app/pending/page'));
@@ -218,6 +219,22 @@ function AppShell() {
               element={
                 <RequireAuth>
                   <SyllabusDetailPage user={user!} />
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/pins"
+              element={
+                <RequireAuth>
+                  <PinsPage user={user!} />
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/student/:id/pins"
+              element={
+                <RequireAuth>
+                  <PinsPage user={user!} />
                 </RequireAuth>
               }
             />

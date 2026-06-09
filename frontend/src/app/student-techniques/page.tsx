@@ -24,11 +24,9 @@ import type {
 import {
   useAllTags,
   useAttemptSummary,
-  useLibraryTechniques,
   useStudentPins,
   useStudentTechniques,
 } from '@/lib/queries';
-import { LibraryTechniqueRow } from '@/components/library-technique-row';
 import {
   useRemoveTagFromTechnique,
   useResetUserClaim,
@@ -615,12 +613,22 @@ export default function StudentTechniques({ user }: StudentTechniquesProps) {
           </TabsContent>
 
           <TabsContent value="pinned" className="mt-0">
-            <PinnedTab
-              studentId={data.student.id}
-              isOwnView={isOwnView}
-              studentName={studentName}
-              syllabusTechniques={data.techniques}
-              user={user}
+            <EmptyState
+              icon={Pin}
+              title="Pins live on their own page now"
+              description={
+                isOwnView
+                  ? 'Your pinned techniques moved to /pins so they sit beside Library and Syllabus instead of being hidden behind a profile tab.'
+                  : `${studentName}'s pinned techniques moved to their own page so they sit beside Library and Syllabus.`
+              }
+              action={
+                <Button asChild>
+                  <Link to={isOwnView ? '/pins' : `/student/${data.student.id}/pins`}>
+                    <Pin className="mr-2 h-4 w-4" aria-hidden />
+                    Open pins
+                  </Link>
+                </Button>
+              }
             />
           </TabsContent>
 
@@ -1031,128 +1039,6 @@ function RecentlyWorkingOnStrip({
           </Badge>
         ))}
       </div>
-    </div>
-  );
-}
-
-interface PinnedTabProps {
-  studentId: number;
-  isOwnView: boolean;
-  studentName: string;
-  syllabusTechniques: Technique[];
-  user: User;
-}
-
-function PinnedTab({
-  studentId,
-  isOwnView,
-  studentName,
-  syllabusTechniques,
-  user,
-}: PinnedTabProps) {
-  const pinsQuery = useStudentPins(studentId);
-  const libraryQuery = useLibraryTechniques();
-  const [expandedId, setExpandedId] = useState<number | null>(null);
-
-  const pins = pinsQuery.data ?? [];
-  const libraryById = useMemo(() => {
-    const map = new Map<number, NonNullable<typeof libraryQuery.data>[number]>();
-    (libraryQuery.data ?? []).forEach((t) => map.set(t.id, t));
-    return map;
-  }, [libraryQuery.data]);
-
-  // Index syllabus assignments by technique_id so a pinned row can show
-  // status / attempt counts when the same technique sits on a syllabus too.
-  const syllabusByTechnique = useMemo(() => {
-    const map = new Map<number, Technique>();
-    syllabusTechniques.forEach((t) => map.set(t.technique_id, t));
-    return map;
-  }, [syllabusTechniques]);
-
-  if (pinsQuery.isLoading || libraryQuery.isLoading) {
-    return (
-      <div className="overflow-hidden rounded-lg border border-border bg-card">
-        {Array.from({ length: 3 }).map((_, i) => (
-          <SkeletonListRow key={i} />
-        ))}
-      </div>
-    );
-  }
-
-  if (pins.length === 0) {
-    return (
-      <EmptyState
-        icon={Pin}
-        title={isOwnView ? "Nothing pinned yet" : `${studentName} hasn't pinned anything yet`}
-        description={
-          isOwnView
-            ? "Open a technique in the library, then tap Pin to add it here. Pinned techniques carry their notes across syllabus and pinned views."
-            : "When the student pins techniques from the library, they'll show up on this tab."
-        }
-      />
-    );
-  }
-
-  return (
-    <div className="space-y-3">
-      <p className="text-xs text-muted-foreground">
-        {pins.length} {pins.length === 1 ? 'pinned technique' : 'pinned techniques'}
-      </p>
-      <ul className="divide-y divide-border overflow-hidden rounded-lg border border-border bg-card">
-        {pins.map((p) => {
-          const libraryRow = libraryById.get(p.technique_id);
-          const onSyllabus = syllabusByTechnique.get(p.technique_id);
-          if (!libraryRow) {
-            // Library data hasn't arrived for this pin (race or visibility).
-            return (
-              <li key={p.id} className="px-4 py-3">
-                <p className="text-sm font-medium">{p.technique_name}</p>
-              </li>
-            );
-          }
-          const badges = onSyllabus ? (
-            <span className="inline-flex items-center gap-2 text-[11px] text-muted-foreground">
-              <Badge variant="outline" className="px-1.5 py-0">
-                On syllabus
-              </Badge>
-              <span className="inline-flex items-center gap-1">
-                <span
-                  className={`inline-block h-1.5 w-1.5 rounded-full ${
-                    onSyllabus.status === 'green'
-                      ? 'bg-status-green'
-                      : onSyllabus.status === 'amber'
-                        ? 'bg-status-amber'
-                        : 'bg-status-red'
-                  }`}
-                />
-                {onSyllabus.status}
-              </span>
-              {onSyllabus.attempt_count > 0 && (
-                <span>
-                  {onSyllabus.attempt_count}{' '}
-                  {onSyllabus.attempt_count === 1 ? 'attempt' : 'attempts'}
-                </span>
-              )}
-              {onSyllabus.syllabus_name && (
-                <span>in {onSyllabus.syllabus_name}</span>
-              )}
-            </span>
-          ) : null;
-          return (
-            <LibraryTechniqueRow
-              key={p.id}
-              technique={libraryRow}
-              expanded={expandedId === libraryRow.id}
-              onToggle={() =>
-                setExpandedId((prev) => (prev === libraryRow.id ? null : libraryRow.id))
-              }
-              user={user}
-              canEdit={false}
-              badges={badges}
-            />
-          );
-        })}
-      </ul>
     </div>
   );
 }
