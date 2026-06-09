@@ -21,6 +21,7 @@ import {
   removeTechniqueFromCollection,
   reorderVideos,
   resetUserClaim,
+  setFootageSubmitter,
   setStudentGraduated,
   setStudentRank,
   setVideoGlobalHidden,
@@ -182,6 +183,44 @@ export function useSetStudentGraduated() {
       qc.setQueryData<User[]>(qk.users(), (prev) =>
         prev?.map((s) => (s.id === id ? { ...s, graduated_at: stamp } : s)),
       );
+
+      return { previousStudents, previousUsers };
+    },
+    onError: (_err, _vars, ctx) => {
+      ctx?.previousStudents?.forEach(([key, data]) => qc.setQueryData(key, data));
+      if (ctx?.previousUsers) qc.setQueryData(qk.users(), ctx.previousUsers);
+    },
+    onSettled: (_res, _err, { id }) =>
+      Promise.all([
+        qc.invalidateQueries({ queryKey: ["students"] }),
+        qc.invalidateQueries({ queryKey: qk.users() }),
+        qc.invalidateQueries({ queryKey: qk.student(id) }),
+      ]),
+  });
+}
+
+// Coach toggle of the FootageSubmitter sub-role. Optimistically flips
+// the student's role in any cached list so the badge + the role-aware
+// upload affordances respond instantly.
+export function useSetFootageSubmitter() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (vars: { id: number; enabled: boolean }) =>
+      unwrap(await setFootageSubmitter(vars.id, vars.enabled)),
+    onMutate: async ({ id, enabled }) => {
+      await qc.cancelQueries({ queryKey: ["students"] });
+      await qc.cancelQueries({ queryKey: qk.users() });
+
+      const previousStudents = qc.getQueriesData<User[]>({ queryKey: ["students"] });
+      const previousUsers = qc.getQueryData<User[]>(qk.users());
+
+      const nextRole: User["role"] = enabled
+        ? "footage_submitter_student"
+        : "student";
+      const patch = (u: User): User => (u.id === id ? { ...u, role: nextRole } : u);
+
+      qc.setQueriesData<User[]>({ queryKey: ["students"] }, (prev) => prev?.map(patch));
+      qc.setQueryData<User[]>(qk.users(), (prev) => prev?.map(patch));
 
       return { previousStudents, previousUsers };
     },

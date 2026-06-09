@@ -9,6 +9,7 @@ import {
   KeyRound,
   MoreVertical,
   Plus,
+  Video,
 } from 'lucide-react';
 import { ClaimLinkPanel } from '@/components/claim-link-panel';
 import { toast } from 'sonner';
@@ -28,6 +29,7 @@ import {
 import {
   useRemoveTagFromTechnique,
   useResetUserClaim,
+  useSetFootageSubmitter,
   useSetStudentGraduated,
   useUpdateTechnique,
 } from '@/lib/mutations';
@@ -101,6 +103,7 @@ export default function StudentTechniques({ user }: StudentTechniquesProps) {
   const removeTagMutation = useRemoveTagFromTechnique();
   const resetClaimMutation = useResetUserClaim();
   const graduateMutation = useSetStudentGraduated();
+  const footageSubmitterMutation = useSetFootageSubmitter();
   const [searchParams, setSearchParams] = useSearchParams();
   const focusId = (() => {
     const raw = searchParams.get('focus');
@@ -527,6 +530,15 @@ export default function StudentTechniques({ user }: StudentTechniquesProps) {
             student={data.student}
             canEdit={data.can_edit_student_rank}
           />
+          {data.student.role === 'footage_submitter_student' && (
+            <Badge
+              variant="secondary"
+              className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium"
+            >
+              <Video className="h-3 w-3" aria-hidden />
+              Footage Submitter
+            </Badge>
+          )}
           <div>
             <h1 className="text-xl font-semibold tracking-tight sm:text-2xl">
               {isOwnView ? 'My techniques' : `${studentName}'s techniques`}
@@ -582,6 +594,30 @@ export default function StudentTechniques({ user }: StudentTechniquesProps) {
                       <GraduationCap className="mr-2 h-4 w-4" aria-hidden />
                       {isGraduate ? 'Un-graduate' : 'Graduate'}
                     </DropdownMenuItem>
+                    {data.can_manage_footage_submitter && (
+                      <DropdownMenuItem
+                        onSelect={() => {
+                          const enabled = data.student.role !== 'footage_submitter_student';
+                          footageSubmitterMutation.mutate(
+                            { id: data.student.id, enabled },
+                            {
+                              onSuccess: () =>
+                                toast.success(
+                                  enabled
+                                    ? 'Footage Submitter granted'
+                                    : 'Footage Submitter revoked',
+                                ),
+                              onError: () => toast.error('Could not update Footage Submitter role'),
+                            },
+                          );
+                        }}
+                      >
+                        <Video className="mr-2 h-4 w-4" aria-hidden />
+                        {data.student.role === 'footage_submitter_student'
+                          ? 'Revoke Footage Submitter'
+                          : 'Grant Footage Submitter'}
+                      </DropdownMenuItem>
+                    )}
                   </DropdownMenuContent>
                 </DropdownMenu>
               )}

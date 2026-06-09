@@ -427,6 +427,7 @@ export interface StudentTechniques {
   can_create_techniques: boolean;
   can_manage_tags: boolean;
   can_edit_student_rank: boolean;
+  can_manage_footage_submitter: boolean;
 }
 
 export interface SingleStudentTechnique {
@@ -800,6 +801,23 @@ export async function setStudentRank(
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(rank),
+    credentials: "include",
+  });
+}
+
+/// Coach toggle that flips a student between `Student` and
+/// `FootageSubmitterStudent`. The backend refuses to act on non-student
+/// targets (coach / admin); the caller should gate the UI on
+/// `can_manage_footage_submitter` from the student profile response so
+/// this never gets hit on an admin / coach by accident.
+export async function setFootageSubmitter(
+  studentId: number,
+  enabled: boolean,
+): Promise<Response> {
+  return await fetch(`/api/student/${studentId}/footage-submitter`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ enabled }),
     credentials: "include",
   });
 }

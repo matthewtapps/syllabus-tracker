@@ -27,6 +27,7 @@ const API_URL = process.env.API_URL ?? "http://localhost:8000";
 
 const SCENARIOS = {
   "pr03-rank": pr03Rank,
+  "pr04-footage-submitter": pr04FootageSubmitter,
 };
 
 async function main() {
@@ -121,6 +122,42 @@ async function pr03Rank({ page, outDir }) {
     await page.waitForLoadState("networkidle");
     await shot(page, outDir, "05-coach-empty-state");
   }
+}
+
+// ===========================================================
+// PR 4 scenario: FootageSubmitter promote/revoke + badge
+// ===========================================================
+async function pr04FootageSubmitter({ page, outDir }) {
+  await loginAs(page, { username: "demo_coach", password: "password" });
+
+  // Reset demo_alex to a plain Student so the "grant" path is reachable
+  // on a fresh run.
+  await page.request.post(API_URL + "/api/student/3/footage-submitter", {
+    data: { enabled: false },
+    headers: { "Content-Type": "application/json" },
+  });
+
+  await page.goto(BASE_URL + "/student/3");
+  await page.waitForLoadState("networkidle");
+  await shot(page, outDir, "01-coach-before-grant");
+
+  await page.getByRole("button", { name: "More actions" }).click();
+  await page.getByRole("menuitem", { name: "Grant Footage Submitter" }).click();
+  await page.waitForTimeout(500);
+  await shot(page, outDir, "02-coach-after-grant");
+
+  await page.getByRole("button", { name: "More actions" }).click();
+  await page.waitForSelector('[role="menu"]');
+  await shot(page, outDir, "03-coach-menu-after-grant");
+  await page.keyboard.press("Escape");
+
+  // Login as the now-promoted student to confirm /api/me carries
+  // SubmitFootage and the badge renders.
+  await page.request.post(API_URL + "/api/logout");
+  await loginAs(page, { username: "demo_alex", password: "demo" });
+  await page.goto(BASE_URL + "/student/3");
+  await page.waitForLoadState("networkidle");
+  await shot(page, outDir, "04-student-own-view-with-badge");
 }
 
 main().catch((err) => {
