@@ -1,17 +1,17 @@
-name: Deploy to sillybus environment
+name: Deploy
 
-# Deploys the sillybus instance to sugar-glider. Pulls all provider
-# credentials and the SSH key fresh from platform tofu state on every
-# run (Path 3 cross-repo model). The only GHA-resident secrets are the
-# two PLATFORM_STATE_R2_* values needed to read platform state.
+# Deploys to sugar-glider. Pulls all provider credentials and the SSH
+# key fresh from platform tofu state on every run (Path 3 cross-repo
+# model). The only GHA-resident secrets are the two PLATFORM_STATE_R2_*
+# values needed to read platform state.
 #
 # Triggers:
-#   - push to feat/sillybus-app
+#   - push to main
 #   - manual workflow_dispatch
 
 on:
   push:
-    branches: [feat/sillybus-app]
+    branches: [main]
   workflow_dispatch:
     inputs:
       allow_destructive_migrations:
@@ -31,7 +31,7 @@ permissions:
   packages: write
 
 concurrency:
-  group: deploy-sillybus
+  group: deploy
   cancel-in-progress: true
 
 jobs:
@@ -40,7 +40,7 @@ jobs:
   # nixos-anywhere yet, so the deploy job no-ops.
   read_platform:
     runs-on: ubuntu-latest
-    environment: sillybus
+    environment: production
     outputs:
       vm_ip:               ${{ steps.read.outputs.vm_ip }}
       host_age_ready:      ${{ steps.read.outputs.host_age_ready }}
@@ -87,9 +87,6 @@ jobs:
   # Lint + test run unconditionally on every push. They don't need the
   # platform state (no host or DNS interaction); they gate build_backend
   # and build_frontend so a broken-build SHA never gets pushed to GHCR.
-  # Mirrors the legacy main `lint` + `test` jobs in deploy.yaml verbatim
-  # minus the buildevents wrappers (re-added when Honeycomb tracing is
-  # wired in via infra/docs/honeycomb-telemetry.md).
   lint:
     runs-on: ubuntu-latest
     steps:
@@ -124,7 +121,7 @@ jobs:
     needs: read_platform
     if: needs.read_platform.outputs.host_age_ready == 'true'
     runs-on: ubuntu-latest
-    environment: sillybus
+    environment: production
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - uses: cachix/install-nix-action@v27
@@ -165,15 +162,15 @@ jobs:
           push: true
           tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/app:${{ github.sha }}
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/app:sillybus-latest
-          cache-from: type=gha,scope=sillybus-backend
-          cache-to: type=gha,scope=sillybus-backend,mode=max
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/app:latest
+          cache-from: type=gha,scope=backend
+          cache-to: type=gha,scope=backend,mode=max
 
   build_frontend:
     needs: [read_platform, lint, test]
     if: needs.read_platform.outputs.host_age_ready == 'true'
     runs-on: ubuntu-latest
-    environment: sillybus   # needs PLATFORM_STATE_R2_* secrets for tofu state read
+    environment: production   # needs PLATFORM_STATE_R2_* secrets for tofu state read
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - uses: cachix/install-nix-action@v27
@@ -216,13 +213,13 @@ jobs:
           push: true
           tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/frontend:${{ github.sha }}
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/frontend:sillybus-latest
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/frontend:latest
           build-args: |
             VITE_API_URL=/api
             VITE_ENVIRONMENT=production
             VITE_HONEYCOMB_API_KEY=${{ steps.hc.outputs.vite_key }}
-          cache-from: type=gha,scope=sillybus-frontend
-          cache-to: type=gha,scope=sillybus-frontend,mode=max
+          cache-from: type=gha,scope=frontend
+          cache-to: type=gha,scope=frontend,mode=max
 
   # Stage everything the host needs for restore + migrate + deploy:
   # encrypted runtime-secrets (static + per-deploy Honeycomb),
@@ -235,7 +232,7 @@ jobs:
   prep_host:
     needs: [read_platform, apply_tofu]
     runs-on: ubuntu-latest
-    environment: sillybus
+    environment: production
     env:
       VM_IP: ${{ needs.read_platform.outputs.vm_ip }}
     steps:
@@ -349,7 +346,7 @@ jobs:
   restore_litestream:
     needs: [read_platform, prep_host]
     runs-on: ubuntu-latest
-    environment: sillybus
+    environment: production
     env:
       VM_IP: ${{ needs.read_platform.outputs.vm_ip }}
     steps:
@@ -428,7 +425,7 @@ jobs:
   migrate:
     needs: [read_platform, restore_litestream, build_backend]
     runs-on: ubuntu-latest
-    environment: sillybus
+    environment: production
     env:
       VM_IP: ${{ needs.read_platform.outputs.vm_ip }}
     steps:
@@ -488,7 +485,7 @@ jobs:
   deploy:
     needs: [read_platform, migrate, build_frontend]
     runs-on: ubuntu-latest
-    environment: sillybus
+    environment: production
     env:
       VM_IP: ${{ needs.read_platform.outputs.vm_ip }}
     steps:

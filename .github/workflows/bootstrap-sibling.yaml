@@ -1,4 +1,4 @@
-name: Bootstrap sibling sillybus instance
+name: Bootstrap sibling instance
 
 # Spins up (or tears down) a second instance of the sillybus stack on
 # sugar-glider, alongside the primary sillybus deployment. Used for:
@@ -87,7 +87,7 @@ env:
   IMAGE_NAME: matthewtapps/syllabus-tracker
   # Use the latest known-good image, NOT a fresh build. Sibling is a
   # second instance of the SAME app code.
-  IMAGE_TAG: sillybus-latest
+  IMAGE_TAG: latest
 
 concurrency:
   group: bootstrap-sibling-${{ github.event.inputs.sibling_name }}
@@ -96,7 +96,7 @@ concurrency:
 jobs:
   read_platform:
     runs-on: ubuntu-latest
-    environment: sillybus
+    environment: production
     outputs:
       vm_ip:              ${{ steps.read.outputs.vm_ip }}
       host_age_recipient: ${{ steps.read.outputs.host_age_recipient }}
@@ -129,7 +129,7 @@ jobs:
   do_action:
     needs: read_platform
     runs-on: ubuntu-latest
-    environment: sillybus
+    environment: production
     env:
       VM_IP:               ${{ needs.read_platform.outputs.vm_ip }}
       SIBLING_NAME:        ${{ github.event.inputs.sibling_name }}
