@@ -84,9 +84,10 @@ jobs:
           fi
           echo "VM_IP=$VM_IP, host_age_ready=$([ -n \"$HOST_AGE\" ] && echo true || echo false)"
 
-  # Lint + test run unconditionally on every push. They don't need the
-  # platform state (no host or DNS interaction); they gate build_backend
-  # and build_frontend so a broken-build SHA never gets pushed to GHCR.
+  # Lint + test + sqlx-check run unconditionally on every push. They
+  # don't need the platform state (no host or DNS interaction); they
+  # gate build_backend and build_frontend so a broken-build SHA never
+  # gets pushed to GHCR.
   lint:
     runs-on: ubuntu-latest
     steps:
@@ -100,6 +101,45 @@ jobs:
         run: cargo clippy --all-targets --all-features -- -D warnings
         env:
           SQLX_OFFLINE: "true"
+
+  # Fails if the .sqlx/ offline cache is stale relative to the SQL
+  # queries in code or to config/schema.sql. Catches migration-heavy
+  # PRs that forget to run `just sqlx-prepare`. Mirrors `just sqlx-check`.
+  #
+  # SQLite type inference depends on row presence for some columns
+  # (e.g. a column that's always NULL infers `Null` instead of `Text`).
+  # The .sqlx/ cache was generated against a seeded local DB, so the
+  # check must run against an equivalent state. We bootstrap an empty
+  # DB from schema.sql then run the seed binary (the canonical source
+  # of the seed state) before invoking sqlx prepare --check.
+  sqlx-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+        with:
+          toolchain: 1.86
+      - uses: swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+      - name: Install sqlx-cli
+        run: cargo install sqlx-cli --version 0.8.5 --no-default-features --features sqlite,native-tls --locked
+      - name: Bootstrap empty sqlite DB from schema.sql
+        run: |
+          mkdir -p data
+          : > data/sqlite.db
+          sqlite3 data/sqlite.db < config/schema.sql
+      - name: Seed the DB so SQLite type inference matches the cache
+        # Mirrors `just seed` (minus the migrate step; we already
+        # applied schema.sql by hand). SQLX_OFFLINE so the macros use
+        # the cache for compilation; DATABASE_URL for runtime.
+        run: cargo run -p syllabus-tracker --bin seed
+        env:
+          SQLX_OFFLINE: "true"
+          DATABASE_URL: sqlite://data/sqlite.db
+          SCHEMA_PATH: ./config/schema.sql
+      - name: Check .sqlx/ cache against current queries
+        run: cargo sqlx prepare --check --workspace -- -p syllabus-tracker --tests --all-features
+        env:
+          DATABASE_URL: sqlite://data/sqlite.db
 
   test:
     runs-on: ubuntu-latest
@@ -144,7 +184,7 @@ jobs:
           tofu apply -auto-approve -input=false
 
   build_backend:
-    needs: [read_platform, lint, test]
+    needs: [read_platform, lint, test, sqlx-check]
     if: needs.read_platform.outputs.host_age_ready == 'true'
     runs-on: ubuntu-latest
     steps:
@@ -167,7 +207,7 @@ jobs:
           cache-to: type=gha,scope=backend,mode=max
 
   build_frontend:
-    needs: [read_platform, lint, test]
+    needs: [read_platform, lint, test, sqlx-check]
     if: needs.read_platform.outputs.host_age_ready == 'true'
     runs-on: ubuntu-latest
     environment: production   # needs PLATFORM_STATE_R2_* secrets for tofu state read
