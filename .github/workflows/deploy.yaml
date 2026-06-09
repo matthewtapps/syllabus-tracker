@@ -196,14 +196,17 @@ jobs:
           i=0; until tofu init -input=false; do i=$((i+1)); [ $i -ge 30 ] && { echo "::error::tofu init failed after 30 attempts"; exit 1; }; echo "tofu init attempt $i failed; sleeping 30s"; sleep 30; done
           tofu apply -auto-approve -input=false
 
+  # Runs on every event. On push / workflow_dispatch the build is
+  # pushed to GHCR for the deploy chain; on pull_request the build
+  # runs as a deployability check with push: false and no GHCR login.
   build_backend:
-    needs: [read_platform, lint, test, sqlx-check]
-    if: github.event_name != 'pull_request' && needs.read_platform.outputs.host_age_ready == 'true'
+    needs: [lint, test, sqlx-check]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
       - uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
+        if: github.event_name != 'pull_request'
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
@@ -212,25 +215,30 @@ jobs:
         with:
           context: .
           file: ./Dockerfile
-          push: true
+          push: ${{ github.event_name != 'pull_request' }}
           tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/app:${{ github.sha }}
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/app:latest
           cache-from: type=gha,scope=backend
           cache-to: type=gha,scope=backend,mode=max
 
+  # Same pattern as build_backend, plus the platform-state read for the
+  # browser-side Honeycomb key (push/dispatch only). On PR runs the
+  # honeycomb key is left blank: the build is a deployability check, not
+  # a deployable artifact.
   build_frontend:
-    needs: [read_platform, lint, test, sqlx-check]
-    if: github.event_name != 'pull_request' && needs.read_platform.outputs.host_age_ready == 'true'
+    needs: [lint, test, sqlx-check]
     runs-on: ubuntu-latest
-    environment: production   # needs PLATFORM_STATE_R2_* secrets for tofu state read
+    environment: production   # needs PLATFORM_STATE_R2_* secrets for tofu state read on push events
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - uses: cachix/install-nix-action@v27
+        if: github.event_name != 'pull_request'
         with:
           extra_nix_config: |
             experimental-features = nix-command flakes
       - name: Install opentofu via nix
+        if: github.event_name != 'pull_request'
         # nix cache is independent of github releases CDN
         run: |
           nix profile install nixpkgs#opentofu
@@ -240,6 +248,7 @@ jobs:
         # refuses to propagate ::add-mask::'d values across job
         # boundaries ("Skip output ... since it may contain secret").
         # Reading directly inside the build job sidesteps that.
+        if: github.event_name != 'pull_request'
         id: hc
         env:
           AWS_ACCESS_KEY_ID:     ${{ secrets.PLATFORM_STATE_R2_ACCESS_KEY_ID }}
@@ -255,6 +264,7 @@ jobs:
           echo "vite_key=$VITE_HC" >> "$GITHUB_OUTPUT"
       - uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
       - uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
+        if: github.event_name != 'pull_request'
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
@@ -263,13 +273,13 @@ jobs:
         with:
           context: ./frontend
           file: ./frontend/Dockerfile
-          push: true
+          push: ${{ github.event_name != 'pull_request' }}
           tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/frontend:${{ github.sha }}
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/frontend:latest
           build-args: |
             VITE_API_URL=/api
-            VITE_ENVIRONMENT=production
+            VITE_ENVIRONMENT=${{ github.event_name == 'pull_request' && 'pr-check' || 'production' }}
             VITE_HONEYCOMB_API_KEY=${{ steps.hc.outputs.vite_key }}
           cache-from: type=gha,scope=frontend
           cache-to: type=gha,scope=frontend,mode=max
