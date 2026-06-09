@@ -23,3 +23,14 @@ resource "aws_route53_record" "sillybus_www" {
   ttl     = 300
   records = [local.vm_ip]
 }
+
+# Staging sibling for inspecting WIP roadmap work. Backed by the
+# `staging.yml` workflow which builds images from a named branch and
+# deploys a parallel stack to sugar-glider with HTTPS via Let's Encrypt.
+resource "aws_route53_record" "sillybus_staging" {
+  zone_id = data.terraform_remote_state.platform.outputs.zone_ids["sillybus.app"]
+  name    = "staging.sillybus.app"
+  type    = "A"
+  ttl     = 300
+  records = [local.vm_ip]
+}
