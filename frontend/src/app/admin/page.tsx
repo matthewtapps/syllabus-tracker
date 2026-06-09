@@ -59,7 +59,7 @@ import { SkeletonTableRow } from '@/components/skeleton-row';
 import { GraduateConfirmDialog } from '@/components/graduate-confirm-dialog';
 import { ClaimLinkPanel } from '@/components/claim-link-panel';
 import { TracedForm } from '@/components/traced-form';
-import { useFormWithValidation } from '@/components/hooks/useFormErrors';
+import { handleApiFormError, useFormWithValidation } from '@/components/hooks/useFormErrors';
 import { type InviteResponse, type User } from '@/lib/api';
 import { useAllUsers } from '@/lib/queries';
 import {
@@ -217,7 +217,7 @@ export default function AdminPage() {
       !needle ||
       (u.display_name?.toLowerCase() || '').includes(needle) ||
       u.username.toLowerCase().includes(needle) ||
-      u.role.toLowerCase().includes(needle);
+      u.role.includes(needle);
     let matchesStatus = true;
     if (statusTab === 'active') {
       matchesStatus = !u.archived && !u.graduated_at;
@@ -227,7 +227,7 @@ export default function AdminPage() {
       matchesStatus = !!u.archived;
     }
     const matchesRole =
-      roleFilter === 'all' || u.role.toLowerCase() === roleFilter.toLowerCase();
+      roleFilter === 'all' || u.role === roleFilter;
     return matchesText && matchesStatus && matchesRole;
   });
 
@@ -236,7 +236,7 @@ export default function AdminPage() {
     editForm.reset({
       username: u.username,
       display_name: u.display_name ?? '',
-      role: (u.role.toLowerCase() as EditValues['role']) ?? 'student',
+      role: u.role,
     });
     setIsEditDialogOpen(true);
   }
@@ -284,26 +284,44 @@ export default function AdminPage() {
 
   async function handleEditUser(data: EditValues) {
     if (!selectedUser) return;
-    await updateUserMutation.mutateAsync({
-      userId: selectedUser.id,
-      data: {
-        username: data.username,
-        display_name: data.display_name,
-        role: data.role,
-      },
-    });
-    toast.success('User updated');
-    setIsEditDialogOpen(false);
+    try {
+      await updateUserMutation.mutateAsync({
+        userId: selectedUser.id,
+        data: {
+          username: data.username,
+          display_name: data.display_name,
+          role: data.role,
+        },
+      });
+      toast.success('User updated');
+      setIsEditDialogOpen(false);
+    } catch (err) {
+      const handled = await handleApiFormError(
+        err,
+        editForm.setError,
+        Object.keys(editForm.getValues()),
+      );
+      if (!handled) toast.error(err instanceof Error ? err.message : 'Failed to update user');
+    }
   }
 
   async function handleChangePassword(data: PasswordValues) {
     if (!selectedUser) return;
-    await updateUserMutation.mutateAsync({
-      userId: selectedUser.id,
-      data: { password: data.new_password },
-    });
-    toast.success('Password changed');
-    setIsPasswordDialogOpen(false);
+    try {
+      await updateUserMutation.mutateAsync({
+        userId: selectedUser.id,
+        data: { password: data.new_password },
+      });
+      toast.success('Password changed');
+      setIsPasswordDialogOpen(false);
+    } catch (err) {
+      const handled = await handleApiFormError(
+        err,
+        passwordForm.setError,
+        Object.keys(passwordForm.getValues()),
+      );
+      if (!handled) toast.error(err instanceof Error ? err.message : 'Failed to change password');
+    }
   }
 
   return (
@@ -496,7 +514,6 @@ export default function AdminPage() {
             <TracedForm
               id="edit_user"
               onSubmit={editForm.handleSubmit(handleEditUser)}
-              setFieldErrors={editForm.setFieldErrors}
               className="space-y-4"
             >
               <FormField
@@ -580,7 +597,6 @@ export default function AdminPage() {
             <TracedForm
               id="change_password_admin"
               onSubmit={passwordForm.handleSubmit(handleChangePassword)}
-              setFieldErrors={passwordForm.setFieldErrors}
               className="space-y-4"
             >
               <FormField
@@ -735,7 +751,7 @@ function UserActionsMenu({
   onIssueClaim,
   onResetPassword,
 }: UserActionsMenuProps) {
-  const isStudent = user.role.toLowerCase() === 'student';
+  const isStudent = user.role === 'student';
   const isGraduated = !!user.graduated_at;
   const isClaimed = !!user.claimed_at;
   return (

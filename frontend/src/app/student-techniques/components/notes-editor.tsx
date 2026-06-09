@@ -3,7 +3,8 @@ import { PencilIcon } from "lucide-react";
 import { updateTechnique } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { useFormWithValidation } from "@/components/hooks/useFormErrors";
+import { toast } from "sonner";
+import { handleApiFormError, useFormWithValidation } from "@/components/hooks/useFormErrors";
 import { TracedForm } from "@/components/traced-form";
 
 type NotesField = "student_notes" | "coach_notes";
@@ -95,9 +96,18 @@ function NotesEditorForm({
   });
 
   const handleSubmit = async (data: Record<NotesField, string>) => {
-    const response = await updateTechnique(techniqueId, { [field]: data[field] });
-    if (!response.ok) throw response;
-    onSave(data[field]);
+    try {
+      const response = await updateTechnique(techniqueId, { [field]: data[field] });
+      if (!response.ok) throw response;
+      onSave(data[field]);
+    } catch (err) {
+      const handled = await handleApiFormError(
+        err,
+        form.setError,
+        Object.keys(form.getValues()),
+      );
+      if (!handled) toast.error(err instanceof Error ? err.message : "Failed to save notes");
+    }
   };
 
   return (
@@ -108,7 +118,6 @@ function NotesEditorForm({
       <TracedForm
         id={`${field}_${techniqueId}`}
         onSubmit={form.handleSubmit(handleSubmit)}
-        setFieldErrors={form.setFieldErrors}
         className="space-y-2"
       >
         <Textarea

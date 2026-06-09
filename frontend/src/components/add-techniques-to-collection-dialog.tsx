@@ -20,7 +20,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { useFormWithValidation } from './hooks/useFormErrors';
+import { handleApiFormError, useFormWithValidation } from './hooks/useFormErrors';
 import { TracedForm } from './traced-form';
 
 interface AddTechniquesToCollectionDialogProps {
@@ -184,16 +184,25 @@ export default function AddTechniquesToCollectionDialog({
 
   async function handleCreateSubmit(values: CreateValues) {
     if (!values.name.trim() || !values.description.trim()) return;
-    const response = await createTechniqueInCollection(
-      collectionId,
-      values.name,
-      values.description,
-    );
-    if (!response.ok) throw response;
-    const created: LibraryTechnique = await response.json();
-    onAdded([created]);
-    toast.success(`Created "${created.name}"`);
-    createForm.reset();
+    try {
+      const response = await createTechniqueInCollection(
+        collectionId,
+        values.name,
+        values.description,
+      );
+      if (!response.ok) throw response;
+      const created: LibraryTechnique = await response.json();
+      onAdded([created]);
+      toast.success(`Created "${created.name}"`);
+      createForm.reset();
+    } catch (err) {
+      const handled = await handleApiFormError(
+        err,
+        createForm.setError,
+        Object.keys(createForm.getValues()),
+      );
+      if (!handled) toast.error(err instanceof Error ? err.message : 'Failed to create technique');
+    }
   }
 
   return (
@@ -335,7 +344,6 @@ export default function AddTechniquesToCollectionDialog({
               <TracedForm
                 id="create_technique_in_collection"
                 onSubmit={createForm.handleSubmit(handleCreateSubmit)}
-                setFieldErrors={createForm.setFieldErrors}
                 className="space-y-4"
               >
                 <div className="space-y-2">

@@ -1,5 +1,6 @@
 // Centralised query key factory. Hierarchical so partial invalidation works:
 // invalidating `qk.student(id)` also matches `qk.studentTechniques(id)`.
+import type { Query } from "@tanstack/react-query";
 
 export const qk = {
   currentUser: () => ["currentUser"] as const,
@@ -46,4 +47,19 @@ export const qk = {
 
   dashboardVideoOverview: () => ["dashboard", "videoOverview"] as const,
   adminStorage: () => ["admin", "storage"] as const,
+
+  // Predicate matchers for queryClient.invalidateQueries({ predicate }).
+  // Keep matcher logic colocated with the keys it inspects so renaming a
+  // segment in one place doesn't silently miss the other.
+  matches: {
+    anyStudentTechniques: (q: Query) =>
+      q.queryKey[0] === "student" && q.queryKey[2] === "techniques",
+    anyStudentTechniqueDetail: (q: Query) => q.queryKey[0] === "studentTechnique",
+    anyStudentTechniqueScope: (q: Query) =>
+      (q.queryKey[0] === "student" && q.queryKey[2] === "techniques") ||
+      q.queryKey[0] === "studentTechnique",
+    anyCollection: (q: Query) => q.queryKey[0] === "collection",
+    anyTechniqueVideos: (q: Query) =>
+      q.queryKey[0] === "technique" && q.queryKey[2] === "videos",
+  },
 };

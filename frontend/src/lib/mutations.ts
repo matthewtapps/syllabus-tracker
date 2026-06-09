@@ -116,10 +116,11 @@ export function useToggleUserArchived() {
     onError: (_err, _vars, ctx) => {
       if (ctx?.previous) qc.setQueryData(qk.users(), ctx.previous);
     },
-    onSettled: () => {
-      qc.invalidateQueries({ queryKey: qk.users() });
-      qc.invalidateQueries({ queryKey: ["students"] });
-    },
+    onSettled: () =>
+      Promise.all([
+        qc.invalidateQueries({ queryKey: qk.users() }),
+        qc.invalidateQueries({ queryKey: ["students"] }),
+      ]),
   });
 }
 
@@ -138,10 +139,11 @@ export function useApproveUser() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (userId: number) => unwrap(await approveUser(userId)),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: qk.users() });
-      qc.invalidateQueries({ queryKey: ["students"] });
-    },
+    onSuccess: () =>
+      Promise.all([
+        qc.invalidateQueries({ queryKey: qk.users() }),
+        qc.invalidateQueries({ queryKey: ["students"] }),
+      ]),
   });
 }
 
@@ -185,11 +187,12 @@ export function useSetStudentGraduated() {
       ctx?.previousStudents?.forEach(([key, data]) => qc.setQueryData(key, data));
       if (ctx?.previousUsers) qc.setQueryData(qk.users(), ctx.previousUsers);
     },
-    onSettled: (_res, _err, { id }) => {
-      qc.invalidateQueries({ queryKey: ["students"] });
-      qc.invalidateQueries({ queryKey: qk.users() });
-      qc.invalidateQueries({ queryKey: qk.student(id) });
-    },
+    onSettled: (_res, _err, { id }) =>
+      Promise.all([
+        qc.invalidateQueries({ queryKey: ["students"] }),
+        qc.invalidateQueries({ queryKey: qk.users() }),
+        qc.invalidateQueries({ queryKey: qk.student(id) }),
+      ]),
   });
 }
 
@@ -207,7 +210,7 @@ export function useUpdateTechnique() {
     // Optimistic patch across every cached student-technique list and the
     // single-technique detail cache so the row updates instantly.
     onMutate: async ({ studentTechniqueId, updates }) => {
-      await qc.cancelQueries({ predicate: matchStudentTechniqueScope });
+      await qc.cancelQueries({ predicate: qk.matches.anyStudentTechniqueScope });
 
       const techPatch: Partial<Technique> = {};
       if (updates.status !== undefined) techPatch.status = updates.status;
@@ -270,27 +273,14 @@ export function useUpdateTechnique() {
         qc.setQueryData(qk.studentTechnique(ctx.studentTechniqueId), ctx.detailSnap);
       }
     },
-    onSettled: (_res, _err, { studentTechniqueId, updates }) => {
-      // The single-technique cache always invalidates.
-      qc.invalidateQueries({ queryKey: qk.studentTechnique(studentTechniqueId) });
-      // If technique definition fields changed, every student list is stale.
-      const broadly =
-        updates.technique_name !== undefined ||
-        updates.technique_description !== undefined;
-      if (broadly) {
-        qc.invalidateQueries({
-          predicate: (q) =>
-            q.queryKey[0] === "student" && q.queryKey[2] === "techniques",
-        });
-      } else {
-        // Only this student's list needs refresh - find the parent student id from cache.
-        qc.invalidateQueries({
-          predicate: (q) =>
-            q.queryKey[0] === "student" && q.queryKey[2] === "techniques",
-        });
-      }
-      qc.invalidateQueries({ queryKey: ["students"] });
-    },
+    // Returning the promise keeps isPending true until the cascading refetches
+    // complete, so the calling UI sees fresh data the moment the spinner clears.
+    onSettled: (_res, _err, { studentTechniqueId }) =>
+      Promise.all([
+        qc.invalidateQueries({ queryKey: qk.studentTechnique(studentTechniqueId) }),
+        qc.invalidateQueries({ predicate: qk.matches.anyStudentTechniques }),
+        qc.invalidateQueries({ queryKey: ["students"] }),
+      ]),
   });
 }
 
@@ -301,11 +291,7 @@ export function useAddTagToTechnique() {
       unwrap(await addTagToTechnique(vars.techniqueId, vars.tagId)),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: qk.libraryTechniques() });
-      qc.invalidateQueries({
-        predicate: (q) =>
-          (q.queryKey[0] === "student" && q.queryKey[2] === "techniques") ||
-          q.queryKey[0] === "studentTechnique",
-      });
+      qc.invalidateQueries({ predicate: qk.matches.anyStudentTechniqueScope });
     },
   });
 }
@@ -317,11 +303,7 @@ export function useRemoveTagFromTechnique() {
       unwrap(await removeTagFromTechnique(vars.techniqueId, vars.tagId)),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: qk.libraryTechniques() });
-      qc.invalidateQueries({
-        predicate: (q) =>
-          (q.queryKey[0] === "student" && q.queryKey[2] === "techniques") ||
-          q.queryKey[0] === "studentTechnique",
-      });
+      qc.invalidateQueries({ predicate: qk.matches.anyStudentTechniqueScope });
     },
   });
 }
@@ -340,11 +322,7 @@ export function useDeleteTag() {
     mutationFn: async (tagId: number) => unwrap(await deleteTag(tagId)),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: qk.tags() });
-      qc.invalidateQueries({
-        predicate: (q) =>
-          (q.queryKey[0] === "student" && q.queryKey[2] === "techniques") ||
-          q.queryKey[0] === "studentTechnique",
-      });
+      qc.invalidateQueries({ predicate: qk.matches.anyStudentTechniqueScope });
     },
   });
 }
@@ -395,11 +373,12 @@ export function useAssignTechniquesToStudent() {
           vars.collectionId,
         ),
       ),
-    onSuccess: (_res, { studentId }) => {
-      qc.invalidateQueries({ queryKey: qk.studentTechniques(studentId) });
-      qc.invalidateQueries({ queryKey: qk.studentUnassigned(studentId) });
-      qc.invalidateQueries({ queryKey: ["students"] });
-    },
+    onSuccess: (_res, { studentId }) =>
+      Promise.all([
+        qc.invalidateQueries({ queryKey: qk.studentTechniques(studentId) }),
+        qc.invalidateQueries({ queryKey: qk.studentUnassigned(studentId) }),
+        qc.invalidateQueries({ queryKey: ["students"] }),
+      ]),
   });
 }
 
@@ -420,13 +399,14 @@ export function useCreateAndAssignTechnique() {
           vars.collectionId,
         ),
       ),
-    onSuccess: (_res, { studentId }) => {
-      qc.invalidateQueries({ queryKey: qk.studentTechniques(studentId) });
-      qc.invalidateQueries({ queryKey: qk.studentUnassigned(studentId) });
-      qc.invalidateQueries({ queryKey: qk.libraryStats() });
-      qc.invalidateQueries({ queryKey: qk.collections() });
-      qc.invalidateQueries({ queryKey: ["students"] });
-    },
+    onSuccess: (_res, { studentId }) =>
+      Promise.all([
+        qc.invalidateQueries({ queryKey: qk.studentTechniques(studentId) }),
+        qc.invalidateQueries({ queryKey: qk.studentUnassigned(studentId) }),
+        qc.invalidateQueries({ queryKey: qk.libraryStats() }),
+        qc.invalidateQueries({ queryKey: qk.collections() }),
+        qc.invalidateQueries({ queryKey: ["students"] }),
+      ]),
   });
 }
 
@@ -435,13 +415,14 @@ export function useAssignCollectionToStudent() {
   return useMutation({
     mutationFn: async (vars: { studentId: number; collectionId: number }) =>
       unwrap(await assignCollectionToStudent(vars.studentId, vars.collectionId)),
-    onSuccess: (_res, { studentId, collectionId }) => {
-      qc.invalidateQueries({ queryKey: qk.studentTechniques(studentId) });
-      qc.invalidateQueries({ queryKey: qk.studentUnassigned(studentId) });
-      qc.invalidateQueries({ queryKey: qk.collection(collectionId) });
-      qc.invalidateQueries({ queryKey: qk.collectionStudents(collectionId) });
-      qc.invalidateQueries({ queryKey: ["students"] });
-    },
+    onSuccess: (_res, { studentId, collectionId }) =>
+      Promise.all([
+        qc.invalidateQueries({ queryKey: qk.studentTechniques(studentId) }),
+        qc.invalidateQueries({ queryKey: qk.studentUnassigned(studentId) }),
+        qc.invalidateQueries({ queryKey: qk.collection(collectionId) }),
+        qc.invalidateQueries({ queryKey: qk.collectionStudents(collectionId) }),
+        qc.invalidateQueries({ queryKey: ["students"] }),
+      ]),
   });
 }
 
@@ -526,13 +507,9 @@ export function useUpdateLibraryTechnique() {
     }) => unwrap(await updateLibraryTechnique(vars.techniqueId, vars.data)),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: qk.collections() });
-      qc.invalidateQueries({ queryKey: ["collection"] });
+      qc.invalidateQueries({ predicate: qk.matches.anyCollection });
       qc.invalidateQueries({ queryKey: qk.libraryTechniques() });
-      qc.invalidateQueries({
-        predicate: (q) =>
-          (q.queryKey[0] === "student" && q.queryKey[2] === "techniques") ||
-          q.queryKey[0] === "studentTechnique",
-      });
+      qc.invalidateQueries({ predicate: qk.matches.anyStudentTechniqueScope });
     },
   });
 }
@@ -563,20 +540,25 @@ export function useCreateAttempt(studentId: number | undefined) {
       data?: { note?: string | null; attempted_at?: string | null };
     }) => createAttempt(vars.studentTechniqueId, vars.data ?? {}),
     onSuccess: (_res, { studentTechniqueId }) => {
-      qc.invalidateQueries({ queryKey: qk.attempts(studentTechniqueId) });
-      qc.invalidateQueries({ queryKey: qk.studentTechnique(studentTechniqueId) });
-      qc.invalidateQueries({
-        queryKey: ["studentTechnique", studentTechniqueId, "sparkline"],
-      });
-      if (studentId !== undefined) {
-        qc.invalidateQueries({ queryKey: qk.attemptSummary(studentId) });
-        qc.invalidateQueries({ queryKey: qk.attemptHeatmap(studentId) });
+      const tasks: Promise<unknown>[] = [
+        qc.invalidateQueries({ queryKey: qk.attempts(studentTechniqueId) }),
+        qc.invalidateQueries({ queryKey: qk.studentTechnique(studentTechniqueId) }),
         qc.invalidateQueries({
-          queryKey: ["student", studentId, "recentAttempts"],
-        });
-        qc.invalidateQueries({ queryKey: qk.studentTechniques(studentId) });
+          queryKey: ["studentTechnique", studentTechniqueId, "sparkline"],
+        }),
+        qc.invalidateQueries({ queryKey: ["students"] }),
+      ];
+      if (studentId !== undefined) {
+        tasks.push(
+          qc.invalidateQueries({ queryKey: qk.attemptSummary(studentId) }),
+          qc.invalidateQueries({ queryKey: qk.attemptHeatmap(studentId) }),
+          qc.invalidateQueries({
+            queryKey: ["student", studentId, "recentAttempts"],
+          }),
+          qc.invalidateQueries({ queryKey: qk.studentTechniques(studentId) }),
+        );
       }
-      qc.invalidateQueries({ queryKey: ["students"] });
+      return Promise.all(tasks);
     },
   });
 }
@@ -593,20 +575,26 @@ export function useUpdateAttempt(studentTechniqueId?: number, studentId?: number
       };
     }) => unwrap(await updateAttempt(vars.attemptId, vars.data)),
     onSuccess: () => {
+      const tasks: Promise<unknown>[] = [];
       if (studentTechniqueId !== undefined) {
-        qc.invalidateQueries({ queryKey: qk.attempts(studentTechniqueId) });
-        qc.invalidateQueries({ queryKey: qk.studentTechnique(studentTechniqueId) });
-        qc.invalidateQueries({
-          queryKey: ["studentTechnique", studentTechniqueId, "sparkline"],
-        });
+        tasks.push(
+          qc.invalidateQueries({ queryKey: qk.attempts(studentTechniqueId) }),
+          qc.invalidateQueries({ queryKey: qk.studentTechnique(studentTechniqueId) }),
+          qc.invalidateQueries({
+            queryKey: ["studentTechnique", studentTechniqueId, "sparkline"],
+          }),
+        );
       }
       if (studentId !== undefined) {
-        qc.invalidateQueries({ queryKey: qk.attemptSummary(studentId) });
-        qc.invalidateQueries({ queryKey: qk.attemptHeatmap(studentId) });
-        qc.invalidateQueries({
-          queryKey: ["student", studentId, "recentAttempts"],
-        });
+        tasks.push(
+          qc.invalidateQueries({ queryKey: qk.attemptSummary(studentId) }),
+          qc.invalidateQueries({ queryKey: qk.attemptHeatmap(studentId) }),
+          qc.invalidateQueries({
+            queryKey: ["student", studentId, "recentAttempts"],
+          }),
+        );
       }
+      return Promise.all(tasks);
     },
   });
 }
@@ -616,21 +604,28 @@ export function useDeleteAttempt(studentTechniqueId?: number, studentId?: number
   return useMutation({
     mutationFn: async (attemptId: number) => unwrap(await deleteAttempt(attemptId)),
     onSuccess: () => {
+      const tasks: Promise<unknown>[] = [
+        qc.invalidateQueries({ queryKey: ["students"] }),
+      ];
       if (studentTechniqueId !== undefined) {
-        qc.invalidateQueries({ queryKey: qk.attempts(studentTechniqueId) });
-        qc.invalidateQueries({ queryKey: qk.studentTechnique(studentTechniqueId) });
-        qc.invalidateQueries({
-          queryKey: ["studentTechnique", studentTechniqueId, "sparkline"],
-        });
+        tasks.push(
+          qc.invalidateQueries({ queryKey: qk.attempts(studentTechniqueId) }),
+          qc.invalidateQueries({ queryKey: qk.studentTechnique(studentTechniqueId) }),
+          qc.invalidateQueries({
+            queryKey: ["studentTechnique", studentTechniqueId, "sparkline"],
+          }),
+        );
       }
       if (studentId !== undefined) {
-        qc.invalidateQueries({ queryKey: qk.attemptSummary(studentId) });
-        qc.invalidateQueries({ queryKey: qk.attemptHeatmap(studentId) });
-        qc.invalidateQueries({
-          queryKey: ["student", studentId, "recentAttempts"],
-        });
+        tasks.push(
+          qc.invalidateQueries({ queryKey: qk.attemptSummary(studentId) }),
+          qc.invalidateQueries({ queryKey: qk.attemptHeatmap(studentId) }),
+          qc.invalidateQueries({
+            queryKey: ["student", studentId, "recentAttempts"],
+          }),
+        );
       }
-      qc.invalidateQueries({ queryKey: ["students"] });
+      return Promise.all(tasks);
     },
   });
 }
@@ -665,10 +660,7 @@ export function useUpdateVideo(techniqueId?: number) {
       if (techniqueId !== undefined) {
         qc.invalidateQueries({ queryKey: qk.techniqueVideos(techniqueId) });
       } else {
-        qc.invalidateQueries({
-          predicate: (q) =>
-            q.queryKey[0] === "technique" && q.queryKey[2] === "videos",
-        });
+        qc.invalidateQueries({ predicate: qk.matches.anyTechniqueVideos });
       }
     },
   });
@@ -695,10 +687,7 @@ export function useDeleteVideo(techniqueId?: number) {
       if (techniqueId !== undefined) {
         qc.invalidateQueries({ queryKey: qk.techniqueVideosAll(techniqueId) });
       } else {
-        qc.invalidateQueries({
-          predicate: (q) =>
-            q.queryKey[0] === "technique" && q.queryKey[2] === "videos",
-        });
+        qc.invalidateQueries({ predicate: qk.matches.anyTechniqueVideos });
       }
     },
   });
@@ -736,11 +725,4 @@ export function useSetVideoStudentVisibility(techniqueId: number) {
   });
 }
 
-// Helper for predicate-based matching: any student-technique-shaped cache.
-function matchStudentTechniqueScope(query: { queryKey: readonly unknown[] }) {
-  const k = query.queryKey;
-  return (
-    (k[0] === "student" && k[2] === "techniques") ||
-    k[0] === "studentTechnique"
-  );
-}
+// Predicate moved to qk.matches.anyStudentTechniqueScope in query-keys.ts.

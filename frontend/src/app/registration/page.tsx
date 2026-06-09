@@ -8,6 +8,7 @@ import {
   assignCollectionToStudent,
   getCollections,
   inviteUser,
+  isAdmin,
   type Collection,
   type InviteResponse,
   type User,
@@ -40,7 +41,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { TracedForm } from '@/components/traced-form';
-import { useFormWithValidation } from '@/components/hooks/useFormErrors';
+import { handleApiFormError, useFormWithValidation } from '@/components/hooks/useFormErrors';
 
 const NO_COLLECTION = 'none';
 
@@ -65,7 +66,7 @@ export default function AddUserPage({ user }: AddUserPageProps) {
     url: string;
   } | null>(null);
   const [collections, setCollections] = useState<Collection[]>([]);
-  const isAdmin = user?.role === 'admin' || user?.role === 'Admin';
+  const admin = isAdmin(user ?? null);
 
   const form = useFormWithValidation<InviteFormValues>({
     resolver: zodResolver(inviteSchema),
@@ -96,36 +97,45 @@ export default function AddUserPage({ user }: AddUserPageProps) {
   const showCollectionPicker = watchedRole === 'student' && collections.length > 0;
 
   async function handleSubmit(data: InviteFormValues) {
-    const response = await inviteUser({
-      display_name: data.display_name,
-      role: data.role,
-    });
-    if (!response.ok) throw response;
-    const invite: InviteResponse = await response.json();
+    try {
+      const response = await inviteUser({
+        display_name: data.display_name,
+        role: data.role,
+      });
+      if (!response.ok) throw response;
+      const invite: InviteResponse = await response.json();
 
-    // Optional: bulk-assign a collection so the new student lands fully set up.
-    if (
-      data.role === 'student' &&
-      data.collection_id &&
-      data.collection_id !== NO_COLLECTION
-    ) {
-      const parsed = parseInt(data.collection_id, 10);
-      if (Number.isFinite(parsed)) {
-        try {
-          await assignCollectionToStudent(invite.user_id, parsed);
-        } catch {
-          toast.error("Created the user, but couldn't assign the collection");
+      // Optional: bulk-assign a collection so the new student lands fully set up.
+      if (
+        data.role === 'student' &&
+        data.collection_id &&
+        data.collection_id !== NO_COLLECTION
+      ) {
+        const parsed = parseInt(data.collection_id, 10);
+        if (Number.isFinite(parsed)) {
+          try {
+            await assignCollectionToStudent(invite.user_id, parsed);
+          } catch {
+            toast.error("Created the user, but couldn't assign the collection");
+          }
         }
       }
-    }
 
-    const url = `${window.location.origin}${invite.claim_path}`;
-    setIssued({ displayName: data.display_name, url });
-    form.reset({
-      display_name: '',
-      role: data.role,
-      collection_id: data.collection_id ?? NO_COLLECTION,
-    });
+      const url = `${window.location.origin}${invite.claim_path}`;
+      setIssued({ displayName: data.display_name, url });
+      form.reset({
+        display_name: '',
+        role: data.role,
+        collection_id: data.collection_id ?? NO_COLLECTION,
+      });
+    } catch (err) {
+      const handled = await handleApiFormError(
+        err,
+        form.setError,
+        Object.keys(form.getValues()),
+      );
+      if (!handled) toast.error(err instanceof Error ? err.message : 'Failed to create user');
+    }
   }
 
   return (
@@ -135,7 +145,6 @@ export default function AddUserPage({ user }: AddUserPageProps) {
           <TracedForm
             id="invite_user"
             onSubmit={form.handleSubmit(handleSubmit)}
-            setFieldErrors={form.setFieldErrors}
             className="space-y-4"
           >
             <FormField
@@ -171,7 +180,7 @@ export default function AddUserPage({ user }: AddUserPageProps) {
                     <SelectContent>
                       <SelectItem value="student">Student</SelectItem>
                       <SelectItem value="coach">Coach</SelectItem>
-                      {isAdmin && <SelectItem value="admin">Admin</SelectItem>}
+                      {admin && <SelectItem value="admin">Admin</SelectItem>}
                     </SelectContent>
                   </Select>
                   <FormMessage />

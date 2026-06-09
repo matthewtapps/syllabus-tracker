@@ -53,11 +53,30 @@ export async function logout(): Promise<void | null> {
   }
 }
 
+export type Role = "student" | "coach" | "admin";
+
+function normaliseRole(raw: unknown): Role {
+  if (typeof raw !== "string") return "student";
+  const lower = raw.toLowerCase();
+  if (lower === "coach" || lower === "admin" || lower === "student") return lower;
+  return "student";
+}
+
+export function isCoachOrAdmin(user: User | null): user is User & {
+  role: "coach" | "admin";
+} {
+  return !!user && (user.role === "coach" || user.role === "admin");
+}
+
+export function isAdmin(user: User | null): user is User & { role: "admin" } {
+  return !!user && user.role === "admin";
+}
+
 export interface User {
   id: number;
   username: string;
   display_name: string;
-  role: string;
+  role: Role;
   last_update?: string;
   archived: boolean;
   graduated_at?: string | null;
@@ -88,7 +107,8 @@ export async function getCurrentUser(): Promise<User | null> {
       return null;
     }
 
-    return await response.json();
+    const user: User = await response.json();
+    return { ...user, role: normaliseRole(user.role) };
   } catch {
     return null;
   }
@@ -579,7 +599,8 @@ export async function getAllUsers(): Promise<User[]> {
     credentials: "include",
   });
 
-  return await response.json();
+  const users: User[] = await response.json();
+  return users.map((u) => ({ ...u, role: normaliseRole(u.role) }));
 }
 
 export async function markStudentTechniqueSeen(id: number): Promise<void> {

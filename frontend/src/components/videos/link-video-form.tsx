@@ -15,7 +15,7 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
-import { useFormWithValidation } from "@/components/hooks/useFormErrors";
+import { handleApiFormError, useFormWithValidation } from "@/components/hooks/useFormErrors";
 import { TracedForm } from "@/components/traced-form";
 
 interface LinkVideoFormProps {
@@ -49,13 +49,22 @@ export function LinkVideoForm({
   const detected = detectHost(watchedUrl);
 
   async function handleSubmit(values: FormValues) {
-    const video = await linkVideo(techniqueId, {
-      title: values.title.trim(),
-      description: values.description?.trim() || undefined,
-      url: values.url.trim(),
-    });
-    toast.success("Link added");
-    onLinked(video);
+    try {
+      const video = await linkVideo(techniqueId, {
+        title: values.title.trim(),
+        description: values.description?.trim() || undefined,
+        url: values.url.trim(),
+      });
+      toast.success("Link added");
+      onLinked(video);
+    } catch (err) {
+      const handled = await handleApiFormError(
+        err,
+        form.setError,
+        Object.keys(form.getValues()),
+      );
+      if (!handled) toast.error(err instanceof Error ? err.message : "Failed to link video");
+    }
   }
 
   const isSubmitting = form.formState.isSubmitting;
@@ -65,7 +74,6 @@ export function LinkVideoForm({
       <TracedForm
         id="video_link"
         onSubmit={form.handleSubmit(handleSubmit)}
-        setFieldErrors={form.setFieldErrors}
         className="space-y-4"
       >
         <FormField

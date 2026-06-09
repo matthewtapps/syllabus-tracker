@@ -17,7 +17,7 @@ import { Input } from '@/components/ui/input';
 import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
 import { TracedForm } from '@/components/traced-form';
-import { useFormWithValidation } from '@/components/hooks/useFormErrors';
+import { handleApiFormError, useFormWithValidation } from '@/components/hooks/useFormErrors';
 
 const profileSchema = z.object({
   display_name: z.string(),
@@ -92,20 +92,38 @@ export default function ProfilePage() {
   }, [user?.id]);
 
   async function handleProfileSubmit(data: ProfileValues) {
-    await profileMutation.mutateAsync({
-      display_name: data.display_name,
-      username: data.username.trim(),
-    });
-    toast.success('Profile updated');
+    try {
+      await profileMutation.mutateAsync({
+        display_name: data.display_name,
+        username: data.username.trim(),
+      });
+      toast.success('Profile updated');
+    } catch (err) {
+      const handled = await handleApiFormError(
+        err,
+        profileForm.setError,
+        Object.keys(profileForm.getValues()),
+      );
+      if (!handled) toast.error(err instanceof Error ? err.message : 'Failed to update profile');
+    }
   }
 
   async function handlePasswordSubmit(data: PasswordValues) {
-    await passwordMutation.mutateAsync({
-      current_password: data.current_password,
-      new_password: data.new_password,
-    });
-    toast.success('Password changed');
-    passwordForm.reset();
+    try {
+      await passwordMutation.mutateAsync({
+        current_password: data.current_password,
+        new_password: data.new_password,
+      });
+      toast.success('Password changed');
+      passwordForm.reset();
+    } catch (err) {
+      const handled = await handleApiFormError(
+        err,
+        passwordForm.setError,
+        Object.keys(passwordForm.getValues()),
+      );
+      if (!handled) toast.error(err instanceof Error ? err.message : 'Failed to change password');
+    }
   }
 
   return (
@@ -123,7 +141,6 @@ export default function ProfilePage() {
             <TracedForm
               id="update_profile"
               onSubmit={profileForm.handleSubmit(handleProfileSubmit)}
-              setFieldErrors={profileForm.setFieldErrors}
               className="space-y-4"
             >
               <FormField
@@ -180,7 +197,6 @@ export default function ProfilePage() {
           <TracedForm
             id="change_password"
             onSubmit={passwordForm.handleSubmit(handlePasswordSubmit)}
-            setFieldErrors={passwordForm.setFieldErrors}
             className="space-y-4"
           >
             <FormField

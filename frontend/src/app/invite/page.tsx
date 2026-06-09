@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { AlertCircle, GraduationCap } from 'lucide-react';
+import { toast } from 'sonner';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { claimInvite, getInvite, type InviteInfo } from '@/lib/api';
@@ -16,7 +17,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { TracedForm } from '@/components/traced-form';
-import { useFormWithValidation } from '@/components/hooks/useFormErrors';
+import { handleApiFormError, useFormWithValidation } from '@/components/hooks/useFormErrors';
 
 const claimSchema = z
   .object({
@@ -80,13 +81,22 @@ export default function InvitePage({ onClaimSuccess }: InvitePageProps) {
 
   async function handleSubmit(data: ClaimValues) {
     if (!token) return;
-    const response = await claimInvite(token, {
-      username: data.username,
-      password: data.password,
-    });
-    if (!response.ok) throw response;
-    onClaimSuccess();
-    navigate('/dashboard');
+    try {
+      const response = await claimInvite(token, {
+        username: data.username,
+        password: data.password,
+      });
+      if (!response.ok) throw response;
+      onClaimSuccess();
+      navigate('/dashboard');
+    } catch (err) {
+      const handled = await handleApiFormError(
+        err,
+        form.setError,
+        Object.keys(form.getValues()),
+      );
+      if (!handled) toast.error(err instanceof Error ? err.message : 'Failed to claim invite');
+    }
   }
 
   return (
@@ -145,7 +155,6 @@ export default function InvitePage({ onClaimSuccess }: InvitePageProps) {
               <TracedForm
                 id="claim_invite"
                 onSubmit={form.handleSubmit(handleSubmit)}
-                setFieldErrors={form.setFieldErrors}
                 className="space-y-4"
               >
                 <FormField

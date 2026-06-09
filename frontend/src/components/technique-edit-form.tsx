@@ -75,7 +75,6 @@ export default function TechniqueEditForm({
       <TracedForm
         id="technique_edit"
         onSubmit={form.handleSubmit(handleSubmit)}
-        setFieldErrors={form.setFieldErrors}
         className="space-y-4"
       >
         <FormField

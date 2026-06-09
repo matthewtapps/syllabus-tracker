@@ -31,7 +31,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { EmptyState } from '@/components/empty-state';
 import { SkeletonListRow } from '@/components/skeleton-row';
 import { TracedForm } from '@/components/traced-form';
-import { useFormWithValidation } from '@/components/hooks/useFormErrors';
+import { handleApiFormError, useFormWithValidation } from '@/components/hooks/useFormErrors';
 
 const newCollectionSchema = z.object({
   name: z.string().min(1, 'Name is required').max(100, 'Name is too long'),
@@ -65,15 +65,24 @@ export default function CollectionsPage() {
   });
 
   async function handleCreate(values: NewCollectionValues) {
-    const response = await createMutation.mutateAsync({
-      name: values.name,
-      description: values.description,
-    });
-    const created: Collection = await response.json();
-    setCreateDialogOpen(false);
-    form.reset();
-    toast.success('Collection created');
-    navigate(`/collections/${created.id}`);
+    try {
+      const response = await createMutation.mutateAsync({
+        name: values.name,
+        description: values.description,
+      });
+      const created: Collection = await response.json();
+      setCreateDialogOpen(false);
+      form.reset();
+      toast.success('Collection created');
+      navigate(`/collections/${created.id}`);
+    } catch (err) {
+      const handled = await handleApiFormError(
+        err,
+        form.setError,
+        Object.keys(form.getValues()),
+      );
+      if (!handled) toast.error(err instanceof Error ? err.message : 'Failed to create collection');
+    }
   }
 
   return (
@@ -124,7 +133,6 @@ export default function CollectionsPage() {
               <TracedForm
                 id="create_collection"
                 onSubmit={form.handleSubmit(handleCreate)}
-                setFieldErrors={form.setFieldErrors}
                 className="space-y-4"
               >
                 <FormField

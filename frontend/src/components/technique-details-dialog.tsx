@@ -27,7 +27,7 @@ import {
   FormLabel,
   FormMessage,
 } from '@/components/ui/form';
-import { useFormWithValidation } from './hooks/useFormErrors';
+import { handleApiFormError, useFormWithValidation } from './hooks/useFormErrors';
 import { TracedForm } from './traced-form';
 
 interface TechniqueDetailsDialogProps {
@@ -83,19 +83,28 @@ export default function TechniqueDetailsDialog({
     watchedDescription !== technique.description;
 
   async function handleSubmit(values: FormValues) {
-    const response = await updateLibraryTechnique(technique.id, {
-      name: values.name,
-      description: values.description,
-    });
-    if (!response.ok) throw response;
-    const updated: LibraryTechnique = {
-      ...technique,
-      name: values.name,
-      description: values.description,
-    };
-    onSaved(updated);
-    toast.success('Technique updated');
-    setMode('view');
+    try {
+      const response = await updateLibraryTechnique(technique.id, {
+        name: values.name,
+        description: values.description,
+      });
+      if (!response.ok) throw response;
+      const updated: LibraryTechnique = {
+        ...technique,
+        name: values.name,
+        description: values.description,
+      };
+      onSaved(updated);
+      toast.success('Technique updated');
+      setMode('view');
+    } catch (err) {
+      const handled = await handleApiFormError(
+        err,
+        form.setError,
+        Object.keys(form.getValues()),
+      );
+      if (!handled) toast.error(err instanceof Error ? err.message : 'Failed to update technique');
+    }
   }
 
   return (
@@ -166,7 +175,6 @@ export default function TechniqueDetailsDialog({
               <TracedForm
                 id="update_library_technique"
                 onSubmit={form.handleSubmit(handleSubmit)}
-                setFieldErrors={form.setFieldErrors}
                 className="space-y-4"
               >
                 <FormField

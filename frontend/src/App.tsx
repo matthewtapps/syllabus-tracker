@@ -1,3 +1,4 @@
+import { lazy, Suspense } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { Toaster } from "sonner";
 import {
@@ -8,25 +9,27 @@ import {
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 import { Layout } from './components/layout';
 import { SwUpdateToast } from './components/sw-update-toast';
-import LoginPage from './app/login/page';
-import StudentTechniques from './app/student-techniques/page';
-import StudentTechniqueDetail from './app/student-techniques/[techniqueId]/page';
-import StudentsList from './app/students-list/page';
-import Dashboard from './app/dashboard/page';
-import ProfilePage from './app/profile/page';
-import RegisterUserPage from './app/registration/page';
-import AdminPage from './app/admin/page';
-import CollectionsPage from './app/collections/page';
-import LibraryPage from './app/library/page';
-import CollectionDetailPage from './app/collections/[id]/page';
-import InvitePage from './app/invite/page';
-import RegisterPage from './app/register/page';
-import PendingApprovalPage from './app/pending/page';
-import ForgotPasswordPage from './app/forgot-password/page';
+import { RequireAdmin, RequireAuth, RequireCoach } from './components/route-guards';
 import { TelemetryProvider } from './context/telemetry';
 import { CapabilitiesProvider } from './context/capabilities';
 import { useCapabilities, useCurrentUser } from './lib/queries';
 import { qk } from './lib/query-keys';
+
+const LoginPage = lazy(() => import('./app/login/page'));
+const StudentTechniques = lazy(() => import('./app/student-techniques/page'));
+const StudentTechniqueDetail = lazy(() => import('./app/student-techniques/[techniqueId]/page'));
+const StudentsList = lazy(() => import('./app/students-list/page'));
+const Dashboard = lazy(() => import('./app/dashboard/page'));
+const ProfilePage = lazy(() => import('./app/profile/page'));
+const RegisterUserPage = lazy(() => import('./app/registration/page'));
+const AdminPage = lazy(() => import('./app/admin/page'));
+const CollectionsPage = lazy(() => import('./app/collections/page'));
+const LibraryPage = lazy(() => import('./app/library/page'));
+const CollectionDetailPage = lazy(() => import('./app/collections/[id]/page'));
+const InvitePage = lazy(() => import('./app/invite/page'));
+const RegisterPage = lazy(() => import('./app/register/page'));
+const PendingApprovalPage = lazy(() => import('./app/pending/page'));
+const ForgotPasswordPage = lazy(() => import('./app/forgot-password/page'));
 
 // Module-level singleton. StrictMode double-renders won't reset it.
 const queryClient = new QueryClient({
@@ -65,6 +68,14 @@ function App() {
   );
 }
 
+function RouteLoading() {
+  return (
+    <div className="flex min-h-[40vh] items-center justify-center text-sm text-muted-foreground">
+      Loading...
+    </div>
+  );
+}
+
 function AppShell() {
   const qc = useQueryClient();
   const userQuery = useCurrentUser();
@@ -97,7 +108,11 @@ function AppShell() {
   // pending screen; the rest of the app is gated until a coach approves them.
   const isPending = !!user && !!user.claimed_at && !user.approved_at;
   if (isPending && user) {
-    return <PendingApprovalPage user={user} onLogout={handleLogout} />;
+    return (
+      <Suspense fallback={<RouteLoading />}>
+        <PendingApprovalPage user={user} onLogout={handleLogout} />
+      </Suspense>
+    );
   }
 
   return (
@@ -105,6 +120,10 @@ function AppShell() {
       <TelemetryProvider>
         <CapabilitiesProvider value={capabilities}>
         <Layout user={user} onLogout={handleLogout}>
+          <Suspense fallback={<RouteLoading />}>
+          {/* The `user!` assertions on protected routes are safe: each one
+              sits inside RequireAuth/RequireCoach/RequireAdmin, which
+              redirect when user is null before the inner element renders. */}
           <Routes>
             <Route
               path="/login"
@@ -124,70 +143,87 @@ function AppShell() {
             />
             <Route
               path="/student/:id"
-              element={user ? <StudentTechniques user={user} /> : <Navigate to="/login" replace />}
+              element={
+                <RequireAuth>
+                  <StudentTechniques user={user!} />
+                </RequireAuth>
+              }
             />
             <Route
               path="/student/:id/technique/:techniqueId"
-              element={user ? <StudentTechniqueDetail user={user} /> : <Navigate to="/login" replace />}
+              element={
+                <RequireAuth>
+                  <StudentTechniqueDetail user={user!} />
+                </RequireAuth>
+              }
             />
             <Route
               path="/students"
               element={
-                user && (user.role === 'coach' || user.role === 'Coach' || user.role === 'admin' || user.role === 'Admin')
-                  ? <StudentsList user={user} />
-                  : <Navigate to="/login" replace />
+                <RequireCoach>
+                  <StudentsList user={user!} />
+                </RequireCoach>
               }
             />
             <Route
               path="/dashboard"
-              element={user ? <Dashboard user={user} /> : <Navigate to="/login" replace />}
+              element={
+                <RequireAuth>
+                  <Dashboard user={user!} />
+                </RequireAuth>
+              }
             />
             <Route
               path="/profile"
-              element={user ? <ProfilePage /> : <Navigate to="/login" replace />}
+              element={
+                <RequireAuth>
+                  <ProfilePage />
+                </RequireAuth>
+              }
             />
             <Route
               path="/register-user"
               element={
-                user && (user.role === 'coach' || user.role === 'Coach' || user.role === 'admin' || user.role === 'Admin')
-                  ? <RegisterUserPage user={user} />
-                  : <Navigate to="/login" replace />
+                <RequireCoach>
+                  <RegisterUserPage user={user!} />
+                </RequireCoach>
               }
             />
             <Route
               path="/admin"
               element={
-                user && (user.role === 'admin')
-                  ? <AdminPage />
-                  : <Navigate to="/login" replace />
+                <RequireAdmin>
+                  <AdminPage />
+                </RequireAdmin>
               }
             />
             <Route
               path="/library"
               element={
-                user && (user.role === 'coach' || user.role === 'Coach' || user.role === 'admin' || user.role === 'Admin')
-                  ? <LibraryPage />
-                  : <Navigate to="/login" replace />
+                <RequireCoach>
+                  <LibraryPage />
+                </RequireCoach>
               }
             />
             <Route
               path="/collections"
               element={
-                user && (user.role === 'coach' || user.role === 'Coach' || user.role === 'admin' || user.role === 'Admin')
-                  ? <CollectionsPage />
-                  : <Navigate to="/login" replace />
+                <RequireCoach>
+                  <CollectionsPage />
+                </RequireCoach>
               }
             />
             <Route
               path="/collections/:id"
               element={
-                user && (user.role === 'coach' || user.role === 'Coach' || user.role === 'admin' || user.role === 'Admin')
-                  ? <CollectionDetailPage />
-                  : <Navigate to="/login" replace />
+                <RequireCoach>
+                  <CollectionDetailPage />
+                </RequireCoach>
               }
             />
             <Route path="/" element={<Navigate to={user ? "/dashboard" : "/login"} replace />} />
           </Routes>
+          </Suspense>
         </Layout>
         </CapabilitiesProvider>
         <SwUpdateToast />

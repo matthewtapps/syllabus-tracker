@@ -15,7 +15,8 @@ import {
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { TracedForm } from '@/components/traced-form';
-import { useFormWithValidation } from '@/components/hooks/useFormErrors';
+import { toast } from 'sonner';
+import { handleApiFormError, useFormWithValidation } from '@/components/hooks/useFormErrors';
 
 const schema = z.object({
   username: z.string().min(1, 'Username is required'),
@@ -31,9 +32,18 @@ export default function ForgotPasswordPage() {
   });
 
   async function handleSubmit(data: Values) {
-    const response = await requestPasswordReset(data.username);
-    if (!response.ok) throw response;
-    setSubmitted(true);
+    try {
+      const response = await requestPasswordReset(data.username);
+      if (!response.ok) throw response;
+      setSubmitted(true);
+    } catch (err) {
+      const handled = await handleApiFormError(
+        err,
+        form.setError,
+        Object.keys(form.getValues()),
+      );
+      if (!handled) toast.error(err instanceof Error ? err.message : 'Failed to send reset link');
+    }
   }
 
   return (
@@ -87,7 +97,6 @@ export default function ForgotPasswordPage() {
               <TracedForm
                 id="request_password_reset"
                 onSubmit={form.handleSubmit(handleSubmit)}
-                setFieldErrors={form.setFieldErrors}
                 className="space-y-4"
               >
                 <FormField

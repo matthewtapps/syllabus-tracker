@@ -67,7 +67,6 @@ export function LoginForm({ onSuccess, className, ...props }: LoginFormProps) {
           <TracedForm
             id="login"
             onSubmit={form.handleSubmit(handleSubmit)}
-            setFieldErrors={form.setFieldErrors}
             className="flex flex-col justify-center gap-5 p-8"
           >
             <div className="space-y-1">

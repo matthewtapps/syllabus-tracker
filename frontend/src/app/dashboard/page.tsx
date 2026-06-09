@@ -66,19 +66,11 @@ const DASHBOARD_DATE_FORMAT = new Intl.DateTimeFormat(undefined, {
 type RosterTab = 'initiative' | 'recent' | 'quiet';
 
 interface DashboardProps {
-  user: User | null;
+  user: User;
 }
 
 export default function Dashboard({ user }: DashboardProps) {
-  if (!user) {
-    return (
-      <div className="container mx-auto px-4 py-6 sm:px-6 md:py-8">
-        </div>
-    );
-  }
-
-  const role = user.role?.toLowerCase();
-  if (role === 'student') {
+  if (user.role === 'student') {
     return <StudentDashboard user={user} />;
   }
   return <CoachDashboard user={user} />;

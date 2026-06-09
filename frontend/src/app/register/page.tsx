@@ -14,7 +14,8 @@ import {
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { TracedForm } from '@/components/traced-form';
-import { useFormWithValidation } from '@/components/hooks/useFormErrors';
+import { toast } from 'sonner';
+import { handleApiFormError, useFormWithValidation } from '@/components/hooks/useFormErrors';
 
 const registerSchema = z
   .object({
@@ -54,15 +55,24 @@ export default function RegisterPage({ onRegisterSuccess }: RegisterPageProps) {
   });
 
   async function handleSubmit(data: RegisterValues) {
-    const response = await selfRegister({
-      username: data.username,
-      password: data.password,
-      first_name: data.first_name,
-      last_name: data.last_name && data.last_name.length > 0 ? data.last_name : undefined,
-    });
-    if (!response.ok) throw response;
-    onRegisterSuccess();
-    navigate('/dashboard');
+    try {
+      const response = await selfRegister({
+        username: data.username,
+        password: data.password,
+        first_name: data.first_name,
+        last_name: data.last_name && data.last_name.length > 0 ? data.last_name : undefined,
+      });
+      if (!response.ok) throw response;
+      onRegisterSuccess();
+      navigate('/dashboard');
+    } catch (err) {
+      const handled = await handleApiFormError(
+        err,
+        form.setError,
+        Object.keys(form.getValues()),
+      );
+      if (!handled) toast.error(err instanceof Error ? err.message : 'Failed to register');
+    }
   }
 
   return (
@@ -91,7 +101,6 @@ export default function RegisterPage({ onRegisterSuccess }: RegisterPageProps) {
             <TracedForm
               id="self_register"
               onSubmit={form.handleSubmit(handleSubmit)}
-              setFieldErrors={form.setFieldErrors}
               className="space-y-4"
             >
               <div className="grid gap-3 sm:grid-cols-2">

@@ -3,12 +3,27 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import { VitePWA } from "vite-plugin-pwa";
+import { visualizer } from "rollup-plugin-visualizer";
 
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [
     react(),
     tailwindcss(),
+    // Opt-in bundle map. Run `pnpm analyze` to produce dist/stats.html and
+    // see which chunks dominate the build. Spread keeps the array type
+    // homogeneous, avoiding the rollup version mismatch between vite's
+    // rollup and rollup-plugin-visualizer's rollup.
+    ...(process.env.ANALYZE
+      ? [
+          visualizer({
+            filename: "dist/stats.html",
+            open: true,
+            gzipSize: true,
+            brotliSize: true,
+          }),
+        ]
+      : []),
     VitePWA({
       registerType: "prompt",
       includeAssets: [
@@ -48,7 +63,16 @@ export default defineConfig({
         ],
       },
       workbox: {
-        globPatterns: ["**/*.{js,css,html,ico,png,svg,woff,woff2}"],
+        // Precache only the HTML shell + critical static assets. Route JS
+        // chunks are runtime-cached on first navigation (StaleWhileRevalidate
+        // below). With every page lazy-loaded, precaching every chunk would
+        // re-download the entire app on first install.
+        globPatterns: [
+          "index.html",
+          "assets/**/*.css",
+          "manifest.webmanifest",
+          "**/*.{ico,png,svg,woff,woff2}",
+        ],
         navigateFallback: "/index.html",
         // Don't intercept API calls or the SPA's auth redirects.
         navigateFallbackDenylist: [/^\/api/],
@@ -59,6 +83,20 @@ export default defineConfig({
           {
             urlPattern: ({ url }) => url.pathname.startsWith("/api/"),
             handler: "NetworkOnly",
+          },
+          {
+            // Route chunks (hashed filenames). Serve from cache if present
+            // for offline-friendly returning visits; revalidate in the
+            // background so the next nav picks up new builds.
+            urlPattern: ({ url }) => /\/assets\/.*\.js$/.test(url.pathname),
+            handler: "StaleWhileRevalidate",
+            options: {
+              cacheName: "app-js",
+              expiration: {
+                maxEntries: 60,
+                maxAgeSeconds: 60 * 60 * 24 * 30,
+              },
+            },
           },
         ],
       },

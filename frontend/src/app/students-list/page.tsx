@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import { Archive, GraduationCap, MoreVertical, Search, UserPlus, Users, X } from 'lucide-react';
-import { type User } from '@/lib/api';
+import { type User, isAdmin } from '@/lib/api';
 import { useStudents } from '@/lib/queries';
 import { useSetStudentGraduated, useToggleUserArchived } from '@/lib/mutations';
 import { Input } from '@/components/ui/input';
@@ -48,7 +48,7 @@ interface StudentsListProps {
 
 export default function StudentsList({ user }: StudentsListProps) {
   const navigate = useNavigate();
-  const isAdmin = user.role?.toLowerCase() === 'admin';
+  const admin = isAdmin(user);
   const studentsQuery = useStudents('recent_update', true);
   const students = useMemo(() => studentsQuery.data ?? [], [studentsQuery.data]);
   const loading = studentsQuery.isLoading;
@@ -143,7 +143,7 @@ export default function StudentsList({ user }: StudentsListProps) {
 
   function rowActions(student: User) {
     const showUnGraduate = !!student.graduated_at;
-    const showUnArchive = isAdmin && student.archived;
+    const showUnArchive = admin && student.archived;
     if (!showUnGraduate && !showUnArchive) return undefined;
     return (
       <DropdownMenu>

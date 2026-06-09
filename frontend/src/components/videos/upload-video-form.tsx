@@ -21,7 +21,7 @@ import {
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
-import { useFormWithValidation } from "@/components/hooks/useFormErrors";
+import { handleApiFormError, useFormWithValidation } from "@/components/hooks/useFormErrors";
 import { TracedForm } from "@/components/traced-form";
 
 interface UploadVideoFormProps {
@@ -103,7 +103,7 @@ export function UploadVideoForm({
   async function handleSubmit(values: FormValues) {
     if (!file) {
       setFileError("Pick an mp4 file to upload.");
-      throw new Error("Pick an mp4 file to upload.");
+      return;
     }
     setProgressPct(0);
     try {
@@ -122,7 +122,12 @@ export function UploadVideoForm({
       onUploaded(result.video_id);
     } catch (err) {
       setProgressPct(null);
-      throw err;
+      const handled = await handleApiFormError(
+        err,
+        form.setError,
+        Object.keys(form.getValues()),
+      );
+      if (!handled) toast.error(err instanceof Error ? err.message : "Failed to upload video");
     }
   }
 
@@ -133,7 +138,6 @@ export function UploadVideoForm({
       <TracedForm
         id="video_upload"
         onSubmit={form.handleSubmit(handleSubmit)}
-        setFieldErrors={form.setFieldErrors}
         className="space-y-4"
       >
         <div className="space-y-2">

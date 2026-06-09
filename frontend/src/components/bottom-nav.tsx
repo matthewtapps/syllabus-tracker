@@ -13,6 +13,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import type { User } from '@/lib/api';
+import { isCoachOrAdmin, isAdmin } from '@/lib/api';
 import { useInstallTrigger } from '@/lib/install';
 import { cn } from '@/lib/utils';
 import {
@@ -36,15 +37,10 @@ interface Tab {
 }
 
 function buildTabs(user: User): Tab[] {
-  const isCoachOrAdmin =
-    user.role === 'coach' ||
-    user.role === 'Coach' ||
-    user.role === 'admin' ||
-    user.role === 'Admin';
   const tabs: Tab[] = [
     { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   ];
-  if (isCoachOrAdmin) {
+  if (isCoachOrAdmin(user)) {
     tabs.push({ to: '/students', label: 'Students', icon: Users });
     tabs.push({
       to: '/library',
@@ -117,12 +113,8 @@ function MoreTab({ user, onLogout }: { user: User; onLogout: () => void }) {
   const [open, setOpen] = useState(false);
   const navigate = useNavigate();
   const install = useInstallTrigger();
-  const isCoachOrAdmin =
-    user.role === 'coach' ||
-    user.role === 'Coach' ||
-    user.role === 'admin' ||
-    user.role === 'Admin';
-  const isAdmin = user.role === 'admin' || user.role === 'Admin';
+  const coachOrAdmin = isCoachOrAdmin(user);
+  const admin = isAdmin(user);
 
   const close = () => setOpen(false);
 
@@ -144,7 +136,7 @@ function MoreTab({ user, onLogout }: { user: User; onLogout: () => void }) {
         <SheetTitle className="sr-only">More</SheetTitle>
 
         <div className="space-y-1 p-2">
-          {isCoachOrAdmin && (
+          {coachOrAdmin && (
             <MoreItem
               icon={UserPlus}
               label="New user"
@@ -154,7 +146,7 @@ function MoreTab({ user, onLogout }: { user: User; onLogout: () => void }) {
               }}
             />
           )}
-          {isAdmin && (
+          {admin && (
             <MoreItem
               icon={Shield}
               label="Admin"

@@ -23,7 +23,7 @@ import {
   useAssignTechniquesToStudent,
   useCreateAndAssignTechnique,
 } from '@/lib/mutations';
-import { useFormWithValidation } from './hooks/useFormErrors';
+import { handleApiFormError, useFormWithValidation } from './hooks/useFormErrors';
 import { TracedForm } from './traced-form';
 import { toast } from 'sonner';
 
@@ -150,25 +150,43 @@ export default function AssignTechniques({
 
   async function handleAssignTechniques(data: AssignTechniquesFormValues) {
     if (data.selected_technique_ids.length === 0) return;
-    await assignMutation.mutateAsync({
-      studentId,
-      techniqueIds: data.selected_technique_ids,
-      collectionId: chosenCollectionId(),
-    });
-    assignForm.reset();
-    onAssignComplete();
+    try {
+      await assignMutation.mutateAsync({
+        studentId,
+        techniqueIds: data.selected_technique_ids,
+        collectionId: chosenCollectionId(),
+      });
+      assignForm.reset();
+      onAssignComplete();
+    } catch (err) {
+      const handled = await handleApiFormError(
+        err,
+        assignForm.setError,
+        Object.keys(assignForm.getValues()),
+      );
+      if (!handled) toast.error(err instanceof Error ? err.message : 'Failed to assign techniques');
+    }
   }
 
   async function handleCreateTechnique(data: CreateTechniqueFormValues) {
     if (!data.name.trim() || !data.description.trim()) return;
-    await createMutation.mutateAsync({
-      studentId,
-      name: data.name,
-      description: data.description,
-      collectionId: chosenCollectionId(),
-    });
-    createTechniqueForm.reset();
-    onAssignComplete();
+    try {
+      await createMutation.mutateAsync({
+        studentId,
+        name: data.name,
+        description: data.description,
+        collectionId: chosenCollectionId(),
+      });
+      createTechniqueForm.reset();
+      onAssignComplete();
+    } catch (err) {
+      const handled = await handleApiFormError(
+        err,
+        createTechniqueForm.setError,
+        Object.keys(createTechniqueForm.getValues()),
+      );
+      if (!handled) toast.error(err instanceof Error ? err.message : 'Failed to create technique');
+    }
   }
 
   async function handleAssignCollection() {
@@ -253,7 +271,6 @@ export default function AssignTechniques({
             <TracedForm
               id="assign_techniques"
               onSubmit={assignForm.handleSubmit(handleAssignTechniques)}
-              setFieldErrors={assignForm.setFieldErrors}
               className="flex min-h-0 flex-1 flex-col gap-4"
             >
               {fileUnderField}
@@ -362,7 +379,6 @@ export default function AssignTechniques({
             <TracedForm
               id="create_technique"
               onSubmit={createTechniqueForm.handleSubmit(handleCreateTechnique)}
-              setFieldErrors={createTechniqueForm.setFieldErrors}
               className="space-y-4"
             >
               {fileUnderField}

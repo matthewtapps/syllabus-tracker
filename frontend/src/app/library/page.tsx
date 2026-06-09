@@ -46,7 +46,7 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
 import { TracedForm } from '@/components/traced-form';
 import { EmptyState } from '@/components/empty-state';
-import { useFormWithValidation } from '@/components/hooks/useFormErrors';
+import { handleApiFormError, useFormWithValidation } from '@/components/hooks/useFormErrors';
 import { TagsEditor } from '@/app/student-techniques/components/tags-editor';
 import { AddVideoButton } from '@/components/videos/add-video-button';
 import { VideoList } from '@/components/videos/video-list';
@@ -494,8 +494,12 @@ function NameDescriptionEditor({
       toast.success('Technique updated');
       onDone();
     } catch (err) {
-      console.error(err);
-      toast.error('Failed to update technique');
+      const handled = await handleApiFormError(
+        err,
+        form.setError,
+        Object.keys(form.getValues()),
+      );
+      if (!handled) toast.error(err instanceof Error ? err.message : 'Failed to update technique');
     }
   }
 
@@ -504,7 +508,6 @@ function NameDescriptionEditor({
       <TracedForm
         id="edit_library_technique"
         onSubmit={form.handleSubmit(handleSubmit)}
-        setFieldErrors={form.setFieldErrors}
         className="space-y-3"
       >
         <FormField
