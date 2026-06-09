@@ -789,9 +789,10 @@ mod tests {
         // Direct inserts: a video row plus a watch aggregate timestamped now.
         let watched_at = chrono::Utc::now().naive_utc();
         let video_id: i64 = sqlx::query_scalar!(
-            r#"INSERT INTO videos (technique_id, title, kind, processing_status, uploaded_by_id)
-               VALUES (?, 'demo', 'upload', 'ready', ?)
+            r#"INSERT INTO videos (technique_id, parent_kind, parent_id, title, kind, processing_status, uploaded_by_id)
+               VALUES (?, 'technique', ?, 'demo', 'upload', 'ready', ?)
                RETURNING id as "id!: i64""#,
+            technique_id,
             technique_id,
             student_id
         )
@@ -860,9 +861,10 @@ mod tests {
         .expect("backdate student note");
 
         let video_id: i64 = sqlx::query_scalar!(
-            r#"INSERT INTO videos (technique_id, title, kind, processing_status, uploaded_by_id)
-               VALUES (?, 'demo', 'upload', 'ready', ?)
+            r#"INSERT INTO videos (technique_id, parent_kind, parent_id, title, kind, processing_status, uploaded_by_id)
+               VALUES (?, 'technique', ?, 'demo', 'upload', 'ready', ?)
                RETURNING id as "id!: i64""#,
+            technique_id,
             technique_id,
             student_id
         )

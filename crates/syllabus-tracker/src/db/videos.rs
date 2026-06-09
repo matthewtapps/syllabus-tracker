@@ -7,12 +7,17 @@ use tracing::{info, instrument};
 use crate::error::AppError;
 use crate::models::{DbVideo, ProcessingStatus, Video, VideoKind};
 
+/// Next position for a technique-anchored video. M7 / CX-018: filters on
+/// `(parent_kind='technique', parent_id)` so the same code path will work
+/// once the back-compat `technique_id` column is dropped at M16. The legacy
+/// column is still populated by INSERTs in this PR to keep older read paths
+/// alive through the migration window.
 #[instrument(skip(pool))]
 pub async fn next_video_position(pool: &Pool<Sqlite>, technique_id: i64) -> Result<i64, AppError> {
     let row = sqlx::query!(
         "SELECT COALESCE(MAX(position), -1) AS max_position
          FROM videos
-         WHERE technique_id = ? AND deleted_at IS NULL",
+         WHERE parent_kind = 'technique' AND parent_id = ? AND deleted_at IS NULL",
         technique_id
     )
     .fetch_one(pool)
@@ -32,11 +37,15 @@ pub async fn create_processing_video(
     let position = next_video_position(pool, technique_id).await?;
     let kind = VideoKind::Native.as_str();
     let status = ProcessingStatus::Processing.as_str();
+    // Both `technique_id` and `(parent_kind='technique', parent_id)` are
+    // populated until the M16 cleanup drops the legacy column.
     let res = sqlx::query!(
         "INSERT INTO videos (
-            technique_id, title, description, position, kind, processing_status,
+            technique_id, parent_kind, parent_id,
+            title, description, position, kind, processing_status,
             uploaded_by_id
-         ) VALUES (?, ?, ?, ?, ?, ?, ?)",
+         ) VALUES (?, 'technique', ?, ?, ?, ?, ?, ?, ?)",
+        technique_id,
         technique_id,
         title,
         description,
@@ -72,9 +81,11 @@ pub async fn create_external_video(
     let status = ProcessingStatus::Ready.as_str();
     let res = sqlx::query!(
         "INSERT INTO videos (
-            technique_id, title, description, position, kind, processing_status,
+            technique_id, parent_kind, parent_id,
+            title, description, position, kind, processing_status,
             external_url, external_host, external_video_id, uploaded_by_id
-         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+         ) VALUES (?, 'technique', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        input.technique_id,
         input.technique_id,
         input.title,
         input.description,
@@ -190,7 +201,8 @@ pub async fn list_videos_for_technique(
                 external_url, external_host, external_video_id, uploaded_by_id,
                 created_at, updated_at, hidden_at
          FROM videos
-         WHERE technique_id = ? AND deleted_at IS NULL
+         WHERE parent_kind = 'technique' AND parent_id = ?
+           AND deleted_at IS NULL
          ORDER BY position ASC, id ASC",
         technique_id
     )
@@ -263,7 +275,7 @@ pub async fn list_videos_for_technique_visible_to(
                         v.external_url, v.external_host, v.external_video_id, v.uploaded_by_id,
                         v.created_at, v.updated_at, v.hidden_at
                  FROM videos v
-                 WHERE v.technique_id = ?
+                 WHERE v.parent_kind = 'technique' AND v.parent_id = ?
                    AND v.deleted_at IS NULL
                    AND v.hidden_at IS NULL
                  ORDER BY v.position ASC, v.id ASC",
@@ -283,7 +295,7 @@ pub async fn list_videos_for_technique_visible_to(
                  FROM videos v
                  LEFT JOIN video_student_visibility vsv
                         ON vsv.video_id = v.id AND vsv.student_id = ?
-                 WHERE v.technique_id = ?
+                 WHERE v.parent_kind = 'technique' AND v.parent_id = ?
                    AND v.deleted_at IS NULL
                    AND COALESCE(vsv.visible, v.hidden_at IS NULL) = 1
                  ORDER BY v.position ASC, v.id ASC",
@@ -505,7 +517,8 @@ pub async fn reorder_videos(
         sqlx::query!(
             "UPDATE videos
              SET position = ?, updated_at = ?
-             WHERE id = ? AND technique_id = ? AND deleted_at IS NULL",
+             WHERE id = ? AND parent_kind = 'technique' AND parent_id = ?
+               AND deleted_at IS NULL",
             position,
             now,
             video_id,

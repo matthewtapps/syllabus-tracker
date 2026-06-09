@@ -43,7 +43,12 @@ pub async fn list_library_techniques(
             -- SQL identifier `collection_techniques` is the legacy table name (M4.5 / decision #19).
             COALESCE((SELECT COUNT(*) FROM collection_techniques ct WHERE ct.technique_id = t.id), 0) AS "syllabus_count!: i64",
             COALESCE((SELECT COUNT(DISTINCT st.student_id) FROM student_techniques st WHERE st.technique_id = t.id), 0) AS "student_count!: i64",
-            COALESCE((SELECT COUNT(*) FROM videos v WHERE v.technique_id = t.id AND v.deleted_at IS NULL), 0) AS "video_count!: i64",
+            -- M7 / CX-018: filter by polymorphic parent. Back-compat
+            -- technique_id is still populated for technique-anchored rows
+            -- so this could match either column; pick the new shape so
+            -- the M16 cleanup that drops technique_id doesn't need a
+            -- second pass through this file.
+            COALESCE((SELECT COUNT(*) FROM videos v WHERE v.parent_kind = 'technique' AND v.parent_id = t.id AND v.deleted_at IS NULL), 0) AS "video_count!: i64",
             (SELECT MAX(st.updated_at) FROM student_techniques st WHERE st.technique_id = t.id) AS "last_activity_at?: NaiveDateTime"
         FROM techniques t
         ORDER BY t.name
@@ -271,7 +276,8 @@ pub async fn library_technique_stats(
         r#"SELECT COALESCE(SUM(a.play_count), 0) AS "plays!: i64"
            FROM video_watch_aggregates a
            JOIN videos v ON v.id = a.video_id
-           WHERE v.technique_id = ? AND v.deleted_at IS NULL"#,
+           WHERE v.parent_kind = 'technique' AND v.parent_id = ?
+             AND v.deleted_at IS NULL"#,
         technique_id
     )
     .fetch_one(pool)

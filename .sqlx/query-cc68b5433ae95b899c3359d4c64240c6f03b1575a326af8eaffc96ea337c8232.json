@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT COALESCE(MAX(position), -1) AS max_position\n         FROM videos\n         WHERE technique_id = ? AND deleted_at IS NULL",
+  "query": "SELECT COALESCE(MAX(position), -1) AS max_position\n         FROM videos\n         WHERE parent_kind = 'technique' AND parent_id = ? AND deleted_at IS NULL",
   "describe": {
     "columns": [
       {
@@ -16,5 +16,5 @@
       false
     ]
   },
-  "hash": "0b638c4786a58355960c1170db3509715ae3adaff0b1e87150efcc36fa2a86c3"
+  "hash": "cc68b5433ae95b899c3359d4c64240c6f03b1575a326af8eaffc96ea337c8232"
 }

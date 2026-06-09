@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO videos (\n            technique_id, parent_kind, parent_id,\n            title, description, position, kind, processing_status,\n            external_url, external_host, external_video_id, uploaded_by_id\n         ) VALUES (?, 'technique', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 11
+    },
+    "nullable": []
+  },
+  "hash": "0bc3a4e9d3d97907e9b35a8a6fba10c766e65184f809daa888102c578d952574"
+}
