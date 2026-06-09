@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO pinned_techniques (student_id, technique_id, pinned_at)\n         VALUES (?, ?, ?)\n         ON CONFLICT(student_id, technique_id) DO UPDATE SET\n             pinned_at = excluded.pinned_at,\n             unpinned_at = NULL\n         RETURNING id AS \"id!: i64\"",
+  "describe": {
+    "columns": [
+      {
+        "name": "id!: i64",
+        "ordinal": 0,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "0a5265b4ed25edc732e48069b105dc70d20760e4d5f51d63554e795746843fa9"
+}

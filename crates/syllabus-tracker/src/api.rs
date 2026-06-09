@@ -979,6 +979,79 @@ pub async fn api_get_student_feed(
     Ok(Json(crate::db::feed::StudentFeedResponse { items }))
 }
 
+// ---- Pinned techniques (M6 / SD-003) ----
+
+#[derive(Serialize)]
+pub struct PinnedTechniqueResponse {
+    pub id: i64,
+    pub student_id: i64,
+    pub technique_id: i64,
+    pub technique_name: String,
+    pub technique_description: String,
+    pub pinned_at: String,
+}
+
+fn pinned_to_response(p: crate::db::PinnedTechnique) -> PinnedTechniqueResponse {
+    PinnedTechniqueResponse {
+        id: p.id,
+        student_id: p.student_id,
+        technique_id: p.technique_id,
+        technique_name: p.technique_name,
+        technique_description: p.technique_description,
+        pinned_at: chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(
+            p.pinned_at,
+            chrono::Utc,
+        )
+        .to_rfc3339(),
+    }
+}
+
+/// Auth helper: a non-coach actor can only manage their own pins.
+fn require_pin_scope(user: &User, student_id: i64) -> Result<(), ApiError> {
+    if user.id != student_id && !user.has_permission(Permission::ViewAllStudents) {
+        return Err(Status::Forbidden.into());
+    }
+    Ok(())
+}
+
+#[get("/student/<student_id>/pins")]
+pub async fn api_list_pinned_techniques(
+    student_id: i64,
+    user: User,
+    db: &State<Pool<Sqlite>>,
+) -> ApiResult<Json<Vec<PinnedTechniqueResponse>>> {
+    user.require_permission(Permission::PinTechniques)?;
+    require_pin_scope(&user, student_id)?;
+    let pins = crate::db::list_pinned_techniques(db, student_id).await?;
+    Ok(Json(pins.into_iter().map(pinned_to_response).collect()))
+}
+
+#[post("/student/<student_id>/pin/<technique_id>")]
+pub async fn api_pin_technique(
+    student_id: i64,
+    technique_id: i64,
+    user: User,
+    db: &State<Pool<Sqlite>>,
+) -> ApiResult<Status> {
+    user.require_permission(Permission::PinTechniques)?;
+    require_pin_scope(&user, student_id)?;
+    crate::db::pin_technique(db, student_id, technique_id).await?;
+    Ok(Status::Ok)
+}
+
+#[delete("/student/<student_id>/pin/<technique_id>")]
+pub async fn api_unpin_technique(
+    student_id: i64,
+    technique_id: i64,
+    user: User,
+    db: &State<Pool<Sqlite>>,
+) -> ApiResult<Status> {
+    user.require_permission(Permission::PinTechniques)?;
+    require_pin_scope(&user, student_id)?;
+    crate::db::unpin_technique(db, student_id, technique_id).await?;
+    Ok(Status::Ok)
+}
+
 #[derive(Deserialize, Clone)]
 pub struct FootageSubmitterToggle {
     pub enabled: bool,

@@ -26,6 +26,8 @@ import {
   setStudentRank,
   setVideoGlobalHidden,
   setVideoStudentVisibility,
+  pinTechnique,
+  unpinTechnique,
   updateAttempt,
   updateSyllabus,
   updateLibraryTechnique,
@@ -810,3 +812,30 @@ export function useSetVideoStudentVisibility(techniqueId: number) {
 }
 
 // Predicate moved to qk.matches.anyStudentTechniqueScope in query-keys.ts.
+
+// ============================================================
+// Pinned techniques (M6 / SD-003)
+// ============================================================
+
+export function usePinTechnique() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (vars: { studentId: number; techniqueId: number }) =>
+      unwrap(await pinTechnique(vars.studentId, vars.techniqueId)),
+    onSuccess: (_res, { studentId }) =>
+      Promise.all([
+        qc.invalidateQueries({ queryKey: qk.studentPins(studentId) }),
+        qc.invalidateQueries({ queryKey: qk.studentFeed(studentId) }),
+      ]),
+  });
+}
+
+export function useUnpinTechnique() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (vars: { studentId: number; techniqueId: number }) =>
+      unwrap(await unpinTechnique(vars.studentId, vars.techniqueId)),
+    onSuccess: (_res, { studentId }) =>
+      qc.invalidateQueries({ queryKey: qk.studentPins(studentId) }),
+  });
+}

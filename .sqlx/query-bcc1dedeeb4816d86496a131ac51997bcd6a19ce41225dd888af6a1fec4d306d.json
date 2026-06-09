@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE pinned_techniques\n         SET unpinned_at = ?\n         WHERE student_id = ? AND technique_id = ? AND unpinned_at IS NULL",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": []
+  },
+  "hash": "bcc1dedeeb4816d86496a131ac51997bcd6a19ce41225dd888af6a1fec4d306d"
+}

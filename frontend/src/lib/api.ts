@@ -430,6 +430,45 @@ export interface StudentTechniques {
   can_manage_footage_submitter: boolean;
 }
 
+export interface PinnedTechnique {
+  id: number;
+  student_id: number;
+  technique_id: number;
+  technique_name: string;
+  technique_description: string;
+  pinned_at: string;
+}
+
+export async function getPinnedTechniques(
+  studentId: number,
+): Promise<PinnedTechnique[]> {
+  const response = await fetch(`/api/student/${studentId}/pins`, {
+    credentials: "include",
+  });
+  if (!response.ok) throw new Error("Failed to fetch pinned techniques");
+  return await response.json();
+}
+
+export async function pinTechnique(
+  studentId: number,
+  techniqueId: number,
+): Promise<Response> {
+  return await fetch(`/api/student/${studentId}/pin/${techniqueId}`, {
+    method: "POST",
+    credentials: "include",
+  });
+}
+
+export async function unpinTechnique(
+  studentId: number,
+  techniqueId: number,
+): Promise<Response> {
+  return await fetch(`/api/student/${studentId}/pin/${techniqueId}`, {
+    method: "DELETE",
+    credentials: "include",
+  });
+}
+
 export interface SingleStudentTechnique {
   technique: Technique;
   student: User;

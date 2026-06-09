@@ -16,6 +16,7 @@ import {
   getLibraryTechniques,
   getLibraryTechniqueStats,
   getRecentAttemptsForStudent,
+  getPinnedTechniques,
   getStudentFeed,
   getStudentTechniqueDetail,
   getStudentTechniques,
@@ -217,6 +218,16 @@ export function useStudentFeed(studentId: number | undefined) {
         : skipToken,
     staleTime: 0,
     refetchOnWindowFocus: true,
+  });
+}
+
+export function useStudentPins(studentId: number | undefined) {
+  return useQuery({
+    queryKey: qk.studentPins(studentId ?? 0),
+    queryFn:
+      typeof studentId === "number" && Number.isFinite(studentId)
+        ? () => getPinnedTechniques(studentId)
+        : skipToken,
   });
 }
 

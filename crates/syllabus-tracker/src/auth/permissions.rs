@@ -42,6 +42,11 @@ pub enum Permission {
     /// Granted to every role. Read-only for students; coach + admin
     /// also get `EditAllTechniques` and friends.
     BrowseLibrary,
+
+    /// Pin/unpin techniques to a student's "working on" list (M6 / SD-003).
+    /// Granted to every role. The route handler enforces the per-student
+    /// owner check on top: students can only pin/unpin for themselves.
+    PinTechniques,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -71,6 +76,8 @@ static STUDENT_PERMISSIONS: Lazy<HashSet<Permission>> = Lazy::new(|| {
     permissions.insert(Permission::EditOwnNotes);
 
     permissions.insert(Permission::BrowseLibrary);
+
+    permissions.insert(Permission::PinTechniques);
 
     permissions
 });
@@ -176,6 +183,7 @@ impl Permission {
             Permission::SubmitFootage => "SubmitFootage",
             Permission::ManageFootageSubmitter => "ManageFootageSubmitter",
             Permission::BrowseLibrary => "BrowseLibrary",
+            Permission::PinTechniques => "PinTechniques",
         }
     }
 }

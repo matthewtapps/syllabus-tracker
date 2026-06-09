@@ -6,6 +6,8 @@ import {
   ChevronUpIcon,
   FolderOpen,
   Pencil,
+  Pin,
+  PinOff,
   PlayIcon,
   Search,
   Users,
@@ -24,12 +26,15 @@ import {
 } from '@/lib/api';
 import {
   useAllTags,
+  useStudentPins,
   useSyllabuses,
   useLibraryTechniqueStats,
   useLibraryTechniques,
 } from '@/lib/queries';
 import {
+  usePinTechnique,
   useRemoveTagFromTechnique,
+  useUnpinTechnique,
   useUpdateLibraryTechnique,
 } from '@/lib/mutations';
 import { Badge } from '@/components/ui/badge';
@@ -347,6 +352,7 @@ export default function LibraryPage({ user }: LibraryPageProps) {
                       scrollToVideoId={scrollToVideoId}
                       onVideoScrolled={() => setScrollToVideoId(null)}
                       canEdit={canEdit}
+                      user={user}
                     />
                   )}
                 </li>
@@ -379,6 +385,7 @@ interface ExpandedPanelProps {
   scrollToVideoId?: number | null;
   onVideoScrolled?: () => void;
   canEdit: boolean;
+  user: User;
 }
 
 function ExpandedPanel({
@@ -386,7 +393,9 @@ function ExpandedPanel({
   scrollToVideoId,
   onVideoScrolled,
   canEdit,
+  user,
 }: ExpandedPanelProps) {
+  const isStudentLike = user.role === 'student' || user.role === 'footage_submitter_student';
   const [editing, setEditing] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
   // Stats are a coach-only aggregate (per-student counts and student
@@ -410,6 +419,8 @@ function ExpandedPanel({
       )}
 
       <TagsRow technique={technique} canEdit={canEdit} />
+
+      {isStudentLike && <PinRow studentId={user.id} techniqueId={technique.id} />}
 
       {canEdit && <SyllabusesRow stats={stats} />}
 
@@ -652,6 +663,59 @@ function TagsRow({
           />
         )}
       </div>
+    </section>
+  );
+}
+
+function PinRow({ studentId, techniqueId }: { studentId: number; techniqueId: number }) {
+  const pinsQuery = useStudentPins(studentId);
+  const isPinned = (pinsQuery.data ?? []).some((p) => p.technique_id === techniqueId);
+  const pinMutation = usePinTechnique();
+  const unpinMutation = useUnpinTechnique();
+  const busy = pinMutation.isPending || unpinMutation.isPending;
+  return (
+    <section className="flex items-center gap-3">
+      <Button
+        type="button"
+        variant={isPinned ? 'secondary' : 'outline'}
+        size="sm"
+        className="gap-2"
+        disabled={busy || pinsQuery.isLoading}
+        onClick={() => {
+          if (isPinned) {
+            unpinMutation.mutate(
+              { studentId, techniqueId },
+              {
+                onSuccess: () => toast.success('Unpinned'),
+                onError: () => toast.error('Failed to unpin'),
+              },
+            );
+          } else {
+            pinMutation.mutate(
+              { studentId, techniqueId },
+              {
+                onSuccess: () => toast.success('Pinned to your working list'),
+                onError: () => toast.error('Failed to pin'),
+              },
+            );
+          }
+        }}
+      >
+        {isPinned ? (
+          <>
+            <PinOff className="h-4 w-4" aria-hidden /> Unpin
+          </>
+        ) : (
+          <>
+            <Pin className="h-4 w-4" aria-hidden /> Pin to working list
+          </>
+        )}
+      </Button>
+      <p className="text-xs text-muted-foreground">
+        {isPinned
+          ? "On your Pinned tab."
+          : 'Adds this technique to your Pinned tab. You can drill in and take notes without it being part of a syllabus.'}
+      </p>
     </section>
   );
 }

@@ -7,6 +7,7 @@
 mod attempts;
 pub mod feed;
 mod invites;
+mod pins;
 mod reporting;
 mod sessions;
 mod student_techniques;
@@ -20,6 +21,7 @@ mod watch;
 pub use attempts::*;
 pub use feed::*;
 pub use invites::*;
+pub use pins::*;
 pub use reporting::*;
 pub use sessions::*;
 pub use student_techniques::*;

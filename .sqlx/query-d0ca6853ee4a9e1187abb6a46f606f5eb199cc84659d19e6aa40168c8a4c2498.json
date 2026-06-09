@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT 1 AS \"exists_flag!: i64\"\n           FROM pinned_techniques\n           WHERE student_id = ? AND technique_id = ? AND unpinned_at IS NULL\n           LIMIT 1",
+  "describe": {
+    "columns": [
+      {
+        "name": "exists_flag!: i64",
+        "ordinal": 0,
+        "type_info": "Null"
+      }
+    ],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "d0ca6853ee4a9e1187abb6a46f606f5eb199cc84659d19e6aa40168c8a4c2498"
+}
