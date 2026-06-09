@@ -1,7 +1,12 @@
 import type { ReactNode } from "react";
 import { Download, Plus, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { useInstall, type IosBrowser, type InstallContext } from "@/lib/install";
+import {
+  useInstall,
+  type AndroidInApp,
+  type IosBrowser,
+  type InstallContext,
+} from "@/lib/install";
 
 export function InstallPrompt() {
   const { context, visible, dismiss } = useInstall();
@@ -53,6 +58,8 @@ function Body({ context }: { context: InstallContext }) {
   if (context.kind === "native") return <NativeBody onInstall={context.install} />;
   if (context.kind === "ios-safari") return <IosSafariBody />;
   if (context.kind === "ios-other") return <IosOtherBody browser={context.browser} />;
+  if (context.kind === "android-firefox") return <AndroidFirefoxBody />;
+  if (context.kind === "android-in-app") return <AndroidInAppBody browser={context.browser} />;
   return null;
 }
 
@@ -170,6 +177,66 @@ function iosOtherCopy(browser: IosBrowser): {
       <>Then tap Install app from this menu again</>,
     ],
   };
+}
+
+function AndroidFirefoxBody() {
+  return (
+    <>
+      <h3 className="text-sm font-semibold">Install on your phone</h3>
+      <p className="mt-0.5 text-xs text-muted-foreground">
+        Add Silly Bus to your home screen for one-tap access.
+      </p>
+      <ol className="mt-3 space-y-2 text-xs">
+        <Step n={1}>
+          Tap the <strong className="text-foreground">⋮</strong> menu in Firefox's bar
+        </Step>
+        <Step n={2}>
+          Tap <strong className="text-foreground">Install</strong> (or Add to Home Screen on older Firefox)
+        </Step>
+        <Step n={3}>
+          Confirm to add the icon to your home screen
+        </Step>
+      </ol>
+    </>
+  );
+}
+
+function AndroidInAppBody({ browser }: { browser: AndroidInApp }) {
+  const label = labelForAndroidInApp(browser);
+  return (
+    <>
+      <h3 className="text-sm font-semibold">Open in Chrome to install</h3>
+      <p className="mt-0.5 text-xs text-muted-foreground">
+        You're in {label}'s in-app browser. Web apps can only install from Chrome (or another full browser).
+      </p>
+      <ol className="mt-3 space-y-2 text-xs">
+        <Step n={1}>
+          Tap the <strong className="text-foreground">⋮</strong> menu (usually top-right)
+        </Step>
+        <Step n={2}>
+          Choose <strong className="text-foreground">Open in Chrome</strong> or <strong className="text-foreground">Open in browser</strong>
+        </Step>
+        <Step n={3}>Once in Chrome, tap Install app from this menu again</Step>
+      </ol>
+    </>
+  );
+}
+
+function labelForAndroidInApp(browser: AndroidInApp): string {
+  switch (browser) {
+    case "facebook": return "Facebook";
+    case "instagram": return "Instagram";
+    case "tiktok": return "TikTok";
+    case "twitter": return "X / Twitter";
+    case "linkedin": return "LinkedIn";
+    case "pinterest": return "Pinterest";
+    case "snapchat": return "Snapchat";
+    case "line": return "LINE";
+    case "wechat": return "WeChat";
+    case "telegram": return "Telegram";
+    case "google-app": return "Google";
+    default: return "this app";
+  }
 }
 
 function labelForBrowser(browser: IosBrowser): string {

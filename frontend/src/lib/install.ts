@@ -28,10 +28,29 @@ export type IosBrowser =
   | "google-app"
   | "other";
 
+// Android in-app webview brand. Distinct from IosBrowser because the
+// remediation copy differs (open in Chrome vs Safari) and Android also has
+// browsers we *do* drive natively (Chrome, Samsung, Edge, etc.).
+export type AndroidInApp =
+  | "facebook"
+  | "instagram"
+  | "tiktok"
+  | "twitter"
+  | "linkedin"
+  | "pinterest"
+  | "snapchat"
+  | "line"
+  | "wechat"
+  | "telegram"
+  | "google-app"
+  | "other-webview";
+
 export type InstallContext =
   | { kind: "native"; install: () => Promise<void> }
   | { kind: "ios-safari" }
   | { kind: "ios-other"; browser: IosBrowser }
+  | { kind: "android-firefox" }
+  | { kind: "android-in-app"; browser: AndroidInApp }
   | { kind: "installed" }
   | { kind: "none" };
 
@@ -47,6 +66,39 @@ function isIos(): boolean {
   if (/iPad|iPhone|iPod/.test(ua)) return true;
   // iPadOS 13+ reports as Mac; distinguish via touch support.
   return ua.includes("Mac") && "ontouchend" in document;
+}
+
+function isAndroid(): boolean {
+  if (typeof window === "undefined") return false;
+  return /Android/.test(window.navigator.userAgent);
+}
+
+// Returns a brand if the UA looks like a known in-app webview, otherwise
+// null. The Chromium-derived install path covers Chrome/Edge/Samsung/etc.
+// automatically via `beforeinstallprompt`; we only need this fallback for
+// browsers that can't install (in-app webviews and Firefox).
+function detectAndroidInApp(ua: string): AndroidInApp | null {
+  if (/FBAN|FBAV|FB_IAB/.test(ua)) return "facebook";
+  if (/Instagram/.test(ua)) return "instagram";
+  if (/TikTok|musical_ly|BytedanceWebview|trill_/.test(ua)) return "tiktok";
+  if (/Twitter/.test(ua)) return "twitter";
+  if (/LinkedInApp/.test(ua)) return "linkedin";
+  if (/Pinterest/.test(ua)) return "pinterest";
+  if (/Snapchat/.test(ua)) return "snapchat";
+  if (/Line\//.test(ua)) return "line";
+  if (/MicroMessenger/.test(ua)) return "wechat";
+  if (/TelegramBot|Telegram\//.test(ua)) return "telegram";
+  if (/GSA\//.test(ua)) return "google-app";
+  // Generic Android WebView signature: "wv" in the Chrome version token.
+  // Catches lesser-known apps embedding Chrome's webview without `beforeinstallprompt`.
+  if (/Chrome\/[\d.]+ Mobile.*wv/.test(ua) || / wv\)/.test(ua)) return "other-webview";
+  return null;
+}
+
+function isAndroidFirefox(ua: string): boolean {
+  // Firefox Android: contains "Firefox/" and "Android". On iOS Firefox uses
+  // "FxiOS" instead, so this won't false-positive.
+  return /Android/.test(ua) && /Firefox\//.test(ua);
 }
 
 // Order matters: in-app browser tokens and explicit browser tokens (CriOS, FxiOS)
@@ -132,10 +184,24 @@ async function runNativeInstall(): Promise<void> {
 function computeContext(): InstallContext {
   if (installedFlag) return { kind: "installed" };
   if (deferredEvent) return { kind: "native", install: runNativeInstall };
-  if (typeof window === "undefined" || !isIos()) return { kind: "none" };
-  const browser = detectIosBrowser(window.navigator.userAgent);
-  if (browser === "safari") return { kind: "ios-safari" };
-  return { kind: "ios-other", browser };
+  if (typeof window === "undefined") return { kind: "none" };
+  const ua = window.navigator.userAgent;
+  if (isIos()) {
+    const browser = detectIosBrowser(ua);
+    if (browser === "safari") return { kind: "ios-safari" };
+    return { kind: "ios-other", browser };
+  }
+  if (isAndroid()) {
+    const inApp = detectAndroidInApp(ua);
+    if (inApp) return { kind: "android-in-app", browser: inApp };
+    if (isAndroidFirefox(ua)) return { kind: "android-firefox" };
+    // Chromium-derived Android browsers (Chrome / Edge / Samsung / Brave /
+    // Opera / Vivaldi) fire `beforeinstallprompt`; if we got here without
+    // that event, they're either still loading or the PWA criteria aren't
+    // met. Either way, nothing useful to surface.
+    return { kind: "none" };
+  }
+  return { kind: "none" };
 }
 
 function computeVisible(context: InstallContext): boolean {
