@@ -219,6 +219,25 @@ jobs:
           cache-from: type=gha,scope=backend
           cache-to: type=gha,scope=backend,mode=max
 
+  # PR-only: verify the backend Dockerfile builds, but do NOT push to
+  # GHCR and do NOT need any production secrets. Shares the GHA build
+  # cache with `build_backend` so the main deploy reuses layers.
+  build_backend_check:
+    needs: [lint, test, sqlx-check]
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
+      - uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7.1.0
+        with:
+          context: .
+          file: ./Dockerfile
+          push: false
+          load: false
+          cache-from: type=gha,scope=backend
+          cache-to: type=gha,scope=backend,mode=max
+
   build_frontend:
     needs: [read_platform, lint, test, sqlx-check]
     if: github.event_name != 'pull_request' && needs.read_platform.outputs.host_age_ready == 'true'
@@ -271,6 +290,30 @@ jobs:
             VITE_API_URL=/api
             VITE_ENVIRONMENT=production
             VITE_HONEYCOMB_API_KEY=${{ steps.hc.outputs.vite_key }}
+          cache-from: type=gha,scope=frontend
+          cache-to: type=gha,scope=frontend,mode=max
+
+  # PR-only: verify the frontend Dockerfile builds. Does NOT push and
+  # does NOT need the production environment (so no PLATFORM_STATE_R2_*
+  # secrets). VITE_HONEYCOMB_API_KEY is left blank; the resulting
+  # bundle is a build-verification artifact, not a deployable image.
+  build_frontend_check:
+    needs: [lint, test, sqlx-check]
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
+      - uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7.1.0
+        with:
+          context: ./frontend
+          file: ./frontend/Dockerfile
+          push: false
+          load: false
+          build-args: |
+            VITE_API_URL=/api
+            VITE_ENVIRONMENT=pr-check
+            VITE_HONEYCOMB_API_KEY=
           cache-from: type=gha,scope=frontend
           cache-to: type=gha,scope=frontend,mode=max
 
