@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   BookOpen,
   ChevronDownIcon,
@@ -54,6 +54,7 @@ import { cn } from '@/lib/utils';
 
 export default function LibraryPage() {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const techniquesQuery = useLibraryTechniques();
   const techniques = useMemo(
     () => techniquesQuery.data ?? [],
@@ -62,8 +63,41 @@ export default function LibraryPage() {
   const loading = techniquesQuery.isLoading;
   const error = techniquesQuery.error ? 'Failed to load techniques.' : null;
   const [expandedId, setExpandedId] = useState<number | null>(null);
+  const [scrollToVideoId, setScrollToVideoId] = useState<number | null>(null);
   const [search, setSearch] = useState('');
   const [activeTags, setActiveTags] = useState<string[]>([]);
+
+  // Honor `?technique=<id>&video=<id>` arriving from the dashboard "recently
+  // watched" link: expand the technique, scroll its row into view, then hand
+  // the video id to ExpandedPanel so VideoList can scroll to that row once it
+  // loads. Runs once per arrival; the consumed params are stripped so
+  // back/forward doesn't re-trigger. We wait for techniques to load so the
+  // row exists before scrolling.
+  const didConsumeFocusRef = useRef(false);
+  useEffect(() => {
+    if (didConsumeFocusRef.current) return;
+    if (techniques.length === 0) return;
+    const rawTech = searchParams.get('technique');
+    if (!rawTech) return;
+    const techId = parseInt(rawTech, 10);
+    if (!Number.isFinite(techId)) return;
+    if (!techniques.some((t) => t.id === techId)) return;
+    didConsumeFocusRef.current = true;
+    setExpandedId(techId);
+    const rawVid = searchParams.get('video');
+    const vidId = rawVid ? parseInt(rawVid, 10) : NaN;
+    if (Number.isFinite(vidId)) setScrollToVideoId(vidId);
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.delete('technique');
+      next.delete('video');
+      return next;
+    }, { replace: true });
+    requestAnimationFrame(() => {
+      const el = document.getElementById(`library-technique-row-${techId}`);
+      el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  }, [searchParams, setSearchParams, techniques]);
   // Multi-select with OR semantics, matching the bubble UX the user
   // described. `null` is the sentinel for "not in any collection".
   const [activeCollections, setActiveCollections] = useState<(number | null)[]>(
@@ -260,7 +294,7 @@ export default function LibraryPage() {
             {filtered.map((t) => {
               const expanded = expandedId === t.id;
               return (
-                <li key={t.id}>
+                <li key={t.id} id={`library-technique-row-${t.id}`}>
                   <button
                     type="button"
                     onClick={() =>
@@ -300,7 +334,13 @@ export default function LibraryPage() {
                       />
                     )}
                   </button>
-                  {expanded && <ExpandedPanel technique={t} />}
+                  {expanded && (
+                    <ExpandedPanel
+                      technique={t}
+                      scrollToVideoId={scrollToVideoId}
+                      onVideoScrolled={() => setScrollToVideoId(null)}
+                    />
+                  )}
                 </li>
               );
             })}
@@ -328,9 +368,15 @@ function CollapsedMeta({ row }: { row: LibraryTechniqueRow }) {
 
 interface ExpandedPanelProps {
   technique: LibraryTechniqueRow;
+  scrollToVideoId?: number | null;
+  onVideoScrolled?: () => void;
 }
 
-function ExpandedPanel({ technique }: ExpandedPanelProps) {
+function ExpandedPanel({
+  technique,
+  scrollToVideoId,
+  onVideoScrolled,
+}: ExpandedPanelProps) {
   const [editing, setEditing] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
   const statsQuery = useLibraryTechniqueStats(technique.id);
@@ -375,6 +421,8 @@ function ExpandedPanel({ technique }: ExpandedPanelProps) {
           techniqueId={technique.id}
           canManage
           reloadKey={reloadKey}
+          scrollToVideoId={scrollToVideoId}
+          onVideoScrolled={onVideoScrolled}
         />
       </section>
     </div>

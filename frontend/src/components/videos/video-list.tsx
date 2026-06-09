@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -39,6 +39,11 @@ interface VideoListProps {
   /** Name shown in the per-student visibility controls. Only used when
    * `forStudent` is also set. */
   studentDisplayName?: string;
+  /** When set, scroll the matching video row into view once the list loads.
+   * Used by the dashboard "recently watched" link to land on the specific
+   * video the user tapped. */
+  scrollToVideoId?: number | null;
+  onVideoScrolled?: () => void;
 }
 
 export function VideoList({
@@ -47,6 +52,8 @@ export function VideoList({
   reloadKey = 0,
   forStudent,
   studentDisplayName,
+  scrollToVideoId,
+  onVideoScrolled,
 }: VideoListProps) {
   const qc = useQueryClient();
   const videosQuery = useTechniqueVideos(techniqueId, forStudent);
@@ -62,6 +69,23 @@ export function VideoList({
       qc.invalidateQueries({ queryKey: qk.techniqueVideosAll(techniqueId) });
     }
   }, [reloadKey, techniqueId, qc]);
+
+  // When arriving with a target video id (e.g. from the dashboard's
+  // "recently watched" link), scroll its row into view once it has rendered.
+  // Fires once per target, then notifies the parent to clear it.
+  const didScrollToVideoRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (scrollToVideoId == null) return;
+    if (didScrollToVideoRef.current === scrollToVideoId) return;
+    if (!serverVideos) return;
+    if (!serverVideos.some((v) => v.id === scrollToVideoId)) return;
+    didScrollToVideoRef.current = scrollToVideoId;
+    requestAnimationFrame(() => {
+      const el = document.getElementById(`video-row-${scrollToVideoId}`);
+      el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      onVideoScrolled?.();
+    });
+  }, [scrollToVideoId, serverVideos, onVideoScrolled]);
 
   const [playing, setPlaying] = useState<Video | null>(null);
   // Optimistic local order during DnD; falls back to server data otherwise.

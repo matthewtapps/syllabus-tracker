@@ -81,10 +81,10 @@ export default function Dashboard({ user }: DashboardProps) {
   if (role === 'student') {
     return <StudentDashboard user={user} />;
   }
-  return <CoachDashboard />;
+  return <CoachDashboard user={user} />;
 }
 
-function CoachDashboard() {
+function CoachDashboard({ user }: { user: User }) {
   const qc = useQueryClient();
   const studentsQuery = useStudents('recent_update', false);
   const libraryStatsQuery = useLibraryStats();
@@ -263,12 +263,17 @@ function CoachDashboard() {
     );
   }
 
+  const greetingName = user.display_name || user.username;
+
   return (
     <div className="container mx-auto px-4 py-6 sm:px-6 md:py-8">
 
-      <p className="mb-1 text-xs uppercase tracking-wide text-muted-foreground">
+      <p className="text-xs uppercase tracking-wide text-muted-foreground">
         {DASHBOARD_DATE_FORMAT.format(new Date())}
       </p>
+      <h1 className="mb-4 text-2xl font-semibold tracking-tight">
+        Hi, {greetingName}
+      </h1>
 
       <DashboardTotals
         className="mb-4"
@@ -461,11 +466,16 @@ function StudentDashboard({ user }: { user: User }) {
       .slice(0, 5);
   }, [techniques]);
 
+  const greetingName = user.display_name || user.username;
+
   return (
     <div className="container mx-auto px-4 py-6 sm:px-6 md:py-8">
-      <p className="mb-4 text-xs uppercase tracking-wide text-muted-foreground">
+      <p className="text-xs uppercase tracking-wide text-muted-foreground">
         {DASHBOARD_DATE_FORMAT.format(new Date())}
       </p>
+      <h1 className="mb-4 text-2xl font-semibold tracking-tight">
+        Hi, {greetingName}
+      </h1>
 
       {isGraduate && (
         <div className="mb-6 flex items-start gap-3 rounded-lg border border-status-green/30 bg-status-green-bg px-4 py-3 text-sm">

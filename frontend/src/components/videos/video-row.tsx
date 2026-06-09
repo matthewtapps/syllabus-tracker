@@ -111,6 +111,7 @@ export function VideoRow({
 
   return (
     <li
+      id={`video-row-${video.id}`}
       className={cn(
         "relative bg-card",
         isFailed && "bg-destructive/5",
