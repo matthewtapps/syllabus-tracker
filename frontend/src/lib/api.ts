@@ -53,13 +53,23 @@ export async function logout(): Promise<void | null> {
   }
 }
 
-export type Role = "student" | "coach" | "admin";
+export type Role =
+  | "student"
+  | "footage_submitter_student"
+  | "coach"
+  | "admin";
+
+const VALID_ROLES: ReadonlySet<Role> = new Set<Role>([
+  "student",
+  "footage_submitter_student",
+  "coach",
+  "admin",
+]);
 
 function normaliseRole(raw: unknown): Role {
   if (typeof raw !== "string") return "student";
-  const lower = raw.toLowerCase();
-  if (lower === "coach" || lower === "admin" || lower === "student") return lower;
-  return "student";
+  const lower = raw.toLowerCase() as Role;
+  return VALID_ROLES.has(lower) ? lower : "student";
 }
 
 export function isCoachOrAdmin(user: User | null): user is User & {
@@ -72,6 +82,54 @@ export function isAdmin(user: User | null): user is User & { role: "admin" } {
   return !!user && user.role === "admin";
 }
 
+// Treat plain Student and FootageSubmitterStudent as the same kind of
+// person for routing and roster purposes. Mirrors Role::is_student() in
+// the backend; the only difference between the two is whether the user
+// holds the SubmitFootage permission.
+export function isStudent(user: User | null): user is User & {
+  role: "student" | "footage_submitter_student";
+} {
+  return (
+    !!user && (user.role === "student" || user.role === "footage_submitter_student")
+  );
+}
+
+// Permission-level UI gating. Backed by the permissions: string[] field
+// the backend attaches to /api/me, which is derived from the user's role
+// permission set. Use this for any "show this affordance if X" check
+// instead of role-string OR-chains, so future permission additions or
+// re-assignments to roles don't need a frontend audit.
+export function hasPermission(user: User | null, name: Permission): boolean {
+  return !!user && Array.isArray(user.permissions) && user.permissions.includes(name);
+}
+
+// Stable string names mirroring Permission::as_str() in the backend.
+// Listed here rather than imported so the frontend stays decoupled from
+// the Rust enum's order / spelling -- the backend's wire format is the
+// contract.
+export type Permission =
+  | "ViewOwnProfile"
+  | "EditOwnProfile"
+  | "ViewOwnTechniques"
+  | "EditOwnNotes"
+  | "ViewAllStudents"
+  | "EditAllTechniques"
+  | "AssignTechniques"
+  | "CreateTechniques"
+  | "RegisterUsers"
+  | "ManageTags"
+  | "EditUserRoles"
+  | "DeleteUsers"
+  | "EditUserCredentials"
+  | "UploadVideos"
+  | "DeleteVideos"
+  | "ManageVideoVisibility"
+  | "ViewWatchStats"
+  | "ViewStorageStats"
+  | "EditStudentRank"
+  | "SubmitFootage"
+  | "ManageFootageSubmitter";
+
 export type Belt = "white" | "blue" | "purple" | "brown" | "black" | "coral";
 
 export interface User {
@@ -79,6 +137,9 @@ export interface User {
   username: string;
   display_name: string;
   role: Role;
+  /// Stable string names of the permissions the user's role holds.
+  /// Used by `hasPermission(user, "X")` for UI gating.
+  permissions: Permission[];
   last_update?: string;
   archived: boolean;
   graduated_at?: string | null;

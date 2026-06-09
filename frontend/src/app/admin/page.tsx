@@ -86,7 +86,7 @@ import { cn } from '@/lib/utils';
 const editSchema = z.object({
   username: z.string().min(1, 'Username is required'),
   display_name: z.string(),
-  role: z.enum(['student', 'coach', 'admin']),
+  role: z.enum(['student', 'footage_submitter_student', 'coach', 'admin']),
 });
 
 const passwordSchema = z
@@ -122,7 +122,13 @@ function isStatusTab(value: string | null): value is StatusTab {
   return value !== null && STATUS_TAB_VALUES.has(value as StatusTab);
 }
 
-const ROLE_FILTER_VALUES = new Set(['all', 'student', 'coach', 'admin']);
+const ROLE_FILTER_VALUES = new Set([
+  'all',
+  'student',
+  'footage_submitter_student',
+  'coach',
+  'admin',
+]);
 
 function initials(user: Pick<User, 'display_name' | 'username'>): string {
   const source = user.display_name?.trim() || user.username || '';
@@ -371,6 +377,9 @@ export default function AdminPage() {
             <SelectContent>
               <SelectItem value="all">All roles</SelectItem>
               <SelectItem value="student">Students</SelectItem>
+              <SelectItem value="footage_submitter_student">
+                Footage Submitters
+              </SelectItem>
               <SelectItem value="coach">Coaches</SelectItem>
               <SelectItem value="admin">Admins</SelectItem>
             </SelectContent>
@@ -530,6 +539,9 @@ export default function AdminPage() {
                       </FormControl>
                       <SelectContent>
                         <SelectItem value="student">Student</SelectItem>
+                        <SelectItem value="footage_submitter_student">
+                          Footage Submitter
+                        </SelectItem>
                         <SelectItem value="coach">Coach</SelectItem>
                         <SelectItem value="admin">Admin</SelectItem>
                       </SelectContent>
@@ -751,7 +763,7 @@ function UserActionsMenu({
   onIssueClaim,
   onResetPassword,
 }: UserActionsMenuProps) {
-  const isStudent = user.role === 'student';
+  const studentLike = user.role === 'student' || user.role === 'footage_submitter_student';
   const isGraduated = !!user.graduated_at;
   const isClaimed = !!user.claimed_at;
   return (
@@ -784,7 +796,7 @@ function UserActionsMenu({
             Copy invite link
           </DropdownMenuItem>
         )}
-        {isStudent && (
+        {studentLike && (
           <DropdownMenuItem onSelect={() => setTimeout(onToggleGraduated, 0)}>
             <GraduationCap className="mr-2 h-4 w-4" aria-hidden />
             {isGraduated ? 'Un-graduate' : 'Graduate'}

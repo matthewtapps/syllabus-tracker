@@ -1,7 +1,7 @@
 import { useNavigate, useLocation, Link } from "react-router-dom";
 import { Download, LogOut, UserRound } from "lucide-react";
 import type { User } from "@/lib/api";
-import { isCoachOrAdmin, isAdmin } from "@/lib/api";
+import { isCoachOrAdmin, isAdmin, isStudent } from "@/lib/api";
 import { useInstallTrigger } from "@/lib/install";
 import { Button } from "@/components/ui/button";
 import {
@@ -35,10 +35,10 @@ function initials(user: Pick<User, "display_name" | "username">): string {
 
 function buildNavLinks(user: User): NavLink[] {
   const coachOrAdmin = isCoachOrAdmin(user);
-  const isStudent = user.role === "student";
+  const studentLike = isStudent(user);
 
   const links: NavLink[] = [{ to: "/dashboard", label: "Dashboard" }];
-  if (isStudent) links.push({ to: `/student/${user.id}`, label: "My techniques" });
+  if (studentLike) links.push({ to: `/student/${user.id}`, label: "My techniques" });
   if (coachOrAdmin) links.push({ to: "/students", label: "Students" });
   if (coachOrAdmin) links.push({ to: "/library", label: "Techniques" });
   if (coachOrAdmin) links.push({ to: "/register-user", label: "New user" });

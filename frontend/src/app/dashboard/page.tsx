@@ -15,7 +15,7 @@ import {
 } from 'lucide-react';
 import type { User } from '@/lib/api';
 import { toast } from 'sonner';
-import { type InviteResponse, type RecentAttemptItem } from '@/lib/api';
+import { isStudent, type InviteResponse, type RecentAttemptItem } from '@/lib/api';
 import {
   useAttemptHeatmap,
   useLibraryStats,
@@ -70,7 +70,7 @@ interface DashboardProps {
 }
 
 export default function Dashboard({ user }: DashboardProps) {
-  if (user.role === 'student') {
+  if (isStudent(user)) {
     return <StudentDashboard user={user} />;
   }
   return <CoachDashboard user={user} />;
