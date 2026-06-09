@@ -126,6 +126,53 @@ pub async fn get_student_feed(
         })
         .collect();
 
+    // M6 / SD-003 feed wiring: pin events bump the existing technique item
+    // (same row as syllabus-source activity, just refreshed by the pin's
+    // pinned_at) or, for library-only techniques the student hasn't been
+    // assigned, spawn a new technique item without a student_technique_id.
+    let pin_rows = sqlx::query!(
+        r#"
+        SELECT
+            p.technique_id  AS "technique_id!: i64",
+            t.name          AS "title!: String",
+            p.pinned_at     AS "pinned_at!: NaiveDateTime"
+        FROM pinned_techniques p
+        JOIN techniques t ON t.id = p.technique_id
+        WHERE p.student_id = ? AND p.unpinned_at IS NULL
+        "#,
+        student_id,
+    )
+    .fetch_all(pool)
+    .await?;
+
+    for pin in pin_rows {
+        let mut bumped_existing = false;
+        for item in items.iter_mut() {
+            if let FeedItem::Technique(t) = item {
+                if t.technique_id == pin.technique_id {
+                    if pin.pinned_at > t.latest_activity_at {
+                        t.latest_activity_at = pin.pinned_at;
+                    }
+                    bumped_existing = true;
+                    break;
+                }
+            }
+        }
+        if !bumped_existing {
+            items.push(FeedItem::Technique(TechniqueFeedItem {
+                student_technique_id: 0,
+                technique_id: pin.technique_id,
+                title: pin.title,
+                status: "red".to_string(),
+                latest_activity_at: pin.pinned_at,
+                latest_attempt_at: None,
+                attempt_count: 0,
+                last_coach_update_at: None,
+                last_student_update_at: None,
+            }));
+        }
+    }
+
     let rank_rows = sqlx::query!(
         r#"
         SELECT

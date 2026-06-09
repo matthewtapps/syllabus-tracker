@@ -450,6 +450,12 @@ pub async fn api_update_student_technique(
     }
 
     if is_own_technique && !can_edit_all {
+        // SD-015: graduated students lose syllabus-status edits. Note edits
+        // stay open (per pending decision #8 -- graduated retains ongoing-use
+        // surfaces). The client should be hiding the status control too.
+        if technique.status.is_some() && user.graduated_at.is_some() {
+            return Err(Status::Forbidden.into());
+        }
         if let Some(notes) = &technique.student_notes {
             update_student_notes(db, id, &user, notes).await?;
         }
@@ -1806,6 +1812,11 @@ pub async fn api_create_attempt(
     db: &State<Pool<Sqlite>>,
 ) -> ApiResult<Json<CreateAttemptResponse>> {
     body.validate()?;
+    // SD-015: graduated students lose syllabus-side attempt logging. Coaches
+    // recording on someone else's behalf are still allowed.
+    if user.graduated_at.is_some() && !user.has_permission(Permission::EditAllTechniques) {
+        return Err(Status::Forbidden.into());
+    }
     let attempted_at = parse_optional_datetime(body.attempted_at.as_deref())?
         .unwrap_or_else(chrono::Utc::now);
     let result = create_attempt(db, &user, id, attempted_at, body.note.as_deref()).await?;

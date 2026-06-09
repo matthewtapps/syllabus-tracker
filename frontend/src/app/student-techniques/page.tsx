@@ -877,6 +877,7 @@ export default function StudentTechniques({ user }: StudentTechniquesProps) {
                 canEditAll={data.can_edit_all_techniques}
                 canManageTags={data.can_manage_tags}
                 isOwnTechnique={user.id === data.student.id}
+                isOwnGraduated={user.id === data.student.id && !!user.graduated_at}
                 studentId={data.student.id}
                 studentDisplayName={data.student.display_name || data.student.username}
                 currentUserId={user.id}

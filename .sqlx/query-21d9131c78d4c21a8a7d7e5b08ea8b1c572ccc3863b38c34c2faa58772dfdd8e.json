@@ -1,0 +1,32 @@
+{
+  "db_name": "SQLite",
+  "query": "\n        SELECT\n            p.technique_id  AS \"technique_id!: i64\",\n            t.name          AS \"title!: String\",\n            p.pinned_at     AS \"pinned_at!: NaiveDateTime\"\n        FROM pinned_techniques p\n        JOIN techniques t ON t.id = p.technique_id\n        WHERE p.student_id = ? AND p.unpinned_at IS NULL\n        ",
+  "describe": {
+    "columns": [
+      {
+        "name": "technique_id!: i64",
+        "ordinal": 0,
+        "type_info": "Integer"
+      },
+      {
+        "name": "title!: String",
+        "ordinal": 1,
+        "type_info": "Text"
+      },
+      {
+        "name": "pinned_at!: NaiveDateTime",
+        "ordinal": 2,
+        "type_info": "Datetime"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "21d9131c78d4c21a8a7d7e5b08ea8b1c572ccc3863b38c34c2faa58772dfdd8e"
+}

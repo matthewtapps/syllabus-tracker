@@ -32,6 +32,9 @@ interface TechniqueRowProps {
   canEditAll: boolean;
   canManageTags: boolean;
   isOwnTechnique: boolean;
+  /** SD-015: viewer is the (graduated) owner. Hides attempt-logging UI;
+   * coaches can still record on their behalf via canEditAll. */
+  isOwnGraduated?: boolean;
   studentId: number;
   studentDisplayName: string;
   currentUserId: number;
@@ -53,6 +56,7 @@ export function TechniqueRow({
   canEditAll,
   canManageTags,
   isOwnTechnique,
+  isOwnGraduated = false,
   studentId,
   studentDisplayName,
   currentUserId,
@@ -77,7 +81,9 @@ export function TechniqueRow({
   const status = technique.status as Status;
   const canEditStudentNotes = isOwnTechnique;
   const canManageTagsOnRow = canEditAll || canManageTags;
-  const canLogAttempts = isOwnTechnique || canEditAll;
+  // SD-015: graduated owner loses attempt logging. Coach-side recording
+  // (canEditAll) stays on so the coach can still note attempts post-grading.
+  const canLogAttempts = (isOwnTechnique && !isOwnGraduated) || canEditAll;
   const { videos: videosEnabled } = useCapabilities();
 
   // useAttempts (above) is enabled only when the row is expanded; cache holds
