@@ -24,15 +24,16 @@ import type {
 import {
   useAllTags,
   useAttemptSummary,
+  useLibraryTechniques,
   useStudentPins,
   useStudentTechniques,
 } from '@/lib/queries';
+import { LibraryTechniqueRow } from '@/components/library-technique-row';
 import {
   useRemoveTagFromTechnique,
   useResetUserClaim,
   useSetFootageSubmitter,
   useSetStudentGraduated,
-  useUnpinTechnique,
   useUpdateTechnique,
 } from '@/lib/mutations';
 import { qk } from '@/lib/query-keys';
@@ -619,6 +620,7 @@ export default function StudentTechniques({ user }: StudentTechniquesProps) {
               isOwnView={isOwnView}
               studentName={studentName}
               syllabusTechniques={data.techniques}
+              user={user}
             />
           </TabsContent>
 
@@ -1038,6 +1040,7 @@ interface PinnedTabProps {
   isOwnView: boolean;
   studentName: string;
   syllabusTechniques: Technique[];
+  user: User;
 }
 
 function PinnedTab({
@@ -1045,11 +1048,18 @@ function PinnedTab({
   isOwnView,
   studentName,
   syllabusTechniques,
+  user,
 }: PinnedTabProps) {
   const pinsQuery = useStudentPins(studentId);
-  const unpinMutation = useUnpinTechnique();
-  const [showSyllabusContext, setShowSyllabusContext] = useState(true);
+  const libraryQuery = useLibraryTechniques();
+  const [expandedId, setExpandedId] = useState<number | null>(null);
+
   const pins = pinsQuery.data ?? [];
+  const libraryById = useMemo(() => {
+    const map = new Map<number, NonNullable<typeof libraryQuery.data>[number]>();
+    (libraryQuery.data ?? []).forEach((t) => map.set(t.id, t));
+    return map;
+  }, [libraryQuery.data]);
 
   // Index syllabus assignments by technique_id so a pinned row can show
   // status / attempt counts when the same technique sits on a syllabus too.
@@ -1059,7 +1069,7 @@ function PinnedTab({
     return map;
   }, [syllabusTechniques]);
 
-  if (pinsQuery.isLoading) {
+  if (pinsQuery.isLoading || libraryQuery.isLoading) {
     return (
       <div className="overflow-hidden rounded-lg border border-border bg-card">
         {Array.from({ length: 3 }).map((_, i) => (
@@ -1085,97 +1095,61 @@ function PinnedTab({
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center justify-between gap-2">
-        <p className="text-xs text-muted-foreground">
-          {pins.length} {pins.length === 1 ? 'pinned technique' : 'pinned techniques'}
-        </p>
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          className="h-7 px-2 text-xs"
-          onClick={() => setShowSyllabusContext((v) => !v)}
-        >
-          {showSyllabusContext ? 'Hide' : 'Show'} syllabus context
-        </Button>
-      </div>
+      <p className="text-xs text-muted-foreground">
+        {pins.length} {pins.length === 1 ? 'pinned technique' : 'pinned techniques'}
+      </p>
       <ul className="divide-y divide-border overflow-hidden rounded-lg border border-border bg-card">
         {pins.map((p) => {
+          const libraryRow = libraryById.get(p.technique_id);
           const onSyllabus = syllabusByTechnique.get(p.technique_id);
-          const linkTarget = onSyllabus
-            ? `/student/${studentId}/technique/${onSyllabus.id}`
-            : undefined;
-          const title = (
-            <p className="truncate text-sm font-medium">{p.technique_name}</p>
-          );
-          return (
-            <li key={p.id} className="flex items-start gap-3 px-4 py-3">
-              <div className="min-w-0 flex-1 space-y-1">
-                {linkTarget ? (
-                  <Link
-                    to={linkTarget}
-                    className="block transition-colors hover:text-primary"
-                  >
-                    {title}
-                  </Link>
-                ) : (
-                  title
-                )}
-                {p.technique_description && (
-                  <p className="line-clamp-2 text-xs text-muted-foreground">
-                    {p.technique_description}
-                  </p>
-                )}
-                {showSyllabusContext && onSyllabus && (
-                  <div className="flex flex-wrap items-center gap-2 pt-1 text-[11px] text-muted-foreground">
-                    <Badge variant="outline" className="px-1.5 py-0">
-                      On syllabus
-                    </Badge>
-                    <span className="inline-flex items-center gap-1">
-                      <span
-                        className={`inline-block h-1.5 w-1.5 rounded-full ${
-                          onSyllabus.status === 'green'
-                            ? 'bg-status-green'
-                            : onSyllabus.status === 'amber'
-                              ? 'bg-status-amber'
-                              : 'bg-status-red'
-                        }`}
-                      />
-                      {onSyllabus.status}
-                    </span>
-                    {onSyllabus.attempt_count > 0 && (
-                      <span>
-                        {onSyllabus.attempt_count}{' '}
-                        {onSyllabus.attempt_count === 1 ? 'attempt' : 'attempts'}
-                      </span>
-                    )}
-                    {onSyllabus.syllabus_name && (
-                      <span>in {onSyllabus.syllabus_name}</span>
-                    )}
-                  </div>
-                )}
-              </div>
-              {isOwnView && (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="h-8 px-2 text-xs"
-                  disabled={unpinMutation.isPending}
-                  onClick={() =>
-                    unpinMutation.mutate(
-                      { studentId, techniqueId: p.technique_id },
-                      {
-                        onSuccess: () => toast.success('Unpinned'),
-                        onError: () => toast.error('Failed to unpin'),
-                      },
-                    )
-                  }
-                >
-                  Unpin
-                </Button>
+          if (!libraryRow) {
+            // Library data hasn't arrived for this pin (race or visibility).
+            return (
+              <li key={p.id} className="px-4 py-3">
+                <p className="text-sm font-medium">{p.technique_name}</p>
+              </li>
+            );
+          }
+          const badges = onSyllabus ? (
+            <span className="inline-flex items-center gap-2 text-[11px] text-muted-foreground">
+              <Badge variant="outline" className="px-1.5 py-0">
+                On syllabus
+              </Badge>
+              <span className="inline-flex items-center gap-1">
+                <span
+                  className={`inline-block h-1.5 w-1.5 rounded-full ${
+                    onSyllabus.status === 'green'
+                      ? 'bg-status-green'
+                      : onSyllabus.status === 'amber'
+                        ? 'bg-status-amber'
+                        : 'bg-status-red'
+                  }`}
+                />
+                {onSyllabus.status}
+              </span>
+              {onSyllabus.attempt_count > 0 && (
+                <span>
+                  {onSyllabus.attempt_count}{' '}
+                  {onSyllabus.attempt_count === 1 ? 'attempt' : 'attempts'}
+                </span>
               )}
-            </li>
+              {onSyllabus.syllabus_name && (
+                <span>in {onSyllabus.syllabus_name}</span>
+              )}
+            </span>
+          ) : null;
+          return (
+            <LibraryTechniqueRow
+              key={p.id}
+              technique={libraryRow}
+              expanded={expandedId === libraryRow.id}
+              onToggle={() =>
+                setExpandedId((prev) => (prev === libraryRow.id ? null : libraryRow.id))
+              }
+              user={user}
+              canEdit={false}
+              badges={badges}
+            />
           );
         })}
       </ul>
