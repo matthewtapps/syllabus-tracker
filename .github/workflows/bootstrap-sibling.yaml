@@ -1,16 +1,12 @@
-name: Bootstrap sibling sillybus instance
+name: Bootstrap sibling instance
 
-# Spins up (or tears down) a second instance of the sillybus stack on
-# sugar-glider, alongside the primary sillybus deployment. Used for:
-#
-#   - dry-run validation of the legacy cutover path: restore the legacy
-#     SQLite from its R2 backup into a sibling instance, verify the
-#     restored data behaves correctly, then either promote or tear down.
-#   - sibling environments (staging, per-tenant clones) without
-#     standing up a second VM.
+# Spins up (or tears down) a second instance of the production stack
+# on sugar-glider, alongside the primary deployment. Used for sibling
+# environments (staging, per-tenant clones) without standing up a
+# second VM.
 #
 # The sibling shares the same docker-compose.nixos.yml AND the same
-# platform-tier R2 buckets + ingest keys as the primary sillybus —
+# platform-tier R2 buckets + ingest keys as the primary instance —
 # differentiation is at the compose project name + host port + Traefik
 # routing rule level. Sibling backups go to the SAME R2 bucket; they
 # can be partitioned via litestream's path prefix (LITESTREAM_PATH).
@@ -24,14 +20,13 @@ name: Bootstrap sibling sillybus instance
 #                     created by this workflow — either add it manually
 #                     in Route 53 OR test with `curl --resolve` (see notes).
 #   host_port       : Loopback port the stack's nginx binds. Must not
-#                     collide with the primary sillybus (default 8001) or
+#                     collide with the primary instance (default 8001) or
 #                     other siblings. Default 8100.
 #   source_bucket   : optional. If non-empty, litestream restore from
 #                     s3://<source_bucket>/<litestream_path> into the
 #                     sibling's app-data volume BEFORE running migrate.
-#                     e.g. "syllabus-tracker-db-backups-prod" for legacy
-#                     cutover dry-run, OR "sillybus-db-backups-prod"
-#                     for a copy of the current primary.
+#                     e.g. "sillybus-db-backups-prod" for a copy of the
+#                     current primary.
 #   litestream_path : optional. Path inside source_bucket where the
 #                     litestream replica lives. Default "sqlite.db" which
 #                     matches our standard config.
@@ -87,7 +82,7 @@ env:
   IMAGE_NAME: matthewtapps/syllabus-tracker
   # Use the latest known-good image, NOT a fresh build. Sibling is a
   # second instance of the SAME app code.
-  IMAGE_TAG: sillybus-latest
+  IMAGE_TAG: latest
 
 concurrency:
   group: bootstrap-sibling-${{ github.event.inputs.sibling_name }}
@@ -96,7 +91,7 @@ concurrency:
 jobs:
   read_platform:
     runs-on: ubuntu-latest
-    environment: sillybus
+    environment: production
     outputs:
       vm_ip:              ${{ steps.read.outputs.vm_ip }}
       host_age_recipient: ${{ steps.read.outputs.host_age_recipient }}
@@ -118,7 +113,7 @@ jobs:
           AWS_SECRET_ACCESS_KEY: ${{ secrets.PLATFORM_STATE_R2_SECRET_ACCESS_KEY }}
           AWS_MAX_ATTEMPTS:      "5"
         run: |
-          cd infra-sillybus
+          cd infra
           tofu init -input=false
           tofu apply -refresh-only -auto-approve -input=false
           VM_IP=$(tofu output -raw _platform_vm_ip)
@@ -129,7 +124,7 @@ jobs:
   do_action:
     needs: read_platform
     runs-on: ubuntu-latest
-    environment: sillybus
+    environment: production
     env:
       VM_IP:               ${{ needs.read_platform.outputs.vm_ip }}
       SIBLING_NAME:        ${{ github.event.inputs.sibling_name }}
@@ -164,7 +159,7 @@ jobs:
           AWS_SECRET_ACCESS_KEY: ${{ secrets.PLATFORM_STATE_R2_SECRET_ACCESS_KEY }}
           AWS_MAX_ATTEMPTS:      "5"
         run: |
-          cd infra-sillybus
+          cd infra
           tofu init -input=false
           tofu apply -refresh-only -auto-approve -input=false
           mkdir -p ~/.ssh && chmod 700 ~/.ssh
@@ -209,7 +204,7 @@ jobs:
           AWS_MAX_ATTEMPTS:      "5"
           HOST_AGE_RECIPIENT:    ${{ needs.read_platform.outputs.host_age_recipient }}
         run: |
-          cd infra-sillybus
+          cd infra
           BACKEND_HC=$(tofu output -raw _platform_honeycomb_backend_ingest)
           BROWSER_HC=$(tofu output -raw _platform_honeycomb_browser_ingest)
           echo "::add-mask::$BACKEND_HC"
@@ -230,7 +225,7 @@ jobs:
           # creds, ROCKET_SECRET_KEY) — those are env-wide values, not
           # per-instance.
           rsync -avz -e "ssh -i ~/.ssh/id_ed25519" \
-            runtime-secrets-sillybus.enc.env \
+            runtime-secrets.enc.env \
             "deploy@$VM_IP:/tmp/$SIBLING_NAME.enc.env"
           rsync -avz -e "ssh -i ~/.ssh/id_ed25519" \
             /tmp/$SIBLING_NAME-honeycomb.enc.env \
@@ -263,7 +258,8 @@ jobs:
           # at the sibling's runtime-secrets files.
           cat > /tmp/$SIBLING_NAME-override.yml <<EOF
           # Auto-generated by bootstrap-sibling.yaml. Overrides env_file
-          # paths so the sibling reads ITS runtime-secrets, not sillybus's.
+          # paths so the sibling reads ITS runtime-secrets, not the
+          # primary instance's.
           services:
             app:
               env_file:
@@ -279,8 +275,8 @@ jobs:
                 - /run/runtime-secrets/$SIBLING_NAME-honeycomb.env
             litestream:
               # docker-compose.nixos.yml hardcodes container_name:
-              # syllabus-tracker-litestream which collides with the
-              # primary sillybus's litestream container. Override.
+              # sillybus-litestream which collides with the primary
+              # instance's litestream container. Override.
               container_name: $SIBLING_NAME-litestream
               env_file:
                 - ./config/common.env

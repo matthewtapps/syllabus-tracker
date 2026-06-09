@@ -1,624 +1,553 @@
-name: Build, Test, and Deploy to NixOS
+name: Deploy
+
+# Deploys to sugar-glider. Pulls all provider credentials and the SSH
+# key fresh from platform tofu state on every run (Path 3 cross-repo
+# model). The only GHA-resident secrets are the two PLATFORM_STATE_R2_*
+# values needed to read platform state.
+#
+# Triggers:
+#   - push to main
+#   - manual workflow_dispatch
 
 on:
   push:
     branches: [main]
   workflow_dispatch:
     inputs:
-      nixos_config_branch:
-        description: "Branch/commit of NixOS config (if different from app code)"
-        required: false
-        default: ""
-      force_rebuild_options:
-        description: "Extra options for nixos-rebuild (e.g., --fast, --upgrade)"
-        required: false
-        default: ""
       allow_destructive_migrations:
-        description: "Will fail deployments with destructive migrations unless set to true"
+        description: "Allow destructive schema migrations (data loss possible)"
         required: false
         default: "false"
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}
-  BUILDEVENT_FILE: "/tmp/buildevent-attrs"
+  IMAGE_NAME: matthewtapps/syllabus-tracker
+
+# Default GITHUB_TOKEN in env-scoped jobs has restricted scopes; need
+# to grant packages:write explicitly so docker push to GHCR works.
+# contents:read is the default but we set it explicitly for clarity.
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: deploy
+  cancel-in-progress: true
 
 jobs:
-  start-build:
+  # Read platform state, expose VM_IP + host_age_ready flag.
+  # host_age_ready=false means sugar-glider hasn't been bootstrapped via
+  # nixos-anywhere yet, so the deploy job no-ops.
+  read_platform:
     runs-on: ubuntu-latest
+    environment: production
     outputs:
-      trace_id: ${{ steps.start_trace.outputs.trace_id }}
-      build_id: ${{ github.run_id }}
-      trace_start: ${{ steps.set-trace-start.outputs.trace_start }}
-
+      vm_ip:               ${{ steps.read.outputs.vm_ip }}
+      host_age_ready:      ${{ steps.read.outputs.host_age_ready }}
+      host_age_recipient:  ${{ steps.read.outputs.host_age_recipient }}
+      # Note: VITE_HONEYCOMB_API_KEY is NOT exposed as a job output.
+      # GitHub Actions refuses to propagate ::add-mask::'d values
+      # across jobs ("Skip output ... since it may contain secret").
+      # build_frontend pulls it directly from platform tofu state.
     steps:
-      - uses: honeycombio/gha-buildevents@1dad608d8534ec0fdf57e7503ceb8256b5ddc531 # v4.0.0
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: cachix/install-nix-action@v27
         with:
-          apikey: ${{ secrets.HONEYCOMB_API_KEY }}
-          dataset: syllabus-tracker-build-events
-
-      - name: Start build trace
-        id: start_trace
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+      - name: Install opentofu via nix
+        # nix cache is independent of github releases CDN
         run: |
-          # Save trace ID and build ID for other jobs
-          echo "trace_id=$TRACE_ID" >> "$GITHUB_OUTPUT"
-
-          # Start the build trace
-          BUILD_ID=${{ github.run_id }}
-          BUILD_NAME="Build ${{ github.repository }} ${{ github.ref }}"
-          START_TIME=$(date +%s)
-
-          echo "trace_start=$START_TIME" >> "$GITHUB_OUTPUT"
-
-  build-backend:
-    runs-on: ubuntu-latest
-    needs: [start-build]
-    permissions:
-      contents: read
-      packages: write
-    outputs:
-      image_tag: ${{ steps.get_short_sha.outputs.short_sha }}
-      image_name: ${{ env.REGISTRY }}/${{ github.repository }}/app
-
-    steps:
-      - uses: honeycombio/gha-buildevents@1dad608d8534ec0fdf57e7503ceb8256b5ddc531 # v4.0.0
-        with:
-          apikey: ${{ secrets.HONEYCOMB_API_KEY }}
-          dataset: syllabus-tracker-build-events
+          nix profile install nixpkgs#opentofu
+          tofu version
+      - name: Read platform state
+        id: read
         env:
-          TRACE_ID: ${{ needs.start-build.outputs.trace_id }}
-
-      - name: Record backend build start
+          AWS_ACCESS_KEY_ID:     ${{ secrets.PLATFORM_STATE_R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.PLATFORM_STATE_R2_SECRET_ACCESS_KEY }}
+          AWS_MAX_ATTEMPTS:      "5"
         run: |
-          echo "STEP_START=$(date +%s)" >> $GITHUB_ENV
-          echo "STEP_ID=build-backend-image" >> $GITHUB_ENV
+          cd infra
+          i=0; until tofu init -input=false; do i=$((i+1)); [ $i -ge 30 ] && { echo "::error::tofu init failed after 30 attempts"; exit 1; }; echo "tofu init attempt $i failed; sleeping 30s"; sleep 30; done
+          # Refresh-only persists data source values + outputs to state
+          # without creating any resources. Then `tofu output -raw` is
+          # reliable (avoids `tofu console`'s EOF-handling quirks).
+          tofu apply -refresh-only -auto-approve -input=false -lock=false
+          VM_IP=$(tofu output -raw _platform_vm_ip)
+          HOST_AGE=$(tofu output -raw _platform_host_age_recipient)
+          echo "vm_ip=$VM_IP" >> "$GITHUB_OUTPUT"
+          echo "host_age_recipient=$HOST_AGE" >> "$GITHUB_OUTPUT"
+          if [ -n "$HOST_AGE" ]; then
+            echo "host_age_ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "host_age_ready=false" >> "$GITHUB_OUTPUT"
+          fi
+          echo "VM_IP=$VM_IP, host_age_ready=$([ -n \"$HOST_AGE\" ] && echo true || echo false)"
 
-      - name: Checkout code
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
-
-      - name: Log in to the Container registry
-        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Get short SHA
-        id: get_short_sha
-        run: echo "short_sha=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
-
-      - name: Build and push backend Docker image
-        uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7.1.0
-        with:
-          context: .
-          push: true
-          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/app:${{ steps.get_short_sha.outputs.short_sha }},${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/app:latest
-          cache-from: |
-            type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/app:latest
-            type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/app:cache
-            type=gha,scope=backend-build
-          cache-to: |
-            type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/app:cache,mode=max
-            type=gha,scope=backend-build,mode=max
-          build-args: |
-            HONEYCOMB_API_KEY=${{ secrets.HONEYCOMB_API_KEY }}
-            ROCKET_SECRET_KEY=${{ secrets.ROCKET_SECRET_KEY }}
-
-      - name: Log build details to telemetry
-        run: |
-          echo " backend_image_tag=app:${{ steps.get_short_sha.outputs.short_sha }}" >> $BUILDEVENT_FILE
-          echo " backend_build_successful=true" >> $BUILDEVENT_FILE
-
-      - name: Complete backend build step
-        run: |
-          buildevents step $TRACE_ID $STEP_ID $STEP_START "Build Backend Image"
-
+  # Lint + test run unconditionally on every push. They don't need the
+  # platform state (no host or DNS interaction); they gate build_backend
+  # and build_frontend so a broken-build SHA never gets pushed to GHCR.
   lint:
     runs-on: ubuntu-latest
-    needs: [start-build]
     steps:
-      - uses: honeycombio/gha-buildevents@1dad608d8534ec0fdf57e7503ceb8256b5ddc531 # v4.0.0
-        with:
-          apikey: ${{ secrets.HONEYCOMB_API_KEY }}
-          dataset: syllabus-tracker-build-events
-        env:
-          TRACE_ID: ${{ needs.start-build.outputs.trace_id }}
-
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
         with:
           toolchain: 1.86
           components: rustfmt, clippy
-
       - uses: swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
-
-      - name: Record lint step start
-        run: |
-          echo "STEP_START=$(date +%s)" >> $GITHUB_ENV
-          echo "STEP_ID=lint" >> $GITHUB_ENV
-
       - name: Run clippy
-        run: buildevents cmd $TRACE_ID $STEP_ID clippy -- cargo clippy --all-targets --all-features -- -D warnings
+        run: cargo clippy --all-targets --all-features -- -D warnings
         env:
           SQLX_OFFLINE: "true"
 
-      - name: Complete lint step
-        run: buildevents step $TRACE_ID $STEP_ID $STEP_START "Run lints"
-
   test:
     runs-on: ubuntu-latest
-    needs: [start-build]
     steps:
-      - uses: honeycombio/gha-buildevents@1dad608d8534ec0fdf57e7503ceb8256b5ddc531 # v4.0.0
-        with:
-          apikey: ${{ secrets.HONEYCOMB_API_KEY }}
-          dataset: syllabus-tracker-build-events
-        env:
-          TRACE_ID: ${{ needs.start-build.outputs.trace_id }}
-
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
         with:
           toolchain: 1.86
-
       - uses: swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
-
       - uses: taiki-e/install-action@50b4a718b59c718df4ef27a3b445f86cd57b9f00 # v2.80.0
         with:
           tool: cargo-nextest
-
-      - name: Record test step start
-        run: |
-          echo "STEP_START=$(date +%s)" >> $GITHUB_ENV
-          echo "STEP_ID=test" >> $GITHUB_ENV
-
       - name: Run cargo nextest
-        run: buildevents cmd $TRACE_ID $STEP_ID cargo-nextest -- cargo nextest run --all-features
+        run: cargo nextest run --all-features
         env:
           SQLX_OFFLINE: "true"
 
-      - name: Complete test step
-        run: buildevents step $TRACE_ID $STEP_ID $STEP_START "Run tests"
-
-  build-frontend:
+  apply_tofu:
+    needs: read_platform
+    if: needs.read_platform.outputs.host_age_ready == 'true'
     runs-on: ubuntu-latest
-    needs: [start-build]
-    permissions:
-      contents: read
-      packages: write
-    outputs:
-      image_tag: ${{ steps.get_short_sha.outputs.short_sha }}
-      image_name: ${{ env.REGISTRY }}/${{ github.repository }}/frontend
-
+    environment: production
     steps:
-      - uses: honeycombio/gha-buildevents@1dad608d8534ec0fdf57e7503ceb8256b5ddc531 # v4.0.0
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: cachix/install-nix-action@v27
         with:
-          apikey: ${{ secrets.HONEYCOMB_API_KEY }}
-          dataset: syllabus-tracker-build-events
-        env:
-          TRACE_ID: ${{ needs.start-build.outputs.trace_id }}
-
-      - name: Record frontend build start
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+      - name: Install opentofu via nix
+        # nix cache is independent of github releases CDN
         run: |
-          echo "STEP_START=$(date +%s)" >> $GITHUB_ENV
-          echo "STEP_ID=build-frontend-image" >> $GITHUB_ENV
+          nix profile install nixpkgs#opentofu
+          tofu version
+      - name: tofu apply
+        env:
+          AWS_ACCESS_KEY_ID:     ${{ secrets.PLATFORM_STATE_R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.PLATFORM_STATE_R2_SECRET_ACCESS_KEY }}
+          AWS_MAX_ATTEMPTS:      "5"
+        run: |
+          cd infra
+          i=0; until tofu init -input=false; do i=$((i+1)); [ $i -ge 30 ] && { echo "::error::tofu init failed after 30 attempts"; exit 1; }; echo "tofu init attempt $i failed; sleeping 30s"; sleep 30; done
+          tofu apply -auto-approve -input=false
 
-      - name: Checkout code
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
-
-      - name: Log in to the Container registry
-        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
+  build_backend:
+    needs: [read_platform, lint, test]
+    if: needs.read_platform.outputs.host_age_ready == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
+      - uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7.1.0
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/app:${{ github.sha }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/app:latest
+          cache-from: type=gha,scope=backend
+          cache-to: type=gha,scope=backend,mode=max
 
-      - name: Get short SHA
-        id: get_short_sha
-        run: echo "short_sha=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
-
-      - name: Build and push frontend Docker image
-        uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7.1.0
+  build_frontend:
+    needs: [read_platform, lint, test]
+    if: needs.read_platform.outputs.host_age_ready == 'true'
+    runs-on: ubuntu-latest
+    environment: production   # needs PLATFORM_STATE_R2_* secrets for tofu state read
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: cachix/install-nix-action@v27
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+      - name: Install opentofu via nix
+        # nix cache is independent of github releases CDN
+        run: |
+          nix profile install nixpkgs#opentofu
+          tofu version
+      - name: Pull VITE_HONEYCOMB_API_KEY from platform state
+        # Pulled here (not as a read_platform job output) because GHA
+        # refuses to propagate ::add-mask::'d values across job
+        # boundaries ("Skip output ... since it may contain secret").
+        # Reading directly inside the build job sidesteps that.
+        id: hc
+        env:
+          AWS_ACCESS_KEY_ID:     ${{ secrets.PLATFORM_STATE_R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.PLATFORM_STATE_R2_SECRET_ACCESS_KEY }}
+          AWS_MAX_ATTEMPTS:      "5"
+        run: |
+          cd infra
+          i=0; until tofu init -input=false; do i=$((i+1)); [ $i -ge 30 ] && { echo "::error::tofu init failed after 30 attempts"; exit 1; }; echo "tofu init attempt $i failed; sleeping 30s"; sleep 30; done
+          tofu apply -refresh-only -auto-approve -input=false -lock=false
+          VITE_HC=$(tofu output -raw _platform_honeycomb_browser_ingest)
+          echo "::add-mask::$VITE_HC"
+          # Step output stays within the job; doesn't cross boundary.
+          echo "vite_key=$VITE_HC" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
+      - uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7.1.0
         with:
           context: ./frontend
+          file: ./frontend/Dockerfile
           push: true
-          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/frontend:${{ steps.get_short_sha.outputs.short_sha }},${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/frontend:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/frontend:${{ github.sha }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/frontend:latest
           build-args: |
-            VITE_HONEYCOMB_API_KEY=${{ secrets.HONEYCOMB_API_KEY }}
             VITE_API_URL=/api
             VITE_ENVIRONMENT=production
+            VITE_HONEYCOMB_API_KEY=${{ steps.hc.outputs.vite_key }}
+          cache-from: type=gha,scope=frontend
+          cache-to: type=gha,scope=frontend,mode=max
 
-      - name: Log build details to telemetry
-        run: |
-          echo " frontend_image_tag=frontend:${{ steps.get_short_sha.outputs.short_sha }}" >> $BUILDEVENT_FILE
-          echo " frontend_build_successful=true" >> $BUILDEVENT_FILE
-
-      - name: Complete frontend build step
-        run: |
-          buildevents step $TRACE_ID $STEP_ID $STEP_START "Build Frontend Image"
-
-  deploy_nixos_config:
-    needs: [build-backend, build-frontend, lint, test]
+  # Stage everything the host needs for restore + migrate + deploy:
+  # encrypted runtime-secrets (static + per-deploy Honeycomb),
+  # Traefik dynamic config, compose + config + nginx files, docker
+  # login for ghcr.io. After this job: /run/runtime-secrets/sillybus.env
+  # + /run/runtime-secrets/sillybus-honeycomb.env are decrypted on
+  # the host, /srv/sillybus/ has the latest compose + config, and
+  # ghcr.io creds are cached. The downstream jobs (restore, migrate,
+  # deploy) operate against this prepared state.
+  prep_host:
+    needs: [read_platform, apply_tofu]
     runs-on: ubuntu-latest
-    if: github.repository == 'matthewtapps/syllabus-tracker'
-
+    environment: production
     env:
-      NIXOS_SERVER_IP: ${{ secrets.NIXOS_SERVER_IP }}
-
+      VM_IP: ${{ needs.read_platform.outputs.vm_ip }}
     steps:
-      - uses: honeycombio/gha-buildevents@1dad608d8534ec0fdf57e7503ceb8256b5ddc531 # v4.0.0
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: cachix/install-nix-action@v27
         with:
-          apikey: ${{ secrets.HONEYCOMB_API_KEY }}
-          dataset: syllabus-tracker-build-events
-        env:
-          TRACE_ID: ${{ needs.start-build.outputs.trace_id }}
-
-      - name: Record NixOS deploy start
-        run: |
-          echo "STEP_START=$(date +%s)" >> $GITHUB_ENV
-          echo "STEP_ID=deploy_nixos_config" >> $GITHUB_ENV
-
-      - name: Checkout code
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-        with:
-          ref: ${{ github.event.inputs.nixos_config_branch || github.ref }}
-
-      - name: Install Nix
-        uses: DeterminateSystems/nix-installer-action@main
-        with:
-          extra-conf: |
+          extra_nix_config: |
             experimental-features = nix-command flakes
-
-      - name: Restore /nix/store cache
-        uses: nix-community/cache-nix-action@v7
-        with:
-          primary-key: nix-${{ runner.os }}-${{ hashFiles('nixos/flake.lock') }}
-          restore-prefixes-first-match: nix-${{ runner.os }}-
-          gc-max-store-size-linux: 1G
-          purge: true
-          purge-prefixes: nix-${{ runner.os }}-
-          purge-created: 0
-          purge-primary-key: never
-
-      - name: Set up SSH
+      - name: Install opentofu + sops via nix
         run: |
-          mkdir -p ~/.ssh
-          chmod 700 ~/.ssh
-          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
+          nix profile install nixpkgs#opentofu nixpkgs#sops
+          tofu version
+          sops --version
+
+      - name: Pull SSH key from platform state
+        env:
+          AWS_ACCESS_KEY_ID:     ${{ secrets.PLATFORM_STATE_R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.PLATFORM_STATE_R2_SECRET_ACCESS_KEY }}
+          AWS_MAX_ATTEMPTS:      "5"
+        run: |
+          cd infra
+          i=0; until tofu init -input=false; do i=$((i+1)); [ $i -ge 30 ] && { echo "::error::tofu init failed after 30 attempts"; exit 1; }; echo "tofu init attempt $i failed; sleeping 30s"; sleep 30; done
+          tofu apply -refresh-only -auto-approve -input=false -lock=false
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          tofu output -raw _platform_ci_deploy_private_key > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
-          ssh-keyscan -H "${NIXOS_SERVER_IP}" >> ~/.ssh/known_hosts
+          ssh-keyscan -H "$VM_IP" >> ~/.ssh/known_hosts
 
-      - name: Deploy with deploy-rs
-        run: nix run github:serokell/deploy-rs -- ./nixos#syllabustracker
-
-      - name: Complete NixOS deploy step
+      - name: Build sillybus-honeycomb.enc.env from platform state
+        # Honeycomb ingest keys live in platform tofu state (minted by
+        # IaC, rotated via `tofu apply -replace`). Pulling them per-deploy
+        # means rotation = one tofu apply + one redeploy, no commit. The
+        # static runtime-secrets.enc.env in this repo holds only
+        # the keys that don't change per-deploy (ROCKET_SECRET_KEY, S3_*).
+        env:
+          AWS_ACCESS_KEY_ID:     ${{ secrets.PLATFORM_STATE_R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.PLATFORM_STATE_R2_SECRET_ACCESS_KEY }}
+          AWS_MAX_ATTEMPTS:      "5"
+          HOST_AGE_RECIPIENT:    ${{ needs.read_platform.outputs.host_age_recipient }}
         run: |
-          buildevents step $TRACE_ID $STEP_ID $STEP_START "Deploy NixOS Configuration"
-          echo " nixos_config_updated=true" >> $BUILDEVENT_FILE
+          cd infra
+          BACKEND=$(tofu output -raw _platform_honeycomb_backend_ingest)
+          BROWSER=$(tofu output -raw _platform_honeycomb_browser_ingest)
+          echo "::add-mask::$BACKEND"
+          echo "::add-mask::$BROWSER"
+          install -m 0600 /dev/stdin /tmp/_sb_hc.env <<EOF
+          HONEYCOMB_API_KEY=$BACKEND
+          VITE_HONEYCOMB_API_KEY=$BROWSER
+          EOF
+          sops --config /dev/null -e --age "$HOST_AGE_RECIPIENT" \
+            --input-type=dotenv --output-type=dotenv /tmp/_sb_hc.env > /tmp/sillybus-honeycomb.enc.env
+          shred -u /tmp/_sb_hc.env
 
-  migrate_database:
-    needs: [deploy_nixos_config, build-backend]
+      - name: Ship runtime secrets (static + Honeycomb)
+        run: |
+          rsync -avz -e "ssh -i ~/.ssh/id_ed25519" \
+            runtime-secrets.enc.env \
+            "deploy@$VM_IP:/tmp/sillybus.enc.env"
+          rsync -avz -e "ssh -i ~/.ssh/id_ed25519" \
+            /tmp/sillybus-honeycomb.enc.env \
+            "deploy@$VM_IP:/tmp/sillybus-honeycomb.enc.env"
+          ssh -i ~/.ssh/id_ed25519 "deploy@$VM_IP" '
+            sudo install -o root -g root -m 0640 /tmp/sillybus.enc.env /etc/secrets.d/sillybus.enc.env
+            sudo install -o root -g root -m 0640 /tmp/sillybus-honeycomb.enc.env /etc/secrets.d/sillybus-honeycomb.enc.env
+            sudo systemctl restart runtime-secrets-decrypt.service
+          '
+          shred -u /tmp/sillybus-honeycomb.enc.env
+
+      - name: Ship Traefik dynamic config
+        run: |
+          rsync -avz -e "ssh -i ~/.ssh/id_ed25519" \
+            traefik-dynamic/sillybus.yml \
+            "deploy@$VM_IP:/tmp/sillybus.yml"
+          ssh -i ~/.ssh/id_ed25519 "deploy@$VM_IP" '
+            sudo install -o root -g root -m 0644 /tmp/sillybus.yml /srv/platform/traefik-dynamic/sillybus.yml
+          '
+
+      - name: Ship compose stack + config
+        run: |
+          ssh -i ~/.ssh/id_ed25519 "deploy@$VM_IP" '
+            sudo install -d -o deploy -g users -m 0755 /srv/sillybus &&
+            sudo install -d -o deploy -g users -m 0755 /srv/sillybus/config &&
+            sudo install -d -o deploy -g users -m 0755 /srv/sillybus/nginx
+          '
+          rsync -avz --delete -e "ssh -i ~/.ssh/id_ed25519" \
+            docker-compose.nixos.yml \
+            "deploy@$VM_IP:/srv/sillybus/docker-compose.nixos.yml"
+          rsync -avz --delete -e "ssh -i ~/.ssh/id_ed25519" \
+            config/ \
+            "deploy@$VM_IP:/srv/sillybus/config/"
+          rsync -avz --delete -e "ssh -i ~/.ssh/id_ed25519" \
+            nginx/ \
+            "deploy@$VM_IP:/srv/sillybus/nginx/"
+
+      # docker login is intentionally NOT done here: GITHUB_TOKEN is
+      # per-job and gets revoked when prep_host ends, so a login here
+      # would leave stale creds for downstream jobs. migrate + deploy
+      # each do their own docker login with their job's own token.
+
+  # Restore /app/data/sqlite.db in the sillybus_app-data named volume
+  # from $LITESTREAM_BUCKET if missing. This is the first thing that
+  # touches the volume on a fresh deploy -- migrate + app start after
+  # this exits successfully. If the bucket has no replica yet (truly
+  # fresh deployment), creates an empty file so migrate can write the
+  # schema. Operates via `docker run`, not compose, so it runs against
+  # the named volume before the runtime stack comes up.
+  #
+  # Fails the job (and the workflow) if litestream restore errors for
+  # any reason other than "no replica" -- worth halting the deploy on
+  # rather than risking a downstream clobber.
+  restore_litestream:
+    needs: [read_platform, prep_host]
     runs-on: ubuntu-latest
-    if: github.repository == 'matthewtapps/syllabus-tracker'
-
+    environment: production
     env:
-      NIXOS_SERVER_IP: ${{ secrets.NIXOS_SERVER_IP }}
-      NIXOS_SERVER_USER: ${{ secrets.NIXOS_SERVER_USER }}
-      APP_DEPLOY_PATH: "/srv/syllabus-tracker"
-
+      VM_IP: ${{ needs.read_platform.outputs.vm_ip }}
     steps:
-      - uses: honeycombio/gha-buildevents@1dad608d8534ec0fdf57e7503ceb8256b5ddc531 # v4.0.0
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: cachix/install-nix-action@v27
         with:
-          apikey: ${{ secrets.HONEYCOMB_API_KEY }}
-          dataset: syllabus-tracker-build-events
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+      - name: Install opentofu via nix
+        run: |
+          nix profile install nixpkgs#opentofu
+          tofu version
+
+      - name: Pull SSH key from platform state
         env:
-          TRACE_ID: ${{ needs.start-build.outputs.trace_id }}
-
-      - name: Record migrate start
+          AWS_ACCESS_KEY_ID:     ${{ secrets.PLATFORM_STATE_R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.PLATFORM_STATE_R2_SECRET_ACCESS_KEY }}
+          AWS_MAX_ATTEMPTS:      "5"
         run: |
-          echo "STEP_START=$(date +%s)" >> $GITHUB_ENV
-          echo "STEP_ID=migrate_database" >> $GITHUB_ENV
+          cd infra
+          i=0; until tofu init -input=false; do i=$((i+1)); [ $i -ge 30 ] && { echo "::error::tofu init failed after 30 attempts"; exit 1; }; echo "tofu init attempt $i failed; sleeping 30s"; sleep 30; done
+          tofu apply -refresh-only -auto-approve -input=false -lock=false
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          tofu output -raw _platform_ci_deploy_private_key > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H "$VM_IP" >> ~/.ssh/known_hosts
 
-      - name: Checkout code
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-
-      - name: Set up SSH
+      - name: Restore litestream from R2 (or noop if local DB present)
         run: |
-          mkdir -p ~/.ssh
-          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
-          chmod 600 ~/.ssh/id_rsa
-          ssh-keyscan -H "${NIXOS_SERVER_IP}" >> ~/.ssh/known_hosts
+          # --entrypoint /bin/sh overrides the litestream image's default
+          # `litestream` entrypoint so we can wrap the call in shell
+          # logic (check for existing file, fall through on no-replica).
+          # config/prod.env supplies LITESTREAM_BUCKET + LITESTREAM_ENDPOINT
+          # (the compose stack picks it up automatically; standalone docker
+          # run needs it explicitly).
+          ssh -i ~/.ssh/id_ed25519 "deploy@$VM_IP" '
+            set -e
+            docker run --rm \
+              -v sillybus_app-data:/data:rw \
+              -v /srv/sillybus/config/litestream.yml:/etc/litestream.yml:ro \
+              --env-file /srv/sillybus/config/prod.env \
+              --env-file /run/runtime-secrets/sillybus.env \
+              --entrypoint /bin/sh \
+              litestream/litestream:0.3.13 \
+              -c "
+                set -e
+                if [ -f /data/sqlite.db ]; then
+                  echo \"[restore] /data/sqlite.db already present in volume; skipping\"
+                  exit 0
+                fi
+                if [ -z \"\$LITESTREAM_BUCKET\" ]; then
+                  echo \"[restore] FATAL: LITESTREAM_BUCKET is empty; refusing to silently create an empty DB\" >&2
+                  exit 1
+                fi
+                echo \"[restore] no local DB; restoring from \$LITESTREAM_BUCKET\"
+                if litestream restore -config /etc/litestream.yml /data/sqlite.db; then
+                  echo \"[restore] restored from R2 (\$(du -h /data/sqlite.db | cut -f1))\"
+                else
+                  echo \"[restore] no replica in bucket; creating empty DB so migrate can init schema\"
+                  : > /data/sqlite.db
+                  chmod 0660 /data/sqlite.db
+                fi
+              "
+          '
 
-      - name: Stage config on server
-        run: |
-          cat > docker_config.json << EOF
-          {
-            "auths": {
-              "${{ env.REGISTRY }}": {
-                "auth": "$(echo -n ${{ github.actor }}:${{ secrets.GITHUB_TOKEN }} | base64)"
-              }
-            }
-          }
-          EOF
-
-          ssh "${NIXOS_SERVER_USER}@${NIXOS_SERVER_IP}" "mkdir -p ~/.docker"
-          scp docker_config.json "${NIXOS_SERVER_USER}@${NIXOS_SERVER_IP}:~/.docker/config.json"
-
-          ssh "${NIXOS_SERVER_USER}@${NIXOS_SERVER_IP}" \
-            "mkdir -p ${APP_DEPLOY_PATH}/config"
-
-          # Stage what the migrate binary needs: the config (schema.sql,
-          # common.env, prod.env).
-          rsync -avz -e "ssh -i ~/.ssh/id_rsa" \
-            "${GITHUB_WORKSPACE}/config" \
-            "${NIXOS_SERVER_USER}@${NIXOS_SERVER_IP}:${APP_DEPLOY_PATH}"
-
-      - name: Dry-run migration against copy of prod database
-        env:
-          BACKEND_IMAGE_TAG: ${{ needs.build-backend.outputs.image_tag }}
-          ALLOW_DESTRUCTIVE_MIGRATIONS: ${{ github.event.inputs.allow_destructive_migrations }}
-        run: |
-          ssh -i ~/.ssh/id_rsa \
-            "${NIXOS_SERVER_USER}@${NIXOS_SERVER_IP}" \
-            "bash -s" <<EOF
-              set -e
-              cd "${APP_DEPLOY_PATH}"
-
-              export REGISTRY="${REGISTRY}"
-              export IMAGE_NAME="${IMAGE_NAME}"
-              APP_IMAGE="\${REGISTRY}/\${IMAGE_NAME}/app:${BACKEND_IMAGE_TAG}"
-              SOURCE_VOLUME="syllabus-tracker-services_app-data"
-              DRY_RUN_VOLUME="syllabus-tracker-services_dry-run-data"
-
-              echo "Pulling new app image \${APP_IMAGE}..."
-              docker pull "\${APP_IMAGE}"
-
-              echo "Preparing copy of prod sqlite database for migration dry-run..."
-              docker volume rm -f "\${DRY_RUN_VOLUME}" >/dev/null 2>&1 || true
-              docker volume create "\${DRY_RUN_VOLUME}" >/dev/null
-              docker run --rm \
-                -v "\${SOURCE_VOLUME}:/source:ro" \
-                -v "\${DRY_RUN_VOLUME}:/dest" \
-                alpine:3.23 \
-                sh -c "cp /source/sqlite.db* /dest/ 2>/dev/null || echo 'no existing sqlite.db (fresh database)'"
-
-              echo "Running migration dry-run against the copy..."
-              set +e
-              docker run --rm \
-                --entrypoint /app/migrate \
-                --env-file ./config/common.env \
-                --env-file ./config/prod.env \
-                --env-file /run/secrets/syllabus-tracker.env \
-                -e ALLOW_DESTRUCTIVE_MIGRATIONS="${ALLOW_DESTRUCTIVE_MIGRATIONS}" \
-                -v "\${DRY_RUN_VOLUME}:/app/data" \
-                "\${APP_IMAGE}" \
-                --dry-run
-              DRY_RUN_EXIT=\$?
-              set -e
-
-              docker volume rm -f "\${DRY_RUN_VOLUME}" >/dev/null 2>&1 || true
-
-              if [ "\${DRY_RUN_EXIT}" -ne 0 ]; then
-                echo "ERROR: migration dry-run failed against a copy of prod data (exit \${DRY_RUN_EXIT}). Aborting before applying to prod."
-                exit 1
-              fi
-
-              echo "Migration dry-run succeeded; safe to proceed."
-          EOF
-
-      - name: Apply migration to prod database
-        env:
-          BACKEND_IMAGE_TAG: ${{ needs.build-backend.outputs.image_tag }}
-          ALLOW_DESTRUCTIVE_MIGRATIONS: ${{ github.event.inputs.allow_destructive_migrations }}
-        run: |
-          ssh -i ~/.ssh/id_rsa \
-            "${NIXOS_SERVER_USER}@${NIXOS_SERVER_IP}" \
-            "bash -s" <<EOF
-              set -e
-              cd "${APP_DEPLOY_PATH}"
-
-              export REGISTRY="${REGISTRY}"
-              export IMAGE_NAME="${IMAGE_NAME}"
-              APP_IMAGE="\${REGISTRY}/\${IMAGE_NAME}/app:${BACKEND_IMAGE_TAG}"
-              APP_VOLUME="syllabus-tracker-services_app-data"
-
-              echo "Applying migration to prod database (volume: \${APP_VOLUME})..."
-              docker run --rm \
-                --entrypoint /app/migrate \
-                --env-file ./config/common.env \
-                --env-file ./config/prod.env \
-                --env-file /run/secrets/syllabus-tracker.env \
-                -e ALLOW_DESTRUCTIVE_MIGRATIONS="${ALLOW_DESTRUCTIVE_MIGRATIONS}" \
-                -v "\${APP_VOLUME}:/app/data" \
-                "\${APP_IMAGE}"
-
-              echo "Prod migration applied. Container swap can proceed."
-          EOF
-
-      - name: Complete migrate step
-        run: |
-          buildevents step $TRACE_ID $STEP_ID $STEP_START "Migrate prod database"
-
-  deploy_application:
-    needs: [migrate_database, build-backend, build-frontend]
+  # Run DB schema migrations against the restored (or empty) sqlite.db.
+  # Idempotent: applies any new schema deltas atop existing data; creates
+  # the schema from scratch on a fresh DB.
+  #
+  # ALLOW_DESTRUCTIVE_MIGRATIONS defaults to "false" so destructive
+  # changes (DROP, ALTER) require an explicit workflow_dispatch input.
+  # Failing here halts the workflow before deploy -- the existing
+  # running stack on the host is unaffected (this job mutates the
+  # volume in place but the live app keeps using its own connections;
+  # deploy is what rotates containers).
+  migrate:
+    needs: [read_platform, restore_litestream, build_backend]
     runs-on: ubuntu-latest
-    if: github.repository == 'matthewtapps/syllabus-tracker'
-
+    environment: production
     env:
-      NIXOS_SERVER_IP: ${{ secrets.NIXOS_SERVER_IP }}
-      NIXOS_SERVER_USER: ${{ secrets.NIXOS_SERVER_USER }}
-      APP_DEPLOY_PATH: "/srv/syllabus-tracker"
-
+      VM_IP: ${{ needs.read_platform.outputs.vm_ip }}
     steps:
-      - uses: honeycombio/gha-buildevents@1dad608d8534ec0fdf57e7503ceb8256b5ddc531 # v4.0.0
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: cachix/install-nix-action@v27
         with:
-          apikey: ${{ secrets.HONEYCOMB_API_KEY }}
-          dataset: syllabus-tracker-build-events
-        env:
-          TRACE_ID: ${{ needs.start-build.outputs.trace_id }}
-
-      - name: Record app deploy start
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+      - name: Install opentofu via nix
         run: |
-          echo "STEP_START=$(date +%s)" >> $GITHUB_ENV
-          echo "STEP_ID=deploy_application" >> $GITHUB_ENV
+          nix profile install nixpkgs#opentofu
+          tofu version
 
-      - name: Checkout code
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-
-      - name: Set up SSH
-        run: |
-          mkdir -p ~/.ssh
-          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
-          chmod 600 ~/.ssh/id_rsa
-          ssh-keyscan -H "${NIXOS_SERVER_IP}" >> ~/.ssh/known_hosts
-
-      - name: Copy application files and set up docker environment
+      - name: Pull SSH key from platform state
         env:
-          GHCR_USERNAME: ${{ github.actor }}
+          AWS_ACCESS_KEY_ID:     ${{ secrets.PLATFORM_STATE_R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.PLATFORM_STATE_R2_SECRET_ACCESS_KEY }}
+          AWS_MAX_ATTEMPTS:      "5"
+        run: |
+          cd infra
+          i=0; until tofu init -input=false; do i=$((i+1)); [ $i -ge 30 ] && { echo "::error::tofu init failed after 30 attempts"; exit 1; }; echo "tofu init attempt $i failed; sleeping 30s"; sleep 30; done
+          tofu apply -refresh-only -auto-approve -input=false -lock=false
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          tofu output -raw _platform_ci_deploy_private_key > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H "$VM_IP" >> ~/.ssh/known_hosts
+
+      - name: docker login (this job's GITHUB_TOKEN)
+        env:
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          BACKEND_IMAGE_NAME: ${{ needs.build-backend.outputs.image_name }}
-          BACKEND_IMAGE_TAG: ${{ needs.build-backend.outputs.image_tag }}
-          FRONTEND_IMAGE_NAME: ${{ needs.build-frontend.outputs.image_name }}
-          FRONTEND_IMAGE_TAG: ${{ needs.build-frontend.outputs.image_tag }}
+          GHCR_USER:  ${{ github.actor }}
         run: |
-          cat > docker_config.json << EOF
-          {
-            "auths": {
-              "${{ env.REGISTRY }}": {
-                "auth": "$(echo -n ${{ github.actor }}:${{ secrets.GITHUB_TOKEN }} | base64)"
-              }
-            }
-          }
-          EOF
+          ssh -i ~/.ssh/id_ed25519 "deploy@$VM_IP" \
+            "docker login ghcr.io -u '$GHCR_USER' --password-stdin" <<< "$GHCR_TOKEN"
 
-          ssh "${NIXOS_SERVER_USER}@${NIXOS_SERVER_IP}" "mkdir -p ~/.docker"
-          scp docker_config.json "${NIXOS_SERVER_USER}@${NIXOS_SERVER_IP}:~/.docker/config.json"
-
-          ssh "${NIXOS_SERVER_USER}@${NIXOS_SERVER_IP}" \
-            "mkdir -p ${APP_DEPLOY_PATH}/config && mkdir -p ${APP_DEPLOY_PATH}/nginx"
-
-          rsync -avz --delete -e "ssh -i ~/.ssh/id_rsa" \
-            "${GITHUB_WORKSPACE}/docker-compose.nixos.yml" \
-            "${GITHUB_WORKSPACE}/config" \
-            "${GITHUB_WORKSPACE}/nginx" \
-            "${NIXOS_SERVER_USER}@${NIXOS_SERVER_IP}:${APP_DEPLOY_PATH}"
-
-      - name: Deploy application with Docker Compose
+      - name: Run DB migrations
         env:
-          BACKEND_IMAGE_TAG: ${{ needs.build-backend.outputs.image_tag }}
-          FRONTEND_IMAGE_TAG: ${{ needs.build-frontend.outputs.image_tag }}
-          ALLOW_DESTRUCTIVE_MIGRATIONS: ${{ github.event.inputs.allow_destructive_migrations }}
+          ALLOW_DESTRUCTIVE_MIGRATIONS: ${{ github.event.inputs.allow_destructive_migrations || 'false' }}
         run: |
-          ssh -i ~/.ssh/id_rsa \
-            "${NIXOS_SERVER_USER}@${NIXOS_SERVER_IP}" \
-            "bash -s" <<EOF
-              set -ex
-              cd "${APP_DEPLOY_PATH}"
+          IMG="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/app:${{ github.sha }}"
+          ssh -i ~/.ssh/id_ed25519 "deploy@$VM_IP" "
+            set -e
+            docker pull '$IMG'
+            docker run --rm \
+              -e ALLOW_DESTRUCTIVE_MIGRATIONS='$ALLOW_DESTRUCTIVE_MIGRATIONS' \
+              --env-file /run/runtime-secrets/sillybus.env \
+              --env-file /srv/sillybus/config/common.env \
+              --env-file /srv/sillybus/config/prod.env \
+              -v sillybus_app-data:/app/data \
+              --entrypoint /app/migrate \
+              '$IMG'
+          "
 
-              echo "Pulling latest application images..."
-              export APP_IMAGE_TAG="${BACKEND_IMAGE_TAG}"
-              export FRONTEND_IMAGE_TAG="${FRONTEND_IMAGE_TAG}"
-              export REGISTRY="${REGISTRY}"
-              export ALLOW_DESTRUCTIVE_MIGRATIONS="${ALLOW_DESTRUCTIVE_MIGRATIONS}"
-              export IMAGE_NAME="${IMAGE_NAME}"
-
-              docker compose -f docker-compose.nixos.yml pull app frontend otel-collector nginx
-
-              echo "Starting application services with Docker Compose..."
-              docker compose -f docker-compose.nixos.yml up -d --remove-orphans
-
-              echo "Cleaning up unused Docker images..."
-              docker image prune -af
-
-              echo "Application deployment complete."
-          EOF
-
-      - name: Complete application deploy step
-        run: |
-          buildevents step $TRACE_ID $STEP_ID $STEP_START "Deploy Application Services"
-          echo " deployed_app_image=${{ needs.build-backend.outputs.image_name }}:${{ needs.build-backend.outputs.image_tag }}" >> $BUILDEVENT_FILE
-          echo " deployed_frontend_image=${{ needs.build-frontend.outputs.image_name }}:${{ needs.build-frontend.outputs.image_tag }}" >> $BUILDEVENT_FILE
-
-  verify_deployment:
-    needs: [start-build, deploy_application]
+  # Bring up the runtime stack. docker-compose.nixos.yml contains only
+  # the long-running services (app, frontend, nginx, litestream
+  # replicate, otel-collector). Restore + migrate are already done.
+  deploy:
+    needs: [read_platform, migrate, build_frontend]
     runs-on: ubuntu-latest
-    if: github.repository == 'matthewtapps/syllabus-tracker' && success()
-
+    environment: production
+    env:
+      VM_IP: ${{ needs.read_platform.outputs.vm_ip }}
     steps:
-      - uses: honeycombio/gha-buildevents@1dad608d8534ec0fdf57e7503ceb8256b5ddc531 # v4.0.0
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: cachix/install-nix-action@v27
         with:
-          apikey: ${{ secrets.HONEYCOMB_API_KEY }}
-          dataset: syllabus-tracker-build-events
-        env:
-          TRACE_ID: ${{ needs.start-build.outputs.trace_id }}
-
-      - name: Record verification start
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+      - name: Install opentofu via nix
         run: |
-          echo "STEP_START=$(date +%s)" >> $GITHUB_ENV
-          echo "STEP_ID=verify_deployment" >> $GITHUB_ENV
+          nix profile install nixpkgs#opentofu
+          tofu version
 
-      - name: Checkout code for commit info
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Pull SSH key from platform state
+        env:
+          AWS_ACCESS_KEY_ID:     ${{ secrets.PLATFORM_STATE_R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.PLATFORM_STATE_R2_SECRET_ACCESS_KEY }}
+          AWS_MAX_ATTEMPTS:      "5"
+        run: |
+          cd infra
+          i=0; until tofu init -input=false; do i=$((i+1)); [ $i -ge 30 ] && { echo "::error::tofu init failed after 30 attempts"; exit 1; }; echo "tofu init attempt $i failed; sleeping 30s"; sleep 30; done
+          tofu apply -refresh-only -auto-approve -input=false -lock=false
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          tofu output -raw _platform_ci_deploy_private_key > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H "$VM_IP" >> ~/.ssh/known_hosts
 
+      - name: docker login (this job's GITHUB_TOKEN)
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GHCR_USER:  ${{ github.actor }}
+        run: |
+          ssh -i ~/.ssh/id_ed25519 "deploy@$VM_IP" \
+            "docker login ghcr.io -u '$GHCR_USER' --password-stdin" <<< "$GHCR_TOKEN"
+
+      - name: docker compose up
+        run: |
+          ssh -i ~/.ssh/id_ed25519 "deploy@$VM_IP" "
+            cd /srv/sillybus &&
+            REGISTRY='${{ env.REGISTRY }}' \
+            IMAGE_NAME='${{ env.IMAGE_NAME }}' \
+            APP_IMAGE_TAG='${{ github.sha }}' \
+            FRONTEND_IMAGE_TAG='${{ github.sha }}' \
+            docker compose -f docker-compose.nixos.yml pull &&
+            REGISTRY='${{ env.REGISTRY }}' \
+            IMAGE_NAME='${{ env.IMAGE_NAME }}' \
+            APP_IMAGE_TAG='${{ github.sha }}' \
+            FRONTEND_IMAGE_TAG='${{ github.sha }}' \
+            docker compose -f docker-compose.nixos.yml up -d --remove-orphans
+          "
+
+  verify:
+    needs: deploy
+    runs-on: ubuntu-latest
+    steps:
       - name: Health check
-        env:
-          FULL_APP_DOMAIN: "syllabustracker.matthewtapps.com"
         run: |
-          echo "Attempting health check on https://${FULL_APP_DOMAIN}/api/health"
-          curl --verbose --fail --location "https://${FULL_APP_DOMAIN}/api/health" || \
-            (echo "ERROR: Application health check failed." && exit 1)
-
-          echo "Application health check successful."
-          echo " deployment_health_check=passed" >> $BUILDEVENT_FILE
-
-      - name: Create Honeycomb deployment marker
-        run: |
-          DEPLOY_TIME=$(date +%s)
-          GIT_COMMIT_HASH=$(git rev-parse HEAD)
-          GIT_COMMIT_MESSAGE=$(git log -1 --pretty=%B | tr -d '\n')
-
-          curl -X POST "https://api.honeycomb.io/1/markers/__all__" \
-            -H "X-Honeycomb-Team: ${{ secrets.HONEYCOMB_MARKER_KEY }}" \
-            -H "Content-Type: application/json" \
-            -d "{
-              \"message\": \"Deployed to NixOS VM: ${GIT_COMMIT_HASH}\",
-              \"type\": \"deploy\",
-              \"start_time\": ${DEPLOY_TIME},
-              \"url\": \"https://github.com/${{ github.repository }}/commit/${{ github.sha }}\",
-              \"metadata\": {
-                \"commit_hash\": \"${GIT_COMMIT_HASH}\",
-                \"commit_message\": \"${GIT_COMMIT_MESSAGE}\",
-                \"github_actor\": \"${{ github.actor }}\",
-                \"github_repository\": \"${{ github.repository }}\",
-                \"github_ref\": \"${{ github.ref }}\"
-              }
-            }"
-
-      - name: Complete verification step
-        run: |
-          buildevents step $TRACE_ID $STEP_ID $STEP_START "Verify Deployment"
-
-  end-trace:
-    runs-on: ubuntu-latest
-    needs: [start-build, verify_deployment]
-    if: ${{ always() }}
-    permissions:
-      actions: read
-
-    steps:
-      - uses: technote-space/workflow-conclusion-action@45ce8e0eb155657ab8ccf346ade734257fd196a5 # v3
-      - uses: honeycombio/gha-buildevents@1dad608d8534ec0fdf57e7503ceb8256b5ddc531 # v4.0.0
-        with:
-          apikey: ${{ secrets.HONEYCOMB_API_KEY }}
-          dataset: syllabus-tracker-build-events
-          status: ${{ env.WORKFLOW_CONCLUSION }}
-          trace-start: ${{ needs.start-build.outputs.trace_start}}
+          for i in {1..30}; do
+            if curl -fsSL https://sillybus.app/api/health; then
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "health check timed out"
+          exit 1

@@ -86,11 +86,8 @@ This returns a query_id. Poll `/1/query_results/__all__/{id}` for results.
 
 ### Environments
 
-- **sillybus** (id `hcaen_01kth4k90j69a9vvgks864rh78`) — what you want
-  for new-architecture deployments on sugar-glider.
-- **syllabus-tracker** — legacy prod (`170.64.159.153` droplet,
-  `syllabustracker.matthewtapps.com`). Different stack, click-minted
-  keys; don't query unless you specifically need legacy data.
+- **sillybus** (id `hcaen_01kth4k90j69a9vvgks864rh78`) — production on
+  sugar-glider.
 
 ### Services (datasets) you'll see in sillybus
 

@@ -9,7 +9,7 @@ pub fn load_environment() -> Result<(), Box<dyn std::error::Error>> {
     // Load most-specific files first so existing shell env wins, then secrets,
     // then environment-specific, then common defaults.
     let env_files = if is_production {
-        vec![".secrets.env", "config/prod.env", "config/common.env"]
+        vec!["config/prod.env", "config/common.env"]
     } else {
         vec![".secrets.env", "config/dev.env", "config/common.env"]
     };

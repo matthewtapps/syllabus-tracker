@@ -2,7 +2,7 @@ name: sillybus
 
 # Runtime stack only. The litestream restore + DB migrations are
 # operated as their own GHA jobs (`litestream_restore`, `migrate`)
-# in deploy-sillybus.yaml so failures gate the deploy explicitly at
+# in deploy.yaml so failures gate the deploy explicitly at
 # the workflow level. Both jobs operate on the `sillybus_app-data`
 # named volume directly via `docker run`, before this stack comes
 # up. By the time `docker compose up` runs here, /app/data/sqlite.db
@@ -84,7 +84,7 @@ services:
 
   litestream:
     image: litestream/litestream:0.3.13
-    container_name: syllabus-tracker-litestream
+    container_name: sillybus-litestream
     restart: unless-stopped
     command: ["replicate", "-config", "/etc/litestream.yml"]
     volumes:
