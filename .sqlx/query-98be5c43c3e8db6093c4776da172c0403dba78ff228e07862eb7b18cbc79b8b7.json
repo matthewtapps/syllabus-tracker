@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT belt FROM users WHERE id = ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "belt",
+        "ordinal": 0,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "98be5c43c3e8db6093c4776da172c0403dba78ff228e07862eb7b18cbc79b8b7"
+}

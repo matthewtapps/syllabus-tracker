@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT id, username, password, role, display_name, archived,\n                  email, first_name, last_name,\n                  graduated_at as \"graduated_at?: chrono::NaiveDateTime\",\n                  claimed_at as \"claimed_at?: chrono::NaiveDateTime\",\n                  approved_at as \"approved_at?: chrono::NaiveDateTime\",\n                  reset_requested_at as \"reset_requested_at?: chrono::NaiveDateTime\"\n           FROM users WHERE username = ?",
+  "query": "SELECT id, username, password, role, display_name, archived,\n                  email, first_name, last_name, belt, stripes,\n                  graduated_at as \"graduated_at?: chrono::NaiveDateTime\",\n                  claimed_at as \"claimed_at?: chrono::NaiveDateTime\",\n                  approved_at as \"approved_at?: chrono::NaiveDateTime\",\n                  reset_requested_at as \"reset_requested_at?: chrono::NaiveDateTime\",\n                  last_graded_at as \"last_graded_at?: chrono::NaiveDateTime\"\n           FROM users WHERE username = ?",
   "describe": {
     "columns": [
       {
@@ -49,23 +49,38 @@
         "type_info": "Text"
       },
       {
-        "name": "graduated_at?: chrono::NaiveDateTime",
+        "name": "belt",
         "ordinal": 9,
-        "type_info": "Datetime"
+        "type_info": "Text"
       },
       {
-        "name": "claimed_at?: chrono::NaiveDateTime",
+        "name": "stripes",
         "ordinal": 10,
-        "type_info": "Datetime"
+        "type_info": "Integer"
       },
       {
-        "name": "approved_at?: chrono::NaiveDateTime",
+        "name": "graduated_at?: chrono::NaiveDateTime",
         "ordinal": 11,
         "type_info": "Datetime"
       },
       {
-        "name": "reset_requested_at?: chrono::NaiveDateTime",
+        "name": "claimed_at?: chrono::NaiveDateTime",
         "ordinal": 12,
+        "type_info": "Datetime"
+      },
+      {
+        "name": "approved_at?: chrono::NaiveDateTime",
+        "ordinal": 13,
+        "type_info": "Datetime"
+      },
+      {
+        "name": "reset_requested_at?: chrono::NaiveDateTime",
+        "ordinal": 14,
+        "type_info": "Datetime"
+      },
+      {
+        "name": "last_graded_at?: chrono::NaiveDateTime",
+        "ordinal": 15,
         "type_info": "Datetime"
       }
     ],
@@ -85,8 +100,11 @@
       true,
       true,
       true,
+      true,
+      true,
+      true,
       true
     ]
   },
-  "hash": "caed9326a259619ed2be4845ba01a043970bcdc3ba669be89254175d7881e019"
+  "hash": "ff7938e678d3a94b00faec61f1b22dc9357e8e06d5e120bbd1266a74d8a2f5ab"
 }

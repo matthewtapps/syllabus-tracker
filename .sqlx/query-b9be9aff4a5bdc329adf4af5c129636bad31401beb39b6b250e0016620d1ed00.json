@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE users SET belt = ?, stripes = ?, last_graded_at = ? WHERE id = ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 4
+    },
+    "nullable": []
+  },
+  "hash": "b9be9aff4a5bdc329adf4af5c129636bad31401beb39b6b250e0016620d1ed00"
+}

@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO rank_audit (user_id, belt, stripes, last_graded_at, changed_by_id)\n         VALUES (?, ?, ?, ?, ?)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 5
+    },
+    "nullable": []
+  },
+  "hash": "c8ca001f1d1df91d5d1663348a57994e4c14cffa5ad18d1c29f6b6f625e2ce22"
+}
