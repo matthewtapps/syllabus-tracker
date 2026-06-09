@@ -24,7 +24,8 @@ use api::{
     api_recent_attempts, api_register_user,
     api_remove_tag_from_technique, api_remove_technique_from_collection,
     api_request_password_reset, api_reset_user_claim, api_self_register,
-    api_set_student_graduated, api_set_student_rank, api_update_attempt, api_update_collection,
+    api_set_footage_submitter, api_set_student_graduated, api_set_student_rank, api_update_attempt,
+    api_update_collection,
     api_update_library_technique, api_update_profile, api_update_student_technique,
     api_update_user, health,
 };
@@ -262,6 +263,7 @@ pub async fn init_rocket(
                 api_library_technique_stats,
                 api_set_student_graduated,
                 api_set_student_rank,
+                api_set_footage_submitter,
                 api_mark_student_technique_seen,
                 api_invite_user,
                 api_get_invite,

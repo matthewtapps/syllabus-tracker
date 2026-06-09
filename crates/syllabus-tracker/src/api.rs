@@ -119,6 +119,11 @@ pub struct UserData {
     pub username: String,
     pub display_name: String,
     pub role: String,
+    /// Stable string names of the permissions this user's role holds.
+    /// Lets the frontend gate UI per-permission (e.g. show an upload
+    /// button only when `permissions` contains "SubmitFootage")
+    /// without inventing a new RequireX route guard per surface.
+    pub permissions: Vec<String>,
     pub last_update: Option<String>,
     pub archived: bool,
     pub graduated_at: Option<String>,
@@ -141,11 +146,18 @@ pub struct UserData {
 
 impl From<User> for UserData {
     fn from(user: User) -> Self {
+        let permissions: Vec<String> = user
+            .role
+            .permissions()
+            .iter()
+            .map(|p| p.as_str().to_string())
+            .collect();
         Self {
             id: user.id,
             username: user.username.clone(),
             display_name: user.display_name.clone(),
             role: user.role.to_string(),
+            permissions,
             last_update: user.last_update.clone(),
             archived: user.archived,
             graduated_at: user.graduated_at.clone(),
@@ -316,6 +328,7 @@ pub struct StudentResponse {
     pub id: i64,
     pub username: String,
     pub display_name: String,
+    pub role: String,
     pub archived: bool,
     pub graduated_at: Option<String>,
     pub belt: Option<String>,
@@ -332,6 +345,7 @@ pub struct StudentTechniquesResponse {
     pub can_create_techniques: bool,
     pub can_manage_tags: bool,
     pub can_edit_student_rank: bool,
+    pub can_manage_footage_submitter: bool,
 }
 
 #[get("/student/<id>/techniques")]
@@ -387,6 +401,7 @@ pub async fn api_get_student_techniques(
             id: student.id,
             username: student.username,
             display_name: student.display_name,
+            role: student.role.to_string(),
             archived: student.archived,
             graduated_at: student.graduated_at,
             belt: student.belt,
@@ -399,6 +414,7 @@ pub async fn api_get_student_techniques(
         can_create_techniques: user.has_permission(Permission::CreateTechniques),
         can_manage_tags: user.has_permission(Permission::ManageTags),
         can_edit_student_rank: user.has_permission(Permission::EditStudentRank),
+        can_manage_footage_submitter: user.has_permission(Permission::ManageFootageSubmitter),
     }))
 }
 
@@ -873,7 +889,7 @@ pub async fn api_set_student_graduated(
     user.require_permission(Permission::ViewAllStudents)?;
 
     let target = get_user(db, id).await?;
-    if !matches!(target.role, crate::auth::Role::Student) {
+    if !target.role.is_student() {
         return Err(Status::BadRequest.into());
     }
 
@@ -928,7 +944,7 @@ pub async fn api_set_student_rank(
     user.require_permission(Permission::EditStudentRank)?;
 
     let target = get_user(db, id).await?;
-    if !matches!(target.role, crate::auth::Role::Student) {
+    if !target.role.is_student() {
         return Err(Status::BadRequest.into());
     }
 
@@ -941,6 +957,38 @@ pub async fn api_set_student_rank(
         user.id,
     )
     .await?;
+    Ok(Status::Ok)
+}
+
+#[derive(Deserialize, Clone)]
+pub struct FootageSubmitterToggle {
+    pub enabled: bool,
+}
+
+/// Coach toggle of the FootageSubmitter sub-role on a student. Flips
+/// `users.role` between "student" and "footage_submitter_student".
+/// Refuses to act on coach or admin targets. Distinct from the admin
+/// role-update flow.
+#[post("/student/<id>/footage-submitter", data = "<body>")]
+pub async fn api_set_footage_submitter(
+    id: i64,
+    body: Json<FootageSubmitterToggle>,
+    user: User,
+    db: &State<Pool<Sqlite>>,
+) -> ApiResult<Status> {
+    user.require_permission(Permission::ManageFootageSubmitter)?;
+
+    let target = get_user(db, id).await?;
+    if !target.role.is_student() {
+        return Err(Status::BadRequest.into());
+    }
+
+    let next_role = if body.enabled {
+        crate::auth::Role::FootageSubmitterStudent
+    } else {
+        crate::auth::Role::Student
+    };
+    update_user_role(db, id, next_role.as_str()).await?;
     Ok(Status::Ok)
 }
 
@@ -1630,6 +1678,7 @@ pub async fn api_get_single_student_technique(
             id: student.id,
             username: student.username,
             display_name: student.display_name,
+            role: student.role.to_string(),
             archived: student.archived,
             graduated_at: student.graduated_at,
             belt: student.belt,
