@@ -46,7 +46,7 @@ After M5's first pieces shipped (GH PRs #12 + #13), product feedback redirected 
 
 - **M4.5 — Collections → syllabuses rename** (new milestone, slots between M4 and M5b). User-facing rename: routes / types / API paths / copy. SQL table names stay `collections` until M5c bundles the data-model change with the table rename in one atomic step.
 
-- **M6** (pinning + notes refactor): `technique_notes` (already created in GH PR #14) is now scoped to the **pinned context only**. The originally-planned dual-read shim against `student_techniques.{student,coach}_notes` is dropped; syllabus notes will live in the per-syllabus progress table introduced in M5c.
+- **M6** (pinning + notes refactor): `technique_notes` (already created in GH PR #14) **stays as the canonical notes store across syllabus / pinned / camp contexts** per decision #21. The originally-planned dual-read shim during a transition window is replaced by a one-shot copy in the M5c migration script: legacy `student_techniques.{student,coach}_notes` rows merge into `technique_notes` during cutover. The per-syllabus progress table introduced in M5c does **NOT** carry notes columns — only status, attempt counts, and last-update timestamps.
 
 - **M8** (camps): drop any RAG-status surface on `camp_techniques`. Camp focus stays on videos / notes / matches.
 
@@ -61,6 +61,9 @@ After M5's first pieces shipped (GH PRs #12 + #13), product feedback redirected 
 | 18 | Multiple syllabuses per student | A student can be doing several syllabuses simultaneously; progress per `(student, syllabus, technique)`. | Matches gym reality: a student might be on Blue Belt + No-Gi Fundamentals + IBJJF Open prep at once, each with separate progress. |
 | 19 | Collections → syllabuses rename, scope | User-facing rename now (M4.5). SQL table names stay `collections` until M5c bundles the data-model change with the table rename atomically. | SQLite's declarative migrator handles a rename as drop + recreate, which is destructive. Bundling with the cutover keeps destructive ops contained to one coordinated step. |
 | 20 | Prod migration cadence for the data-model change | Manual cutover during M5c. Build on staging until the cutover lands; keep existing prod code paths working against `student_techniques` until cutover day. | The structural shift from `student_techniques` to per-syllabus progress is too big to drip in; an atomic cutover with a written runbook is safer than a long deprecation window. |
+| 21 | Notes home under the new data model | **`technique_notes` (keyed `(student, technique)`) stays as the canonical notes store.** Notes are shared across syllabus / pinned / camp contexts. The per-syllabus progress row (`student_syllabus_techniques`) does **NOT** carry `notes_*` columns — it tracks status, attempt counts, last-update timestamps only. | Honors SD-004's "same notes appear across every view of the same `(student, technique)` pair" — the original product intent. Avoids the "I wrote a note in my Blue Belt syllabus, opened my No-Gi syllabus, where did it go?" foot-gun. Per-syllabus state (status / attempts) is the thing that legitimately differs across contexts. |
+| 22 | Feed grouping when the same technique is in multiple syllabuses | **One card per `(student, technique)`, aggregating syllabuses.** Card sub-title lists the contributing syllabuses ("Blue Belt Fundamentals · No-Gi Fundamentals"). Status reflects the most advanced syllabus's status, or "mixed" with a tooltip. | Consistent with decision #21 — notes live at the `(student, technique)` level, so the dominant feed surface should too. Avoids feed noise from duplicate cards for the same technique. Tapping the card lands on the syllabus page where per-syllabus progress is visible side-by-side. |
+| 23 | Filter-chip transition animation | **Framer Motion**. Add as a project dependency with a tiny wrapper around `motion.div` for entry/exit fades on filtered cards. Reused later for M19's notification drawer + M20's deleted-item placeholder transitions. | The chip-press → cards-rearrange interaction is the headline of the new feed surface; the difference between "cards instantly snap" and "cards smoothly fade" is the difference between feeling like a polished product and feeling like a homework assignment. The dep cost is real but amortised across future surfaces. |
 
 ### What stays unchanged
 
@@ -68,6 +71,7 @@ After M5's first pieces shipped (GH PRs #12 + #13), product feedback redirected 
 - Pinning data model (`pinned_techniques`, M6) — independent of the syllabus question; stays as planned.
 - All milestones beyond M8 — names and content unchanged; only the camp-RAG carve-out (decision #17) affects M8.
 - The pending-decisions table above (rows 1–15) — all still valid as-is.
+- **`technique_notes` (PR #14) schema and comment** — still correct under decision #21. The comment's "shared across syllabus / pinned / camp" framing was right; only the *implementation timeline* changes (cutover-time copy instead of dual-read shim).
 
 ---
 
@@ -237,15 +241,31 @@ These two refactors are called out separately because they touch a lot of surfac
 
 **Goal**: User-facing rename of "collections" to "syllabuses". No data-model change; SQL table names stay `collections` until M5c bundles the rename with the atomic data-model cutover.
 
+**Scope and counts** (verified against the current codebase):
+- 20+ backend / frontend files have substantive `collection` references. `db/collections.rs` (~72 hits) → renames to `db/syllabuses.rs`. Frontend `lib/api.ts`, `mutations.ts`, `query-keys.ts`, the `app/collections/` route, plus deep refs from `student-techniques/page.tsx`, `library/page.tsx`, `assign-techniques.tsx`, `add-techniques-to-collection-dialog.tsx`.
+- `bin/seed.rs` (12 hits) and `crates/syllabus-tracker/src/test/utils.rs` need ripple updates so the seed binary and integration tests still pass.
+- `frontend/scripts/manual-verify.mjs` references "collection" — verify script breaks otherwise.
+- `db/reporting.rs` queries that join collections feed the dashboard — explicitly grep this file post-rename.
+
+**Naming policy** (critical for the M4.5 → M5c window):
+- **SQL identifiers stay verbatim** in raw query strings: `collections`, `collection_techniques`, `student_techniques.collection_id`. Don't fight the migrator.
+- **Rust fn parameters and struct fields rename** to `syllabus_*`. Bridge with `AS syllabus_id` aliases in `SELECT` clauses (e.g. `SELECT collection_id AS syllabus_id FROM student_techniques`).
+- Every raw SQL hit on `collection_id` after the rename must carry an inline comment pointing at decision #19 / M5c so a future reader knows it's the old name, not a new one.
+
 **Scope**:
-- Frontend: route `/collections` → `/syllabuses`, route `/collections/:id` → `/syllabuses/:id`. Type `Collection` → `Syllabus`. Variable names, hooks (`useCollections` → `useSyllabuses`), query keys. UI copy: "Collections" → "Syllabuses", "Collection" → "Syllabus". Plural is "syllabuses" everywhere — avoid "syllabi".
+- Frontend: route `/collections` → `/syllabuses`, route `/collections/:id` → `/syllabuses/:id`. **Add a `<Navigate to="/syllabuses" replace />` redirect from `/collections` and `/collections/:id`** so any link a coach previously shared via Slack/iMessage still resolves. Type `Collection` → `Syllabus`. Variable names, hooks (`useCollections` → `useSyllabuses`), query keys. UI copy: "Collections" → "Syllabuses", "Collection" → "Syllabus". Plural is "syllabuses" everywhere — avoid "syllabi".
 - Backend: API path `/api/collections` → `/api/syllabuses`. Rust types `Collection`/`CollectionResponse` → `Syllabus`/`SyllabusResponse`. `db/collections.rs` → `db/syllabuses.rs`. The Rocket routes use the new path; the legacy `/api/collections` paths are not preserved (only our frontend consumes them).
-- **SQL stays as-is**: `collections`, `collection_techniques`, `student_techniques.collection_id` keep their current names. A code comment on each of these calls out "renamed to syllabus at code/UX level; SQL rename bundled with the M5c cutover."
+- **SQL stays as-is**: `collections`, `collection_techniques`, `student_techniques.collection_id` keep their current names per the naming policy above.
 - Copy: anywhere we say "Add to collection" → "Add to syllabus". "Start from a syllabus" framing on the new-student / add-techniques flows.
 
-**PR breakdown** (~2): (1) Backend rename (paths, types, file rename) + sqlx-prepare. (2) Frontend rename (routes, types, copy).
+**PR breakdown** (~4): (1) Backend rename (paths, types, file rename) + `sqlx-prepare`. (2) Frontend lib + API helpers + queries/mutations/keys rename. (3) Page / component / copy rename + `/collections` → `/syllabuses` redirect routes. (4) `bin/seed.rs` + `test/utils.rs` + `frontend/scripts/manual-verify.mjs` ripple updates.
 
-**Verify**: All existing collection workflows still work end-to-end under the new vocabulary; SQL queries unchanged; no behaviour change.
+**Verify**:
+- All existing collection workflows still work end-to-end under the new vocabulary; no behaviour change.
+- `cargo nextest` passes; `pnpm exec tsc -b` clean; manual `seed` binary runs against an empty DB and produces a populated dev set.
+- `rg -n collection crates/syllabus-tracker/src/db/reporting.rs` returns zero non-comment hits.
+- `rg -n "/collections" frontend/src` returns only the `<Navigate>` redirect pair (no surviving callers).
+- Old links: navigating to `/collections/3` redirects to `/syllabuses/3` and renders.
 
 ---
 
@@ -285,7 +305,7 @@ Any coach role can read any student's feed (CX-015); students can only read thei
 
 ### M5b — Feed-as-cards + filter chips + syllabus extraction (introduced by amendment)
 
-> ✨ New milestone introduced by the [Plan amendment](#plan-amendment-2026-06-09--ia--data-model-reframe). Layers on top of M5a (which already shipped as GH PRs #12 + #13).
+> ✨ New milestone introduced by the [Plan amendment](#plan-amendment-2026-06-09--ia--data-model-reframe). Layers on top of M5a (which already shipped as GH PRs #12 + #13). **M5b is honestly 3 milestones-of-work split into M5b1 / M5b2 / M5b3 below**; the rubber-duck review caught that the original "~3 PRs" estimate undercounted by ~2x.
 
 **Goal**: Activity feed becomes the primary view at `/student/<id>` as a card layout (Twitter / Instagram style, infinite scroll). The four parallel tabs from M5a collapse into filter chips on the same feed surface (Activity / Pinned / Camps / etc — chip semantics, not view-swap). Syllabus exits the tab set entirely and gets its own route at `/student/<id>/syllabus`.
 
@@ -295,20 +315,63 @@ Any coach role can read any student's feed (CX-015); students can only read thei
 - `/student/<id>` (was: profile with tabs) → activity feed home. Prominent "View syllabus" button at the top below the rank strip.
 - `/student/<id>/syllabus` (NEW) → the existing syllabus content (techniques list, RAG status, filters, attempts). All of the content currently inside M5a's "Syllabus" `TabsContent` moves here as its own route component.
 
-**DB**: No changes. Continues to read `student_techniques` until M5c's cutover.
+**Frontend data contract** (must be defined before extraction):
+- `/student/<id>` feed page reads: `useStudentFeed(studentId, {kinds, cursor})` + a new `useStudentProfileHeader(studentId)` (rank strip + footage badge fields). Does NOT read `useStudentTechniques`.
+- `/student/<id>/syllabus` syllabus page reads `useStudentTechniques(studentId)` exactly as today — preserves all existing filter / expansion / dialog state.
+- The issued-claim-link panel (`student-techniques/page.tsx:961-988`) **stays at profile root `/student/<id>`**, not the syllabus page; it belongs to the student's identity, not their progress.
 
-**Backend**: Feed endpoint unchanged from M5a (kinds + parent-resolution + dedup all valid). Add `?kinds=` filter param so the chip UI can request just `camps`, `pinned`, `techniques`, etc.
+### M5b1 — Route extraction + feed endpoint pagination
+
+**Goal**: Surgical move of the existing M5a Syllabus tab content into its own route at `/student/<id>/syllabus`. Backend feed gets paginated. No card layout yet; no chips yet. Status quo for the visible feed surface.
+
+**Backend**:
+- Add cursor pagination to `GET /api/student/<id>/feed`: `?after=<NaiveDateTime>&limit=<n=25>`. Today's `db/feed.rs` reads everything; rewrite the sort-in-app pattern as a per-kind `UNION ALL` plus `WHERE latest_activity_at < ?after ORDER BY latest_activity_at DESC LIMIT ?limit`.
+- New supporting indexes — required NOW even though M18 originally owned them: `idx_attempts_for_feed` on `attempts(student_technique_id, attempted_at DESC)` (already exists at `:157`), confirm `idx_rank_audit_user_changed` covers the rank-side `WHERE user_id = ? ORDER BY changed_at DESC`.
+- Endpoint signature: returns `{items: FeedItem[], next_cursor: NaiveDateTime | null}` so the frontend can chain pages.
 
 **Frontend**:
-- Extract a `FeedCard` component family: `TechniqueFeedCard`, `RankChangeFeedCard`, etc. Each is a standalone card (border, padding, action affordance), not a connected list row. Future milestones add `PinnedFeedCard`, `CampFeedCard`, `ThreadFeedCard`, etc — the surface grows by adding new cards.
-- Filter chip row above the feed: `All / Techniques / Pinned / Camps / Rank changes` (and grows as new kinds land). Multi-select OR semantics. Fade-in/out animation when toggling chips so non-matching cards disappear smoothly.
-- Infinite scroll via `useInfiniteQuery` on `qk.studentFeed`. Page size ~25, cursor by `latest_activity_at`.
-- Extract `/student/<id>/syllabus` as a new lazy route component holding the existing M5a Syllabus tab content. The existing `?focus=<technique_id>` deep links continue to land on this route.
-- Drop the `Tabs` container from `/student/<id>` since chips replace it. Profile header (rank strip, footage submitter badge, student name, view-syllabus button) stays at the top.
+- Add `/student/<id>/syllabus` as a lazy route. Move the syllabus content (h2 + attempts summary + action buttons + filters + technique list) into a new component `app/student-techniques/syllabus-page.tsx` (or whatever the cleanest extraction).
+- Profile root `/student/<id>` keeps the existing tab scaffold for one PR (transitional) but the Syllabus tab redirects to `/student/<id>/syllabus`.
+- Deep link rewrite: `activity-feed.tsx:103` currently emits `?profile_tab=syllabus&focus=...`. Rewrite to `/student/<id>/syllabus?focus=...`.
 
-**PR breakdown** (~3): (1) Extract `/student/<id>/syllabus` as its own route; move M5a's syllabus tab content there. (2) Replace tab container with filter chips + infinite scroll on `/student/<id>`. (3) Convert v1 row layout to per-kind `FeedCard` components.
+**PR breakdown** (~3): (1) Pagination on backend + new endpoint contract + sqlx-prepare. (2) Extract syllabus content to its own route + claim-link panel placement decision. (3) Rewrite feed item deep-links.
 
-**Verify**: `/student/<id>` lands on the feed (cards, infinite scroll). Chips filter the feed in place. `/student/<id>/syllabus` shows the techniques list with all existing controls. `?focus=` deep links land on syllabus. Coaches can read any student's feed and syllabus.
+### M5b2 — FeedCard family + dropping the tab container
+
+**Goal**: Convert the connected-list rows in `activity-feed.tsx` to per-kind standalone Cards. Drop the `Tabs` wrapper from `/student/<id>` entirely. No infinite scroll yet (still one page of items).
+
+**Frontend**:
+- Add `frontend/src/app/student-techniques/components/feed-cards/` directory: `technique-feed-card.tsx`, `rank-change-feed-card.tsx`, plus a shared `FeedCardShell` (border / padding / hover affordances). Future milestones add `pinned-feed-card.tsx`, `camp-feed-card.tsx`, etc.
+- Each card uses shadcn `Card` / `CardHeader` / `CardContent` primitives — already in the project. No new shadcn imports needed.
+- Drop the `Tabs` / `TabsList` / `TabsContent` from the profile root. The page becomes: profile header + "View syllabus" button + feed cards.
+
+**PR breakdown** (~2): (1) FeedCard family extraction + card components. (2) Drop tabs container + flatten profile root.
+
+### M5b3 — Filter chips + infinite scroll + Framer Motion
+
+**Goal**: Add filter chips above the feed and wire up infinite scroll. Framer Motion ships as a project dependency (per decision #23) for chip-toggle card animations.
+
+**Backend**:
+- Extend `GET /api/student/<id>/feed?kinds=technique,rank_change` to accept a comma-separated kind filter. Multi-select OR semantics.
+
+**Frontend**:
+- Add `framer-motion` to `frontend/package.json`. Reuse later for M19 / M20.
+- New `useInfiniteFeed(studentId, {kinds})` hook wrapping TanStack's `useInfiniteQuery`. Cursor field is `latest_activity_at`. `getNextPageParam` returns `lastPage.next_cursor || undefined`.
+- New `InfiniteList<T>` component (or hook) wrapping `IntersectionObserver` for the "load more on scroll" trigger. Reusable for future card lists (camps, threads, etc).
+- Filter chip row above the feed using shadcn `Badge` with active/inactive variants (precedent at `student-techniques/page.tsx:773-810`). URL state via `?kinds=` searchParam.
+- Chip toggle animation: `motion.div` wrapping each card with `layout` and `animate={{ opacity: 1 }} initial={{ opacity: 0 }} exit={{ opacity: 0 }}`.
+
+**Query key** update: `qk.studentFeed(studentId, {kinds, cursor})` — extend M5a's key to carry the new params. **Important**: today's `query-keys.ts:48` is `studentFeed: (studentId) => ["student", studentId, "feed"]` — needs the params slot.
+
+**PR breakdown** (~3): (1) Framer Motion dep + `useInfiniteFeed` hook + backend `?kinds=` filter. (2) Filter chip row + URL state plumbing. (3) Chip-toggle animation + verify pass on mobile viewports.
+
+**Verify (M5b overall)**:
+- `/student/<id>` lands on the feed (cards, infinite scroll, chips). Toggling chips smoothly fades non-matching cards.
+- `/student/<id>/syllabus` shows the techniques list with all existing controls (filters, expansion, attempts, edit dialogs).
+- `?focus=` deep links on technique feed cards land on the syllabus page.
+- `?profile_tab=syllabus` legacy URLs from M5a redirect to `/student/<id>/syllabus`.
+- Coaches read any student's feed and syllabus (CX-015 holds).
+- Issued-claim-link panel reachable from `/student/<id>` (profile root), not buried in the syllabus page.
 
 ---
 
@@ -318,43 +381,70 @@ Any coach role can read any student's feed (CX-015); students can only read thei
 
 **Goal**: Replace the `student_techniques` model (techniques assigned individually to a student) with the new model: syllabuses as standalone entities, students "doing" multiple syllabuses, per-`(student, syllabus, technique)` progress. Existing prod data migrated manually as part of the cutover.
 
-**Stories**: not directly tied to a CSV story; this is a foundational data-model change required by amendment decisions #16 and #18.
+**Stories**: not directly tied to a CSV story; this is a foundational data-model change required by amendment decisions #16, #18, #21, and #22.
 
 **DB** (atomic migration):
 - Rename `collections` → `syllabuses` (and the related `collection_techniques` → `syllabus_techniques`).
 - New `student_syllabuses` table: `(id, student_id, syllabus_id, assigned_at, assigned_by_id, archived_at NULL)`. Records "this student is doing this syllabus". A student can have multiple active rows.
-- New `student_syllabus_techniques` table: `(student_syllabus_id, technique_id, status, last_coach_update_at, last_coach_update_by_id, last_student_update_at, last_student_update_by_id, notes_student, notes_coach)`. Per-`(student, syllabus, technique)` progress. PK on `(student_syllabus_id, technique_id)`.
-- New `attempts.student_syllabus_technique_id` column replaces the existing `student_technique_id`. Attempts are now scoped to a `(student, syllabus, technique)` tuple.
-- Existing `student_techniques` table is **dropped at the end of the cutover** after data is migrated.
+- New `student_syllabus_techniques` table: `(student_syllabus_id, technique_id, status, last_coach_update_at, last_coach_update_by_id, last_student_update_at, last_student_update_by_id, attempt_count_cache)`. Per-`(student, syllabus, technique)` progress. **No `notes_*` columns per decision #21** — notes live in `technique_notes` keyed `(student, technique)`, shared across all contexts. PK on `(student_syllabus_id, technique_id)`.
+- `attempts.student_technique_id` is **rewritten in place** (not adding a new column): the FK target switches from `student_techniques(id)` to `student_syllabus_techniques(id)`. SQLite requires the rebuild-table dance via the migration engine; the runbook below names this as an explicit step.
+- `student_technique_views.student_technique_id` also rewritten in place to point at `student_syllabus_techniques`. Existing rows mapped via the same migration script.
+- Existing `student_techniques`, `collections`, `collection_techniques`, `student_techniques.collection_id` are all **dropped at the end of the cutover** after data is migrated.
 
-**Migration runbook**:
-1. Deploy the new tables alongside the existing `student_techniques` in a single migration (additive only).
-2. Stop the app briefly. Run a one-off migration script that, for each existing student:
-   - Reads their `student_techniques` rows.
-   - Decides which target syllabus each row belongs to (mostly via the existing `student_techniques.collection_id` if set; ad-hoc rows get bucketed into a new per-student "Imported progression" syllabus auto-created during the migration).
-   - Writes corresponding `student_syllabuses` + `student_syllabus_techniques` rows. Carries `status`, notes, last-update timestamps over.
-   - Repoints attempts.
-3. Deploy the new app code that reads from the new tables. Drop `student_techniques`, `collections`, `collection_techniques`, `student_techniques.collection_id`. App boots cleanly.
-4. Rollback path: keep a SQL backup of the original `student_techniques`-shaped DB taken right before step 2; if anything goes wrong, restore + revert the app deploy together.
+**Migration runbook** (write it before code, treat it like a deployment script):
 
-**Backend**: every read against `student_techniques` rewrites to the new tables. The Rocket route surface mostly survives but the response shape changes: instead of returning a flat list of techniques per student, we return a list of `(syllabus, techniques[])` groups. The feed query (M5a) gets reworked to surface "you progressed on technique X in syllabus Y" rather than just "technique X".
+1. **Pre-flight on the staging fork** (separate PR, days before the real cutover): full dry-run of the migration script against a fresh fork of prod data. Verify row counts match before / after, spot-check ~10 students with mixed progression for fidelity.
+2. **Pre-cutover SQL backup**. Litestream snapshot the prod DB to an off-host R2 location. This is the rollback artefact.
+3. **Engage maintenance mode**. App is set to return 503 for all non-health routes. Add a `MAINTENANCE_MODE` env-var read by Rocket at startup; the existing `prep_host` step in the deploy workflow flips it. (TODO: confirm Rocket gracefully reloads or needs a restart.)
+4. **Add new tables** alongside `student_techniques` via the declarative migrator. Additive only at this step; old reads still work.
+5. **Run the one-off migration binary** (`bin/migrate_to_syllabus_model`). For each existing student:
+   - Iterate their `student_techniques` rows.
+   - Decide each row's target syllabus: `collection_id IS NOT NULL` maps 1:1 to the renamed `syllabuses` table; `collection_id IS NULL` rows bucket into a new per-student "Imported progression" syllabus created during the run.
+   - Insert `student_syllabuses` + `student_syllabus_techniques` rows. Status, last-update timestamps carry over verbatim.
+   - **Notes pass**: copy any `student_techniques.student_notes` / `coach_notes` into a `technique_notes` row keyed `(student_id, technique_id)` — that table already exists from M6 schema (PR #14). If a `technique_notes` row already exists for the pair (pinned-only writes from M6), merge into it: take the more recent timestamp, concat notes if both non-empty.
+   - **Attempts FK rewrite**: build an in-memory map `old_student_technique_id` → `new_student_syllabus_technique_id`. `UPDATE attempts SET student_technique_id = ?` in batches; use SQLite's `UPDATE ... FROM (SELECT old, new FROM map_table)` (SQLite 3.33+).
+   - **Views rewrite**: same pattern for `student_technique_views.student_technique_id`.
+6. **Rebuild-table dance** for the FK target switch. SQLite needs: create `attempts_new` with the new FK, copy rows, drop `attempts`, rename `attempts_new` → `attempts`. The migration engine has a precedent for this (`reorder-columns` style migrations); cross-reference.
+7. **Deploy the new app code**. Schema check at startup verifies the new shape; old tables are dropped in this same migrate pass.
+8. **Disengage maintenance mode**. Smoke-test the dashboard, a coach's view of a student, a student's own syllabus page, the feed.
+9. **Rollback path**: if any step fails before the new app code is up, run a script to drop the new tables (the additive part). If failure is after the FK rewrite, restore the pre-cutover Litestream snapshot AND revert the app image — these must move together, do not partially restore.
 
-**Frontend**: `/student/<id>/syllabus` becomes `/student/<id>/syllabuses` (plural — student can have multiple). Each syllabus renders as a section with its own technique list + RAG bar. A "Start a new syllabus" affordance lets a coach assign another. The feed gets a new card kind for "Syllabus started" / "Syllabus archived" events.
+**Backend**:
+- Every read against `student_techniques` rewrites to the new tables. The Rocket route surface mostly survives but the response shape changes: instead of returning a flat list of techniques per student, we return a list of `(syllabus, techniques[])` groups for the syllabus page; the feed page query groups by `(student_id, technique_id)` per decision #22, aggregating syllabuses.
+- The feed `technique` item gets a new `syllabuses: [{id, name, status}]` sub-array so a card can show "Blue Belt Fundamentals · No-Gi Fundamentals" and which one tripped the latest activity.
+- `db/feed.rs` rewrites: `SELECT FROM student_syllabus_techniques sst JOIN student_syllabuses ss ON sst.student_syllabus_id = ss.id WHERE ss.student_id = ?` replaces today's `student_techniques` scan; group in app code by `(student_id, technique_id)` aggregating syllabuses per decision #22.
+- `db/reporting.rs` dashboard query: `has_unseen_activity` join migrates from `student_techniques.last_student_update_at` to `MAX(student_syllabus_techniques.last_student_update_at)` per `(student_id, technique_id)` group.
 
-**PR breakdown** (~5): (1) New tables alongside existing. Migration script as a one-off binary. Verify against the prod-shaped staging DB. (2) Backend reads rewritten; existing endpoints adapted; integration tests against the new shape. (3) Frontend reads rewritten; syllabuses page handles multiple. (4) New feed item kinds. (5) **Atomic cutover day**: app down for a few minutes, migration script run, new app deployed, `student_techniques` dropped.
+**Frontend**:
+- `/student/<id>/syllabus` becomes `/student/<id>/syllabuses` (plural — student can have multiple). Each syllabus renders as a section with its own technique list + RAG bar.
+- A "Start a new syllabus" affordance lets a coach assign another from the per-student page or from the new student creation flow.
+- The feed gets a new card kind for "Syllabus started" / "Syllabus archived" events.
 
-**Verify**: Existing prod students keep their progress (status, notes, attempts) intact after migration. Coaches can assign a second syllabus to an existing student and track progress separately on shared techniques. The feed shows "X progressed on Y in syllabus Z" events correctly. Rollback path tested on the staging fork.
+**PR breakdown** (~7): (1) New tables + the migration binary; verify against the staging fork. (2) Backend reads rewritten; existing endpoints adapted; integration tests against the new shape. Server still reads from old tables in prod (new tables exist but unused) — this PR is a "shadow build" lifted by feature flag. (3) Frontend reads rewritten; syllabuses page handles multiple; per-syllabus sections. (4) New feed item kinds + the `(student_id, technique_id)` aggregation grouping rule. (5) Notes-pass: copy notes from `student_techniques.{student,coach}_notes` into `technique_notes` (merging with any existing pinned-context rows). (6) Maintenance-mode infrastructure: env var, Rocket-level guard, deploy.yaml flip step. (7) **Atomic cutover day**: 503 mode, migration binary, new image deploy, old tables dropped.
+
+**Verify**:
+- Staging fork: full dry-run completes; row counts match; spot-check ~10 students.
+- Existing prod students keep their progress (status, notes, attempts) intact after migration.
+- Coaches can assign a second syllabus to an existing student and track progress separately on shared techniques.
+- Notes typed in the syllabus page show up in the pinned view of the same technique (decision #21).
+- A technique in two syllabuses shows as ONE feed card with both syllabuses in the sub-title (decision #22).
+- Dashboard `has_unseen_activity` lights up correctly after a student edits a syllabus note.
+- Rollback path tested end-to-end on the staging fork BEFORE cutover day.
 
 **Risks** (revisit before kickoff):
 - The "Imported progression" auto-syllabus bucket for ad-hoc-assigned techniques is lossy. Acceptable for now but document the heuristic in the migration runbook.
 - The cutover is coordinated. Pick a low-traffic window and pre-announce.
+- The FK rebuild-table dance for `attempts` (108 call sites of `attempts.student_technique_id` today) is the most error-prone step. Bench it on the staging fork first.
 - Tests / fixtures across the codebase reference `student_techniques` shapes; a wholesale rename of test fixtures rides along.
+- The notes-merge step in the migration script needs a deterministic conflict-resolution rule (most-recent timestamp wins; concat both texts if both non-empty). Document it.
 
 ---
 
 ### M6 — Pinning + shared notes refactor
 
-> ⚠️ **Amended 2026-06-09** — see [Plan amendment](#plan-amendment-2026-06-09--ia--data-model-reframe). `technique_notes` (already created in GH PR #14) is now scoped to the **pinned context only**. The dual-read shim against `student_techniques.{student,coach}_notes` is dropped; syllabus notes will live in the per-syllabus progress table introduced in M5c.
+> ⚠️ **Amended 2026-06-09** — see [Plan amendment](#plan-amendment-2026-06-09--ia--data-model-reframe). Per decision #21, `technique_notes` (already created in GH PR #14) IS the canonical notes store across syllabus / pinned / camp contexts. The dual-read shim against `student_techniques.{student,coach}_notes` becomes a one-shot migration during M5c: the migration script copies legacy notes into `technique_notes`, merging with any pinned-context rows.
+>
+> **Followup**: the schema comment at `config/schema.sql:52-58` in PR #14 still describes the table as "shared across syllabus / pinned / camp" which now aligns with decision #21 — no change needed. The original "shim then drop" intent is replaced by "copy at cutover".
 
 **Stories**: SD-003, SD-004, SD-006, SD-008, SD-009, SD-015, SD-014 (profile header strip only; dashboard signal stays in M21).
 
@@ -423,7 +513,9 @@ Any coach role can read any student's feed (CX-015); students can only read thei
 
 ### M8 — Generic camps + camp techniques + per-camp visibility + route-module convention
 
-> ⚠️ **Amended 2026-06-09** — camps do **not** track RAG status (decision #17). Drop any status fields from `camp_techniques`; RAG lives on the per-syllabus progress row only. Camp focus is videos / notes / matches.
+> ⚠️ **Amended 2026-06-09** — decision #17 confirms `camp_techniques` does NOT carry a status column. M8's existing DB schema (`camp_techniques(camp_id, technique_id, position)`) already matches this; this note is documentation-only — no fields to drop. The amendment's real M8 impact lives upstream of the schema: any "RAG donut" / "status pill" UI surface on camp detail is out of scope; camp focus is videos / notes / matches.
+>
+> The original "Camps tab" framing in the Frontend section below is also superseded by decision #16 — the Camps surface is now a filter chip on the feed (`?kinds=camp` on the feed query) plus the `/camps/<id>` detail route, not a parallel tab.
 
 **Stories**: CC-001, CC-008, CC-009, CC-010, CC-015.
 
