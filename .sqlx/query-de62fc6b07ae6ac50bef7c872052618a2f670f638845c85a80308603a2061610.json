@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT v.id, v.technique_id, v.title, v.description, v.position, v.kind,\n                v.processing_status, v.processing_error, v.storage_key, v.bytes,\n                v.duration_seconds, v.width, v.height,\n                v.external_url, v.external_host, v.external_video_id, v.uploaded_by_id,\n                v.created_at, v.updated_at, v.hidden_at\n         FROM videos v\n         LEFT JOIN video_student_visibility vsv\n                ON vsv.video_id = v.id AND vsv.student_id = ?\n         WHERE v.technique_id = ?\n           AND v.deleted_at IS NULL\n           AND COALESCE(vsv.visible, v.hidden_at IS NULL) = 1\n         ORDER BY v.position ASC, v.id ASC",
+  "query": "SELECT v.id, v.technique_id, v.title, v.description, v.position, v.kind,\n                        v.processing_status, v.processing_error, v.storage_key, v.bytes,\n                        v.duration_seconds, v.width, v.height,\n                        v.external_url, v.external_host, v.external_video_id, v.uploaded_by_id,\n                        v.created_at, v.updated_at, v.hidden_at\n                 FROM videos v\n                 WHERE v.technique_id = ?\n                   AND v.deleted_at IS NULL\n                   AND v.hidden_at IS NULL\n                 ORDER BY v.position ASC, v.id ASC",
   "describe": {
     "columns": [
       {
@@ -105,7 +105,7 @@
       }
     ],
     "parameters": {
-      "Right": 2
+      "Right": 1
     },
     "nullable": [
       true,
@@ -130,5 +130,5 @@
       true
     ]
   },
-  "hash": "5861078ea1e8f26272dacd17edba33d40f9e46f382db5e2b58484b6ec8c9cdcd"
+  "hash": "de62fc6b07ae6ac50bef7c872052618a2f670f638845c85a80308603a2061610"
 }

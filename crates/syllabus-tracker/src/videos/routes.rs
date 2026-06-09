@@ -240,18 +240,25 @@ pub struct VideoListItem {
 }
 
 #[instrument(skip(pool))]
-#[get("/techniques/<tid>/videos?<for_student>")]
+#[get("/techniques/<tid>/videos?<for_student>&<ctx>")]
 pub async fn api_list_technique_videos(
     tid: i64,
     for_student: Option<i64>,
+    ctx: Option<String>,
     user: User,
     pool: &State<Pool<Sqlite>>,
 ) -> Result<Json<ListVideosResponse>, Status> {
     let is_coach = user.has_permission(crate::auth::Permission::ViewAllStudents);
+    let visibility_ctx = db::VisibilityContext::parse(ctx.as_deref()).map_err(|_| Status::BadRequest)?;
+    // Camp ctx requires the caller to be in the camp; camps don't exist
+    // until M8, so reject for now to make the future contract explicit.
+    if matches!(visibility_ctx, db::VisibilityContext::Camp(_)) {
+        return Err(Status::BadRequest);
+    }
     let videos = if !is_coach {
-        // Students always see only what's effectively visible to them,
-        // regardless of any for_student query param a client tries to pass.
-        db::list_videos_for_technique_visible_to(pool.inner(), tid, user.id)
+        // Students see what's effectively visible to them in the named
+        // context (default: Syllabus, preserving legacy behaviour).
+        db::list_videos_for_technique_visible_to(pool.inner(), tid, user.id, visibility_ctx)
             .await
             .map_err(Status::from)?
     } else {
@@ -493,9 +500,10 @@ pub async fn api_delete_video(
 }
 
 #[instrument(skip(pool, storage))]
-#[get("/videos/<vid>/playback-url")]
+#[get("/videos/<vid>/playback-url?<ctx>")]
 pub async fn api_video_playback_url(
     vid: i64,
+    ctx: Option<String>,
     user: User,
     pool: &State<Pool<Sqlite>>,
     storage: &State<DynVideoStorage>,
@@ -504,11 +512,15 @@ pub async fn api_video_playback_url(
         .await
         .map_err(Status::from)?
         .ok_or(Status::NotFound)?;
+    let visibility_ctx = db::VisibilityContext::parse(ctx.as_deref()).map_err(|_| Status::BadRequest)?;
+    if matches!(visibility_ctx, db::VisibilityContext::Camp(_)) {
+        return Err(Status::BadRequest);
+    }
     // Students can only fetch playback URLs for videos that are effectively
-    // visible to them. Coaches bypass the check (library / preview flow).
+    // visible to them in the named context. Coaches bypass the check.
     let is_coach = user.has_permission(crate::auth::Permission::ViewAllStudents);
     if !is_coach {
-        let visible = db::video_visible_to_student(pool.inner(), vid, user.id)
+        let visible = db::video_visible_to_student(pool.inner(), vid, user.id, visibility_ctx)
             .await
             .map_err(Status::from)?;
         if !visible {
@@ -543,9 +555,10 @@ pub async fn api_video_playback_url(
 }
 
 #[instrument(skip(pool, storage))]
-#[get("/videos/<vid>/download-url")]
+#[get("/videos/<vid>/download-url?<ctx>")]
 pub async fn api_video_download_url(
     vid: i64,
+    ctx: Option<String>,
     user: User,
     pool: &State<Pool<Sqlite>>,
     storage: &State<DynVideoStorage>,
@@ -554,9 +567,13 @@ pub async fn api_video_download_url(
         .await
         .map_err(Status::from)?
         .ok_or(Status::NotFound)?;
+    let visibility_ctx = db::VisibilityContext::parse(ctx.as_deref()).map_err(|_| Status::BadRequest)?;
+    if matches!(visibility_ctx, db::VisibilityContext::Camp(_)) {
+        return Err(Status::BadRequest);
+    }
     let is_coach = user.has_permission(crate::auth::Permission::ViewAllStudents);
     if !is_coach {
-        let visible = db::video_visible_to_student(pool.inner(), vid, user.id)
+        let visible = db::video_visible_to_student(pool.inner(), vid, user.id, visibility_ctx)
             .await
             .map_err(Status::from)?;
         if !visible {

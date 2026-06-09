@@ -180,6 +180,16 @@ CREATE INDEX IF NOT EXISTS idx_videos_alive_by_technique
 -- (student, video). `visible = 1` forces the video to show even when the
 -- global hide is set; `visible = 0` forces it hidden even when the global
 -- default is visible. Absence of a row = follow the global default.
+-- Per-(video, student) visibility overrides scoped to the syllabus
+-- context. Layered on top of `videos.hidden_at` (the global hide).
+-- The `Camp(camp_id)` context (M8) will live in a separate table
+-- (`camp_video_visibility`) so a video hidden for a student in one
+-- camp doesn't ripple into other contexts. Library / thread / pinned
+-- contexts only check `videos.hidden_at`; per-student overrides do
+-- not apply there.
+-- Historically named `video_student_visibility` — kept as-is to avoid
+-- a destructive rename migration. Code refers to this table via the
+-- `Syllabus` arm of `VisibilityContext`.
 CREATE TABLE IF NOT EXISTS video_student_visibility (
     video_id INTEGER NOT NULL REFERENCES videos (id) ON DELETE CASCADE,
     student_id INTEGER NOT NULL REFERENCES users (id) ON DELETE CASCADE,

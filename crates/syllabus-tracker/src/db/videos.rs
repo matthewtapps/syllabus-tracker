@@ -199,64 +199,153 @@ pub async fn list_videos_for_technique(
     Ok(rows.into_iter().map(Video::from).collect())
 }
 
+/// The context in which a student is viewing a video. Determines which
+/// per-student override table (if any) layers on top of the global
+/// `videos.hidden_at` flag.
+///
+/// - `Library`: only `videos.hidden_at` applies. Per-student overrides
+///   are ignored, because the library is a shared browse surface; a
+///   student should never see a different library from their peers
+///   beyond what's globally hidden.
+/// - `Syllabus`: `videos.hidden_at` + the syllabus-scoped per-student
+///   overrides (the table currently named `video_student_visibility`).
+///   The default for legacy callers — preserves the prior behaviour.
+/// - `Camp(camp_id)`: `videos.hidden_at` + the camp-scoped overrides
+///   (M8 work, table not yet created). Until M8 lands, this arm just
+///   falls through to global-hide-only behaviour with a TODO.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum VisibilityContext {
+    Library,
+    Syllabus,
+    Camp(i64),
+}
+
+impl VisibilityContext {
+    /// Parse from the `ctx` query param. Recognised forms:
+    /// `library`, `syllabus`, `camp:<id>`. Missing / unknown values
+    /// default to `Syllabus` (the legacy behaviour).
+    pub fn parse(raw: Option<&str>) -> Result<Self, &'static str> {
+        match raw {
+            None | Some("syllabus") => Ok(VisibilityContext::Syllabus),
+            Some("library") => Ok(VisibilityContext::Library),
+            Some(s) if s.starts_with("camp:") => {
+                let id_str = &s["camp:".len()..];
+                id_str
+                    .parse::<i64>()
+                    .map(VisibilityContext::Camp)
+                    .map_err(|_| "invalid camp id in ctx")
+            }
+            Some(_) => Err("unknown ctx value"),
+        }
+    }
+}
+
 /// Lists videos for a technique, filtered to what `student_id` should
-/// actually see (effective visibility: per-student override beats global
-/// hide, soft-deleted videos always excluded).
+/// actually see in the given context. Soft-deleted videos always
+/// excluded.
 #[instrument(skip(pool))]
 pub async fn list_videos_for_technique_visible_to(
     pool: &Pool<Sqlite>,
     technique_id: i64,
     student_id: i64,
+    ctx: VisibilityContext,
 ) -> Result<Vec<Video>, AppError> {
-    let rows = sqlx::query_as!(
-        DbVideo,
-        "SELECT v.id, v.technique_id, v.title, v.description, v.position, v.kind,
-                v.processing_status, v.processing_error, v.storage_key, v.bytes,
-                v.duration_seconds, v.width, v.height,
-                v.external_url, v.external_host, v.external_video_id, v.uploaded_by_id,
-                v.created_at, v.updated_at, v.hidden_at
-         FROM videos v
-         LEFT JOIN video_student_visibility vsv
-                ON vsv.video_id = v.id AND vsv.student_id = ?
-         WHERE v.technique_id = ?
-           AND v.deleted_at IS NULL
-           AND COALESCE(vsv.visible, v.hidden_at IS NULL) = 1
-         ORDER BY v.position ASC, v.id ASC",
-        student_id,
-        technique_id,
-    )
-    .fetch_all(pool)
-    .await?;
+    let rows = match ctx {
+        VisibilityContext::Library | VisibilityContext::Camp(_) => {
+            // Library: no per-student overrides apply, only global hide.
+            // Camp: M8 will add `camp_video_visibility`; for now we fall
+            // back to global-hide-only since no camp_id exists yet.
+            sqlx::query_as!(
+                DbVideo,
+                "SELECT v.id, v.technique_id, v.title, v.description, v.position, v.kind,
+                        v.processing_status, v.processing_error, v.storage_key, v.bytes,
+                        v.duration_seconds, v.width, v.height,
+                        v.external_url, v.external_host, v.external_video_id, v.uploaded_by_id,
+                        v.created_at, v.updated_at, v.hidden_at
+                 FROM videos v
+                 WHERE v.technique_id = ?
+                   AND v.deleted_at IS NULL
+                   AND v.hidden_at IS NULL
+                 ORDER BY v.position ASC, v.id ASC",
+                technique_id,
+            )
+            .fetch_all(pool)
+            .await?
+        }
+        VisibilityContext::Syllabus => {
+            sqlx::query_as!(
+                DbVideo,
+                "SELECT v.id, v.technique_id, v.title, v.description, v.position, v.kind,
+                        v.processing_status, v.processing_error, v.storage_key, v.bytes,
+                        v.duration_seconds, v.width, v.height,
+                        v.external_url, v.external_host, v.external_video_id, v.uploaded_by_id,
+                        v.created_at, v.updated_at, v.hidden_at
+                 FROM videos v
+                 LEFT JOIN video_student_visibility vsv
+                        ON vsv.video_id = v.id AND vsv.student_id = ?
+                 WHERE v.technique_id = ?
+                   AND v.deleted_at IS NULL
+                   AND COALESCE(vsv.visible, v.hidden_at IS NULL) = 1
+                 ORDER BY v.position ASC, v.id ASC",
+                student_id,
+                technique_id,
+            )
+            .fetch_all(pool)
+            .await?
+        }
+    };
     Ok(rows.into_iter().map(Video::from).collect())
 }
 
-/// Returns the effective visibility for a single (video, student) pair.
-/// Used by playback / download guards to refuse access if the student
-/// shouldn't be able to see the video. Coaches bypass this check.
+/// Returns the effective visibility for a single (video, student) pair
+/// in the given context. Used by playback / download guards to refuse
+/// access if the student shouldn't be able to see the video in that
+/// context. Coaches bypass this check at the route level.
 #[instrument(skip(pool))]
 pub async fn video_visible_to_student(
     pool: &Pool<Sqlite>,
     video_id: i64,
     student_id: i64,
+    ctx: VisibilityContext,
 ) -> Result<bool, AppError> {
-    let row = sqlx::query!(
-        "SELECT
-            CASE
-                WHEN v.deleted_at IS NOT NULL THEN 0
-                WHEN vsv.visible IS NOT NULL THEN vsv.visible
-                WHEN v.hidden_at IS NULL THEN 1
-                ELSE 0
-            END AS \"visible!: i64\"
-         FROM videos v
-         LEFT JOIN video_student_visibility vsv
-                ON vsv.video_id = v.id AND vsv.student_id = ?
-         WHERE v.id = ?",
-        student_id,
-        video_id,
-    )
-    .fetch_optional(pool)
-    .await?;
-    Ok(row.map(|r| r.visible != 0).unwrap_or(false))
+    let row = match ctx {
+        VisibilityContext::Library | VisibilityContext::Camp(_) => {
+            // Library / Camp (until M8): only the global hide applies.
+            sqlx::query!(
+                "SELECT
+                    CASE
+                        WHEN v.deleted_at IS NOT NULL THEN 0
+                        WHEN v.hidden_at IS NULL THEN 1
+                        ELSE 0
+                    END AS \"visible!: i64\"
+                 FROM videos v
+                 WHERE v.id = ?",
+                video_id,
+            )
+            .fetch_optional(pool)
+            .await?
+            .map(|r| r.visible)
+        }
+        VisibilityContext::Syllabus => sqlx::query!(
+            "SELECT
+                CASE
+                    WHEN v.deleted_at IS NOT NULL THEN 0
+                    WHEN vsv.visible IS NOT NULL THEN vsv.visible
+                    WHEN v.hidden_at IS NULL THEN 1
+                    ELSE 0
+                END AS \"visible!: i64\"
+             FROM videos v
+             LEFT JOIN video_student_visibility vsv
+                    ON vsv.video_id = v.id AND vsv.student_id = ?
+             WHERE v.id = ?",
+            student_id,
+            video_id,
+        )
+        .fetch_optional(pool)
+        .await?
+        .map(|r| r.visible),
+    };
+    Ok(row.map(|v| v != 0).unwrap_or(false))
 }
 
 /// Sets (or clears) the global hide flag on a video. `actor_id` is not
