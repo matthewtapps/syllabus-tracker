@@ -62,6 +62,13 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
+import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from '@/components/ui/tabs';
+import { Calendar, ListTodo, Pin, Sparkles } from 'lucide-react';
 import { EmptyState } from '@/components/empty-state';
 import { SkeletonListRow } from '@/components/skeleton-row';
 import { GraduateConfirmDialog } from '@/components/graduate-confirm-dialog';
@@ -87,6 +94,8 @@ const FILTER_TAB_VALUES = new Set<FilterTab>([
 function isFilterTab(value: string | null): value is FilterTab {
   return value !== null && FILTER_TAB_VALUES.has(value as FilterTab);
 }
+
+type ProfileTab = 'activity' | 'syllabus' | 'pinned' | 'camps';
 
 interface StudentTechniquesProps {
   user: User;
@@ -178,6 +187,27 @@ export default function StudentTechniques({ user }: StudentTechniquesProps) {
       const params = new URLSearchParams(prev);
       if (next === 'all') params.delete('tab');
       else params.set('tab', next);
+      return params;
+    }, { replace: true });
+  }
+  // Top-level profile tab (Activity / Syllabus / Pinned / Camps) is a
+  // separate URL parameter from the in-syllabus status filter `tab` so
+  // existing /student/<id>?tab=red&focus=... deep links keep working.
+  // Deep links carrying ?focus=<id> land on the Syllabus tab so the
+  // technique they were targeting is visible.
+  const profileTabParam = searchParams.get('profile_tab');
+  const isValidProfileTab = (v: string | null): v is ProfileTab =>
+    v === 'activity' || v === 'syllabus' || v === 'pinned' || v === 'camps';
+  const profileTab: ProfileTab = isValidProfileTab(profileTabParam)
+    ? profileTabParam
+    : focusId !== null
+      ? 'syllabus'
+      : 'activity';
+  function setProfileTab(next: ProfileTab) {
+    setSearchParams((prev) => {
+      const params = new URLSearchParams(prev);
+      if (next === 'activity') params.delete('profile_tab');
+      else params.set('profile_tab', next);
       return params;
     }, { replace: true });
   }
@@ -541,8 +571,70 @@ export default function StudentTechniques({ user }: StudentTechniquesProps) {
           )}
           <div>
             <h1 className="text-xl font-semibold tracking-tight sm:text-2xl">
-              {isOwnView ? 'My techniques' : `${studentName}'s techniques`}
+              {isOwnView ? 'My profile' : studentName}
             </h1>
+          </div>
+        </div>
+      )}
+
+      {data && (
+        <Tabs value={profileTab} onValueChange={(v) => setProfileTab(v as ProfileTab)} className="space-y-4">
+          <TabsList className="grid w-full grid-cols-4 sm:inline-grid sm:w-auto">
+            <TabsTrigger value="activity" aria-label="Activity" className="gap-1.5">
+              <Sparkles className="h-3.5 w-3.5" aria-hidden />
+              <span className="hidden sm:inline">Activity</span>
+            </TabsTrigger>
+            <TabsTrigger value="syllabus" aria-label="Syllabus" className="gap-1.5">
+              <ListTodo className="h-3.5 w-3.5" aria-hidden />
+              <span className="hidden sm:inline">Syllabus</span>
+            </TabsTrigger>
+            <TabsTrigger value="pinned" aria-label="Pinned" className="gap-1.5">
+              <Pin className="h-3.5 w-3.5" aria-hidden />
+              <span className="hidden sm:inline">Pinned</span>
+            </TabsTrigger>
+            <TabsTrigger value="camps" aria-label="Camps" className="gap-1.5">
+              <Calendar className="h-3.5 w-3.5" aria-hidden />
+              <span className="hidden sm:inline">Camps</span>
+            </TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="activity" className="mt-0">
+            <EmptyState
+              icon={Sparkles}
+              title="Activity feed coming soon"
+              description="One row per thing happening, ordered by most recent. Lands in the next milestone."
+            />
+          </TabsContent>
+
+          <TabsContent value="pinned" className="mt-0">
+            <EmptyState
+              icon={Pin}
+              title="Pinned techniques coming soon"
+              description={
+                isOwnView
+                  ? 'Pin library techniques to your personal working-on list. Lands in a future milestone.'
+                  : `${studentName} can pin library techniques here. Lands in a future milestone.`
+              }
+            />
+          </TabsContent>
+
+          <TabsContent value="camps" className="mt-0">
+            <EmptyState
+              icon={Calendar}
+              title="Camps coming soon"
+              description={
+                isOwnView
+                  ? 'Camps you and your coach build together will show here.'
+                  : 'Coaches build camps with this student here. Lands in a future milestone.'
+              }
+            />
+          </TabsContent>
+
+          <TabsContent value="syllabus" className="mt-0 space-y-4">
+          <div>
+            <h2 className="text-base font-semibold tracking-tight">
+              {isOwnView ? 'My techniques' : `${studentName}'s techniques`}
+            </h2>
             {attemptSummary && attemptSummary.total > 0 && (
               <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
                 <span>
@@ -656,8 +748,6 @@ export default function StudentTechniques({ user }: StudentTechniquesProps) {
               )}
             </div>
           )}
-        </div>
-      )}
 
       {!loading && !error && data && (
         <div className="mb-6 space-y-4">
@@ -805,6 +895,9 @@ export default function StudentTechniques({ user }: StudentTechniquesProps) {
           </div>
         )}
       </div>
+          </TabsContent>
+        </Tabs>
+      )}
 
       <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
         <DialogContent className="max-h-[85vh] w-[calc(100vw-1rem)] max-w-md overflow-y-auto p-4 sm:p-6">

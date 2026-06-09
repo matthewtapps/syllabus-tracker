@@ -29,6 +29,7 @@ const SCENARIOS = {
   "pr03-rank": pr03Rank,
   "pr04-footage-submitter": pr04FootageSubmitter,
   "pr06-library-access": pr06LibraryAccess,
+  "pr07a-profile-tabs": pr07aProfileTabs,
 };
 
 async function main() {
@@ -191,6 +192,35 @@ async function pr06LibraryAccess({ page, outDir }) {
   await page.goto(BASE_URL + "/collections");
   await page.waitForLoadState("networkidle");
   await shot(page, outDir, "05-student-collections");
+}
+
+// ===========================================================
+// PR 7a scenario: student profile multi-tab scaffold
+// ===========================================================
+async function pr07aProfileTabs({ page, outDir }) {
+  await loginAs(page, { username: "demo_coach", password: "password" });
+
+  // Default lands on Activity tab.
+  await page.goto(BASE_URL + "/student/3");
+  await page.waitForLoadState("networkidle");
+  await shot(page, outDir, "01-activity-default");
+
+  await page.getByRole("tab", { name: /Syllabus/i }).click();
+  await page.waitForTimeout(300);
+  await shot(page, outDir, "02-syllabus-tab");
+
+  await page.getByRole("tab", { name: /Pinned/i }).click();
+  await page.waitForTimeout(300);
+  await shot(page, outDir, "03-pinned-placeholder");
+
+  await page.getByRole("tab", { name: /Camps/i }).click();
+  await page.waitForTimeout(300);
+  await shot(page, outDir, "04-camps-placeholder");
+
+  // ?focus= deep-link should auto-land on the Syllabus tab.
+  await page.goto(BASE_URL + "/student/3?focus=1");
+  await page.waitForLoadState("networkidle");
+  await shot(page, outDir, "05-focus-lands-on-syllabus");
 }
 
 main().catch((err) => {
