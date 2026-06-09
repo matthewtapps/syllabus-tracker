@@ -13,7 +13,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import type { User } from '@/lib/api';
-import { useInstallPrompt } from '@/lib/use-install-prompt';
+import { useInstallTrigger } from '@/lib/install';
 import { cn } from '@/lib/utils';
 import {
   Sheet,
@@ -116,7 +116,7 @@ export function BottomNav({ user, onLogout }: BottomNavProps) {
 function MoreTab({ user, onLogout }: { user: User; onLogout: () => void }) {
   const [open, setOpen] = useState(false);
   const navigate = useNavigate();
-  const { canInstall, promptInstall } = useInstallPrompt();
+  const install = useInstallTrigger();
   const isCoachOrAdmin =
     user.role === 'coach' ||
     user.role === 'Coach' ||
@@ -172,13 +172,13 @@ function MoreTab({ user, onLogout }: { user: User; onLogout: () => void }) {
               navigate('/profile');
             }}
           />
-          {canInstall && (
+          {install.available && (
             <MoreItem
               icon={Download}
               label="Install app"
               onClick={() => {
                 close();
-                void promptInstall();
+                install.trigger();
               }}
             />
           )}

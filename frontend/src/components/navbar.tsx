@@ -1,7 +1,7 @@
 import { useNavigate, useLocation, Link } from "react-router-dom";
 import { Download, LogOut, UserRound } from "lucide-react";
 import type { User } from "@/lib/api";
-import { useInstallPrompt } from "@/lib/use-install-prompt";
+import { useInstallTrigger } from "@/lib/install";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -50,7 +50,7 @@ export function NavBar({ user, onLogout }: NavBarProps) {
   const navigate = useNavigate();
   const location = useLocation();
 
-  const { canInstall, promptInstall } = useInstallPrompt();
+  const install = useInstallTrigger();
 
   const links = user ? buildNavLinks(user) : [];
   const isActive = (path: string) => location.pathname === path;
@@ -123,8 +123,8 @@ export function NavBar({ user, onLogout }: NavBarProps) {
                   </div>
                 </DropdownMenuLabel>
                 <DropdownMenuSeparator />
-                {canInstall && (
-                  <DropdownMenuItem onSelect={() => setTimeout(() => void promptInstall(), 0)}>
+                {install.available && (
+                  <DropdownMenuItem onSelect={() => setTimeout(install.trigger, 0)}>
                     <Download className="mr-2 h-4 w-4" aria-hidden />
                     Install app
                   </DropdownMenuItem>
