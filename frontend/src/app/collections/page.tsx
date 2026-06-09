@@ -4,7 +4,7 @@ import { BookOpen, ChevronRight, Plus, Search, Users } from 'lucide-react';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { toast } from 'sonner';
-import { type Collection } from '@/lib/api';
+import { isCoachOrAdmin, type Collection, type User } from '@/lib/api';
 import { useCollections } from '@/lib/queries';
 import { useCreateCollection } from '@/lib/mutations';
 import { Button } from '@/components/ui/button';
@@ -39,7 +39,12 @@ const newCollectionSchema = z.object({
 });
 type NewCollectionValues = z.infer<typeof newCollectionSchema>;
 
-export default function CollectionsPage() {
+interface CollectionsPageProps {
+  user: User;
+}
+
+export default function CollectionsPage({ user }: CollectionsPageProps) {
+  const canEdit = isCoachOrAdmin(user);
   const navigate = useNavigate();
   const collectionsQuery = useCollections();
   const createMutation = useCreateCollection();
@@ -114,13 +119,15 @@ export default function CollectionsPage() {
           />
         </div>
         <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
-          <DialogTrigger asChild>
-            <Button className="shrink-0">
-              <Plus className="mr-2 h-4 w-4" aria-hidden />
-              <span className="hidden sm:inline">New collection</span>
-              <span className="sm:hidden">New</span>
-            </Button>
-          </DialogTrigger>
+          {canEdit && (
+            <DialogTrigger asChild>
+              <Button className="shrink-0">
+                <Plus className="mr-2 h-4 w-4" aria-hidden />
+                <span className="hidden sm:inline">New collection</span>
+                <span className="sm:hidden">New</span>
+              </Button>
+            </DialogTrigger>
+          )}
           <DialogContent className="w-[calc(100vw-1rem)] max-w-md p-4 sm:p-6">
             <DialogHeader>
               <DialogTitle>New collection</DialogTitle>
@@ -208,12 +215,18 @@ export default function CollectionsPage() {
           <EmptyState
             icon={BookOpen}
             title="No collections yet"
-            description="Create your first collection to bundle techniques together."
+            description={
+              canEdit
+                ? 'Create your first collection to bundle techniques together.'
+                : 'Your coach hasn’t built any collections yet.'
+            }
             action={
-              <Button onClick={() => setCreateDialogOpen(true)}>
-                <Plus className="mr-2 h-4 w-4" aria-hidden />
-                New collection
-              </Button>
+              canEdit ? (
+                <Button onClick={() => setCreateDialogOpen(true)}>
+                  <Plus className="mr-2 h-4 w-4" aria-hidden />
+                  New collection
+                </Button>
+              ) : undefined
             }
           />
         ) : filteredCollections && filteredCollections.length === 0 ? (

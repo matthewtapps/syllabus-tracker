@@ -200,25 +200,25 @@ function AppShell() {
             <Route
               path="/library"
               element={
-                <RequireCoach>
-                  <LibraryPage />
-                </RequireCoach>
+                <RequireAuth>
+                  <LibraryPage user={user!} />
+                </RequireAuth>
               }
             />
             <Route
               path="/collections"
               element={
-                <RequireCoach>
-                  <CollectionsPage />
-                </RequireCoach>
+                <RequireAuth>
+                  <CollectionsPage user={user!} />
+                </RequireAuth>
               }
             />
             <Route
               path="/collections/:id"
               element={
-                <RequireCoach>
-                  <CollectionDetailPage />
-                </RequireCoach>
+                <RequireAuth>
+                  <CollectionDetailPage user={user!} />
+                </RequireAuth>
               }
             />
             <Route path="/" element={<Navigate to={user ? "/dashboard" : "/login"} replace />} />

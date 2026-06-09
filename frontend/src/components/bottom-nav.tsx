@@ -50,6 +50,13 @@ function buildTabs(user: User): Tab[] {
     });
   } else {
     tabs.push({ to: `/student/${user.id}`, label: 'My techniques', icon: Library });
+    // Students now browse the global library read-only (M4).
+    tabs.push({
+      to: '/library',
+      label: 'Library',
+      icon: Library,
+      alsoActiveOn: ['/collections'],
+    });
   }
   return tabs;
 }

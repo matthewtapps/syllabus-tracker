@@ -14,11 +14,13 @@ import {
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { toast } from 'sonner';
-import type {
-  AttemptWeekBucket,
-  LibraryTechniqueRow,
-  LibraryTechniqueStats,
-  Tag,
+import {
+  isCoachOrAdmin,
+  type AttemptWeekBucket,
+  type LibraryTechniqueRow,
+  type LibraryTechniqueStats,
+  type Tag,
+  type User,
 } from '@/lib/api';
 import {
   useAllTags,
@@ -52,7 +54,12 @@ import { AddVideoButton } from '@/components/videos/add-video-button';
 import { VideoList } from '@/components/videos/video-list';
 import { cn } from '@/lib/utils';
 
-export default function LibraryPage() {
+interface LibraryPageProps {
+  user: User;
+}
+
+export default function LibraryPage({ user }: LibraryPageProps) {
+  const canEdit = isCoachOrAdmin(user);
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const techniquesQuery = useLibraryTechniques();
@@ -339,6 +346,7 @@ export default function LibraryPage() {
                       technique={t}
                       scrollToVideoId={scrollToVideoId}
                       onVideoScrolled={() => setScrollToVideoId(null)}
+                      canEdit={canEdit}
                     />
                   )}
                 </li>
@@ -370,21 +378,26 @@ interface ExpandedPanelProps {
   technique: LibraryTechniqueRow;
   scrollToVideoId?: number | null;
   onVideoScrolled?: () => void;
+  canEdit: boolean;
 }
 
 function ExpandedPanel({
   technique,
   scrollToVideoId,
   onVideoScrolled,
+  canEdit,
 }: ExpandedPanelProps) {
   const [editing, setEditing] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
-  const statsQuery = useLibraryTechniqueStats(technique.id);
+  // Stats are a coach-only aggregate (per-student counts and student
+  // labels), so skip the fetch for students entirely -- otherwise the
+  // 403 leaves the panel in a perpetual "Loading..." state.
+  const statsQuery = useLibraryTechniqueStats(technique.id, canEdit);
   const stats = statsQuery.data ?? null;
 
   return (
     <div className="space-y-5 border-t border-border bg-muted/20 px-4 py-4">
-      {editing ? (
+      {editing && canEdit ? (
         <NameDescriptionEditor
           technique={technique}
           onDone={() => setEditing(false)}
@@ -392,15 +405,15 @@ function ExpandedPanel({
       ) : (
         <NameDescriptionDisplay
           technique={technique}
-          onEdit={() => setEditing(true)}
+          onEdit={canEdit ? () => setEditing(true) : undefined}
         />
       )}
 
-      <TagsRow technique={technique} />
+      <TagsRow technique={technique} canEdit={canEdit} />
 
-      <CollectionsRow stats={stats} />
+      {canEdit && <CollectionsRow stats={stats} />}
 
-      <StatsStrip stats={stats} loading={statsQuery.isLoading} />
+      {canEdit && <StatsStrip stats={stats} loading={statsQuery.isLoading} />}
 
       <section className="space-y-2">
         <div className="flex items-center justify-between gap-2">
@@ -408,21 +421,26 @@ function ExpandedPanel({
             <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
               Videos
             </h3>
-            <p className="text-[11px] text-muted-foreground">
-              Order applies to every student.
-            </p>
+            {canEdit && (
+              <p className="text-[11px] text-muted-foreground">
+                Order applies to every student.
+              </p>
+            )}
           </div>
-          <AddVideoButton
-            techniqueId={technique.id}
-            onAdded={() => setReloadKey((k) => k + 1)}
-          />
+          {canEdit && (
+            <AddVideoButton
+              techniqueId={technique.id}
+              onAdded={() => setReloadKey((k) => k + 1)}
+            />
+          )}
         </div>
         <VideoList
           techniqueId={technique.id}
-          canManage
+          canManage={canEdit}
           reloadKey={reloadKey}
           scrollToVideoId={scrollToVideoId}
           onVideoScrolled={onVideoScrolled}
+          ctx="library"
         />
       </section>
     </div>
@@ -434,7 +452,7 @@ function NameDescriptionDisplay({
   onEdit,
 }: {
   technique: LibraryTechniqueRow;
-  onEdit: () => void;
+  onEdit?: () => void;
 }) {
   return (
     <div className="flex items-start gap-2">
@@ -449,16 +467,18 @@ function NameDescriptionDisplay({
           </p>
         )}
       </div>
-      <Button
-        type="button"
-        variant="ghost"
-        size="icon"
-        className="h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground"
-        onClick={onEdit}
-        aria-label="Edit name and description"
-      >
-        <Pencil className="h-3.5 w-3.5" aria-hidden />
-      </Button>
+      {onEdit && (
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground"
+          onClick={onEdit}
+          aria-label="Edit name and description"
+        >
+          <Pencil className="h-3.5 w-3.5" aria-hidden />
+        </Button>
+      )}
     </div>
   );
 }
@@ -553,7 +573,13 @@ function NameDescriptionEditor({
   );
 }
 
-function TagsRow({ technique }: { technique: LibraryTechniqueRow }) {
+function TagsRow({
+  technique,
+  canEdit,
+}: {
+  technique: LibraryTechniqueRow;
+  canEdit: boolean;
+}) {
   const removeTagMutation = useRemoveTagFromTechnique();
   const allTagsQuery = useAllTags();
   const allTags = allTagsQuery.data ?? [];
@@ -593,6 +619,9 @@ function TagsRow({ technique }: { technique: LibraryTechniqueRow }) {
         Tags
       </h3>
       <div className="flex flex-wrap items-center gap-1.5">
+        {localTags.length === 0 && !canEdit && (
+          <p className="text-xs italic text-muted-foreground">No tags yet.</p>
+        )}
         {localTags.map((tag) => (
           <Badge
             key={tag.id}
@@ -600,24 +629,28 @@ function TagsRow({ technique }: { technique: LibraryTechniqueRow }) {
             className="gap-1 pr-1 text-xs"
           >
             {tag.name}
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              className="h-4 w-4 rounded-full text-muted-foreground hover:bg-background hover:text-foreground"
-              onClick={() => handleRemoveTag(tag)}
-            >
-              <XIcon className="h-3 w-3" aria-hidden />
-              <span className="sr-only">Remove {tag.name}</span>
-            </Button>
+            {canEdit && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="h-4 w-4 rounded-full text-muted-foreground hover:bg-background hover:text-foreground"
+                onClick={() => handleRemoveTag(tag)}
+              >
+                <XIcon className="h-3 w-3" aria-hidden />
+                <span className="sr-only">Remove {tag.name}</span>
+              </Button>
+            )}
           </Badge>
         ))}
-        <TagsEditor
-          techniqueId={technique.id}
-          assignedTags={localTags}
-          allTags={allTags}
-          onTagAdded={handleTagAdded}
-        />
+        {canEdit && (
+          <TagsEditor
+            techniqueId={technique.id}
+            assignedTags={localTags}
+            allTags={allTags}
+            onTagAdded={handleTagAdded}
+          />
+        )}
       </div>
     </section>
   );

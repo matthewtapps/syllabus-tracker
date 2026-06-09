@@ -40,7 +40,9 @@ function buildNavLinks(user: User): NavLink[] {
   const links: NavLink[] = [{ to: "/dashboard", label: "Dashboard" }];
   if (studentLike) links.push({ to: `/student/${user.id}`, label: "My techniques" });
   if (coachOrAdmin) links.push({ to: "/students", label: "Students" });
-  if (coachOrAdmin) links.push({ to: "/library", label: "Techniques" });
+  // Library is open to everyone (students browse read-only); coach +
+  // admin get the full editing surface.
+  links.push({ to: "/library", label: coachOrAdmin ? "Techniques" : "Library" });
   if (coachOrAdmin) links.push({ to: "/register-user", label: "New user" });
   if (isAdmin(user)) links.push({ to: "/admin", label: "Admin" });
   return links;

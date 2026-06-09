@@ -14,9 +14,11 @@ import {
 import { toast } from 'sonner';
 import {
   getTechniquesForAssignment,
+  isCoachOrAdmin,
   type Collection,
   type LibraryTechnique,
   type Tag,
+  type User,
 } from '@/lib/api';
 import {
   useCollection,
@@ -62,14 +64,21 @@ function initials(label: string): string {
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
 }
 
-export default function CollectionDetailPage() {
+interface CollectionDetailPageProps {
+  user: User;
+}
+
+export default function CollectionDetailPage({ user }: CollectionDetailPageProps) {
+  const canEdit = isCoachOrAdmin(user);
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const collectionId = id ? parseInt(id, 10) : 0;
   const qc = useQueryClient();
 
   const collectionQuery = useCollection(collectionId);
-  const studentsQuery = useCollectionStudents(collectionId);
+  // Roster of students assigned this collection -- a privacy concern
+  // for student viewers, so only fetched for coach / admin.
+  const studentsQuery = useCollectionStudents(canEdit ? collectionId : 0);
   const collection = collectionQuery.data ?? null;
   const students = studentsQuery.data ?? [];
   const error = collectionQuery.error ? 'Failed to load collection.' : null;
@@ -280,7 +289,7 @@ export default function CollectionDetailPage() {
                 </div>
               </div>
             )}
-            {!editingMeta && (
+            {!editingMeta && canEdit && (
               <div className="flex shrink-0 gap-2">
                 <Button
                   variant="outline"
@@ -307,15 +316,17 @@ export default function CollectionDetailPage() {
               <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
                 Techniques in this collection
               </h2>
-              <Button
-                variant="outline"
-                size="sm"
-                className="gap-2"
-                onClick={() => setAddOpen(true)}
-              >
-                <Plus className="h-4 w-4" aria-hidden />
-                Add techniques
-              </Button>
+              {canEdit && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-2"
+                  onClick={() => setAddOpen(true)}
+                >
+                  <Plus className="h-4 w-4" aria-hidden />
+                  Add techniques
+                </Button>
+              )}
             </div>
 
             <div className="overflow-hidden rounded-lg border border-border bg-card">
@@ -373,15 +384,17 @@ export default function CollectionDetailPage() {
                           <span className="sr-only">Edit {t.name}</span>
                         </Button>
                       )}
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8 text-muted-foreground hover:text-destructive"
-                        onClick={() => handleRemoveTechnique(t.id)}
-                      >
-                        <X className="h-4 w-4" aria-hidden />
-                        <span className="sr-only">Remove {t.name}</span>
-                      </Button>
+                      {canEdit && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                          onClick={() => handleRemoveTechnique(t.id)}
+                        >
+                          <X className="h-4 w-4" aria-hidden />
+                          <span className="sr-only">Remove {t.name}</span>
+                        </Button>
+                      )}
                     </li>
                   ))}
                 </ul>
@@ -389,6 +402,7 @@ export default function CollectionDetailPage() {
             </div>
           </section>
 
+          {canEdit && (
           <section className="space-y-3">
             <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
               Assigned students
@@ -431,6 +445,7 @@ export default function CollectionDetailPage() {
               )}
             </div>
           </section>
+          )}
         </>
       )}
 

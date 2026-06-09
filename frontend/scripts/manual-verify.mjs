@@ -28,6 +28,7 @@ const API_URL = process.env.API_URL ?? "http://localhost:8000";
 const SCENARIOS = {
   "pr03-rank": pr03Rank,
   "pr04-footage-submitter": pr04FootageSubmitter,
+  "pr06-library-access": pr06LibraryAccess,
 };
 
 async function main() {
@@ -158,6 +159,38 @@ async function pr04FootageSubmitter({ page, outDir }) {
   await page.goto(BASE_URL + "/student/3");
   await page.waitForLoadState("networkidle");
   await shot(page, outDir, "04-student-own-view-with-badge");
+}
+
+// ===========================================================
+// PR 6 scenario: students browsing the library (read-only)
+// ===========================================================
+async function pr06LibraryAccess({ page, outDir }) {
+  // Coach view first so we have a reference point.
+  await loginAs(page, { username: "demo_coach", password: "password" });
+  await page.goto(BASE_URL + "/library");
+  await page.waitForLoadState("networkidle");
+  await shot(page, outDir, "01-coach-library");
+
+  // Coach view of one expanded technique row -- captures edit/upload
+  // affordances that should disappear for students.
+  await page.locator("ul li button").first().click();
+  await page.waitForTimeout(400);
+  await shot(page, outDir, "02-coach-expanded");
+
+  await page.request.post(API_URL + "/api/logout");
+  await loginAs(page, { username: "demo_alex", password: "demo" });
+  await page.goto(BASE_URL + "/library");
+  await page.waitForLoadState("networkidle");
+  await shot(page, outDir, "03-student-library");
+
+  await page.locator("ul li button").first().click();
+  await page.waitForTimeout(400);
+  await shot(page, outDir, "04-student-expanded");
+
+  // Collections page sanity-check from the student side.
+  await page.goto(BASE_URL + "/collections");
+  await page.waitForLoadState("networkidle");
+  await shot(page, outDir, "05-student-collections");
 }
 
 main().catch((err) => {
