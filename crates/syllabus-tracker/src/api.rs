@@ -614,7 +614,7 @@ pub async fn api_library_stats(
     user: User,
     db: &State<Pool<Sqlite>>,
 ) -> ApiResult<Json<LibraryStatsResponse>> {
-    user.require_permission(Permission::ViewAllStudents)?;
+    user.require_permission(Permission::BrowseLibrary)?;
 
     let total_techniques = count_techniques(db).await?;
 
@@ -626,7 +626,7 @@ pub async fn api_list_library_techniques(
     user: User,
     db: &State<Pool<Sqlite>>,
 ) -> ApiResult<Json<Vec<crate::db::LibraryTechniqueRow>>> {
-    user.require_permission(Permission::ViewAllStudents)?;
+    user.require_permission(Permission::BrowseLibrary)?;
     let rows = crate::db::list_library_techniques(db).await?;
     Ok(Json(rows))
 }
@@ -637,6 +637,9 @@ pub async fn api_library_technique_stats(
     user: User,
     db: &State<Pool<Sqlite>>,
 ) -> ApiResult<Json<crate::db::LibraryTechniqueStats>> {
+    // Coach-side aggregate stats (per-student counts etc). Students
+    // shouldn't see who else has been assigned a technique, so this
+    // stays coach-only even though browse access is open.
     user.require_permission(Permission::ViewAllStudents)?;
     let stats = crate::db::library_technique_stats(db, id).await?;
     Ok(Json(stats))
@@ -1367,7 +1370,7 @@ pub async fn api_get_collections(
     user: User,
     db: &State<Pool<Sqlite>>,
 ) -> ApiResult<Json<Vec<CollectionResponse>>> {
-    user.require_permission(Permission::AssignTechniques)?;
+    user.require_permission(Permission::BrowseLibrary)?;
     let collections = get_all_collections(db).await?;
     Ok(Json(
         collections
@@ -1383,7 +1386,7 @@ pub async fn api_get_collection(
     user: User,
     db: &State<Pool<Sqlite>>,
 ) -> ApiResult<Json<CollectionResponse>> {
-    user.require_permission(Permission::AssignTechniques)?;
+    user.require_permission(Permission::BrowseLibrary)?;
     let collection = get_collection(db, id).await?;
     Ok(Json(collection_to_response(collection, &user)))
 }

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { DownloadIcon } from "lucide-react";
 import { toast } from "sonner";
-import type { Video } from "@/lib/api";
+import type { Video, VisibilityCtx } from "@/lib/api";
 import { getDownloadUrl } from "@/lib/api";
 import {
   Dialog,
@@ -16,9 +16,10 @@ import { useWatchTracker } from "./useWatchTracker";
 interface VideoPlayerDialogProps {
   video: Video | null;
   onClose: () => void;
+  ctx?: VisibilityCtx;
 }
 
-export function VideoPlayerDialog({ video, onClose }: VideoPlayerDialogProps) {
+export function VideoPlayerDialog({ video, onClose, ctx }: VideoPlayerDialogProps) {
   return (
     <Dialog open={!!video} onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="max-h-[90vh] w-[calc(100vw-1rem)] max-w-2xl overflow-y-auto p-4 sm:p-6 [&>*]:min-w-0">
@@ -29,13 +30,13 @@ export function VideoPlayerDialog({ video, onClose }: VideoPlayerDialogProps) {
             {video?.title ?? "Video"}
           </DialogTitle>
         </DialogHeader>
-        {video && <PlayerContent video={video} />}
+        {video && <PlayerContent video={video} ctx={ctx} />}
       </DialogContent>
     </Dialog>
   );
 }
 
-function PlayerContent({ video }: { video: Video }) {
+function PlayerContent({ video, ctx }: { video: Video; ctx?: VisibilityCtx }) {
   const events = useWatchTracker(video.id);
   const isNative = video.kind === "native";
   const canDownload = isNative && video.processing_status === "ready";
@@ -44,7 +45,7 @@ function PlayerContent({ video }: { video: Video }) {
   async function handleDownload() {
     setDownloading(true);
     try {
-      const signed = await getDownloadUrl(video.id);
+      const signed = await getDownloadUrl(video.id, ctx ? { ctx } : undefined);
       window.open(signed.url, "_blank", "noopener,noreferrer");
     } catch (err) {
       console.error(err);
@@ -56,7 +57,7 @@ function PlayerContent({ video }: { video: Video }) {
 
   return (
     <div className="space-y-3">
-      <VideoPlayerPanel video={video} events={events} />
+      <VideoPlayerPanel video={video} events={events} ctx={ctx} />
       {canDownload && (
         <div className="flex justify-end">
           <Button

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { getPlaybackUrl } from "@/lib/api";
+import { getPlaybackUrl, type VisibilityCtx } from "@/lib/api";
 
 interface State {
   url: string | null;
@@ -9,7 +9,11 @@ interface State {
 
 const REFRESH_LEAD_MS = 5 * 60 * 1000;
 
-export function useSignedPlaybackUrl(videoId: number, enabled: boolean) {
+export function useSignedPlaybackUrl(
+  videoId: number,
+  enabled: boolean,
+  ctx?: VisibilityCtx,
+) {
   const [state, setState] = useState<State>({
     url: null,
     loading: false,
@@ -21,7 +25,7 @@ export function useSignedPlaybackUrl(videoId: number, enabled: boolean) {
   const load = useCallback(async () => {
     setState((s) => ({ ...s, loading: true, error: null }));
     try {
-      const signed = await getPlaybackUrl(videoId);
+      const signed = await getPlaybackUrl(videoId, ctx ? { ctx } : undefined);
       if (cancelledRef.current) return;
       setState({ url: signed.url, loading: false, error: null });
       const expiresAt = Date.parse(signed.expires_at);
@@ -41,7 +45,7 @@ export function useSignedPlaybackUrl(videoId: number, enabled: boolean) {
         error: "Could not get a playback link. Try again.",
       });
     }
-  }, [videoId]);
+  }, [videoId, ctx]);
 
   useEffect(() => {
     cancelledRef.current = false;

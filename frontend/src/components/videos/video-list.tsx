@@ -19,6 +19,7 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { GripVerticalIcon } from "lucide-react";
+import type { VisibilityCtx } from "@/lib/api";
 import { useTechniqueVideos } from "@/lib/queries";
 import { useReorderVideos } from "@/lib/mutations";
 import { qk } from "@/lib/query-keys";
@@ -44,6 +45,12 @@ interface VideoListProps {
    * video the user tapped. */
   scrollToVideoId?: number | null;
   onVideoScrolled?: () => void;
+  /** Visibility context the list is browsed in. Threaded into the
+   * /techniques/<tid>/videos request and into every signed-playback /
+   * download URL request so the backend applies the correct overrides
+   * (library = global hide only, syllabus = global + syllabus override
+   * table). Defaults to syllabus for backwards compatibility. */
+  ctx?: VisibilityCtx;
 }
 
 export function VideoList({
@@ -54,9 +61,10 @@ export function VideoList({
   studentDisplayName,
   scrollToVideoId,
   onVideoScrolled,
+  ctx,
 }: VideoListProps) {
   const qc = useQueryClient();
-  const videosQuery = useTechniqueVideos(techniqueId, forStudent);
+  const videosQuery = useTechniqueVideos(techniqueId, forStudent, ctx);
   const serverVideos = videosQuery.data ?? null;
   const error = videosQuery.error ? "Could not load videos" : null;
   const reorderMutation = useReorderVideos(techniqueId);
@@ -230,7 +238,7 @@ export function VideoList({
         </ul>
       )}
 
-      <VideoPlayerDialog video={playing} onClose={() => setPlaying(null)} />
+      <VideoPlayerDialog video={playing} onClose={() => setPlaying(null)} ctx={ctx} />
     </div>
   );
 }

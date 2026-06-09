@@ -1,15 +1,16 @@
 import { useEffect, useRef } from "react";
-import type { Video } from "@/lib/api";
+import type { Video, VisibilityCtx } from "@/lib/api";
 import type { PlayerEvents } from "./player-events";
 import { useSignedPlaybackUrl } from "./useSignedPlaybackUrl";
 
 interface NativePlayerProps {
   video: Video;
   events?: PlayerEvents;
+  ctx?: VisibilityCtx;
 }
 
-export function NativePlayer({ video, events }: NativePlayerProps) {
-  const { url, loading, error, refresh } = useSignedPlaybackUrl(video.id, true);
+export function NativePlayer({ video, events, ctx }: NativePlayerProps) {
+  const { url, loading, error, refresh } = useSignedPlaybackUrl(video.id, true, ctx);
   const startedRef = useRef(false);
   const videoRef = useRef<HTMLVideoElement | null>(null);
 

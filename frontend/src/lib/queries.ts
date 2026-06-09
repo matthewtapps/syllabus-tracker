@@ -24,6 +24,7 @@ import {
   getVideoStatus,
   listAttempts,
   listVideos,
+  type VisibilityCtx,
 } from "./api";
 import { qk } from "./query-keys";
 
@@ -218,12 +219,13 @@ export function useLibraryTechniqueStats(
 export function useTechniqueVideos(
   techniqueId: number | undefined,
   forStudent?: number,
+  ctx?: VisibilityCtx,
 ) {
   return useQuery({
-    queryKey: qk.techniqueVideos(techniqueId ?? 0, forStudent ?? null),
+    queryKey: qk.techniqueVideos(techniqueId ?? 0, forStudent ?? null, ctx ?? null),
     queryFn:
       typeof techniqueId === "number" && Number.isFinite(techniqueId)
-        ? () => listVideos(techniqueId, { forStudent })
+        ? () => listVideos(techniqueId, { forStudent, ctx })
         : skipToken,
     staleTime: 0,
     refetchOnWindowFocus: true,

@@ -37,6 +37,11 @@ pub enum Permission {
     /// coaches can grant/revoke footage rights without touching the
     /// broader user-management surface.
     ManageFootageSubmitter,
+
+    /// Browse the global technique library (the `/library` page).
+    /// Granted to every role. Read-only for students; coach + admin
+    /// also get `EditAllTechniques` and friends.
+    BrowseLibrary,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -64,6 +69,8 @@ static STUDENT_PERMISSIONS: Lazy<HashSet<Permission>> = Lazy::new(|| {
     permissions.insert(Permission::EditOwnProfile);
     permissions.insert(Permission::ViewOwnTechniques);
     permissions.insert(Permission::EditOwnNotes);
+
+    permissions.insert(Permission::BrowseLibrary);
 
     permissions
 });
@@ -168,6 +175,7 @@ impl Permission {
             Permission::EditStudentRank => "EditStudentRank",
             Permission::SubmitFootage => "SubmitFootage",
             Permission::ManageFootageSubmitter => "ManageFootageSubmitter",
+            Permission::BrowseLibrary => "BrowseLibrary",
         }
     }
 }

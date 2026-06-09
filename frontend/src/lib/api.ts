@@ -1083,13 +1083,23 @@ export interface UploadResponse {
   processing_status: ProcessingStatus;
 }
 
+/// Visibility context the backend uses to decide which per-student
+/// override table (if any) applies on top of `videos.hidden_at`. See
+/// the backend's `VisibilityContext` enum. `"syllabus"` is the default
+/// when omitted; library callers should pass `"library"` so the
+/// per-student syllabus overrides don't leak into shared browse views.
+export type VisibilityCtx = "library" | "syllabus" | `camp:${number}`;
+
 export async function listVideos(
   techniqueId: number,
-  opts?: { forStudent?: number },
+  opts?: { forStudent?: number; ctx?: VisibilityCtx },
 ): Promise<Video[]> {
   const url = new URL(`/api/techniques/${techniqueId}/videos`, window.location.origin);
   if (typeof opts?.forStudent === "number") {
     url.searchParams.set("for_student", String(opts.forStudent));
+  }
+  if (opts?.ctx) {
+    url.searchParams.set("ctx", opts.ctx);
   }
   const response = await fetch(url.pathname + url.search, {
     credentials: "include",
@@ -1229,16 +1239,26 @@ export async function deleteVideo(videoId: number): Promise<void> {
   if (!response.ok) throw response;
 }
 
-export async function getPlaybackUrl(videoId: number): Promise<SignedUrl> {
-  const response = await fetch(`/api/videos/${videoId}/playback-url`, {
+export async function getPlaybackUrl(
+  videoId: number,
+  opts?: { ctx?: VisibilityCtx },
+): Promise<SignedUrl> {
+  const url = new URL(`/api/videos/${videoId}/playback-url`, window.location.origin);
+  if (opts?.ctx) url.searchParams.set("ctx", opts.ctx);
+  const response = await fetch(url.pathname + url.search, {
     credentials: "include",
   });
   if (!response.ok) throw response;
   return (await response.json()) as SignedUrl;
 }
 
-export async function getDownloadUrl(videoId: number): Promise<SignedUrl> {
-  const response = await fetch(`/api/videos/${videoId}/download-url`, {
+export async function getDownloadUrl(
+  videoId: number,
+  opts?: { ctx?: VisibilityCtx },
+): Promise<SignedUrl> {
+  const url = new URL(`/api/videos/${videoId}/download-url`, window.location.origin);
+  if (opts?.ctx) url.searchParams.set("ctx", opts.ctx);
+  const response = await fetch(url.pathname + url.search, {
     credentials: "include",
   });
   if (!response.ok) throw response;

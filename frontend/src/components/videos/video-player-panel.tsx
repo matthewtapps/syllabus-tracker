@@ -1,4 +1,4 @@
-import type { Video } from "@/lib/api";
+import type { Video, VisibilityCtx } from "@/lib/api";
 import type { PlayerEvents } from "./player-events";
 import { DriveEmbed } from "./drive-embed";
 import { ExternalLinkCard } from "./external-link-card";
@@ -9,9 +9,10 @@ import { YouTubeLiteEmbed } from "./youtube-lite-embed";
 interface VideoPlayerPanelProps {
   video: Video;
   events?: PlayerEvents;
+  ctx?: VisibilityCtx;
 }
 
-export function VideoPlayerPanel({ video, events }: VideoPlayerPanelProps) {
+export function VideoPlayerPanel({ video, events, ctx }: VideoPlayerPanelProps) {
   if (video.processing_status === "processing") {
     return (
       <p className="rounded-md border border-border bg-muted/30 p-3 text-sm text-muted-foreground">
@@ -30,7 +31,7 @@ export function VideoPlayerPanel({ video, events }: VideoPlayerPanelProps) {
 
   switch (video.kind) {
     case "native":
-      return <NativePlayer video={video} events={events} />;
+      return <NativePlayer video={video} events={events} ctx={ctx} />;
     case "youtube":
       return <YouTubeLiteEmbed video={video} events={events} />;
     case "vimeo":
