@@ -1,0 +1,164 @@
+{
+  "db_name": "SQLite",
+  "query": "\n        SELECT\n            u.id,\n            u.username,\n            u.display_name,\n            u.role,\n            u.archived,\n            u.graduated_at as \"graduated_at?: NaiveDateTime\",\n            u.email,\n            u.claimed_at as \"claimed_at?: NaiveDateTime\",\n            u.approved_at as \"approved_at?: NaiveDateTime\",\n            u.first_name,\n            u.last_name,\n            u.reset_requested_at as \"reset_requested_at?: NaiveDateTime\",\n            u.belt,\n            u.stripes,\n            u.last_graded_at as \"last_graded_at?: NaiveDateTime\",\n            MAX(st.updated_at) as \"last_update?: NaiveDateTime\",\n            -- Notes dual-read (M6 / SD-004): prefer technique_notes row over\n            -- legacy student_techniques columns. New table is empty until\n            -- the writer-cutover PR, so COALESCE is a no-op until then.\n            MAX(COALESCE(tn.last_coach_update_at, st.last_coach_update_at)) as \"last_coach_update_at?: NaiveDateTime\",\n            COUNT(st.id) as \"total_techniques?: i64\",\n            COALESCE(SUM(CASE WHEN st.status = 'red'   THEN 1 ELSE 0 END), 0) as \"red_count?: i64\",\n            COALESCE(SUM(CASE WHEN st.status = 'amber' THEN 1 ELSE 0 END), 0) as \"amber_count?: i64\",\n            COALESCE(SUM(CASE WHEN st.status = 'green' THEN 1 ELSE 0 END), 0) as \"green_count?: i64\",\n            -- `datetime(...)` wrapping defends against legacy rows where\n            -- `last_student_update_at` was written as RFC3339 with offset\n            -- (`2026-05-31T10:00:00+00:00`) while `seen_at` was written naive\n            -- (`2026-05-31 10:00:00`). Raw TEXT comparison would treat the\n            -- legacy format as always greater (because 'T' > ' '), producing\n            -- a stuck-on unseen dot. Remove once legacy timestamps are\n            -- migrated, see TODO.md.\n            COALESCE(MAX(\n                CASE\n                    WHEN COALESCE(tn.last_student_update_at, st.last_student_update_at) IS NULL THEN 0\n                    WHEN stv.seen_at IS NULL THEN 1\n                    WHEN datetime(COALESCE(tn.last_student_update_at, st.last_student_update_at)) > datetime(stv.seen_at) THEN 1\n                    ELSE 0\n                END\n            ), 0) as \"has_unseen_activity?: i64\",\n            MAX(COALESCE(tn.last_student_update_at, st.last_student_update_at)) as \"latest_student_note_at?: NaiveDateTime\",\n            (SELECT MAX(last_watched_at)\n               FROM video_watch_aggregates\n              WHERE user_id = u.id) as \"latest_watch_at?: NaiveDateTime\",\n            (SELECT v.title\n               FROM video_watch_aggregates a\n               JOIN videos v ON v.id = a.video_id\n              WHERE a.user_id = u.id AND v.deleted_at IS NULL\n              ORDER BY a.last_watched_at DESC\n              LIMIT 1) as \"latest_watch_video_title?: String\"\n        FROM users u\n        LEFT JOIN student_techniques st ON u.id = st.student_id\n        LEFT JOIN technique_notes tn\n               ON tn.student_id = st.student_id AND tn.technique_id = st.technique_id\n        LEFT JOIN student_technique_views stv\n               ON stv.student_technique_id = st.id AND stv.user_id = ?\n        WHERE u.role IN ('student', 'footage_submitter_student')\n        GROUP BY u.id\n        ORDER BY MAX(st.updated_at) DESC NULLS LAST\n        ",
+  "describe": {
+    "columns": [
+      {
+        "name": "id",
+        "ordinal": 0,
+        "type_info": "Integer"
+      },
+      {
+        "name": "username",
+        "ordinal": 1,
+        "type_info": "Text"
+      },
+      {
+        "name": "display_name",
+        "ordinal": 2,
+        "type_info": "Text"
+      },
+      {
+        "name": "role",
+        "ordinal": 3,
+        "type_info": "Text"
+      },
+      {
+        "name": "archived",
+        "ordinal": 4,
+        "type_info": "Bool"
+      },
+      {
+        "name": "graduated_at?: NaiveDateTime",
+        "ordinal": 5,
+        "type_info": "Datetime"
+      },
+      {
+        "name": "email",
+        "ordinal": 6,
+        "type_info": "Text"
+      },
+      {
+        "name": "claimed_at?: NaiveDateTime",
+        "ordinal": 7,
+        "type_info": "Datetime"
+      },
+      {
+        "name": "approved_at?: NaiveDateTime",
+        "ordinal": 8,
+        "type_info": "Datetime"
+      },
+      {
+        "name": "first_name",
+        "ordinal": 9,
+        "type_info": "Text"
+      },
+      {
+        "name": "last_name",
+        "ordinal": 10,
+        "type_info": "Text"
+      },
+      {
+        "name": "reset_requested_at?: NaiveDateTime",
+        "ordinal": 11,
+        "type_info": "Datetime"
+      },
+      {
+        "name": "belt",
+        "ordinal": 12,
+        "type_info": "Text"
+      },
+      {
+        "name": "stripes",
+        "ordinal": 13,
+        "type_info": "Integer"
+      },
+      {
+        "name": "last_graded_at?: NaiveDateTime",
+        "ordinal": 14,
+        "type_info": "Datetime"
+      },
+      {
+        "name": "last_update?: NaiveDateTime",
+        "ordinal": 15,
+        "type_info": "Text"
+      },
+      {
+        "name": "last_coach_update_at?: NaiveDateTime",
+        "ordinal": 16,
+        "type_info": "Text"
+      },
+      {
+        "name": "total_techniques?: i64",
+        "ordinal": 17,
+        "type_info": "Integer"
+      },
+      {
+        "name": "red_count?: i64",
+        "ordinal": 18,
+        "type_info": "Integer"
+      },
+      {
+        "name": "amber_count?: i64",
+        "ordinal": 19,
+        "type_info": "Integer"
+      },
+      {
+        "name": "green_count?: i64",
+        "ordinal": 20,
+        "type_info": "Integer"
+      },
+      {
+        "name": "has_unseen_activity?: i64",
+        "ordinal": 21,
+        "type_info": "Integer"
+      },
+      {
+        "name": "latest_student_note_at?: NaiveDateTime",
+        "ordinal": 22,
+        "type_info": "Text"
+      },
+      {
+        "name": "latest_watch_at?: NaiveDateTime",
+        "ordinal": 23,
+        "type_info": "Null"
+      },
+      {
+        "name": "latest_watch_video_title?: String",
+        "ordinal": 24,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      true,
+      true,
+      true,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      false
+    ]
+  },
+  "hash": "1ab7cd14a6d7f39c1c45df8ae8ff052d73f669611f68eeb7b0de828e4b9a044f"
+}

@@ -78,13 +78,23 @@ pub async fn get_student_techniques(
 ) -> Result<Vec<StudentTechnique>, AppError> {
     info!("Getting student techniques with tags");
 
+    // Dual-read on notes (M6 / SD-004): COALESCE the shared `technique_notes`
+    // row over the legacy `student_techniques.{student,coach}_notes` columns.
+    // Writer still hits the legacy columns this milestone; the new table is
+    // empty until the writer-cutover PR, at which point this COALESCE
+    // silently flips to the new source. Same pattern for the per-actor
+    // `last_*_update_at/by_id` fields.
     let rows = sqlx::query!(
         r#"
         SELECT st.id, st.technique_id, st.technique_name, st.technique_description,
-               st.student_id, st.status, st.student_notes, st.coach_notes,
+               st.student_id, st.status,
+               COALESCE(tn.student_notes, st.student_notes) as student_notes,
+               COALESCE(tn.coach_notes, st.coach_notes) as coach_notes,
                st.created_at, st.updated_at,
-               st.last_coach_update_at, st.last_coach_update_by_id,
-               st.last_student_update_at, st.last_student_update_by_id,
+               COALESCE(tn.last_coach_update_at, st.last_coach_update_at) as "last_coach_update_at?: NaiveDateTime",
+               COALESCE(tn.last_coach_update_by_id, st.last_coach_update_by_id) as "last_coach_update_by_id?: i64",
+               COALESCE(tn.last_student_update_at, st.last_student_update_at) as "last_student_update_at?: NaiveDateTime",
+               COALESCE(tn.last_student_update_by_id, st.last_student_update_by_id) as "last_student_update_by_id?: i64",
                st.collection_id as "syllabus_id?",
                cu.display_name as coach_updater_display_name,
                cu.username as coach_updater_username,
@@ -96,8 +106,12 @@ pub async fn get_student_techniques(
                att.last_attempt_at as "last_attempt_at?: NaiveDateTime",
                stv.seen_at as "viewer_seen_at?: NaiveDateTime"
         FROM student_techniques st
-        LEFT JOIN users cu ON st.last_coach_update_by_id = cu.id
-        LEFT JOIN users su ON st.last_student_update_by_id = su.id
+        LEFT JOIN technique_notes tn
+               ON tn.student_id = st.student_id AND tn.technique_id = st.technique_id
+        LEFT JOIN users cu
+               ON COALESCE(tn.last_coach_update_by_id, st.last_coach_update_by_id) = cu.id
+        LEFT JOIN users su
+               ON COALESCE(tn.last_student_update_by_id, st.last_student_update_by_id) = su.id
         -- SQL identifier `collections` is the legacy table name (M4.5 / decision #19).
         LEFT JOIN collections coll ON st.collection_id = coll.id
         LEFT JOIN technique_tags tt ON st.technique_id = tt.technique_id
@@ -195,15 +209,24 @@ pub async fn get_student_technique(
 
     // SQL column `collection_id` is the legacy name (M4.5 / decision #19);
     // aliased on the way out so `SELECT *` order would otherwise drop the
-    // field — list columns explicitly instead.
+    // field. Notes dual-read (M6 / SD-004): COALESCE the shared
+    // `technique_notes` row over the legacy `student_techniques.*` columns.
     let row = sqlx::query_as!(
         DbStudentTechnique,
-        r#"SELECT id, technique_id, student_id, technique_name, technique_description,
-                  status, student_notes, coach_notes, created_at, updated_at,
-                  last_coach_update_at, last_coach_update_by_id,
-                  last_student_update_at, last_student_update_by_id,
-                  collection_id AS "syllabus_id?"
-           FROM student_techniques WHERE id = ?"#,
+        r#"SELECT st.id, st.technique_id, st.student_id, st.technique_name, st.technique_description,
+                  st.status,
+                  COALESCE(tn.student_notes, st.student_notes) AS student_notes,
+                  COALESCE(tn.coach_notes, st.coach_notes) AS coach_notes,
+                  st.created_at, st.updated_at,
+                  COALESCE(tn.last_coach_update_at, st.last_coach_update_at) AS "last_coach_update_at?: chrono::NaiveDateTime",
+                  COALESCE(tn.last_coach_update_by_id, st.last_coach_update_by_id) AS "last_coach_update_by_id?: i64",
+                  COALESCE(tn.last_student_update_at, st.last_student_update_at) AS "last_student_update_at?: chrono::NaiveDateTime",
+                  COALESCE(tn.last_student_update_by_id, st.last_student_update_by_id) AS "last_student_update_by_id?: i64",
+                  st.collection_id AS "syllabus_id?"
+           FROM student_techniques st
+           LEFT JOIN technique_notes tn
+                  ON tn.student_id = st.student_id AND tn.technique_id = st.technique_id
+           WHERE st.id = ?"#,
         student_technique_id
     )
     .fetch_one(pool)

@@ -65,6 +65,8 @@ pub async fn get_student_feed(
     pool: &Pool<Sqlite>,
     student_id: i64,
 ) -> Result<Vec<FeedItem>, AppError> {
+    // Notes dual-read (M6 / SD-004): COALESCE the shared `technique_notes`
+    // row over the legacy `student_techniques.last_*_update_at` columns.
     let technique_rows = sqlx::query!(
         r#"
         SELECT
@@ -73,14 +75,18 @@ pub async fn get_student_feed(
             COALESCE(st.technique_name, t.name, '') AS "title!: String",
             COALESCE(st.status, 'red')  AS "status!: String",
             st.updated_at               AS "updated_at?: NaiveDateTime",
-            st.last_coach_update_at     AS "last_coach_update_at?: NaiveDateTime",
-            st.last_student_update_at   AS "last_student_update_at?: NaiveDateTime",
+            COALESCE(tn.last_coach_update_at, st.last_coach_update_at)
+                                        AS "last_coach_update_at?: NaiveDateTime",
+            COALESCE(tn.last_student_update_at, st.last_student_update_at)
+                                        AS "last_student_update_at?: NaiveDateTime",
             (SELECT MAX(a.attempted_at) FROM attempts a WHERE a.student_technique_id = st.id)
                                         AS "latest_attempt_at?: NaiveDateTime",
             (SELECT COUNT(*) FROM attempts a WHERE a.student_technique_id = st.id)
                                         AS "attempt_count!: i64"
         FROM student_techniques st
         LEFT JOIN techniques t ON t.id = st.technique_id
+        LEFT JOIN technique_notes tn
+               ON tn.student_id = st.student_id AND tn.technique_id = st.technique_id
         WHERE st.student_id = ?
         "#,
         student_id,

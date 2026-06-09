@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT id, technique_id, student_id, technique_name, technique_description,\n                  status, student_notes, coach_notes, created_at, updated_at,\n                  last_coach_update_at, last_coach_update_by_id,\n                  last_student_update_at, last_student_update_by_id,\n                  collection_id AS \"syllabus_id?\"\n           FROM student_techniques WHERE id = ?",
+  "query": "SELECT st.id, st.technique_id, st.student_id, st.technique_name, st.technique_description,\n                  st.status,\n                  COALESCE(tn.student_notes, st.student_notes) AS student_notes,\n                  COALESCE(tn.coach_notes, st.coach_notes) AS coach_notes,\n                  st.created_at, st.updated_at,\n                  COALESCE(tn.last_coach_update_at, st.last_coach_update_at) AS \"last_coach_update_at?: chrono::NaiveDateTime\",\n                  COALESCE(tn.last_coach_update_by_id, st.last_coach_update_by_id) AS \"last_coach_update_by_id?: i64\",\n                  COALESCE(tn.last_student_update_at, st.last_student_update_at) AS \"last_student_update_at?: chrono::NaiveDateTime\",\n                  COALESCE(tn.last_student_update_by_id, st.last_student_update_by_id) AS \"last_student_update_by_id?: i64\",\n                  st.collection_id AS \"syllabus_id?\"\n           FROM student_techniques st\n           LEFT JOIN technique_notes tn\n                  ON tn.student_id = st.student_id AND tn.technique_id = st.technique_id\n           WHERE st.id = ?",
   "describe": {
     "columns": [
       {
@@ -54,22 +54,22 @@
         "type_info": "Datetime"
       },
       {
-        "name": "last_coach_update_at",
+        "name": "last_coach_update_at?: chrono::NaiveDateTime",
         "ordinal": 10,
         "type_info": "Datetime"
       },
       {
-        "name": "last_coach_update_by_id",
+        "name": "last_coach_update_by_id?: i64",
         "ordinal": 11,
         "type_info": "Integer"
       },
       {
-        "name": "last_student_update_at",
+        "name": "last_student_update_at?: chrono::NaiveDateTime",
         "ordinal": 12,
         "type_info": "Datetime"
       },
       {
-        "name": "last_student_update_by_id",
+        "name": "last_student_update_by_id?: i64",
         "ordinal": 13,
         "type_info": "Integer"
       },
@@ -100,5 +100,5 @@
       true
     ]
   },
-  "hash": "eafdd43f8465519e407bfce4a9819f01f11ba4e99ad209baa70379b628425c66"
+  "hash": "c00565f839675726ad95d6162f66f2c016a0fa9024a2690942c8c391f801b3cf"
 }

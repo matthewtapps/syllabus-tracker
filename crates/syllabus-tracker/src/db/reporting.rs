@@ -81,7 +81,10 @@ pub async fn get_students_by_recent_updates(
             u.stripes,
             u.last_graded_at as "last_graded_at?: NaiveDateTime",
             MAX(st.updated_at) as "last_update?: NaiveDateTime",
-            MAX(st.last_coach_update_at) as "last_coach_update_at?: NaiveDateTime",
+            -- Notes dual-read (M6 / SD-004): prefer technique_notes row over
+            -- legacy student_techniques columns. New table is empty until
+            -- the writer-cutover PR, so COALESCE is a no-op until then.
+            MAX(COALESCE(tn.last_coach_update_at, st.last_coach_update_at)) as "last_coach_update_at?: NaiveDateTime",
             COUNT(st.id) as "total_techniques?: i64",
             COALESCE(SUM(CASE WHEN st.status = 'red'   THEN 1 ELSE 0 END), 0) as "red_count?: i64",
             COALESCE(SUM(CASE WHEN st.status = 'amber' THEN 1 ELSE 0 END), 0) as "amber_count?: i64",
@@ -95,13 +98,13 @@ pub async fn get_students_by_recent_updates(
             -- migrated, see TODO.md.
             COALESCE(MAX(
                 CASE
-                    WHEN st.last_student_update_at IS NULL THEN 0
+                    WHEN COALESCE(tn.last_student_update_at, st.last_student_update_at) IS NULL THEN 0
                     WHEN stv.seen_at IS NULL THEN 1
-                    WHEN datetime(st.last_student_update_at) > datetime(stv.seen_at) THEN 1
+                    WHEN datetime(COALESCE(tn.last_student_update_at, st.last_student_update_at)) > datetime(stv.seen_at) THEN 1
                     ELSE 0
                 END
             ), 0) as "has_unseen_activity?: i64",
-            MAX(st.last_student_update_at) as "latest_student_note_at?: NaiveDateTime",
+            MAX(COALESCE(tn.last_student_update_at, st.last_student_update_at)) as "latest_student_note_at?: NaiveDateTime",
             (SELECT MAX(last_watched_at)
                FROM video_watch_aggregates
               WHERE user_id = u.id) as "latest_watch_at?: NaiveDateTime",
@@ -113,6 +116,8 @@ pub async fn get_students_by_recent_updates(
               LIMIT 1) as "latest_watch_video_title?: String"
         FROM users u
         LEFT JOIN student_techniques st ON u.id = st.student_id
+        LEFT JOIN technique_notes tn
+               ON tn.student_id = st.student_id AND tn.technique_id = st.technique_id
         LEFT JOIN student_technique_views stv
                ON stv.student_technique_id = st.id AND stv.user_id = ?
         WHERE u.role IN ('student', 'footage_submitter_student')
