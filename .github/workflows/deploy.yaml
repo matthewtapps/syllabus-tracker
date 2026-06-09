@@ -6,12 +6,21 @@ name: Deploy
 # values needed to read platform state.
 #
 # Triggers:
-#   - push to main
-#   - manual workflow_dispatch
+#   - push to main           -> full pipeline (lint/test/sqlx-check + deploy)
+#   - pull_request           -> lint/test/sqlx-check only; no deploy jobs run
+#   - manual workflow_dispatch -> full pipeline
+#
+# The deploy-only jobs (read_platform, apply_tofu, build_*, prep_host,
+# restore_litestream, migrate, deploy, verify) are gated with
+# `if: github.event_name != 'pull_request'` so a PR run exercises code
+# correctness gates without touching prod infrastructure. The staging
+# sibling deploys are owned by .github/workflows/staging.yml; they are
+# triggered manually only.
 
 on:
   push:
     branches: [main]
+  pull_request:
   workflow_dispatch:
     inputs:
       allow_destructive_migrations:
@@ -30,8 +39,11 @@ permissions:
   contents: read
   packages: write
 
+# Per-ref concurrency: main pushes share one group (so new commits
+# cancel in-flight deploys), each PR branch gets its own (so pushing
+# new commits cancels just that PR's run).
 concurrency:
-  group: deploy
+  group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -39,6 +51,7 @@ jobs:
   # host_age_ready=false means sugar-glider hasn't been bootstrapped via
   # nixos-anywhere yet, so the deploy job no-ops.
   read_platform:
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     environment: production
     outputs:
@@ -159,7 +172,7 @@ jobs:
 
   apply_tofu:
     needs: read_platform
-    if: needs.read_platform.outputs.host_age_ready == 'true'
+    if: github.event_name != 'pull_request' && needs.read_platform.outputs.host_age_ready == 'true'
     runs-on: ubuntu-latest
     environment: production
     steps:
@@ -185,7 +198,7 @@ jobs:
 
   build_backend:
     needs: [read_platform, lint, test, sqlx-check]
-    if: needs.read_platform.outputs.host_age_ready == 'true'
+    if: github.event_name != 'pull_request' && needs.read_platform.outputs.host_age_ready == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -208,7 +221,7 @@ jobs:
 
   build_frontend:
     needs: [read_platform, lint, test, sqlx-check]
-    if: needs.read_platform.outputs.host_age_ready == 'true'
+    if: github.event_name != 'pull_request' && needs.read_platform.outputs.host_age_ready == 'true'
     runs-on: ubuntu-latest
     environment: production   # needs PLATFORM_STATE_R2_* secrets for tofu state read
     steps:
