@@ -18,7 +18,7 @@ use syllabus_tracker::auth::Role;
 use syllabus_tracker::db::{
     add_tag_to_technique, add_technique_to_collection, assign_technique_to_student,
     create_collection, create_tag, create_technique, create_user, find_user_by_username,
-    get_tag_by_name,
+    get_tag_by_name, update_user_rank,
 };
 use syllabus_tracker::env;
 use syllabus_tracker::lib::seed::{ItemOutcome, SeedReporter, TerminalSeedReporter};
@@ -39,6 +39,26 @@ const STUDENT_NAMES: &[(&str, &str)] = &[
     // Queue-state demos: render in the dashboard "Things for you" panel.
     ("demo_jordan", "Jordan Pierce"),
     ("demo_robin", "Robin Lee"),
+];
+
+/// Per-student rank fixture: (belt, stripes, days_since_last_grading).
+/// `None` leaves the student rank-less so the empty-state branch in the
+/// UI is exercised too. Same order as STUDENT_NAMES.
+const STUDENT_RANKS: &[Option<(&str, i64, i64)>] = &[
+    Some(("black", 2, 120)),  // alex
+    Some(("blue", 4, 420)),   // bianca, ready to grade
+    Some(("purple", 1, 60)),  // marcus
+    Some(("blue", 3, 180)),   // priya
+    Some(("brown", 0, 365)),  // diego
+    Some(("blue", 1, 90)),    // sarah
+    Some(("black", 0, 240)),  // hiroshi
+    Some(("white", 4, 720)),  // maya
+    Some(("purple", 0, 30)),  // yusuf
+    Some(("blue", 2, 150)),   // camila
+    Some(("brown", 3, 200)),  // tobias
+    Some(("white", 2, 45)),   // aisha
+    None,                     // jordan (pending approval, no rank)
+    Some(("white", 0, 14)),   // robin
 ];
 
 /// (name, description, tag names)
@@ -298,6 +318,7 @@ async fn run() -> Result<()> {
         "Seeding techniques",
         "Seeding Blue Belt Fundamentals collection",
         "Seeding students",
+        "Backfilling student ranks",
         "Assigning techniques to students",
         "Generating attempts",
     ];
@@ -413,6 +434,41 @@ async fn run() -> Result<()> {
     .await?;
     reporter.phase_finished();
 
+    // 4b. Rank backfill. Idempotent: skip students who already have a
+    // non-null belt. Writes to rank_audit alongside the user update so
+    // M5's activity feed sees the grading event.
+    reporter.phase_started(phases[7], Some(STUDENT_RANKS.len() as u64));
+    let now_naive = Utc::now().naive_utc();
+    for (i, &student_id) in student_ids.iter().enumerate() {
+        let existing_belt: Option<String> =
+            sqlx::query_scalar!("SELECT belt FROM users WHERE id = ?", student_id)
+                .fetch_one(&pool)
+                .await?;
+        if existing_belt.is_some() {
+            reporter.phase_item(ItemOutcome::Existed);
+            continue;
+        }
+        match STUDENT_RANKS[i] {
+            None => {
+                reporter.phase_item(ItemOutcome::Existed);
+            }
+            Some((belt, stripes, days_ago)) => {
+                let graded_at = now_naive - Duration::days(days_ago);
+                update_user_rank(
+                    &pool,
+                    student_id,
+                    Some(belt),
+                    Some(stripes),
+                    Some(graded_at),
+                    coach_id,
+                )
+                .await?;
+                reporter.phase_item(ItemOutcome::Created);
+            }
+        }
+    }
+    reporter.phase_finished();
+
     // 5. Assignments + status + timestamp backfill.
     // Use NaiveDateTime so sqlx encodes timestamps as "%F %T%.f" (the same
     // format `mark_seen` and `CURRENT_TIMESTAMP` use). Mixing in `DateTime<Utc>`
@@ -420,7 +476,7 @@ async fn run() -> Result<()> {
     // suffix; the dashboard query then text-compares them against space-form
     // `seen_at` values and the unseen-activity flag gets stuck.
     let assignments_total: u64 = STUDENT_PROFILES.iter().map(|p| p.0 as u64).sum();
-    reporter.phase_started(phases[7], Some(assignments_total));
+    reporter.phase_started(phases[8], Some(assignments_total));
     let now = Utc::now().naive_utc();
     for (i, &student_id) in student_ids.iter().enumerate() {
         let (count, red_pct, amber_pct, days_since_coach, has_new_activity) = STUDENT_PROFILES[i];
@@ -535,7 +591,7 @@ async fn run() -> Result<()> {
     // 6. Attempts. Spread across the last ~90 days so sparkline + heatmap
     // have something to draw. Skipped for any student_technique that
     // already has attempts so the seed remains idempotent.
-    reporter.phase_started(phases[8], None);
+    reporter.phase_started(phases[9], None);
     let student_notes = [
         "Felt smooth today.",
         "Need to drill the timing more.",
