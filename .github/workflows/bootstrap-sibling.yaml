@@ -118,7 +118,7 @@ jobs:
           AWS_SECRET_ACCESS_KEY: ${{ secrets.PLATFORM_STATE_R2_SECRET_ACCESS_KEY }}
           AWS_MAX_ATTEMPTS:      "5"
         run: |
-          cd infra-sillybus
+          cd infra
           tofu init -input=false
           tofu apply -refresh-only -auto-approve -input=false
           VM_IP=$(tofu output -raw _platform_vm_ip)
@@ -164,7 +164,7 @@ jobs:
           AWS_SECRET_ACCESS_KEY: ${{ secrets.PLATFORM_STATE_R2_SECRET_ACCESS_KEY }}
           AWS_MAX_ATTEMPTS:      "5"
         run: |
-          cd infra-sillybus
+          cd infra
           tofu init -input=false
           tofu apply -refresh-only -auto-approve -input=false
           mkdir -p ~/.ssh && chmod 700 ~/.ssh
@@ -209,7 +209,7 @@ jobs:
           AWS_MAX_ATTEMPTS:      "5"
           HOST_AGE_RECIPIENT:    ${{ needs.read_platform.outputs.host_age_recipient }}
         run: |
-          cd infra-sillybus
+          cd infra
           BACKEND_HC=$(tofu output -raw _platform_honeycomb_backend_ingest)
           BROWSER_HC=$(tofu output -raw _platform_honeycomb_browser_ingest)
           echo "::add-mask::$BACKEND_HC"
@@ -230,7 +230,7 @@ jobs:
           # creds, ROCKET_SECRET_KEY) — those are env-wide values, not
           # per-instance.
           rsync -avz -e "ssh -i ~/.ssh/id_ed25519" \
-            runtime-secrets-sillybus.enc.env \
+            runtime-secrets.enc.env \
             "deploy@$VM_IP:/tmp/$SIBLING_NAME.enc.env"
           rsync -avz -e "ssh -i ~/.ssh/id_ed25519" \
             /tmp/$SIBLING_NAME-honeycomb.enc.env \

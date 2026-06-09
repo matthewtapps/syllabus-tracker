@@ -1,11 +1,8 @@
-# SOPS recipients for the sillybus environment's runtime secrets file.
-# Distinct config from the legacy .sops.yaml at repo root; the legacy
-# main branch's files keep their existing recipients.
+# SOPS recipients for the production runtime secrets file.
 #
-# The host's age recipient (derived from sugar-glider's SSH host key)
-# is added in Phase 5.2 after nixos-anywhere bootstrap creates the
-# host's SSH key. Until then, only the laptop keys can decrypt
-# runtime-secrets-sillybus.enc.env.
+# sugar_glider_host: age recipient derived from sugar-glider's SSH host
+# key via ssh-to-age. The host decrypts runtime-secrets.enc.env at
+# activation via sops-nix on the platform host.
 
 keys:
   - &laptop_primary    age1dkmrzjz5zye09w3vdt74kk4q43erjqhau8ce5f0shd9uzuhjwpfqs2ntkm
@@ -13,7 +10,7 @@ keys:
   - &sugar_glider_host age1g0t733wx429tvvx834mtsz3pfx3887acppyps25feujlfzl92cqs92wm5p
 
 creation_rules:
-  - path_regex: runtime-secrets-sillybus\.enc\.env$
+  - path_regex: runtime-secrets\.enc\.env$
     key_groups:
       - age:
           - *laptop_primary
