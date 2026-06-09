@@ -1,5 +1,12 @@
 import { lazy, Suspense } from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import {
+  BrowserRouter as Router,
+  Navigate,
+  Route,
+  Routes,
+  useParams,
+  useSearchParams,
+} from 'react-router-dom';
 import { Toaster } from "sonner";
 import {
   QueryClient,
@@ -76,6 +83,28 @@ function RouteLoading() {
       Loading...
     </div>
   );
+}
+
+/// Legacy URL adapter for `/student/:id`. Pre-M5b3' this was the profile
+/// tabs page; the activity / pinned / syllabus tabs are now separate routes.
+/// Default redirect target is the activity feed (decision #25). If the
+/// caller carried `?profile_tab=syllabus` or `?focus=...`, treat that as a
+/// syllabus-tab intent and redirect to the syllabus route with focus
+/// preserved.
+function StudentRedirect() {
+  const params = useParams<{ id: string }>();
+  const [searchParams] = useSearchParams();
+  const id = params.id ?? '';
+  const profileTab = searchParams.get('profile_tab');
+  const hasFocus = searchParams.has('focus');
+  const goSyllabus = profileTab === 'syllabus' || hasFocus;
+  const next = new URLSearchParams(searchParams);
+  next.delete('profile_tab');
+  const qs = next.toString();
+  const target = goSyllabus
+    ? `/student/${id}/syllabus${qs ? `?${qs}` : ''}`
+    : `/student/${id}/activity${qs ? `?${qs}` : ''}`;
+  return <Navigate to={target} replace />;
 }
 
 function AppShell() {
@@ -252,6 +281,22 @@ function AppShell() {
               element={
                 <RequireAuth>
                   <ActivityPage user={user!} />
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/student/:id/syllabus"
+              element={
+                <RequireAuth>
+                  <StudentTechniques user={user!} />
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/student/:id"
+              element={
+                <RequireAuth>
+                  <StudentRedirect />
                 </RequireAuth>
               }
             />
