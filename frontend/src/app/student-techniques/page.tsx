@@ -65,6 +65,7 @@ import { SkeletonListRow } from '@/components/skeleton-row';
 import { GraduateConfirmDialog } from '@/components/graduate-confirm-dialog';
 import TechniqueEditForm from '@/components/technique-edit-form';
 import AssignTechniques from '@/components/assign-techniques';
+import { RankStrip } from '@/components/rank-strip';
 import { TechniqueRow } from './components/technique-row';
 import {
   TechniqueFilters,
@@ -522,6 +523,10 @@ export default function StudentTechniques({ user }: StudentTechniquesProps) {
 
       {data && (
         <div className="mb-4 space-y-3">
+          <RankStrip
+            student={data.student}
+            canEdit={data.can_edit_student_rank}
+          />
           <div>
             <h1 className="text-xl font-semibold tracking-tight sm:text-2xl">
               {isOwnView ? 'My techniques' : `${studentName}'s techniques`}

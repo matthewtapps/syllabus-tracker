@@ -22,6 +22,7 @@ import {
   reorderVideos,
   resetUserClaim,
   setStudentGraduated,
+  setStudentRank,
   setVideoGlobalHidden,
   setVideoStudentVisibility,
   updateAttempt,
@@ -34,6 +35,7 @@ import {
   updateVideo,
 } from "./api";
 import type {
+  RankUpdate,
   SingleStudentTechnique,
   StudentTechniques,
   Technique,
@@ -180,6 +182,49 @@ export function useSetStudentGraduated() {
       qc.setQueryData<User[]>(qk.users(), (prev) =>
         prev?.map((s) => (s.id === id ? { ...s, graduated_at: stamp } : s)),
       );
+
+      return { previousStudents, previousUsers };
+    },
+    onError: (_err, _vars, ctx) => {
+      ctx?.previousStudents?.forEach(([key, data]) => qc.setQueryData(key, data));
+      if (ctx?.previousUsers) qc.setQueryData(qk.users(), ctx.previousUsers);
+    },
+    onSettled: (_res, _err, { id }) =>
+      Promise.all([
+        qc.invalidateQueries({ queryKey: ["students"] }),
+        qc.invalidateQueries({ queryKey: qk.users() }),
+        qc.invalidateQueries({ queryKey: qk.student(id) }),
+      ]),
+  });
+}
+
+// Coach-only edit of a student's belt + stripes + last grading date.
+// Optimistic patch keeps the profile header in sync the moment the
+// modal closes; rollback on error.
+export function useSetStudentRank() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (vars: { id: number; rank: RankUpdate }) =>
+      unwrap(await setStudentRank(vars.id, vars.rank)),
+    onMutate: async ({ id, rank }) => {
+      await qc.cancelQueries({ queryKey: ["students"] });
+      await qc.cancelQueries({ queryKey: qk.users() });
+
+      const previousStudents = qc.getQueriesData<User[]>({ queryKey: ["students"] });
+      const previousUsers = qc.getQueryData<User[]>(qk.users());
+
+      const patch = (u: User): User =>
+        u.id === id
+          ? {
+              ...u,
+              belt: rank.belt,
+              stripes: rank.stripes,
+              last_graded_at: rank.last_graded_at,
+            }
+          : u;
+
+      qc.setQueriesData<User[]>({ queryKey: ["students"] }, (prev) => prev?.map(patch));
+      qc.setQueryData<User[]>(qk.users(), (prev) => prev?.map(patch));
 
       return { previousStudents, previousUsers };
     },
