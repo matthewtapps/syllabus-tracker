@@ -12,52 +12,17 @@ This gives us:
 - **Restore window**: any point in time within the last 30 days.
 - **Restore time**: roughly seconds-to-minutes for our DB size (low MB).
 
-The replica lives in R2 bucket `syllabus-tracker-db-backups-prod` under the `db/` prefix. It is a different bucket and a different API token from the video bucket so a credential leak in one doesn't compromise the other.
+The replica lives in R2 bucket `sillybus-db-backups-prod` under the `db/` prefix. It is a different bucket and a different API token from the video bucket so a credential leak in one doesn't compromise the other.
 
 SQLite runs in WAL mode (set via `PRAGMA journal_mode=WAL` in both the app and the migrate binary). Three files live on disk: `sqlite.db`, `sqlite.db-wal`, `sqlite.db-shm`. Never copy just one of them with `cp`. Use the restore command below.
 
-## One-time setup
+## Provisioning
 
-The bucket is Terraform-managed; the S3 API token is click-minted in the R2 dashboard. See [`infra/terraform/README.md`](../infra/terraform/README.md) for why we don't Terraform the token.
+The bucket and its scoped R2 API token are both managed by platform OpenTofu (separate repo). The runtime token is consumed by this repo's deploy at deploy time via the platform-state read, mapped into `runtime-secrets.enc.env` as `LITESTREAM_ACCESS_KEY_ID` / `LITESTREAM_SECRET_ACCESS_KEY`. There is no per-deploy click-mint step.
 
-### 1. Apply Terraform to create the bucket
+The non-secret bits (`LITESTREAM_BUCKET`, `LITESTREAM_ENDPOINT`) live in `config/prod.env`.
 
-```sh
-just tf apply
-```
-
-This creates the `syllabus-tracker-db-backups-prod` bucket (assuming `CLOUDFLARE_API_TOKEN` is in `.secrets.env` with `Workers R2 Storage > Edit` scope).
-
-### 2. Enable bucket versioning (manual)
-
-The Cloudflare Terraform provider doesn't expose a versioning resource yet. Toggle it once by hand: Cloudflare dashboard > R2 > `syllabus-tracker-db-backups-prod` > Settings > **Object Versioning** > Enable. Cheap insurance against an accidental delete or a buggy retention sweep.
-
-### 3. Click-mint the Litestream token and stash the credentials
-
-1. Cloudflare dashboard > R2 Object Storage > **Manage R2 API Tokens** > **Create API Token**.
-2. Permissions: **Object Read & Write**.
-3. Specify bucket: `syllabus-tracker-db-backups-prod`. **Do not** reuse the videos token; the whole point is blast-radius separation.
-4. Create. **Copy the Access Key ID and Secret Access Key.** The secret is shown exactly once.
-5. Add to SOPS via `just sops`:
-   ```yaml
-   r2_backups_access_key_id: <paste Access Key ID>
-   r2_backups_secret_access_key: <paste Secret Access Key>
-   ```
-   Save. Then `just tf apply` pushes them to GitHub Actions as `R2_BACKUPS_ACCESS_KEY_ID` and `R2_BACKUPS_SECRET_ACCESS_KEY`.
-
-The deploy workflow (`.github/workflows/deploy.yaml`) writes them into `.secrets.env` on the prod host as `LITESTREAM_ACCESS_KEY_ID` and `LITESTREAM_SECRET_ACCESS_KEY` where the Litestream container picks them up via `env_file`.
-
-The non-secret bits (`LITESTREAM_BUCKET`, `LITESTREAM_ENDPOINT`) live in `config/prod.env` and are also OpenTofu outputs in case they ever need to change.
-
-### 4. Deploy
-
-After the secrets exist, the next deploy will start the Litestream container. Confirm it's working:
-
-```sh
-docker logs syllabus-tracker-litestream
-```
-
-You should see lines like `wrote snapshot`, then periodic `wrote wal segment`. Check the R2 bucket via the Cloudflare dashboard, you should see objects appearing under `db/`.
+On the host, the deploy workflow decrypts `runtime-secrets.enc.env` to `/run/runtime-secrets/sillybus.env` and `docker-compose.nixos.yml` loads it via `env_file:` on the `litestream` service.
 
 ## Restoring
 
@@ -66,7 +31,7 @@ You need the Litestream binary locally and the R2 credentials in env. The binary
 ### Latest
 
 ```sh
-export LITESTREAM_BUCKET=syllabus-tracker-db-backups-prod
+export LITESTREAM_BUCKET=sillybus-db-backups-prod
 export LITESTREAM_ENDPOINT=https://ea9e8573831e597fc41f865267b8fd35.r2.cloudflarestorage.com
 export LITESTREAM_ACCESS_KEY_ID=<from 1Password / dashboard>
 export LITESTREAM_SECRET_ACCESS_KEY=<from 1Password / dashboard>
@@ -104,16 +69,16 @@ sqlite3 /tmp/restored.db "SELECT COUNT(*) FROM techniques;"
 If you're restoring after a real disaster, **stop the app and Litestream containers first** so nothing is writing to the volume while you swap files.
 
 ```sh
-docker compose -f docker-compose.nixos.yml stop app litestream
+docker compose -f /srv/sillybus/docker-compose.nixos.yml stop app litestream
 
 # Inside the app-data volume, remove the old DB and its sidecars, drop the
 # restored DB in place, and clear any stale generation marker so Litestream
 # starts a fresh generation pointing at the new file.
-sudo rm /var/lib/docker/volumes/syllabus-tracker-services_app-data/_data/sqlite.db*
-sudo cp /tmp/restored.db /var/lib/docker/volumes/syllabus-tracker-services_app-data/_data/sqlite.db
-sudo chown <docker uid>:<docker gid> /var/lib/docker/volumes/syllabus-tracker-services_app-data/_data/sqlite.db
+sudo rm /var/lib/docker/volumes/sillybus_app-data/_data/sqlite.db*
+sudo cp /tmp/restored.db /var/lib/docker/volumes/sillybus_app-data/_data/sqlite.db
+sudo chown <docker uid>:<docker gid> /var/lib/docker/volumes/sillybus_app-data/_data/sqlite.db
 
-docker compose -f docker-compose.nixos.yml start app litestream
+docker compose -f /srv/sillybus/docker-compose.nixos.yml start app litestream
 ```
 
 Litestream will detect a new database and start a fresh generation on next sync.
