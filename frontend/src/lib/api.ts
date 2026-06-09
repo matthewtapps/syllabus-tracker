@@ -810,6 +810,41 @@ export async function setStudentRank(
 /// targets (coach / admin); the caller should gate the UI on
 /// `can_manage_footage_submitter` from the student profile response so
 /// this never gets hit on an admin / coach by accident.
+export type FeedItem =
+  | {
+      kind: "technique";
+      student_technique_id: number;
+      technique_id: number;
+      title: string;
+      status: "red" | "amber" | "green";
+      latest_activity_at: string;
+      latest_attempt_at: string | null;
+      attempt_count: number;
+      last_coach_update_at: string | null;
+      last_student_update_at: string | null;
+    }
+  | {
+      kind: "rank_change";
+      rank_audit_id: number;
+      belt: string | null;
+      stripes: number | null;
+      awarded_at: string | null;
+      changed_by_name: string | null;
+      latest_activity_at: string;
+    };
+
+export interface StudentFeedResponse {
+  items: FeedItem[];
+}
+
+export async function getStudentFeed(studentId: number): Promise<StudentFeedResponse> {
+  const response = await fetch(`/api/student/${studentId}/feed`, {
+    credentials: "include",
+  });
+  if (!response.ok) throw response;
+  return (await response.json()) as StudentFeedResponse;
+}
+
 export async function setFootageSubmitter(
   studentId: number,
   enabled: boolean,

@@ -16,6 +16,7 @@ import {
   getLibraryTechniques,
   getLibraryTechniqueStats,
   getRecentAttemptsForStudent,
+  getStudentFeed,
   getStudentTechniqueDetail,
   getStudentTechniques,
   getStudents,
@@ -204,6 +205,18 @@ export function useLibraryTechniqueStats(
       enabled && typeof techniqueId === "number" && Number.isFinite(techniqueId)
         ? () => getLibraryTechniqueStats(techniqueId)
         : skipToken,
+  });
+}
+
+export function useStudentFeed(studentId: number | undefined) {
+  return useQuery({
+    queryKey: qk.studentFeed(studentId ?? 0),
+    queryFn:
+      typeof studentId === "number" && Number.isFinite(studentId)
+        ? () => getStudentFeed(studentId)
+        : skipToken,
+    staleTime: 0,
+    refetchOnWindowFocus: true,
   });
 }
 

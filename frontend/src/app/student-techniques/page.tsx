@@ -75,6 +75,7 @@ import { GraduateConfirmDialog } from '@/components/graduate-confirm-dialog';
 import TechniqueEditForm from '@/components/technique-edit-form';
 import AssignTechniques from '@/components/assign-techniques';
 import { RankStrip } from '@/components/rank-strip';
+import { ActivityFeed } from './components/activity-feed';
 import { TechniqueRow } from './components/technique-row';
 import {
   TechniqueFilters,
@@ -599,10 +600,10 @@ export default function StudentTechniques({ user }: StudentTechniquesProps) {
           </TabsList>
 
           <TabsContent value="activity" className="mt-0">
-            <EmptyState
-              icon={Sparkles}
-              title="Activity feed coming soon"
-              description="One row per thing happening, ordered by most recent. Lands in the next milestone."
+            <ActivityFeed
+              studentId={data.student.id}
+              isOwnView={isOwnView}
+              studentName={studentName}
             />
           </TabsContent>
 
