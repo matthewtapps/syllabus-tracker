@@ -24,6 +24,7 @@ import type {
 import {
   useAllTags,
   useAttemptSummary,
+  useStudentPins,
   useStudentTechniques,
 } from '@/lib/queries';
 import {
@@ -31,6 +32,7 @@ import {
   useResetUserClaim,
   useSetFootageSubmitter,
   useSetStudentGraduated,
+  useUnpinTechnique,
   useUpdateTechnique,
 } from '@/lib/mutations';
 import { qk } from '@/lib/query-keys';
@@ -575,6 +577,10 @@ export default function StudentTechniques({ user }: StudentTechniquesProps) {
               {isOwnView ? 'My profile' : studentName}
             </h1>
           </div>
+          <RecentlyWorkingOnStrip
+            studentId={data.student.id}
+            onTechniqueClick={() => setProfileTab('pinned')}
+          />
         </div>
       )}
 
@@ -608,14 +614,11 @@ export default function StudentTechniques({ user }: StudentTechniquesProps) {
           </TabsContent>
 
           <TabsContent value="pinned" className="mt-0">
-            <EmptyState
-              icon={Pin}
-              title="Pinned techniques coming soon"
-              description={
-                isOwnView
-                  ? 'Pin library techniques to your personal working-on list. Lands in a future milestone.'
-                  : `${studentName} can pin library techniques here. Lands in a future milestone.`
-              }
+            <PinnedTab
+              studentId={data.student.id}
+              isOwnView={isOwnView}
+              studentName={studentName}
+              syllabusTechniques={data.techniques}
             />
           </TabsContent>
 
@@ -991,6 +994,190 @@ export default function StudentTechniques({ user }: StudentTechniquesProps) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+    </div>
+  );
+}
+
+interface RecentlyWorkingOnStripProps {
+  studentId: number;
+  onTechniqueClick: () => void;
+}
+
+/// SD-014: top-of-profile strip showing the latest 3 pins. Acts as a quick
+/// way back into the Pinned tab without scrolling through the syllabus.
+function RecentlyWorkingOnStrip({
+  studentId,
+  onTechniqueClick,
+}: RecentlyWorkingOnStripProps) {
+  const pinsQuery = useStudentPins(studentId);
+  const pins = (pinsQuery.data ?? []).slice(0, 3);
+  if (pins.length === 0) return null;
+  return (
+    <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+      <Pin className="h-3 w-3 shrink-0" aria-hidden />
+      <span className="uppercase tracking-wide">Recently working on</span>
+      <div className="flex flex-wrap gap-1.5">
+        {pins.map((p) => (
+          <Badge
+            key={p.id}
+            variant="outline"
+            className="cursor-pointer"
+            onClick={onTechniqueClick}
+          >
+            {p.technique_name}
+          </Badge>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+interface PinnedTabProps {
+  studentId: number;
+  isOwnView: boolean;
+  studentName: string;
+  syllabusTechniques: Technique[];
+}
+
+function PinnedTab({
+  studentId,
+  isOwnView,
+  studentName,
+  syllabusTechniques,
+}: PinnedTabProps) {
+  const pinsQuery = useStudentPins(studentId);
+  const unpinMutation = useUnpinTechnique();
+  const [showSyllabusContext, setShowSyllabusContext] = useState(true);
+  const pins = pinsQuery.data ?? [];
+
+  // Index syllabus assignments by technique_id so a pinned row can show
+  // status / attempt counts when the same technique sits on a syllabus too.
+  const syllabusByTechnique = useMemo(() => {
+    const map = new Map<number, Technique>();
+    syllabusTechniques.forEach((t) => map.set(t.technique_id, t));
+    return map;
+  }, [syllabusTechniques]);
+
+  if (pinsQuery.isLoading) {
+    return (
+      <div className="overflow-hidden rounded-lg border border-border bg-card">
+        {Array.from({ length: 3 }).map((_, i) => (
+          <SkeletonListRow key={i} />
+        ))}
+      </div>
+    );
+  }
+
+  if (pins.length === 0) {
+    return (
+      <EmptyState
+        icon={Pin}
+        title={isOwnView ? "Nothing pinned yet" : `${studentName} hasn't pinned anything yet`}
+        description={
+          isOwnView
+            ? "Open a technique in the library, then tap Pin to add it here. Pinned techniques carry their notes across syllabus and pinned views."
+            : "When the student pins techniques from the library, they'll show up on this tab."
+        }
+      />
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-xs text-muted-foreground">
+          {pins.length} {pins.length === 1 ? 'pinned technique' : 'pinned techniques'}
+        </p>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="h-7 px-2 text-xs"
+          onClick={() => setShowSyllabusContext((v) => !v)}
+        >
+          {showSyllabusContext ? 'Hide' : 'Show'} syllabus context
+        </Button>
+      </div>
+      <ul className="divide-y divide-border overflow-hidden rounded-lg border border-border bg-card">
+        {pins.map((p) => {
+          const onSyllabus = syllabusByTechnique.get(p.technique_id);
+          const linkTarget = onSyllabus
+            ? `/student/${studentId}/technique/${onSyllabus.id}`
+            : undefined;
+          const title = (
+            <p className="truncate text-sm font-medium">{p.technique_name}</p>
+          );
+          return (
+            <li key={p.id} className="flex items-start gap-3 px-4 py-3">
+              <div className="min-w-0 flex-1 space-y-1">
+                {linkTarget ? (
+                  <Link
+                    to={linkTarget}
+                    className="block transition-colors hover:text-primary"
+                  >
+                    {title}
+                  </Link>
+                ) : (
+                  title
+                )}
+                {p.technique_description && (
+                  <p className="line-clamp-2 text-xs text-muted-foreground">
+                    {p.technique_description}
+                  </p>
+                )}
+                {showSyllabusContext && onSyllabus && (
+                  <div className="flex flex-wrap items-center gap-2 pt-1 text-[11px] text-muted-foreground">
+                    <Badge variant="outline" className="px-1.5 py-0">
+                      On syllabus
+                    </Badge>
+                    <span className="inline-flex items-center gap-1">
+                      <span
+                        className={`inline-block h-1.5 w-1.5 rounded-full ${
+                          onSyllabus.status === 'green'
+                            ? 'bg-status-green'
+                            : onSyllabus.status === 'amber'
+                              ? 'bg-status-amber'
+                              : 'bg-status-red'
+                        }`}
+                      />
+                      {onSyllabus.status}
+                    </span>
+                    {onSyllabus.attempt_count > 0 && (
+                      <span>
+                        {onSyllabus.attempt_count}{' '}
+                        {onSyllabus.attempt_count === 1 ? 'attempt' : 'attempts'}
+                      </span>
+                    )}
+                    {onSyllabus.syllabus_name && (
+                      <span>in {onSyllabus.syllabus_name}</span>
+                    )}
+                  </div>
+                )}
+              </div>
+              {isOwnView && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-8 px-2 text-xs"
+                  disabled={unpinMutation.isPending}
+                  onClick={() =>
+                    unpinMutation.mutate(
+                      { studentId, techniqueId: p.technique_id },
+                      {
+                        onSuccess: () => toast.success('Unpinned'),
+                        onError: () => toast.error('Failed to unpin'),
+                      },
+                    )
+                  }
+                >
+                  Unpin
+                </Button>
+              )}
+            </li>
+          );
+        })}
+      </ul>
     </div>
   );
 }
