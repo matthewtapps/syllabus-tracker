@@ -963,6 +963,23 @@ pub async fn api_set_student_rank(
     Ok(Status::Ok)
 }
 
+/// Activity feed for a student profile (M5). Returns one row per
+/// top-level item, reverse-chronological by latest activity. Item
+/// kinds in v1: `technique` and `rank_change`. Coaches can read any
+/// student's feed (CX-015); students can only read their own.
+#[get("/student/<id>/feed")]
+pub async fn api_get_student_feed(
+    id: i64,
+    user: User,
+    db: &State<Pool<Sqlite>>,
+) -> ApiResult<Json<crate::db::feed::StudentFeedResponse>> {
+    if user.id != id && !user.has_permission(Permission::ViewAllStudents) {
+        return Err(Status::Forbidden.into());
+    }
+    let items = crate::db::get_student_feed(db, id).await?;
+    Ok(Json(crate::db::feed::StudentFeedResponse { items }))
+}
+
 #[derive(Deserialize, Clone)]
 pub struct FootageSubmitterToggle {
     pub enabled: bool,

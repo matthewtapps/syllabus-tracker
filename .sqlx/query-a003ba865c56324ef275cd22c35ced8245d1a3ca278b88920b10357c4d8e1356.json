@@ -1,0 +1,50 @@
+{
+  "db_name": "SQLite",
+  "query": "\n        SELECT\n            ra.id                       AS \"id!: i64\",\n            ra.belt                     AS \"belt?: String\",\n            ra.stripes                  AS \"stripes?: i64\",\n            ra.last_graded_at           AS \"last_graded_at?: NaiveDateTime\",\n            ra.changed_at               AS \"changed_at!: NaiveDateTime\",\n            u.display_name              AS \"changed_by_name?: String\"\n        FROM rank_audit ra\n        LEFT JOIN users u ON u.id = ra.changed_by_id\n        WHERE ra.user_id = ?\n        ",
+  "describe": {
+    "columns": [
+      {
+        "name": "id!: i64",
+        "ordinal": 0,
+        "type_info": "Integer"
+      },
+      {
+        "name": "belt?: String",
+        "ordinal": 1,
+        "type_info": "Text"
+      },
+      {
+        "name": "stripes?: i64",
+        "ordinal": 2,
+        "type_info": "Integer"
+      },
+      {
+        "name": "last_graded_at?: NaiveDateTime",
+        "ordinal": 3,
+        "type_info": "Datetime"
+      },
+      {
+        "name": "changed_at!: NaiveDateTime",
+        "ordinal": 4,
+        "type_info": "Datetime"
+      },
+      {
+        "name": "changed_by_name?: String",
+        "ordinal": 5,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      true,
+      true,
+      true,
+      true,
+      false,
+      true
+    ]
+  },
+  "hash": "a003ba865c56324ef275cd22c35ced8245d1a3ca278b88920b10357c4d8e1356"
+}

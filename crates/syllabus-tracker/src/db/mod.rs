@@ -6,6 +6,7 @@
 
 mod attempts;
 mod collections;
+pub mod feed;
 mod invites;
 mod reporting;
 mod sessions;
@@ -18,6 +19,7 @@ mod watch;
 
 pub use attempts::*;
 pub use collections::*;
+pub use feed::*;
 pub use invites::*;
 pub use reporting::*;
 pub use sessions::*;
