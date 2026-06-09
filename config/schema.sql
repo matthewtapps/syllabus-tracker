@@ -12,8 +12,26 @@ CREATE TABLE IF NOT EXISTS users (
     approved_at TIMESTAMP,
     first_name TEXT,
     last_name TEXT,
-    reset_requested_at TIMESTAMP
+    reset_requested_at TIMESTAMP,
+    belt TEXT,
+    stripes INTEGER,
+    last_graded_at TIMESTAMP
 );
+
+-- Append-only log of rank changes. Read by the activity feed (M5) to
+-- emit one-off `rank_change` items per the implementation plan, and
+-- as a record of which coach awarded each grading.
+CREATE TABLE IF NOT EXISTS rank_audit (
+    id INTEGER PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    belt TEXT,
+    stripes INTEGER,
+    last_graded_at TIMESTAMP,
+    changed_by_id INTEGER NOT NULL REFERENCES users(id),
+    changed_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_rank_audit_user_changed
+    ON rank_audit(user_id, changed_at DESC);
 
 CREATE TABLE IF NOT EXISTS techniques (
     id INTEGER PRIMARY KEY,
