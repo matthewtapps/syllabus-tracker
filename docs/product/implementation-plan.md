@@ -14,6 +14,42 @@ This is a living document. Re-read it before starting each milestone; mark miles
 
 ---
 
+## Status: shipped in 2026-06-09 / 2026-06-10 session
+
+For posterity. PRs reference the GH numbers in this repo.
+
+**Backend cutover / structural:**
+- M4.5 backend rename — PR #16 ✅ merged-ready (collections → syllabuses for Rust types + API surface; SQL identifiers unchanged per decision #19).
+- M4.5 frontend rename — PR #17 ✅
+- M6 notes dual-read shim — PR #18 ✅
+- M6 notes writer cutover — PR #19 ✅
+- M7 video parent polymorphism schema — PR #23 ✅
+- M7 videos.rs query cutover — PR #24 ✅
+
+**Pinning + ongoing-use surfaces:**
+- M6 pin/unpin endpoints + library "Pin to working list" — PR #20 ✅
+- M6 Pinned tab content + Recently-working-on strip — PR #21 ✅
+- M6 feed wiring for pins + SD-015 graduated read-only — PR #22 ✅
+
+**IA reshape (this amendment's work):**
+- Shared `LibraryTechniqueRow` component extraction + Pins lifted to its own page — PR #25 ✅
+- This amendment with the rubber-duck review — PR #26 ✅
+- M5b2' activity feed extraction (`/activity` + `/student/:id/activity`) — PR #27 ✅
+- M5b3' drop the `<Tabs>` container; `/student/:id` redirects — PR #28 ✅
+- M5b3 (kind filter chips, client-side filter, scope-shrunk per amendment) — PR #29 ✅
+- Activity feed cards expand inline via `LibraryTechniqueExpandedBody` — PR #30 ✅
+- Activity snippet on slim feed cards — PR #31 ✅
+- Backend `?kinds=` filter on `/api/student/<id>/feed` — PR #32 ✅
+
+**Not started yet (next session):**
+- M5d (unified TechniqueRow base) — plan calls for ~4 PRs once the syllabus row's StatusToggle / NotesEditor / AttemptsList absorb into the shared base.
+- M5b3 infrastructure (Framer Motion + cursor pagination + infinite scroll).
+- M5c (atomic data-model cutover) — the biggest coordinated PR in the roadmap.
+- M7.5 (loose uploads) — partial work stashed during PR #19 mid-stream after UX feedback redirected the session.
+- M8 onward (camps, competitions, matches, threads, mentions, comments).
+
+---
+
 ## Plan amendment: 2026-06-10 — Top-level pages + shared row component
 
 > Captured after PR #25 shipped a shared `LibraryTechniqueRow` component and lifted Pins to its own page. Further product feedback during that session reshapes the IA the original [2026-06-09 amendment](#plan-amendment-2026-06-09--ia--data-model-reframe) sketched. **This amendment overrides** the M5b chip-filter framing and the "filter chips replace tabs" decision (#16) where they conflict.
