@@ -115,7 +115,7 @@ pub async fn get_students_by_recent_updates(
         LEFT JOIN student_techniques st ON u.id = st.student_id
         LEFT JOIN student_technique_views stv
                ON stv.student_technique_id = st.id AND stv.user_id = ?
-        WHERE u.role = 'student'
+        WHERE u.role IN ('student', 'footage_submitter_student')
         GROUP BY u.id
         ORDER BY MAX(st.updated_at) DESC NULLS LAST
         "#,

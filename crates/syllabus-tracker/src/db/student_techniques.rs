@@ -274,7 +274,7 @@ pub async fn update_student_technique(
             .execute(pool)
             .await?;
         }
-        Role::Student => {
+        Role::Student | Role::FootageSubmitterStudent => {
             sqlx::query!(
                 "UPDATE student_techniques
                  SET status = ?, student_notes = ?, coach_notes = ?, updated_at = ?,
@@ -323,7 +323,7 @@ pub async fn update_student_notes(
             .execute(pool)
             .await?;
         }
-        Role::Student => {
+        Role::Student | Role::FootageSubmitterStudent => {
             sqlx::query!(
                 "UPDATE student_techniques
                  SET student_notes = ?, updated_at = ?,

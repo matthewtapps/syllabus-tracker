@@ -70,7 +70,7 @@ async fn bump_student_technique_activity(
             .execute(&mut **tx)
             .await?;
         }
-        Role::Student => {
+        Role::Student | Role::FootageSubmitterStudent => {
             sqlx::query!(
                 "UPDATE student_techniques
                  SET updated_at = ?,
@@ -109,7 +109,7 @@ async fn ensure_can_access_student_technique(
 
     match actor.role {
         Role::Coach | Role::Admin => Ok(student_id),
-        Role::Student => {
+        Role::Student | Role::FootageSubmitterStudent => {
             if actor.id == student_id {
                 Ok(student_id)
             } else {
@@ -170,7 +170,7 @@ pub async fn create_attempt(
                 None,
                 None,
             ),
-            Role::Student => (
+            Role::Student | Role::FootageSubmitterStudent => (
                 None,
                 None,
                 None,
@@ -363,7 +363,7 @@ pub async fn delete_attempt(
         Role::Coach | Role::Admin => {
             ensure_can_access_student_technique(pool, actor, row.student_technique_id).await?;
         }
-        Role::Student => {
+        Role::Student | Role::FootageSubmitterStudent => {
             ensure_can_access_student_technique(pool, actor, row.student_technique_id).await?;
             if row.recorded_by_id != actor.id {
                 return Err(AppError::Authorization(
@@ -421,7 +421,7 @@ pub async fn update_attempt_note(
             .execute(&mut *tx)
             .await?;
         }
-        Role::Student => {
+        Role::Student | Role::FootageSubmitterStudent => {
             let stamp = normalised.as_ref().map(|_| now);
             sqlx::query!(
                 "UPDATE attempts
@@ -463,7 +463,7 @@ pub async fn update_attempt_timestamp(
         Role::Coach | Role::Admin => {
             ensure_can_access_student_technique(pool, actor, row.student_technique_id).await?;
         }
-        Role::Student => {
+        Role::Student | Role::FootageSubmitterStudent => {
             ensure_can_access_student_technique(pool, actor, row.student_technique_id).await?;
             if row.recorded_by_id != actor.id {
                 return Err(AppError::Authorization(

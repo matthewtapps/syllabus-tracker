@@ -30,13 +30,31 @@ pub enum Permission {
     ViewStorageStats,
 
     EditStudentRank,
+
+    SubmitFootage,
+    /// Coach-level toggle between `Student` and `FootageSubmitterStudent`.
+    /// Distinct from `EditUserRoles` (admin-only, can set any role) so
+    /// coaches can grant/revoke footage rights without touching the
+    /// broader user-management surface.
+    ManageFootageSubmitter,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub enum Role {
     Student,
+    FootageSubmitterStudent,
     Coach,
     Admin,
+}
+
+impl Role {
+    /// True for any role we treat as a student for roster, dashboard,
+    /// and routing purposes (`Student` and `FootageSubmitterStudent`).
+    /// The dashboard's roster SQL must use `IN ('student',
+    /// 'footage_submitter_student')` to stay in sync with this.
+    pub fn is_student(&self) -> bool {
+        matches!(self, Role::Student | Role::FootageSubmitterStudent)
+    }
 }
 
 static STUDENT_PERMISSIONS: Lazy<HashSet<Permission>> = Lazy::new(|| {
@@ -46,6 +64,16 @@ static STUDENT_PERMISSIONS: Lazy<HashSet<Permission>> = Lazy::new(|| {
     permissions.insert(Permission::EditOwnProfile);
     permissions.insert(Permission::ViewOwnTechniques);
     permissions.insert(Permission::EditOwnNotes);
+
+    permissions
+});
+
+static FOOTAGE_SUBMITTER_PERMISSIONS: Lazy<HashSet<Permission>> = Lazy::new(|| {
+    let mut permissions = HashSet::new();
+
+    permissions.extend(STUDENT_PERMISSIONS.iter().copied());
+
+    permissions.insert(Permission::SubmitFootage);
 
     permissions
 });
@@ -69,6 +97,9 @@ static COACH_PERMISSIONS: Lazy<HashSet<Permission>> = Lazy::new(|| {
 
     permissions.insert(Permission::EditStudentRank);
 
+    permissions.insert(Permission::SubmitFootage);
+    permissions.insert(Permission::ManageFootageSubmitter);
+
     permissions
 });
 
@@ -90,6 +121,7 @@ impl Role {
     pub fn permissions(&self) -> &'static HashSet<Permission> {
         match self {
             Role::Student => &STUDENT_PERMISSIONS,
+            Role::FootageSubmitterStudent => &FOOTAGE_SUBMITTER_PERMISSIONS,
             Role::Coach => &COACH_PERMISSIONS,
             Role::Admin => &ADMIN_PERMISSIONS,
         }
@@ -102,11 +134,42 @@ impl Role {
     pub fn as_str(&self) -> &str {
         match self {
             Role::Student => "student",
+            Role::FootageSubmitterStudent => "footage_submitter_student",
             Role::Coach => "coach",
             Role::Admin => "admin",
         }
     }
+}
 
+impl Permission {
+    /// Stable wire-format name (matches the Debug derivation; used in
+    /// the `permissions: string[]` payload on /api/me so the frontend
+    /// can do `user.permissions.includes("SubmitFootage")`).
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Permission::ViewOwnProfile => "ViewOwnProfile",
+            Permission::EditOwnProfile => "EditOwnProfile",
+            Permission::ViewOwnTechniques => "ViewOwnTechniques",
+            Permission::EditOwnNotes => "EditOwnNotes",
+            Permission::ViewAllStudents => "ViewAllStudents",
+            Permission::EditAllTechniques => "EditAllTechniques",
+            Permission::AssignTechniques => "AssignTechniques",
+            Permission::CreateTechniques => "CreateTechniques",
+            Permission::RegisterUsers => "RegisterUsers",
+            Permission::ManageTags => "ManageTags",
+            Permission::EditUserRoles => "EditUserRoles",
+            Permission::DeleteUsers => "DeleteUsers",
+            Permission::EditUserCredentials => "EditUserCredentials",
+            Permission::UploadVideos => "UploadVideos",
+            Permission::DeleteVideos => "DeleteVideos",
+            Permission::ManageVideoVisibility => "ManageVideoVisibility",
+            Permission::ViewWatchStats => "ViewWatchStats",
+            Permission::ViewStorageStats => "ViewStorageStats",
+            Permission::EditStudentRank => "EditStudentRank",
+            Permission::SubmitFootage => "SubmitFootage",
+            Permission::ManageFootageSubmitter => "ManageFootageSubmitter",
+        }
+    }
 }
 
 impl FromStr for Role {
@@ -115,6 +178,7 @@ impl FromStr for Role {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
             "student" => Ok(Role::Student),
+            "footage_submitter_student" => Ok(Role::FootageSubmitterStudent),
             "coach" => Ok(Role::Coach),
             "admin" => Ok(Role::Admin),
             _ => Err(Error::msg(format!("Unknown role: {}", s))),
@@ -124,10 +188,6 @@ impl FromStr for Role {
 
 impl fmt::Display for Role {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Role::Student => write!(f, "student"),
-            Role::Coach => write!(f, "coach"),
-            Role::Admin => write!(f, "admin"),
-        }
+        f.write_str(self.as_str())
     }
 }
