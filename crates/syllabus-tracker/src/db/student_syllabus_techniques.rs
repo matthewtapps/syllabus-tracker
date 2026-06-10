@@ -461,6 +461,8 @@ pub struct StudentSyllabusTechniqueOverview {
     pub status: String,
     pub updated_at: String,
     pub last_attempt_at: Option<String>,
+    pub last_coach_update_at: Option<String>,
+    pub last_student_update_at: Option<String>,
 }
 
 #[instrument]
@@ -477,7 +479,9 @@ pub async fn list_sst_flat_for_student(
                   sst.status AS "status!: String",
                   sst.updated_at AS "updated_at!: NaiveDateTime",
                   (SELECT MAX(attempted_at) FROM syllabus_attempts
-                    WHERE student_syllabus_technique_id = sst.id) AS "last_attempt_at?: NaiveDateTime"
+                    WHERE student_syllabus_technique_id = sst.id) AS "last_attempt_at?: NaiveDateTime",
+                  sst.last_coach_update_at AS "last_coach_update_at?: NaiveDateTime",
+                  sst.last_student_update_at AS "last_student_update_at?: NaiveDateTime"
            FROM student_syllabus_techniques sst
            JOIN syllabus_assignments sa ON sa.id = sst.assignment_id
            JOIN syllabi s ON s.id = sa.syllabus_id
@@ -499,6 +503,8 @@ pub async fn list_sst_flat_for_student(
             status: r.status,
             updated_at: rfc3339(r.updated_at),
             last_attempt_at: r.last_attempt_at.map(rfc3339),
+            last_coach_update_at: r.last_coach_update_at.map(rfc3339),
+            last_student_update_at: r.last_student_update_at.map(rfc3339),
         })
         .collect())
 }
