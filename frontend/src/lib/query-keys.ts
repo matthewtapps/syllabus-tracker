@@ -85,6 +85,13 @@ export const qk = {
   activityUnreadCount: () => ["activity", "unreadCount"] as const,
   adminStorage: () => ["admin", "storage"] as const,
 
+  studentSyllabusTechniquesFlat: (studentId: number) =>
+    ["student", studentId, "syllabusTechniquesFlat"] as const,
+  studentRecentSyllabusAttempts: (studentId: number, limit: number) =>
+    ["student", studentId, "recentSyllabusAttempts", limit] as const,
+  studentSyllabusAttemptHeatmap: (studentId: number) =>
+    ["student", studentId, "syllabusAttemptHeatmap"] as const,
+
   // Predicate matchers for queryClient.invalidateQueries({ predicate }).
   // Keep matcher logic colocated with the keys it inspects so renaming a
   // segment in one place doesn't silently miss the other.

@@ -1,0 +1,32 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT\n            COALESCE(SUM(CASE WHEN sst.status = 'red'   THEN 1 ELSE 0 END), 0) AS \"red!: i64\",\n            COALESCE(SUM(CASE WHEN sst.status = 'amber' THEN 1 ELSE 0 END), 0) AS \"amber!: i64\",\n            COALESCE(SUM(CASE WHEN sst.status = 'green' THEN 1 ELSE 0 END), 0) AS \"green!: i64\"\n           FROM student_syllabus_techniques sst\n           JOIN syllabus_assignments sa ON sa.id = sst.assignment_id\n           WHERE sst.technique_id = ? AND sa.unassigned_at IS NULL AND sst.hidden_at IS NULL",
+  "describe": {
+    "columns": [
+      {
+        "name": "red!: i64",
+        "ordinal": 0,
+        "type_info": "Integer"
+      },
+      {
+        "name": "amber!: i64",
+        "ordinal": 1,
+        "type_info": "Integer"
+      },
+      {
+        "name": "green!: i64",
+        "ordinal": 2,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "95a7b6485d94281cd594e87c6d7a16dcaf5a256d2cd1adc9444f06b146e8facf"
+}

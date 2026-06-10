@@ -448,6 +448,67 @@ pub async fn add_technique_to_assignment(
     Ok(id)
 }
 
+/// A flat, cross-assignment view of one student's SST rows for the student's
+/// own dashboard "currently working / recently done" widgets. Spans every
+/// active (unassigned_at IS NULL) assignment; excludes soft-hidden rows.
+#[derive(Debug, Serialize)]
+pub struct StudentSyllabusTechniqueOverview {
+    pub sst_id: i64,
+    pub technique_id: i64,
+    pub technique_name: String,
+    pub syllabus_id: i64,
+    pub syllabus_name: String,
+    pub status: String,
+    pub updated_at: String,
+    pub last_attempt_at: Option<String>,
+    pub last_coach_update_at: Option<String>,
+    pub last_student_update_at: Option<String>,
+}
+
+#[instrument]
+pub async fn list_sst_flat_for_student(
+    pool: &Pool<Sqlite>,
+    student_id: i64,
+) -> Result<Vec<StudentSyllabusTechniqueOverview>, AppError> {
+    let rows = sqlx::query!(
+        r#"SELECT sst.id AS "sst_id!: i64",
+                  sst.technique_id AS "technique_id!: i64",
+                  t.name AS "technique_name!: String",
+                  sa.syllabus_id AS "syllabus_id!: i64",
+                  s.name AS "syllabus_name!: String",
+                  sst.status AS "status!: String",
+                  sst.updated_at AS "updated_at!: NaiveDateTime",
+                  (SELECT MAX(attempted_at) FROM syllabus_attempts
+                    WHERE student_syllabus_technique_id = sst.id) AS "last_attempt_at?: NaiveDateTime",
+                  sst.last_coach_update_at AS "last_coach_update_at?: NaiveDateTime",
+                  sst.last_student_update_at AS "last_student_update_at?: NaiveDateTime"
+           FROM student_syllabus_techniques sst
+           JOIN syllabus_assignments sa ON sa.id = sst.assignment_id
+           JOIN syllabi s ON s.id = sa.syllabus_id
+           JOIN techniques t ON t.id = sst.technique_id
+           WHERE sa.student_id = ? AND sa.unassigned_at IS NULL AND sst.hidden_at IS NULL
+           ORDER BY sst.updated_at DESC"#,
+        student_id,
+    )
+    .fetch_all(pool)
+    .await?;
+    Ok(rows
+        .into_iter()
+        .map(|r| StudentSyllabusTechniqueOverview {
+            sst_id: r.sst_id,
+            technique_id: r.technique_id,
+            technique_name: r.technique_name,
+            syllabus_id: r.syllabus_id,
+            syllabus_name: r.syllabus_name,
+            status: r.status,
+            updated_at: rfc3339(r.updated_at),
+            last_attempt_at: r.last_attempt_at.map(rfc3339),
+            last_coach_update_at: r.last_coach_update_at.map(rfc3339),
+            last_student_update_at: r.last_student_update_at.map(rfc3339),
+        })
+        .collect())
+}
+
 #[derive(Debug, Serialize)]
 pub struct DiffGhost {
     /// SST id whose technique is no longer in the syllabus's current set.

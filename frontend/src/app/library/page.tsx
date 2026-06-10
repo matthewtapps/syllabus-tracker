@@ -5,14 +5,9 @@ import { Accordion } from '@/components/ui/accordion';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Separator } from '@/components/ui/separator';
 import { EmptyState } from '@/components/empty-state';
 import { TechniqueRow } from '@/components/technique-row';
-import {
-  useCollections,
-  useLibraryTechniques,
-  useStudentLibrary,
-} from '@/lib/queries';
+import { useLibraryTechniques, useStudentLibrary } from '@/lib/queries';
 import { useUser } from '@/lib/current-user-context';
 import { isCoachOrAdmin } from '@/lib/api';
 
@@ -37,12 +32,6 @@ export default function LibraryPage() {
   const [scrollToVideoId, setScrollToVideoId] = useState<number | null>(null);
   const [search, setSearch] = useState('');
   const [activeTags, setActiveTags] = useState<string[]>([]);
-
-  // Multi-select with OR semantics. `null` is the sentinel for "not in any
-  // collection". Coach-only filter; students see no collections control.
-  const [activeCollections, setActiveCollections] = useState<(number | null)[]>(
-    [],
-  );
 
   // Honor `?technique=<id>&video=<id>` arriving from the dashboard "recently
   // watched" link. Runs once per arrival; the consumed params are stripped
@@ -73,9 +62,6 @@ export default function LibraryPage() {
     });
   }, [searchParams, setSearchParams, techniques]);
 
-  const collectionsQuery = useCollections();
-  const collections = isCoach ? collectionsQuery.data ?? [] : [];
-
   const availableTags = useMemo(() => {
     const set = new Set<string>();
     techniques.forEach((t) => t.tags.forEach((tag) => set.add(tag.name)));
@@ -93,16 +79,9 @@ export default function LibraryPage() {
       const matchesTags =
         activeTags.length === 0 ||
         activeTags.every((tag) => t.tags.some((x) => x.name === tag));
-      const matchesCollection =
-        activeCollections.length === 0 ||
-        activeCollections.some((c) =>
-          c === null
-            ? t.collection_ids.length === 0
-            : t.collection_ids.includes(c),
-        );
-      return matchesText && matchesTags && matchesCollection;
+      return matchesText && matchesTags;
     });
-  }, [techniques, search, activeTags, activeCollections]);
+  }, [techniques, search, activeTags]);
 
   function toggleTag(tag: string) {
     setActiveTags((prev) =>
@@ -157,64 +136,6 @@ export default function LibraryPage() {
               onClick={() => setActiveTags([])}
             >
               <XIcon className="mr-1 h-3 w-3" aria-hidden />
-              Clear
-            </Button>
-          )}
-        </div>
-      )}
-
-      {isCoach && collections.length > 0 && availableTags.length > 0 && (
-        <Separator className="mb-3" />
-      )}
-
-      {isCoach && collections.length > 0 && (
-        <div className="mb-4 flex flex-wrap gap-1.5">
-          {collections.map((c) => {
-            const active = activeCollections.includes(c.id);
-            return (
-              <Badge
-                key={c.id}
-                variant={active ? 'default' : 'outline'}
-                className="cursor-pointer select-none"
-                onClick={() =>
-                  setActiveCollections((prev) =>
-                    active
-                      ? prev.filter((x) => x !== c.id)
-                      : [...prev, c.id],
-                  )
-                }
-              >
-                {c.name}
-              </Badge>
-            );
-          })}
-          {(() => {
-            const active = activeCollections.includes(null);
-            return (
-              <Badge
-                key="__no_collection"
-                variant={active ? 'default' : 'outline'}
-                className="cursor-pointer select-none"
-                onClick={() =>
-                  setActiveCollections((prev) =>
-                    active
-                      ? prev.filter((x) => x !== null)
-                      : [...prev, null],
-                  )
-                }
-              >
-                No collection
-              </Badge>
-            );
-          })()}
-          {activeCollections.length > 0 && (
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              className="h-6 px-2 text-xs"
-              onClick={() => setActiveCollections([])}
-            >
               Clear
             </Button>
           )}

@@ -1,0 +1,26 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT date(sa.attempted_at, 'weekday 0', '-6 days') AS \"week_start!: String\",\n                  COUNT(*) AS \"count!: i64\"\n           FROM syllabus_attempts sa\n           JOIN student_syllabus_techniques sst ON sst.id = sa.student_syllabus_technique_id\n           WHERE sst.technique_id = ?\n             AND sa.attempted_at >= datetime('now', '-56 days')\n           GROUP BY date(sa.attempted_at, 'weekday 0', '-6 days')\n           ORDER BY 1",
+  "describe": {
+    "columns": [
+      {
+        "name": "week_start!: String",
+        "ordinal": 0,
+        "type_info": "Text"
+      },
+      {
+        "name": "count!: i64",
+        "ordinal": 1,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      true,
+      false
+    ]
+  },
+  "hash": "5ca8505e5d5b1fc76a2c3b378130876cc6f36bf94bf982cfc09016bec937e06a"
+}

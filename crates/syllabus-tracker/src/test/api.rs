@@ -734,31 +734,47 @@ mod tests {
 
     #[rocket::async_test]
     async fn test_taking_initiative_recent_student_note_update() {
+        // Initiative is now sourced from the syllabus stack (SST rows), so we
+        // need a syllabus assignment before the student note triggers a signal.
         let test_db = TestDbBuilder::new()
             .coach("coach_user", Some("Coach User"))
             .student("student_user", Some("Student User"))
             .technique("Armbar", "desc", Some("coach_user"))
-            .assign_technique(Some("Armbar"), Some("student_user"), "red", "", "")
             .build()
             .await
             .expect("Failed to build test DB");
 
-        let (client, test_db) = setup_test_client(test_db).await;
-        let st_id = test_db
-            .student_technique_id("student_user", "Armbar")
+        let coach_id = test_db.user_id("coach_user").unwrap();
+        let student_id = test_db.user_id("student_user").unwrap();
+        let armbar_id = test_db.technique_id("Armbar").unwrap();
+
+        // Create a syllabus assignment with the technique so SST exists.
+        let syllabus_id = crate::db::create_syllabus(&test_db.pool, "S", None, coach_id)
             .await
-            .expect("Failed to get id");
+            .unwrap();
+        let assignment_id = crate::db::assign(&test_db.pool, coach_id, student_id, syllabus_id)
+            .await
+            .unwrap();
+        crate::db::add_technique_to_assignment(&test_db.pool, assignment_id, armbar_id, coach_id)
+            .await
+            .unwrap();
+        let sst_id = crate::db::get_sst_id(&test_db.pool, assignment_id, armbar_id)
+            .await
+            .unwrap()
+            .expect("SST row must exist after add_technique_to_assignment");
+
+        let (client, _test_db) = setup_test_client(test_db).await;
 
         let before = chrono::Utc::now();
         let student_cookies = login_test_user(&client, "student_user", "password123").await;
         let resp = client
-            .put(format!("/api/student_technique/{}", st_id))
+            .patch(format!("/api/student_syllabus_techniques/{}", sst_id))
             .cookies(student_cookies)
             .header(ContentType::JSON)
             .body(json!({ "student_notes": "drilled this morning" }).to_string())
             .dispatch()
             .await;
-        assert_eq!(resp.status(), Status::Ok);
+        assert_eq!(resp.status(), Status::NoContent);
 
         let coach_cookies = login_test_user(&client, "coach_user", "password123").await;
         let initiative = fetch_initiative(&client, coach_cookies, "student_user")

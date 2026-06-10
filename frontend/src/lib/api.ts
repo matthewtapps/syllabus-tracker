@@ -1711,6 +1711,62 @@ export async function setVideoSyllabusVisibilityApi(
 }
 
 // ============================================================
+// Syllabus-backed student dashboard reads (dashboard-reporting migration)
+// ============================================================
+
+export interface StudentSyllabusTechniqueOverview {
+  sst_id: number;
+  technique_id: number;
+  technique_name: string;
+  syllabus_id: number;
+  syllabus_name: string;
+  status: "red" | "amber" | "green";
+  updated_at: string;
+  last_attempt_at: string | null;
+  last_coach_update_at: string | null;
+  last_student_update_at: string | null;
+}
+
+export async function getStudentSyllabusTechniquesFlat(
+  studentId: number,
+): Promise<StudentSyllabusTechniqueOverview[]> {
+  const response = await fetch(`/api/student/${studentId}/syllabus_techniques`, {
+    credentials: "include",
+  });
+  if (!response.ok) throw new Error("Failed to fetch syllabus techniques");
+  return await response.json();
+}
+
+export async function getRecentSyllabusAttemptsForStudent(
+  studentId: number,
+  limit: number = 5,
+): Promise<RecentAttemptItem[]> {
+  const response = await fetch(
+    `/api/student/${studentId}/syllabus_attempts/recent?limit=${limit}`,
+    { credentials: "include" },
+  );
+  if (!response.ok) throw new Error("Failed to fetch recent syllabus attempts");
+  return await response.json();
+}
+
+export async function getSyllabusAttemptHeatmap(
+  studentId: number,
+  from?: string,
+  to?: string,
+): Promise<AttemptBucket[]> {
+  const params = new URLSearchParams();
+  if (from) params.set("from", from);
+  if (to) params.set("to", to);
+  const qs = params.toString();
+  const url = qs
+    ? `/api/student/${studentId}/syllabus_attempts/heatmap?${qs}`
+    : `/api/student/${studentId}/syllabus_attempts/heatmap`;
+  const response = await fetch(url, { credentials: "include" });
+  if (!response.ok) throw new Error("Failed to fetch syllabus attempt heatmap");
+  return await response.json();
+}
+
+// ============================================================
 // Activity feed (PR 2)
 // ============================================================
 

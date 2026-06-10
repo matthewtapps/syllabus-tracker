@@ -20,15 +20,18 @@ import {
   getLibraryTechniqueStats,
   getRecentAttemptsForStudent,
   getRecentlyActiveStudents,
+  getRecentSyllabusAttemptsForStudent,
   getStudentLibrary,
   getStudentPinnedTechniques,
   getStudentSyllabusTechniquesApi,
+  getStudentSyllabusTechniquesFlat,
   getStudentSyllabiApi,
   getStudentTechniqueDetail,
   getStudentTechniques,
   getStudents,
   getSyllabusDetail,
   getSyllabi,
+  getSyllabusAttemptHeatmap,
   listSyllabusStudentsApi,
   getTechniquesForAssignment,
   listSyllabusAttemptsApi,
@@ -437,5 +440,34 @@ export function useRecentlyActiveStudents(enabled: boolean = true) {
     queryKey: qk.recentlyActiveStudents(),
     queryFn: enabled ? () => getRecentlyActiveStudents(10) : skipToken,
     staleTime: 60 * 1000,
+  });
+}
+
+// ---- Syllabus-backed student dashboard reads ----
+
+export function useStudentSyllabusTechniquesFlat(studentId: number | undefined) {
+  return useQuery({
+    queryKey: qk.studentSyllabusTechniquesFlat(studentId ?? 0),
+    queryFn: whenId(studentId, getStudentSyllabusTechniquesFlat),
+  });
+}
+
+export function useRecentSyllabusAttempts(
+  studentId: number | undefined,
+  limit: number = 5,
+) {
+  return useQuery({
+    queryKey: qk.studentRecentSyllabusAttempts(studentId ?? 0, limit),
+    queryFn:
+      typeof studentId === "number" && Number.isFinite(studentId)
+        ? () => getRecentSyllabusAttemptsForStudent(studentId, limit)
+        : skipToken,
+  });
+}
+
+export function useSyllabusAttemptHeatmap(studentId: number | undefined) {
+  return useQuery({
+    queryKey: qk.studentSyllabusAttemptHeatmap(studentId ?? 0),
+    queryFn: whenId(studentId, getSyllabusAttemptHeatmap),
   });
 }

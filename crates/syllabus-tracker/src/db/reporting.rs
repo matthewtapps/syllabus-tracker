@@ -52,50 +52,36 @@ struct UserWithActivityDto {
 pub async fn get_students_by_recent_updates(
     pool: &Pool<Sqlite>,
     include_archived: bool,
-    viewer_id: i64,
+    // viewer_id retained for signature stability; the unseen rule no longer uses per-coach view state.
+    _viewer_id: i64,
 ) -> Result<Vec<User>, AppError> {
-    // Aggregate flag: does this student have any student_technique where the
-    // student has touched it since the viewing coach last looked? `stv.seen_at`
-    // is null for rows the viewer has never opened, so MAX(...) of a NULL
-    // becomes a "yes" via the first WHEN branch.
     let dtos = sqlx::query_as!(
         UserWithActivityDto,
         r#"
         SELECT
-            u.id,
-            u.username,
-            u.display_name,
-            u.role,
-            u.archived,
+            u.id, u.username, u.display_name, u.role, u.archived,
             u.graduated_at as "graduated_at?: NaiveDateTime",
             u.email,
             u.claimed_at as "claimed_at?: NaiveDateTime",
             u.approved_at as "approved_at?: NaiveDateTime",
-            u.first_name,
-            u.last_name,
+            u.first_name, u.last_name,
             u.reset_requested_at as "reset_requested_at?: NaiveDateTime",
-            MAX(st.updated_at) as "last_update?: NaiveDateTime",
-            MAX(st.last_coach_update_at) as "last_coach_update_at?: NaiveDateTime",
-            COUNT(st.id) as "total_techniques?: i64",
-            COALESCE(SUM(CASE WHEN st.status = 'red'   THEN 1 ELSE 0 END), 0) as "red_count?: i64",
-            COALESCE(SUM(CASE WHEN st.status = 'amber' THEN 1 ELSE 0 END), 0) as "amber_count?: i64",
-            COALESCE(SUM(CASE WHEN st.status = 'green' THEN 1 ELSE 0 END), 0) as "green_count?: i64",
-            -- `datetime(...)` wrapping defends against legacy rows where
-            -- `last_student_update_at` was written as RFC3339 with offset
-            -- (`2026-05-31T10:00:00+00:00`) while `seen_at` was written naive
-            -- (`2026-05-31 10:00:00`). Raw TEXT comparison would treat the
-            -- legacy format as always greater (because 'T' > ' '), producing
-            -- a stuck-on unseen dot. Remove once legacy timestamps are
-            -- migrated, see TODO.md.
-            COALESCE(MAX(
-                CASE
-                    WHEN st.last_student_update_at IS NULL THEN 0
-                    WHEN stv.seen_at IS NULL THEN 1
-                    WHEN datetime(st.last_student_update_at) > datetime(stv.seen_at) THEN 1
-                    ELSE 0
-                END
-            ), 0) as "has_unseen_activity?: i64",
-            MAX(st.last_student_update_at) as "latest_student_note_at?: NaiveDateTime",
+            MAX(sst.updated_at) as "last_update?: NaiveDateTime",
+            MAX(sst.last_coach_update_at) as "last_coach_update_at?: NaiveDateTime",
+            COUNT(sst.id) as "total_techniques?: i64",
+            COALESCE(SUM(CASE WHEN sst.status = 'red'   THEN 1 ELSE 0 END), 0) as "red_count?: i64",
+            COALESCE(SUM(CASE WHEN sst.status = 'amber' THEN 1 ELSE 0 END), 0) as "amber_count?: i64",
+            COALESCE(SUM(CASE WHEN sst.status = 'green' THEN 1 ELSE 0 END), 0) as "green_count?: i64",
+            -- Simple unseen heuristic, no per-coach memory: the student has
+            -- student-side activity strictly newer than any coach-side activity.
+            -- datetime(...) wrapping normalises mixed timestamp text formats.
+            CASE
+                WHEN MAX(sst.last_student_update_at) IS NULL THEN 0
+                WHEN MAX(sst.last_coach_update_at) IS NULL THEN 1
+                WHEN datetime(MAX(sst.last_student_update_at)) > datetime(MAX(sst.last_coach_update_at)) THEN 1
+                ELSE 0
+            END as "has_unseen_activity?: i64",
+            MAX(sst.last_student_update_at) as "latest_student_note_at?: NaiveDateTime",
             (SELECT MAX(last_watched_at)
                FROM video_watch_aggregates
               WHERE user_id = u.id) as "latest_watch_at?: NaiveDateTime",
@@ -106,14 +92,14 @@ pub async fn get_students_by_recent_updates(
               ORDER BY a.last_watched_at DESC
               LIMIT 1) as "latest_watch_video_title?: String"
         FROM users u
-        LEFT JOIN student_techniques st ON u.id = st.student_id
-        LEFT JOIN student_technique_views stv
-               ON stv.student_technique_id = st.id AND stv.user_id = ?
+        LEFT JOIN syllabus_assignments sa
+               ON sa.student_id = u.id AND sa.unassigned_at IS NULL
+        LEFT JOIN student_syllabus_techniques sst
+               ON sst.assignment_id = sa.id AND sst.hidden_at IS NULL
         WHERE u.role = 'student'
         GROUP BY u.id
-        ORDER BY MAX(st.updated_at) DESC NULLS LAST
+        ORDER BY MAX(sst.updated_at) DESC NULLS LAST
         "#,
-        viewer_id
     )
     .fetch_all(pool)
     .await?;

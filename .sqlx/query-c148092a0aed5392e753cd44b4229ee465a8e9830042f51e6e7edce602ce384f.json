@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT COUNT(*) AS \"count!: i64\"\n           FROM syllabus_attempts sa\n           JOIN student_syllabus_techniques sst ON sst.id = sa.student_syllabus_technique_id\n           WHERE sst.technique_id = ?\n             AND sa.attempted_at >= datetime('now', '-30 days')",
+  "describe": {
+    "columns": [
+      {
+        "name": "count!: i64",
+        "ordinal": 0,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "c148092a0aed5392e753cd44b4229ee465a8e9830042f51e6e7edce602ce384f"
+}
