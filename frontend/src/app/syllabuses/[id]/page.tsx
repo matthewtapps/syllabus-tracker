@@ -488,7 +488,10 @@ function AddTechniqueDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="flex max-h-[90vh] flex-col gap-3"
+        // Fixed height so the modal does not jump shorter when the user
+        // filters the list down to a couple of rows. The list reservation
+        // below absorbs the difference instead.
+        className="flex h-[85vh] flex-col gap-3 sm:h-[80vh]"
         aria-describedby={undefined}
       >
         <DialogHeader>
