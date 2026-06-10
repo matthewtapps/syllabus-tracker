@@ -194,7 +194,7 @@ export default function CollectionDetailPage() {
     try {
       await deleteMutation.mutateAsync(collection.id);
       toast.success('Collection deleted');
-      navigate('/collections');
+      navigate('/legacy/collections');
     } catch (err) {
       console.error(err);
       toast.error('Failed to delete');
@@ -210,7 +210,7 @@ export default function CollectionDetailPage() {
           size="sm"
           className="-ml-3 h-8 gap-1.5 text-muted-foreground"
         >
-          <Link to="/collections">
+          <Link to="/legacy/collections">
             <ArrowLeft className="h-4 w-4" aria-hidden />
             Back to collections
           </Link>

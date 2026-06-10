@@ -20,7 +20,7 @@ import { cn } from "@/lib/utils";
 import { formatRelative } from "@/lib/dates";
 import { statusToDotClass, type Status } from "@/lib/status";
 import { NotesEditor } from "./notes-editor";
-import { TagsEditor } from "./tags-editor";
+import { TagsEditor } from "@/components/tags-editor";
 import { AttemptButton } from "./attempt-button";
 import { AttemptsPanel } from "./attempts-panel";
 import { VideoList } from "@/components/videos/video-list";
@@ -354,7 +354,7 @@ export function TechniqueRow({
               if (collection) next.set('from_collection', collection);
               const qs = next.toString();
               navigate(
-                `/student/${studentId}/technique/${technique.id}${
+                `/student/${studentId}/legacy/technique/${technique.id}${
                   qs ? `?${qs}` : ''
                 }`,
               );

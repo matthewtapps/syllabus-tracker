@@ -1,56 +1,24 @@
 import { useMemo } from "react";
-import { Link } from "react-router-dom";
-import { FolderOpen, PlayIcon } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
+import { PlayIcon } from "lucide-react";
 import { useLibraryTechniqueStats } from "@/lib/queries";
 import type { AttemptWeekBucket, LibraryTechniqueStats } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { useTechniqueRow } from "./technique-row-context";
 
-// Coach-only block: collections list, status mix donut, attempts sparkline,
-// video plays. Reads /api/techniques/<id>/stats, which is gated on
-// ViewAllStudents server-side. Students never reach this block because the
+// Coach-only block: status mix donut, attempts sparkline, video plays.
+// Reads /api/techniques/<id>/stats, which is gated on ViewAllStudents
+// server-side. Students never reach this block because the
 // BLOCK_VISIBILITY registry filters it out.
+//
+// Legacy collections membership no longer renders: collections were
+// deprecated in PR 5 and the /collections route is gone.
 export function LibraryStatsBlock() {
   const { technique } = useTechniqueRow();
   const statsQuery = useLibraryTechniqueStats(technique.id);
   const stats = statsQuery.data ?? null;
   const loading = statsQuery.isLoading;
 
-  return (
-    <>
-      <CollectionsRow stats={stats} />
-      <StatsStrip stats={stats} loading={loading} />
-    </>
-  );
-}
-
-function CollectionsRow({ stats }: { stats: LibraryTechniqueStats | null }) {
-  return (
-    <section className="space-y-2">
-      <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-        Collections
-      </h3>
-      {stats === null ? (
-        <p className="text-xs text-muted-foreground">Loading...</p>
-      ) : stats.collections.length === 0 ? (
-        <p className="text-xs italic text-muted-foreground">
-          Not in any collection yet.
-        </p>
-      ) : (
-        <div className="flex flex-wrap gap-1.5">
-          {stats.collections.map((c) => (
-            <Badge key={c.id} variant="outline" asChild>
-              <Link to={`/collections/${c.id}`} className="cursor-pointer">
-                <FolderOpen className="mr-1 h-3 w-3" aria-hidden />
-                {c.name}
-              </Link>
-            </Badge>
-          ))}
-        </div>
-      )}
-    </section>
-  );
+  return <StatsStrip stats={stats} loading={loading} />;
 }
 
 function StatsStrip({

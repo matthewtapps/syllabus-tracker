@@ -1,3 +1,8 @@
+// Legacy collections surface, dormant since PR 5. Replaced
+// conceptually by syllabuses + syllabus_techniques. Backend stays
+// mounted so the /legacy/collections frontend route remains reachable
+// for prod migration. TODO: remove after 2026-09-10.
+
 use sqlx::{Pool, Sqlite};
 use tracing::{info, instrument};
 

@@ -74,7 +74,7 @@ export default function CollectionsPage() {
       setCreateDialogOpen(false);
       form.reset();
       toast.success('Collection created');
-      navigate(`/collections/${created.id}`);
+      navigate(`/legacy/collections/${created.id}`);
     } catch (err) {
       const handled = await handleApiFormError(
         err,
@@ -225,7 +225,7 @@ export default function CollectionsPage() {
             {filteredCollections!.map((c) => (
               <li key={c.id}>
                 <Link
-                  to={`/collections/${c.id}`}
+                  to={`/legacy/collections/${c.id}`}
                   className="flex items-center gap-4 px-4 py-4 transition-colors hover:bg-muted/40"
                 >
                   <div className="min-w-0 flex-1 space-y-1">

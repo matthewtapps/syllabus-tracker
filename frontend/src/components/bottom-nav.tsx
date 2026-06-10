@@ -48,7 +48,6 @@ function buildTabs(user: User): Tab[] {
       to: '/library',
       label: 'Library',
       icon: Library,
-      alsoActiveOn: ['/collections'],
     });
     tabs.push({ to: '/syllabuses', label: 'Syllabi', icon: NotebookPen });
   } else {
@@ -59,6 +58,11 @@ function buildTabs(user: User): Tab[] {
     });
     tabs.push({ to: '/library', label: 'Library', icon: Library });
     tabs.push({ to: `/student/${user.id}/pinned`, label: 'Pinned', icon: Pin });
+    tabs.push({
+      to: `/student/${user.id}`,
+      label: 'Profile',
+      icon: UserRound,
+    });
   }
   return tabs;
 }

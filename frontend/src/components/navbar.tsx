@@ -38,10 +38,10 @@ function buildNavLinks(user: User): NavLink[] {
   const isStudent = user.role === "student";
 
   const links: NavLink[] = [{ to: "/dashboard", label: "Dashboard" }];
-  if (isStudent) links.push({ to: `/student/${user.id}`, label: "My techniques" });
   links.push({ to: "/library", label: "Library" });
   if (isStudent) links.push({ to: `/student/${user.id}/syllabuses`, label: "Syllabus Library" });
   if (isStudent) links.push({ to: `/student/${user.id}/pinned`, label: "Pinned" });
+  if (isStudent) links.push({ to: `/student/${user.id}`, label: "Profile" });
   if (coachOrAdmin) links.push({ to: "/syllabuses", label: "Syllabus Library" });
   if (coachOrAdmin) links.push({ to: "/students", label: "Students" });
   if (coachOrAdmin) links.push({ to: "/register-user", label: "New user" });

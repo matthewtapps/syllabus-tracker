@@ -19,14 +19,25 @@ import { qk } from './lib/query-keys';
 import type { User } from './lib/api';
 
 const LoginPage = lazy(() => import('./app/login/page'));
-const StudentTechniques = lazy(() => import('./app/student-techniques/page'));
-const StudentTechniqueDetail = lazy(() => import('./app/student-techniques/[techniqueId]/page'));
+const StudentProfilePage = lazy(() => import('./app/student-profile/page'));
+// Legacy surfaces kept reachable by direct URL (no nav links) so coaches
+// can side-by-side compare the old student-techniques + collections
+// flows against the new syllabus stack while migrating prod students.
+// The backend tables and routes are dormant but still mounted; a later
+// cleanup PR drops them.
+const LegacyStudentTechniques = lazy(() => import('./app/student-techniques/page'));
+const LegacyStudentTechniqueDetail = lazy(
+  () => import('./app/student-techniques/[techniqueId]/page'),
+);
+const LegacyCollectionsPage = lazy(() => import('./app/collections/page'));
+const LegacyCollectionDetailPage = lazy(
+  () => import('./app/collections/[id]/page'),
+);
 const StudentsList = lazy(() => import('./app/students-list/page'));
 const Dashboard = lazy(() => import('./app/dashboard/page'));
 const ProfilePage = lazy(() => import('./app/profile/page'));
 const RegisterUserPage = lazy(() => import('./app/registration/page'));
 const AdminPage = lazy(() => import('./app/admin/page'));
-const CollectionsPage = lazy(() => import('./app/collections/page'));
 const LibraryPage = lazy(() => import('./app/library/page'));
 const StudentPinnedPage = lazy(() => import('./app/student-pinned/page'));
 const SyllabusesPage = lazy(() => import('./app/syllabuses/page'));
@@ -35,7 +46,6 @@ const StudentSyllabusesPage = lazy(() => import('./app/student-syllabuses/page')
 const StudentSyllabusDetailPage = lazy(
   () => import('./app/student-syllabuses/[syllabusId]/page'),
 );
-const CollectionDetailPage = lazy(() => import('./app/collections/[id]/page'));
 const InvitePage = lazy(() => import('./app/invite/page'));
 const RegisterPage = lazy(() => import('./app/register/page'));
 const PendingApprovalPage = lazy(() => import('./app/pending/page'));
@@ -193,16 +203,40 @@ function AuthedRoutes() {
         path="/student/:id"
         element={
           <RequireAuth>
-            <StudentTechniques />
+            <StudentProfilePage />
           </RequireAuth>
         }
       />
       <Route
-        path="/student/:id/technique/:techniqueId"
+        path="/student/:id/legacy"
         element={
           <RequireAuth>
-            <StudentTechniqueDetail />
+            <LegacyStudentTechniques />
           </RequireAuth>
+        }
+      />
+      <Route
+        path="/student/:id/legacy/technique/:techniqueId"
+        element={
+          <RequireAuth>
+            <LegacyStudentTechniqueDetail />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/legacy/collections"
+        element={
+          <RequireCoach>
+            <LegacyCollectionsPage />
+          </RequireCoach>
+        }
+      />
+      <Route
+        path="/legacy/collections/:id"
+        element={
+          <RequireCoach>
+            <LegacyCollectionDetailPage />
+          </RequireCoach>
         }
       />
       <Route
@@ -291,22 +325,6 @@ function AuthedRoutes() {
           <RequireAuth>
             <StudentSyllabusDetailPage />
           </RequireAuth>
-        }
-      />
-      <Route
-        path="/collections"
-        element={
-          <RequireCoach>
-            <CollectionsPage />
-          </RequireCoach>
-        }
-      />
-      <Route
-        path="/collections/:id"
-        element={
-          <RequireCoach>
-            <CollectionDetailPage />
-          </RequireCoach>
         }
       />
       <Route path="/" element={<Navigate to="/dashboard" replace />} />
