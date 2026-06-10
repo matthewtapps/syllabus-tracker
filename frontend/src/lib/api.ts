@@ -1769,6 +1769,31 @@ export async function getRecentlyActiveStudents(
   return (await response.json()) as RecentlyActiveStudent[];
 }
 
+/** Fetches activity rows scoped to a specific student.
+ *  Used by coaches (and the student themselves) on the student profile page
+ *  to show that student's activity rather than the gym-wide feed. */
+export async function getStudentActivityFeed(
+  studentId: number,
+  params?: {
+    before_ts?: string;
+    before_id?: number;
+    limit?: number;
+  },
+): Promise<ActivityRow[]> {
+  const url = new URL(
+    `/api/student/${studentId}/activity_feed`,
+    window.location.origin,
+  );
+  if (params?.before_ts) url.searchParams.set("before_ts", params.before_ts);
+  if (params?.before_id !== undefined)
+    url.searchParams.set("before_id", String(params.before_id));
+  if (params?.limit !== undefined)
+    url.searchParams.set("limit", String(params.limit));
+  const response = await fetch(url.toString(), { credentials: "include" });
+  if (!response.ok) throw response;
+  return (await response.json()) as ActivityRow[];
+}
+
 export async function postMarkAllActivityRead(): Promise<void> {
   const response = await fetch("/api/activity/mark_all_read", {
     method: "POST",

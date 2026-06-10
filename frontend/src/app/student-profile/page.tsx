@@ -12,7 +12,7 @@ import {
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import {
-  useActivityFeed,
+  useStudentActivityFeed,
   useAllUsers,
 } from '@/lib/queries';
 import { useUser } from '@/lib/current-user-context';
@@ -64,7 +64,9 @@ function ProfileHub({
     if (isOwnView) return viewer;
     return (usersQuery.data ?? []).find((u) => u.id === studentId);
   }, [isOwnView, viewer, usersQuery.data, studentId]);
-  const feedQuery = useActivityFeed();
+  // Use the student-scoped feed so a coach sees only THIS student's activity
+  // rather than the gym-wide coach feed.
+  const feedQuery = useStudentActivityFeed(studentId);
 
   const loading = !isOwnView && usersQuery.isLoading;
 
