@@ -1714,29 +1714,17 @@ export async function setVideoSyllabusVisibilityApi(
 // Activity feed (PR 2)
 // ============================================================
 
-export interface ActivityRow {
-  id: number;
-  occurred_at: string;
-  verb: string;
-  actor_user_id: number;
-  actor_name: string | null;
-  target_student_id: number | null;
-  technique_id: number | null;
-  technique_name: string | null;
-  syllabus_id: number | null;
-  syllabus_name: string | null;
-  sst_id: number | null;
-  video_id: number | null;
-  video_title: string | null;
-  payload_json: string | null;
-  unread: boolean;
-}
+import type { ActivityRow } from "./activity-line";
+export type { ActivityRow };
 
 export interface RecentlyActiveStudent {
   student_id: number;
-  student_name: string;
+  student_name: string | null;
   verb: string;
   occurred_at: string;
+  technique_id: number | null;
+  syllabus_id: number | null;
+  video_id: number | null;
   technique_name: string | null;
   syllabus_name: string | null;
   video_title: string | null;

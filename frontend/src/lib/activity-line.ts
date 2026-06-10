@@ -16,6 +16,8 @@
  *   the FK was SET NULL).
  */
 
+/** Canonical ActivityRow type. Exported so api.ts and callers can import it
+ *  rather than re-declaring an identical shape. */
 export interface ActivityRow {
   id: number;
   occurred_at: string;
