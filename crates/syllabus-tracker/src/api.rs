@@ -17,21 +17,23 @@ use validator::ValidationErrors;
 use crate::auth::UserSession;
 use crate::auth::{Permission, User};
 use crate::db::{
-    AttemptSuggestion, Collection, add_tag_to_technique, add_techniques_to_collection,
-    add_techniques_to_student, approve_user, assign_collection_to_student,
+    ActivityRow, AttemptSuggestion, Collection, add_tag_to_technique, add_techniques_to_collection,
+    add_techniques_to_student, advance_cursor_to, approve_user, assign_collection_to_student,
     attempt_buckets_for_student, attempt_summary_for_student, attempt_weekly_buckets_for_technique,
     authenticate_user, claim_invite, count_techniques, create_and_assign_technique, create_attempt,
     create_collection, create_invite_token, create_self_registered_user, create_tag,
     create_technique_in_collection, create_user, create_user_session, create_user_stub,
-    delete_attempt, delete_collection, delete_tag, find_user_by_username, find_valid_invite_token,
-    get_all_collections, get_all_tags, get_all_users, get_collection, get_student_technique,
-    get_student_techniques, get_students_by_recent_updates, get_students_with_collection,
-    get_tags_for_technique, get_unassigned_techniques, get_user, invalidate_session, list_attempts,
-    list_recent_attempts_for_student, mark_student_technique_seen, remove_tag_from_technique,
-    remove_technique_from_collection, request_password_reset, reset_user_claim, set_user_archived,
-    set_user_graduated, update_attempt_note, update_attempt_timestamp, update_collection,
-    update_student_notes, update_student_technique, update_technique, update_user_display_name,
-    update_user_password, update_user_role, update_username,
+    delete_attempt, delete_collection, delete_tag, feed, feed_max_id, find_user_by_username,
+    find_valid_invite_token, get_all_collections, get_all_tags, get_all_users, get_collection,
+    get_student_technique, get_student_techniques, get_students_by_recent_updates,
+    get_students_with_collection, get_tags_for_technique, get_unassigned_techniques, get_user,
+    invalidate_session, list_attempts, list_recent_attempts_for_student, mark_all_read,
+    mark_one_read, mark_one_unread, mark_student_technique_seen, recently_active_students,
+    remove_tag_from_technique, remove_technique_from_collection, request_password_reset,
+    reset_user_claim, set_user_archived, set_user_graduated, unread_count, update_attempt_note,
+    update_attempt_timestamp, update_collection, update_student_notes, update_student_technique,
+    update_technique, update_user_display_name, update_user_password, update_user_role,
+    update_username,
 };
 use crate::error::AppError;
 use crate::models::Tag;
@@ -1877,4 +1879,192 @@ pub async fn api_attempt_sparkline(
             })
             .collect(),
     }))
+}
+
+// ---- Activity feed routes (Task 23) ----------------------------------------
+
+const ACTIVITY_FEED_DEFAULT_LIMIT: i64 = 50;
+const ACTIVITY_FEED_MAX_LIMIT: i64 = 200;
+
+#[derive(FromForm)]
+pub struct ActivityFeedQuery {
+    before_ts: Option<String>,
+    before_id: Option<i64>,
+    limit: Option<i64>,
+}
+
+/// Parse an optional RFC3339 or SQLite naive-datetime string into
+/// `chrono::NaiveDateTime`. Returns `None` when the input is `None`.
+fn parse_before_ts(s: &str) -> Option<chrono::NaiveDateTime> {
+    // Try the SQLite storage format first (no T, no offset), then RFC3339,
+    // then RFC3339 with sub-seconds.
+    chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S%.f")
+        .or_else(|_| chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S"))
+        .or_else(|_| chrono::DateTime::parse_from_rfc3339(s).map(|dt| dt.naive_utc()))
+        .ok()
+}
+
+/// `GET /api/activity/feed?before_ts=&before_id=&limit=`
+///
+/// Returns the viewer's activity feed as a JSON array. The viewer's cursor is
+/// advanced to `feed_max_id` (snapshotted BEFORE building the page) so rows
+/// that arrive during the request are not silently marked as seen.
+#[get("/activity/feed?<params..>")]
+pub async fn api_activity_feed(
+    params: ActivityFeedQuery,
+    user: User,
+    db: &State<Pool<Sqlite>>,
+) -> ApiResult<Json<Vec<ActivityRow>>> {
+    let limit = params
+        .limit
+        .unwrap_or(ACTIVITY_FEED_DEFAULT_LIMIT)
+        .clamp(1, ACTIVITY_FEED_MAX_LIMIT);
+
+    let before = match (&params.before_ts, params.before_id) {
+        (Some(ts_str), Some(id)) => {
+            let ts = parse_before_ts(ts_str).ok_or_else(|| {
+                warn!(
+                    raw = ts_str,
+                    "rejected activity/feed: unparseable before_ts"
+                );
+                ApiError::from(Status::BadRequest)
+            })?;
+            Some((ts, id))
+        }
+        (None, None) => None,
+        _ => {
+            warn!(
+                "rejected activity/feed: partial cursor (before_ts and before_id must both be present or both absent)"
+            );
+            return Err(Status::BadRequest.into());
+        }
+    };
+
+    // Snapshot the max id BEFORE building the page; advance cursor AFTER.
+    let snapshot_max = feed_max_id(db, user.id, user.role.clone()).await?;
+    let rows = feed(db, user.id, user.role.clone(), before, limit).await?;
+    advance_cursor_to(db, user.id, snapshot_max).await?;
+
+    Ok(Json(rows))
+}
+
+#[derive(Serialize)]
+pub struct UnreadCountResponse {
+    pub count: i64,
+}
+
+/// `GET /api/activity/unread_count`
+#[get("/activity/unread_count")]
+pub async fn api_activity_unread_count(
+    user: User,
+    db: &State<Pool<Sqlite>>,
+) -> ApiResult<Json<UnreadCountResponse>> {
+    let count = unread_count(db, user.id, user.role.clone()).await?;
+    Ok(Json(UnreadCountResponse { count }))
+}
+
+/// `POST /api/activity/mark_all_read`
+#[post("/activity/mark_all_read")]
+pub async fn api_activity_mark_all_read(user: User, db: &State<Pool<Sqlite>>) -> ApiResult<Status> {
+    mark_all_read(db, user.id).await?;
+    Ok(Status::NoContent)
+}
+
+/// `POST /api/activity/<activity_id>/read`
+#[post("/activity/<activity_id>/read")]
+pub async fn api_activity_mark_one_read(
+    activity_id: i64,
+    user: User,
+    db: &State<Pool<Sqlite>>,
+) -> ApiResult<Status> {
+    mark_one_read(db, user.id, activity_id).await?;
+    Ok(Status::NoContent)
+}
+
+/// `POST /api/activity/<activity_id>/unread`
+#[post("/activity/<activity_id>/unread")]
+pub async fn api_activity_mark_one_unread(
+    activity_id: i64,
+    user: User,
+    db: &State<Pool<Sqlite>>,
+) -> ApiResult<Status> {
+    mark_one_unread(db, user.id, activity_id).await?;
+    Ok(Status::NoContent)
+}
+
+// ---- Student-scoped activity feed (coach viewing a student profile) --------
+
+/// `GET /api/student/<sid>/activity_feed?before_ts=&before_id=&limit=`
+///
+/// Returns activity rows scoped to the given student (target_student_id = sid).
+/// Authorized for the owning student OR any viewer with ViewAllStudents (coaches).
+///
+/// The student variant of `feed` already filters `target_student_id = sid` and
+/// annotates unread against sid's own cursor, so the result is exactly what the
+/// student themselves would see. This route does NOT advance any cursor
+/// (read-only scoped view; the student's own cursor is advanced by the main
+/// `/api/activity/feed` endpoint when the student opens their own feed).
+#[get("/student/<sid>/activity_feed?<params..>")]
+pub async fn api_student_activity_feed(
+    sid: i64,
+    params: ActivityFeedQuery,
+    user: User,
+    db: &State<Pool<Sqlite>>,
+) -> ApiResult<Json<Vec<ActivityRow>>> {
+    if user.id != sid && !user.has_permission(Permission::ViewAllStudents) {
+        return Err(Status::Forbidden.into());
+    }
+
+    let limit = params
+        .limit
+        .unwrap_or(ACTIVITY_FEED_DEFAULT_LIMIT)
+        .clamp(1, ACTIVITY_FEED_MAX_LIMIT);
+
+    let before = match (&params.before_ts, params.before_id) {
+        (Some(ts_str), Some(id)) => {
+            let ts = parse_before_ts(ts_str).ok_or_else(|| {
+                warn!(
+                    raw = ts_str,
+                    "rejected student activity_feed: unparseable before_ts"
+                );
+                ApiError::from(Status::BadRequest)
+            })?;
+            Some((ts, id))
+        }
+        (None, None) => None,
+        _ => {
+            warn!(
+                "rejected student activity_feed: partial cursor (before_ts and before_id must both be present or both absent)"
+            );
+            return Err(Status::BadRequest.into());
+        }
+    };
+
+    // Use the student-variant of feed (target_student_id = sid, unread
+    // annotated against sid's cursor). Pass sid as the viewer so unread
+    // annotations reflect the student's perspective.
+    let rows = feed(db, sid, crate::auth::Role::Student, before, limit).await?;
+
+    Ok(Json(rows))
+}
+
+// ---- Coach dashboard recently-active route (Task 24) -----------------------
+
+/// `GET /api/activity/recently_active?limit=`
+///
+/// Returns each student's most-recent activity row, ordered by recency (most
+/// recent first). Coach-facing. Intended to replace the legacy
+/// `get_students_by_recent_updates` read for the "recently active students"
+/// panel; the legacy endpoint at `GET /api/students` remains unchanged until
+/// the frontend migration in Task 26.
+#[get("/activity/recently_active?<limit>")]
+pub async fn api_recently_active_students(
+    limit: Option<i64>,
+    user: User,
+    db: &State<Pool<Sqlite>>,
+) -> ApiResult<Json<Vec<crate::db::StudentLatestActivity>>> {
+    user.require_permission(Permission::ViewAllStudents)?;
+    let n = limit.unwrap_or(50).clamp(1, 200);
+    let rows = recently_active_students(db, n).await?;
+    Ok(Json(rows))
 }

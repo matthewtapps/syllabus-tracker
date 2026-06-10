@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT max_seen_id AS \"m!: i64\" FROM activity_cursors WHERE viewer_user_id = ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "m!: i64",
+        "ordinal": 0,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "056d175e6450e25a385905b375e08d25f18c01e31c069e26e7f0bd81e08a0af4"
+}

@@ -448,7 +448,10 @@ mod tests {
         assert!(t.last_coach_update_at.is_some());
         assert!(t.last_student_update_at.is_some());
         assert_eq!(t.last_coach_update_by_name.as_deref(), Some("Coach User"));
-        assert_eq!(t.last_student_update_by_name.as_deref(), Some("Student User"));
+        assert_eq!(
+            t.last_student_update_by_name.as_deref(),
+            Some("Student User")
+        );
     }
 
     /// Helper: fetch the techniques list as the given user and pull out the
@@ -509,8 +512,7 @@ mod tests {
             .dispatch()
             .await;
 
-        let flag =
-            fetch_unseen_flag(&client, student_cookies, student_id, st_id).await;
+        let flag = fetch_unseen_flag(&client, student_cookies, student_id, st_id).await;
         assert!(!flag, "student should not see a dot for their own edit");
     }
 
@@ -814,10 +816,8 @@ mod tests {
         let initiative = fetch_initiative(&client, coach_cookies, "student_user")
             .await
             .expect("expected last_student_initiative_at to be set from watch aggregate");
-        let watched_utc = chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(
-            watched_at,
-            chrono::Utc,
-        );
+        let watched_utc =
+            chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(watched_at, chrono::Utc);
         assert!(
             (initiative - watched_utc).num_seconds().abs() <= 1,
             "initiative {} should match watch time {}",
@@ -885,10 +885,8 @@ mod tests {
         let initiative = fetch_initiative(&client, coach_cookies, "student_user")
             .await
             .expect("expected initiative timestamp");
-        let watched_utc = chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(
-            watched_at,
-            chrono::Utc,
-        );
+        let watched_utc =
+            chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(watched_at, chrono::Utc);
         assert!(
             (initiative - watched_utc).num_seconds().abs() <= 1,
             "initiative {} should equal the more recent watch {}",
@@ -1104,10 +1102,7 @@ mod tests {
         let login_response = client
             .post("/api/login")
             .header(ContentType::JSON)
-            .body(
-                json!({ "username": "new_student", "password": "secret123" })
-                    .to_string(),
-            )
+            .body(json!({ "username": "new_student", "password": "secret123" }).to_string())
             .dispatch()
             .await;
         assert_eq!(login_response.status(), Status::Ok);
@@ -1167,18 +1162,13 @@ mod tests {
             .await
             .expect("Failed to build test DB");
         let (client, test_db) = setup_test_client(test_db).await;
-        let student_id = test_db
-            .user_id("student_user")
-            .expect("student not found");
+        let student_id = test_db.user_id("student_user").expect("student not found");
 
         // Student can currently log in.
         let before = client
             .post("/api/login")
             .header(ContentType::JSON)
-            .body(
-                json!({ "username": "student_user", "password": "password123" })
-                    .to_string(),
-            )
+            .body(json!({ "username": "student_user", "password": "password123" }).to_string())
             .dispatch()
             .await;
         let body = before.into_string().await.unwrap();
@@ -1201,10 +1191,7 @@ mod tests {
         let after = client
             .post("/api/login")
             .header(ContentType::JSON)
-            .body(
-                json!({ "username": "student_user", "password": "password123" })
-                    .to_string(),
-            )
+            .body(json!({ "username": "student_user", "password": "password123" }).to_string())
             .dispatch()
             .await;
         let body = after.into_string().await.unwrap();

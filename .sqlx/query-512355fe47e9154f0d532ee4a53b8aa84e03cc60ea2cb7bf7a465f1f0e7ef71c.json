@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT COUNT(*) AS \"c!: i64\" FROM activity_seen_overrides\n           WHERE viewer_user_id = ? AND activity_id = ? AND seen = 1",
+  "describe": {
+    "columns": [
+      {
+        "name": "c!: i64",
+        "ordinal": 0,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "512355fe47e9154f0d532ee4a53b8aa84e03cc60ea2cb7bf7a465f1f0e7ef71c"
+}

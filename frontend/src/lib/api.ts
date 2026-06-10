@@ -1709,3 +1709,111 @@ export async function setVideoSyllabusVisibilityApi(
   );
   if (!response.ok) throw response;
 }
+
+// ============================================================
+// Activity feed (PR 2)
+// ============================================================
+
+import type { ActivityRow } from "./activity-line";
+export type { ActivityRow };
+
+export interface RecentlyActiveStudent {
+  student_id: number;
+  student_name: string | null;
+  verb: string;
+  occurred_at: string;
+  technique_id: number | null;
+  syllabus_id: number | null;
+  video_id: number | null;
+  technique_name: string | null;
+  syllabus_name: string | null;
+  video_title: string | null;
+  payload_json: string | null;
+}
+
+export interface ActivityUnreadCount {
+  count: number;
+}
+
+export async function getActivityFeed(params?: {
+  before_ts?: string;
+  before_id?: number;
+  limit?: number;
+}): Promise<ActivityRow[]> {
+  const url = new URL("/api/activity/feed", window.location.origin);
+  if (params?.before_ts) url.searchParams.set("before_ts", params.before_ts);
+  if (params?.before_id !== undefined)
+    url.searchParams.set("before_id", String(params.before_id));
+  if (params?.limit !== undefined)
+    url.searchParams.set("limit", String(params.limit));
+  const response = await fetch(url.toString(), { credentials: "include" });
+  if (!response.ok) throw response;
+  return (await response.json()) as ActivityRow[];
+}
+
+export async function getActivityUnreadCount(): Promise<ActivityUnreadCount> {
+  const response = await fetch("/api/activity/unread_count", {
+    credentials: "include",
+  });
+  if (!response.ok) throw response;
+  return (await response.json()) as ActivityUnreadCount;
+}
+
+export async function getRecentlyActiveStudents(
+  limit?: number,
+): Promise<RecentlyActiveStudent[]> {
+  const url = new URL("/api/activity/recently_active", window.location.origin);
+  if (limit !== undefined) url.searchParams.set("limit", String(limit));
+  const response = await fetch(url.toString(), { credentials: "include" });
+  if (!response.ok) throw response;
+  return (await response.json()) as RecentlyActiveStudent[];
+}
+
+/** Fetches activity rows scoped to a specific student.
+ *  Used by coaches (and the student themselves) on the student profile page
+ *  to show that student's activity rather than the gym-wide feed. */
+export async function getStudentActivityFeed(
+  studentId: number,
+  params?: {
+    before_ts?: string;
+    before_id?: number;
+    limit?: number;
+  },
+): Promise<ActivityRow[]> {
+  const url = new URL(
+    `/api/student/${studentId}/activity_feed`,
+    window.location.origin,
+  );
+  if (params?.before_ts) url.searchParams.set("before_ts", params.before_ts);
+  if (params?.before_id !== undefined)
+    url.searchParams.set("before_id", String(params.before_id));
+  if (params?.limit !== undefined)
+    url.searchParams.set("limit", String(params.limit));
+  const response = await fetch(url.toString(), { credentials: "include" });
+  if (!response.ok) throw response;
+  return (await response.json()) as ActivityRow[];
+}
+
+export async function postMarkAllActivityRead(): Promise<void> {
+  const response = await fetch("/api/activity/mark_all_read", {
+    method: "POST",
+    credentials: "include",
+  });
+  if (!response.ok) throw response;
+}
+
+export async function postMarkActivityRead(id: number): Promise<void> {
+  const response = await fetch(`/api/activity/${id}/read`, {
+    method: "POST",
+    credentials: "include",
+  });
+  if (!response.ok) throw response;
+}
+
+export async function postMarkActivityUnread(id: number): Promise<void> {
+  const response = await fetch(`/api/activity/${id}/unread`, {
+    method: "POST",
+    credentials: "include",
+  });
+  if (!response.ok) throw response;
+}

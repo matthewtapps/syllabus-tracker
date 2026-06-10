@@ -23,7 +23,10 @@ pub fn load_environment() -> Result<(), Box<dyn std::error::Error>> {
 
 fn load_env_file(path: &Path) -> Result<(), Box<dyn std::error::Error>> {
     if !path.exists() {
-        warn!("Warning: Environment file {} not found, skipping", path.display());
+        warn!(
+            "Warning: Environment file {} not found, skipping",
+            path.display()
+        );
         return Ok(());
     }
 

@@ -1,4 +1,5 @@
 pub mod activity;
+pub mod activity_read;
 pub mod api;
 pub mod attempts;
 pub mod db;

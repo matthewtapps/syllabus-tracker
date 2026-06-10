@@ -9,7 +9,7 @@ use sqlx::{Pool, Sqlite};
 use tracing::{info, instrument};
 
 use crate::auth::{Permission, Role, User};
-use crate::db::activity::{emit, payload, NewActivity, Verb};
+use crate::db::activity::{NewActivity, Verb, emit, payload};
 use crate::error::AppError;
 
 #[derive(Debug, Serialize)]

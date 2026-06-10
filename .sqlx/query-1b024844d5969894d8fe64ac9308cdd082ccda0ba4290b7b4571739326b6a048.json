@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "DELETE FROM activity_seen_overrides\n         WHERE viewer_user_id = ? AND seen = 1 AND activity_id <= ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "1b024844d5969894d8fe64ac9308cdd082ccda0ba4290b7b4571739326b6a048"
+}

@@ -12,13 +12,14 @@ import {
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import {
+  useStudentActivityFeed,
   useAllUsers,
-  useRecentAttempts,
 } from '@/lib/queries';
 import { useUser } from '@/lib/current-user-context';
 import { isCoachOrAdmin } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { formatRelative } from '@/lib/dates';
+import { activityLine } from '@/lib/activity-line';
 import type { User } from '@/lib/api';
 
 function initials(u: Pick<User, 'display_name' | 'username'>): string {
@@ -63,8 +64,9 @@ function ProfileHub({
     if (isOwnView) return viewer;
     return (usersQuery.data ?? []).find((u) => u.id === studentId);
   }, [isOwnView, viewer, usersQuery.data, studentId]);
-  const recentQuery = useRecentAttempts(studentId, 5);
-  const recent = useMemo(() => recentQuery.data ?? [], [recentQuery.data]);
+  // Use the student-scoped feed so a coach sees only THIS student's activity
+  // rather than the gym-wide coach feed.
+  const feedQuery = useStudentActivityFeed(studentId);
 
   const loading = !isOwnView && usersQuery.isLoading;
 
@@ -146,7 +148,7 @@ function ProfileHub({
           Recent activity
         </h2>
         <div className="overflow-hidden rounded-lg border border-border bg-card">
-          {recentQuery.isLoading ? (
+          {feedQuery.isLoading ? (
             <div className="divide-y divide-border">
               {Array.from({ length: 3 }).map((_, i) => (
                 <div key={i} className="px-4 py-3">
@@ -155,34 +157,41 @@ function ProfileHub({
                 </div>
               ))}
             </div>
-          ) : recent.length === 0 ? (
+          ) : (feedQuery.data ?? []).length === 0 ? (
             <p className="px-6 py-8 text-center text-sm text-muted-foreground">
               {isOwnView
-                ? 'You have not logged any attempts yet.'
-                : `${displayName} has not logged any attempts yet.`}
+                ? 'No activity recorded yet.'
+                : `No activity recorded for ${displayName} yet.`}
             </p>
           ) : (
             <ul className="divide-y divide-border">
-              {recent.map((a) => (
-                <li
-                  key={a.id}
-                  className="flex items-start justify-between gap-3 px-4 py-3"
-                >
-                  <div className="min-w-0 flex-1 space-y-0.5">
-                    <p className="truncate text-sm font-medium">
-                      {a.technique_name}
-                    </p>
-                    {(a.student_note || a.coach_note) && (
-                      <p className="line-clamp-1 text-xs text-muted-foreground">
-                        {a.student_note || a.coach_note}
+              {(feedQuery.data ?? []).slice(0, 10).map((row) => {
+                const line = activityLine(row);
+                return (
+                  <li
+                    key={row.id}
+                    className="flex items-start justify-between gap-3 px-4 py-3"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm">
+                        {line.href ? (
+                          <Link
+                            to={line.href}
+                            className="underline-offset-2 hover:underline"
+                          >
+                            {line.text}
+                          </Link>
+                        ) : (
+                          line.text
+                        )}
                       </p>
-                    )}
-                  </div>
-                  <span className="shrink-0 text-xs text-muted-foreground">
-                    {formatRelative(a.attempted_at)}
-                  </span>
-                </li>
-              ))}
+                    </div>
+                    <span className="shrink-0 text-xs text-muted-foreground">
+                      {formatRelative(row.occurred_at)}
+                    </span>
+                  </li>
+                );
+              })}
             </ul>
           )}
         </div>

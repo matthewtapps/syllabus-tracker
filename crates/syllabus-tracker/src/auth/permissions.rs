@@ -106,7 +106,6 @@ impl Role {
             Role::Admin => "admin",
         }
     }
-
 }
 
 impl FromStr for Role {

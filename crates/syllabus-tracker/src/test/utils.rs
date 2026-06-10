@@ -6,12 +6,14 @@ pub mod test_utils {
         update_student_technique,
     };
     use crate::error::AppError;
-    use crate::models::StudentTechnique;
     use crate::init_rocket;
+    use crate::models::StudentTechnique;
     use crate::videos::media::test_support::{FakeMediaProbe, FakeMediaTranscode};
     use crate::videos::storage::test_support::InMemoryVideoStorage;
     use crate::videos::{DynMediaProbe, DynMediaTranscode, DynVideoStorage};
-    use migration_engine::migrations::{migrate_database_declaratively, read_schema_file_to_string};
+    use migration_engine::migrations::{
+        migrate_database_declaratively, read_schema_file_to_string,
+    };
     use rocket::http::{ContentType, Cookie};
     use rocket::local::asynchronous::Client;
     use serde_json::json;
@@ -234,8 +236,7 @@ pub mod test_utils {
 
                 if let (Some(s_id), Some(t_id)) = (student_id, technique_id) {
                     let assignment_id =
-                        assign_technique_to_student(&pool, t_id, s_id, None, seed_coach_id)
-                            .await?;
+                        assign_technique_to_student(&pool, t_id, s_id, None, seed_coach_id).await?;
 
                     if st.status != "red"
                         || !st.student_notes.is_empty()
@@ -406,10 +407,7 @@ pub mod test_utils {
     /// Build a Rocket test client with the videos feature flag in the requested
     /// state. Pass `videos_enabled = false` to exercise the disabled-branch
     /// surface (no VideoStack, video routes not mounted, capabilities.videos = false).
-    pub async fn setup_test_client_with(
-        test_db: TestDb,
-        videos_enabled: bool,
-    ) -> (Client, TestDb) {
+    pub async fn setup_test_client_with(test_db: TestDb, videos_enabled: bool) -> (Client, TestDb) {
         let stack = if videos_enabled {
             let storage: DynVideoStorage = std::sync::Arc::new(InMemoryVideoStorage::new());
             let probe: DynMediaProbe = std::sync::Arc::new(FakeMediaProbe::ok_h264(30.0));

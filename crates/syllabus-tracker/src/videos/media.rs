@@ -111,8 +111,8 @@ impl MediaProbe for FfprobeMediaProbe {
             return Err(MediaError::Probe(stderr));
         }
 
-        let parsed: FfprobeOutput = serde_json::from_slice(&output.stdout)
-            .map_err(|e| MediaError::Parse(e.to_string()))?;
+        let parsed: FfprobeOutput =
+            serde_json::from_slice(&output.stdout).map_err(|e| MediaError::Parse(e.to_string()))?;
 
         let format = parsed.format.ok_or_else(|| {
             MediaError::Parse("ffprobe response missing format section".to_string())
@@ -170,12 +170,7 @@ impl MediaTranscode for FfmpegMediaTranscode {
         destination: &Path,
     ) -> Result<(), MediaError> {
         let output = Command::new(&self.binary)
-            .args([
-                "-y",
-                "-loglevel",
-                "error",
-                "-i",
-            ])
+            .args(["-y", "-loglevel", "error", "-i"])
             .arg(source)
             .args([
                 "-c:v",
@@ -225,7 +220,6 @@ pub mod test_support {
                 },
             }
         }
-
     }
 
     #[async_trait]

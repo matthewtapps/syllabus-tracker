@@ -12,8 +12,7 @@ mod tests {
 
         let response = client.get("/api/capabilities").dispatch().await;
         assert_eq!(response.status(), Status::Ok);
-        let body: Value =
-            serde_json::from_str(&response.into_string().await.unwrap()).unwrap();
+        let body: Value = serde_json::from_str(&response.into_string().await.unwrap()).unwrap();
         assert_eq!(body["videos"], Value::Bool(true));
     }
 
@@ -24,8 +23,7 @@ mod tests {
 
         let response = client.get("/api/capabilities").dispatch().await;
         assert_eq!(response.status(), Status::Ok);
-        let body: Value =
-            serde_json::from_str(&response.into_string().await.unwrap()).unwrap();
+        let body: Value = serde_json::from_str(&response.into_string().await.unwrap()).unwrap();
         assert_eq!(body["videos"], Value::Bool(false));
     }
 

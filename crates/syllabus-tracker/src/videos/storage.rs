@@ -5,10 +5,10 @@ use std::time::Duration;
 use async_trait::async_trait;
 use aws_config::Region;
 use aws_credential_types::Credentials;
-use aws_sdk_s3::config::{BehaviorVersion, Builder as S3ConfigBuilder};
-use aws_sdk_s3::primitives::ByteStream;
-use aws_sdk_s3::presigning::PresigningConfig;
 use aws_sdk_s3::Client as S3Client;
+use aws_sdk_s3::config::{BehaviorVersion, Builder as S3ConfigBuilder};
+use aws_sdk_s3::presigning::PresigningConfig;
+use aws_sdk_s3::primitives::ByteStream;
 use thiserror::Error;
 use tracing::instrument;
 
@@ -59,9 +59,8 @@ pub struct S3Config {
 impl S3Config {
     pub fn from_env() -> Result<Self, StorageError> {
         let read = |key: &str| {
-            dotenvy::var(key).map_err(|e| {
-                StorageError::Backend(format!("missing env var {}: {}", key, e))
-            })
+            dotenvy::var(key)
+                .map_err(|e| StorageError::Backend(format!("missing env var {}: {}", key, e)))
         };
         let force_path_style = dotenvy::var("S3_FORCE_PATH_STYLE")
             .map(|v| v == "true" || v == "1")
@@ -164,8 +163,8 @@ impl VideoStorage for S3VideoStorage {
 
     #[instrument(skip(self), fields(bucket = %self.bucket, key = %key))]
     async fn presign_get(&self, key: &str, ttl: Duration) -> Result<String, StorageError> {
-        let presign = PresigningConfig::expires_in(ttl)
-            .map_err(|e| StorageError::Presign(e.to_string()))?;
+        let presign =
+            PresigningConfig::expires_in(ttl).map_err(|e| StorageError::Presign(e.to_string()))?;
         let req = self
             .presign_client
             .get_object()
@@ -184,8 +183,8 @@ impl VideoStorage for S3VideoStorage {
         ttl: Duration,
         filename: &str,
     ) -> Result<String, StorageError> {
-        let presign = PresigningConfig::expires_in(ttl)
-            .map_err(|e| StorageError::Presign(e.to_string()))?;
+        let presign =
+            PresigningConfig::expires_in(ttl).map_err(|e| StorageError::Presign(e.to_string()))?;
         let disposition = format!("attachment; filename=\"{}\"", filename);
         let req = self
             .presign_client
@@ -231,10 +230,7 @@ pub mod test_support {
             source: &Path,
         ) -> Result<(), StorageError> {
             let bytes = tokio::fs::read(source).await?;
-            self.objects
-                .lock()
-                .unwrap()
-                .insert(key.to_string(), bytes);
+            self.objects.lock().unwrap().insert(key.to_string(), bytes);
             Ok(())
         }
 

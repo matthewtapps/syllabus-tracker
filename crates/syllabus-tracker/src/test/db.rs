@@ -3,7 +3,9 @@ mod tests {
     use crate::auth::Role;
     use crate::db::{create_user, find_user_by_username};
 
-    use migration_engine::migrations::{migrate_database_declaratively, read_schema_file_to_string};
+    use migration_engine::migrations::{
+        migrate_database_declaratively, read_schema_file_to_string,
+    };
     use rocket::tokio;
     use sqlx::{Pool, Sqlite, sqlite::SqlitePoolOptions};
 

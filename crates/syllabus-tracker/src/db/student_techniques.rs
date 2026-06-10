@@ -12,9 +12,7 @@ use tracing::{info, instrument};
 
 use crate::auth::{Role, User};
 use crate::error::AppError;
-use crate::models::{
-    DbStudentTechnique, DbTag, StudentTechnique, Tag, Technique, naive_to_utc,
-};
+use crate::models::{DbStudentTechnique, DbTag, StudentTechnique, Tag, Technique, naive_to_utc};
 
 #[instrument]
 pub async fn assign_technique_to_student(
@@ -452,4 +450,3 @@ pub async fn mark_student_technique_seen(
     .await?;
     Ok(())
 }
-

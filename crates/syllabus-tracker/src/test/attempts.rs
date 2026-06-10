@@ -4,10 +4,10 @@ mod tests {
 
     use crate::auth::User;
     use crate::db::{
-        attempt_buckets_for_student, attempt_summary_for_student,
+        AttemptSuggestion, attempt_buckets_for_student, attempt_summary_for_student,
         attempt_weekly_buckets_for_technique, create_attempt, delete_attempt, get_attempt,
         get_user, list_attempts, list_recent_attempts_for_student, update_attempt_note,
-        update_attempt_timestamp, AttemptSuggestion,
+        update_attempt_timestamp,
     };
     use crate::test::test_utils::TestDbBuilder;
 
@@ -181,9 +181,14 @@ mod tests {
             .await
             .unwrap();
 
-        update_attempt_note(&db.pool, &student, res.attempt.id, Some("here's what I did"))
-            .await
-            .unwrap();
+        update_attempt_note(
+            &db.pool,
+            &student,
+            res.attempt.id,
+            Some("here's what I did"),
+        )
+        .await
+        .unwrap();
 
         let refreshed = get_attempt(&db.pool, res.attempt.id).await.unwrap();
         assert_eq!(refreshed.coach_note.as_deref(), Some("coach saw it"));
@@ -358,10 +363,9 @@ mod tests {
         .await
         .unwrap();
 
-        let buckets =
-            attempt_buckets_for_student(&db.pool, student.id, yesterday, today)
-                .await
-                .unwrap();
+        let buckets = attempt_buckets_for_student(&db.pool, student.id, yesterday, today)
+            .await
+            .unwrap();
         assert_eq!(buckets.len(), 2);
         let map: std::collections::HashMap<_, _> =
             buckets.into_iter().map(|b| (b.date, b.count)).collect();
@@ -431,7 +435,11 @@ mod tests {
         let after = db.get_student_technique(st_id).await.unwrap();
         let stamp = after.last_student_update_at.expect("activity set");
         let age = Utc::now().signed_duration_since(stamp);
-        assert!(age.num_seconds() < 60, "activity should be recent, was {}s old", age.num_seconds());
+        assert!(
+            age.num_seconds() < 60,
+            "activity should be recent, was {}s old",
+            age.num_seconds()
+        );
     }
 
     #[rocket::async_test]
