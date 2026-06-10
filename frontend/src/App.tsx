@@ -242,9 +242,9 @@ function AuthedRoutes({ user }: { user: User }) {
       <Route
         path="/library"
         element={
-          <RequireCoach>
+          <RequireAuth>
             <LibraryPage />
-          </RequireCoach>
+          </RequireAuth>
         }
       />
       <Route
