@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import {
+  Activity,
   AlertCircle,
   ArrowRight,
   CheckCircle2,
@@ -21,6 +22,7 @@ import {
   useAttemptHeatmap,
   useLibraryStats,
   useRecentAttempts,
+  useRecentlyActiveStudents,
   useStudentTechniques,
   useStudents,
 } from '@/lib/queries';
@@ -36,7 +38,7 @@ import {
 } from '@/components/ui/dialog';
 import { ClaimLinkPanel } from '@/components/claim-link-panel';
 import { StudentRow } from '@/components/student-row';
-import type { Technique } from '@/lib/api';
+import type { RecentlyActiveStudent, Technique } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { formatRelative } from '@/lib/dates';
 import { statusToDotClass } from '@/lib/status';
@@ -50,8 +52,8 @@ import {
 } from '@/components/skeleton-row';
 import { StatusDonut } from '@/components/status-donut';
 import type { Status } from '@/lib/status';
-import { VideoOverviewCard } from '@/components/videos/video-overview-card';
-import { useCapabilities } from '@/context/capabilities-context';
+import { activityLine } from '@/lib/activity-line';
+import type { ActivityRow } from '@/lib/activity-line';
 import { DashboardTotals } from './components/dashboard-totals';
 import { QueuePanel } from './components/queue-panel';
 
@@ -79,13 +81,13 @@ function CoachDashboard() {
   const qc = useQueryClient();
   const studentsQuery = useStudents('recent_update', false);
   const libraryStatsQuery = useLibraryStats();
+  const recentlyActiveQuery = useRecentlyActiveStudents();
   const students = studentsQuery.data ?? null;
   const totalTechniques = libraryStatsQuery.data?.total_techniques ?? null;
   const loading = studentsQuery.isLoading;
   const error = studentsQuery.error ? 'Failed to load dashboard data. Please try again.' : null;
   const resetClaimMutation = useResetUserClaim();
   const approveMutation = useApproveUser();
-  const { videos: videosEnabled } = useCapabilities();
 
   const activeStudents = useMemo(
     () => (students ?? []).filter((s) => !s.archived && !s.graduated_at),
@@ -318,7 +320,10 @@ function CoachDashboard() {
         />
       </div>
 
-      {videosEnabled && <VideoOverviewCard />}
+      <RecentlyActivePanel
+        data={recentlyActiveQuery.data ?? null}
+        isLoading={recentlyActiveQuery.isLoading}
+      />
 
       <Dialog
         open={!!issuedClaimUrl}
@@ -622,6 +627,94 @@ function RecentAttemptsSection({
           );
         })}
       </ul>
+    </section>
+  );
+}
+
+// Build a minimal ActivityRow-shaped object from a RecentlyActiveStudent so
+// activityLine can format the verb copy. Fields not present on the recently-
+// active row are left null; activityLine falls back to generic copy gracefully.
+function recentlyActiveToActivityRow(r: RecentlyActiveStudent): ActivityRow {
+  return {
+    id: 0,
+    occurred_at: r.occurred_at,
+    verb: r.verb,
+    actor_user_id: r.student_id,
+    actor_name: r.student_name,
+    target_student_id: r.student_id,
+    technique_id: null,
+    technique_name: r.technique_name ?? null,
+    syllabus_id: null,
+    syllabus_name: r.syllabus_name ?? null,
+    sst_id: null,
+    video_id: null,
+    video_title: r.video_title ?? null,
+    payload_json: r.payload_json ?? null,
+    unread: false,
+  };
+}
+
+function RecentlyActivePanel({
+  data,
+  isLoading,
+}: {
+  data: RecentlyActiveStudent[] | null;
+  isLoading: boolean;
+}) {
+  return (
+    <section className="mb-8 overflow-hidden rounded-lg border border-border bg-card">
+      <header className="flex items-center gap-2.5 border-b border-border px-4 py-3">
+        <Activity className="h-4 w-4 text-muted-foreground" aria-hidden />
+        <h2 className="text-sm font-semibold">Recent student activity</h2>
+      </header>
+
+      {isLoading ? (
+        <div className="divide-y divide-border">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <div key={i} className="px-4 py-3">
+              <div className="h-3 w-1/4 animate-pulse rounded bg-muted" />
+              <div className="mt-2 h-3 w-2/5 animate-pulse rounded bg-muted" />
+            </div>
+          ))}
+        </div>
+      ) : !data || data.length === 0 ? (
+        <p className="px-6 py-8 text-center text-sm text-muted-foreground">
+          No recent student activity yet.
+        </p>
+      ) : (
+        <ul className="divide-y divide-border">
+          {data.map((row, idx) => {
+            const line = activityLine(recentlyActiveToActivityRow(row));
+            return (
+              <li
+                key={`${row.student_id}-${row.occurred_at}-${idx}`}
+                className="flex items-start justify-between gap-3 px-4 py-3"
+              >
+                <div className="min-w-0 flex-1 space-y-0.5">
+                  <p className="truncate text-sm font-medium">
+                    {row.student_name}
+                  </p>
+                  <p className="truncate text-xs text-muted-foreground">
+                    {line.href ? (
+                      <Link
+                        to={line.href}
+                        className="underline-offset-2 hover:underline"
+                      >
+                        {line.text}
+                      </Link>
+                    ) : (
+                      line.text
+                    )}
+                  </p>
+                </div>
+                <span className="shrink-0 text-xs text-muted-foreground">
+                  {formatRelative(row.occurred_at)}
+                </span>
+              </li>
+            );
+          })}
+        </ul>
+      )}
     </section>
   );
 }
