@@ -126,7 +126,9 @@ mod tests {
         let student_id = db.user_id("student_user").unwrap();
         let armbar_id = db.technique_id("Armbar").unwrap();
 
-        pin_technique(&db.pool, student_id, armbar_id).await.unwrap();
+        pin_technique(&db.pool, student_id, armbar_id)
+            .await
+            .unwrap();
 
         let _ = login_test_user(&client, "student_user", "password123").await;
         let resp = client
@@ -192,8 +194,7 @@ mod tests {
             .dispatch()
             .await;
         assert_eq!(list.status(), Status::Ok);
-        let rows: Vec<Value> =
-            serde_json::from_str(&list.into_string().await.unwrap()).unwrap();
+        let rows: Vec<Value> = serde_json::from_str(&list.into_string().await.unwrap()).unwrap();
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0]["id"].as_i64(), Some(technique_id));
         assert_eq!(rows[0]["is_pinned"].as_bool(), Some(true));
@@ -270,7 +271,7 @@ mod tests {
         let hidden_id = video_ids[1];
 
         // Globally hide the second video.
-        set_video_hidden_globally(&db.pool, hidden_id, true)
+        set_video_hidden_globally(&db.pool, hidden_id, true, coach_id)
             .await
             .unwrap();
 

@@ -1,13 +1,13 @@
 use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
+use rocket::State;
 use rocket::data::{ByteUnit, ToByteUnit};
 use rocket::form::{Errors as FormErrors, Form};
 use rocket::fs::TempFile;
 use rocket::http::Status;
-use rocket::serde::{json::Json, Deserialize, Serialize};
+use rocket::serde::{Deserialize, Serialize, json::Json};
 use rocket::tokio;
-use rocket::State;
 use sqlx::{Pool, Sqlite};
 use tracing::{error, instrument, warn};
 use uuid::Uuid;
@@ -18,7 +18,7 @@ use crate::models::{ProcessingStatus, Video};
 use crate::videos::embeds;
 use crate::videos::metrics::{kv, video_metrics};
 use crate::videos::pipeline::{
-    self, max_video_bytes, signed_download_ttl, signed_playback_ttl, PipelineContext,
+    self, PipelineContext, max_video_bytes, signed_download_ttl, signed_playback_ttl,
 };
 use crate::videos::storage::DynVideoStorage;
 
@@ -103,16 +103,12 @@ pub async fn api_video_upload(
 
     let metrics = video_metrics();
     if !is_mp4(form.file.content_type()) {
-        metrics
-            .uploads_total
-            .add(1, &[kv("result", "fail_format")]);
+        metrics.uploads_total.add(1, &[kv("result", "fail_format")]);
         return Err(Status::UnsupportedMediaType);
     }
 
     if form.file.len() > max_video_bytes() as u64 {
-        metrics
-            .uploads_total
-            .add(1, &[kv("result", "fail_size")]);
+        metrics.uploads_total.add(1, &[kv("result", "fail_size")]);
         return Err(Status::PayloadTooLarge);
     }
 
@@ -130,18 +126,15 @@ pub async fn api_video_upload(
     let mut dest = pipeline::temp_dir();
     dest.push(format!("{}.mp4", Uuid::new_v4()));
 
-    form.file
-        .persist_to(&dest)
-        .await
-        .map_err(|e| {
-            error!(
-                technique_id = tid,
-                dest = ?dest,
-                error = %e,
-                "failed to persist uploaded video to disk"
-            );
-            Status::InternalServerError
-        })?;
+    form.file.persist_to(&dest).await.map_err(|e| {
+        error!(
+            technique_id = tid,
+            dest = ?dest,
+            error = %e,
+            "failed to persist uploaded video to disk"
+        );
+        Status::InternalServerError
+    })?;
 
     let video_id = db::create_processing_video(
         pool.inner(),
@@ -273,9 +266,13 @@ pub async fn api_list_technique_videos(
         videos
             .into_iter()
             .map(|v| {
-                let override_for_student = overrides
-                    .get(&v.id)
-                    .map(|b| if *b { "show".to_string() } else { "hide".to_string() });
+                let override_for_student = overrides.get(&v.id).map(|b| {
+                    if *b {
+                        "show".to_string()
+                    } else {
+                        "hide".to_string()
+                    }
+                });
                 VideoListItem {
                     video: v,
                     override_for_student,
@@ -309,7 +306,7 @@ pub async fn api_set_video_global_hidden(
     pool: &State<Pool<Sqlite>>,
 ) -> Result<Status, Status> {
     user.require_permission(crate::auth::Permission::ManageVideoVisibility)?;
-    db::set_video_hidden_globally(pool.inner(), vid, body.hidden)
+    db::set_video_hidden_globally(pool.inner(), vid, body.hidden, user.id)
         .await
         .map_err(Status::from)?;
     Ok(Status::NoContent)
@@ -351,7 +348,11 @@ pub async fn api_update_video(
     let title = req.title.as_deref().map(str::trim);
     let description: Option<Option<String>> = req.description.map(|s| {
         let trimmed = s.trim().to_string();
-        if trimmed.is_empty() { None } else { Some(trimmed) }
+        if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed)
+        }
     });
     db::update_video_metadata(
         pool.inner(),
@@ -434,18 +435,15 @@ pub async fn api_replace_video(
         })?;
     let mut dest = pipeline::temp_dir();
     dest.push(format!("{}.mp4", Uuid::new_v4()));
-    form.file
-        .persist_to(&dest)
-        .await
-        .map_err(|e| {
-            error!(
-                video_id = vid,
-                dest = ?dest,
-                error = %e,
-                "failed to persist replacement video to disk"
-            );
-            Status::InternalServerError
-        })?;
+    form.file.persist_to(&dest).await.map_err(|e| {
+        error!(
+            video_id = vid,
+            dest = ?dest,
+            error = %e,
+            "failed to persist replacement video to disk"
+        );
+        Status::InternalServerError
+    })?;
 
     db::reset_video_to_processing(pool.inner(), vid)
         .await
@@ -519,26 +517,27 @@ pub async fn api_video_playback_url(
             return Err(Status::NotFound);
         }
     }
-    let status =
-        ProcessingStatus::from_db_str(db_video.processing_status.as_deref().unwrap_or("processing"));
+    let status = ProcessingStatus::from_db_str(
+        db_video
+            .processing_status
+            .as_deref()
+            .unwrap_or("processing"),
+    );
     if status != ProcessingStatus::Ready {
         return Err(Status::Conflict);
     }
     let key = db_video.storage_key.ok_or(Status::Conflict)?;
     let ttl = signed_playback_ttl();
     let started = std::time::Instant::now();
-    let url = storage
-        .presign_get(&key, ttl)
-        .await
-        .map_err(|e| {
-            error!(
-                video_id = vid,
-                storage_key = %key,
-                error = %e,
-                "failed to mint signed playback url"
-            );
-            Status::InternalServerError
-        })?;
+    let url = storage.presign_get(&key, ttl).await.map_err(|e| {
+        error!(
+            video_id = vid,
+            storage_key = %key,
+            error = %e,
+            "failed to mint signed playback url"
+        );
+        Status::InternalServerError
+    })?;
     video_metrics()
         .signed_url_mint_duration_ms
         .record(started.elapsed().as_millis() as u64, &[]);
@@ -567,8 +566,12 @@ pub async fn api_video_download_url(
             return Err(Status::NotFound);
         }
     }
-    let status =
-        ProcessingStatus::from_db_str(db_video.processing_status.as_deref().unwrap_or("processing"));
+    let status = ProcessingStatus::from_db_str(
+        db_video
+            .processing_status
+            .as_deref()
+            .unwrap_or("processing"),
+    );
     if status != ProcessingStatus::Ready {
         return Err(Status::Conflict);
     }
@@ -795,4 +798,3 @@ fn sanitised_download_name(title: &str) -> String {
         format!("{}.mp4", base)
     }
 }
-
