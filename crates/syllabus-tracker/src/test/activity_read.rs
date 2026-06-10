@@ -500,6 +500,102 @@ mod tests {
         assert_eq!(rows[0].verb, "technique_pinned");
     }
 
+    // Task 22 tests
+
+    /// Seeding cursors marks all pre-existing activity as seen for every user,
+    /// and a second run is a no-op (idempotent).
+    #[rocket::async_test]
+    async fn cursor_init_seeds_existing_users_to_current_max_and_is_idempotent() {
+        use crate::db::run_cursor_init;
+
+        let db = TestDbBuilder::new()
+            .coach("coach", None)
+            .student("alice", None)
+            .student("bob", None)
+            .build()
+            .await
+            .unwrap();
+        let coach = db.user_id("coach").unwrap();
+        let alice = db.user_id("alice").unwrap();
+        let bob = db.user_id("bob").unwrap();
+
+        // Emit some activity rows so MAX(activity.id) > 0.
+        let mut tx = db.pool.begin().await.unwrap();
+        emit(
+            &mut tx,
+            NewActivity::new(Verb::SyllabusAssigned, coach).target_student(alice),
+        )
+        .await
+        .unwrap();
+        tx.commit().await.unwrap();
+
+        let mut tx = db.pool.begin().await.unwrap();
+        emit(
+            &mut tx,
+            NewActivity::new(Verb::SyllabusGraduated, coach).target_student(bob),
+        )
+        .await
+        .unwrap();
+        tx.commit().await.unwrap();
+
+        let max_activity_id =
+            sqlx::query_scalar!(r#"SELECT COALESCE(MAX(id), 0) AS "m!: i64" FROM activity"#)
+                .fetch_one(&db.pool)
+                .await
+                .unwrap();
+        assert!(max_activity_id > 0);
+
+        // First run: should seed all 3 users.
+        let inserted = run_cursor_init(&db.pool).await.unwrap();
+        assert_eq!(inserted, 3, "all three users get a cursor row");
+
+        // Every user's cursor should equal the current MAX activity id.
+        for user_id in [coach, alice, bob] {
+            let max_seen = sqlx::query_scalar!(
+                r#"SELECT max_seen_id AS "m!: i64" FROM activity_cursors
+                   WHERE viewer_user_id = ?"#,
+                user_id
+            )
+            .fetch_one(&db.pool)
+            .await
+            .unwrap();
+            assert_eq!(
+                max_seen, max_activity_id,
+                "user {} cursor should equal max activity id",
+                user_id
+            );
+        }
+
+        // Second run: idempotent, no new rows inserted (INSERT OR IGNORE skips existing).
+        let inserted_again = run_cursor_init(&db.pool).await.unwrap();
+        assert_eq!(inserted_again, 0, "second run inserts nothing (idempotent)");
+
+        // Cursor values unchanged.
+        for user_id in [coach, alice, bob] {
+            let max_seen = sqlx::query_scalar!(
+                r#"SELECT max_seen_id AS "m!: i64" FROM activity_cursors
+                   WHERE viewer_user_id = ?"#,
+                user_id
+            )
+            .fetch_one(&db.pool)
+            .await
+            .unwrap();
+            assert_eq!(
+                max_seen, max_activity_id,
+                "cursor unchanged after second run for user {}",
+                user_id
+            );
+        }
+
+        // No duplicate cursor rows.
+        let cursor_count =
+            sqlx::query_scalar!(r#"SELECT COUNT(*) AS "c!: i64" FROM activity_cursors"#)
+                .fetch_one(&db.pool)
+                .await
+                .unwrap();
+        assert_eq!(cursor_count, 3, "exactly 3 cursor rows, no duplicates");
+    }
+
     /// Student feed only includes rows where target_student_id = viewer.
     #[rocket::async_test]
     async fn student_feed_only_targets_self() {

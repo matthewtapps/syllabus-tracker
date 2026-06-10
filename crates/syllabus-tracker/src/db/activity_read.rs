@@ -351,6 +351,26 @@ pub async fn feed(
     }
 }
 
+/// Seed every existing user's cursor to the current `MAX(activity.id)` so
+/// pre-deploy history reads as already-seen. Idempotent: `INSERT OR IGNORE`
+/// skips users who already have a cursor row. Returns the number of cursor rows
+/// inserted (0 on a second run).
+pub async fn run_cursor_init(pool: &Pool<Sqlite>) -> Result<i64, AppError> {
+    let max_id = sqlx::query_scalar!(r#"SELECT COALESCE(MAX(id), 0) AS "m!: i64" FROM activity"#)
+        .fetch_one(pool)
+        .await?;
+
+    let res = sqlx::query!(
+        "INSERT OR IGNORE INTO activity_cursors (viewer_user_id, max_seen_id)
+         SELECT id, ? FROM users",
+        max_id,
+    )
+    .execute(pool)
+    .await?;
+
+    Ok(res.rows_affected() as i64)
+}
+
 /// Count unread rows in the viewer's feed.
 ///
 /// An unread row satisfies ALL of:
