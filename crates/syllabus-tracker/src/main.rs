@@ -23,11 +23,11 @@ use api::{
     api_get_students, api_get_technique_tags, api_get_unassigned_techniques, api_invite_user,
     api_library_stats, api_library_technique_stats, api_list_attempts, api_list_library_techniques,
     api_login, api_logout, api_mark_student_technique_seen, api_me, api_me_unauthorized,
-    api_pin_technique, api_recent_attempts, api_register_user, api_remove_tag_from_technique,
-    api_remove_technique_from_collection, api_request_password_reset, api_reset_user_claim,
-    api_self_register, api_set_student_graduated, api_unpin_technique, api_update_attempt,
-    api_update_collection, api_update_library_technique, api_update_profile,
-    api_update_student_technique, api_update_user, health,
+    api_pin_technique, api_recent_attempts, api_recently_active_students, api_register_user,
+    api_remove_tag_from_technique, api_remove_technique_from_collection,
+    api_request_password_reset, api_reset_user_claim, api_self_register, api_set_student_graduated,
+    api_unpin_technique, api_update_attempt, api_update_collection, api_update_library_technique,
+    api_update_profile, api_update_student_technique, api_update_user, health,
 };
 use auth::unauthorized_api;
 use capabilities::{Capabilities, api_capabilities};
@@ -336,6 +336,7 @@ pub async fn init_rocket(
                 api_activity_mark_all_read,
                 api_activity_mark_one_read,
                 api_activity_mark_one_unread,
+                api_recently_active_students,
             ],
         )
         .register(

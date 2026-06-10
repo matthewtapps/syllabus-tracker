@@ -28,11 +28,12 @@ use crate::db::{
     get_student_technique, get_student_techniques, get_students_by_recent_updates,
     get_students_with_collection, get_tags_for_technique, get_unassigned_techniques, get_user,
     invalidate_session, list_attempts, list_recent_attempts_for_student, mark_all_read,
-    mark_one_read, mark_one_unread, mark_student_technique_seen, remove_tag_from_technique,
-    remove_technique_from_collection, request_password_reset, reset_user_claim, set_user_archived,
-    set_user_graduated, unread_count, update_attempt_note, update_attempt_timestamp,
-    update_collection, update_student_notes, update_student_technique, update_technique,
-    update_user_display_name, update_user_password, update_user_role, update_username,
+    mark_one_read, mark_one_unread, mark_student_technique_seen, recently_active_students,
+    remove_tag_from_technique, remove_technique_from_collection, request_password_reset,
+    reset_user_claim, set_user_archived, set_user_graduated, unread_count, update_attempt_note,
+    update_attempt_timestamp, update_collection, update_student_notes, update_student_technique,
+    update_technique, update_user_display_name, update_user_password, update_user_role,
+    update_username,
 };
 use crate::error::AppError;
 use crate::models::Tag;
@@ -1983,4 +1984,25 @@ pub async fn api_activity_mark_one_unread(
 ) -> ApiResult<Status> {
     mark_one_unread(db, user.id, activity_id).await?;
     Ok(Status::NoContent)
+}
+
+// ---- Coach dashboard recently-active route (Task 24) -----------------------
+
+/// `GET /api/activity/recently_active?limit=`
+///
+/// Returns each student's most-recent activity row, ordered by recency (most
+/// recent first). Coach-facing. Intended to replace the legacy
+/// `get_students_by_recent_updates` read for the "recently active students"
+/// panel; the legacy endpoint at `GET /api/students` remains unchanged until
+/// the frontend migration in Task 26.
+#[get("/activity/recently_active?<limit>")]
+pub async fn api_recently_active_students(
+    limit: Option<i64>,
+    user: User,
+    db: &State<Pool<Sqlite>>,
+) -> ApiResult<Json<Vec<crate::db::StudentLatestActivity>>> {
+    user.require_permission(Permission::ViewAllStudents)?;
+    let n = limit.unwrap_or(50).clamp(1, 200);
+    let rows = recently_active_students(db, n).await?;
+    Ok(Json(rows))
 }

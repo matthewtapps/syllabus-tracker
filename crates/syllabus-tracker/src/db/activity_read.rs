@@ -371,6 +371,83 @@ pub async fn run_cursor_init(pool: &Pool<Sqlite>) -> Result<i64, AppError> {
     Ok(res.rows_affected() as i64)
 }
 
+/// One row per student in the coach's "recently active" dashboard panel. Each
+/// row carries the student's most recent activity row (by `occurred_at DESC`).
+/// Rows with a NULL `target_student_id` are excluded (coach-only / fanout stub
+/// rows that have no student target).
+#[derive(Debug, Serialize)]
+pub struct StudentLatestActivity {
+    pub student_id: i64,
+    pub student_name: Option<String>,
+    pub verb: String,
+    pub occurred_at: String,
+    pub technique_id: Option<i64>,
+    pub technique_name: Option<String>,
+    pub syllabus_id: Option<i64>,
+    pub syllabus_name: Option<String>,
+    pub video_id: Option<i64>,
+    pub video_title: Option<String>,
+    pub payload_json: Option<String>,
+}
+
+/// Return each student's most-recent activity row, ordered by
+/// `occurred_at DESC`. Rows without a `target_student_id` are excluded.
+///
+/// Uses a correlated subquery: for each distinct `target_student_id`, select
+/// the single row with the maximum `occurred_at` (tie-broken by `id DESC`).
+pub async fn recently_active_students(
+    pool: &Pool<Sqlite>,
+    limit: i64,
+) -> Result<Vec<StudentLatestActivity>, AppError> {
+    let rows = sqlx::query!(
+        r#"SELECT act.target_student_id AS "student_id!: i64",
+                  u.display_name        AS "student_name?: String",
+                  act.verb              AS "verb!: String",
+                  act.occurred_at       AS "occurred_at!: String",
+                  act.technique_id      AS "technique_id?: i64",
+                  t.name                AS "technique_name?: String",
+                  act.syllabus_id       AS "syllabus_id?: i64",
+                  s.name                AS "syllabus_name?: String",
+                  act.video_id          AS "video_id?: i64",
+                  v.title               AS "video_title?: String",
+                  act.payload_json      AS "payload_json?: String"
+           FROM activity act
+           LEFT JOIN users u        ON u.id = act.target_student_id
+           LEFT JOIN techniques t   ON t.id = act.technique_id
+           LEFT JOIN syllabi s      ON s.id = act.syllabus_id
+           LEFT JOIN videos v       ON v.id = act.video_id
+           WHERE act.target_student_id IS NOT NULL
+             AND act.id = (
+                 SELECT id FROM activity inner_act
+                 WHERE inner_act.target_student_id = act.target_student_id
+                 ORDER BY inner_act.occurred_at DESC, inner_act.id DESC
+                 LIMIT 1
+             )
+           ORDER BY act.occurred_at DESC, act.id DESC
+           LIMIT ?"#,
+        limit,
+    )
+    .fetch_all(pool)
+    .await?;
+
+    Ok(rows
+        .into_iter()
+        .map(|r| StudentLatestActivity {
+            student_id: r.student_id,
+            student_name: r.student_name,
+            verb: r.verb,
+            occurred_at: r.occurred_at,
+            technique_id: r.technique_id,
+            technique_name: r.technique_name,
+            syllabus_id: r.syllabus_id,
+            syllabus_name: r.syllabus_name,
+            video_id: r.video_id,
+            video_title: r.video_title,
+            payload_json: r.payload_json,
+        })
+        .collect())
+}
+
 /// Count unread rows in the viewer's feed.
 ///
 /// An unread row satisfies ALL of:
