@@ -1,63 +1,46 @@
-import { ChevronDownIcon, ChevronUpIcon, FolderOpen, PlayIcon, Users } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
+import { FolderOpen, PlayIcon, Users } from "lucide-react";
 import { useTechniqueRow } from "./technique-row-context";
 
-interface HeaderProps {
-  expanded: boolean;
-  onToggle: () => void;
-}
+// Trigger content for the AccordionTrigger. No chevron here; the Accordion
+// renders its own caret in the trailing slot. Tags live in the expanded
+// panel only, so the collapsed row stays a single-line title plus a thin
+// meta strip.
+//
+// The meta strip shows student/collection counts to coaches only — these
+// are coach-relevant aggregates. Students see only the video count, and
+// the strip hides entirely when there is nothing to show.
+//
+// Title truncates with ellipsis when collapsed (so the row stays compact
+// in a long list) but wraps freely when the row is open, so long names
+// like "Side Control Escape (Bridge & Shrimp)" are fully readable once
+// the user is actually looking at the technique. The group-data-* hook
+// matches the AccordionItem ancestor's data-state attribute.
+export function Header() {
+  const { technique, role } = useTechniqueRow();
+  const isCoach = role === "coach" || role === "admin";
+  const showVideoMeta = isCoach || technique.video_count > 0;
 
-export function Header({ expanded, onToggle }: HeaderProps) {
-  const { technique, context } = useTechniqueRow();
   return (
-    <button
-      type="button"
-      onClick={onToggle}
-      aria-expanded={expanded}
-      className="flex w-full items-start gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/40"
-    >
-      <div className="min-w-0 flex-1 space-y-1">
-        <p className="truncate text-sm font-medium">{technique.name}</p>
-        <p className="text-xs text-muted-foreground">
-          <CollapsedMeta />
-        </p>
-        {technique.tags.length > 0 && (
-          <div className="flex flex-wrap gap-1 pt-0.5">
-            {technique.tags.map((tag) => (
-              <Badge
-                key={tag.id}
-                variant="outline"
-                className="px-1.5 py-0 text-[10px]"
-              >
-                {tag.name}
-              </Badge>
-            ))}
-          </div>
-        )}
-      </div>
-      {/* student-pinned and global-library both surface is_pinned status. */}
-      {context.kind !== "global-library" || technique.is_pinned ? null : null}
-      {expanded ? (
-        <ChevronUpIcon className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
-      ) : (
-        <ChevronDownIcon className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+    <div className="min-w-0 flex-1 space-y-1">
+      <p className="truncate text-sm font-semibold leading-tight group-data-[state=open]:overflow-visible group-data-[state=open]:whitespace-normal group-data-[state=open]:break-words">
+        {technique.name}
+      </p>
+      {(isCoach || showVideoMeta) && (
+        <span className="flex min-w-0 items-center gap-1.5 truncate whitespace-nowrap text-xs text-muted-foreground">
+          {isCoach && (
+            <>
+              <Users className="h-3 w-3 shrink-0" aria-hidden />
+              <span>{technique.student_count}</span>
+              <span aria-hidden>·</span>
+              <FolderOpen className="h-3 w-3 shrink-0" aria-hidden />
+              <span>{technique.collection_count}</span>
+              <span aria-hidden>·</span>
+            </>
+          )}
+          <PlayIcon className="h-3 w-3 shrink-0" aria-hidden />
+          <span>{technique.video_count}</span>
+        </span>
       )}
-    </button>
-  );
-}
-
-function CollapsedMeta() {
-  const { technique } = useTechniqueRow();
-  return (
-    <span className="flex min-w-0 items-center gap-1.5 truncate whitespace-nowrap">
-      <Users className="h-3 w-3 shrink-0" aria-hidden />
-      <span>{technique.student_count}</span>
-      <span aria-hidden>·</span>
-      <FolderOpen className="h-3 w-3 shrink-0" aria-hidden />
-      <span>{technique.collection_count}</span>
-      <span aria-hidden>·</span>
-      <PlayIcon className="h-3 w-3 shrink-0" aria-hidden />
-      <span>{technique.video_count}</span>
-    </span>
+    </div>
   );
 }

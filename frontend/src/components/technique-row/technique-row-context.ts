@@ -7,9 +7,19 @@ import type { LibraryTechniqueRow, Role } from "@/lib/api";
 // id so blocks can read assignment-level state (graduated_at, unassigned_at)
 // without re-fetching. PR 1 ships the global-library and student-pinned
 // variants; PR 3 fills out student-syllabus.
+//
+// `onUnpinIntent` on student-pinned lets the listing page intercept the
+// unpin click so it can play an exit animation before the cache update
+// removes the row. When set, PinButton calls it instead of firing the
+// mutation directly. The page is then responsible for running the
+// mutation (and the undo toast).
 export type RowContext =
   | { kind: "global-library" }
-  | { kind: "student-pinned"; studentId: number }
+  | {
+      kind: "student-pinned";
+      studentId: number;
+      onUnpinIntent?: (technique: LibraryTechniqueRow) => void;
+    }
   | {
       kind: "student-syllabus";
       studentId: number;
