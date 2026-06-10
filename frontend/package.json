@@ -7,7 +7,9 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "pnpm": {
     "onlyBuiltDependencies": [
@@ -62,20 +64,27 @@
   "devDependencies": {
     "@eslint/js": "^9.25.0",
     "@tanstack/react-query-devtools": "^5.100.14",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
+    "@testing-library/user-event": "^14.6.1",
     "@types/node": "^22.15.17",
     "@types/react": "^19.1.2",
     "@types/react-dom": "^19.1.2",
     "@vitejs/plugin-react": "^4.4.1",
+    "@vitest/browser": "^4.1.8",
+    "@vitest/browser-playwright": "^4.1.8",
     "eslint": "^9.25.0",
     "eslint-plugin-react-hooks": "^5.2.0",
     "eslint-plugin-react-refresh": "^0.4.19",
     "globals": "^16.0.0",
+    "playwright": "^1.60.0",
     "rollup-plugin-visualizer": "^7.0.1",
     "tw-animate-css": "^1.2.9",
     "typescript": "~5.8.3",
     "typescript-eslint": "^8.30.1",
     "vite": "^6.3.5",
     "vite-plugin-pwa": "^1.3.0",
+    "vitest": "^4.1.8",
     "workbox-window": "^7.4.1"
   }
 }
