@@ -78,6 +78,9 @@ export const qk = {
   videoStats: (videoId: number) => ["video", videoId, "stats"] as const,
 
   dashboardVideoOverview: () => ["dashboard", "videoOverview"] as const,
+  recentlyActiveStudents: () => ["activity", "recentlyActive"] as const,
+  activityFeed: () => ["activity", "feed"] as const,
+  activityUnreadCount: () => ["activity", "unreadCount"] as const,
   adminStorage: () => ["admin", "storage"] as const,
 
   // Predicate matchers for queryClient.invalidateQueries({ predicate }).

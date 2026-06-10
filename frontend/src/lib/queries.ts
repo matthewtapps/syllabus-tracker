@@ -3,6 +3,8 @@ import {
   getAdminStorage,
   getAllTags,
   getAllUsers,
+  getActivityFeed,
+  getActivityUnreadCount,
   getAttemptHeatmap,
   getAttemptSparkline,
   getAttemptSummary,
@@ -16,6 +18,7 @@ import {
   getLibraryTechniques,
   getLibraryTechniqueStats,
   getRecentAttemptsForStudent,
+  getRecentlyActiveStudents,
   getStudentLibrary,
   getStudentPinnedTechniques,
   getStudentSyllabusTechniquesApi,
@@ -388,5 +391,36 @@ export function useAssignmentDiff(
       Number.isFinite(syllabusId)
         ? () => getAssignmentDiffApi(studentId, syllabusId)
         : skipToken,
+  });
+}
+
+// ---- Activity feed (PR 2) ----
+
+// The viewer's own activity feed. For a student this returns rows where
+// they are the target; for a coach it returns all gym activity except their
+// own actions. `enabled` lets callers gate the query on auth state.
+export function useActivityFeed(enabled: boolean = true) {
+  return useQuery({
+    queryKey: qk.activityFeed(),
+    queryFn: enabled ? () => getActivityFeed({ limit: 20 }) : skipToken,
+    staleTime: 30 * 1000,
+  });
+}
+
+export function useActivityUnreadCount(enabled: boolean = true) {
+  return useQuery({
+    queryKey: qk.activityUnreadCount(),
+    queryFn: enabled ? getActivityUnreadCount : skipToken,
+    staleTime: 30 * 1000,
+    refetchOnWindowFocus: true,
+  });
+}
+
+// Coach/admin only: recently-active students from the activity stream.
+export function useRecentlyActiveStudents(enabled: boolean = true) {
+  return useQuery({
+    queryKey: qk.recentlyActiveStudents(),
+    queryFn: enabled ? () => getRecentlyActiveStudents(10) : skipToken,
+    staleTime: 60 * 1000,
   });
 }

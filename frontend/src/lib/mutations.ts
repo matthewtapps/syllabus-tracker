@@ -1034,6 +1034,9 @@ export function useDeleteSyllabusAttempt() {
 import {
   addTechniqueToStudentSyllabusApi,
   applyAssignmentDiffApi,
+  postMarkAllActivityRead,
+  postMarkActivityRead,
+  postMarkActivityUnread,
   setAssignmentGraduatedApi,
   setSstHiddenApi,
   setVideoSyllabusVisibilityApi,
@@ -1107,6 +1110,46 @@ export function useSetSstHidden() {
         queryKey: qk.studentSyllabusDiff(vars.studentId, vars.syllabusId),
       });
     },
+  });
+}
+
+// ============================================================
+// Activity read-side mutations (PR 2)
+// ============================================================
+
+export function useMarkAllActivityRead() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => postMarkAllActivityRead(),
+    onSuccess: () =>
+      Promise.all([
+        qc.invalidateQueries({ queryKey: qk.activityUnreadCount() }),
+        qc.invalidateQueries({ queryKey: qk.activityFeed() }),
+      ]),
+  });
+}
+
+export function useMarkActivityRead() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) => postMarkActivityRead(id),
+    onSuccess: () =>
+      Promise.all([
+        qc.invalidateQueries({ queryKey: qk.activityUnreadCount() }),
+        qc.invalidateQueries({ queryKey: qk.activityFeed() }),
+      ]),
+  });
+}
+
+export function useMarkActivityUnread() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) => postMarkActivityUnread(id),
+    onSuccess: () =>
+      Promise.all([
+        qc.invalidateQueries({ queryKey: qk.activityUnreadCount() }),
+        qc.invalidateQueries({ queryKey: qk.activityFeed() }),
+      ]),
   });
 }
 
