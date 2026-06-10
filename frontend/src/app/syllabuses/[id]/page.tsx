@@ -210,16 +210,10 @@ function SyllabusDetail({ syllabusId }: { syllabusId: number }) {
           <TabsTrigger value="techniques" className="gap-1.5">
             <NotebookPen className="h-3.5 w-3.5" aria-hidden />
             Techniques
-            <span className="text-muted-foreground">
-              ({syllabus.techniques.length})
-            </span>
           </TabsTrigger>
           <TabsTrigger value="students" className="gap-1.5">
             <Users className="h-3.5 w-3.5" aria-hidden />
             Students
-            <span className="text-muted-foreground">
-              ({assignedIds.length})
-            </span>
           </TabsTrigger>
         </TabsList>
 
