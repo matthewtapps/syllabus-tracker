@@ -6,6 +6,7 @@ import {
   LayoutDashboard,
   Library,
   LogOut,
+  NotebookPen,
   Pin,
   Shield,
   UserPlus,
@@ -49,8 +50,13 @@ function buildTabs(user: User): Tab[] {
       icon: Library,
       alsoActiveOn: ['/collections'],
     });
+    tabs.push({ to: '/syllabuses', label: 'Syllabuses', icon: NotebookPen });
   } else {
-    tabs.push({ to: `/student/${user.id}`, label: 'My techniques', icon: Library });
+    tabs.push({
+      to: `/student/${user.id}/syllabuses`,
+      label: 'Syllabuses',
+      icon: NotebookPen,
+    });
     tabs.push({ to: '/library', label: 'Library', icon: Library });
     tabs.push({ to: `/student/${user.id}/pinned`, label: 'Pinned', icon: Pin });
   }

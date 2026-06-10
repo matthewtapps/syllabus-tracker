@@ -1,5 +1,5 @@
 import { createContext, useContext } from "react";
-import type { LibraryTechniqueRow, Role } from "@/lib/api";
+import type { LibraryTechniqueRow, Role, SstRow } from "@/lib/api";
 
 // Discriminated context tells each row block which surface it's rendering
 // in. Blocks read this via useTechniqueRow() instead of receiving each piece
@@ -25,6 +25,7 @@ export type RowContext =
       studentId: number;
       syllabusId: number;
       assignmentId: number;
+      sst: SstRow;
     };
 
 export interface TechniqueRowState {

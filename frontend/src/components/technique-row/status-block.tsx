@@ -1,0 +1,37 @@
+import { toast } from "sonner";
+import { StatusToggle } from "@/components/status-toggle";
+import { useUpdateStudentSyllabusTechnique } from "@/lib/mutations";
+import type { Status } from "@/lib/status";
+import { useTechniqueRow } from "./technique-row-context";
+
+// Status toggle for student-syllabus rows. The owning student and any
+// coach can flip status; backend gates it (the SST PATCH route applies
+// the per-field permission policy).
+export function StatusBlock() {
+  const { context } = useTechniqueRow();
+  const mutation = useUpdateStudentSyllabusTechnique();
+  if (context.kind !== "student-syllabus") return null;
+  const { sst, studentId, syllabusId } = context;
+
+  async function handleChange(next: Status) {
+    try {
+      await mutation.mutateAsync({
+        sstId: sst.id,
+        studentId,
+        syllabusId,
+        data: { status: next },
+      });
+    } catch {
+      toast.error("Failed to update status");
+    }
+  }
+
+  return (
+    <StatusToggle
+      value={sst.status as Status}
+      onChange={handleChange}
+      disabled={mutation.isPending}
+      size="sm"
+    />
+  );
+}

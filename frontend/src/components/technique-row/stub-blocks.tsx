@@ -1,18 +1,6 @@
-// Placeholders for the student-syllabus blocks (PR 3 + PR 4). Listed in
+// Placeholders for the syllabus-context blocks PR 4 fills in. Listed in
 // BLOCK_VISIBILITY so the expanded-panel orchestrator can iterate without
 // branching, but they render nothing until their owning PRs land.
-
-export function NotesStudentBlock() {
-  return null;
-}
-
-export function NotesCoachBlock() {
-  return null;
-}
-
-export function AttemptsBlock() {
-  return null;
-}
 
 export function EditDefinitionBlock() {
   // The description-block's inline edit affordance covers PR 1's edit
