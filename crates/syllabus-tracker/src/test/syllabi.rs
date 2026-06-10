@@ -336,8 +336,7 @@ mod tests {
             .dispatch()
             .await;
         assert_eq!(resp.status(), Status::Ok);
-        let body: Vec<Value> =
-            serde_json::from_str(&resp.into_string().await.unwrap()).unwrap();
+        let body: Vec<Value> = serde_json::from_str(&resp.into_string().await.unwrap()).unwrap();
         assert_eq!(body.len(), 1);
         assert_eq!(body[0]["syllabus_id"].as_i64(), Some(syllabus_id));
     }
@@ -453,14 +452,24 @@ mod pr4_tests {
             .unwrap()
             .unwrap();
         let (client, db) = setup_test_client(test_db).await;
-        (client, db, syllabus_id, student_id, coach_id, assignment_id, sst_id)
+        (
+            client,
+            db,
+            syllabus_id,
+            student_id,
+            coach_id,
+            assignment_id,
+            sst_id,
+        )
     }
 
     #[rocket::async_test]
     async fn graduate_blocks_student_sst_writes() {
         let (client, db, syllabus_id, student_id, coach_id, assignment_id, sst_id) =
             seed_active_assignment().await;
-        db::graduate(&db.pool, coach_id, assignment_id).await.unwrap();
+        db::graduate(&db.pool, coach_id, assignment_id)
+            .await
+            .unwrap();
         let _ = (syllabus_id, student_id);
         let _ = login_test_user(&client, "student_user", "password123").await;
 
@@ -489,9 +498,10 @@ mod pr4_tests {
 
     #[rocket::async_test]
     async fn graduate_lets_coach_edit() {
-        let (client, db, _, _, coach_id, assignment_id, sst_id) =
-            seed_active_assignment().await;
-        db::graduate(&db.pool, coach_id, assignment_id).await.unwrap();
+        let (client, db, _, _, coach_id, assignment_id, sst_id) = seed_active_assignment().await;
+        db::graduate(&db.pool, coach_id, assignment_id)
+            .await
+            .unwrap();
         let _ = login_test_user(&client, "coach_user", "password123").await;
 
         let resp = client
@@ -551,33 +561,44 @@ mod pr4_tests {
         let rows = db::list_for_assignment(&test_db.pool, assignment_id, &user)
             .await
             .unwrap();
-        assert_eq!(rows.len(), 1, "graduated assignment retains its frozen SST set");
+        assert_eq!(
+            rows.len(),
+            1,
+            "graduated assignment retains its frozen SST set"
+        );
     }
 
     #[rocket::async_test]
     async fn set_hidden_toggles_sst_state() {
         let (_client, db, _, _, coach_id, _, sst_id) = seed_active_assignment().await;
-        db::set_hidden(&db.pool, coach_id, sst_id, true).await.unwrap();
-        let user = crate::db::get_user(&db.pool, coach_id).await.unwrap();
-        let rows = db::list_for_assignment(&db.pool, sst_owner_assignment(&db, sst_id).await, &user)
+        db::set_hidden(&db.pool, coach_id, sst_id, true)
             .await
             .unwrap();
+        let user = crate::db::get_user(&db.pool, coach_id).await.unwrap();
+        let rows =
+            db::list_for_assignment(&db.pool, sst_owner_assignment(&db, sst_id).await, &user)
+                .await
+                .unwrap();
         let row = rows.iter().find(|r| r.id == sst_id).unwrap();
         assert!(row.hidden_at.is_some());
 
-        db::set_hidden(&db.pool, coach_id, sst_id, false).await.unwrap();
-        let rows = db::list_for_assignment(&db.pool, sst_owner_assignment(&db, sst_id).await, &user)
+        db::set_hidden(&db.pool, coach_id, sst_id, false)
             .await
             .unwrap();
+        let rows =
+            db::list_for_assignment(&db.pool, sst_owner_assignment(&db, sst_id).await, &user)
+                .await
+                .unwrap();
         let row = rows.iter().find(|r| r.id == sst_id).unwrap();
         assert!(row.hidden_at.is_none());
     }
 
-    async fn sst_owner_assignment(
-        db: &crate::test::test_utils::TestDb,
-        sst_id: i64,
-    ) -> i64 {
-        db::get_owner(&db.pool, sst_id).await.unwrap().unwrap().assignment_id
+    async fn sst_owner_assignment(db: &crate::test::test_utils::TestDb, sst_id: i64) -> i64 {
+        db::get_owner(&db.pool, sst_id)
+            .await
+            .unwrap()
+            .unwrap()
+            .assignment_id
     }
 
     #[rocket::async_test]
@@ -615,7 +636,9 @@ mod pr4_tests {
             .await
             .unwrap();
 
-        let diff = db::diff_for_assignment(&db.pool, assignment_id).await.unwrap();
+        let diff = db::diff_for_assignment(&db.pool, assignment_id)
+            .await
+            .unwrap();
         assert!(
             diff.ghosts.iter().any(|g| g.technique_id == armbar_id),
             "Armbar should be a ghost: removed from syllabus, still in SST"
@@ -628,14 +651,16 @@ mod pr4_tests {
 
     #[rocket::async_test]
     async fn add_technique_to_assignment_unhides_existing() {
-        let (_client, db, _, _, coach_id, assignment_id, sst_id) =
-            seed_active_assignment().await;
+        let (_client, db, _, _, coach_id, assignment_id, sst_id) = seed_active_assignment().await;
         let armbar_id = db.technique_id("Armbar").unwrap();
-        db::set_hidden(&db.pool, coach_id, sst_id, true).await.unwrap();
-
-        let returned = db::add_technique_to_assignment(&db.pool, assignment_id, armbar_id)
+        db::set_hidden(&db.pool, coach_id, sst_id, true)
             .await
             .unwrap();
+
+        let returned =
+            db::add_technique_to_assignment(&db.pool, assignment_id, armbar_id, coach_id)
+                .await
+                .unwrap();
         assert_eq!(returned, sst_id, "should reuse the existing SST row");
 
         let user = crate::db::get_user(&db.pool, coach_id).await.unwrap();
@@ -648,9 +673,10 @@ mod pr4_tests {
 
     #[rocket::async_test]
     async fn ungraduate_clears_columns_without_touching_sst() {
-        let (_client, db, _, _, coach_id, assignment_id, sst_id) =
-            seed_active_assignment().await;
-        db::graduate(&db.pool, coach_id, assignment_id).await.unwrap();
+        let (_client, db, _, _, coach_id, assignment_id, sst_id) = seed_active_assignment().await;
+        db::graduate(&db.pool, coach_id, assignment_id)
+            .await
+            .unwrap();
         db::ungraduate(&db.pool, assignment_id).await.unwrap();
         let flags = db::get_assignment_lifecycle(&db.pool, assignment_id)
             .await
@@ -772,7 +798,9 @@ mod pr4_tests {
         .await
         .unwrap();
         let _ = login_test_user(&client, "coach_user", "password123").await;
-        let diff = db::diff_for_assignment(&db.pool, assignment_id).await.unwrap();
+        let diff = db::diff_for_assignment(&db.pool, assignment_id)
+            .await
+            .unwrap();
         let ghost = diff.ghosts.first().unwrap();
 
         let resp = client
@@ -798,8 +826,7 @@ mod pr4_tests {
             .dispatch()
             .await;
         assert_eq!(resp.status(), Status::Ok);
-        let body: Value =
-            serde_json::from_str(&resp.into_string().await.unwrap()).unwrap();
+        let body: Value = serde_json::from_str(&resp.into_string().await.unwrap()).unwrap();
         assert_eq!(body["applied"].as_i64(), Some(2));
     }
 }

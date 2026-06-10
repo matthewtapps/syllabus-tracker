@@ -10,6 +10,7 @@ use sqlx::{Pool, Sqlite};
 use tracing::instrument;
 
 use crate::auth::{Role, User};
+use crate::db::activity::{NewActivity, Verb, emit, payload};
 use crate::error::AppError;
 use crate::models::Tag;
 
@@ -137,10 +138,7 @@ pub struct SstOwner {
 }
 
 #[instrument]
-pub async fn get_owner(
-    pool: &Pool<Sqlite>,
-    sst_id: i64,
-) -> Result<Option<SstOwner>, AppError> {
+pub async fn get_owner(pool: &Pool<Sqlite>, sst_id: i64) -> Result<Option<SstOwner>, AppError> {
     let row = sqlx::query!(
         r#"SELECT sst.assignment_id AS "assignment_id!: i64",
                   a.student_id AS "student_id!: i64",
@@ -174,6 +172,29 @@ pub async fn update_sst(
     let now = chrono::Utc::now().naive_utc();
     let actor_is_coach = matches!(actor.role, Role::Coach | Role::Admin);
 
+    let mut tx = pool.begin().await?;
+
+    // Resolve owner for denormalised activity fields.
+    let owner = sqlx::query!(
+        r#"SELECT a.student_id AS "student_id!: i64",
+                  a.syllabus_id AS "syllabus_id!: i64",
+                  sst.technique_id AS "technique_id!: i64"
+           FROM student_syllabus_techniques sst
+           JOIN syllabus_assignments a ON a.id = sst.assignment_id
+           WHERE sst.id = ?"#,
+        sst_id,
+    )
+    .fetch_one(&mut *tx)
+    .await?;
+
+    // Read the old status before any UPDATE so we can diff it.
+    let old_status = sqlx::query_scalar!(
+        r#"SELECT status AS "status!: String" FROM student_syllabus_techniques WHERE id = ?"#,
+        sst_id,
+    )
+    .fetch_one(&mut *tx)
+    .await?;
+
     // Common bookkeeping first.
     if actor_is_coach {
         sqlx::query!(
@@ -185,7 +206,7 @@ pub async fn update_sst(
             actor.id,
             sst_id,
         )
-        .execute(pool)
+        .execute(&mut *tx)
         .await?;
     } else {
         sqlx::query!(
@@ -197,7 +218,7 @@ pub async fn update_sst(
             actor.id,
             sst_id,
         )
-        .execute(pool)
+        .execute(&mut *tx)
         .await?;
     }
 
@@ -207,7 +228,7 @@ pub async fn update_sst(
             status,
             sst_id,
         )
-        .execute(pool)
+        .execute(&mut *tx)
         .await?;
     }
     if let Some(ref notes) = update.student_notes {
@@ -216,7 +237,7 @@ pub async fn update_sst(
             notes,
             sst_id,
         )
-        .execute(pool)
+        .execute(&mut *tx)
         .await?;
     }
     if let Some(ref notes) = update.coach_notes {
@@ -225,9 +246,47 @@ pub async fn update_sst(
             notes,
             sst_id,
         )
-        .execute(pool)
+        .execute(&mut *tx)
         .await?;
     }
+
+    // Emit one activity row per present field.
+    if let Some(ref status) = update.status {
+        emit(
+            &mut tx,
+            NewActivity::new(Verb::SstStatusChanged, actor.id)
+                .target_student(owner.student_id)
+                .sst(sst_id)
+                .technique(owner.technique_id)
+                .syllabus(owner.syllabus_id)
+                .payload(payload::status_changed(&old_status, status)),
+        )
+        .await?;
+    }
+    if update.student_notes.is_some() {
+        emit(
+            &mut tx,
+            NewActivity::new(Verb::SstStudentNotesEdited, actor.id)
+                .target_student(owner.student_id)
+                .sst(sst_id)
+                .technique(owner.technique_id)
+                .syllabus(owner.syllabus_id),
+        )
+        .await?;
+    }
+    if update.coach_notes.is_some() {
+        emit(
+            &mut tx,
+            NewActivity::new(Verb::SstCoachNotesEdited, actor.id)
+                .target_student(owner.student_id)
+                .sst(sst_id)
+                .technique(owner.technique_id)
+                .syllabus(owner.syllabus_id),
+        )
+        .await?;
+    }
+
+    tx.commit().await?;
     Ok(())
 }
 
@@ -260,6 +319,21 @@ pub async fn set_hidden(
     hidden: bool,
 ) -> Result<(), AppError> {
     let now = chrono::Utc::now().naive_utc();
+    let mut tx = pool.begin().await?;
+
+    // Resolve owner for denormalised activity fields.
+    let owner = sqlx::query!(
+        r#"SELECT a.student_id AS "student_id!: i64",
+                  a.syllabus_id AS "syllabus_id!: i64",
+                  sst.technique_id AS "technique_id!: i64"
+           FROM student_syllabus_techniques sst
+           JOIN syllabus_assignments a ON a.id = sst.assignment_id
+           WHERE sst.id = ?"#,
+        sst_id,
+    )
+    .fetch_one(&mut *tx)
+    .await?;
+
     if hidden {
         sqlx::query!(
             "UPDATE student_syllabus_techniques
@@ -270,7 +344,7 @@ pub async fn set_hidden(
             now,
             sst_id,
         )
-        .execute(pool)
+        .execute(&mut *tx)
         .await?;
     } else {
         sqlx::query!(
@@ -280,9 +354,26 @@ pub async fn set_hidden(
             now,
             sst_id,
         )
-        .execute(pool)
+        .execute(&mut *tx)
         .await?;
     }
+
+    let verb = if hidden {
+        Verb::SstHidden
+    } else {
+        Verb::SstUnhidden
+    };
+    emit(
+        &mut tx,
+        NewActivity::new(verb, coach_id)
+            .target_student(owner.student_id)
+            .sst(sst_id)
+            .technique(owner.technique_id)
+            .syllabus(owner.syllabus_id),
+    )
+    .await?;
+
+    tx.commit().await?;
     Ok(())
 }
 
@@ -296,6 +387,7 @@ pub async fn add_technique_to_assignment(
     pool: &Pool<Sqlite>,
     assignment_id: i64,
     technique_id: i64,
+    coach_id: i64,
 ) -> Result<i64, AppError> {
     let mut tx = pool.begin().await?;
     let existing: Option<i64> = sqlx::query_scalar!(
@@ -331,6 +423,27 @@ pub async fn add_technique_to_assignment(
         .await?;
         res.last_insert_rowid()
     };
+
+    // Resolve the assignment's student + syllabus for denormalised fields.
+    let asgn = sqlx::query!(
+        r#"SELECT student_id AS "student_id!: i64",
+                  syllabus_id AS "syllabus_id!: i64"
+           FROM syllabus_assignments WHERE id = ?"#,
+        assignment_id,
+    )
+    .fetch_one(&mut *tx)
+    .await?;
+
+    emit(
+        &mut tx,
+        NewActivity::new(Verb::SstAdded, coach_id)
+            .target_student(asgn.student_id)
+            .sst(id)
+            .technique(technique_id)
+            .syllabus(asgn.syllabus_id),
+    )
+    .await?;
+
     tx.commit().await?;
     Ok(id)
 }

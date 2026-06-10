@@ -102,9 +102,7 @@ pub async fn api_get_syllabus(
     db: &State<Pool<Sqlite>>,
 ) -> ApiResult<Json<SyllabusDetailResponse>> {
     user.require_permission(Permission::ManageSyllabi)?;
-    let syllabus = db::get_syllabus(db, sid)
-        .await?
-        .ok_or(Status::NotFound)?;
+    let syllabus = db::get_syllabus(db, sid).await?.ok_or(Status::NotFound)?;
     let techniques = db::list_syllabus_techniques(db, sid).await?;
     Ok(Json(SyllabusDetailResponse {
         syllabus,
@@ -132,9 +130,7 @@ pub async fn api_update_syllabus(
         db,
         sid,
         body.name.as_deref(),
-        body.description
-            .as_ref()
-            .map(|opt| opt.as_deref()),
+        body.description.as_ref().map(|opt| opt.as_deref()),
     )
     .await?;
     Ok(Status::NoContent)
@@ -225,10 +221,7 @@ pub struct GraduateAssignmentRequest {
     pub graduated_at: Option<String>,
 }
 
-#[patch(
-    "/student/<sid>/syllabi/<syid>/assignment",
-    data = "<body>"
-)]
+#[patch("/student/<sid>/syllabi/<syid>/assignment", data = "<body>")]
 pub async fn api_set_assignment_graduated(
     sid: i64,
     syid: i64,
@@ -306,10 +299,7 @@ pub struct DiffApplyResponse {
     pub applied: i64,
 }
 
-#[post(
-    "/student/<sid>/syllabi/<syid>/assignment/diff/apply",
-    data = "<body>"
-)]
+#[post("/student/<sid>/syllabi/<syid>/assignment/diff/apply", data = "<body>")]
 pub async fn api_apply_assignment_diff(
     sid: i64,
     syid: i64,
@@ -346,7 +336,8 @@ pub async fn api_apply_assignment_diff(
     for entry in &body.missing_actions {
         match entry.action {
             MissingAction::AddToStudent => {
-                db::add_technique_to_assignment(db, assignment.id, entry.technique_id).await?;
+                db::add_technique_to_assignment(db, assignment.id, entry.technique_id, user.id)
+                    .await?;
                 applied += 1;
             }
             MissingAction::Ignore => {}
@@ -369,10 +360,7 @@ pub struct SstIdResponse {
     pub id: i64,
 }
 
-#[post(
-    "/student/<sid>/syllabi/<syid>/techniques",
-    data = "<body>"
-)]
+#[post("/student/<sid>/syllabi/<syid>/techniques", data = "<body>")]
 pub async fn api_add_technique_to_student_syllabus(
     sid: i64,
     syid: i64,
@@ -384,8 +372,7 @@ pub async fn api_add_technique_to_student_syllabus(
     let assignment = db::get_assignment(db, sid, syid)
         .await?
         .ok_or(Status::NotFound)?;
-    let id =
-        db::add_technique_to_assignment(db, assignment.id, body.technique_id).await?;
+    let id = db::add_technique_to_assignment(db, assignment.id, body.technique_id, user.id).await?;
     Ok(Json(SstIdResponse { id }))
 }
 
@@ -394,10 +381,7 @@ pub struct SetSstHiddenRequest {
     pub hidden: bool,
 }
 
-#[patch(
-    "/student_syllabus_techniques/<sst_id>/hidden",
-    data = "<body>"
-)]
+#[patch("/student_syllabus_techniques/<sst_id>/hidden", data = "<body>")]
 pub async fn api_set_sst_hidden(
     sst_id: i64,
     user: User,
@@ -474,9 +458,7 @@ pub async fn api_list_student_syllabus_techniques(
     let assignment = db::get_assignment(db, sid, syid)
         .await?
         .ok_or(Status::NotFound)?;
-    if assignment.unassigned_at.is_some()
-        && !user.has_permission(Permission::ManageSyllabi)
-    {
+    if assignment.unassigned_at.is_some() && !user.has_permission(Permission::ManageSyllabi) {
         return Err(Status::NotFound.into());
     }
     let techniques = db::list_for_assignment(db, assignment.id, &user).await?;
@@ -511,9 +493,7 @@ pub async fn api_update_sst(
             return Err(Status::BadRequest.into());
         }
     }
-    let owner = db::get_owner(db, sst_id)
-        .await?
-        .ok_or(Status::NotFound)?;
+    let owner = db::get_owner(db, sst_id).await?.ok_or(Status::NotFound)?;
 
     let viewer_is_owning_student = user.id == owner.student_id;
     let viewer_is_coach = user.has_permission(Permission::ViewAllStudents);
@@ -643,7 +623,7 @@ pub async fn api_delete_syllabus_attempt(
         .await?
         .ok_or(Status::NotFound)?;
     db::ensure_can_access_syllabus_sst(db, &user, sst_id).await?;
-    db::delete_syllabus_attempt(db, aid).await?;
+    db::delete_syllabus_attempt(db, &user, aid).await?;
     Ok(Status::NoContent)
 }
 

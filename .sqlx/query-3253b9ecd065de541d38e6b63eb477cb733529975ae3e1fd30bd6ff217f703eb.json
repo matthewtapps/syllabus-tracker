@@ -1,0 +1,50 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT verb AS \"v!: String\",\n                      payload_json AS \"p?\",\n                      sst_id AS \"sst?: i64\",\n                      technique_id AS \"tech?: i64\",\n                      syllabus_id AS \"syl?: i64\",\n                      target_student_id AS \"t?: i64\"\n               FROM activity WHERE verb = 'sst_status_changed'",
+  "describe": {
+    "columns": [
+      {
+        "name": "v!: String",
+        "ordinal": 0,
+        "type_info": "Text"
+      },
+      {
+        "name": "p?",
+        "ordinal": 1,
+        "type_info": "Text"
+      },
+      {
+        "name": "sst?: i64",
+        "ordinal": 2,
+        "type_info": "Integer"
+      },
+      {
+        "name": "tech?: i64",
+        "ordinal": 3,
+        "type_info": "Integer"
+      },
+      {
+        "name": "syl?: i64",
+        "ordinal": 4,
+        "type_info": "Integer"
+      },
+      {
+        "name": "t?: i64",
+        "ordinal": 5,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      false,
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "3253b9ecd065de541d38e6b63eb477cb733529975ae3e1fd30bd6ff217f703eb"
+}

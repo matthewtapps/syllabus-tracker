@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT target_student_id AS \"t?: i64\"\n               FROM activity WHERE verb = 'video_added'\n               ORDER BY target_student_id NULLS LAST",
+  "describe": {
+    "columns": [
+      {
+        "name": "t?: i64",
+        "ordinal": 0,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "cc53835141a541863ca852d8b146cca9e1c80e4f71fcfcf49073fb23484136d2"
+}

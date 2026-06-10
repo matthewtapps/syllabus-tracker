@@ -4,6 +4,7 @@
 //! fanning out one-way to leaf modules. Each submodule re-exports its public
 //! names through this `mod.rs` so call sites stay flat (`crate::db::foo`).
 
+mod activity;
 mod attempts;
 mod collections;
 mod invites;
@@ -21,6 +22,7 @@ mod users;
 mod videos;
 mod watch;
 
+pub use activity::*;
 pub use attempts::*;
 pub use collections::*;
 pub use invites::*;

@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT student_id AS \"id!: i64\" FROM (\n               SELECT a.student_id\n               FROM syllabus_assignments a\n               JOIN student_syllabus_techniques sst ON sst.assignment_id = a.id\n               WHERE a.unassigned_at IS NULL\n                 AND sst.technique_id = ?\n                 AND sst.hidden_at IS NULL\n               UNION\n               SELECT student_id\n               FROM student_pinned_techniques\n               WHERE technique_id = ?\n           )\n           ORDER BY student_id",
+  "describe": {
+    "columns": [
+      {
+        "name": "id!: i64",
+        "ordinal": 0,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "ace00e69d1529414a3ad6f340d7e501d0222d5035673cee1de38334ae5fcc1dd"
+}

@@ -6,6 +6,7 @@ use serde::Serialize;
 use sqlx::{Pool, Sqlite};
 use tracing::{info, instrument};
 
+use crate::db::activity::{NewActivity, Verb, emit};
 use crate::error::AppError;
 
 #[derive(Debug, Serialize)]
@@ -229,6 +230,14 @@ pub async fn assign(
         .await?;
     }
 
+    emit(
+        &mut tx,
+        NewActivity::new(Verb::SyllabusAssigned, coach_id)
+            .target_student(student_id)
+            .syllabus(syllabus_id),
+    )
+    .await?;
+
     tx.commit().await?;
     info!(assignment_id, student_id, syllabus_id, "Assigned syllabus");
     Ok(assignment_id)
@@ -240,6 +249,16 @@ pub async fn unassign(
     coach_id: i64,
     assignment_id: i64,
 ) -> Result<(), AppError> {
+    let mut tx = pool.begin().await?;
+
+    let ids = sqlx::query!(
+        r#"SELECT student_id AS "student_id!: i64", syllabus_id AS "syllabus_id!: i64"
+           FROM syllabus_assignments WHERE id = ?"#,
+        assignment_id,
+    )
+    .fetch_one(&mut *tx)
+    .await?;
+
     let now = chrono::Utc::now().naive_utc();
     sqlx::query!(
         "UPDATE syllabus_assignments
@@ -249,8 +268,18 @@ pub async fn unassign(
         coach_id,
         assignment_id,
     )
-    .execute(pool)
+    .execute(&mut *tx)
     .await?;
+
+    emit(
+        &mut tx,
+        NewActivity::new(Verb::SyllabusUnassigned, coach_id)
+            .target_student(ids.student_id)
+            .syllabus(ids.syllabus_id),
+    )
+    .await?;
+
+    tx.commit().await?;
     Ok(())
 }
 
@@ -266,6 +295,16 @@ pub async fn graduate(
     coach_id: i64,
     assignment_id: i64,
 ) -> Result<(), AppError> {
+    let mut tx = pool.begin().await?;
+
+    let ids = sqlx::query!(
+        r#"SELECT student_id AS "student_id!: i64", syllabus_id AS "syllabus_id!: i64"
+           FROM syllabus_assignments WHERE id = ?"#,
+        assignment_id,
+    )
+    .fetch_one(&mut *tx)
+    .await?;
+
     let now = chrono::Utc::now().naive_utc();
     sqlx::query!(
         "UPDATE syllabus_assignments
@@ -275,8 +314,18 @@ pub async fn graduate(
         coach_id,
         assignment_id,
     )
-    .execute(pool)
+    .execute(&mut *tx)
     .await?;
+
+    emit(
+        &mut tx,
+        NewActivity::new(Verb::SyllabusGraduated, coach_id)
+            .target_student(ids.student_id)
+            .syllabus(ids.syllabus_id),
+    )
+    .await?;
+
+    tx.commit().await?;
     Ok(())
 }
 
@@ -284,10 +333,7 @@ pub async fn graduate(
 /// current shape; the coach uses the diff view to decide what to bring in
 /// or hide.
 #[instrument]
-pub async fn ungraduate(
-    pool: &Pool<Sqlite>,
-    assignment_id: i64,
-) -> Result<(), AppError> {
+pub async fn ungraduate(pool: &Pool<Sqlite>, assignment_id: i64) -> Result<(), AppError> {
     sqlx::query!(
         "UPDATE syllabus_assignments
          SET graduated_at = NULL, graduated_by_id = NULL

@@ -4,6 +4,7 @@ use chrono::Utc;
 use sqlx::{Pool, Sqlite};
 use tracing::instrument;
 
+use crate::db::activity::{NewActivity, Verb, emit, payload};
 use crate::error::AppError;
 use crate::models::WatchAggregateRow;
 
@@ -64,8 +65,7 @@ pub async fn ingest_watch_events(
     .prior_max;
 
     let has_new_play = prior_started == 0 && events.iter().any(|e| e.event == "started");
-    let has_new_completed =
-        prior_completed == 0 && events.iter().any(|e| e.event == "completed");
+    let has_new_completed = prior_completed == 0 && events.iter().any(|e| e.event == "completed");
     let batch_max_seconds = events
         .iter()
         .filter_map(|e| e.seconds_watched)
@@ -76,6 +76,16 @@ pub async fn ingest_watch_events(
     } else {
         0
     };
+
+    let duration_seconds = sqlx::query_scalar!(
+        r#"SELECT COALESCE(duration_seconds, 0) AS "d!: i64" FROM videos WHERE id = ?"#,
+        video_id
+    )
+    .fetch_one(&mut *tx)
+    .await?;
+    let threshold = std::cmp::min(10, (duration_seconds as f64 * 0.2).ceil() as i64).max(1);
+    let new_cumulative = prior_max_seconds.max(batch_max_seconds);
+    let crossed_now = prior_max_seconds < threshold && new_cumulative >= threshold;
 
     // Persist raw event rows. Duplicates are allowed; the prior-state checks
     // above already deduped what matters for the aggregate.
@@ -118,6 +128,17 @@ pub async fn ingest_watch_events(
     )
     .execute(&mut *tx)
     .await?;
+
+    if crossed_now {
+        emit(
+            &mut tx,
+            NewActivity::new(Verb::VideoWatched, user_id)
+                .target_student(user_id)
+                .video(video_id)
+                .payload(payload::video_watched(new_cumulative, duration_seconds)),
+        )
+        .await?;
+    }
 
     tx.commit().await?;
     Ok(())

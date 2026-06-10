@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO videos (technique_id, title, position, kind, processing_status, uploaded_by_id)\n               VALUES (?, 'Test', 0, 'external', 'ready', ?)\n               RETURNING id AS \"id!: i64\"",
+  "describe": {
+    "columns": [
+      {
+        "name": "id!: i64",
+        "ordinal": 0,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "ca9f4d54b4a223b981632fc19b4796902bf5dbcd57a2c34420a7d06840845816"
+}

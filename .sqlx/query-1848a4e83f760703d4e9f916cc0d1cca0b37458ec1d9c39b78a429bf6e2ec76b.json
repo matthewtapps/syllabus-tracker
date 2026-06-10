@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT status AS \"status!: String\" FROM student_syllabus_techniques WHERE id = ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "status!: String",
+        "ordinal": 0,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "1848a4e83f760703d4e9f916cc0d1cca0b37458ec1d9c39b78a429bf6e2ec76b"
+}

@@ -333,6 +333,30 @@ CREATE TABLE IF NOT EXISTS student_syllabus_video_visibility (
 CREATE INDEX IF NOT EXISTS idx_ssvv_student_syllabus
     ON student_syllabus_video_visibility (student_id, syllabus_id);
 
+CREATE TABLE IF NOT EXISTS activity (
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    occurred_at       TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    verb              TEXT    NOT NULL,
+    actor_user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    target_student_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    technique_id      INTEGER REFERENCES techniques(id) ON DELETE SET NULL,
+    syllabus_id       INTEGER REFERENCES syllabi(id)    ON DELETE SET NULL,
+    sst_id            INTEGER REFERENCES student_syllabus_techniques(id) ON DELETE SET NULL,
+    video_id          INTEGER REFERENCES videos(id)     ON DELETE SET NULL,
+    payload_json      TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_activity_student
+    ON activity (target_student_id, occurred_at DESC, id DESC);
+CREATE INDEX IF NOT EXISTS idx_activity_syllabus
+    ON activity (syllabus_id, occurred_at DESC, id DESC);
+CREATE INDEX IF NOT EXISTS idx_activity_technique
+    ON activity (technique_id, occurred_at DESC, id DESC);
+CREATE INDEX IF NOT EXISTS idx_activity_recent
+    ON activity (occurred_at DESC, id DESC);
+CREATE INDEX IF NOT EXISTS idx_activity_coalesce
+    ON activity (actor_user_id, verb, occurred_at DESC);
+
 -- Litestream-owned bookkeeping tables. Declared here only so the migration
 -- engine recognises them as expected and doesn't try to drop them. Litestream
 -- creates and maintains the rows; the app never reads or writes them.
