@@ -601,9 +601,75 @@ pub async fn api_list_library_techniques(
     user: User,
     db: &State<Pool<Sqlite>>,
 ) -> ApiResult<Json<Vec<crate::db::LibraryTechniqueRow>>> {
-    user.require_permission(Permission::ViewAllStudents)?;
+    user.require_permission(Permission::ViewLibrary)?;
     let rows = crate::db::list_library_techniques(db).await?;
     Ok(Json(rows))
+}
+
+#[get("/student/<id>/library")]
+pub async fn api_get_student_library(
+    id: i64,
+    user: User,
+    db: &State<Pool<Sqlite>>,
+) -> ApiResult<Json<Vec<crate::db::LibraryTechniqueRow>>> {
+    if user.id != id && !user.has_permission(Permission::ViewAllStudents) {
+        return Err(Status::Forbidden.into());
+    }
+
+    let mut rows = crate::db::list_library_techniques(db).await?;
+    let pinned_ids = crate::db::pinned_technique_ids_for_student(db, id).await?;
+    for row in rows.iter_mut() {
+        row.is_pinned = pinned_ids.contains(&row.id);
+    }
+    Ok(Json(rows))
+}
+
+#[get("/student/<id>/pinned_techniques")]
+pub async fn api_get_pinned_techniques(
+    id: i64,
+    user: User,
+    db: &State<Pool<Sqlite>>,
+) -> ApiResult<Json<Vec<crate::db::LibraryTechniqueRow>>> {
+    if user.id != id && !user.has_permission(Permission::ViewAllStudents) {
+        return Err(Status::Forbidden.into());
+    }
+    let rows = crate::db::list_pinned_for_student(db, id).await?;
+    Ok(Json(rows))
+}
+
+#[derive(Deserialize)]
+pub struct PinTechniqueRequest {
+    pub technique_id: i64,
+}
+
+#[post("/student/<id>/pinned_techniques", data = "<body>")]
+pub async fn api_pin_technique(
+    id: i64,
+    body: Json<PinTechniqueRequest>,
+    user: User,
+    db: &State<Pool<Sqlite>>,
+) -> ApiResult<Status> {
+    // Coaches do not pin on a student's behalf; the viewer must be the
+    // owning student. Flip to allow coach-pinning is trivial later.
+    if user.id != id {
+        return Err(Status::Forbidden.into());
+    }
+    crate::db::pin_technique(db, id, body.technique_id).await?;
+    Ok(Status::NoContent)
+}
+
+#[delete("/student/<id>/pinned_techniques/<technique_id>")]
+pub async fn api_unpin_technique(
+    id: i64,
+    technique_id: i64,
+    user: User,
+    db: &State<Pool<Sqlite>>,
+) -> ApiResult<Status> {
+    if user.id != id {
+        return Err(Status::Forbidden.into());
+    }
+    crate::db::unpin_technique(db, id, technique_id).await?;
+    Ok(Status::NoContent)
 }
 
 #[get("/techniques/<id>/stats")]

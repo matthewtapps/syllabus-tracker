@@ -203,6 +203,19 @@ CREATE TABLE IF NOT EXISTS video_privacy_acks (
     acked_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Per-student personal pin list, drawn from the global techniques library.
+-- Independent of any syllabus or assignment; the student curates this
+-- themselves. Replaces the "I want quick access to these" mental model
+-- that the legacy student_techniques table conflated with coach-assigned
+-- progress tracking.
+CREATE TABLE IF NOT EXISTS student_pinned_techniques (
+    student_id   INTEGER NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+    technique_id INTEGER NOT NULL REFERENCES techniques (id) ON DELETE CASCADE,
+    pinned_at    TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (student_id, technique_id)
+);
+CREATE INDEX IF NOT EXISTS idx_spt_student ON student_pinned_techniques (student_id);
+
 -- Litestream-owned bookkeeping tables. Declared here only so the migration
 -- engine recognises them as expected and doesn't try to drop them. Litestream
 -- creates and maintains the rows; the app never reads or writes them.

@@ -7,6 +7,7 @@
 mod attempts;
 mod collections;
 mod invites;
+mod pinned;
 mod reporting;
 mod sessions;
 mod student_techniques;
@@ -19,6 +20,7 @@ mod watch;
 pub use attempts::*;
 pub use collections::*;
 pub use invites::*;
+pub use pinned::*;
 pub use reporting::*;
 pub use sessions::*;
 pub use student_techniques::*;

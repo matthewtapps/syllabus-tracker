@@ -1,0 +1,26 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT ct.technique_id AS \"technique_id!: i64\",\n                  ct.collection_id AS \"collection_id!: i64\"\n           FROM collection_techniques ct\n           JOIN student_pinned_techniques spt ON spt.technique_id = ct.technique_id\n           WHERE spt.student_id = ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "technique_id!: i64",
+        "ordinal": 0,
+        "type_info": "Integer"
+      },
+      {
+        "name": "collection_id!: i64",
+        "ordinal": 1,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "af5cdca45d44a37c26a7ce8c11bb56a18304953a6b0f496857625403b1a2d9bb"
+}

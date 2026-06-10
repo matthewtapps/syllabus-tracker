@@ -26,6 +26,11 @@ pub struct LibraryTechniqueRow {
     pub student_count: i64,
     pub video_count: i64,
     pub last_activity_at: Option<String>,
+    /// Defaults to false. Set to true by the student-library endpoint when
+    /// the viewing student has the technique pinned. Coach-facing endpoints
+    /// always emit false.
+    #[serde(default)]
+    pub is_pinned: bool,
 }
 
 #[instrument]
@@ -103,6 +108,7 @@ pub async fn list_library_techniques(
                 chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(dt, chrono::Utc)
                     .to_rfc3339()
             }),
+            is_pinned: false,
         })
         .collect())
 }
