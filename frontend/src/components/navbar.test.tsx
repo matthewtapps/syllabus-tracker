@@ -5,7 +5,8 @@
  * to verify the badge reflects the count and "Mark all read" clears it.
  */
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { screen, fireEvent, waitFor } from "@testing-library/react";
+import { screen, waitFor } from "@testing-library/react";
+import { userEvent } from "@vitest/browser/context";
 import { NavBar } from "./navbar";
 import { buildUser, renderWithProviders } from "@/test/render";
 
@@ -91,8 +92,9 @@ describe("NavBar unread badge", () => {
       expect(screen.getByText("3")).toBeInTheDocument();
     });
 
-    // Open the bell dropdown.
-    fireEvent.click(screen.getByRole("button", { name: /activity.*3 unread/i }));
+    // Open the bell dropdown. userEvent fires the full pointer+mouse+click
+    // sequence that Radix DropdownMenu requires to toggle open.
+    await userEvent.click(screen.getByRole("button", { name: /activity.*3 unread/i }));
 
     // "Mark all read" option is visible.
     await waitFor(() => {

@@ -9,6 +9,7 @@
  */
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { screen, waitFor } from "@testing-library/react";
+import { Route, Routes } from "react-router-dom";
 import StudentProfilePage from "./page";
 import { buildUser, renderWithProviders } from "@/test/render";
 import type { ActivityRow } from "@/lib/activity-line";
@@ -99,10 +100,12 @@ describe("StudentProfilePage / recent activity", () => {
     fetchSpy = vi.spyOn(window, "fetch").mockImplementation(mockFn);
 
     const student = buildUser({ id: 42, role: "student" });
-    renderWithProviders(<StudentProfilePage />, {
-      user: student,
-      initialEntries: ["/student/42"],
-    });
+    renderWithProviders(
+      <Routes>
+        <Route path="/student/:id" element={<StudentProfilePage />} />
+      </Routes>,
+      { user: student, initialEntries: ["/student/42"] },
+    );
 
     await waitFor(() => {
       expect(screen.getByText(/logged an attempt on Armbar/i)).toBeInTheDocument();
@@ -128,10 +131,12 @@ describe("StudentProfilePage / recent activity", () => {
     fetchSpy = vi.spyOn(window, "fetch").mockImplementation(mockFn);
 
     const student = buildUser({ id: 42, role: "student" });
-    renderWithProviders(<StudentProfilePage />, {
-      user: student,
-      initialEntries: ["/student/42"],
-    });
+    renderWithProviders(
+      <Routes>
+        <Route path="/student/:id" element={<StudentProfilePage />} />
+      </Routes>,
+      { user: student, initialEntries: ["/student/42"] },
+    );
 
     await waitFor(() => {
       expect(screen.getByText(/logged an attempt on Armbar/i)).toBeInTheDocument();
@@ -144,10 +149,12 @@ describe("StudentProfilePage / recent activity", () => {
     fetchSpy = vi.spyOn(window, "fetch").mockImplementation(mockFn);
 
     const student = buildUser({ id: 42, role: "student" });
-    renderWithProviders(<StudentProfilePage />, {
-      user: student,
-      initialEntries: ["/student/42"],
-    });
+    renderWithProviders(
+      <Routes>
+        <Route path="/student/:id" element={<StudentProfilePage />} />
+      </Routes>,
+      { user: student, initialEntries: ["/student/42"] },
+    );
 
     await waitFor(() => {
       expect(
