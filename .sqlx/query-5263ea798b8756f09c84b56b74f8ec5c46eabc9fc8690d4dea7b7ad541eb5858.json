@@ -1,0 +1,38 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT sst.id AS \"sst_id!: i64\",\n                  sst.technique_id AS \"technique_id!: i64\",\n                  t.name AS \"name!: String\",\n                  sst.hidden_at AS \"hidden_at?: chrono::NaiveDateTime\"\n           FROM student_syllabus_techniques sst\n           JOIN syllabus_assignments a ON a.id = sst.assignment_id\n           JOIN techniques t ON t.id = sst.technique_id\n           WHERE sst.assignment_id = ?\n             AND NOT EXISTS (\n                 SELECT 1 FROM syllabus_techniques st\n                 WHERE st.syllabus_id = a.syllabus_id\n                   AND st.technique_id = sst.technique_id\n             )\n           ORDER BY t.name",
+  "describe": {
+    "columns": [
+      {
+        "name": "sst_id!: i64",
+        "ordinal": 0,
+        "type_info": "Integer"
+      },
+      {
+        "name": "technique_id!: i64",
+        "ordinal": 1,
+        "type_info": "Integer"
+      },
+      {
+        "name": "name!: String",
+        "ordinal": 2,
+        "type_info": "Text"
+      },
+      {
+        "name": "hidden_at?: chrono::NaiveDateTime",
+        "ordinal": 3,
+        "type_info": "Datetime"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      true,
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "5263ea798b8756f09c84b56b74f8ec5c46eabc9fc8690d4dea7b7ad541eb5858"
+}

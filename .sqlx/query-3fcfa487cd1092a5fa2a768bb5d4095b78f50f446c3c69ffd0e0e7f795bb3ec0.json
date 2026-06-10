@@ -1,0 +1,26 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT unassigned_at AS \"unassigned_at?: chrono::NaiveDateTime\",\n                  graduated_at AS \"graduated_at?: chrono::NaiveDateTime\"\n           FROM syllabus_assignments WHERE id = ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "unassigned_at?: chrono::NaiveDateTime",
+        "ordinal": 0,
+        "type_info": "Datetime"
+      },
+      {
+        "name": "graduated_at?: chrono::NaiveDateTime",
+        "ordinal": 1,
+        "type_info": "Datetime"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      true,
+      true
+    ]
+  },
+  "hash": "3fcfa487cd1092a5fa2a768bb5d4095b78f50f446c3c69ffd0e0e7f795bb3ec0"
+}

@@ -253,3 +253,75 @@ pub async fn unassign(
     .await?;
     Ok(())
 }
+
+/// Stamps graduation on an assignment. Graduated assignments are immutable
+/// snapshots: PR 4 routes refuse student writes against any SST under a
+/// graduated assignment, and the syllabus-add / syllabus-remove cascades
+/// skip graduated assignments entirely. Coaches keep the ability to edit
+/// (with a frontend confirmation), so they can correct an entry after
+/// graduating by mistake without an explicit ungraduate.
+#[instrument]
+pub async fn graduate(
+    pool: &Pool<Sqlite>,
+    coach_id: i64,
+    assignment_id: i64,
+) -> Result<(), AppError> {
+    let now = chrono::Utc::now().naive_utc();
+    sqlx::query!(
+        "UPDATE syllabus_assignments
+         SET graduated_at = ?, graduated_by_id = ?
+         WHERE id = ? AND graduated_at IS NULL",
+        now,
+        coach_id,
+        assignment_id,
+    )
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+/// Clears graduation. Does NOT auto-sync the SST set with the syllabus's
+/// current shape; the coach uses the diff view to decide what to bring in
+/// or hide.
+#[instrument]
+pub async fn ungraduate(
+    pool: &Pool<Sqlite>,
+    assignment_id: i64,
+) -> Result<(), AppError> {
+    sqlx::query!(
+        "UPDATE syllabus_assignments
+         SET graduated_at = NULL, graduated_by_id = NULL
+         WHERE id = ?",
+        assignment_id,
+    )
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+#[derive(Debug)]
+pub struct AssignmentLifecycleFlags {
+    pub unassigned_at: Option<chrono::NaiveDateTime>,
+    pub graduated_at: Option<chrono::NaiveDateTime>,
+}
+
+/// Cheap accessor used by the SST and attempts routes to gate student
+/// writes on a graduated assignment.
+#[instrument]
+pub async fn get_assignment_lifecycle(
+    pool: &Pool<Sqlite>,
+    assignment_id: i64,
+) -> Result<Option<AssignmentLifecycleFlags>, AppError> {
+    let row = sqlx::query!(
+        r#"SELECT unassigned_at AS "unassigned_at?: chrono::NaiveDateTime",
+                  graduated_at AS "graduated_at?: chrono::NaiveDateTime"
+           FROM syllabus_assignments WHERE id = ?"#,
+        assignment_id,
+    )
+    .fetch_optional(pool)
+    .await?;
+    Ok(row.map(|r| AssignmentLifecycleFlags {
+        unassigned_at: r.unassigned_at,
+        graduated_at: r.graduated_at,
+    }))
+}

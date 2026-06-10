@@ -220,6 +220,224 @@ pub async fn api_unassign_syllabus(
     Ok(Status::NoContent)
 }
 
+#[derive(Deserialize)]
+pub struct GraduateAssignmentRequest {
+    pub graduated_at: Option<String>,
+}
+
+#[patch(
+    "/student/<sid>/syllabuses/<syid>/assignment",
+    data = "<body>"
+)]
+pub async fn api_set_assignment_graduated(
+    sid: i64,
+    syid: i64,
+    user: User,
+    body: Json<GraduateAssignmentRequest>,
+    db: &State<Pool<Sqlite>>,
+) -> ApiResult<Status> {
+    user.require_permission(Permission::ManageSyllabuses)?;
+    let assignment = db::get_assignment(db, sid, syid)
+        .await?
+        .ok_or(Status::NotFound)?;
+    if body.graduated_at.is_some() {
+        db::graduate(db, user.id, assignment.id).await?;
+    } else {
+        db::ungraduate(db, assignment.id).await?;
+    }
+    Ok(Status::NoContent)
+}
+
+// ============================================================
+// Diff view + apply
+// ============================================================
+
+#[get("/student/<sid>/syllabuses/<syid>/assignment/diff")]
+pub async fn api_assignment_diff(
+    sid: i64,
+    syid: i64,
+    user: User,
+    db: &State<Pool<Sqlite>>,
+) -> ApiResult<Json<db::SyllabusAssignmentDiff>> {
+    user.require_permission(Permission::ManageSyllabuses)?;
+    let assignment = db::get_assignment(db, sid, syid)
+        .await?
+        .ok_or(Status::NotFound)?;
+    let diff = db::diff_for_assignment(db, assignment.id).await?;
+    Ok(Json(diff))
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum GhostAction {
+    ReaddGlobally,
+    HideLocally,
+    Ignore,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MissingAction {
+    AddToStudent,
+    Ignore,
+}
+
+#[derive(Deserialize)]
+pub struct GhostActionEntry {
+    pub sst_id: i64,
+    pub technique_id: i64,
+    pub action: GhostAction,
+}
+
+#[derive(Deserialize)]
+pub struct MissingActionEntry {
+    pub technique_id: i64,
+    pub action: MissingAction,
+}
+
+#[derive(Deserialize)]
+pub struct DiffApplyRequest {
+    pub ghost_actions: Vec<GhostActionEntry>,
+    pub missing_actions: Vec<MissingActionEntry>,
+}
+
+#[derive(Serialize)]
+pub struct DiffApplyResponse {
+    pub applied: i64,
+}
+
+#[post(
+    "/student/<sid>/syllabuses/<syid>/assignment/diff/apply",
+    data = "<body>"
+)]
+pub async fn api_apply_assignment_diff(
+    sid: i64,
+    syid: i64,
+    user: User,
+    body: Json<DiffApplyRequest>,
+    db: &State<Pool<Sqlite>>,
+) -> ApiResult<Json<DiffApplyResponse>> {
+    user.require_permission(Permission::ManageSyllabuses)?;
+    let assignment = db::get_assignment(db, sid, syid)
+        .await?
+        .ok_or(Status::NotFound)?;
+
+    let mut applied = 0i64;
+    for entry in &body.ghost_actions {
+        match entry.action {
+            GhostAction::ReaddGlobally => {
+                db::add_technique_to_syllabus(
+                    db,
+                    syid,
+                    entry.technique_id,
+                    user.id,
+                    db::PropagationMode::SyllabusOnly,
+                )
+                .await?;
+                applied += 1;
+            }
+            GhostAction::HideLocally => {
+                db::set_hidden(db, user.id, entry.sst_id, true).await?;
+                applied += 1;
+            }
+            GhostAction::Ignore => {}
+        }
+    }
+    for entry in &body.missing_actions {
+        match entry.action {
+            MissingAction::AddToStudent => {
+                db::add_technique_to_assignment(db, assignment.id, entry.technique_id).await?;
+                applied += 1;
+            }
+            MissingAction::Ignore => {}
+        }
+    }
+    Ok(Json(DiffApplyResponse { applied }))
+}
+
+// ============================================================
+// Per-student curation
+// ============================================================
+
+#[derive(Deserialize)]
+pub struct AddTechniqueToStudentRequest {
+    pub technique_id: i64,
+}
+
+#[derive(Serialize)]
+pub struct SstIdResponse {
+    pub id: i64,
+}
+
+#[post(
+    "/student/<sid>/syllabuses/<syid>/techniques",
+    data = "<body>"
+)]
+pub async fn api_add_technique_to_student_syllabus(
+    sid: i64,
+    syid: i64,
+    user: User,
+    body: Json<AddTechniqueToStudentRequest>,
+    db: &State<Pool<Sqlite>>,
+) -> ApiResult<Json<SstIdResponse>> {
+    user.require_permission(Permission::ManageSyllabuses)?;
+    let assignment = db::get_assignment(db, sid, syid)
+        .await?
+        .ok_or(Status::NotFound)?;
+    let id =
+        db::add_technique_to_assignment(db, assignment.id, body.technique_id).await?;
+    Ok(Json(SstIdResponse { id }))
+}
+
+#[derive(Deserialize)]
+pub struct SetSstHiddenRequest {
+    pub hidden: bool,
+}
+
+#[patch(
+    "/student_syllabus_techniques/<sst_id>/hidden",
+    data = "<body>"
+)]
+pub async fn api_set_sst_hidden(
+    sst_id: i64,
+    user: User,
+    body: Json<SetSstHiddenRequest>,
+    db: &State<Pool<Sqlite>>,
+) -> ApiResult<Status> {
+    user.require_permission(Permission::ManageSyllabuses)?;
+    let owner = db::get_owner(db, sst_id).await?.ok_or(Status::NotFound)?;
+    let _ = owner;
+    db::set_hidden(db, user.id, sst_id, body.hidden).await?;
+    Ok(Status::NoContent)
+}
+
+// ============================================================
+// Per-syllabus video visibility override
+// ============================================================
+
+#[derive(Deserialize)]
+pub struct SetVideoSyllabusVisibilityRequest {
+    /// `Some(b)` upserts the override; `None` clears it.
+    pub visible: Option<bool>,
+}
+
+#[put(
+    "/student/<sid>/syllabuses/<syid>/videos/<vid>/visibility",
+    data = "<body>"
+)]
+pub async fn api_set_video_syllabus_visibility(
+    sid: i64,
+    syid: i64,
+    vid: i64,
+    user: User,
+    body: Json<SetVideoSyllabusVisibilityRequest>,
+    db: &State<Pool<Sqlite>>,
+) -> ApiResult<Status> {
+    user.require_permission(Permission::ManageSyllabuses)?;
+    db::set_video_syllabus_visibility(db, vid, syid, sid, body.visible, user.id).await?;
+    Ok(Status::NoContent)
+}
+
 // ============================================================
 // Student-facing syllabus reads
 // ============================================================
@@ -303,6 +521,16 @@ pub async fn api_update_sst(
         return Err(Status::Forbidden.into());
     }
 
+    // Graduated assignments are read-only for students; coach writes
+    // proceed (frontend prompts for confirmation per mutation).
+    if !viewer_is_coach {
+        if let Some(flags) = db::get_assignment_lifecycle(db, owner.assignment_id).await? {
+            if flags.graduated_at.is_some() {
+                return Err(Status::Forbidden.into());
+            }
+        }
+    }
+
     // Per-field permission policy. Any disallowed field present in the
     // request fails the whole request with 403; no silent field drops.
     // Students cannot self-assess: status is coach-controlled, matching
@@ -354,6 +582,15 @@ pub async fn api_create_syllabus_attempt(
     let viewer_is_coach = user.has_permission(Permission::ViewAllStudents);
     if body.coach_note.is_some() && !viewer_is_coach {
         return Err(Status::Forbidden.into());
+    }
+    // Students can't log attempts against a graduated assignment.
+    if !viewer_is_coach {
+        let owner = db::get_owner(db, sst_id).await?.ok_or(Status::NotFound)?;
+        if let Some(flags) = db::get_assignment_lifecycle(db, owner.assignment_id).await? {
+            if flags.graduated_at.is_some() {
+                return Err(Status::Forbidden.into());
+            }
+        }
     }
     let input = db::CreateSyllabusAttempt {
         attempted_at,

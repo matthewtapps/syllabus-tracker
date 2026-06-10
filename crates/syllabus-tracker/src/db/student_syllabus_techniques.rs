@@ -248,3 +248,184 @@ pub async fn get_sst_id(
     .await?;
     Ok(id)
 }
+
+/// Coach-only soft-hide toggle on an SST row. Setting `hidden = true`
+/// stamps `hidden_at`; clearing sets it back to NULL and drops the
+/// `hidden_by_id`. Attempts and notes are preserved either way.
+#[instrument]
+pub async fn set_hidden(
+    pool: &Pool<Sqlite>,
+    coach_id: i64,
+    sst_id: i64,
+    hidden: bool,
+) -> Result<(), AppError> {
+    let now = chrono::Utc::now().naive_utc();
+    if hidden {
+        sqlx::query!(
+            "UPDATE student_syllabus_techniques
+             SET hidden_at = ?, hidden_by_id = ?, updated_at = ?
+             WHERE id = ?",
+            now,
+            coach_id,
+            now,
+            sst_id,
+        )
+        .execute(pool)
+        .await?;
+    } else {
+        sqlx::query!(
+            "UPDATE student_syllabus_techniques
+             SET hidden_at = NULL, hidden_by_id = NULL, updated_at = ?
+             WHERE id = ?",
+            now,
+            sst_id,
+        )
+        .execute(pool)
+        .await?;
+    }
+    Ok(())
+}
+
+/// Adds a technique to this specific assignment, either inserting a fresh
+/// SST or clearing `hidden_at` if one already exists. The technique does
+/// not have to be in the syllabus's current `syllabus_techniques`; this
+/// is the "arbitrary add for this student" affordance plus the "sync
+/// missing" action from the diff view.
+#[instrument]
+pub async fn add_technique_to_assignment(
+    pool: &Pool<Sqlite>,
+    assignment_id: i64,
+    technique_id: i64,
+) -> Result<i64, AppError> {
+    let mut tx = pool.begin().await?;
+    let existing: Option<i64> = sqlx::query_scalar!(
+        r#"SELECT id AS "id!: i64"
+           FROM student_syllabus_techniques
+           WHERE assignment_id = ? AND technique_id = ?"#,
+        assignment_id,
+        technique_id,
+    )
+    .fetch_optional(&mut *tx)
+    .await?;
+    let id = if let Some(id) = existing {
+        let now = chrono::Utc::now().naive_utc();
+        sqlx::query!(
+            "UPDATE student_syllabus_techniques
+             SET hidden_at = NULL, hidden_by_id = NULL, updated_at = ?
+             WHERE id = ?",
+            now,
+            id,
+        )
+        .execute(&mut *tx)
+        .await?;
+        id
+    } else {
+        let res = sqlx::query!(
+            "INSERT INTO student_syllabus_techniques
+                (assignment_id, technique_id)
+             VALUES (?, ?)",
+            assignment_id,
+            technique_id,
+        )
+        .execute(&mut *tx)
+        .await?;
+        res.last_insert_rowid()
+    };
+    tx.commit().await?;
+    Ok(id)
+}
+
+#[derive(Debug, Serialize)]
+pub struct DiffGhost {
+    /// SST id whose technique is no longer in the syllabus's current set.
+    pub sst_id: i64,
+    pub technique_id: i64,
+    pub technique_name: String,
+    /// Whether this SST is currently hidden.
+    pub hidden: bool,
+}
+
+#[derive(Debug, Serialize)]
+pub struct DiffMissing {
+    /// Technique in the syllabus_techniques set that the student is not
+    /// actively progressing on (either no SST exists, or the SST is
+    /// hidden).
+    pub technique_id: i64,
+    pub technique_name: String,
+    /// Existing SST id if one exists but is hidden, else None.
+    pub sst_id: Option<i64>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct SyllabusAssignmentDiff {
+    pub ghosts: Vec<DiffGhost>,
+    pub missing: Vec<DiffMissing>,
+}
+
+#[instrument]
+pub async fn diff_for_assignment(
+    pool: &Pool<Sqlite>,
+    assignment_id: i64,
+) -> Result<SyllabusAssignmentDiff, AppError> {
+    // ghosts: SST rows whose technique is not in the syllabus's current
+    // syllabus_techniques set.
+    let ghost_rows = sqlx::query!(
+        r#"SELECT sst.id AS "sst_id!: i64",
+                  sst.technique_id AS "technique_id!: i64",
+                  t.name AS "name!: String",
+                  sst.hidden_at AS "hidden_at?: chrono::NaiveDateTime"
+           FROM student_syllabus_techniques sst
+           JOIN syllabus_assignments a ON a.id = sst.assignment_id
+           JOIN techniques t ON t.id = sst.technique_id
+           WHERE sst.assignment_id = ?
+             AND NOT EXISTS (
+                 SELECT 1 FROM syllabus_techniques st
+                 WHERE st.syllabus_id = a.syllabus_id
+                   AND st.technique_id = sst.technique_id
+             )
+           ORDER BY t.name"#,
+        assignment_id,
+    )
+    .fetch_all(pool)
+    .await?;
+
+    // missing: techniques in syllabus_techniques whose SST either does not
+    // exist for this assignment, or exists with hidden_at set.
+    let missing_rows = sqlx::query!(
+        r#"SELECT t.id AS "technique_id!: i64",
+                  t.name AS "name!: String",
+                  sst.id AS "sst_id?: i64"
+           FROM syllabus_assignments a
+           JOIN syllabus_techniques st ON st.syllabus_id = a.syllabus_id
+           JOIN techniques t ON t.id = st.technique_id
+           LEFT JOIN student_syllabus_techniques sst
+                  ON sst.assignment_id = a.id
+                 AND sst.technique_id = st.technique_id
+           WHERE a.id = ?
+             AND (sst.id IS NULL OR sst.hidden_at IS NOT NULL)
+           ORDER BY t.name"#,
+        assignment_id,
+    )
+    .fetch_all(pool)
+    .await?;
+
+    Ok(SyllabusAssignmentDiff {
+        ghosts: ghost_rows
+            .into_iter()
+            .map(|r| DiffGhost {
+                sst_id: r.sst_id,
+                technique_id: r.technique_id,
+                technique_name: r.name,
+                hidden: r.hidden_at.is_some(),
+            })
+            .collect(),
+        missing: missing_rows
+            .into_iter()
+            .map(|r| DiffMissing {
+                technique_id: r.technique_id,
+                technique_name: r.name,
+                sst_id: r.sst_id,
+            })
+            .collect(),
+    })
+}

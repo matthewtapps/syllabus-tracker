@@ -43,13 +43,14 @@ use telemetry::TelemetryFairing;
 use telemetry::init_tracing;
 use thiserror::Error;
 use syllabuses::{
-    api_add_technique_to_syllabus, api_assign_syllabus, api_create_syllabus,
+    api_add_technique_to_student_syllabus, api_add_technique_to_syllabus,
+    api_apply_assignment_diff, api_assign_syllabus, api_assignment_diff, api_create_syllabus,
     api_create_syllabus_attempt, api_delete_syllabus, api_delete_syllabus_attempt,
     api_get_syllabus, api_list_student_syllabus_techniques, api_list_student_syllabuses,
     api_list_syllabus_attempts, api_list_syllabus_students, api_list_syllabus_technique_videos,
-    api_list_syllabuses,
-    api_remove_technique_from_syllabus, api_unassign_syllabus, api_update_syllabus,
-    api_update_syllabus_attempt, api_update_sst,
+    api_list_syllabuses, api_remove_technique_from_syllabus, api_set_assignment_graduated,
+    api_set_sst_hidden, api_set_video_syllabus_visibility, api_unassign_syllabus,
+    api_update_syllabus, api_update_syllabus_attempt, api_update_sst,
 };
 use videos::{
     api_admin_storage, api_dashboard_video_overview, api_delete_video, api_list_technique_videos,
@@ -313,6 +314,12 @@ pub async fn init_rocket(
                 api_remove_technique_from_syllabus,
                 api_assign_syllabus,
                 api_unassign_syllabus,
+                api_set_assignment_graduated,
+                api_assignment_diff,
+                api_apply_assignment_diff,
+                api_add_technique_to_student_syllabus,
+                api_set_sst_hidden,
+                api_set_video_syllabus_visibility,
                 api_list_student_syllabuses,
                 api_list_student_syllabus_techniques,
                 api_update_sst,

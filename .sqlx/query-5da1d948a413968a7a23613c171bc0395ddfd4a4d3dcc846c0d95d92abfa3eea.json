@@ -1,0 +1,32 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT t.id AS \"technique_id!: i64\",\n                  t.name AS \"name!: String\",\n                  sst.id AS \"sst_id?: i64\"\n           FROM syllabus_assignments a\n           JOIN syllabus_techniques st ON st.syllabus_id = a.syllabus_id\n           JOIN techniques t ON t.id = st.technique_id\n           LEFT JOIN student_syllabus_techniques sst\n                  ON sst.assignment_id = a.id\n                 AND sst.technique_id = st.technique_id\n           WHERE a.id = ?\n             AND (sst.id IS NULL OR sst.hidden_at IS NOT NULL)\n           ORDER BY t.name",
+  "describe": {
+    "columns": [
+      {
+        "name": "technique_id!: i64",
+        "ordinal": 0,
+        "type_info": "Integer"
+      },
+      {
+        "name": "name!: String",
+        "ordinal": 1,
+        "type_info": "Text"
+      },
+      {
+        "name": "sst_id?: i64",
+        "ordinal": 2,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      true,
+      false,
+      true
+    ]
+  },
+  "hash": "5da1d948a413968a7a23613c171bc0395ddfd4a4d3dcc846c0d95d92abfa3eea"
+}
