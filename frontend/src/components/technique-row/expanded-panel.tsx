@@ -21,7 +21,9 @@ interface ExpandedPanelProps {
 }
 
 // Orchestrates the per-block render order based on BLOCK_VISIBILITY for
-// (context.kind, role). The map's iteration order is the render order.
+// (context.kind, role). Lives flush inside the AccordionContent so the
+// expansion flows directly out of the header instead of stacking a
+// second card. Block iteration order is the render order.
 export function ExpandedPanel({
   scrollToVideoId,
   onVideoScrolled,
@@ -30,7 +32,7 @@ export function ExpandedPanel({
   const blocks = blocksFor(context.kind, role);
 
   return (
-    <div className="space-y-5 border-t border-border bg-muted/20 px-4 py-4">
+    <div className="space-y-4">
       {blocks.map((id) => (
         <BlockRenderer
           key={id}

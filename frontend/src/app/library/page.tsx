@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { BookOpen, Search, X as XIcon } from 'lucide-react';
+import { Accordion } from '@/components/ui/accordion';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -34,7 +35,7 @@ export default function LibraryPage() {
   const error = techniquesQuery.error ? 'Failed to load techniques.' : null;
 
   const [searchParams, setSearchParams] = useSearchParams();
-  const [expandedId, setExpandedId] = useState<number | null>(null);
+  const [expandedValue, setExpandedValue] = useState<string>('');
   const [scrollToVideoId, setScrollToVideoId] = useState<number | null>(null);
   const [search, setSearch] = useState('');
   const [activeTags, setActiveTags] = useState<string[]>([]);
@@ -58,7 +59,7 @@ export default function LibraryPage() {
     if (!Number.isFinite(techId)) return;
     if (!techniques.some((t) => t.id === techId)) return;
     didConsumeFocusRef.current = true;
-    setExpandedId(techId);
+    setExpandedValue(String(techId));
     const rawVid = searchParams.get('video');
     const vidId = rawVid ? parseInt(rawVid, 10) : NaN;
     if (Number.isFinite(vidId)) setScrollToVideoId(vidId);
@@ -69,7 +70,7 @@ export default function LibraryPage() {
       return next;
     }, { replace: true });
     requestAnimationFrame(() => {
-      const el = document.getElementById(`library-technique-row-${techId}`);
+      const el = document.getElementById(`technique-row-${techId}`);
       el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     });
   }, [searchParams, setSearchParams, techniques]);
@@ -267,25 +268,28 @@ export default function LibraryPage() {
             No techniques match the current filters.
           </p>
         ) : (
-          <ul className="divide-y divide-border">
+          <Accordion
+            type="single"
+            collapsible
+            value={expandedValue}
+            onValueChange={setExpandedValue}
+          >
             {filtered.map((t) => {
-              const expanded = expandedId === t.id;
+              const value = String(t.id);
+              const isOpen = expandedValue === value;
               return (
-                <li key={t.id} id={`library-technique-row-${t.id}`}>
-                  <TechniqueRow
-                    technique={t}
-                    context={{ kind: 'global-library' }}
-                    expanded={expanded}
-                    onToggle={() =>
-                      setExpandedId((prev) => (prev === t.id ? null : t.id))
-                    }
-                    scrollToVideoId={expanded ? scrollToVideoId : null}
-                    onVideoScrolled={() => setScrollToVideoId(null)}
-                  />
-                </li>
+                <TechniqueRow
+                  key={t.id}
+                  technique={t}
+                  context={{ kind: 'global-library' }}
+                  value={value}
+                  isOpen={isOpen}
+                  scrollToVideoId={isOpen ? scrollToVideoId : null}
+                  onVideoScrolled={() => setScrollToVideoId(null)}
+                />
               );
             })}
-          </ul>
+          </Accordion>
         )}
       </div>
     </div>

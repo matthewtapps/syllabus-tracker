@@ -13,6 +13,9 @@ interface TagsBlockProps {
   editable: boolean;
 }
 
+// Inline chip strip. Sits flush with the description block above and the
+// next section below; no heading row, so the expanded panel reads as a
+// single flowing card rather than a stack of nested sections.
 export function TagsBlock({ editable }: TagsBlockProps) {
   const { technique } = useTechniqueRow();
   const removeTagMutation = useRemoveTagFromTechnique();
@@ -50,50 +53,43 @@ export function TagsBlock({ editable }: TagsBlockProps) {
     );
   }
 
-  if (!editable && localTags.length === 0) {
-    return null;
-  }
+  if (!editable && localTags.length === 0) return null;
 
   return (
-    <section className="space-y-2">
-      <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-        Tags
-      </h3>
-      <div className="flex flex-wrap items-center gap-1.5">
-        {localTags.map((tag) =>
-          editable ? (
-            <Badge
-              key={tag.id}
-              variant="secondary"
-              className="gap-1 pr-1 text-xs"
+    <div className="flex flex-wrap items-center gap-1.5">
+      {localTags.map((tag) =>
+        editable ? (
+          <Badge
+            key={tag.id}
+            variant="secondary"
+            className="gap-1 pr-1 text-xs"
+          >
+            {tag.name}
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="h-4 w-4 rounded-full text-muted-foreground hover:bg-background hover:text-foreground"
+              onClick={() => handleRemoveTag(tag)}
             >
-              {tag.name}
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                className="h-4 w-4 rounded-full text-muted-foreground hover:bg-background hover:text-foreground"
-                onClick={() => handleRemoveTag(tag)}
-              >
-                <XIcon className="h-3 w-3" aria-hidden />
-                <span className="sr-only">Remove {tag.name}</span>
-              </Button>
-            </Badge>
-          ) : (
-            <Badge key={tag.id} variant="secondary" className="text-xs">
-              {tag.name}
-            </Badge>
-          ),
-        )}
-        {editable && (
-          <TagsEditor
-            techniqueId={technique.id}
-            assignedTags={localTags}
-            allTags={allTags}
-            onTagAdded={handleTagAdded}
-          />
-        )}
-      </div>
-    </section>
+              <XIcon className="h-3 w-3" aria-hidden />
+              <span className="sr-only">Remove {tag.name}</span>
+            </Button>
+          </Badge>
+        ) : (
+          <Badge key={tag.id} variant="secondary" className="text-xs">
+            {tag.name}
+          </Badge>
+        ),
+      )}
+      {editable && (
+        <TagsEditor
+          techniqueId={technique.id}
+          assignedTags={localTags}
+          allTags={allTags}
+          onTagAdded={handleTagAdded}
+        />
+      )}
+    </div>
   );
 }

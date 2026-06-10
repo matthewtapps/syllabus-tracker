@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useParams, Navigate } from 'react-router-dom';
 import { Pin } from 'lucide-react';
+import { Accordion } from '@/components/ui/accordion';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/empty-state';
 import { TechniqueRow } from '@/components/technique-row';
@@ -33,7 +34,7 @@ function PinnedListing({
   studentId: number;
   isOwnView: boolean;
 }) {
-  const [expandedId, setExpandedId] = useState<number | null>(null);
+  const [expandedValue, setExpandedValue] = useState<string>('');
   const query = useStudentPinnedTechniques(studentId);
   const techniques = useMemo(() => query.data ?? [], [query.data]);
   const loading = query.isLoading;
@@ -83,23 +84,25 @@ function PinnedListing({
             }
           />
         ) : (
-          <ul className="divide-y divide-border">
+          <Accordion
+            type="single"
+            collapsible
+            value={expandedValue}
+            onValueChange={setExpandedValue}
+          >
             {techniques.map((t) => {
-              const expanded = expandedId === t.id;
+              const value = String(t.id);
               return (
-                <li key={t.id}>
-                  <TechniqueRow
-                    technique={t}
-                    context={{ kind: 'student-pinned', studentId }}
-                    expanded={expanded}
-                    onToggle={() =>
-                      setExpandedId((prev) => (prev === t.id ? null : t.id))
-                    }
-                  />
-                </li>
+                <TechniqueRow
+                  key={t.id}
+                  technique={t}
+                  context={{ kind: 'student-pinned', studentId }}
+                  value={value}
+                  isOpen={expandedValue === value}
+                />
               );
             })}
-          </ul>
+          </Accordion>
         )}
       </div>
     </div>
