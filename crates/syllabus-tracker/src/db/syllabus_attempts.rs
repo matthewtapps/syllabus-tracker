@@ -9,6 +9,7 @@ use sqlx::{Pool, Sqlite};
 use tracing::{info, instrument};
 
 use crate::auth::{Permission, Role, User};
+use crate::db::activity::{emit, payload, NewActivity, Verb};
 use crate::error::AppError;
 
 #[derive(Debug, Serialize)]
@@ -123,6 +124,7 @@ pub async fn create_syllabus_attempt(
     } else {
         None
     };
+    let mut tx = pool.begin().await?;
     let res = sqlx::query!(
         "INSERT INTO syllabus_attempts (
             student_syllabus_technique_id,
@@ -143,20 +145,70 @@ pub async fn create_syllabus_attempt(
         input.student_note,
         student_note_at,
     )
-    .execute(pool)
+    .execute(&mut *tx)
     .await?;
+    let attempt_id = res.last_insert_rowid();
     info!(sst_id, "Logged syllabus attempt");
-    Ok(res.last_insert_rowid())
+    let owner = sqlx::query!(
+        r#"SELECT a.student_id AS "student_id!: i64",
+                  a.syllabus_id AS "syllabus_id!: i64",
+                  sst.technique_id AS "technique_id!: i64"
+           FROM student_syllabus_techniques sst
+           JOIN syllabus_assignments a ON a.id = sst.assignment_id
+           WHERE sst.id = ?"#,
+        sst_id,
+    )
+    .fetch_one(&mut *tx)
+    .await?;
+    emit(
+        &mut tx,
+        NewActivity::new(Verb::AttemptLogged, actor.id)
+            .target_student(owner.student_id)
+            .sst(sst_id)
+            .technique(owner.technique_id)
+            .syllabus(owner.syllabus_id)
+            .payload(payload::attempt_pointer(attempt_id)),
+    )
+    .await?;
+    tx.commit().await?;
+    Ok(attempt_id)
 }
 
 #[instrument]
 pub async fn delete_syllabus_attempt(
     pool: &Pool<Sqlite>,
+    actor: &User,
     attempt_id: i64,
 ) -> Result<(), AppError> {
+    let mut tx = pool.begin().await?;
+    // Resolve sst + owner BEFORE the DELETE so the FK targets still exist.
+    let owner = sqlx::query!(
+        r#"SELECT a.student_id AS "student_id!: i64",
+                  a.syllabus_id AS "syllabus_id!: i64",
+                  sst.technique_id AS "technique_id!: i64",
+                  sa.student_syllabus_technique_id AS "sst_id!: i64"
+           FROM syllabus_attempts sa
+           JOIN student_syllabus_techniques sst ON sst.id = sa.student_syllabus_technique_id
+           JOIN syllabus_assignments a ON a.id = sst.assignment_id
+           WHERE sa.id = ?"#,
+        attempt_id,
+    )
+    .fetch_one(&mut *tx)
+    .await?;
     sqlx::query!("DELETE FROM syllabus_attempts WHERE id = ?", attempt_id)
-        .execute(pool)
+        .execute(&mut *tx)
         .await?;
+    emit(
+        &mut tx,
+        NewActivity::new(Verb::AttemptDeleted, actor.id)
+            .target_student(owner.student_id)
+            .sst(owner.sst_id)
+            .technique(owner.technique_id)
+            .syllabus(owner.syllabus_id)
+            .payload(payload::attempt_pointer(attempt_id)),
+    )
+    .await?;
+    tx.commit().await?;
     Ok(())
 }
 
@@ -177,13 +229,14 @@ pub async fn update_syllabus_attempt(
     let now = Utc::now().naive_utc();
     let actor_is_coach = matches!(actor.role, Role::Coach | Role::Admin);
 
+    let mut tx = pool.begin().await?;
     if let Some(ts) = update.attempted_at {
         sqlx::query!(
             "UPDATE syllabus_attempts SET attempted_at = ? WHERE id = ?",
             ts,
             attempt_id
         )
-        .execute(pool)
+        .execute(&mut *tx)
         .await?;
     }
     if actor_is_coach {
@@ -197,7 +250,7 @@ pub async fn update_syllabus_attempt(
                 now,
                 attempt_id,
             )
-            .execute(pool)
+            .execute(&mut *tx)
             .await?;
         }
     } else if let Some(ref note) = update.student_note {
@@ -209,9 +262,33 @@ pub async fn update_syllabus_attempt(
             now,
             attempt_id,
         )
-        .execute(pool)
+        .execute(&mut *tx)
         .await?;
     }
+    let owner = sqlx::query!(
+        r#"SELECT a.student_id AS "student_id!: i64",
+                  a.syllabus_id AS "syllabus_id!: i64",
+                  sst.technique_id AS "technique_id!: i64",
+                  sa.student_syllabus_technique_id AS "sst_id!: i64"
+           FROM syllabus_attempts sa
+           JOIN student_syllabus_techniques sst ON sst.id = sa.student_syllabus_technique_id
+           JOIN syllabus_assignments a ON a.id = sst.assignment_id
+           WHERE sa.id = ?"#,
+        attempt_id,
+    )
+    .fetch_one(&mut *tx)
+    .await?;
+    emit(
+        &mut tx,
+        NewActivity::new(Verb::AttemptEdited, actor.id)
+            .target_student(owner.student_id)
+            .sst(owner.sst_id)
+            .technique(owner.technique_id)
+            .syllabus(owner.syllabus_id)
+            .payload(payload::attempt_pointer(attempt_id)),
+    )
+    .await?;
+    tx.commit().await?;
     Ok(())
 }
 

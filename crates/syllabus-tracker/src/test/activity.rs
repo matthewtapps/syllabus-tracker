@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod tests {
-    use crate::db::{NewActivity, Verb, emit};
+    use crate::db::{emit, NewActivity, Verb};
     use crate::test::test_utils::TestDbBuilder;
 
     #[rocket::async_test]
@@ -236,6 +236,93 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(row.t, None, "empty fan-out writes a single coach-only row");
+    }
+
+    #[rocket::async_test]
+    async fn attempt_log_emits_attempt_logged() {
+        use crate::auth::{Role, User};
+        use chrono::Utc;
+
+        let db = TestDbBuilder::new()
+            .coach("coach", None)
+            .student("alice", None)
+            .technique("Armbar", "", Some("coach"))
+            .build()
+            .await
+            .unwrap();
+        let coach = db.user_id("coach").unwrap();
+        let alice = db.user_id("alice").unwrap();
+        let armbar = db.technique_id("Armbar").unwrap();
+
+        let sid = crate::db::create_syllabus(&db.pool, "S", None, coach)
+            .await
+            .unwrap();
+        let aid = crate::db::assign(&db.pool, coach, alice, sid)
+            .await
+            .unwrap();
+        let sst_id = crate::db::add_technique_to_assignment(&db.pool, aid, armbar)
+            .await
+            .unwrap();
+
+        let actor = User {
+            id: coach,
+            username: "coach".into(),
+            role: Role::Coach,
+            display_name: "Coach".into(),
+            archived: false,
+            graduated_at: None,
+            email: None,
+            claimed_at: None,
+            approved_at: None,
+            first_name: None,
+            last_name: None,
+            reset_requested_at: None,
+            last_update: None,
+            last_coach_update_at: None,
+            total_techniques: None,
+            red_count: None,
+            amber_count: None,
+            green_count: None,
+            has_unseen_activity: None,
+            last_student_initiative_at: None,
+            last_watch_at: None,
+            last_watch_video_title: None,
+        };
+        let attempt_id = crate::db::create_syllabus_attempt(
+            &db.pool,
+            &actor,
+            sst_id,
+            &crate::db::CreateSyllabusAttempt {
+                attempted_at: Utc::now().naive_utc(),
+                coach_note: None,
+                student_note: None,
+            },
+        )
+        .await
+        .unwrap();
+
+        let row = sqlx::query!(
+            r#"SELECT verb AS "v!: String",
+                      actor_user_id AS "a!: i64",
+                      target_student_id AS "t?: i64",
+                      sst_id AS "sst?: i64",
+                      technique_id AS "tech?: i64",
+                      syllabus_id AS "syl?: i64",
+                      payload_json AS "p?"
+               FROM activity
+               WHERE verb = 'attempt_logged'"#
+        )
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+        assert_eq!(row.v, "attempt_logged");
+        assert_eq!(row.a, coach);
+        assert_eq!(row.t, Some(alice));
+        assert_eq!(row.sst, Some(sst_id));
+        assert_eq!(row.tech, Some(armbar));
+        assert_eq!(row.syl, Some(sid));
+        let payload: serde_json::Value = serde_json::from_str(&row.p.unwrap()).unwrap();
+        assert_eq!(payload["attempt_id"], attempt_id);
     }
 
     #[rocket::async_test]
