@@ -972,6 +972,109 @@ mod tests {
         );
     }
 
+    // Bug 1 fix tests: student-scoped activity feed route
+
+    /// GET /api/student/<sid>/activity_feed returns only rows targeting that
+    /// student, even when requested by a coach (not gym-wide feed).
+    #[rocket::async_test]
+    async fn student_scoped_feed_returns_only_target_student_rows() {
+        use crate::test::test_utils::{login_test_user, setup_test_client};
+
+        let db = TestDbBuilder::new()
+            .coach("coach", None)
+            .student("alice", None)
+            .student("bob", None)
+            .build()
+            .await
+            .unwrap();
+        let coach = db.user_id("coach").unwrap();
+        let alice = db.user_id("alice").unwrap();
+        let bob = db.user_id("bob").unwrap();
+
+        // Emit a row targeting alice and one targeting bob.
+        let mut tx = db.pool.begin().await.unwrap();
+        emit(
+            &mut tx,
+            NewActivity::new(Verb::SyllabusAssigned, coach).target_student(alice),
+        )
+        .await
+        .unwrap();
+        tx.commit().await.unwrap();
+
+        let mut tx = db.pool.begin().await.unwrap();
+        emit(
+            &mut tx,
+            NewActivity::new(Verb::SyllabusGraduated, coach).target_student(bob),
+        )
+        .await
+        .unwrap();
+        tx.commit().await.unwrap();
+
+        // Coach requests alice's scoped feed.
+        let (client, _db) = setup_test_client(db).await;
+        let _ = login_test_user(&client, "coach", "password123").await;
+
+        let url = format!("/api/student/{}/activity_feed", alice);
+        let resp = client.get(url).dispatch().await;
+        assert_eq!(
+            resp.status(),
+            rocket::http::Status::Ok,
+            "student scoped feed returns 200 for coach"
+        );
+        let body: Vec<serde_json::Value> =
+            serde_json::from_str(&resp.into_string().await.unwrap()).unwrap();
+
+        assert_eq!(body.len(), 1, "only alice's row returned");
+        assert_eq!(
+            body[0]["verb"].as_str(),
+            Some("syllabus_assigned"),
+            "alice's row has the correct verb"
+        );
+        assert_eq!(
+            body[0]["target_student_id"].as_i64(),
+            Some(alice),
+            "target_student_id is alice"
+        );
+    }
+
+    /// A student requesting another student's scoped feed gets 403.
+    #[rocket::async_test]
+    async fn student_scoped_feed_forbidden_for_other_student() {
+        use crate::test::test_utils::{login_test_user, setup_test_client};
+
+        let db = TestDbBuilder::new()
+            .coach("coach", None)
+            .student("alice", None)
+            .student("bob", None)
+            .build()
+            .await
+            .unwrap();
+        let coach = db.user_id("coach").unwrap();
+        let alice = db.user_id("alice").unwrap();
+
+        // Emit a row targeting alice.
+        let mut tx = db.pool.begin().await.unwrap();
+        emit(
+            &mut tx,
+            NewActivity::new(Verb::SyllabusAssigned, coach).target_student(alice),
+        )
+        .await
+        .unwrap();
+        tx.commit().await.unwrap();
+
+        // bob tries to read alice's scoped feed.
+        let (client, _db) = setup_test_client(db).await;
+        let _ = login_test_user(&client, "bob", "password123").await;
+
+        let url = format!("/api/student/{}/activity_feed", alice);
+        let resp = client.get(url).dispatch().await;
+        assert_eq!(
+            resp.status(),
+            rocket::http::Status::Forbidden,
+            "another student requesting the feed gets 403"
+        );
+    }
+
     // Task 24 tests
 
     /// recently_active_students returns students ordered by most-recent

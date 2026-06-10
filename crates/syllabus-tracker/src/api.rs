@@ -1992,6 +1992,62 @@ pub async fn api_activity_mark_one_unread(
     Ok(Status::NoContent)
 }
 
+// ---- Student-scoped activity feed (coach viewing a student profile) --------
+
+/// `GET /api/student/<sid>/activity_feed?before_ts=&before_id=&limit=`
+///
+/// Returns activity rows scoped to the given student (target_student_id = sid).
+/// Authorized for the owning student OR any viewer with ViewAllStudents (coaches).
+///
+/// The student variant of `feed` already filters `target_student_id = sid` and
+/// annotates unread against sid's own cursor, so the result is exactly what the
+/// student themselves would see. This route does NOT advance any cursor
+/// (read-only scoped view; the student's own cursor is advanced by the main
+/// `/api/activity/feed` endpoint when the student opens their own feed).
+#[get("/student/<sid>/activity_feed?<params..>")]
+pub async fn api_student_activity_feed(
+    sid: i64,
+    params: ActivityFeedQuery,
+    user: User,
+    db: &State<Pool<Sqlite>>,
+) -> ApiResult<Json<Vec<ActivityRow>>> {
+    if user.id != sid && !user.has_permission(Permission::ViewAllStudents) {
+        return Err(Status::Forbidden.into());
+    }
+
+    let limit = params
+        .limit
+        .unwrap_or(ACTIVITY_FEED_DEFAULT_LIMIT)
+        .clamp(1, ACTIVITY_FEED_MAX_LIMIT);
+
+    let before = match (&params.before_ts, params.before_id) {
+        (Some(ts_str), Some(id)) => {
+            let ts = parse_before_ts(ts_str).ok_or_else(|| {
+                warn!(
+                    raw = ts_str,
+                    "rejected student activity_feed: unparseable before_ts"
+                );
+                ApiError::from(Status::BadRequest)
+            })?;
+            Some((ts, id))
+        }
+        (None, None) => None,
+        _ => {
+            warn!(
+                "rejected student activity_feed: partial cursor (before_ts and before_id must both be present or both absent)"
+            );
+            return Err(Status::BadRequest.into());
+        }
+    };
+
+    // Use the student-variant of feed (target_student_id = sid, unread
+    // annotated against sid's cursor). Pass sid as the viewer so unread
+    // annotations reflect the student's perspective.
+    let rows = feed(db, sid, crate::auth::Role::Student, before, limit).await?;
+
+    Ok(Json(rows))
+}
+
 // ---- Coach dashboard recently-active route (Task 24) -----------------------
 
 /// `GET /api/activity/recently_active?limit=`
