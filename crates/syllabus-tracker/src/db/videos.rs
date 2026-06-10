@@ -589,3 +589,92 @@ pub async fn total_video_objects(pool: &Pool<Sqlite>) -> Result<i64, AppError> {
     .await?;
     Ok(row.count)
 }
+
+/// Sets, updates, or clears the per-(student, syllabus, video) override.
+/// `Some(b)` upserts the row with that visibility flag; `None` removes
+/// the row so the video falls back to its global visibility.
+#[instrument(skip(pool))]
+pub async fn set_video_syllabus_visibility(
+    pool: &Pool<Sqlite>,
+    video_id: i64,
+    syllabus_id: i64,
+    student_id: i64,
+    visible: Option<bool>,
+    by_user_id: i64,
+) -> Result<(), AppError> {
+    let now = chrono::Utc::now().naive_utc();
+    match visible {
+        Some(b) => {
+            sqlx::query!(
+                "INSERT INTO student_syllabus_video_visibility
+                    (student_id, syllabus_id, video_id, visible, updated_by_id, updated_at)
+                 VALUES (?, ?, ?, ?, ?, ?)
+                 ON CONFLICT (student_id, syllabus_id, video_id) DO UPDATE
+                    SET visible = excluded.visible,
+                        updated_by_id = excluded.updated_by_id,
+                        updated_at = excluded.updated_at",
+                student_id,
+                syllabus_id,
+                video_id,
+                b,
+                by_user_id,
+                now,
+            )
+            .execute(pool)
+            .await?;
+        }
+        None => {
+            sqlx::query!(
+                "DELETE FROM student_syllabus_video_visibility
+                 WHERE student_id = ? AND syllabus_id = ? AND video_id = ?",
+                student_id,
+                syllabus_id,
+                video_id,
+            )
+            .execute(pool)
+            .await?;
+        }
+    }
+    Ok(())
+}
+
+/// Returns a map of `video_id -> override.visible` for the given video
+/// ids within the (student, syllabus) scope. Used to annotate the coach's
+/// view of the per-syllabus video list with which entries are overridden
+/// vs following global visibility.
+#[instrument(skip(pool, video_ids))]
+pub async fn list_video_syllabus_overrides(
+    pool: &Pool<Sqlite>,
+    video_ids: &[i64],
+    syllabus_id: i64,
+    student_id: i64,
+) -> Result<std::collections::HashMap<i64, bool>, AppError> {
+    use std::collections::HashMap;
+    if video_ids.is_empty() {
+        return Ok(HashMap::new());
+    }
+    // Build an IN-list via query_builder so we keep the dynamic-length
+    // shape that SQLx's compile-time macro doesn't handle.
+    let mut qb = sqlx::QueryBuilder::<sqlx::Sqlite>::new(
+        "SELECT video_id, visible FROM student_syllabus_video_visibility \
+         WHERE student_id = ",
+    );
+    qb.push_bind(student_id);
+    qb.push(" AND syllabus_id = ");
+    qb.push_bind(syllabus_id);
+    qb.push(" AND video_id IN (");
+    let mut sep = qb.separated(", ");
+    for id in video_ids {
+        sep.push_bind(*id);
+    }
+    qb.push(")");
+    let rows = qb.build().fetch_all(pool).await?;
+    let mut map: HashMap<i64, bool> = HashMap::new();
+    for row in rows {
+        use sqlx::Row;
+        let video_id: i64 = row.try_get("video_id")?;
+        let visible: bool = row.try_get("visible")?;
+        map.insert(video_id, visible);
+    }
+    Ok(map)
+}

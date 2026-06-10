@@ -26,6 +26,10 @@ export type RowContext =
       syllabusId: number;
       assignmentId: number;
       sst: SstRow;
+      /** Carries the assignment's graduated_at so coach-side mutation
+       *  sites can prompt for confirmation before writing to a
+       *  graduated assignment. `null` when not graduated. */
+      graduatedAt: string | null;
     }
   // Coach editing a technique inside a global syllabus. Same edit
   // affordances as global-library coach surface, minus the cross-system

@@ -39,6 +39,11 @@ interface VideoListProps {
   /** Name shown in the per-student visibility controls. Only used when
    * `forStudent` is also set. */
   studentDisplayName?: string;
+  /** When set, scopes the fetch to a per-(student, syllabus) view: the
+   *  per-syllabus video endpoint is hit instead, and the per-video
+   *  override toggle (PR 4) targets `student_syllabus_video_visibility`
+   *  rather than the legacy per-student visibility table. */
+  syllabus?: { studentId: number; syllabusId: number };
   /** When set, scroll the matching video row into view once the list loads.
    * Used by the dashboard "recently watched" link to land on the specific
    * video the user tapped. */
@@ -52,11 +57,12 @@ export function VideoList({
   reloadKey = 0,
   forStudent,
   studentDisplayName,
+  syllabus,
   scrollToVideoId,
   onVideoScrolled,
 }: VideoListProps) {
   const qc = useQueryClient();
-  const videosQuery = useTechniqueVideos(techniqueId, forStudent);
+  const videosQuery = useTechniqueVideos(techniqueId, forStudent, syllabus);
   const serverVideos = videosQuery.data ?? null;
   const error = videosQuery.error ? "Could not load videos" : null;
   const reorderMutation = useReorderVideos(techniqueId);
@@ -206,6 +212,7 @@ export function VideoList({
                   canManage={canManage}
                   forStudent={forStudent}
                   studentDisplayName={studentDisplayName}
+                  syllabus={syllabus}
                   onPlay={() => setPlaying(video)}
                   onDeleted={handleDeleted}
                 />
@@ -223,6 +230,7 @@ export function VideoList({
               canManage={canManage}
               forStudent={forStudent}
               studentDisplayName={studentDisplayName}
+              syllabus={syllabus}
               onPlay={() => setPlaying(video)}
               onDeleted={handleDeleted}
             />
@@ -241,6 +249,7 @@ interface SortableVideoRowProps {
   canManage: boolean;
   forStudent?: number;
   studentDisplayName?: string;
+  syllabus?: { studentId: number; syllabusId: number };
   onPlay: () => void;
   onDeleted: (videoId: number) => void;
 }
@@ -251,6 +260,7 @@ function SortableVideoRow({
   canManage,
   forStudent,
   studentDisplayName,
+  syllabus,
   onPlay,
   onDeleted,
 }: SortableVideoRowProps) {
@@ -294,6 +304,7 @@ function SortableVideoRow({
         canManage={canManage}
         forStudent={forStudent}
         studentDisplayName={studentDisplayName}
+        syllabus={syllabus}
         onPlay={onPlay}
         onDeleted={onDeleted}
         dragHandle={handle}

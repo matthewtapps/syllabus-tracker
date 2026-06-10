@@ -9,6 +9,7 @@ import {
   useCreateSyllabusAttempt,
   useDeleteSyllabusAttempt,
 } from "@/lib/mutations";
+import { useGraduatedConfirm } from "./graduated-guard";
 import { useTechniqueRow } from "./technique-row-context";
 import type { SyllabusAttempt } from "@/lib/api";
 
@@ -84,9 +85,11 @@ function AddAttemptForm({
   const [date, setDate] = useState(today);
   const [note, setNote] = useState("");
   const mutation = useCreateSyllabusAttempt();
+  const confirmGraduated = useGraduatedConfirm();
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (!confirmGraduated()) return;
     try {
       // Local-midnight ISO so the date the user picked is the date the
       // server records, regardless of their UTC offset.
@@ -159,6 +162,7 @@ function AddAttemptForm({
 function AttemptRow({ attempt }: { attempt: SyllabusAttempt }) {
   const { context } = useTechniqueRow();
   const deleteMutation = useDeleteSyllabusAttempt();
+  const confirmGraduated = useGraduatedConfirm();
   const dateLabel = useMemo(() => {
     const d = new Date(attempt.attempted_at);
     return d.toLocaleDateString();
@@ -166,6 +170,7 @@ function AttemptRow({ attempt }: { attempt: SyllabusAttempt }) {
   if (context.kind !== "student-syllabus") return null;
 
   async function handleDelete() {
+    if (!confirmGraduated()) return;
     try {
       await deleteMutation.mutateAsync({
         attemptId: attempt.id,

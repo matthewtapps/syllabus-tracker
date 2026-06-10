@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE syllabus_assignments\n         SET graduated_at = ?, graduated_by_id = ?\n         WHERE id = ? AND graduated_at IS NULL",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": []
+  },
+  "hash": "b3cb70fc479c7b999f0f009cfcf30e0d8ef732354a0e680dc04ce3cf41c994f2"
+}

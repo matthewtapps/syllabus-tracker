@@ -1,6 +1,14 @@
 import { useMemo, useState } from 'react';
 import { Navigate, useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, NotebookPen, Search, Trash2 } from 'lucide-react';
+import {
+  ArrowLeft,
+  GitCompare,
+  GraduationCap,
+  NotebookPen,
+  Plus,
+  Search,
+  Trash2,
+} from 'lucide-react';
 import { toast } from 'sonner';
 import { Accordion } from '@/components/ui/accordion';
 import { Badge } from '@/components/ui/badge';
@@ -17,10 +25,16 @@ import { Input } from '@/components/ui/input';
 import { EmptyState } from '@/components/empty-state';
 import { TechniqueRow } from '@/components/technique-row';
 import { useStudentSyllabusTechniques } from '@/lib/queries';
-import { useUnassignSyllabusFromStudent } from '@/lib/mutations';
+import {
+  useSetAssignmentGraduated,
+  useUnassignSyllabusFromStudent,
+} from '@/lib/mutations';
 import { useUser } from '@/lib/current-user-context';
 import { isCoachOrAdmin } from '@/lib/api';
 import type { LibraryTechniqueRow, SstRow } from '@/lib/api';
+import { cn } from '@/lib/utils';
+import { DiffDialog } from './components/diff-dialog';
+import { AddToStudentDialog } from './components/add-to-student-dialog';
 
 function toLibraryShape(sst: SstRow): LibraryTechniqueRow {
   // The Header / blocks expect a LibraryTechniqueRow-shaped object; SST
@@ -81,9 +95,13 @@ function Detail({
   );
   const [expandedValue, setExpandedValue] = useState<string>('');
   const [unassignOpen, setUnassignOpen] = useState(false);
+  const [graduateOpen, setGraduateOpen] = useState(false);
+  const [addOpen, setAddOpen] = useState(false);
+  const [diffOpen, setDiffOpen] = useState(false);
   const [search, setSearch] = useState('');
   const [activeTags, setActiveTags] = useState<string[]>([]);
   const unassignMutation = useUnassignSyllabusFromStudent();
+  const graduateMutation = useSetAssignmentGraduated();
 
   const availableTags = useMemo(() => {
     const set = new Set<string>();
@@ -191,15 +209,54 @@ function Detail({
             </p>
           </div>
           {!isOwnView && (
-            <Button
-              variant="outline"
-              size="sm"
-              className="gap-1.5 text-destructive"
-              onClick={() => setUnassignOpen(true)}
-            >
-              <Trash2 className="h-3.5 w-3.5" aria-hidden />
-              Unassign
-            </Button>
+            <div className="flex shrink-0 flex-wrap items-center gap-1.5">
+              {assignment.graduated_at && (
+                <Badge variant="default" className="gap-1 bg-status-green text-foreground">
+                  <GraduationCap className="h-3 w-3" aria-hidden />
+                  Graduated
+                </Badge>
+              )}
+              <Button
+                variant="outline"
+                size="icon"
+                aria-label="Sync with current syllabus"
+                onClick={() => setDiffOpen(true)}
+              >
+                <GitCompare className="h-4 w-4" aria-hidden />
+              </Button>
+              <Button
+                variant="outline"
+                size="icon"
+                aria-label="Add technique to this student"
+                onClick={() => setAddOpen(true)}
+              >
+                <Plus className="h-4 w-4" aria-hidden />
+              </Button>
+              <Button
+                variant="outline"
+                size="icon"
+                aria-label={
+                  assignment.graduated_at
+                    ? 'Ungraduate this syllabus'
+                    : 'Graduate this syllabus'
+                }
+                onClick={() => setGraduateOpen(true)}
+                className={cn(
+                  assignment.graduated_at && 'text-status-green',
+                )}
+              >
+                <GraduationCap className="h-4 w-4" aria-hidden />
+              </Button>
+              <Button
+                variant="outline"
+                size="icon"
+                aria-label="Unassign syllabus"
+                onClick={() => setUnassignOpen(true)}
+                className="text-destructive"
+              >
+                <Trash2 className="h-4 w-4" aria-hidden />
+              </Button>
+            </div>
           )}
         </div>
       </div>
@@ -286,6 +343,7 @@ function Detail({
                     syllabusId,
                     assignmentId: assignment.id,
                     sst,
+                    graduatedAt: assignment.graduated_at,
                   }}
                   value={value}
                   isOpen={expandedValue === value}
@@ -306,20 +364,93 @@ function Detail({
               resumes progress.
             </DialogDescription>
           </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setUnassignOpen(false)}>
+          <DialogFooter className="grid grid-cols-2 gap-2 sm:flex-none sm:justify-stretch">
+            <Button
+              variant="outline"
+              onClick={() => setUnassignOpen(false)}
+              className="w-full"
+            >
               Cancel
             </Button>
             <Button
               variant="destructive"
               onClick={handleUnassign}
               disabled={unassignMutation.isPending}
+              className="w-full"
             >
               Unassign
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <Dialog open={graduateOpen} onOpenChange={setGraduateOpen}>
+        <DialogContent aria-describedby={undefined}>
+          <DialogHeader>
+            <DialogTitle>
+              {assignment.graduated_at
+                ? `Ungraduate ${assignment.syllabus_name}?`
+                : `Graduate ${assignment.syllabus_name}?`}
+            </DialogTitle>
+            <DialogDescription>
+              {assignment.graduated_at
+                ? 'Restores edits for the student. Their progress is unchanged.'
+                : 'Locks the student out of edits on this syllabus. Their attempts and notes are preserved, and you can edit on their behalf.'}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="grid grid-cols-2 gap-2 sm:flex-none sm:justify-stretch">
+            <Button
+              variant="outline"
+              onClick={() => setGraduateOpen(false)}
+              className="w-full"
+              disabled={graduateMutation.isPending}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={async () => {
+                try {
+                  await graduateMutation.mutateAsync({
+                    studentId,
+                    syllabusId,
+                    graduated: !assignment.graduated_at,
+                  });
+                  toast.success(
+                    assignment.graduated_at
+                      ? `Ungraduated ${assignment.syllabus_name}`
+                      : `Graduated ${assignment.syllabus_name}`,
+                  );
+                  setGraduateOpen(false);
+                } catch {
+                  toast.error('Failed to update graduation');
+                }
+              }}
+              className="w-full"
+              disabled={graduateMutation.isPending}
+            >
+              {assignment.graduated_at ? 'Ungraduate' : 'Graduate'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <DiffDialog
+        open={diffOpen}
+        onOpenChange={setDiffOpen}
+        studentId={studentId}
+        syllabusId={syllabusId}
+        studentName={undefined}
+      />
+
+      <AddToStudentDialog
+        open={addOpen}
+        onOpenChange={setAddOpen}
+        studentId={studentId}
+        syllabusId={syllabusId}
+        presentTechniqueIds={
+          new Set(techniques.map((t) => t.technique_id))
+        }
+      />
     </div>
   );
 }

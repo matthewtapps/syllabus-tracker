@@ -1,7 +1,16 @@
 import { useMemo, useState } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
-import { Archive, GraduationCap, MoreVertical, Search, UserPlus, Users, X } from 'lucide-react';
+import {
+  Archive,
+  GraduationCap,
+  MoreVertical,
+  NotebookPen,
+  Search,
+  UserPlus,
+  Users,
+  X,
+} from 'lucide-react';
 import { type User, isAdmin } from '@/lib/api';
 import { useUser } from '@/lib/current-user-context';
 import { useStudents } from '@/lib/queries';
@@ -142,38 +151,55 @@ export default function StudentsList() {
   function rowActions(student: User) {
     const showUnGraduate = !!student.graduated_at;
     const showUnArchive = admin && student.archived;
-    if (!showUnGraduate && !showUnArchive) return undefined;
     return (
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-9 w-9"
-            aria-label={`Actions for ${student.display_name || student.username}`}
+      <div className="flex items-center gap-1">
+        <Button
+          asChild
+          variant="ghost"
+          size="icon"
+          className="h-9 w-9"
+          aria-label={`View ${student.display_name || student.username}'s syllabuses`}
+        >
+          <Link
+            to={`/student/${student.id}/syllabuses`}
+            onClick={(e) => e.stopPropagation()}
           >
-            <MoreVertical className="h-4 w-4" aria-hidden />
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end">
-          {showUnGraduate && (
-            <DropdownMenuItem
-              onSelect={() => setTimeout(() => setGraduateTarget(student), 0)}
-            >
-              <GraduationCap className="mr-2 h-4 w-4" aria-hidden />
-              Un-graduate
-            </DropdownMenuItem>
-          )}
-          {showUnArchive && (
-            <DropdownMenuItem
-              onSelect={() => setTimeout(() => handleUnArchive(student), 0)}
-            >
-              <Archive className="mr-2 h-4 w-4" aria-hidden />
-              Unarchive
-            </DropdownMenuItem>
-          )}
-        </DropdownMenuContent>
-      </DropdownMenu>
+            <NotebookPen className="h-4 w-4" aria-hidden />
+          </Link>
+        </Button>
+        {(showUnGraduate || showUnArchive) && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-9 w-9"
+                aria-label={`Actions for ${student.display_name || student.username}`}
+              >
+                <MoreVertical className="h-4 w-4" aria-hidden />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              {showUnGraduate && (
+                <DropdownMenuItem
+                  onSelect={() => setTimeout(() => setGraduateTarget(student), 0)}
+                >
+                  <GraduationCap className="mr-2 h-4 w-4" aria-hidden />
+                  Un-graduate
+                </DropdownMenuItem>
+              )}
+              {showUnArchive && (
+                <DropdownMenuItem
+                  onSelect={() => setTimeout(() => handleUnArchive(student), 0)}
+                >
+                  <Archive className="mr-2 h-4 w-4" aria-hidden />
+                  Unarchive
+                </DropdownMenuItem>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
+      </div>
     );
   }
 

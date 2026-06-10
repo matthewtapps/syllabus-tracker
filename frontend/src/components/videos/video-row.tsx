@@ -57,6 +57,7 @@ import {
 } from "@/components/ui/sheet";
 import { useMediaQuery } from "@/lib/use-media-query";
 import { cn } from "@/lib/utils";
+import { SyllabusVisibilityControl } from "./syllabus-visibility-control";
 import { VisibilityPopover } from "./visibility-popover";
 
 interface VideoRowProps {
@@ -70,6 +71,10 @@ interface VideoRowProps {
    * view), clicking the eye toggles global directly. */
   forStudent?: number;
   studentDisplayName?: string;
+  /** When set, the visibility control toggles a per-(student, syllabus,
+   *  video) override (PR 4). Mutually exclusive with `forStudent` in
+   *  practice: callers only pass one. */
+  syllabus?: { studentId: number; syllabusId: number };
   /** Render-prop for a drag handle when sortable. */
   dragHandle?: React.ReactNode;
 }
@@ -82,6 +87,7 @@ export function VideoRow({
   onDeleted,
   forStudent,
   studentDisplayName,
+  syllabus,
   dragHandle,
 }: VideoRowProps) {
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -160,7 +166,14 @@ export function VideoRow({
           </span>
         </button>
 
-        {canManage && (
+        {canManage && syllabus ? (
+          <SyllabusVisibilityControl
+            video={video}
+            techniqueId={techniqueId}
+            studentId={syllabus.studentId}
+            syllabusId={syllabus.syllabusId}
+          />
+        ) : canManage ? (
           <VisibilityControl
             video={video}
             techniqueId={techniqueId}
@@ -169,7 +182,7 @@ export function VideoRow({
             forStudent={forStudent}
             studentDisplayName={studentDisplayName}
           />
-        )}
+        ) : null}
 
         {canManage && (
           <DropdownMenu>
