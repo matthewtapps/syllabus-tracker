@@ -1,5 +1,5 @@
 import { useNavigate, useLocation, Link } from "react-router-dom";
-import { Download, LogOut, UserRound } from "lucide-react";
+import { Bell, Download, LogOut, UserRound } from "lucide-react";
 import type { User } from "@/lib/api";
 import { isCoachOrAdmin, isAdmin } from "@/lib/api";
 import { useInstallTrigger } from "@/lib/install";
@@ -14,6 +14,8 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { cn } from "@/lib/utils";
+import { useActivityUnreadCount } from "@/lib/queries";
+import { useMarkAllActivityRead } from "@/lib/mutations";
 
 interface NavBarProps {
   user: User | null;
@@ -54,10 +56,17 @@ export function NavBar({ user, onLogout }: NavBarProps) {
   const location = useLocation();
 
   const install = useInstallTrigger();
+  const unreadCountQuery = useActivityUnreadCount(!!user);
+  const markAllReadMutation = useMarkAllActivityRead();
+  const unreadCount = unreadCountQuery.data?.count ?? 0;
 
   const links = user ? buildNavLinks(user) : [];
   const isActive = (path: string) => location.pathname === path;
   const handleProfile = () => navigate("/profile");
+
+  function handleMarkAllRead() {
+    markAllReadMutation.mutate();
+  }
 
   // Mobile uses BottomNav; the top bar only renders on >=sm.
   return (
@@ -101,6 +110,53 @@ export function NavBar({ user, onLogout }: NavBarProps) {
         </div>
 
         <div className="flex items-center gap-2">
+          {user && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="relative"
+                  aria-label={
+                    unreadCount > 0
+                      ? `Activity, ${unreadCount} unread`
+                      : "Activity"
+                  }
+                >
+                  <Bell className="h-4 w-4" aria-hidden />
+                  {unreadCount > 0 && (
+                    <span
+                      className="absolute right-1 top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-bold leading-none text-destructive-foreground"
+                      aria-hidden
+                    >
+                      {unreadCount > 99 ? "99+" : unreadCount}
+                    </span>
+                  )}
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-48">
+                <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">
+                  {unreadCount > 0
+                    ? `${unreadCount} unread`
+                    : "All caught up"}
+                </DropdownMenuLabel>
+                {unreadCount > 0 && (
+                  <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      onSelect={() => setTimeout(handleMarkAllRead, 0)}
+                      disabled={markAllReadMutation.isPending}
+                    >
+                      <Bell className="mr-2 h-4 w-4" aria-hidden />
+                      {markAllReadMutation.isPending
+                        ? "Marking read..."
+                        : "Mark all read"}
+                    </DropdownMenuItem>
+                  </>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
           {user ? (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
