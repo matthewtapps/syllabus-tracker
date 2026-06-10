@@ -24,7 +24,12 @@ describe("TechniqueRow / student-syllabus context", () => {
   });
 
   test("coach viewer sees the status toggle, attempts heading, and student notes section", () => {
-    const sst = buildSst({ status: "amber", student_notes: "" });
+    // Student-notes block hides itself when empty and the viewer cannot
+    // edit it (i.e. coach view). Seed content so the section renders.
+    const sst = buildSst({
+      status: "amber",
+      student_notes: "Bumped the elbow up.",
+    });
     const technique = buildTechnique();
     const value = String(technique.id);
     renderWithProviders(
