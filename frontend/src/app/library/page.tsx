@@ -114,6 +114,10 @@ export default function LibraryPage() {
 
   return (
     <div className="container mx-auto px-4 py-6 sm:px-6 md:py-8">
+      <h1 className="mb-4 flex items-center gap-2 text-base font-semibold">
+        <BookOpen className="h-4 w-4" aria-hidden />
+        Global Technique Library
+      </h1>
       {isCoach && (
         <Tabs
           value="library"

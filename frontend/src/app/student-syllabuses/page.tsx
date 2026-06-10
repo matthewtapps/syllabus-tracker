@@ -45,11 +45,6 @@ function StudentSyllabusesList({
           <NotebookPen className="h-4 w-4" aria-hidden />
           {isOwnView ? 'My syllabuses' : 'Syllabuses'}
         </h1>
-        <p className="text-xs text-muted-foreground">
-          {isOwnView
-            ? 'Coach-curated paths you are currently working through.'
-            : 'Syllabuses this student is currently working through.'}
-        </p>
       </div>
 
       <div className="overflow-hidden rounded-lg border border-border bg-card">
