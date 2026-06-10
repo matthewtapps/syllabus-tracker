@@ -305,7 +305,12 @@ pub async fn api_update_sst(
 
     // Per-field permission policy. Any disallowed field present in the
     // request fails the whole request with 403; no silent field drops.
+    // Students cannot self-assess: status is coach-controlled, matching
+    // the legacy semantics where progression is the coach's call.
     if body.coach_notes.is_some() && !viewer_is_coach {
+        return Err(Status::Forbidden.into());
+    }
+    if body.status.is_some() && !viewer_is_coach {
         return Err(Status::Forbidden.into());
     }
 

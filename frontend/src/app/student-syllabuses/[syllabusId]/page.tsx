@@ -144,7 +144,7 @@ function Detail({
           onClick={() => navigate(`/student/${studentId}/syllabuses`)}
         >
           <ArrowLeft className="h-4 w-4" aria-hidden />
-          Back
+          Back to syllabuses
         </Button>
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0">

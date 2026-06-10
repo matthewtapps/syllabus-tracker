@@ -343,7 +343,7 @@ mod tests {
     }
 
     #[rocket::async_test]
-    async fn coach_notes_field_rejected_for_student_on_sst_patch() {
+    async fn coach_and_status_fields_rejected_for_student_on_sst_patch() {
         let (client, db, syllabus_id, student_id, coach_id, armbar_id, _) =
             assign_syllabus_and_seed_techniques().await;
         let assignment_id = db::assign(&db.pool, coach_id, student_id, syllabus_id)
@@ -363,11 +363,21 @@ mod tests {
             .await;
         assert_eq!(resp.status(), Status::Forbidden);
 
+        // Status is coach-controlled, so a student PATCH carrying it
+        // returns 403 even if the other fields are otherwise allowed.
+        let resp = client
+            .patch(format!("/api/student_syllabus_techniques/{}", sst_id))
+            .header(ContentType::JSON)
+            .body(json!({ "status": "amber" }).to_string())
+            .dispatch()
+            .await;
+        assert_eq!(resp.status(), Status::Forbidden);
+
         // Student updating their own notes is fine.
         let resp = client
             .patch(format!("/api/student_syllabus_techniques/{}", sst_id))
             .header(ContentType::JSON)
-            .body(json!({ "student_notes": "ok", "status": "amber" }).to_string())
+            .body(json!({ "student_notes": "ok" }).to_string())
             .dispatch()
             .await;
         assert_eq!(resp.status(), Status::NoContent);

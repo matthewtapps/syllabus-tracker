@@ -135,11 +135,20 @@ function AddAttemptForm({
           rows={3}
         />
       </label>
-      <div className="flex justify-end gap-2">
-        <Button type="button" size="sm" variant="outline" onClick={onDone}>
+      <div className="grid grid-cols-2 gap-2 pt-1">
+        <Button
+          type="button"
+          variant="outline"
+          onClick={onDone}
+          className="w-full"
+        >
           Cancel
         </Button>
-        <Button size="sm" type="submit" disabled={mutation.isPending}>
+        <Button
+          type="submit"
+          disabled={mutation.isPending}
+          className="w-full"
+        >
           {mutation.isPending ? "Saving..." : "Log attempt"}
         </Button>
       </div>

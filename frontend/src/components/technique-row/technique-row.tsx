@@ -98,12 +98,30 @@ export function TechniqueRow({
     viewerIsOwner &&
     (context.kind === "global-library" || context.kind === "student-pinned");
 
+  // Left-border accent for the student-syllabus surface: status colour
+  // when the row is open or already at amber/green, transparent when
+  // the status is still red (the visual signal is reserved for
+  // techniques the student has made progress on). Mirrors the legacy
+  // student-techniques row.
+  const sstStatus =
+    context.kind === "student-syllabus" ? context.sst.status : null;
+  const accentClass =
+    sstStatus === "amber"
+      ? "border-l-status-amber"
+      : sstStatus === "green"
+        ? "border-l-status-green"
+        : "border-l-transparent";
+
   return (
     <TechniqueRowContext.Provider value={ctxValue}>
       <AccordionItem
         value={value}
         id={`technique-row-${technique.id}`}
-        className="group border-b last:border-b-0"
+        className={cn(
+          "group border-b last:border-b-0",
+          context.kind === "student-syllabus" && "border-l-4 transition-colors",
+          context.kind === "student-syllabus" && accentClass,
+        )}
       >
         <AccordionPrimitive.Header asChild>
           <div

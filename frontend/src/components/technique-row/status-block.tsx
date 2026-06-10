@@ -8,9 +8,12 @@ import { useTechniqueRow } from "./technique-row-context";
 // coach can flip status; backend gates it (the SST PATCH route applies
 // the per-field permission policy).
 export function StatusBlock() {
-  const { context } = useTechniqueRow();
+  const { context, role } = useTechniqueRow();
   const mutation = useUpdateStudentSyllabusTechnique();
   if (context.kind !== "student-syllabus") return null;
+  // Status is coach-controlled: students cannot self-assess their
+  // progression. The backend rejects student PATCH with status set.
+  if (role === "student") return null;
   const { sst, studentId, syllabusId } = context;
 
   async function handleChange(next: Status) {
