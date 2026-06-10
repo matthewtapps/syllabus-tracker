@@ -2059,13 +2059,17 @@ fn resolve_heatmap_window(
     let today = chrono::Utc::now().date_naive();
     let default_from = today - chrono::Duration::days(365);
     let from = match params.from.as_deref() {
-        Some(s) => chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d")
-            .map_err(|_| ApiError::from(Status::BadRequest))?,
+        Some(s) => chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d").map_err(|e| {
+            warn!(raw = s, error = %e, "rejected heatmap: unparseable date");
+            ApiError::from(Status::BadRequest)
+        })?,
         None => default_from,
     };
     let to = match params.to.as_deref() {
-        Some(s) => chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d")
-            .map_err(|_| ApiError::from(Status::BadRequest))?,
+        Some(s) => chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d").map_err(|e| {
+            warn!(raw = s, error = %e, "rejected heatmap: unparseable date");
+            ApiError::from(Status::BadRequest)
+        })?,
         None => today,
     };
     Ok((from, to))

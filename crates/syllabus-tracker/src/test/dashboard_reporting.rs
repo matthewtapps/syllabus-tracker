@@ -124,18 +124,98 @@ mod tests {
             .unwrap();
         let coach = db.user_id("coach").unwrap();
         let alice = db.user_id("alice").unwrap();
-        let sid = create_syllabus(&db.pool, "S", None, coach).await.unwrap();
-        let aid = assign(&db.pool, coach, alice, sid).await.unwrap();
-        add_technique_to_assignment(&db.pool, aid, db.technique_id("Armbar").unwrap(), coach)
+
+        // Two SEPARATE syllabi, each assigned to alice, each with one technique.
+        // This proves the query spans across assignments, not just techniques
+        // within a single assignment.
+        let sid1 = create_syllabus(&db.pool, "S1", None, coach).await.unwrap();
+        let aid1 = assign(&db.pool, coach, alice, sid1).await.unwrap();
+        add_technique_to_assignment(&db.pool, aid1, db.technique_id("Armbar").unwrap(), coach)
             .await
             .unwrap();
-        add_technique_to_assignment(&db.pool, aid, db.technique_id("Triangle").unwrap(), coach)
+
+        let sid2 = create_syllabus(&db.pool, "S2", None, coach).await.unwrap();
+        let aid2 = assign(&db.pool, coach, alice, sid2).await.unwrap();
+        add_technique_to_assignment(&db.pool, aid2, db.technique_id("Triangle").unwrap(), coach)
             .await
             .unwrap();
 
         let rows = list_sst_flat_for_student(&db.pool, alice).await.unwrap();
         assert_eq!(rows.len(), 2);
         assert!(rows.iter().all(|r| r.status == "red"));
+
+        // Both distinct syllabus IDs must appear in the result set.
+        let syllabus_ids: std::collections::HashSet<i64> =
+            rows.iter().map(|r| r.syllabus_id).collect();
+        assert!(syllabus_ids.contains(&sid1));
+        assert!(syllabus_ids.contains(&sid2));
+    }
+
+    #[rocket::async_test]
+    async fn recent_syllabus_attempts_excludes_other_students() {
+        use crate::db::{
+            CreateSyllabusAttempt, create_syllabus_attempt,
+            list_recent_syllabus_attempts_for_student,
+        };
+        let db = TestDbBuilder::new()
+            .coach("coach", None)
+            .student("alice", None)
+            .student("bob", None)
+            .technique("Armbar", "", Some("coach"))
+            .build()
+            .await
+            .unwrap();
+        let coach = db.user_id("coach").unwrap();
+        let alice = db.user_id("alice").unwrap();
+        let bob = db.user_id("bob").unwrap();
+        let armbar = db.technique_id("Armbar").unwrap();
+
+        // Assign the same syllabus to both students, add the technique for each.
+        let sid = create_syllabus(&db.pool, "S", None, coach).await.unwrap();
+
+        let aid_alice = assign(&db.pool, coach, alice, sid).await.unwrap();
+        let sst_alice = add_technique_to_assignment(&db.pool, aid_alice, armbar, coach)
+            .await
+            .unwrap();
+
+        let aid_bob = assign(&db.pool, coach, bob, sid).await.unwrap();
+        let sst_bob = add_technique_to_assignment(&db.pool, aid_bob, armbar, coach)
+            .await
+            .unwrap();
+
+        let now = chrono::Utc::now().naive_utc();
+        let attempt_input = CreateSyllabusAttempt {
+            attempted_at: now,
+            coach_note: None,
+            student_note: None,
+        };
+
+        // Log one attempt for alice and one for bob.
+        create_syllabus_attempt(&db.pool, &coach_actor(coach), sst_alice, &attempt_input)
+            .await
+            .unwrap();
+        create_syllabus_attempt(&db.pool, &coach_actor(coach), sst_bob, &attempt_input)
+            .await
+            .unwrap();
+
+        // Alice's feed must contain exactly her own attempt.
+        let alice_recent = list_recent_syllabus_attempts_for_student(&db.pool, alice, 5)
+            .await
+            .unwrap();
+        assert_eq!(alice_recent.len(), 1, "alice should see exactly 1 attempt");
+
+        // Bob's attempt must NOT appear in alice's results.
+        assert!(
+            alice_recent.iter().all(|r| r.technique_name == "Armbar"),
+            "unexpected technique in alice's attempts"
+        );
+
+        // Confirm bob's attempt does NOT leak into alice's result set by
+        // checking via bob's own feed.
+        let bob_recent = list_recent_syllabus_attempts_for_student(&db.pool, bob, 5)
+            .await
+            .unwrap();
+        assert_eq!(bob_recent.len(), 1, "bob should see exactly 1 attempt");
     }
 
     #[rocket::async_test]
