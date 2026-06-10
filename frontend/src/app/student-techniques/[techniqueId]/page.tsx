@@ -14,8 +14,8 @@ import {
   type Tag,
   type Technique,
   type TechniqueUpdate,
-  type User,
 } from "@/lib/api";
+import { useUser } from "@/lib/current-user-context";
 import {
   useAllTags,
   useAttempts,
@@ -62,15 +62,10 @@ import { NotesEditor } from "../components/notes-editor";
 import { TagRemoveDialog } from "../components/tag-remove-dialog";
 import { TagsEditor } from "../components/tags-editor";
 
-interface StudentTechniqueDetailProps {
-  user: User;
-}
-
 const RECENT_WINDOW_DAYS = 30;
 
-export default function StudentTechniqueDetail({
-  user,
-}: StudentTechniqueDetailProps) {
+export default function StudentTechniqueDetail() {
+  const user = useUser();
   const { id, techniqueId } = useParams<{ id: string; techniqueId: string }>();
   const [searchParams] = useSearchParams();
   const studentId = parseInt(id ?? "0", 10);

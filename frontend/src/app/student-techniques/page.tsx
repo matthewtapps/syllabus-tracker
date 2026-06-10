@@ -18,8 +18,8 @@ import type {
   Tag,
   Technique,
   TechniqueUpdate,
-  User,
 } from '@/lib/api';
+import { useUser } from '@/lib/current-user-context';
 import {
   useAllTags,
   useAttemptSummary,
@@ -85,11 +85,8 @@ function isFilterTab(value: string | null): value is FilterTab {
   return value !== null && FILTER_TAB_VALUES.has(value as FilterTab);
 }
 
-interface StudentTechniquesProps {
-  user: User;
-}
-
-export default function StudentTechniques({ user }: StudentTechniquesProps) {
+export default function StudentTechniques() {
+  const user = useUser();
   const { id } = useParams<{ id: string }>();
   const studentId = parseInt(id || '0', 10);
   const qc = useQueryClient();

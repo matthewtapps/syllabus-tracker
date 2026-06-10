@@ -14,6 +14,7 @@ import {
   Users,
 } from 'lucide-react';
 import type { User } from '@/lib/api';
+import { useUser } from '@/lib/current-user-context';
 import { toast } from 'sonner';
 import { type InviteResponse, type RecentAttemptItem } from '@/lib/api';
 import {
@@ -65,18 +66,16 @@ const DASHBOARD_DATE_FORMAT = new Intl.DateTimeFormat(undefined, {
 
 type RosterTab = 'initiative' | 'recent' | 'quiet';
 
-interface DashboardProps {
-  user: User;
-}
-
-export default function Dashboard({ user }: DashboardProps) {
+export default function Dashboard() {
+  const user = useUser();
   if (user.role === 'student') {
-    return <StudentDashboard user={user} />;
+    return <StudentDashboard />;
   }
-  return <CoachDashboard user={user} />;
+  return <CoachDashboard />;
 }
 
-function CoachDashboard({ user }: { user: User }) {
+function CoachDashboard() {
+  const user = useUser();
   const qc = useQueryClient();
   const studentsQuery = useStudents('recent_update', false);
   const libraryStatsQuery = useLibraryStats();
@@ -411,7 +410,8 @@ function rosterEmptyMessage(tab: RosterTab): string {
   }
 }
 
-function StudentDashboard({ user }: { user: User }) {
+function StudentDashboard() {
+  const user = useUser();
   const techniquesQuery = useStudentTechniques(user.id);
   const recentAttemptsQuery = useRecentAttempts(user.id, 5);
   const heatmapQuery = useAttemptHeatmap(user.id);

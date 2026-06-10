@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import { Archive, GraduationCap, MoreVertical, Search, UserPlus, Users, X } from 'lucide-react';
 import { type User, isAdmin } from '@/lib/api';
+import { useUser } from '@/lib/current-user-context';
 import { useStudents } from '@/lib/queries';
 import { useSetStudentGraduated, useToggleUserArchived } from '@/lib/mutations';
 import { Input } from '@/components/ui/input';
@@ -42,11 +43,8 @@ function isStatusTab(value: string | null): value is StatusTab {
   return value !== null && STATUS_TAB_VALUES.has(value as StatusTab);
 }
 
-interface StudentsListProps {
-  user: User;
-}
-
-export default function StudentsList({ user }: StudentsListProps) {
+export default function StudentsList() {
+  const user = useUser();
   const navigate = useNavigate();
   const admin = isAdmin(user);
   const studentsQuery = useStudents('recent_update', true);
