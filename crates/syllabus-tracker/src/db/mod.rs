@@ -5,6 +5,7 @@
 //! names through this `mod.rs` so call sites stay flat (`crate::db::foo`).
 
 mod activity;
+mod activity_read;
 mod attempts;
 mod collections;
 mod invites;
@@ -13,9 +14,9 @@ mod reporting;
 mod sessions;
 mod student_syllabus_techniques;
 mod student_techniques;
+mod syllabi;
 mod syllabus_assignments;
 mod syllabus_attempts;
-mod syllabi;
 mod tags;
 mod techniques;
 mod users;
@@ -23,6 +24,7 @@ mod videos;
 mod watch;
 
 pub use activity::*;
+pub use activity_read::*;
 pub use attempts::*;
 pub use collections::*;
 pub use invites::*;
@@ -31,9 +33,9 @@ pub use reporting::*;
 pub use sessions::*;
 pub use student_syllabus_techniques::*;
 pub use student_techniques::*;
+pub use syllabi::*;
 pub use syllabus_assignments::*;
 pub use syllabus_attempts::*;
-pub use syllabi::*;
 pub use tags::*;
 pub use techniques::*;
 pub use users::*;
