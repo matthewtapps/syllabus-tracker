@@ -10,6 +10,7 @@ use serde::Serialize;
 use sqlx::{Pool, Sqlite};
 use tracing::instrument;
 
+use crate::db::activity::{NewActivity, Verb, affected_students_for_syllabus, emit_fanout};
 use crate::error::AppError;
 use crate::models::Tag;
 
@@ -84,10 +85,7 @@ pub async fn list_syllabi(pool: &Pool<Sqlite>) -> Result<Vec<Syllabus>, AppError
 }
 
 #[instrument]
-pub async fn get_syllabus(
-    pool: &Pool<Sqlite>,
-    id: i64,
-) -> Result<Option<Syllabus>, AppError> {
+pub async fn get_syllabus(pool: &Pool<Sqlite>, id: i64) -> Result<Option<Syllabus>, AppError> {
     let row = sqlx::query!(
         r#"SELECT s.id AS "id!: i64",
                   s.name AS "name!: String",
@@ -295,6 +293,18 @@ pub async fn add_technique_to_syllabus(
         }
     }
 
+    // Fan-out is unconditional on propagation mode: record the coach action
+    // for every active student even when SyllabusOnly skips SST materialisation.
+    let affected = affected_students_for_syllabus(&mut tx, syllabus_id).await?;
+    emit_fanout(
+        &mut tx,
+        NewActivity::new(Verb::SyllabusTechniqueAdded, coach_id)
+            .syllabus(syllabus_id)
+            .technique(technique_id),
+        &affected,
+    )
+    .await?;
+
     tx.commit().await?;
     Ok(())
 }
@@ -343,6 +353,17 @@ pub async fn remove_technique_from_syllabus(
         .execute(&mut *tx)
         .await?;
     }
+
+    // Fan-out is unconditional on propagation mode.
+    let affected = affected_students_for_syllabus(&mut tx, syllabus_id).await?;
+    emit_fanout(
+        &mut tx,
+        NewActivity::new(Verb::SyllabusTechniqueRemoved, coach_id)
+            .syllabus(syllabus_id)
+            .technique(technique_id),
+        &affected,
+    )
+    .await?;
 
     tx.commit().await?;
     Ok(())
