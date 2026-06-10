@@ -10,6 +10,7 @@ import {
 import { cn } from "@/lib/utils";
 import { ExpandedPanel } from "./expanded-panel";
 import { Header } from "./header";
+import { HiddenToggleButton } from "./hidden-toggle-button";
 import { PinButton } from "./pin-button";
 import { RemoveFromSyllabusButton } from "./remove-from-syllabus-button";
 import {
@@ -102,6 +103,9 @@ export function TechniqueRow({
     viewerIsOwner &&
     (context.kind === "global-library" || context.kind === "student-pinned");
   const showRemoveButton = context.kind === "syllabus-management";
+  const showHiddenToggle =
+    context.kind === "student-syllabus" &&
+    (user.role === "coach" || user.role === "admin");
 
   // Left-border accent for the student-syllabus surface: status colour
   // when the row is open or already at amber/green, transparent when
@@ -146,6 +150,11 @@ export function TechniqueRow({
             {showPinButton && (
               <div className="flex shrink-0 items-center pl-1">
                 <PinButton />
+              </div>
+            )}
+            {showHiddenToggle && (
+              <div className="flex shrink-0 items-center pl-1">
+                <HiddenToggleButton />
               </div>
             )}
             <AccordionPrimitive.Trigger

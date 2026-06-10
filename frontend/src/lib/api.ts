@@ -1550,3 +1550,145 @@ export async function listSyllabusStudentsApi(
   if (!response.ok) throw response;
   return await response.json();
 }
+
+// ============================================================
+// PR 4: graduation, diff view, per-student curation, video overrides
+// ============================================================
+
+export interface DiffGhost {
+  sst_id: number;
+  technique_id: number;
+  technique_name: string;
+  hidden: boolean;
+}
+
+export interface DiffMissing {
+  technique_id: number;
+  technique_name: string;
+  sst_id: number | null;
+}
+
+export interface SyllabusAssignmentDiff {
+  ghosts: DiffGhost[];
+  missing: DiffMissing[];
+}
+
+export type GhostActionKind =
+  | "readd_globally"
+  | "hide_locally"
+  | "ignore";
+
+export type MissingActionKind = "add_to_student" | "ignore";
+
+export interface GhostActionEntry {
+  sst_id: number;
+  technique_id: number;
+  action: GhostActionKind;
+}
+
+export interface MissingActionEntry {
+  technique_id: number;
+  action: MissingActionKind;
+}
+
+export async function setAssignmentGraduatedApi(
+  studentId: number,
+  syllabusId: number,
+  graduatedAt: string | null,
+): Promise<void> {
+  const response = await fetch(
+    `/api/student/${studentId}/syllabuses/${syllabusId}/assignment`,
+    {
+      method: "PATCH",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ graduated_at: graduatedAt }),
+    },
+  );
+  if (!response.ok) throw response;
+}
+
+export async function getAssignmentDiffApi(
+  studentId: number,
+  syllabusId: number,
+): Promise<SyllabusAssignmentDiff> {
+  const response = await fetch(
+    `/api/student/${studentId}/syllabuses/${syllabusId}/assignment/diff`,
+    { credentials: "include" },
+  );
+  if (!response.ok) throw response;
+  return await response.json();
+}
+
+export async function applyAssignmentDiffApi(
+  studentId: number,
+  syllabusId: number,
+  body: {
+    ghost_actions: GhostActionEntry[];
+    missing_actions: MissingActionEntry[];
+  },
+): Promise<{ applied: number }> {
+  const response = await fetch(
+    `/api/student/${studentId}/syllabuses/${syllabusId}/assignment/diff/apply`,
+    {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    },
+  );
+  if (!response.ok) throw response;
+  return await response.json();
+}
+
+export async function addTechniqueToStudentSyllabusApi(
+  studentId: number,
+  syllabusId: number,
+  techniqueId: number,
+): Promise<{ id: number }> {
+  const response = await fetch(
+    `/api/student/${studentId}/syllabuses/${syllabusId}/techniques`,
+    {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ technique_id: techniqueId }),
+    },
+  );
+  if (!response.ok) throw response;
+  return await response.json();
+}
+
+export async function setSstHiddenApi(
+  sstId: number,
+  hidden: boolean,
+): Promise<void> {
+  const response = await fetch(
+    `/api/student_syllabus_techniques/${sstId}/hidden`,
+    {
+      method: "PATCH",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ hidden }),
+    },
+  );
+  if (!response.ok) throw response;
+}
+
+export async function setVideoSyllabusVisibilityApi(
+  studentId: number,
+  syllabusId: number,
+  videoId: number,
+  visible: boolean | null,
+): Promise<void> {
+  const response = await fetch(
+    `/api/student/${studentId}/syllabuses/${syllabusId}/videos/${videoId}/visibility`,
+    {
+      method: "PUT",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ visible }),
+    },
+  );
+  if (!response.ok) throw response;
+}

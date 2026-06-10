@@ -362,3 +362,21 @@ export function useSyllabusStudents(syllabusId: number | undefined) {
         : skipToken,
   });
 }
+
+import { getAssignmentDiffApi } from "./api";
+
+export function useAssignmentDiff(
+  studentId: number | undefined,
+  syllabusId: number | undefined,
+) {
+  return useQuery({
+    queryKey: qk.studentSyllabusDiff(studentId ?? 0, syllabusId ?? 0),
+    queryFn:
+      typeof studentId === "number" &&
+      typeof syllabusId === "number" &&
+      Number.isFinite(studentId) &&
+      Number.isFinite(syllabusId)
+        ? () => getAssignmentDiffApi(studentId, syllabusId)
+        : skipToken,
+  });
+}

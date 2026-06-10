@@ -1026,3 +1026,201 @@ export function useDeleteSyllabusAttempt() {
       qc.invalidateQueries({ queryKey: qk.syllabusAttempts(vars.sstId) }),
   });
 }
+
+// ============================================================
+// PR 4: graduation, diff apply, per-student curation, video overrides
+// ============================================================
+
+import {
+  addTechniqueToStudentSyllabusApi,
+  applyAssignmentDiffApi,
+  setAssignmentGraduatedApi,
+  setSstHiddenApi,
+  setVideoSyllabusVisibilityApi,
+  type GhostActionEntry,
+  type MissingActionEntry,
+  type SyllabusAssignmentDiff,
+  type SstRow,
+  type StudentSyllabusDetailResponse,
+} from "./api";
+
+export function useSetAssignmentGraduated() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: {
+      studentId: number;
+      syllabusId: number;
+      graduated: boolean;
+    }) =>
+      setAssignmentGraduatedApi(
+        vars.studentId,
+        vars.syllabusId,
+        vars.graduated ? new Date().toISOString() : null,
+      ),
+    onSuccess: (_res, vars) => {
+      qc.invalidateQueries({
+        queryKey: qk.studentSyllabusTechniques(vars.studentId, vars.syllabusId),
+      });
+      qc.invalidateQueries({ queryKey: qk.studentSyllabuses(vars.studentId) });
+    },
+  });
+}
+
+export function useAddTechniqueToStudentSyllabus() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: {
+      studentId: number;
+      syllabusId: number;
+      techniqueId: number;
+    }) =>
+      addTechniqueToStudentSyllabusApi(
+        vars.studentId,
+        vars.syllabusId,
+        vars.techniqueId,
+      ),
+    onSuccess: (_res, vars) => {
+      qc.invalidateQueries({
+        queryKey: qk.studentSyllabusTechniques(vars.studentId, vars.syllabusId),
+      });
+      qc.invalidateQueries({
+        queryKey: qk.studentSyllabusDiff(vars.studentId, vars.syllabusId),
+      });
+    },
+  });
+}
+
+export function useSetSstHidden() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: {
+      sstId: number;
+      studentId: number;
+      syllabusId: number;
+      hidden: boolean;
+    }) => setSstHiddenApi(vars.sstId, vars.hidden),
+    onSuccess: (_res, vars) => {
+      qc.invalidateQueries({
+        queryKey: qk.studentSyllabusTechniques(vars.studentId, vars.syllabusId),
+      });
+      qc.invalidateQueries({
+        queryKey: qk.studentSyllabusDiff(vars.studentId, vars.syllabusId),
+      });
+    },
+  });
+}
+
+export function useSetVideoSyllabusVisibility() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: {
+      studentId: number;
+      syllabusId: number;
+      videoId: number;
+      visible: boolean | null;
+      techniqueId: number;
+    }) =>
+      setVideoSyllabusVisibilityApi(
+        vars.studentId,
+        vars.syllabusId,
+        vars.videoId,
+        vars.visible,
+      ),
+    onSuccess: (_res, vars) =>
+      qc.invalidateQueries({
+        queryKey: qk.syllabusTechniqueVideos(
+          vars.studentId,
+          vars.syllabusId,
+          vars.techniqueId,
+        ),
+      }),
+  });
+}
+
+// Bundled diff apply mutation. The plan calls this the second optimistic
+// patch in PR 4 (pin/unpin from PR 1 is the first). On mutate we patch
+// the studentSyllabusTechniques + studentSyllabusDiff caches; on error
+// we roll the patches back.
+export function useApplyAssignmentDiff() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: {
+      studentId: number;
+      syllabusId: number;
+      ghost_actions: GhostActionEntry[];
+      missing_actions: MissingActionEntry[];
+    }) =>
+      applyAssignmentDiffApi(vars.studentId, vars.syllabusId, {
+        ghost_actions: vars.ghost_actions,
+        missing_actions: vars.missing_actions,
+      }),
+    onMutate: async (vars) => {
+      const sstKey = qk.studentSyllabusTechniques(
+        vars.studentId,
+        vars.syllabusId,
+      );
+      const diffKey = qk.studentSyllabusDiff(vars.studentId, vars.syllabusId);
+      await qc.cancelQueries({ queryKey: sstKey });
+      await qc.cancelQueries({ queryKey: diffKey });
+      const prevSst =
+        qc.getQueryData<StudentSyllabusDetailResponse>(sstKey);
+      const prevDiff = qc.getQueryData<SyllabusAssignmentDiff>(diffKey);
+
+      // Optimistic patch on the SST list: hidden ghosts drop out of the
+      // student-visible set; nothing else changes structurally (we don't
+      // know the SST id for "add_to_student" until the server returns).
+      const hiddenIds = new Set(
+        vars.ghost_actions
+          .filter((g) => g.action === "hide_locally")
+          .map((g) => g.sst_id),
+      );
+      if (prevSst) {
+        qc.setQueryData<StudentSyllabusDetailResponse>(sstKey, {
+          ...prevSst,
+          techniques: prevSst.techniques.map((sst: SstRow) =>
+            hiddenIds.has(sst.id)
+              ? { ...sst, hidden_at: new Date().toISOString() }
+              : sst,
+          ),
+        });
+      }
+      // Optimistic patch on the diff: drop entries that were acted on.
+      if (prevDiff) {
+        const ghostSstIds = new Set(
+          vars.ghost_actions
+            .filter((g) => g.action !== "ignore")
+            .map((g) => g.sst_id),
+        );
+        const missingTechIds = new Set(
+          vars.missing_actions
+            .filter((m) => m.action !== "ignore")
+            .map((m) => m.technique_id),
+        );
+        qc.setQueryData<SyllabusAssignmentDiff>(diffKey, {
+          ghosts: prevDiff.ghosts.filter((g) => !ghostSstIds.has(g.sst_id)),
+          missing: prevDiff.missing.filter(
+            (m) => !missingTechIds.has(m.technique_id),
+          ),
+        });
+      }
+      return { prevSst, prevDiff, sstKey, diffKey };
+    },
+    onError: (_err, _vars, ctx) => {
+      if (ctx?.prevSst !== undefined && ctx.sstKey) {
+        qc.setQueryData(ctx.sstKey, ctx.prevSst);
+      }
+      if (ctx?.prevDiff !== undefined && ctx.diffKey) {
+        qc.setQueryData(ctx.diffKey, ctx.prevDiff);
+      }
+    },
+    onSettled: (_res, _err, vars) => {
+      qc.invalidateQueries({
+        queryKey: qk.studentSyllabusTechniques(vars.studentId, vars.syllabusId),
+      });
+      qc.invalidateQueries({
+        queryKey: qk.studentSyllabusDiff(vars.studentId, vars.syllabusId),
+      });
+      qc.invalidateQueries({ queryKey: qk.syllabus(vars.syllabusId) });
+    },
+  });
+}

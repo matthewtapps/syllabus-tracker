@@ -50,6 +50,8 @@ export const qk = {
     ["student", studentId, "syllabus", syllabusId, "techniques"] as const,
   syllabusAttempts: (sstId: number) =>
     ["syllabus", "sst", sstId, "attempts"] as const,
+  studentSyllabusDiff: (studentId: number, syllabusId: number) =>
+    ["student", studentId, "syllabus", syllabusId, "diff"] as const,
   syllabusTechniqueVideos: (
     studentId: number,
     syllabusId: number,
