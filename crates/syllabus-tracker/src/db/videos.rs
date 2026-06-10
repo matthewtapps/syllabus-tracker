@@ -4,6 +4,9 @@ use chrono::Utc;
 use sqlx::{Pool, Sqlite};
 use tracing::{info, instrument};
 
+use crate::db::activity::{
+    NewActivity, Verb, affected_students_for_technique, emit, emit_fanout, payload,
+};
 use crate::error::AppError;
 use crate::models::{DbVideo, ProcessingStatus, Video, VideoKind};
 
@@ -32,6 +35,7 @@ pub async fn create_processing_video(
     let position = next_video_position(pool, technique_id).await?;
     let kind = VideoKind::Native.as_str();
     let status = ProcessingStatus::Processing.as_str();
+    let mut tx = pool.begin().await?;
     let res = sqlx::query!(
         "INSERT INTO videos (
             technique_id, title, description, position, kind, processing_status,
@@ -45,9 +49,20 @@ pub async fn create_processing_video(
         status,
         uploaded_by_id,
     )
-    .execute(pool)
+    .execute(&mut *tx)
     .await?;
-    Ok(res.last_insert_rowid())
+    let video_id = res.last_insert_rowid();
+    let affected = affected_students_for_technique(&mut tx, technique_id).await?;
+    emit_fanout(
+        &mut tx,
+        NewActivity::new(Verb::VideoAdded, uploaded_by_id)
+            .video(video_id)
+            .technique(technique_id),
+        &affected,
+    )
+    .await?;
+    tx.commit().await?;
+    Ok(video_id)
 }
 
 pub struct NewExternalVideo<'a> {
@@ -70,6 +85,9 @@ pub async fn create_external_video(
     let position = next_video_position(pool, input.technique_id).await?;
     let kind_str = input.kind.as_str();
     let status = ProcessingStatus::Ready.as_str();
+    let technique_id = input.technique_id;
+    let uploaded_by_id = input.uploaded_by_id;
+    let mut tx = pool.begin().await?;
     let res = sqlx::query!(
         "INSERT INTO videos (
             technique_id, title, description, position, kind, processing_status,
@@ -86,9 +104,20 @@ pub async fn create_external_video(
         input.external_video_id,
         input.uploaded_by_id,
     )
-    .execute(pool)
+    .execute(&mut *tx)
     .await?;
-    Ok(res.last_insert_rowid())
+    let video_id = res.last_insert_rowid();
+    let affected = affected_students_for_technique(&mut tx, technique_id).await?;
+    emit_fanout(
+        &mut tx,
+        NewActivity::new(Verb::VideoAdded, uploaded_by_id)
+            .video(video_id)
+            .technique(technique_id),
+        &affected,
+    )
+    .await?;
+    tx.commit().await?;
+    Ok(video_id)
 }
 
 #[instrument(skip(pool))]
@@ -129,11 +158,7 @@ pub async fn finalize_video_ready(
 }
 
 #[instrument(skip(pool))]
-pub async fn mark_video_failed(
-    pool: &Pool<Sqlite>,
-    id: i64,
-    error: &str,
-) -> Result<(), AppError> {
+pub async fn mark_video_failed(pool: &Pool<Sqlite>, id: i64, error: &str) -> Result<(), AppError> {
     let status = ProcessingStatus::Failed.as_str();
     let now = Utc::now().naive_utc();
     sqlx::query!(
@@ -270,11 +295,9 @@ pub async fn list_videos_for_technique_global_visible(
 /// Lists videos for a technique, filtered to what `student_id` should
 /// actually see (effective visibility: per-student override beats global
 /// hide, soft-deleted videos always excluded).
-#[deprecated(
-    note = "Legacy per-student visibility join. Library reads should use \
+#[deprecated(note = "Legacy per-student visibility join. Library reads should use \
             list_videos_for_technique_global_visible; syllabus-context \
-            reads (PR 3+) use the per-syllabus override table."
-)]
+            reads (PR 3+) use the per-syllabus override table.")]
 #[instrument(skip(pool))]
 pub async fn list_videos_for_technique_visible_to(
     pool: &Pool<Sqlite>,
@@ -332,15 +355,23 @@ pub async fn video_visible_to_student(
     Ok(row.map(|r| r.visible != 0).unwrap_or(false))
 }
 
-/// Sets (or clears) the global hide flag on a video. `actor_id` is not
-/// currently recorded on the video itself — the audit lives in app logs.
+/// Sets (or clears) the global hide flag on a video. Emits a fan-out
+/// `video_visibility_set` activity row for every affected student.
 #[instrument(skip(pool))]
 pub async fn set_video_hidden_globally(
     pool: &Pool<Sqlite>,
     video_id: i64,
     hidden: bool,
+    actor_id: i64,
 ) -> Result<bool, AppError> {
     let now = Utc::now().naive_utc();
+    let technique_id = sqlx::query_scalar!(
+        r#"SELECT technique_id AS "technique_id!: i64" FROM videos WHERE id = ?"#,
+        video_id,
+    )
+    .fetch_one(pool)
+    .await?;
+    let mut tx = pool.begin().await?;
     let result = if hidden {
         sqlx::query!(
             "UPDATE videos SET hidden_at = ?, updated_at = ?
@@ -349,7 +380,7 @@ pub async fn set_video_hidden_globally(
             now,
             video_id,
         )
-        .execute(pool)
+        .execute(&mut *tx)
         .await?
     } else {
         sqlx::query!(
@@ -358,9 +389,20 @@ pub async fn set_video_hidden_globally(
             now,
             video_id,
         )
-        .execute(pool)
+        .execute(&mut *tx)
         .await?
     };
+    let affected = affected_students_for_technique(&mut tx, technique_id).await?;
+    emit_fanout(
+        &mut tx,
+        NewActivity::new(Verb::VideoVisibilitySet, actor_id)
+            .video(video_id)
+            .technique(technique_id)
+            .payload(payload::video_visibility_set("global", !hidden)),
+        &affected,
+    )
+    .await?;
+    tx.commit().await?;
     Ok(result.rows_affected() > 0)
 }
 
@@ -449,9 +491,14 @@ pub async fn update_video_metadata(
 ) -> Result<(), AppError> {
     let now = Utc::now().naive_utc();
     if let Some(title) = title {
-        sqlx::query!("UPDATE videos SET title = ?, updated_at = ? WHERE id = ?", title, now, id)
-            .execute(pool)
-            .await?;
+        sqlx::query!(
+            "UPDATE videos SET title = ?, updated_at = ? WHERE id = ?",
+            title,
+            now,
+            id
+        )
+        .execute(pool)
+        .await?;
     }
     if let Some(description) = description {
         sqlx::query!(
@@ -550,9 +597,12 @@ pub async fn reset_video_to_processing(pool: &Pool<Sqlite>, id: i64) -> Result<(
 #[instrument(skip(pool))]
 pub async fn clear_video_watch_state(pool: &Pool<Sqlite>, video_id: i64) -> Result<(), AppError> {
     let mut tx = pool.begin().await?;
-    sqlx::query!("DELETE FROM video_watch_events WHERE video_id = ?", video_id)
-        .execute(&mut *tx)
-        .await?;
+    sqlx::query!(
+        "DELETE FROM video_watch_events WHERE video_id = ?",
+        video_id
+    )
+    .execute(&mut *tx)
+    .await?;
     sqlx::query!(
         "DELETE FROM video_watch_aggregates WHERE video_id = ?",
         video_id
@@ -592,7 +642,8 @@ pub async fn total_video_objects(pool: &Pool<Sqlite>) -> Result<i64, AppError> {
 
 /// Sets, updates, or clears the per-(student, syllabus, video) override.
 /// `Some(b)` upserts the row with that visibility flag; `None` removes
-/// the row so the video falls back to its global visibility.
+/// the row so the video falls back to its global visibility. Always emits
+/// a per-student `video_visibility_set` activity row (non-notifiable).
 #[instrument(skip(pool))]
 pub async fn set_video_syllabus_visibility(
     pool: &Pool<Sqlite>,
@@ -603,6 +654,7 @@ pub async fn set_video_syllabus_visibility(
     by_user_id: i64,
 ) -> Result<(), AppError> {
     let now = chrono::Utc::now().naive_utc();
+    let mut tx = pool.begin().await?;
     match visible {
         Some(b) => {
             sqlx::query!(
@@ -620,7 +672,7 @@ pub async fn set_video_syllabus_visibility(
                 by_user_id,
                 now,
             )
-            .execute(pool)
+            .execute(&mut *tx)
             .await?;
         }
         None => {
@@ -631,10 +683,22 @@ pub async fn set_video_syllabus_visibility(
                 syllabus_id,
                 video_id,
             )
-            .execute(pool)
+            .execute(&mut *tx)
             .await?;
         }
     }
+    emit(
+        &mut tx,
+        NewActivity::new(Verb::VideoVisibilitySet, by_user_id)
+            .target_student(student_id)
+            .video(video_id)
+            .payload(payload::video_visibility_set(
+                "student",
+                visible.unwrap_or(true),
+            )),
+    )
+    .await?;
+    tx.commit().await?;
     Ok(())
 }
 

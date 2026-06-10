@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT technique_id AS \"technique_id!: i64\" FROM videos WHERE id = ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "technique_id!: i64",
+        "ordinal": 0,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "7501a6dd10a6d9fab9146416ba908c97417f78f1b0d9dd8ed9c697da50d0f714"
+}

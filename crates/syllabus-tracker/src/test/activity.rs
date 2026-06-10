@@ -364,6 +364,78 @@ mod tests {
     }
 
     #[rocket::async_test]
+    async fn global_hide_fans_out_visibility_set() {
+        let db = TestDbBuilder::new()
+            .coach("coach", None)
+            .student("alice", None)
+            .student("bob", None)
+            .technique("Armbar", "", Some("coach"))
+            .build()
+            .await
+            .unwrap();
+        let coach = db.user_id("coach").unwrap();
+        let alice = db.user_id("alice").unwrap();
+        let bob = db.user_id("bob").unwrap();
+        let armbar = db.technique_id("Armbar").unwrap();
+
+        // alice has the technique via an assigned syllabus
+        let sid = crate::db::create_syllabus(&db.pool, "S", None, coach)
+            .await
+            .unwrap();
+        let aid = crate::db::assign(&db.pool, coach, alice, sid)
+            .await
+            .unwrap();
+        crate::db::add_technique_to_assignment(&db.pool, aid, armbar, coach)
+            .await
+            .unwrap();
+
+        // bob has it pinned
+        crate::db::pin_technique(&db.pool, bob, armbar)
+            .await
+            .unwrap();
+
+        // Seed a video directly (bypass create helpers to avoid extra activity)
+        let video_id: i64 = sqlx::query_scalar!(
+            r#"INSERT INTO videos (technique_id, title, position, kind, processing_status, uploaded_by_id)
+               VALUES (?, 'Test', 0, 'external', 'ready', ?)
+               RETURNING id AS "id!: i64""#,
+            armbar,
+            coach,
+        )
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+
+        // Clear setup activity
+        sqlx::query!("DELETE FROM activity")
+            .execute(&db.pool)
+            .await
+            .unwrap();
+
+        crate::db::set_video_hidden_globally(&db.pool, video_id, true, coach)
+            .await
+            .unwrap();
+
+        let rows = sqlx::query!(
+            r#"SELECT target_student_id AS "t?: i64", payload_json AS "p?"
+               FROM activity WHERE verb = 'video_visibility_set'
+               ORDER BY target_student_id NULLS LAST"#
+        )
+        .fetch_all(&db.pool)
+        .await
+        .unwrap();
+        assert_eq!(rows.len(), 2, "one row per affected student");
+        for row in &rows {
+            let payload: serde_json::Value =
+                serde_json::from_str(row.p.as_deref().unwrap()).unwrap();
+            assert_eq!(payload["scope"], "global");
+            assert_eq!(payload["visible"], false);
+        }
+        let targets: Vec<Option<i64>> = rows.into_iter().map(|r| r.t).collect();
+        assert_eq!(targets, vec![Some(alice), Some(bob)]);
+    }
+
+    #[rocket::async_test]
     async fn update_sst_status_emits_status_changed_with_from_to() {
         use crate::auth::{Role, User};
         use crate::db::SstUpdate;
@@ -537,6 +609,101 @@ mod tests {
         .unwrap();
         let targets: Vec<Option<i64>> = rows.into_iter().map(|r| r.t).collect();
         assert_eq!(targets, vec![Some(alice), Some(bob)]);
+    }
+
+    #[rocket::async_test]
+    async fn video_added_fans_out_to_union_of_assigned_and_pinned() {
+        let db = TestDbBuilder::new()
+            .coach("coach", None)
+            .student("alice", None)
+            .student("bob", None)
+            .technique("Armbar", "", Some("coach"))
+            .build()
+            .await
+            .unwrap();
+        let coach = db.user_id("coach").unwrap();
+        let alice = db.user_id("alice").unwrap();
+        let bob = db.user_id("bob").unwrap();
+        let armbar = db.technique_id("Armbar").unwrap();
+
+        // alice has the technique via an assigned syllabus
+        let sid = crate::db::create_syllabus(&db.pool, "S", None, coach)
+            .await
+            .unwrap();
+        let aid = crate::db::assign(&db.pool, coach, alice, sid)
+            .await
+            .unwrap();
+        crate::db::add_technique_to_assignment(&db.pool, aid, armbar, coach)
+            .await
+            .unwrap();
+
+        // bob has it pinned
+        crate::db::pin_technique(&db.pool, bob, armbar)
+            .await
+            .unwrap();
+
+        // Clear setup activity
+        sqlx::query!("DELETE FROM activity")
+            .execute(&db.pool)
+            .await
+            .unwrap();
+
+        crate::db::create_processing_video(&db.pool, armbar, "Test Video", None, coach)
+            .await
+            .unwrap();
+
+        let rows = sqlx::query!(
+            r#"SELECT target_student_id AS "t?: i64"
+               FROM activity WHERE verb = 'video_added'
+               ORDER BY target_student_id NULLS LAST"#
+        )
+        .fetch_all(&db.pool)
+        .await
+        .unwrap();
+        let targets: Vec<Option<i64>> = rows.into_iter().map(|r| r.t).collect();
+        assert_eq!(targets, vec![Some(alice), Some(bob)]);
+    }
+
+    #[rocket::async_test]
+    async fn video_added_empty_set_writes_null_target_row() {
+        let db = TestDbBuilder::new()
+            .coach("coach", None)
+            .technique("Armbar", "", Some("coach"))
+            .build()
+            .await
+            .unwrap();
+        let coach = db.user_id("coach").unwrap();
+        let armbar = db.technique_id("Armbar").unwrap();
+
+        // Clear setup activity
+        sqlx::query!("DELETE FROM activity")
+            .execute(&db.pool)
+            .await
+            .unwrap();
+
+        crate::db::create_external_video(
+            &db.pool,
+            crate::db::NewExternalVideo {
+                technique_id: armbar,
+                title: "External Test",
+                description: None,
+                uploaded_by_id: coach,
+                kind: crate::models::VideoKind::Youtube,
+                external_url: "https://youtu.be/dQw4w9WgXcQ",
+                external_host: Some("youtube"),
+                external_video_id: Some("dQw4w9WgXcQ"),
+            },
+        )
+        .await
+        .unwrap();
+
+        let row = sqlx::query!(
+            r#"SELECT target_student_id AS "t?: i64" FROM activity WHERE verb = 'video_added'"#
+        )
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+        assert_eq!(row.t, None, "empty fan-out writes a single null-target row");
     }
 
     #[rocket::async_test]
