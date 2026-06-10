@@ -743,6 +743,12 @@ export interface LibraryTechniqueRow {
   student_count: number;
   video_count: number;
   last_activity_at: string | null;
+  /**
+   * Always present. Coach-facing endpoints return false; the student
+   * library endpoint sets true when the viewing student has the technique
+   * pinned.
+   */
+  is_pinned: boolean;
 }
 
 export async function getLibraryTechniques(): Promise<LibraryTechniqueRow[]> {
@@ -753,6 +759,61 @@ export async function getLibraryTechniques(): Promise<LibraryTechniqueRow[]> {
     throw new Error("Failed to fetch techniques");
   }
   return await response.json();
+}
+
+export async function getStudentLibrary(
+  studentId: number,
+): Promise<LibraryTechniqueRow[]> {
+  const response = await fetch(`/api/student/${studentId}/library`, {
+    credentials: "include",
+  });
+  if (!response.ok) {
+    throw new Error("Failed to fetch student library");
+  }
+  return await response.json();
+}
+
+export async function getStudentPinnedTechniques(
+  studentId: number,
+): Promise<LibraryTechniqueRow[]> {
+  const response = await fetch(`/api/student/${studentId}/pinned_techniques`, {
+    credentials: "include",
+  });
+  if (!response.ok) {
+    throw new Error("Failed to fetch pinned techniques");
+  }
+  return await response.json();
+}
+
+export async function pinTechniqueForStudent(
+  studentId: number,
+  techniqueId: number,
+): Promise<void> {
+  const response = await fetch(`/api/student/${studentId}/pinned_techniques`, {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ technique_id: techniqueId }),
+  });
+  if (!response.ok) {
+    throw new Error("Failed to pin technique");
+  }
+}
+
+export async function unpinTechniqueForStudent(
+  studentId: number,
+  techniqueId: number,
+): Promise<void> {
+  const response = await fetch(
+    `/api/student/${studentId}/pinned_techniques/${techniqueId}`,
+    {
+      method: "DELETE",
+      credentials: "include",
+    },
+  );
+  if (!response.ok) {
+    throw new Error("Failed to unpin technique");
+  }
 }
 
 export interface LibraryTechniqueCollectionRef {

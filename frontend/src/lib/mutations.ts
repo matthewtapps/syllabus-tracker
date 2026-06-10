@@ -17,6 +17,7 @@ import {
   inviteUser,
   linkVideo,
   markStudentTechniqueSeen,
+  pinTechniqueForStudent,
   removeTagFromTechnique,
   removeTechniqueFromCollection,
   reorderVideos,
@@ -24,6 +25,7 @@ import {
   setStudentGraduated,
   setVideoGlobalHidden,
   setVideoStudentVisibility,
+  unpinTechniqueForStudent,
   updateAttempt,
   updateCollection,
   updateLibraryTechnique,
@@ -34,6 +36,7 @@ import {
   updateVideo,
 } from "./api";
 import type {
+  LibraryTechniqueRow,
   SingleStudentTechnique,
   StudentTechniques,
   Technique,
@@ -726,3 +729,111 @@ export function useSetVideoStudentVisibility(techniqueId: number) {
 }
 
 // Predicate moved to qk.matches.anyStudentTechniqueScope in query-keys.ts.
+
+// ============================================================
+// Pinned techniques
+// ============================================================
+
+// Optimistically toggles the pinned state across the student's pinned list
+// and any open student-library cache for the same student. The plan calls
+// for pin/unpin to be optimistic; flash-before-refetch is more disruptive
+// than a rare rollback on backend failure.
+export function usePinTechnique(studentId: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (technique: LibraryTechniqueRow) => {
+      await pinTechniqueForStudent(studentId, technique.id);
+      return technique;
+    },
+    onMutate: async (technique) => {
+      await qc.cancelQueries({ queryKey: qk.pinnedTechniques(studentId) });
+      await qc.cancelQueries({ queryKey: qk.studentLibrary(studentId) });
+
+      const prevPinned = qc.getQueryData<LibraryTechniqueRow[]>(
+        qk.pinnedTechniques(studentId),
+      );
+      const prevLibrary = qc.getQueryData<LibraryTechniqueRow[]>(
+        qk.studentLibrary(studentId),
+      );
+
+      qc.setQueryData<LibraryTechniqueRow[]>(
+        qk.pinnedTechniques(studentId),
+        (prev) => {
+          const next = prev ? [...prev] : [];
+          if (!next.some((t) => t.id === technique.id)) {
+            next.unshift({ ...technique, is_pinned: true });
+          }
+          return next;
+        },
+      );
+      qc.setQueryData<LibraryTechniqueRow[]>(
+        qk.studentLibrary(studentId),
+        (prev) =>
+          prev?.map((t) =>
+            t.id === technique.id ? { ...t, is_pinned: true } : t,
+          ),
+      );
+
+      return { prevPinned, prevLibrary };
+    },
+    onError: (_err, _vars, ctx) => {
+      if (ctx?.prevPinned !== undefined) {
+        qc.setQueryData(qk.pinnedTechniques(studentId), ctx.prevPinned);
+      }
+      if (ctx?.prevLibrary !== undefined) {
+        qc.setQueryData(qk.studentLibrary(studentId), ctx.prevLibrary);
+      }
+    },
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: qk.pinnedTechniques(studentId) });
+      qc.invalidateQueries({ queryKey: qk.studentLibrary(studentId) });
+    },
+  });
+}
+
+export function useUnpinTechnique(studentId: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (techniqueId: number) => {
+      await unpinTechniqueForStudent(studentId, techniqueId);
+      return techniqueId;
+    },
+    onMutate: async (techniqueId) => {
+      await qc.cancelQueries({ queryKey: qk.pinnedTechniques(studentId) });
+      await qc.cancelQueries({ queryKey: qk.studentLibrary(studentId) });
+
+      const prevPinned = qc.getQueryData<LibraryTechniqueRow[]>(
+        qk.pinnedTechniques(studentId),
+      );
+      const prevLibrary = qc.getQueryData<LibraryTechniqueRow[]>(
+        qk.studentLibrary(studentId),
+      );
+
+      qc.setQueryData<LibraryTechniqueRow[]>(
+        qk.pinnedTechniques(studentId),
+        (prev) => prev?.filter((t) => t.id !== techniqueId),
+      );
+      qc.setQueryData<LibraryTechniqueRow[]>(
+        qk.studentLibrary(studentId),
+        (prev) =>
+          prev?.map((t) =>
+            t.id === techniqueId ? { ...t, is_pinned: false } : t,
+          ),
+      );
+
+      return { prevPinned, prevLibrary };
+    },
+    onError: (_err, _vars, ctx) => {
+      if (ctx?.prevPinned !== undefined) {
+        qc.setQueryData(qk.pinnedTechniques(studentId), ctx.prevPinned);
+      }
+      if (ctx?.prevLibrary !== undefined) {
+        qc.setQueryData(qk.studentLibrary(studentId), ctx.prevLibrary);
+      }
+    },
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: qk.pinnedTechniques(studentId) });
+      qc.invalidateQueries({ queryKey: qk.studentLibrary(studentId) });
+    },
+  });
+}

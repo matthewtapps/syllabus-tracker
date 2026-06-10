@@ -35,6 +35,11 @@ export const qk = {
   libraryTechniqueStats: (id: number) =>
     ["libraryTechnique", id, "stats"] as const,
 
+  studentLibrary: (studentId: number) =>
+    ["student", studentId, "library"] as const,
+  pinnedTechniques: (studentId: number) =>
+    ["student", studentId, "pinned_techniques"] as const,
+
   techniqueVideos: (techniqueId: number, forStudent: number | null = null) =>
     ["technique", techniqueId, "videos", forStudent] as const,
   // Prefix matcher for all `techniqueVideos` cache buckets for a technique,
