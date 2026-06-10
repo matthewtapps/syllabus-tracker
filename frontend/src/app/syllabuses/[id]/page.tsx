@@ -9,7 +9,6 @@ import {
   Trash2,
   UserPlus,
   Users,
-  X,
 } from 'lucide-react';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -39,6 +38,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { TracedForm } from '@/components/traced-form';
 import { EmptyState } from '@/components/empty-state';
 import { Accordion } from '@/components/ui/accordion';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { TechniqueRow } from '@/components/technique-row';
 import {
   useLibraryTechniques,
@@ -166,7 +166,7 @@ function SyllabusDetail({ syllabusId }: { syllabusId: number }) {
           onClick={() => navigate('/syllabuses')}
         >
           <ArrowLeft className="h-4 w-4" aria-hidden />
-          Back
+          Back to Syllabus Library
         </Button>
         {editing ? (
           <EditHeader syllabus={syllabus} onDone={() => setEditing(false)} />
@@ -205,59 +205,76 @@ function SyllabusDetail({ syllabusId }: { syllabusId: number }) {
         )}
       </div>
 
-      <TechniquesSection
-        techniques={syllabus.techniques}
-        techSearch={techSearch}
-        setTechSearch={setTechSearch}
-        techTags={techTags}
-        setTechTags={setTechTags}
-        techExpanded={techExpanded}
-        setTechExpanded={setTechExpanded}
-        onAdd={() => setAddOpen(true)}
-        onRemove={(id, name) => setRemoveTarget({ id, name })}
-      />
+      <Tabs defaultValue="techniques" className="space-y-3">
+        <TabsList className="grid w-full grid-cols-2">
+          <TabsTrigger value="techniques" className="gap-1.5">
+            <NotebookPen className="h-3.5 w-3.5" aria-hidden />
+            Techniques
+            <span className="text-muted-foreground">
+              ({syllabus.techniques.length})
+            </span>
+          </TabsTrigger>
+          <TabsTrigger value="students" className="gap-1.5">
+            <Users className="h-3.5 w-3.5" aria-hidden />
+            Students
+            <span className="text-muted-foreground">
+              ({assignedIds.length})
+            </span>
+          </TabsTrigger>
+        </TabsList>
 
-      <section className="space-y-2">
-        <h2 className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-          <Users className="h-3.5 w-3.5" aria-hidden />
-          Assigned students
-        </h2>
-        {assignedIds.length > 0 && (
-          <div className="relative">
-            <Search
-              className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
-              aria-hidden
-            />
-            <Input
-              placeholder="Search students"
-              value={studentSearch}
-              onChange={(e) => setStudentSearch(e.target.value)}
-              className="pl-9"
-            />
-          </div>
-        )}
-        <Button
-          variant="outline"
-          className="w-full gap-1.5"
-          onClick={() => setAssignOpen(true)}
-        >
-          <UserPlus className="h-4 w-4" aria-hidden />
-          Assign student
-        </Button>
-        <div className="overflow-hidden rounded-lg border border-border bg-card">
-          {assignedIds.length === 0 ? (
-            <p className="px-6 py-8 text-center text-sm text-muted-foreground">
-              Nobody is assigned yet.
-            </p>
-          ) : (
-            <AssignedStudentsList
-              studentIds={assignedIds}
-              syllabusId={syllabusId}
-              filterText={studentSearch}
-            />
+        <TabsContent value="techniques" className="mt-0">
+          <TechniquesSection
+            syllabusId={syllabusId}
+            techniques={syllabus.techniques}
+            techSearch={techSearch}
+            setTechSearch={setTechSearch}
+            techTags={techTags}
+            setTechTags={setTechTags}
+            techExpanded={techExpanded}
+            setTechExpanded={setTechExpanded}
+            onAdd={() => setAddOpen(true)}
+            onRemove={(id, name) => setRemoveTarget({ id, name })}
+          />
+        </TabsContent>
+
+        <TabsContent value="students" className="mt-0 space-y-2">
+          {assignedIds.length > 0 && (
+            <div className="relative">
+              <Search
+                className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
+                aria-hidden
+              />
+              <Input
+                placeholder="Search students"
+                value={studentSearch}
+                onChange={(e) => setStudentSearch(e.target.value)}
+                className="pl-9"
+              />
+            </div>
           )}
-        </div>
-      </section>
+          <Button
+            className="w-full gap-1.5"
+            onClick={() => setAssignOpen(true)}
+          >
+            <UserPlus className="h-4 w-4" aria-hidden />
+            Assign student
+          </Button>
+          <div className="overflow-hidden rounded-lg border border-border bg-card">
+            {assignedIds.length === 0 ? (
+              <p className="px-6 py-8 text-center text-sm text-muted-foreground">
+                Nobody is assigned yet.
+              </p>
+            ) : (
+              <AssignedStudentsList
+                studentIds={assignedIds}
+                syllabusId={syllabusId}
+                filterText={studentSearch}
+              />
+            )}
+          </div>
+        </TabsContent>
+      </Tabs>
 
       <AddTechniqueDialog
         open={addOpen}
@@ -658,17 +675,20 @@ function RemoveTechniqueDialog({
   syllabusId: number;
 }) {
   const removeMutation = useRemoveTechniqueFromSyllabus();
-  const [propagation, setPropagation] = useState<PropagationMode | null>(null);
+  const [propagateToActive, setPropagateToActive] = useState(true);
 
-  // Reset selection when target changes so the next open requires a fresh choice.
+  // Reset to the safe default whenever a new target opens the dialog.
   useEffect(() => {
-    setPropagation(null);
+    setPropagateToActive(true);
   }, [target?.id]);
 
   if (!target) return null;
 
   async function handleConfirm() {
-    if (!propagation || !target) return;
+    if (!target) return;
+    const propagation: PropagationMode = propagateToActive
+      ? 'cascade'
+      : 'syllabus_only';
     try {
       await removeMutation.mutateAsync({
         syllabusId,
@@ -684,56 +704,45 @@ function RemoveTechniqueDialog({
 
   return (
     <Dialog open={!!target} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent>
+      <DialogContent aria-describedby={undefined}>
         <DialogHeader>
           <DialogTitle>Remove {target.name}?</DialogTitle>
-          <DialogDescription>
-            Pick how this should affect students already working through this syllabus.
-          </DialogDescription>
         </DialogHeader>
-        <fieldset className="space-y-2">
-          <label className="flex items-start gap-2 text-sm">
-            <input
-              type="radio"
-              name="remove-propagation"
-              value="syllabus_only"
-              checked={propagation === 'syllabus_only'}
-              onChange={() => setPropagation('syllabus_only')}
-              className="mt-1"
-            />
-            <span>
-              <span className="block font-medium">Remove from syllabus only</span>
-              <span className="text-xs text-muted-foreground">
-                Existing student assignments keep this technique with its progress.
-              </span>
+        <label
+          htmlFor="remove-propagate-switch"
+          className="flex cursor-pointer items-center justify-between gap-3 rounded-md border border-border bg-muted/30 p-3"
+        >
+          <span className="min-w-0 flex-1">
+            <span className="block text-sm font-medium">
+              Update active assignments
             </span>
-          </label>
-          <label className="flex items-start gap-2 text-sm">
-            <input
-              type="radio"
-              name="remove-propagation"
-              value="cascade"
-              checked={propagation === 'cascade'}
-              onChange={() => setPropagation('cascade')}
-              className="mt-1"
-            />
-            <span>
-              <span className="block font-medium">Remove from syllabus AND existing student assignments</span>
-              <span className="text-xs text-muted-foreground">
-                Hides the technique for each student. Their attempts and notes are preserved.
-              </span>
+            <span className="block text-xs text-muted-foreground">
+              Students currently working through this syllabus lose this
+              technique. Their attempts and notes are preserved.
             </span>
-          </label>
-        </fieldset>
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose}>
+          </span>
+          <Switch
+            id="remove-propagate-switch"
+            checked={propagateToActive}
+            onCheckedChange={setPropagateToActive}
+          />
+        </label>
+        <DialogFooter className="grid grid-cols-2 gap-2 sm:flex-none sm:justify-stretch">
+          <Button
+            variant="outline"
+            onClick={onClose}
+            className="w-full"
+            disabled={removeMutation.isPending}
+          >
             Cancel
           </Button>
           <Button
-            disabled={!propagation || removeMutation.isPending}
+            variant="destructive"
             onClick={handleConfirm}
+            className="w-full"
+            disabled={removeMutation.isPending}
           >
-            Remove
+            {removeMutation.isPending ? 'Removing...' : 'Remove'}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -805,6 +814,7 @@ function AssignedStudentsList({
 }
 
 function TechniquesSection({
+  syllabusId,
   techniques,
   techSearch,
   setTechSearch,
@@ -815,6 +825,7 @@ function TechniquesSection({
   onAdd,
   onRemove,
 }: {
+  syllabusId: number;
   techniques: SyllabusTechniqueRow[];
   techSearch: string;
   setTechSearch: (v: string) => void;
@@ -908,11 +919,7 @@ function TechniquesSection({
           </p>
         </div>
       )}
-      <Button
-        variant="outline"
-        className="w-full gap-1.5"
-        onClick={onAdd}
-      >
+      <Button className="w-full gap-1.5" onClick={onAdd}>
         <Plus className="h-4 w-4" aria-hidden />
         Add technique
       </Button>
@@ -936,34 +943,18 @@ function TechniquesSection({
           >
             {filtered.map((t) => {
               const value = String(t.technique_id);
-              // Wrapper owns the inter-row divider since the AccordionItem
-              // inside becomes the sole child of its grid cell and its own
-              // `last:border-b-0` strips itself.
               return (
-                <div
+                <TechniqueRow
                   key={t.technique_id}
-                  className="flex items-stretch border-b border-border last:border-b-0"
-                >
-                  <div className="min-w-0 flex-1">
-                    <TechniqueRow
-                      technique={toLibraryShape(t)}
-                      context={{ kind: 'global-library' }}
-                      value={value}
-                      isOpen={techExpanded === value}
-                    />
-                  </div>
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onRemove(t.technique_id, t.name);
-                    }}
-                    aria-label={`Remove ${t.name}`}
-                    className="flex shrink-0 items-center px-3 text-muted-foreground transition-colors hover:bg-muted/40 hover:text-destructive"
-                  >
-                    <X className="h-4 w-4" aria-hidden />
-                  </button>
-                </div>
+                  technique={toLibraryShape(t)}
+                  context={{
+                    kind: 'syllabus-management',
+                    syllabusId,
+                    onRemove: (tech) => onRemove(tech.id, tech.name),
+                  }}
+                  value={value}
+                  isOpen={techExpanded === value}
+                />
               );
             })}
           </Accordion>

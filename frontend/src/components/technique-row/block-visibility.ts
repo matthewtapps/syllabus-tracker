@@ -37,6 +37,11 @@ export const BLOCK_VISIBILITY = {
     coach: ["description", "tags", "videos"],
     admin: ["description", "tags", "videos"],
   },
+  "syllabus-management": {
+    student: ["description", "tags", "videos"],
+    coach: ["description", "tags", "videos", "edit-definition"],
+    admin: ["description", "tags", "videos", "edit-definition"],
+  },
   "student-syllabus": {
     student: [
       "status",

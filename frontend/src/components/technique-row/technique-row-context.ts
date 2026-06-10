@@ -26,6 +26,15 @@ export type RowContext =
       syllabusId: number;
       assignmentId: number;
       sst: SstRow;
+    }
+  // Coach editing a technique inside a global syllabus. Same edit
+  // affordances as global-library coach surface, minus the cross-system
+  // aggregates (collections membership, status mix, attempts, plays)
+  // since those don't belong in the syllabus authoring view.
+  | {
+      kind: "syllabus-management";
+      syllabusId: number;
+      onRemove: (technique: LibraryTechniqueRow) => void;
     };
 
 export interface TechniqueRowState {
