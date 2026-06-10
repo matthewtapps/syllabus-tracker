@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE syllabus_assignments\n         SET unassigned_at = ?, unassigned_by_id = ?\n         WHERE id = ? AND unassigned_at IS NULL",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": []
+  },
+  "hash": "e895288d9395316184567e14d581246e7a37c64ae341b69952f3514759a06c49"
+}

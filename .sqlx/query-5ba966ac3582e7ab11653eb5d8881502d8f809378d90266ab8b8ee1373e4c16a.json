@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "DELETE FROM syllabuses WHERE id = ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": []
+  },
+  "hash": "5ba966ac3582e7ab11653eb5d8881502d8f809378d90266ab8b8ee1373e4c16a"
+}

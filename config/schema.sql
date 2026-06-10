@@ -216,6 +216,123 @@ CREATE TABLE IF NOT EXISTS student_pinned_techniques (
 );
 CREATE INDEX IF NOT EXISTS idx_spt_student ON student_pinned_techniques (student_id);
 
+-- New "syllabus" stack (PR 3). Parallel to legacy collections /
+-- student_techniques / attempts. From PR 3 onward all new writes flow
+-- through these tables; legacy surfaces are read-only and get deleted
+-- in PR 5.
+
+-- Coach-owned, reusable, named collection of techniques. Replaces the
+-- conceptual use of `collections` going forward; legacy `collections`
+-- stays on disk but loses all UI call sites by PR 5.
+CREATE TABLE IF NOT EXISTS syllabuses (
+    id            INTEGER PRIMARY KEY,
+    name          TEXT NOT NULL,
+    description   TEXT,
+    created_at    TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    created_by_id INTEGER REFERENCES users (id),
+    updated_at    TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Membership of techniques in a syllabus, with display ordering.
+CREATE TABLE IF NOT EXISTS syllabus_techniques (
+    syllabus_id  INTEGER NOT NULL REFERENCES syllabuses (id) ON DELETE CASCADE,
+    technique_id INTEGER NOT NULL REFERENCES techniques (id) ON DELETE CASCADE,
+    position     INTEGER NOT NULL DEFAULT 0,
+    added_at     TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    added_by_id  INTEGER REFERENCES users (id),
+    PRIMARY KEY (syllabus_id, technique_id)
+);
+CREATE INDEX IF NOT EXISTS idx_st_position
+    ON syllabus_techniques (syllabus_id, position);
+
+-- Which student has been assigned which syllabus. UNIQUE on
+-- (student_id, syllabus_id) holds even across soft-unassign: re-assigning
+-- the same pair clears `unassigned_at` rather than creating a new row, so
+-- the per-(assignment, technique) SST history is preserved.
+CREATE TABLE IF NOT EXISTS syllabus_assignments (
+    id               INTEGER PRIMARY KEY,
+    student_id       INTEGER NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+    syllabus_id      INTEGER NOT NULL REFERENCES syllabuses (id) ON DELETE CASCADE,
+    assigned_at      TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    assigned_by_id   INTEGER REFERENCES users (id),
+    unassigned_at    TIMESTAMP,
+    unassigned_by_id INTEGER REFERENCES users (id),
+    graduated_at     TIMESTAMP,
+    graduated_by_id  INTEGER REFERENCES users (id),
+    UNIQUE (student_id, syllabus_id)
+);
+CREATE INDEX IF NOT EXISTS idx_sa_student_active
+    ON syllabus_assignments (student_id) WHERE unassigned_at IS NULL;
+
+-- Per-(assignment, technique) progress row. UNIQUE(assignment_id,
+-- technique_id) holds. Eager materialization: on assign (or re-assign),
+-- one row per current `syllabus_techniques` member is inserted with
+-- default `status = 'red'`. On re-assign, existing rows are preserved
+-- including `hidden_at` so coach curation isn't silently undone.
+--
+-- `coach_notes` is student-readable (matches legacy `student_techniques`).
+-- The `last_coach_update_*` and `last_student_update_*` pairs are bumped
+-- by the SST update helper based on the *actor's role*, not on which
+-- field changed: a coach writing student_notes (rare, but allowed when
+-- editing a graduated assignment) still bumps the coach pair.
+CREATE TABLE IF NOT EXISTS student_syllabus_techniques (
+    id                        INTEGER PRIMARY KEY,
+    assignment_id             INTEGER NOT NULL REFERENCES syllabus_assignments (id) ON DELETE CASCADE,
+    technique_id              INTEGER NOT NULL REFERENCES techniques (id) ON DELETE CASCADE,
+    status                    TEXT NOT NULL DEFAULT 'red'
+                                    CHECK (status IN ('red', 'amber', 'green')),
+    student_notes             TEXT,
+    coach_notes               TEXT,
+    hidden_at                 TIMESTAMP,
+    hidden_by_id              INTEGER REFERENCES users (id),
+    created_at                TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at                TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    last_coach_update_at      TIMESTAMP,
+    last_coach_update_by_id   INTEGER REFERENCES users (id),
+    last_student_update_at    TIMESTAMP,
+    last_student_update_by_id INTEGER REFERENCES users (id),
+    UNIQUE (assignment_id, technique_id)
+);
+CREATE INDEX IF NOT EXISTS idx_sst_assignment
+    ON student_syllabus_techniques (assignment_id);
+
+-- Attempts logged against an SST row. Parallel to legacy `attempts`,
+-- which now stays dormant. `attempted_at` is client-supplied (coaches
+-- can log "attempt on last Tuesday"); the handler validates it is not
+-- in the future. `created_at` is server-set.
+CREATE TABLE IF NOT EXISTS syllabus_attempts (
+    id                            INTEGER PRIMARY KEY,
+    student_syllabus_technique_id INTEGER NOT NULL REFERENCES student_syllabus_techniques (id) ON DELETE CASCADE,
+    recorded_by_id                INTEGER NOT NULL REFERENCES users (id),
+    attempted_at                  TIMESTAMP NOT NULL,
+    coach_note                    TEXT,
+    coach_note_by_id              INTEGER REFERENCES users (id),
+    coach_note_at                 TIMESTAMP,
+    student_note                  TEXT,
+    student_note_at               TIMESTAMP,
+    created_at                    TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_sat_sst
+    ON syllabus_attempts (student_syllabus_technique_id, attempted_at DESC);
+CREATE INDEX IF NOT EXISTS idx_sat_recorder
+    ON syllabus_attempts (recorded_by_id, attempted_at DESC);
+
+-- Per-(student, syllabus, video) visibility overrides. Replaces the
+-- legacy per-(student, video) override table for syllabus context.
+-- Library context (PR 1) ignores these and shows global visibility.
+CREATE TABLE IF NOT EXISTS student_syllabus_video_visibility (
+    student_id    INTEGER NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+    syllabus_id   INTEGER NOT NULL REFERENCES syllabuses (id) ON DELETE CASCADE,
+    video_id      INTEGER NOT NULL REFERENCES videos (id) ON DELETE CASCADE,
+    visible       BOOLEAN NOT NULL,
+    created_at    TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at    TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_by_id INTEGER REFERENCES users (id),
+    PRIMARY KEY (student_id, syllabus_id, video_id)
+);
+CREATE INDEX IF NOT EXISTS idx_ssvv_student_syllabus
+    ON student_syllabus_video_visibility (student_id, syllabus_id);
+
 -- Litestream-owned bookkeeping tables. Declared here only so the migration
 -- engine recognises them as expected and doesn't try to drop them. Litestream
 -- creates and maintains the rows; the app never reads or writes them.

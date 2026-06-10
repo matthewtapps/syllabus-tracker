@@ -18,10 +18,16 @@ import {
   getRecentAttemptsForStudent,
   getStudentLibrary,
   getStudentPinnedTechniques,
+  getStudentSyllabusTechniquesApi,
+  getStudentSyllabusesApi,
   getStudentTechniqueDetail,
   getStudentTechniques,
   getStudents,
+  getSyllabusDetail,
+  getSyllabuses,
+  listSyllabusStudentsApi,
   getTechniquesForAssignment,
+  listSyllabusAttemptsApi,
   getVideoStats,
   getVideoStatus,
   listAttempts,
@@ -289,5 +295,70 @@ export function useAdminStorage(enabled: boolean = true) {
   return useQuery({
     queryKey: qk.adminStorage(),
     queryFn: enabled ? getAdminStorage : skipToken,
+  });
+}
+
+// ---- Syllabuses ----
+
+export function useSyllabuses() {
+  return useQuery({
+    queryKey: qk.syllabuses(),
+    queryFn: getSyllabuses,
+  });
+}
+
+export function useSyllabus(syllabusId: number | undefined) {
+  return useQuery({
+    queryKey: qk.syllabus(syllabusId ?? 0),
+    queryFn:
+      typeof syllabusId === "number" && Number.isFinite(syllabusId)
+        ? () => getSyllabusDetail(syllabusId)
+        : skipToken,
+  });
+}
+
+export function useStudentSyllabuses(studentId: number | undefined) {
+  return useQuery({
+    queryKey: qk.studentSyllabuses(studentId ?? 0),
+    queryFn:
+      typeof studentId === "number" && Number.isFinite(studentId)
+        ? () => getStudentSyllabusesApi(studentId)
+        : skipToken,
+  });
+}
+
+export function useStudentSyllabusTechniques(
+  studentId: number | undefined,
+  syllabusId: number | undefined,
+) {
+  return useQuery({
+    queryKey: qk.studentSyllabusTechniques(studentId ?? 0, syllabusId ?? 0),
+    queryFn:
+      typeof studentId === "number" &&
+      typeof syllabusId === "number" &&
+      Number.isFinite(studentId) &&
+      Number.isFinite(syllabusId)
+        ? () => getStudentSyllabusTechniquesApi(studentId, syllabusId)
+        : skipToken,
+  });
+}
+
+export function useSyllabusAttempts(sstId: number | undefined) {
+  return useQuery({
+    queryKey: qk.syllabusAttempts(sstId ?? 0),
+    queryFn:
+      typeof sstId === "number" && Number.isFinite(sstId)
+        ? () => listSyllabusAttemptsApi(sstId)
+        : skipToken,
+  });
+}
+
+export function useSyllabusStudents(syllabusId: number | undefined) {
+  return useQuery({
+    queryKey: qk.syllabusStudents(syllabusId ?? 0),
+    queryFn:
+      typeof syllabusId === "number" && Number.isFinite(syllabusId)
+        ? () => listSyllabusStudentsApi(syllabusId)
+        : skipToken,
   });
 }

@@ -1,9 +1,11 @@
 import { useCallback, useMemo, useState } from 'react';
 import { useParams, Navigate } from 'react-router-dom';
-import { Pin } from 'lucide-react';
+import { Pin, Search } from 'lucide-react';
 import { toast } from 'sonner';
 import { Accordion } from '@/components/ui/accordion';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { EmptyState } from '@/components/empty-state';
 import { TechniqueRow } from '@/components/technique-row';
 import { useStudentPinnedTechniques } from '@/lib/queries';
@@ -42,12 +44,41 @@ function PinnedListing({
 }) {
   const [expandedValue, setExpandedValue] = useState<string>('');
   const [exitingIds, setExitingIds] = useState<Set<number>>(new Set());
+  const [search, setSearch] = useState('');
+  const [activeTags, setActiveTags] = useState<string[]>([]);
   const query = useStudentPinnedTechniques(studentId);
   const pinMutation = usePinTechnique(studentId);
   const unpinMutation = useUnpinTechnique(studentId);
   const techniques = useMemo(() => query.data ?? [], [query.data]);
   const loading = query.isLoading;
   const error = query.error ? 'Failed to load pinned techniques.' : null;
+
+  const availableTags = useMemo(() => {
+    const set = new Set<string>();
+    techniques.forEach((t) => t.tags.forEach((tag) => set.add(tag.name)));
+    return Array.from(set).sort();
+  }, [techniques]);
+
+  const filtered = useMemo(() => {
+    const needle = search.trim().toLowerCase();
+    return techniques.filter((t) => {
+      const matchesText =
+        !needle ||
+        t.name.toLowerCase().includes(needle) ||
+        t.description.toLowerCase().includes(needle) ||
+        t.tags.some((tag) => tag.name.toLowerCase().includes(needle));
+      const matchesTags =
+        activeTags.length === 0 ||
+        activeTags.every((tag) => t.tags.some((x) => x.name === tag));
+      return matchesText && matchesTags;
+    });
+  }, [techniques, search, activeTags]);
+
+  function toggleTag(tag: string) {
+    setActiveTags((prev) =>
+      prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag],
+    );
+  }
 
   // Two-phase unpin so the row can animate out: flag the row for exit
   // styling, wait for the transition to play, then fire the mutation. The
@@ -92,18 +123,63 @@ function PinnedListing({
   return (
     <div className="container mx-auto px-4 py-6 sm:px-6 md:py-8">
       <div className="mb-4 flex items-end justify-between gap-2">
-        <div>
-          <h1 className="flex items-center gap-2 text-base font-semibold">
-            <Pin className="h-4 w-4" aria-hidden />
-            {isOwnView ? 'My pinned techniques' : 'Pinned techniques'}
-          </h1>
+        <h1 className="flex items-center gap-2 text-base font-semibold">
+          <Pin className="h-4 w-4" aria-hidden />
+          {isOwnView ? 'My Pinned Techniques' : 'Pinned Techniques'}
+        </h1>
+      </div>
+
+      {techniques.length > 0 && (
+        <div className="mb-4 space-y-3">
+          <div className="relative">
+            <Search
+              className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
+              aria-hidden
+            />
+            <Input
+              placeholder="Search techniques"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="pl-9"
+            />
+          </div>
+          {availableTags.length > 0 && (
+            <div className="flex flex-wrap gap-1.5">
+              {availableTags.map((tag) => {
+                const active = activeTags.includes(tag);
+                return (
+                  <Badge
+                    key={tag}
+                    variant={active ? 'default' : 'outline'}
+                    className="cursor-pointer select-none"
+                    onClick={() => toggleTag(tag)}
+                  >
+                    {tag}
+                  </Badge>
+                );
+              })}
+              {activeTags.length > 0 && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 px-2 text-xs"
+                  onClick={() => setActiveTags([])}
+                >
+                  Clear
+                </Button>
+              )}
+            </div>
+          )}
           <p className="text-xs text-muted-foreground">
-            {isOwnView
-              ? 'Quick access to techniques you have pinned from the library.'
-              : 'Techniques this student has pinned from the library.'}
+            {filtered.length === techniques.length
+              ? `${techniques.length} ${
+                  techniques.length === 1 ? 'technique' : 'techniques'
+                }`
+              : `${filtered.length} of ${techniques.length} techniques`}
           </p>
         </div>
-      </div>
+      )}
 
       <div className="overflow-hidden rounded-lg border border-border bg-card">
         {loading ? (
@@ -137,6 +213,10 @@ function PinnedListing({
               }
             />
           </div>
+        ) : filtered.length === 0 ? (
+          <p className="px-6 py-10 text-center text-sm text-muted-foreground">
+            No techniques match the current filters.
+          </p>
         ) : (
           <Accordion
             type="single"
@@ -144,7 +224,7 @@ function PinnedListing({
             value={expandedValue}
             onValueChange={setExpandedValue}
           >
-            {techniques.map((t) => {
+            {filtered.map((t) => {
               const value = String(t.id);
               const exiting = exitingIds.has(t.id);
               // Wrapper owns the inter-row border. The AccordionItem

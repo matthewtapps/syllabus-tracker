@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE syllabus_attempts SET attempted_at = ? WHERE id = ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "d3573e82ac4498ce9326c396a68b185467830fe8bd6e6a38921afe2933806013"
+}

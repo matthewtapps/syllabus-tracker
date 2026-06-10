@@ -1,15 +1,15 @@
 import { useTechniqueRow } from "./technique-row-context";
 import { blocksFor, type BlockId } from "./block-visibility";
+import { AttemptsBlock } from "./attempts-block";
 import { DescriptionBlock } from "./description-block";
 import { TagsBlock } from "./tags-block";
 import { LibraryStatsBlock } from "./library-stats-block";
 import { VideosBlock } from "./videos-block";
+import { NotesCoachBlock, NotesStudentBlock } from "./notes-student-block";
+import { StatusBlock } from "./status-block";
 import {
-  AttemptsBlock,
   EditDefinitionBlock,
   HiddenToggleBlock,
-  NotesCoachBlock,
-  NotesStudentBlock,
   RemoveFromSyllabusBlock,
   VideoVisibilityOverrideBlock,
 } from "./stub-blocks";
@@ -72,6 +72,8 @@ function BlockRenderer({
           onVideoScrolled={onVideoScrolled}
         />
       );
+    case "status":
+      return <StatusBlock />;
     case "edit-definition":
       return <EditDefinitionBlock />;
     case "notes-student":

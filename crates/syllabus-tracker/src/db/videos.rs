@@ -199,6 +199,45 @@ pub async fn list_videos_for_technique(
     Ok(rows.into_iter().map(Video::from).collect())
 }
 
+/// Lists videos for a technique in a specific (student, syllabus) context,
+/// filtered to what the student should actually see: globally-visible by
+/// default, then per-(student, syllabus, video) overrides from
+/// `student_syllabus_video_visibility` layered on top. Does NOT join the
+/// legacy `video_student_visibility` table -- syllabus context uses the
+/// new override table only. Library context (PR 1) uses
+/// list_videos_for_technique_global_visible and never applies overrides.
+#[instrument(skip(pool))]
+pub async fn list_videos_for_technique_in_syllabus_visible_to(
+    pool: &Pool<Sqlite>,
+    technique_id: i64,
+    syllabus_id: i64,
+    student_id: i64,
+) -> Result<Vec<Video>, AppError> {
+    let rows = sqlx::query_as!(
+        DbVideo,
+        "SELECT v.id, v.technique_id, v.title, v.description, v.position, v.kind,
+                v.processing_status, v.processing_error, v.storage_key, v.bytes,
+                v.duration_seconds, v.width, v.height,
+                v.external_url, v.external_host, v.external_video_id, v.uploaded_by_id,
+                v.created_at, v.updated_at, v.hidden_at
+         FROM videos v
+         LEFT JOIN student_syllabus_video_visibility ssvv
+                ON ssvv.video_id = v.id
+               AND ssvv.student_id = ?
+               AND ssvv.syllabus_id = ?
+         WHERE v.technique_id = ?
+           AND v.deleted_at IS NULL
+           AND COALESCE(ssvv.visible, v.hidden_at IS NULL) = 1
+         ORDER BY v.position ASC, v.id ASC",
+        student_id,
+        syllabus_id,
+        technique_id,
+    )
+    .fetch_all(pool)
+    .await?;
+    Ok(rows.into_iter().map(Video::from).collect())
+}
+
 /// Lists the globally-visible (not soft-deleted, not globally-hidden) videos
 /// for a technique. Used by the library video read for student viewers. The
 /// legacy per-student `video_student_visibility` table is intentionally NOT

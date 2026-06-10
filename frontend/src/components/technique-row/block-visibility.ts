@@ -10,6 +10,7 @@ export type BlockId =
   | "tags"
   | "library-stats"
   | "videos"
+  | "status"
   | "edit-definition"
   | "notes-student"
   | "notes-coach"
@@ -36,34 +37,42 @@ export const BLOCK_VISIBILITY = {
     coach: ["description", "tags", "videos"],
     admin: ["description", "tags", "videos"],
   },
+  "syllabus-management": {
+    student: ["description", "tags", "videos"],
+    coach: ["description", "tags", "videos", "edit-definition"],
+    admin: ["description", "tags", "videos", "edit-definition"],
+  },
   "student-syllabus": {
     student: [
+      "status",
       "description",
       "tags",
-      "videos",
+      "attempts",
       "notes-student",
       "notes-coach",
-      "attempts",
+      "videos",
     ],
     coach: [
+      "status",
       "description",
       "tags",
-      "videos",
+      "attempts",
       "notes-student",
       "notes-coach",
-      "attempts",
+      "videos",
       "edit-definition",
       "remove-from-syllabus",
       "hidden-toggle",
       "video-visibility-override",
     ],
     admin: [
+      "status",
       "description",
       "tags",
-      "videos",
+      "attempts",
       "notes-student",
       "notes-coach",
-      "attempts",
+      "videos",
       "edit-definition",
       "remove-from-syllabus",
       "hidden-toggle",

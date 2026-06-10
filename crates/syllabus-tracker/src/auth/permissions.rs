@@ -17,6 +17,7 @@ pub enum Permission {
     EditAllTechniques,
     AssignTechniques,
     CreateTechniques,
+    ManageSyllabuses,
     RegisterUsers,
     ManageTags,
 
@@ -59,6 +60,7 @@ static COACH_PERMISSIONS: Lazy<HashSet<Permission>> = Lazy::new(|| {
     permissions.insert(Permission::EditAllTechniques);
     permissions.insert(Permission::AssignTechniques);
     permissions.insert(Permission::CreateTechniques);
+    permissions.insert(Permission::ManageSyllabuses);
     permissions.insert(Permission::RegisterUsers);
     permissions.insert(Permission::ManageTags);
 

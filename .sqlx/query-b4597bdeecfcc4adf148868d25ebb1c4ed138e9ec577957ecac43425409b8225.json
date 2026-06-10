@@ -1,0 +1,74 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT id AS \"id!: i64\",\n                  student_syllabus_technique_id AS \"student_syllabus_technique_id!: i64\",\n                  recorded_by_id AS \"recorded_by_id!: i64\",\n                  attempted_at AS \"attempted_at!: NaiveDateTime\",\n                  coach_note,\n                  coach_note_by_id,\n                  coach_note_at AS \"coach_note_at?: NaiveDateTime\",\n                  student_note,\n                  student_note_at AS \"student_note_at?: NaiveDateTime\",\n                  created_at AS \"created_at!: NaiveDateTime\"\n           FROM syllabus_attempts\n           WHERE student_syllabus_technique_id = ?\n           ORDER BY attempted_at DESC, id DESC",
+  "describe": {
+    "columns": [
+      {
+        "name": "id!: i64",
+        "ordinal": 0,
+        "type_info": "Integer"
+      },
+      {
+        "name": "student_syllabus_technique_id!: i64",
+        "ordinal": 1,
+        "type_info": "Integer"
+      },
+      {
+        "name": "recorded_by_id!: i64",
+        "ordinal": 2,
+        "type_info": "Integer"
+      },
+      {
+        "name": "attempted_at!: NaiveDateTime",
+        "ordinal": 3,
+        "type_info": "Datetime"
+      },
+      {
+        "name": "coach_note",
+        "ordinal": 4,
+        "type_info": "Text"
+      },
+      {
+        "name": "coach_note_by_id",
+        "ordinal": 5,
+        "type_info": "Integer"
+      },
+      {
+        "name": "coach_note_at?: NaiveDateTime",
+        "ordinal": 6,
+        "type_info": "Datetime"
+      },
+      {
+        "name": "student_note",
+        "ordinal": 7,
+        "type_info": "Text"
+      },
+      {
+        "name": "student_note_at?: NaiveDateTime",
+        "ordinal": 8,
+        "type_info": "Datetime"
+      },
+      {
+        "name": "created_at!: NaiveDateTime",
+        "ordinal": 9,
+        "type_info": "Datetime"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      true,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      false
+    ]
+  },
+  "hash": "b4597bdeecfcc4adf148868d25ebb1c4ed138e9ec577957ecac43425409b8225"
+}

@@ -1,5 +1,5 @@
 import { createContext, useContext } from "react";
-import type { LibraryTechniqueRow, Role } from "@/lib/api";
+import type { LibraryTechniqueRow, Role, SstRow } from "@/lib/api";
 
 // Discriminated context tells each row block which surface it's rendering
 // in. Blocks read this via useTechniqueRow() instead of receiving each piece
@@ -25,6 +25,16 @@ export type RowContext =
       studentId: number;
       syllabusId: number;
       assignmentId: number;
+      sst: SstRow;
+    }
+  // Coach editing a technique inside a global syllabus. Same edit
+  // affordances as global-library coach surface, minus the cross-system
+  // aggregates (collections membership, status mix, attempts, plays)
+  // since those don't belong in the syllabus authoring view.
+  | {
+      kind: "syllabus-management";
+      syllabusId: number;
+      onRemove: (technique: LibraryTechniqueRow) => void;
     };
 
 export interface TechniqueRowState {

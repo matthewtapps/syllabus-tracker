@@ -11,6 +11,7 @@ import { cn } from "@/lib/utils";
 import { ExpandedPanel } from "./expanded-panel";
 import { Header } from "./header";
 import { PinButton } from "./pin-button";
+import { RemoveFromSyllabusButton } from "./remove-from-syllabus-button";
 import {
   TechniqueRowContext,
   type RowContext,
@@ -77,6 +78,9 @@ export function TechniqueRow({
       case "student-pinned":
       case "student-syllabus":
         return user.id === context.studentId;
+      case "syllabus-management":
+        // Coach surface; no "owning student" concept applies.
+        return false;
     }
   }, [context, user.id, user.role]);
 
@@ -97,13 +101,32 @@ export function TechniqueRow({
   const showPinButton =
     viewerIsOwner &&
     (context.kind === "global-library" || context.kind === "student-pinned");
+  const showRemoveButton = context.kind === "syllabus-management";
+
+  // Left-border accent for the student-syllabus surface: status colour
+  // when the row is open or already at amber/green, transparent when
+  // the status is still red (the visual signal is reserved for
+  // techniques the student has made progress on). Mirrors the legacy
+  // student-techniques row.
+  const sstStatus =
+    context.kind === "student-syllabus" ? context.sst.status : null;
+  const accentClass =
+    sstStatus === "amber"
+      ? "border-l-status-amber"
+      : sstStatus === "green"
+        ? "border-l-status-green"
+        : "border-l-transparent";
 
   return (
     <TechniqueRowContext.Provider value={ctxValue}>
       <AccordionItem
         value={value}
         id={`technique-row-${technique.id}`}
-        className="group border-b last:border-b-0"
+        className={cn(
+          "group border-b last:border-b-0",
+          context.kind === "student-syllabus" && "border-l-4 transition-colors",
+          context.kind === "student-syllabus" && accentClass,
+        )}
       >
         <AccordionPrimitive.Header asChild>
           <div
@@ -134,6 +157,11 @@ export function TechniqueRow({
                 className="h-4 w-4 text-muted-foreground transition-transform duration-200 group-data-[state=open]:rotate-180"
               />
             </AccordionPrimitive.Trigger>
+            {showRemoveButton && (
+              <div className="flex shrink-0 items-center pr-2">
+                <RemoveFromSyllabusButton />
+              </div>
+            )}
           </div>
         </AccordionPrimitive.Header>
         <AccordionContent className="px-4 pb-4 pt-1">
