@@ -153,7 +153,7 @@ function AuthedAppShell({
       <CurrentUserProvider user={user}>
         <Layout user={user} onLogout={onLogout}>
           <Suspense fallback={<RouteLoading />}>
-            <AuthedRoutes user={user} />
+            <AuthedRoutes />
           </Suspense>
         </Layout>
       </CurrentUserProvider>
@@ -175,10 +175,9 @@ function UnauthedShell({ onAuthSuccess }: { onAuthSuccess: () => void }) {
   );
 }
 
-// PR 1 keeps the user prop on existing pages; PR 2 sweeps these to use
-// useUser() directly. New PR 1 pages (student-pinned) call useUser()
-// themselves and do not receive the prop.
-function AuthedRoutes({ user }: { user: User }) {
+// All authenticated pages read the current user via useUser() now; the
+// `user` prop pattern was retired in PR 2.
+function AuthedRoutes() {
   return (
     <Routes>
       <Route path="/login" element={<Navigate to="/dashboard" replace />} />
@@ -188,7 +187,7 @@ function AuthedRoutes({ user }: { user: User }) {
         path="/student/:id"
         element={
           <RequireAuth>
-            <StudentTechniques user={user} />
+            <StudentTechniques />
           </RequireAuth>
         }
       />
@@ -196,7 +195,7 @@ function AuthedRoutes({ user }: { user: User }) {
         path="/student/:id/technique/:techniqueId"
         element={
           <RequireAuth>
-            <StudentTechniqueDetail user={user} />
+            <StudentTechniqueDetail />
           </RequireAuth>
         }
       />
@@ -204,7 +203,7 @@ function AuthedRoutes({ user }: { user: User }) {
         path="/students"
         element={
           <RequireCoach>
-            <StudentsList user={user} />
+            <StudentsList />
           </RequireCoach>
         }
       />
@@ -212,7 +211,7 @@ function AuthedRoutes({ user }: { user: User }) {
         path="/dashboard"
         element={
           <RequireAuth>
-            <Dashboard user={user} />
+            <Dashboard />
           </RequireAuth>
         }
       />
@@ -228,7 +227,7 @@ function AuthedRoutes({ user }: { user: User }) {
         path="/register-user"
         element={
           <RequireCoach>
-            <RegisterUserPage user={user} />
+            <RegisterUserPage />
           </RequireCoach>
         }
       />

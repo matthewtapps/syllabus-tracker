@@ -11,8 +11,8 @@ import {
   isAdmin,
   type Collection,
   type InviteResponse,
-  type User,
 } from '@/lib/api';
+import { useUser } from '@/lib/current-user-context';
 import { Button } from '@/components/ui/button';
 import { ClaimLinkPanel } from '@/components/claim-link-panel';
 import {
@@ -56,17 +56,14 @@ const inviteSchema = z.object({
 
 type InviteFormValues = z.infer<typeof inviteSchema>;
 
-interface AddUserPageProps {
-  user: User;
-}
-
-export default function AddUserPage({ user }: AddUserPageProps) {
+export default function AddUserPage() {
+  const user = useUser();
   const [issued, setIssued] = useState<{
     displayName: string;
     url: string;
   } | null>(null);
   const [collections, setCollections] = useState<Collection[]>([]);
-  const admin = isAdmin(user ?? null);
+  const admin = isAdmin(user);
 
   const form = useFormWithValidation<InviteFormValues>({
     resolver: zodResolver(inviteSchema),
