@@ -357,6 +357,20 @@ CREATE INDEX IF NOT EXISTS idx_activity_recent
 CREATE INDEX IF NOT EXISTS idx_activity_coalesce
     ON activity (actor_user_id, verb, occurred_at DESC);
 
+CREATE TABLE IF NOT EXISTS activity_cursors (
+    viewer_user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    max_seen_id    INTEGER NOT NULL DEFAULT 0,
+    updated_at     TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS activity_seen_overrides (
+    viewer_user_id INTEGER NOT NULL REFERENCES users(id)    ON DELETE CASCADE,
+    activity_id    INTEGER NOT NULL REFERENCES activity(id) ON DELETE CASCADE,
+    seen           BOOLEAN NOT NULL,
+    PRIMARY KEY (viewer_user_id, activity_id)
+);
+CREATE INDEX IF NOT EXISTS idx_aso_viewer ON activity_seen_overrides (viewer_user_id);
+
 -- Litestream-owned bookkeeping tables. Declared here only so the migration
 -- engine recognises them as expected and doesn't try to drop them. Litestream
 -- creates and maintains the rows; the app never reads or writes them.
