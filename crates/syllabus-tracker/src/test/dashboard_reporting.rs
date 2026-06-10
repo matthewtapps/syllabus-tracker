@@ -219,6 +219,41 @@ mod tests {
     }
 
     #[rocket::async_test]
+    async fn library_stats_status_counts_come_from_sst() {
+        use crate::db::library_technique_stats;
+        let db = TestDbBuilder::new()
+            .coach("coach", None)
+            .student("alice", None)
+            .technique("Armbar", "", Some("coach"))
+            .build()
+            .await
+            .unwrap();
+        let coach = db.user_id("coach").unwrap();
+        let alice = db.user_id("alice").unwrap();
+        let armbar = db.technique_id("Armbar").unwrap();
+        let sid = create_syllabus(&db.pool, "S", None, coach).await.unwrap();
+        let aid = assign(&db.pool, coach, alice, sid).await.unwrap();
+        let sst = add_technique_to_assignment(&db.pool, aid, armbar, coach)
+            .await
+            .unwrap();
+        update_sst(
+            &db.pool,
+            sst,
+            &student_actor(alice),
+            &SstUpdate {
+                status: Some("green".into()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        let stats = library_technique_stats(&db.pool, armbar).await.unwrap();
+        assert_eq!(stats.status_counts.green, 1);
+        assert_eq!(stats.status_counts.red, 0);
+    }
+
+    #[rocket::async_test]
     async fn unseen_flag_set_when_student_activity_newer_than_coach() {
         let db = TestDbBuilder::new()
             .coach("coach", None)
