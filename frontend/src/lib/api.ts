@@ -1538,3 +1538,13 @@ export async function deleteSyllabusAttemptApi(
   });
   if (!response.ok) throw response;
 }
+
+export async function listSyllabusStudentsApi(
+  syllabusId: number,
+): Promise<number[]> {
+  const response = await fetch(`/api/syllabuses/${syllabusId}/students`, {
+    credentials: "include",
+  });
+  if (!response.ok) throw response;
+  return await response.json();
+}

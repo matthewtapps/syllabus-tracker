@@ -46,7 +46,8 @@ use syllabuses::{
     api_add_technique_to_syllabus, api_assign_syllabus, api_create_syllabus,
     api_create_syllabus_attempt, api_delete_syllabus, api_delete_syllabus_attempt,
     api_get_syllabus, api_list_student_syllabus_techniques, api_list_student_syllabuses,
-    api_list_syllabus_attempts, api_list_syllabus_technique_videos, api_list_syllabuses,
+    api_list_syllabus_attempts, api_list_syllabus_students, api_list_syllabus_technique_videos,
+    api_list_syllabuses,
     api_remove_technique_from_syllabus, api_unassign_syllabus, api_update_syllabus,
     api_update_syllabus_attempt, api_update_sst,
 };
@@ -303,6 +304,7 @@ pub async fn init_rocket(
                 api_attempt_heatmap,
                 api_attempt_sparkline,
                 api_list_syllabuses,
+                api_list_syllabus_students,
                 api_create_syllabus,
                 api_get_syllabus,
                 api_update_syllabus,

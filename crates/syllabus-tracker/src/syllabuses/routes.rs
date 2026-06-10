@@ -84,6 +84,17 @@ pub struct SyllabusDetailResponse {
     pub techniques: Vec<db::SyllabusTechniqueRow>,
 }
 
+#[get("/syllabuses/<sid>/students")]
+pub async fn api_list_syllabus_students(
+    sid: i64,
+    user: User,
+    db: &State<Pool<Sqlite>>,
+) -> ApiResult<Json<Vec<i64>>> {
+    user.require_permission(Permission::ManageSyllabuses)?;
+    let ids = db::list_students_assigned_to_syllabus(db, sid).await?;
+    Ok(Json(ids))
+}
+
 #[get("/syllabuses/<sid>")]
 pub async fn api_get_syllabus(
     sid: i64,

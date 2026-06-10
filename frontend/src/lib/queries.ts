@@ -25,6 +25,7 @@ import {
   getStudents,
   getSyllabusDetail,
   getSyllabuses,
+  listSyllabusStudentsApi,
   getTechniquesForAssignment,
   listSyllabusAttemptsApi,
   getVideoStats,
@@ -348,6 +349,16 @@ export function useSyllabusAttempts(sstId: number | undefined) {
     queryFn:
       typeof sstId === "number" && Number.isFinite(sstId)
         ? () => listSyllabusAttemptsApi(sstId)
+        : skipToken,
+  });
+}
+
+export function useSyllabusStudents(syllabusId: number | undefined) {
+  return useQuery({
+    queryKey: qk.syllabusStudents(syllabusId ?? 0),
+    queryFn:
+      typeof syllabusId === "number" && Number.isFinite(syllabusId)
+        ? () => listSyllabusStudentsApi(syllabusId)
         : skipToken,
   });
 }

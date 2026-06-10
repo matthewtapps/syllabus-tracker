@@ -43,6 +43,7 @@ export const qk = {
   syllabuses: () => ["syllabuses"] as const,
   syllabus: (sid: number) => ["syllabus", sid] as const,
   syllabusTechniques: (sid: number) => ["syllabus", sid, "techniques"] as const,
+  syllabusStudents: (sid: number) => ["syllabus", sid, "students"] as const,
   studentSyllabuses: (studentId: number) =>
     ["student", studentId, "syllabuses"] as const,
   studentSyllabusTechniques: (studentId: number, syllabusId: number) =>
