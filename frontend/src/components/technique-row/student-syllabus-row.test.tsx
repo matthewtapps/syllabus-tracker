@@ -23,8 +23,45 @@ describe("TechniqueRow / student-syllabus context", () => {
     fetchSpy?.mockRestore();
   });
 
-  test("expanded row exposes status toggle, attempts heading, and notes section", () => {
+  test("coach viewer sees the status toggle, attempts heading, and student notes section", () => {
     const sst = buildSst({ status: "amber", student_notes: "" });
+    const technique = buildTechnique();
+    const value = String(technique.id);
+    renderWithProviders(
+      <Accordion type="single" collapsible value={value}>
+        <TechniqueRow
+          technique={technique}
+          context={{
+            kind: "student-syllabus",
+            studentId: 42,
+            syllabusId: 7,
+            assignmentId: 13,
+            sst,
+          }}
+          value={value}
+          isOpen
+        />
+      </Accordion>,
+      { user: buildUser({ id: 7, role: "coach" }) },
+    );
+
+    // StatusToggle has aria-label "Technique status" on the group; only
+    // coaches see it.
+    expect(
+      screen.getByRole("group", { name: /technique status/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: /attempts/i }),
+    ).toBeInTheDocument();
+    // From a coach's perspective the student-notes block is labeled
+    // "Student notes" instead of "My notes".
+    expect(
+      screen.getByRole("heading", { name: /student notes/i }),
+    ).toBeInTheDocument();
+  });
+
+  test("owning student does not see the status toggle", () => {
+    const sst = buildSst({ status: "amber" });
     const technique = buildTechnique();
     const value = String(technique.id);
     renderWithProviders(
@@ -45,16 +82,11 @@ describe("TechniqueRow / student-syllabus context", () => {
       { user: buildUser({ id: 42, role: "student" }) },
     );
 
-    // StatusToggle has aria-label "Technique status" on the group.
+    // Status is coach-controlled; the toggle never renders for students.
     expect(
-      screen.getByRole("group", { name: /technique status/i }),
-    ).toBeInTheDocument();
-    // Attempts section heading rendered.
-    expect(
-      screen.getByRole("heading", { name: /attempts/i }),
-    ).toBeInTheDocument();
-    // Coach-notes block is suppressed for the owning student when empty;
-    // student-notes block is editable for the owner.
+      screen.queryByRole("group", { name: /technique status/i }),
+    ).toBeNull();
+    // 'My notes' is the student-facing label on the student-notes block.
     expect(
       screen.getByRole("heading", { name: /my notes/i }),
     ).toBeInTheDocument();

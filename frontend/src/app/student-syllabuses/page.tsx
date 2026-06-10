@@ -43,7 +43,7 @@ function StudentSyllabusesList({
       <div className="mb-4">
         <h1 className="flex items-center gap-2 text-base font-semibold">
           <NotebookPen className="h-4 w-4" aria-hidden />
-          {isOwnView ? 'My syllabuses' : 'Syllabuses'}
+          {isOwnView ? 'My Syllabus Library' : 'Syllabus Library'}
         </h1>
       </div>
 
