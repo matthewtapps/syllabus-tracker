@@ -150,6 +150,121 @@ impl Verb {
     }
 }
 
+/// A row to be written to `activity`. Built with the fluent setters; entity
+/// ids default to None. `occurred_at` is server-set inside `emit`.
+#[derive(Debug, Clone)]
+pub struct NewActivity {
+    pub verb: Verb,
+    pub actor_user_id: i64,
+    pub target_student_id: Option<i64>,
+    pub technique_id: Option<i64>,
+    pub syllabus_id: Option<i64>,
+    pub sst_id: Option<i64>,
+    pub video_id: Option<i64>,
+    pub payload_json: Option<String>,
+}
+
+impl NewActivity {
+    pub fn new(verb: Verb, actor_user_id: i64) -> Self {
+        NewActivity {
+            verb,
+            actor_user_id,
+            target_student_id: None,
+            technique_id: None,
+            syllabus_id: None,
+            sst_id: None,
+            video_id: None,
+            payload_json: None,
+        }
+    }
+
+    pub fn target_student(mut self, id: i64) -> Self {
+        self.target_student_id = Some(id);
+        self
+    }
+    pub fn technique(mut self, id: i64) -> Self {
+        self.technique_id = Some(id);
+        self
+    }
+    pub fn syllabus(mut self, id: i64) -> Self {
+        self.syllabus_id = Some(id);
+        self
+    }
+    pub fn sst(mut self, id: i64) -> Self {
+        self.sst_id = Some(id);
+        self
+    }
+    pub fn video(mut self, id: i64) -> Self {
+        self.video_id = Some(id);
+        self
+    }
+    pub fn payload(mut self, json: String) -> Self {
+        self.payload_json = Some(json);
+        self
+    }
+
+    /// The value of the primary-entity column for this row, used by coalescing.
+    #[allow(dead_code)]
+    pub(crate) fn primary_entity_id(&self) -> Option<i64> {
+        match self.verb.primary_entity() {
+            EntityKind::Technique => self.technique_id,
+            EntityKind::Syllabus => self.syllabus_id,
+            EntityKind::Sst => self.sst_id,
+            EntityKind::Video => self.video_id,
+        }
+    }
+}
+
+/// Typed per-verb payload constructors. Each returns serialised JSON text.
+/// PR 1 only writes these; the typed read side deserialises them in PR 2.
+pub mod payload {
+    use serde_json::json;
+
+    pub fn video_watched(cumulative_seconds: i64, duration_seconds: i64) -> String {
+        json!({
+            "cumulative_seconds": cumulative_seconds,
+            "duration_seconds": duration_seconds
+        })
+        .to_string()
+    }
+
+    pub fn status_changed(from: &str, to: &str) -> String {
+        json!({ "from": from, "to": to }).to_string()
+    }
+
+    pub fn video_visibility_set(scope: &str, visible: bool) -> String {
+        json!({ "scope": scope, "visible": visible }).to_string()
+    }
+
+    pub fn attempt_pointer(attempt_id: i64) -> String {
+        json!({ "attempt_id": attempt_id }).to_string()
+    }
+
+    /// `technique_edited` delta. Pass which fields changed; tags carry the
+    /// added / removed name lists.
+    pub fn technique_edited(
+        name_changed: bool,
+        description_changed: bool,
+        tags_added: &[String],
+        tags_removed: &[String],
+    ) -> String {
+        let mut fields = serde_json::Map::new();
+        if name_changed {
+            fields.insert("name".into(), json!(true));
+        }
+        if description_changed {
+            fields.insert("description".into(), json!(true));
+        }
+        if !tags_added.is_empty() || !tags_removed.is_empty() {
+            fields.insert(
+                "tags".into(),
+                json!({ "added": tags_added, "removed": tags_removed }),
+            );
+        }
+        json!({ "fields": fields }).to_string()
+    }
+}
+
 #[cfg(test)]
 mod registry_tests {
     use super::{EntityKind, Verb};
@@ -197,5 +312,38 @@ mod registry_tests {
         );
         assert_eq!(Verb::TechniqueEdited.primary_entity(), EntityKind::Technique);
         assert_eq!(Verb::VideoAdded.primary_entity(), EntityKind::Video);
+    }
+}
+
+#[cfg(test)]
+mod payload_tests {
+    use super::{payload, NewActivity, Verb};
+
+    #[test]
+    fn status_change_payload_shape() {
+        let p = payload::status_changed("red", "green");
+        let v: serde_json::Value = serde_json::from_str(&p).unwrap();
+        assert_eq!(v["from"], "red");
+        assert_eq!(v["to"], "green");
+    }
+
+    #[test]
+    fn video_watched_payload_shape() {
+        let p = payload::video_watched(12, 60);
+        let v: serde_json::Value = serde_json::from_str(&p).unwrap();
+        assert_eq!(v["cumulative_seconds"], 12);
+        assert_eq!(v["duration_seconds"], 60);
+    }
+
+    #[test]
+    fn new_activity_builder_defaults_entities_to_none() {
+        let ev = NewActivity::new(Verb::TechniquePinned, 7).target_student(7).technique(3);
+        assert_eq!(ev.actor_user_id, 7);
+        assert_eq!(ev.target_student_id, Some(7));
+        assert_eq!(ev.technique_id, Some(3));
+        assert_eq!(ev.syllabus_id, None);
+        assert_eq!(ev.sst_id, None);
+        assert_eq!(ev.video_id, None);
+        assert!(ev.payload_json.is_none());
     }
 }
