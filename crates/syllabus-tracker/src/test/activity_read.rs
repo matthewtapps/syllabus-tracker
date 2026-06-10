@@ -803,6 +803,175 @@ mod tests {
         assert_eq!(count_after, 0, "unread count is zero after mark_all_read");
     }
 
+    // Task 25 route tests (mark-one read/unread + partial cursor rejection)
+
+    /// POST /api/activity/<id>/read marks the row seen and drops the unread
+    /// count by one.
+    #[rocket::async_test]
+    async fn mark_one_read_route_marks_row_seen() {
+        use crate::test::test_utils::{login_test_user, setup_test_client};
+
+        let db = TestDbBuilder::new()
+            .coach("coach", None)
+            .student("alice", None)
+            .build()
+            .await
+            .unwrap();
+        let coach = db.user_id("coach").unwrap();
+        let alice = db.user_id("alice").unwrap();
+
+        // Coach emits a notifiable row targeting alice.
+        let mut tx = db.pool.begin().await.unwrap();
+        emit(
+            &mut tx,
+            NewActivity::new(Verb::SyllabusAssigned, coach).target_student(alice),
+        )
+        .await
+        .unwrap();
+        tx.commit().await.unwrap();
+
+        let act_id = sqlx::query_scalar!(r#"SELECT MAX(id) AS "id!: i64" FROM activity"#)
+            .fetch_one(&db.pool)
+            .await
+            .unwrap();
+
+        let (client, _db) = setup_test_client(db).await;
+        let _ = login_test_user(&client, "alice", "password123").await;
+
+        // Confirm at least one unread row.
+        let count_resp = client.get("/api/activity/unread_count").dispatch().await;
+        assert_eq!(count_resp.status(), rocket::http::Status::Ok);
+        let body: serde_json::Value =
+            serde_json::from_str(&count_resp.into_string().await.unwrap()).unwrap();
+        let count_before = body["count"].as_i64().unwrap();
+        assert!(count_before >= 1, "expected at least one unread row");
+
+        // Mark the specific row read.
+        let url = format!("/api/activity/{}/read", act_id);
+        let resp = client.post(url).dispatch().await;
+        assert_eq!(
+            resp.status(),
+            rocket::http::Status::NoContent,
+            "mark-one-read returns 204"
+        );
+
+        // Unread count must have dropped by one.
+        let count_resp2 = client.get("/api/activity/unread_count").dispatch().await;
+        assert_eq!(count_resp2.status(), rocket::http::Status::Ok);
+        let body2: serde_json::Value =
+            serde_json::from_str(&count_resp2.into_string().await.unwrap()).unwrap();
+        let count_after = body2["count"].as_i64().unwrap();
+        assert_eq!(
+            count_after,
+            count_before - 1,
+            "unread count should drop by one after mark-one-read"
+        );
+    }
+
+    /// POST /api/activity/<id>/unread re-flags a previously-seen row as unread.
+    #[rocket::async_test]
+    async fn mark_one_unread_route_marks_row_unseen() {
+        use crate::test::test_utils::{login_test_user, setup_test_client};
+
+        let db = TestDbBuilder::new()
+            .coach("coach", None)
+            .student("alice", None)
+            .build()
+            .await
+            .unwrap();
+        let coach = db.user_id("coach").unwrap();
+        let alice = db.user_id("alice").unwrap();
+
+        // Coach emits a notifiable row targeting alice.
+        let mut tx = db.pool.begin().await.unwrap();
+        emit(
+            &mut tx,
+            NewActivity::new(Verb::SyllabusAssigned, coach).target_student(alice),
+        )
+        .await
+        .unwrap();
+        tx.commit().await.unwrap();
+
+        let act_id = sqlx::query_scalar!(r#"SELECT MAX(id) AS "id!: i64" FROM activity"#)
+            .fetch_one(&db.pool)
+            .await
+            .unwrap();
+
+        let (client, db) = setup_test_client(db).await;
+        let _ = login_test_user(&client, "alice", "password123").await;
+
+        // Mark all read first so count is 0.
+        let resp = client.post("/api/activity/mark_all_read").dispatch().await;
+        assert_eq!(resp.status(), rocket::http::Status::NoContent);
+
+        let count_resp = client.get("/api/activity/unread_count").dispatch().await;
+        let body: serde_json::Value =
+            serde_json::from_str(&count_resp.into_string().await.unwrap()).unwrap();
+        assert_eq!(
+            body["count"].as_i64(),
+            Some(0),
+            "count should be 0 after mark_all_read"
+        );
+
+        // Now mark that row unread again (it is now below the cursor).
+        let url = format!("/api/activity/{}/unread", act_id);
+        let resp = client.post(url).dispatch().await;
+        assert_eq!(
+            resp.status(),
+            rocket::http::Status::NoContent,
+            "mark-one-unread returns 204"
+        );
+
+        // Unread count must be 1 again.
+        let count_resp2 = client.get("/api/activity/unread_count").dispatch().await;
+        let body2: serde_json::Value =
+            serde_json::from_str(&count_resp2.into_string().await.unwrap()).unwrap();
+        assert_eq!(
+            body2["count"].as_i64(),
+            Some(1),
+            "unread count should be 1 after mark-one-unread"
+        );
+
+        // Verify the override row exists with seen=0.
+        let seen_val = sqlx::query_scalar!(
+            r#"SELECT seen AS "s!: bool" FROM activity_seen_overrides
+               WHERE viewer_user_id = ? AND activity_id = ?"#,
+            alice,
+            act_id
+        )
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+        assert!(!seen_val, "override should be seen=0 after mark-one-unread");
+    }
+
+    /// GET /api/activity/feed with only before_id (missing before_ts) returns 400.
+    #[rocket::async_test]
+    async fn feed_partial_cursor_is_rejected() {
+        use crate::test::test_utils::{login_test_user, setup_test_client};
+
+        let db = TestDbBuilder::new()
+            .coach("coach", None)
+            .student("alice", None)
+            .build()
+            .await
+            .unwrap();
+
+        let (client, _db) = setup_test_client(db).await;
+        let _ = login_test_user(&client, "alice", "password123").await;
+
+        // Provide only before_id, no before_ts — must be rejected.
+        let resp = client
+            .get("/api/activity/feed?before_id=42")
+            .dispatch()
+            .await;
+        assert_eq!(
+            resp.status(),
+            rocket::http::Status::BadRequest,
+            "partial cursor (before_id only) must return 400"
+        );
+    }
+
     // Task 24 tests
 
     /// recently_active_students returns students ordered by most-recent

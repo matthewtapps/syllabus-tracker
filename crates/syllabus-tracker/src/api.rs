@@ -1931,7 +1931,13 @@ pub async fn api_activity_feed(
             })?;
             Some((ts, id))
         }
-        _ => None,
+        (None, None) => None,
+        _ => {
+            warn!(
+                "rejected activity/feed: partial cursor (before_ts and before_id must both be present or both absent)"
+            );
+            return Err(Status::BadRequest.into());
+        }
     };
 
     // Snapshot the max id BEFORE building the page; advance cursor AFTER.
