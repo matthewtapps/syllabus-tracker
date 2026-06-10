@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT COALESCE(duration_seconds, 0) AS \"d!: i64\" FROM videos WHERE id = ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "d!: i64",
+        "ordinal": 0,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "02c3dc4e31e399e7e6a7f8d652524520766b607e4082c1b9a930087e74b21dd6"
+}

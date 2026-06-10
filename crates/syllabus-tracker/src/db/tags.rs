@@ -1,6 +1,9 @@
 use sqlx::{Pool, Sqlite};
 use tracing::{info, instrument};
 
+use crate::db::activity::{
+    NewActivity, Verb, affected_students_for_technique, emit_fanout, payload,
+};
 use crate::error::AppError;
 use crate::models::{DbTag, DbTechnique, Tag, Technique};
 
@@ -49,16 +52,37 @@ pub async fn add_tag_to_technique(
     pool: &Pool<Sqlite>,
     technique_id: i64,
     tag_id: i64,
+    actor_id: i64,
 ) -> Result<(), AppError> {
     info!("Adding tag to technique");
+    let mut tx = pool.begin().await?;
+
+    let tag_name = sqlx::query_scalar!(
+        r#"SELECT name AS "name!: String" FROM tags WHERE id = ?"#,
+        tag_id
+    )
+    .fetch_one(&mut *tx)
+    .await?;
+
     sqlx::query!(
         "INSERT OR IGNORE INTO technique_tags (technique_id, tag_id) VALUES (?, ?)",
         technique_id,
         tag_id
     )
-    .execute(pool)
+    .execute(&mut *tx)
     .await?;
 
+    let affected = affected_students_for_technique(&mut tx, technique_id).await?;
+    emit_fanout(
+        &mut tx,
+        NewActivity::new(Verb::TechniqueEdited, actor_id)
+            .technique(technique_id)
+            .payload(payload::technique_edited(false, false, &[tag_name], &[])),
+        &affected,
+    )
+    .await?;
+
+    tx.commit().await?;
     Ok(())
 }
 
@@ -67,16 +91,37 @@ pub async fn remove_tag_from_technique(
     pool: &Pool<Sqlite>,
     technique_id: i64,
     tag_id: i64,
+    actor_id: i64,
 ) -> Result<(), AppError> {
     info!("Removing tag from technique");
+    let mut tx = pool.begin().await?;
+
+    let tag_name = sqlx::query_scalar!(
+        r#"SELECT name AS "name!: String" FROM tags WHERE id = ?"#,
+        tag_id
+    )
+    .fetch_one(&mut *tx)
+    .await?;
+
     sqlx::query!(
         "DELETE FROM technique_tags WHERE technique_id = ? AND tag_id = ?",
         technique_id,
         tag_id
     )
-    .execute(pool)
+    .execute(&mut *tx)
     .await?;
 
+    let affected = affected_students_for_technique(&mut tx, technique_id).await?;
+    emit_fanout(
+        &mut tx,
+        NewActivity::new(Verb::TechniqueEdited, actor_id)
+            .technique(technique_id)
+            .payload(payload::technique_edited(false, false, &[], &[tag_name])),
+        &affected,
+    )
+    .await?;
+
+    tx.commit().await?;
     Ok(())
 }
 

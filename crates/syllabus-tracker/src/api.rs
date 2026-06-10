@@ -17,21 +17,21 @@ use validator::ValidationErrors;
 use crate::auth::UserSession;
 use crate::auth::{Permission, User};
 use crate::db::{
-    add_tag_to_technique, add_techniques_to_collection, add_techniques_to_student, approve_user,
-    assign_collection_to_student, attempt_buckets_for_student, attempt_summary_for_student,
-    attempt_weekly_buckets_for_technique, authenticate_user, claim_invite, count_techniques,
-    create_and_assign_technique, create_attempt, create_collection, create_invite_token,
-    create_self_registered_user, create_tag, create_technique_in_collection, create_user,
-    create_user_session, create_user_stub, delete_attempt, delete_collection, delete_tag,
-    find_user_by_username, find_valid_invite_token, get_all_collections, get_all_tags,
-    get_all_users, get_collection, get_student_technique, get_student_techniques,
-    get_students_by_recent_updates, get_students_with_collection, get_tags_for_technique,
-    get_unassigned_techniques, get_user, invalidate_session, list_attempts,
+    AttemptSuggestion, Collection, add_tag_to_technique, add_techniques_to_collection,
+    add_techniques_to_student, approve_user, assign_collection_to_student,
+    attempt_buckets_for_student, attempt_summary_for_student, attempt_weekly_buckets_for_technique,
+    authenticate_user, claim_invite, count_techniques, create_and_assign_technique, create_attempt,
+    create_collection, create_invite_token, create_self_registered_user, create_tag,
+    create_technique_in_collection, create_user, create_user_session, create_user_stub,
+    delete_attempt, delete_collection, delete_tag, find_user_by_username, find_valid_invite_token,
+    get_all_collections, get_all_tags, get_all_users, get_collection, get_student_technique,
+    get_student_techniques, get_students_by_recent_updates, get_students_with_collection,
+    get_tags_for_technique, get_unassigned_techniques, get_user, invalidate_session, list_attempts,
     list_recent_attempts_for_student, mark_student_technique_seen, remove_tag_from_technique,
     remove_technique_from_collection, request_password_reset, reset_user_claim, set_user_archived,
     set_user_graduated, update_attempt_note, update_attempt_timestamp, update_collection,
     update_student_notes, update_student_technique, update_technique, update_user_display_name,
-    update_user_password, update_user_role, update_username, AttemptSuggestion, Collection,
+    update_user_password, update_user_role, update_username,
 };
 use crate::error::AppError;
 use crate::models::Tag;
@@ -459,6 +459,7 @@ pub async fn api_update_student_technique(
                 student_technique.technique_id,
                 &technique_name,
                 &technique_description,
+                user.id,
             )
             .await?;
         }
@@ -711,11 +712,7 @@ pub async fn api_logout(cookies: &CookieJar<'_>, db: &State<Pool<Sqlite>>) -> Re
 pub struct ProfileUpdateRequest {
     #[validate(length(max = 100, message = "Display name must be under 100 characters"))]
     display_name: String,
-    #[validate(length(
-        min = 1,
-        max = 50,
-        message = "Username must be 1-50 characters"
-    ))]
+    #[validate(length(min = 1, max = 50, message = "Username must be 1-50 characters"))]
     username: Option<String>,
 }
 
@@ -1024,7 +1021,7 @@ pub async fn api_add_tag_to_technique(
     db: &State<Pool<Sqlite>>,
 ) -> ApiResult<Status> {
     user.require_permission(Permission::ManageTags)?;
-    add_tag_to_technique(db, request.technique_id, request.tag_id).await?;
+    add_tag_to_technique(db, request.technique_id, request.tag_id, user.id).await?;
     Ok(Status::Ok)
 }
 
@@ -1036,7 +1033,7 @@ pub async fn api_remove_tag_from_technique(
     db: &State<Pool<Sqlite>>,
 ) -> ApiResult<Status> {
     user.require_permission(Permission::ManageTags)?;
-    remove_tag_from_technique(db, technique_id, tag_id).await?;
+    remove_tag_from_technique(db, technique_id, tag_id, user.id).await?;
     Ok(Status::Ok)
 }
 
@@ -1228,11 +1225,7 @@ pub async fn api_self_register(
 }
 
 #[post("/admin/users/<id>/approve")]
-pub async fn api_approve_user(
-    id: i64,
-    user: User,
-    db: &State<Pool<Sqlite>>,
-) -> ApiResult<Status> {
+pub async fn api_approve_user(id: i64, user: User, db: &State<Pool<Sqlite>>) -> ApiResult<Status> {
     user.require_permission(Permission::RegisterUsers)?;
     approve_user(db, id).await?;
     Ok(Status::Ok)
@@ -1477,7 +1470,7 @@ pub async fn api_update_library_technique(
 ) -> ApiResult<Status> {
     body.validate()?;
     user.require_permission(Permission::EditAllTechniques)?;
-    update_technique(db, id, &body.name, &body.description).await?;
+    update_technique(db, id, &body.name, &body.description, user.id).await?;
     Ok(Status::Ok)
 }
 
@@ -1559,7 +1552,9 @@ pub struct CreateAttemptResponse {
     pub status_suggestion: Option<String>,
 }
 
-fn parse_optional_datetime(raw: Option<&str>) -> Result<Option<chrono::DateTime<chrono::Utc>>, ApiError> {
+fn parse_optional_datetime(
+    raw: Option<&str>,
+) -> Result<Option<chrono::DateTime<chrono::Utc>>, ApiError> {
     match raw {
         None => Ok(None),
         Some(s) => match chrono::DateTime::parse_from_rfc3339(s) {
@@ -1656,8 +1651,8 @@ pub async fn api_create_attempt(
     db: &State<Pool<Sqlite>>,
 ) -> ApiResult<Json<CreateAttemptResponse>> {
     body.validate()?;
-    let attempted_at = parse_optional_datetime(body.attempted_at.as_deref())?
-        .unwrap_or_else(chrono::Utc::now);
+    let attempted_at =
+        parse_optional_datetime(body.attempted_at.as_deref())?.unwrap_or_else(chrono::Utc::now);
     let result = create_attempt(db, &user, id, attempted_at, body.note.as_deref()).await?;
     let suggestion = match result.suggestion {
         AttemptSuggestion::Amber => Some("amber".to_string()),

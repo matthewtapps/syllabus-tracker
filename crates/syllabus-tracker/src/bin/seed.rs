@@ -173,20 +173,20 @@ const TECHNIQUES: &[(&str, &str, &[&str])] = &[
 /// Distribution of (assigned_count, status_red_pct, status_amber_pct, days_since_coach_update, has_new_activity)
 /// for each demo student. Tuples in the same order as STUDENT_NAMES.
 const STUDENT_PROFILES: &[(usize, f64, f64, i64, bool)] = &[
-    (20, 0.10, 0.30, 0, true),   // Alex — most progressed, freshly active, has new student activity
-    (18, 0.20, 0.30, 1, false),  // Bianca — active yesterday
-    (15, 0.25, 0.40, 3, true),   // Marcus — has new student activity since coach's last look
-    (12, 0.30, 0.40, 5, false),  // Priya
-    (10, 0.40, 0.30, 7, false),  // Diego
-    (14, 0.30, 0.30, 10, true),  // Sarah — new activity
+    (20, 0.10, 0.30, 0, true), // Alex — most progressed, freshly active, has new student activity
+    (18, 0.20, 0.30, 1, false), // Bianca — active yesterday
+    (15, 0.25, 0.40, 3, true), // Marcus — has new student activity since coach's last look
+    (12, 0.30, 0.40, 5, false), // Priya
+    (10, 0.40, 0.30, 7, false), // Diego
+    (14, 0.30, 0.30, 10, true), // Sarah — new activity
     (16, 0.25, 0.35, 14, false), // Hiroshi
-    (8, 0.50, 0.25, 18, false),  // Maya
-    (6, 0.60, 0.25, 21, false),  // Yusuf
-    (4, 0.70, 0.20, 25, false),  // Camila — newer student
-    (3, 0.80, 0.15, 30, false),  // Tobias — very new
-    (0, 0.00, 0.00, 0, false),   // Aisha — just registered, no techniques yet
-    (0, 0.00, 0.00, 0, false),   // Jordan — pending approval (claimed but unapproved)
-    (5, 0.40, 0.40, 12, false),  // Robin — active student who requested a password reset
+    (8, 0.50, 0.25, 18, false), // Maya
+    (6, 0.60, 0.25, 21, false), // Yusuf
+    (4, 0.70, 0.20, 25, false), // Camila — newer student
+    (3, 0.80, 0.15, 30, false), // Tobias — very new
+    (0, 0.00, 0.00, 0, false), // Aisha — just registered, no techniques yet
+    (0, 0.00, 0.00, 0, false), // Jordan — pending approval (claimed but unapproved)
+    (5, 0.40, 0.40, 12, false), // Robin — active student who requested a password reset
 ];
 
 async fn ensure_user(
@@ -240,16 +240,17 @@ async fn ensure_technique(
     tag_ids: &[i64],
 ) -> Result<(i64, ItemOutcome)> {
     // Idempotency: look up by name.
-    let existing: Option<(i64,)> = sqlx::query_as("SELECT id FROM techniques WHERE name = ? LIMIT 1")
-        .bind(name)
-        .fetch_optional(pool)
-        .await?;
+    let existing: Option<(i64,)> =
+        sqlx::query_as("SELECT id FROM techniques WHERE name = ? LIMIT 1")
+            .bind(name)
+            .fetch_optional(pool)
+            .await?;
     if let Some((id,)) = existing {
         return Ok((id, ItemOutcome::Existed));
     }
     let id = create_technique(pool, name, description, coach_id).await?;
     for &tag_id in tag_ids {
-        add_tag_to_technique(pool, id, tag_id).await?;
+        add_tag_to_technique(pool, id, tag_id, coach_id).await?;
     }
     Ok((id, ItemOutcome::Created))
 }
@@ -285,8 +286,7 @@ async fn main() -> ExitCode {
 async fn run() -> Result<()> {
     env::load_environment().ok();
 
-    let url =
-        std::env::var("DATABASE_URL").unwrap_or_else(|_| "sqlite://sqlite.db".to_string());
+    let url = std::env::var("DATABASE_URL").unwrap_or_else(|_| "sqlite://sqlite.db".to_string());
     println!("Seeding demo data into {}", url);
 
     let reporter = TerminalSeedReporter::new();
@@ -321,8 +321,7 @@ async fn run() -> Result<()> {
     reporter.phase_finished();
 
     reporter.phase_started(phases[2], Some(1));
-    let (_admin_id, outcome) =
-        ensure_user(&pool, "admin", "demo", Role::Admin, "Admin").await?;
+    let (_admin_id, outcome) = ensure_user(&pool, "admin", "demo", Role::Admin, "Admin").await?;
     reporter.phase_item(outcome);
     reporter.phase_finished();
 
@@ -596,8 +595,7 @@ async fn run() -> Result<()> {
                 // higher n means older.
                 let days_back = ((n as i64 + 1) * 90 / target as i64).min(89);
                 let hour_offset = ((*st_id + n as i64) % 12) - 6;
-                let attempted_at =
-                    now - Duration::days(days_back) + Duration::hours(hour_offset);
+                let attempted_at = now - Duration::days(days_back) + Duration::hours(hour_offset);
 
                 // Alternate the recorder. Even iterations: student logged
                 // it themselves. Odd: coach logged it for them.

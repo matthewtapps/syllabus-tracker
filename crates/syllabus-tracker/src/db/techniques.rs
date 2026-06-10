@@ -5,6 +5,9 @@ use serde::Serialize;
 use sqlx::{Pool, Sqlite};
 use tracing::{info, instrument};
 
+use crate::db::activity::{
+    NewActivity, Verb, affected_students_for_technique, emit_fanout, payload,
+};
 use crate::error::AppError;
 use crate::models::{AttemptBucket, Tag, Technique};
 
@@ -293,8 +296,20 @@ pub async fn update_technique(
     technique_id: i64,
     name: &str,
     description: &str,
+    actor_id: i64,
 ) -> Result<(), AppError> {
     info!("Updating technique");
+    let mut tx = pool.begin().await?;
+
+    let old = sqlx::query!(
+        r#"SELECT name AS "name!: String", description FROM techniques WHERE id = ?"#,
+        technique_id
+    )
+    .fetch_one(&mut *tx)
+    .await?;
+    let name_changed = old.name != name;
+    let description_changed = old.description.unwrap_or_default() != description;
+
     sqlx::query!(
         "UPDATE techniques
          SET name = ?, description = ?
@@ -303,7 +318,7 @@ pub async fn update_technique(
         description,
         technique_id
     )
-    .execute(pool)
+    .execute(&mut *tx)
     .await?;
 
     sqlx::query!(
@@ -314,9 +329,27 @@ pub async fn update_technique(
         description,
         technique_id
     )
-    .execute(pool)
+    .execute(&mut *tx)
     .await?;
 
+    if name_changed || description_changed {
+        let affected = affected_students_for_technique(&mut tx, technique_id).await?;
+        emit_fanout(
+            &mut tx,
+            NewActivity::new(Verb::TechniqueEdited, actor_id)
+                .technique(technique_id)
+                .payload(payload::technique_edited(
+                    name_changed,
+                    description_changed,
+                    &[],
+                    &[],
+                )),
+            &affected,
+        )
+        .await?;
+    }
+
+    tx.commit().await?;
     Ok(())
 }
 

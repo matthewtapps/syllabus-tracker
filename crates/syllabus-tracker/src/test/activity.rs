@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod tests {
-    use crate::db::{NewActivity, Verb, emit};
+    use crate::db::{NewActivity, Verb, WatchEventInput, emit, ingest_watch_events};
     use crate::test::test_utils::TestDbBuilder;
 
     #[rocket::async_test]
@@ -704,6 +704,164 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(row.t, None, "empty fan-out writes a single null-target row");
+    }
+
+    #[rocket::async_test]
+    async fn update_technique_emits_technique_edited_with_field_delta() {
+        let db = TestDbBuilder::new()
+            .coach("coach", None)
+            .student("alice", None)
+            .technique("Armbar", "Original desc", Some("coach"))
+            .build()
+            .await
+            .unwrap();
+        let coach = db.user_id("coach").unwrap();
+        let alice = db.user_id("alice").unwrap();
+        let armbar = db.technique_id("Armbar").unwrap();
+
+        // alice has the technique pinned so she is in the affected set.
+        crate::db::pin_technique(&db.pool, alice, armbar)
+            .await
+            .unwrap();
+
+        // Clear setup activity rows.
+        sqlx::query!("DELETE FROM activity")
+            .execute(&db.pool)
+            .await
+            .unwrap();
+
+        // Rename the technique.
+        crate::db::update_technique(&db.pool, armbar, "Armbar Renamed", "Original desc", coach)
+            .await
+            .unwrap();
+
+        let row = sqlx::query!(
+            r#"SELECT target_student_id AS "t?: i64",
+                      payload_json AS "p?",
+                      actor_user_id AS "a!: i64"
+               FROM activity WHERE verb = 'technique_edited'"#
+        )
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+        assert_eq!(row.t, Some(alice), "row targets the pinned student");
+        assert_eq!(row.a, coach);
+        let payload: serde_json::Value = serde_json::from_str(&row.p.unwrap()).unwrap();
+        assert_eq!(
+            payload["fields"]["name"],
+            serde_json::json!(true),
+            "name flag set"
+        );
+        assert!(
+            payload["fields"].get("description").is_none()
+                || payload["fields"]["description"] == serde_json::json!(false),
+            "description flag not set for unchanged description"
+        );
+    }
+
+    #[rocket::async_test]
+    async fn crossing_watch_threshold_emits_video_watched_once() {
+        let db = TestDbBuilder::new()
+            .coach("coach", None)
+            .student("alice", None)
+            .technique("Armbar", "", Some("coach"))
+            .build()
+            .await
+            .unwrap();
+        let coach = db.user_id("coach").unwrap();
+        let alice = db.user_id("alice").unwrap();
+        let armbar = db.technique_id("Armbar").unwrap();
+
+        // Insert a video with a known duration (50s, threshold = min(10, ceil(50*0.2)) = 10).
+        let video_id: i64 = sqlx::query_scalar!(
+            r#"INSERT INTO videos (technique_id, title, position, kind, processing_status,
+                                   uploaded_by_id, duration_seconds)
+               VALUES (?, 'Test', 0, 'external', 'ready', ?, 50)
+               RETURNING id AS "id!: i64""#,
+            armbar,
+            coach,
+        )
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+
+        // First batch: 5 seconds - below threshold of 10, no emit.
+        ingest_watch_events(
+            &db.pool,
+            video_id,
+            alice,
+            "play-1",
+            &[
+                WatchEventInput {
+                    event: "started".into(),
+                    seconds_watched: None,
+                },
+                WatchEventInput {
+                    event: "progress".into(),
+                    seconds_watched: Some(5),
+                },
+            ],
+        )
+        .await
+        .unwrap();
+
+        let count_before = sqlx::query_scalar!(
+            r#"SELECT COUNT(*) AS "c!: i64" FROM activity WHERE verb = 'video_watched'"#
+        )
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+        assert_eq!(count_before, 0, "no emit below threshold");
+
+        // Second batch: 12 seconds - crosses threshold of 10.
+        ingest_watch_events(
+            &db.pool,
+            video_id,
+            alice,
+            "play-1",
+            &[WatchEventInput {
+                event: "progress".into(),
+                seconds_watched: Some(12),
+            }],
+        )
+        .await
+        .unwrap();
+
+        let count_after = sqlx::query_scalar!(
+            r#"SELECT COUNT(*) AS "c!: i64" FROM activity WHERE verb = 'video_watched'"#
+        )
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+        assert_eq!(
+            count_after, 1,
+            "one video_watched row after crossing threshold"
+        );
+
+        // Third batch: more seconds - already crossed, no new row (coalesces or no-emit).
+        ingest_watch_events(
+            &db.pool,
+            video_id,
+            alice,
+            "play-1",
+            &[WatchEventInput {
+                event: "progress".into(),
+                seconds_watched: Some(20),
+            }],
+        )
+        .await
+        .unwrap();
+
+        let count_final = sqlx::query_scalar!(
+            r#"SELECT COUNT(*) AS "c!: i64" FROM activity WHERE verb = 'video_watched'"#
+        )
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+        assert_eq!(
+            count_final, 1,
+            "still one row after further progress (coalesced or already crossed)"
+        );
     }
 
     #[rocket::async_test]

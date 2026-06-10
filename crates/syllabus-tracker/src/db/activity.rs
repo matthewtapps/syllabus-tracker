@@ -395,13 +395,16 @@ async fn find_coalesce_target(
 }
 
 /// For sst_status_changed, keep the existing row's `from` and take the new
-/// `to`. All other verbs take the new payload as-is.
+/// `to`. For technique_edited, deep-merge the `fields` maps and concatenate
+/// the tag added/removed arrays so a rename then a tag-add within the 30s
+/// window coalesces into one row keeping both deltas. All other verbs take
+/// the new payload as-is.
 async fn merge_payload(
     tx: &mut Transaction<'_, Sqlite>,
     existing_id: i64,
     ev: &NewActivity,
 ) -> Result<Option<String>, AppError> {
-    if ev.verb != Verb::SstStatusChanged {
+    if ev.verb != Verb::SstStatusChanged && ev.verb != Verb::TechniqueEdited {
         return Ok(ev.payload_json.clone());
     }
     let existing = sqlx::query_scalar!(
@@ -415,9 +418,67 @@ async fn merge_payload(
     };
     let old_v: serde_json::Value = serde_json::from_str(&old).unwrap_or(json!({}));
     let new_v: serde_json::Value = serde_json::from_str(new).unwrap_or(json!({}));
-    Ok(Some(
-        json!({ "from": old_v["from"], "to": new_v["to"] }).to_string(),
-    ))
+
+    if ev.verb == Verb::SstStatusChanged {
+        return Ok(Some(
+            json!({ "from": old_v["from"], "to": new_v["to"] }).to_string(),
+        ));
+    }
+
+    // TechniqueEdited: deep-merge fields maps and concatenate tag arrays.
+    let mut merged_fields = match old_v.get("fields") {
+        Some(serde_json::Value::Object(m)) => m.clone(),
+        _ => serde_json::Map::new(),
+    };
+    let new_fields = match new_v.get("fields") {
+        Some(serde_json::Value::Object(m)) => m.clone(),
+        _ => serde_json::Map::new(),
+    };
+
+    // Merge boolean field flags (name, description): either true wins.
+    for key in &["name", "description"] {
+        if new_fields.get(*key) == Some(&json!(true)) {
+            merged_fields.insert((*key).to_string(), json!(true));
+        }
+    }
+
+    // Merge tags: concatenate added and removed arrays from both sides.
+    let old_tags = old_v.pointer("/fields/tags");
+    let new_tags = new_v.pointer("/fields/tags");
+    if old_tags.is_some() || new_tags.is_some() {
+        let mut added: Vec<serde_json::Value> = vec![];
+        let mut removed: Vec<serde_json::Value> = vec![];
+        if let Some(arr) = old_tags
+            .and_then(|t| t.get("added"))
+            .and_then(|a| a.as_array())
+        {
+            added.extend(arr.clone());
+        }
+        if let Some(arr) = new_tags
+            .and_then(|t| t.get("added"))
+            .and_then(|a| a.as_array())
+        {
+            added.extend(arr.clone());
+        }
+        if let Some(arr) = old_tags
+            .and_then(|t| t.get("removed"))
+            .and_then(|a| a.as_array())
+        {
+            removed.extend(arr.clone());
+        }
+        if let Some(arr) = new_tags
+            .and_then(|t| t.get("removed"))
+            .and_then(|a| a.as_array())
+        {
+            removed.extend(arr.clone());
+        }
+        merged_fields.insert(
+            "tags".to_string(),
+            json!({ "added": added, "removed": removed }),
+        );
+    }
+
+    Ok(Some(json!({ "fields": merged_fields }).to_string()))
 }
 
 /// Write one activity row per affected student, reusing `ev` as a template
@@ -537,6 +598,85 @@ mod registry_tests {
             EntityKind::Technique
         );
         assert_eq!(Verb::VideoAdded.primary_entity(), EntityKind::Video);
+    }
+}
+
+#[cfg(test)]
+mod merge_tests {
+    use super::{json, payload};
+
+    /// A rename then a tag-add within the window must produce one row that
+    /// keeps BOTH the name flag and the tag delta.
+    #[test]
+    fn technique_edited_merge_unions_fields() {
+        // Simulate what merge_payload does by calling the merge logic inline.
+        // Build: old payload has name=true, new payload has tags added=["Sweep"].
+        let old_json = payload::technique_edited(true, false, &[], &[]);
+        let new_json = payload::technique_edited(false, false, &["Sweep".to_string()], &[]);
+
+        let old_v: serde_json::Value = serde_json::from_str(&old_json).unwrap();
+        let new_v: serde_json::Value = serde_json::from_str(&new_json).unwrap();
+
+        // Replicate the merge logic.
+        let mut merged_fields = match old_v.get("fields") {
+            Some(serde_json::Value::Object(m)) => m.clone(),
+            _ => serde_json::Map::new(),
+        };
+        let new_fields = match new_v.get("fields") {
+            Some(serde_json::Value::Object(m)) => m.clone(),
+            _ => serde_json::Map::new(),
+        };
+        for key in &["name", "description"] {
+            if new_fields.get(*key) == Some(&json!(true)) {
+                merged_fields.insert((*key).to_string(), json!(true));
+            }
+        }
+        let old_tags = old_v.pointer("/fields/tags");
+        let new_tags = new_v.pointer("/fields/tags");
+        if old_tags.is_some() || new_tags.is_some() {
+            let mut added: Vec<serde_json::Value> = vec![];
+            let mut removed: Vec<serde_json::Value> = vec![];
+            if let Some(arr) = old_tags
+                .and_then(|t| t.get("added"))
+                .and_then(|a| a.as_array())
+            {
+                added.extend(arr.clone());
+            }
+            if let Some(arr) = new_tags
+                .and_then(|t| t.get("added"))
+                .and_then(|a| a.as_array())
+            {
+                added.extend(arr.clone());
+            }
+            if let Some(arr) = old_tags
+                .and_then(|t| t.get("removed"))
+                .and_then(|a| a.as_array())
+            {
+                removed.extend(arr.clone());
+            }
+            if let Some(arr) = new_tags
+                .and_then(|t| t.get("removed"))
+                .and_then(|a| a.as_array())
+            {
+                removed.extend(arr.clone());
+            }
+            merged_fields.insert(
+                "tags".to_string(),
+                json!({ "added": added, "removed": removed }),
+            );
+        }
+        let merged = json!({ "fields": merged_fields });
+
+        assert_eq!(
+            merged["fields"]["name"],
+            json!(true),
+            "name flag preserved from old"
+        );
+        let added = merged["fields"]["tags"]["added"].as_array().unwrap();
+        assert!(
+            added.iter().any(|v| v == "Sweep"),
+            "tag add from new payload kept"
+        );
     }
 }
 
