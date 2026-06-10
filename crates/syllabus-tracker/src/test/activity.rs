@@ -237,4 +237,34 @@ mod tests {
             .unwrap();
         assert_eq!(row.t, None, "empty fan-out writes a single coach-only row");
     }
+
+    #[rocket::async_test]
+    async fn pin_emits_technique_pinned() {
+        let db = TestDbBuilder::new()
+            .coach("coach", None)
+            .student("alice", None)
+            .technique("Armbar", "", Some("coach"))
+            .build()
+            .await
+            .unwrap();
+        let alice = db.user_id("alice").unwrap();
+        let armbar = db.technique_id("Armbar").unwrap();
+
+        crate::db::pin_technique(&db.pool, alice, armbar)
+            .await
+            .unwrap();
+
+        let row = sqlx::query!(
+            r#"SELECT verb AS "v!: String", actor_user_id AS "a!: i64",
+                      target_student_id AS "t?: i64", technique_id AS "tech?: i64"
+               FROM activity"#
+        )
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+        assert_eq!(row.v, "technique_pinned");
+        assert_eq!(row.a, alice);
+        assert_eq!(row.t, Some(alice));
+        assert_eq!(row.tech, Some(armbar));
+    }
 }

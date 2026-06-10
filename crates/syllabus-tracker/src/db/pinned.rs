@@ -7,6 +7,7 @@ use chrono::NaiveDateTime;
 use sqlx::{Pool, Sqlite};
 use tracing::{info, instrument};
 
+use crate::db::activity::{emit, NewActivity, Verb};
 use crate::error::AppError;
 use crate::models::Tag;
 
@@ -129,13 +130,22 @@ pub async fn pin_technique(
     technique_id: i64,
 ) -> Result<(), AppError> {
     info!("Pinning technique");
+    let mut tx = pool.begin().await?;
     sqlx::query!(
         "INSERT OR IGNORE INTO student_pinned_techniques (student_id, technique_id) VALUES (?, ?)",
         student_id,
         technique_id,
     )
-    .execute(pool)
+    .execute(&mut *tx)
     .await?;
+    emit(
+        &mut tx,
+        NewActivity::new(Verb::TechniquePinned, student_id)
+            .target_student(student_id)
+            .technique(technique_id),
+    )
+    .await?;
+    tx.commit().await?;
     Ok(())
 }
 
@@ -146,12 +156,21 @@ pub async fn unpin_technique(
     technique_id: i64,
 ) -> Result<(), AppError> {
     info!("Unpinning technique");
+    let mut tx = pool.begin().await?;
     sqlx::query!(
         "DELETE FROM student_pinned_techniques WHERE student_id = ? AND technique_id = ?",
         student_id,
         technique_id,
     )
-    .execute(pool)
+    .execute(&mut *tx)
     .await?;
+    emit(
+        &mut tx,
+        NewActivity::new(Verb::TechniqueUnpinned, student_id)
+            .target_student(student_id)
+            .technique(technique_id),
+    )
+    .await?;
+    tx.commit().await?;
     Ok(())
 }
