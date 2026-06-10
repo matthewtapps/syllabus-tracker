@@ -2,6 +2,7 @@ import { Eye, EyeOff } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { useSetSstHidden } from "@/lib/mutations";
+import { useGraduatedConfirm } from "./graduated-guard";
 import { useTechniqueRow } from "./technique-row-context";
 
 // Coach-only hidden toggle for a student-syllabus row. Renders next to
@@ -10,6 +11,7 @@ import { useTechniqueRow } from "./technique-row-context";
 export function HiddenToggleButton() {
   const { context, role } = useTechniqueRow();
   const mutation = useSetSstHidden();
+  const confirmGraduated = useGraduatedConfirm();
   if (context.kind !== "student-syllabus") return null;
   if (role !== "coach" && role !== "admin") return null;
   const { sst, studentId, syllabusId } = context;
@@ -18,6 +20,7 @@ export function HiddenToggleButton() {
   async function handleClick(e: React.MouseEvent) {
     e.preventDefault();
     e.stopPropagation();
+    if (!confirmGraduated()) return;
     try {
       await mutation.mutateAsync({
         sstId: sst.id,

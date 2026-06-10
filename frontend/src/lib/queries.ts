@@ -246,12 +246,22 @@ export function useLibraryTechniqueStats(
 export function useTechniqueVideos(
   techniqueId: number | undefined,
   forStudent?: number,
+  syllabus?: { studentId: number; syllabusId: number },
 ) {
+  // Syllabus context gets its own cache bucket so library-context and
+  // syllabus-context views of the same technique don't collide.
+  const queryKey = syllabus
+    ? qk.syllabusTechniqueVideos(
+        syllabus.studentId,
+        syllabus.syllabusId,
+        techniqueId ?? 0,
+      )
+    : qk.techniqueVideos(techniqueId ?? 0, forStudent ?? null);
   return useQuery({
-    queryKey: qk.techniqueVideos(techniqueId ?? 0, forStudent ?? null),
+    queryKey,
     queryFn:
       typeof techniqueId === "number" && Number.isFinite(techniqueId)
-        ? () => listVideos(techniqueId, { forStudent })
+        ? () => listVideos(techniqueId, { forStudent, syllabus })
         : skipToken,
     staleTime: 0,
     refetchOnWindowFocus: true,

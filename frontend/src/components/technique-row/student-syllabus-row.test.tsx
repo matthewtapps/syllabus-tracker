@@ -42,6 +42,7 @@ describe("TechniqueRow / student-syllabus context", () => {
             syllabusId: 7,
             assignmentId: 13,
             sst,
+            graduatedAt: null,
           }}
           value={value}
           isOpen
@@ -79,6 +80,7 @@ describe("TechniqueRow / student-syllabus context", () => {
             syllabusId: 7,
             assignmentId: 13,
             sst,
+            graduatedAt: null,
           }}
           value={value}
           isOpen
@@ -111,6 +113,7 @@ describe("TechniqueRow / student-syllabus context", () => {
             syllabusId: 7,
             assignmentId: 13,
             sst,
+            graduatedAt: null,
           }}
           value={value}
           isOpen={false}

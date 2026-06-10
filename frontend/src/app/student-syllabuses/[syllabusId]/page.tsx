@@ -343,6 +343,7 @@ function Detail({
                     syllabusId,
                     assignmentId: assignment.id,
                     sst,
+                    graduatedAt: assignment.graduated_at,
                   }}
                   value={value}
                   isOpen={expandedValue === value}

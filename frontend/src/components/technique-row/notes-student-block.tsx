@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { useUpdateStudentSyllabusTechnique } from "@/lib/mutations";
+import { useGraduatedConfirm } from "./graduated-guard";
 import { useTechniqueRow } from "./technique-row-context";
 
 // MY NOTES (when the viewer is the owning student) or "Student notes"
@@ -55,6 +56,7 @@ function NotesEditor({
   const [editing, setEditing] = useState(false);
   const initialRef = useRef(seedValue);
   const mutation = useUpdateStudentSyllabusTechnique();
+  const confirmGraduated = useGraduatedConfirm();
 
   // Re-seed when switching rows (different sst id).
   useEffect(() => {
@@ -71,6 +73,7 @@ function NotesEditor({
       setEditing(false);
       return;
     }
+    if (!confirmGraduated()) return;
     try {
       await mutation.mutateAsync({
         sstId,

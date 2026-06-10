@@ -1040,8 +1040,25 @@ export interface UploadResponse {
 
 export async function listVideos(
   techniqueId: number,
-  opts?: { forStudent?: number },
+  opts?: {
+    forStudent?: number;
+    /** When set, fetches the per-syllabus video list via the syllabus
+     *  endpoint. Applies `student_syllabus_video_visibility` overrides
+     *  on top of global visibility. Overrides `forStudent` if both are
+     *  provided (the syllabus route already scopes to the student). */
+    syllabus?: { studentId: number; syllabusId: number };
+  },
 ): Promise<Video[]> {
+  if (opts?.syllabus) {
+    const { studentId, syllabusId } = opts.syllabus;
+    const response = await fetch(
+      `/api/student/${studentId}/syllabuses/${syllabusId}/techniques/${techniqueId}/videos`,
+      { credentials: "include" },
+    );
+    if (!response.ok) throw new Error("Failed to load videos");
+    const body = await response.json();
+    return body.videos as Video[];
+  }
   const url = new URL(`/api/techniques/${techniqueId}/videos`, window.location.origin);
   if (typeof opts?.forStudent === "number") {
     url.searchParams.set("for_student", String(opts.forStudent));

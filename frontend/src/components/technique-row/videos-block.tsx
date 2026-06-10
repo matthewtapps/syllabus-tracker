@@ -14,8 +14,17 @@ export function VideosBlock({
   scrollToVideoId,
   onVideoScrolled,
 }: VideosBlockProps) {
-  const { technique } = useTechniqueRow();
+  const { context, technique } = useTechniqueRow();
   const [reloadKey, setReloadKey] = useState(0);
+
+  // student-syllabus context: fetch via the per-(student, syllabus,
+  // technique) endpoint so per-syllabus visibility overrides apply, and
+  // pass the syllabus scope to VideoList so coaches see the
+  // SyllabusVisibilityControl on each row.
+  const syllabus =
+    context.kind === "student-syllabus"
+      ? { studentId: context.studentId, syllabusId: context.syllabusId }
+      : undefined;
 
   return (
     <section className="space-y-2">
@@ -41,6 +50,7 @@ export function VideosBlock({
         techniqueId={technique.id}
         canManage={canManage}
         reloadKey={reloadKey}
+        syllabus={syllabus}
         scrollToVideoId={scrollToVideoId}
         onVideoScrolled={onVideoScrolled}
       />
