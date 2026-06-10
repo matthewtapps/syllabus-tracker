@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE activity SET occurred_at = ?, payload_json = ? WHERE id = ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": []
+  },
+  "hash": "44112957674efaf54973031bfb363bf0845dd911c4832c0567c229c6517d0489"
+}

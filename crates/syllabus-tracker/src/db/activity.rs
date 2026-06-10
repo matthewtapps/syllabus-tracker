@@ -5,7 +5,8 @@
 //! with the event it records. This module never deserialises payloads; the
 //! typed read side lands in PR 2 (`db/activity_read.rs`).
 
-use chrono::Utc;
+use chrono::{NaiveDateTime, Utc};
+use serde_json::json;
 use sqlx::{Sqlite, Transaction};
 
 use crate::error::AppError;
@@ -197,7 +198,6 @@ impl NewActivity {
     }
 
     /// The value of the primary-entity column for this row, used by coalescing.
-    #[allow(dead_code)]
     pub(crate) fn primary_entity_id(&self) -> Option<i64> {
         match self.verb.primary_entity() {
             EntityKind::Technique => self.technique_id,
@@ -259,14 +259,35 @@ pub mod payload {
 }
 
 /// 30-second coalescing window (see Task 5). Constant, tunable later.
-#[allow(dead_code)]
 const COALESCE_WINDOW_SECS: i64 = 30;
 
 /// Insert (or coalesce, Task 5) an activity row inside the caller's
 /// transaction. Atomic with the event being recorded.
 pub async fn emit(tx: &mut Transaction<'_, Sqlite>, ev: NewActivity) -> Result<(), AppError> {
     let now = Utc::now().naive_utc();
+    let window_start = now - chrono::Duration::seconds(COALESCE_WINDOW_SECS);
     let verb = ev.verb.as_str();
+
+    // Find the most recent same-key row within the window. The key is
+    // (actor, verb, primary entity col, target_student_id). The primary entity
+    // column varies by verb, so branch on its kind.
+    let existing_id = find_coalesce_target(tx, &ev, verb, window_start).await?;
+
+    if let Some(id) = existing_id {
+        // Merge: bump occurred_at, and for sst_status_changed keep the original
+        // `from` while taking the new `to`.
+        let merged_payload = merge_payload(tx, id, &ev).await?;
+        sqlx::query!(
+            "UPDATE activity SET occurred_at = ?, payload_json = ? WHERE id = ?",
+            now,
+            merged_payload,
+            id,
+        )
+        .execute(&mut **tx)
+        .await?;
+        return Ok(());
+    }
+
     sqlx::query!(
         "INSERT INTO activity
             (occurred_at, verb, actor_user_id, target_student_id,
@@ -285,6 +306,118 @@ pub async fn emit(tx: &mut Transaction<'_, Sqlite>, ev: NewActivity) -> Result<(
     .execute(&mut **tx)
     .await?;
     Ok(())
+}
+
+/// Look up a coalesce target. SQLite NULL never equals NULL, so the
+/// target_student_id match is written as `(target_student_id IS ? OR
+/// target_student_id = ?)` collapsed via `IS`. We pass the value twice and use
+/// `IS` semantics by comparing with `coalesce`-safe predicates per branch.
+async fn find_coalesce_target(
+    tx: &mut Transaction<'_, Sqlite>,
+    ev: &NewActivity,
+    verb: &str,
+    window_start: NaiveDateTime,
+) -> Result<Option<i64>, AppError> {
+    let entity_id = match ev.primary_entity_id() {
+        Some(id) => id,
+        // No primary entity value (should not happen for real verbs); never
+        // coalesce.
+        None => return Ok(None),
+    };
+    let target = ev.target_student_id;
+    let id = match ev.verb.primary_entity() {
+        EntityKind::Technique => {
+            sqlx::query_scalar!(
+                r#"SELECT id AS "id!: i64" FROM activity
+                   WHERE actor_user_id = ? AND verb = ? AND occurred_at >= ?
+                     AND technique_id = ?
+                     AND target_student_id IS ?
+                   ORDER BY occurred_at DESC, id DESC LIMIT 1"#,
+                ev.actor_user_id,
+                verb,
+                window_start,
+                entity_id,
+                target,
+            )
+            .fetch_optional(&mut **tx)
+            .await?
+        }
+        EntityKind::Syllabus => {
+            sqlx::query_scalar!(
+                r#"SELECT id AS "id!: i64" FROM activity
+                   WHERE actor_user_id = ? AND verb = ? AND occurred_at >= ?
+                     AND syllabus_id = ?
+                     AND target_student_id IS ?
+                   ORDER BY occurred_at DESC, id DESC LIMIT 1"#,
+                ev.actor_user_id,
+                verb,
+                window_start,
+                entity_id,
+                target,
+            )
+            .fetch_optional(&mut **tx)
+            .await?
+        }
+        EntityKind::Sst => {
+            sqlx::query_scalar!(
+                r#"SELECT id AS "id!: i64" FROM activity
+                   WHERE actor_user_id = ? AND verb = ? AND occurred_at >= ?
+                     AND sst_id = ?
+                     AND target_student_id IS ?
+                   ORDER BY occurred_at DESC, id DESC LIMIT 1"#,
+                ev.actor_user_id,
+                verb,
+                window_start,
+                entity_id,
+                target,
+            )
+            .fetch_optional(&mut **tx)
+            .await?
+        }
+        EntityKind::Video => {
+            sqlx::query_scalar!(
+                r#"SELECT id AS "id!: i64" FROM activity
+                   WHERE actor_user_id = ? AND verb = ? AND occurred_at >= ?
+                     AND video_id = ?
+                     AND target_student_id IS ?
+                   ORDER BY occurred_at DESC, id DESC LIMIT 1"#,
+                ev.actor_user_id,
+                verb,
+                window_start,
+                entity_id,
+                target,
+            )
+            .fetch_optional(&mut **tx)
+            .await?
+        }
+    };
+    Ok(id)
+}
+
+/// For sst_status_changed, keep the existing row's `from` and take the new
+/// `to`. All other verbs take the new payload as-is.
+async fn merge_payload(
+    tx: &mut Transaction<'_, Sqlite>,
+    existing_id: i64,
+    ev: &NewActivity,
+) -> Result<Option<String>, AppError> {
+    if ev.verb != Verb::SstStatusChanged {
+        return Ok(ev.payload_json.clone());
+    }
+    let existing = sqlx::query_scalar!(
+        r#"SELECT payload_json FROM activity WHERE id = ?"#,
+        existing_id
+    )
+    .fetch_one(&mut **tx)
+    .await?;
+    let (Some(old), Some(new)) = (existing, ev.payload_json.as_ref()) else {
+        return Ok(ev.payload_json.clone());
+    };
+    let old_v: serde_json::Value = serde_json::from_str(&old).unwrap_or(json!({}));
+    let new_v: serde_json::Value = serde_json::from_str(new).unwrap_or(json!({}));
+    Ok(Some(
+        json!({ "from": old_v["from"], "to": new_v["to"] }).to_string(),
+    ))
 }
 
 #[cfg(test)]
