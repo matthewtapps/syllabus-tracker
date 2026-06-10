@@ -147,11 +147,15 @@ function PinnedListing({
             {techniques.map((t) => {
               const value = String(t.id);
               const exiting = exitingIds.has(t.id);
+              // Wrapper owns the inter-row border. The AccordionItem
+              // inside is the sole child of this wrapper, so its own
+              // `border-b last:border-b-0` always strips itself out
+              // (every item is the last child of its own wrapper).
               return (
                 <div
                   key={t.id}
                   className={cn(
-                    'grid transition-[grid-template-rows,opacity] duration-200 ease-out',
+                    'grid border-b border-border transition-[grid-template-rows,opacity] duration-200 ease-out last:border-b-0',
                     exiting
                       ? 'grid-rows-[0fr] opacity-0 pointer-events-none'
                       : 'grid-rows-[1fr] opacity-100',
