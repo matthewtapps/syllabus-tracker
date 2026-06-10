@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { EmptyState } from '@/components/empty-state';
 import { TechniqueRow } from '@/components/technique-row';
-import { useStudentPinnedTechniques } from '@/lib/queries';
+import { useAllUsers, useStudentPinnedTechniques } from '@/lib/queries';
 import { usePinTechnique, useUnpinTechnique } from '@/lib/mutations';
 import { useUser } from '@/lib/current-user-context';
 import { isCoachOrAdmin } from '@/lib/api';
@@ -47,11 +47,23 @@ function PinnedListing({
   const [search, setSearch] = useState('');
   const [activeTags, setActiveTags] = useState<string[]>([]);
   const query = useStudentPinnedTechniques(studentId);
+  const usersQuery = useAllUsers();
   const pinMutation = usePinTechnique(studentId);
   const unpinMutation = useUnpinTechnique(studentId);
   const techniques = useMemo(() => query.data ?? [], [query.data]);
+  const studentName = useMemo(() => {
+    if (isOwnView) return null;
+    const u = (usersQuery.data ?? []).find((u) => u.id === studentId);
+    return u ? u.display_name || u.username : null;
+  }, [isOwnView, usersQuery.data, studentId]);
   const loading = query.isLoading;
   const error = query.error ? 'Failed to load pinned techniques.' : null;
+
+  const title = isOwnView
+    ? 'My Pinned Techniques'
+    : studentName
+      ? `${studentName}'s Pinned Techniques`
+      : 'Pinned Techniques';
 
   const availableTags = useMemo(() => {
     const set = new Set<string>();
@@ -125,7 +137,7 @@ function PinnedListing({
       <div className="mb-4 flex items-end justify-between gap-2">
         <h1 className="flex items-center gap-2 text-base font-semibold">
           <Pin className="h-4 w-4" aria-hidden />
-          {isOwnView ? 'My Pinned Techniques' : 'Pinned Techniques'}
+          {title}
         </h1>
       </div>
 
