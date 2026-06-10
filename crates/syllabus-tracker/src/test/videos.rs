@@ -5,7 +5,7 @@ mod tests {
     use serde_json::json;
 
     use crate::test::test_utils::{
-        create_standard_test_db, login_test_user, setup_test_client, TestDb,
+        TestDb, create_standard_test_db, login_test_user, setup_test_client,
     };
 
     const BOUNDARY: &str = "----testboundarysillybus";
@@ -361,10 +361,7 @@ mod tests {
         let body: serde_json::Value =
             serde_json::from_str(&response.into_string().await.unwrap()).unwrap();
         let videos = body["videos"].as_array().unwrap();
-        let observed: Vec<i64> = videos
-            .iter()
-            .map(|v| v["id"].as_i64().unwrap())
-            .collect();
+        let observed: Vec<i64> = videos.iter().map(|v| v["id"].as_i64().unwrap()).collect();
         assert_eq!(observed, reversed);
     }
 

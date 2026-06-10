@@ -177,7 +177,8 @@ mod tests {
             .unwrap();
 
         // Modify users table to add email column
-        let result = migrate_database_declaratively(pool.clone(), MODIFIED_TABLE_SCHEMA, false).await;
+        let result =
+            migrate_database_declaratively(pool.clone(), MODIFIED_TABLE_SCHEMA, false).await;
         assert!(result.is_ok());
         assert!(result.unwrap(), "Modifying table should report changes");
 
@@ -237,7 +238,8 @@ mod tests {
             .unwrap();
 
         // Migrate to modified schema (adds email column)
-        let result = migrate_database_declaratively(pool.clone(), MODIFIED_TABLE_SCHEMA, false).await;
+        let result =
+            migrate_database_declaratively(pool.clone(), MODIFIED_TABLE_SCHEMA, false).await;
         assert!(result.is_ok());
 
         // Check data is preserved
@@ -275,7 +277,8 @@ mod tests {
             .unwrap();
 
         // Try to remove username column without permission
-        let result = migrate_database_declaratively(pool.clone(), COLUMN_REMOVAL_SCHEMA, false).await;
+        let result =
+            migrate_database_declaratively(pool.clone(), COLUMN_REMOVAL_SCHEMA, false).await;
         assert!(
             result.is_err(),
             "Should fail when trying to remove column without permission"
@@ -384,7 +387,8 @@ mod tests {
             .unwrap();
 
         // Try to remove index without permission
-        let result = migrate_database_declaratively(pool.clone(), WITHOUT_INDEX_SCHEMA, false).await;
+        let result =
+            migrate_database_declaratively(pool.clone(), WITHOUT_INDEX_SCHEMA, false).await;
         assert!(
             result.is_err(),
             "Should fail when trying to remove index without permission"
@@ -417,8 +421,7 @@ mod tests {
             .unwrap();
 
         // Remove index with permission
-        let result =
-            migrate_database_declaratively(pool.clone(), WITHOUT_INDEX_SCHEMA, true).await;
+        let result = migrate_database_declaratively(pool.clone(), WITHOUT_INDEX_SCHEMA, true).await;
 
         assert!(result.is_ok(), "Should succeed when deletions are allowed");
         assert!(result.unwrap(), "Should report changes made");

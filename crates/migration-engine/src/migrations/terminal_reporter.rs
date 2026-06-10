@@ -162,7 +162,11 @@ fn done_style() -> ProgressStyle {
 
 fn label_for_step(description: &str, changes: &ChangesNeeded) -> String {
     if let Some(table_name) = description.strip_prefix("Modifying table ") {
-        if let Some(table) = changes.modified_tables.iter().find(|t| t.name == table_name) {
+        if let Some(table) = changes
+            .modified_tables
+            .iter()
+            .find(|t| t.name == table_name)
+        {
             let mut parts: Vec<String> = Vec::new();
             let mut new_cols = table.new_columns.clone();
             new_cols.sort();
@@ -190,4 +194,3 @@ fn format_duration(d: Duration) -> String {
         format!("{:.0}s", secs)
     }
 }
-

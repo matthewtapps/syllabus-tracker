@@ -167,23 +167,23 @@ pub async fn create_attempt(
     let attempted_naive = attempted_at.naive_utc();
     let note_owned = note.map(|n| n.to_string());
 
-    let (coach_note, coach_note_by, coach_note_at, student_note, student_note_at) =
-        match actor.role {
-            Role::Coach | Role::Admin => (
-                note_owned.clone(),
-                note_owned.as_ref().map(|_| actor_id),
-                note_owned.as_ref().map(|_| attempted_naive),
-                None,
-                None,
-            ),
-            Role::Student => (
-                None,
-                None,
-                None,
-                note_owned.clone(),
-                note_owned.as_ref().map(|_| attempted_naive),
-            ),
-        };
+    let (coach_note, coach_note_by, coach_note_at, student_note, student_note_at) = match actor.role
+    {
+        Role::Coach | Role::Admin => (
+            note_owned.clone(),
+            note_owned.as_ref().map(|_| actor_id),
+            note_owned.as_ref().map(|_| attempted_naive),
+            None,
+            None,
+        ),
+        Role::Student => (
+            None,
+            None,
+            None,
+            note_owned.clone(),
+            note_owned.as_ref().map(|_| attempted_naive),
+        ),
+    };
 
     let res = sqlx::query!(
         "INSERT INTO attempts (
@@ -406,9 +406,7 @@ pub async fn update_attempt_note(
     let now = Utc::now().naive_utc();
     let actor_id = actor.id;
     // Empty string clears the note.
-    let normalised: Option<String> = note
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty());
+    let normalised: Option<String> = note.map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
 
     let mut tx = pool.begin().await?;
     match actor.role {

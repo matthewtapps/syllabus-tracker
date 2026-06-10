@@ -639,4 +639,167 @@ mod tests {
         assert_eq!(bob_rows.len(), 1, "bob sees only his own row");
         assert_eq!(bob_rows[0].verb, "syllabus_graduated");
     }
+
+    // Task 23 route tests
+
+    /// GET /api/activity/feed returns rows and advances the cursor to the
+    /// snapshot max, without marking rows that arrived AFTER the snapshot.
+    #[rocket::async_test]
+    async fn feed_endpoint_returns_rows_and_advances_cursor() {
+        use crate::db::{advance_cursor_to, current_max_seen};
+        use crate::test::test_utils::{login_test_user, setup_test_client};
+
+        let db = TestDbBuilder::new()
+            .coach("coach", None)
+            .student("alice", None)
+            .build()
+            .await
+            .unwrap();
+        let coach = db.user_id("coach").unwrap();
+        let alice = db.user_id("alice").unwrap();
+
+        // Emit two rows targeting alice before the request.
+        for verb in [Verb::SyllabusAssigned, Verb::SyllabusGraduated] {
+            let mut tx = db.pool.begin().await.unwrap();
+            emit(&mut tx, NewActivity::new(verb, coach).target_student(alice))
+                .await
+                .unwrap();
+            tx.commit().await.unwrap();
+        }
+
+        let snapshot_max_id =
+            sqlx::query_scalar!(r#"SELECT COALESCE(MAX(id), 0) AS "m!: i64" FROM activity"#)
+                .fetch_one(&db.pool)
+                .await
+                .unwrap();
+
+        let (client, db) = setup_test_client(db).await;
+        let _ = login_test_user(&client, "alice", "password123").await;
+
+        // Call the feed endpoint.
+        let resp = client.get("/api/activity/feed").dispatch().await;
+        assert_eq!(resp.status(), rocket::http::Status::Ok, "feed returns 200");
+        let body: Vec<serde_json::Value> =
+            serde_json::from_str(&resp.into_string().await.unwrap()).unwrap();
+        assert_eq!(body.len(), 2, "both pre-request rows returned");
+
+        // Cursor must have advanced to the snapshot max.
+        let max_seen = current_max_seen(&db.pool, alice).await.unwrap();
+        assert_eq!(max_seen, snapshot_max_id, "cursor advanced to snapshot max");
+
+        // Emit a new row AFTER the request snapshot was taken. The new row
+        // must NOT be inside the cursor (i.e., cursor < new_row_id).
+        let mut tx = db.pool.begin().await.unwrap();
+        emit(
+            &mut tx,
+            NewActivity::new(Verb::TechniquePinned, coach).target_student(alice),
+        )
+        .await
+        .unwrap();
+        tx.commit().await.unwrap();
+
+        let new_row_id =
+            sqlx::query_scalar!(r#"SELECT COALESCE(MAX(id), 0) AS "m!: i64" FROM activity"#)
+                .fetch_one(&db.pool)
+                .await
+                .unwrap();
+
+        assert!(
+            new_row_id > max_seen,
+            "row inserted after snapshot is above cursor (not silently marked seen)"
+        );
+
+        // Advance the cursor manually past the snapshot (as-if a second page
+        // load) and verify it would not exceed the new row.
+        advance_cursor_to(&db.pool, alice, snapshot_max_id)
+            .await
+            .unwrap();
+        let still_max = current_max_seen(&db.pool, alice).await.unwrap();
+        assert_eq!(
+            still_max, snapshot_max_id,
+            "advance to same value is idempotent"
+        );
+    }
+
+    /// GET /api/activity/unread_count returns a JSON count.
+    #[rocket::async_test]
+    async fn unread_count_endpoint() {
+        use crate::test::test_utils::{login_test_user, setup_test_client};
+
+        let db = TestDbBuilder::new()
+            .coach("coach", None)
+            .student("alice", None)
+            .build()
+            .await
+            .unwrap();
+        let coach = db.user_id("coach").unwrap();
+        let alice = db.user_id("alice").unwrap();
+
+        // Coach emits a notifiable row targeting alice.
+        let mut tx = db.pool.begin().await.unwrap();
+        emit(
+            &mut tx,
+            NewActivity::new(Verb::SyllabusAssigned, coach).target_student(alice),
+        )
+        .await
+        .unwrap();
+        tx.commit().await.unwrap();
+
+        let (client, _db) = setup_test_client(db).await;
+        let _ = login_test_user(&client, "alice", "password123").await;
+
+        let resp = client.get("/api/activity/unread_count").dispatch().await;
+        assert_eq!(
+            resp.status(),
+            rocket::http::Status::Ok,
+            "unread_count returns 200"
+        );
+        let body: serde_json::Value =
+            serde_json::from_str(&resp.into_string().await.unwrap()).unwrap();
+        assert_eq!(body["count"].as_i64(), Some(1), "one unread row for alice");
+    }
+
+    /// POST /api/activity/mark_all_read zeroes the unread count.
+    #[rocket::async_test]
+    async fn mark_all_read_zeroes_unread_count() {
+        use crate::test::test_utils::{login_test_user, setup_test_client};
+
+        let db = TestDbBuilder::new()
+            .coach("coach", None)
+            .student("alice", None)
+            .build()
+            .await
+            .unwrap();
+        let coach = db.user_id("coach").unwrap();
+        let alice = db.user_id("alice").unwrap();
+
+        // Emit a notifiable row for alice.
+        let mut tx = db.pool.begin().await.unwrap();
+        emit(
+            &mut tx,
+            NewActivity::new(Verb::SyllabusAssigned, coach).target_student(alice),
+        )
+        .await
+        .unwrap();
+        tx.commit().await.unwrap();
+
+        let (client, db) = setup_test_client(db).await;
+        let _ = login_test_user(&client, "alice", "password123").await;
+
+        // Confirm there is one unread before.
+        let count_before = unread_count(&db.pool, alice, Role::Student).await.unwrap();
+        assert_eq!(count_before, 1, "one unread before mark_all_read");
+
+        // Call mark_all_read.
+        let resp = client.post("/api/activity/mark_all_read").dispatch().await;
+        assert_eq!(
+            resp.status(),
+            rocket::http::Status::NoContent,
+            "mark_all_read returns 204"
+        );
+
+        // Unread count must now be 0.
+        let count_after = unread_count(&db.pool, alice, Role::Student).await.unwrap();
+        assert_eq!(count_after, 0, "unread count is zero after mark_all_read");
+    }
 }

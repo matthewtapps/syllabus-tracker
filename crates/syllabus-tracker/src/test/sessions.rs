@@ -8,7 +8,9 @@ mod tests {
         test::test_utils::TestDbBuilder,
     };
     use chrono::{Duration, NaiveDateTime, Utc};
-    use migration_engine::migrations::{migrate_database_declaratively, read_schema_file_to_string};
+    use migration_engine::migrations::{
+        migrate_database_declaratively, read_schema_file_to_string,
+    };
     use rocket::tokio;
     use sqlx::{Pool, Sqlite, SqlitePool};
     use uuid::Uuid;

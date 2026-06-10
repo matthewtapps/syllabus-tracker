@@ -403,10 +403,7 @@ pub async fn create_user_stub(
 /// username doesn't exist (we don't want to leak whether usernames are real
 /// to anonymous callers).
 #[instrument]
-pub async fn request_password_reset(
-    pool: &Pool<Sqlite>,
-    username: &str,
-) -> Result<(), AppError> {
+pub async fn request_password_reset(pool: &Pool<Sqlite>, username: &str) -> Result<(), AppError> {
     info!("Recording password reset request");
     let now = Utc::now().naive_utc();
     sqlx::query!(

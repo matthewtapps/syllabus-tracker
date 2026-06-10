@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicI64, Ordering};
 use std::time::Duration;
 
 use sqlx::SqlitePool;
@@ -101,16 +101,12 @@ pub async fn process_uploaded_video(
 
     let elapsed_ms = elapsed.as_millis() as u64;
     let metrics = video_metrics();
-    metrics
-        .upload_duration_ms
-        .record(elapsed_ms, &[]);
+    metrics.upload_duration_ms.record(elapsed_ms, &[]);
 
     match result {
         Ok(()) => {
             info!(elapsed_ms = elapsed_ms as i64, "video pipeline ok");
-            metrics
-                .uploads_total
-                .add(1, &[kv("result", "ok")]);
+            metrics.uploads_total.add(1, &[kv("result", "ok")]);
         }
         Err(err) => {
             error!(
@@ -119,9 +115,7 @@ pub async fn process_uploaded_video(
                 "video pipeline failed",
             );
             let message = err.to_string();
-            metrics
-                .uploads_total
-                .add(1, &[kv("result", "fail")]);
+            metrics.uploads_total.add(1, &[kv("result", "fail")]);
             if let Err(db_err) = db::mark_video_failed(&ctx.pool, video_id, &message).await {
                 error!(error = %db_err, "failed to record video failure");
             }
@@ -164,9 +158,7 @@ async fn run_pipeline(
     }
 
     let upload_path = if probe.is_h264_mp4() {
-        metrics
-            .transcodes_total
-            .add(1, &[kv("result", "skipped")]);
+        metrics.transcodes_total.add(1, &[kv("result", "skipped")]);
         temp_input.to_path_buf()
     } else {
         let mut transcoded = temp_input.to_path_buf();
@@ -182,14 +174,10 @@ async fn run_pipeline(
                 metrics
                     .transcode_duration_ms
                     .record(transcode_started.elapsed().as_millis() as u64, &[]);
-                metrics
-                    .transcodes_total
-                    .add(1, &[kv("result", "ok")]);
+                metrics.transcodes_total.add(1, &[kv("result", "ok")]);
             }
             Err(err) => {
-                metrics
-                    .transcodes_total
-                    .add(1, &[kv("result", "fail")]);
+                metrics.transcodes_total.add(1, &[kv("result", "fail")]);
                 metrics
                     .transcode_failures_total
                     .add(1, &[kv("stage", "ffmpeg")]);
@@ -201,11 +189,7 @@ async fn run_pipeline(
 
     let bytes = tokio::fs::metadata(&upload_path).await?.len() as i64;
     metrics.upload_bytes.record(bytes as u64, &[]);
-    let storage_key = format!(
-        "videos/{}/{}.mp4",
-        technique_id,
-        Uuid::new_v4()
-    );
+    let storage_key = format!("videos/{}/{}.mp4", technique_id, Uuid::new_v4());
 
     let put_started = Instant::now();
     if let Err(err) = ctx
@@ -238,7 +222,10 @@ async fn run_pipeline(
 
 fn enforce_duration(probe: &ProbeResult, limit: i64) -> Result<(), PipelineError> {
     if probe.duration_seconds.round() as i64 > limit {
-        return Err(PipelineError::DurationTooLong(probe.duration_seconds, limit));
+        return Err(PipelineError::DurationTooLong(
+            probe.duration_seconds,
+            limit,
+        ));
     }
     Ok(())
 }

@@ -11,23 +11,23 @@ mod test;
 
 use api::api_get_all_users;
 use api::{
-    api_add_tag_to_technique, api_add_techniques_to_collection, api_approve_user,
-    api_assign_collection, api_assign_techniques, api_attempt_heatmap, api_attempt_sparkline,
-    api_attempt_summary, api_change_password, api_claim_invite,
-    api_create_and_assign_technique, api_create_attempt, api_create_collection, api_create_tag,
-    api_create_technique_in_collection, api_delete_attempt, api_delete_collection, api_delete_tag,
-    api_get_all_tags, api_get_collection, api_get_collection_students, api_get_collections,
-    api_get_invite, api_get_pinned_techniques, api_get_single_student_technique,
-    api_get_student_library, api_get_student_techniques, api_get_students, api_get_technique_tags,
-    api_get_unassigned_techniques, api_invite_user, api_library_stats,
-    api_library_technique_stats, api_list_library_techniques, api_list_attempts,
+    api_activity_feed, api_activity_mark_all_read, api_activity_mark_one_read,
+    api_activity_mark_one_unread, api_activity_unread_count, api_add_tag_to_technique,
+    api_add_techniques_to_collection, api_approve_user, api_assign_collection,
+    api_assign_techniques, api_attempt_heatmap, api_attempt_sparkline, api_attempt_summary,
+    api_change_password, api_claim_invite, api_create_and_assign_technique, api_create_attempt,
+    api_create_collection, api_create_tag, api_create_technique_in_collection, api_delete_attempt,
+    api_delete_collection, api_delete_tag, api_get_all_tags, api_get_collection,
+    api_get_collection_students, api_get_collections, api_get_invite, api_get_pinned_techniques,
+    api_get_single_student_technique, api_get_student_library, api_get_student_techniques,
+    api_get_students, api_get_technique_tags, api_get_unassigned_techniques, api_invite_user,
+    api_library_stats, api_library_technique_stats, api_list_attempts, api_list_library_techniques,
     api_login, api_logout, api_mark_student_technique_seen, api_me, api_me_unauthorized,
-    api_pin_technique, api_recent_attempts, api_register_user,
-    api_remove_tag_from_technique, api_remove_technique_from_collection,
-    api_request_password_reset, api_reset_user_claim, api_self_register,
-    api_set_student_graduated, api_unpin_technique, api_update_attempt, api_update_collection,
-    api_update_library_technique, api_update_profile, api_update_student_technique,
-    api_update_user, health,
+    api_pin_technique, api_recent_attempts, api_register_user, api_remove_tag_from_technique,
+    api_remove_technique_from_collection, api_request_password_reset, api_reset_user_claim,
+    api_self_register, api_set_student_graduated, api_unpin_technique, api_update_attempt,
+    api_update_collection, api_update_library_technique, api_update_profile,
+    api_update_student_technique, api_update_user, health,
 };
 use auth::unauthorized_api;
 use capabilities::{Capabilities, api_capabilities};
@@ -37,29 +37,28 @@ use catchers::{
 };
 use db::clean_expired_sessions;
 use error::AppError;
-use rocket::{Build, Rocket, tokio};
 use migration_engine::migrations::{get_schema_changes, read_schema_file_to_string};
-use telemetry::TelemetryFairing;
-use telemetry::init_tracing;
-use thiserror::Error;
+use rocket::{Build, Rocket, tokio};
 use syllabi::{
     api_add_technique_to_student_syllabus, api_add_technique_to_syllabus,
     api_apply_assignment_diff, api_assign_syllabus, api_assignment_diff, api_create_syllabus,
     api_create_syllabus_attempt, api_delete_syllabus, api_delete_syllabus_attempt,
-    api_get_syllabus, api_list_student_syllabus_techniques, api_list_student_syllabi,
-    api_list_syllabus_attempts, api_list_syllabus_students, api_list_syllabus_technique_videos,
-    api_list_syllabi, api_remove_technique_from_syllabus, api_set_assignment_graduated,
-    api_set_sst_hidden, api_set_video_syllabus_visibility, api_unassign_syllabus,
-    api_update_syllabus, api_update_syllabus_attempt, api_update_sst,
+    api_get_syllabus, api_list_student_syllabi, api_list_student_syllabus_techniques,
+    api_list_syllabi, api_list_syllabus_attempts, api_list_syllabus_students,
+    api_list_syllabus_technique_videos, api_remove_technique_from_syllabus,
+    api_set_assignment_graduated, api_set_sst_hidden, api_set_video_syllabus_visibility,
+    api_unassign_syllabus, api_update_sst, api_update_syllabus, api_update_syllabus_attempt,
 };
+use telemetry::TelemetryFairing;
+use telemetry::init_tracing;
+use thiserror::Error;
 use videos::{
     api_admin_storage, api_dashboard_video_overview, api_delete_video, api_list_technique_videos,
-    api_my_watch_state, api_reorder_videos, api_replace_video,
-    api_set_video_global_hidden, api_set_video_student_visibility,
-    api_student_watch_activity,
-    api_update_video, api_video_download_url, api_video_link, api_video_playback_url,
-    api_video_privacy_ack, api_video_privacy_ack_status, api_video_stats, api_video_status,
-    api_video_upload, api_video_watch_events,
+    api_my_watch_state, api_reorder_videos, api_replace_video, api_set_video_global_hidden,
+    api_set_video_student_visibility, api_student_watch_activity, api_update_video,
+    api_video_download_url, api_video_link, api_video_playback_url, api_video_privacy_ack,
+    api_video_privacy_ack_status, api_video_stats, api_video_status, api_video_upload,
+    api_video_watch_events,
 };
 
 use sqlx::SqlitePool;
@@ -207,7 +206,9 @@ async fn sample_video_gauges(pool: &SqlitePool, active_jobs: i64) {
         Err(e) => error!("failed to sample storage bytes: {}", e),
     }
     match db::total_video_objects(pool).await {
-        Ok(count) => metrics.storage_objects_total.record(count.max(0) as u64, &[]),
+        Ok(count) => metrics
+            .storage_objects_total
+            .record(count.max(0) as u64, &[]),
         Err(e) => error!("failed to sample storage objects: {}", e),
     }
 }
@@ -243,7 +244,9 @@ pub async fn init_rocket(
         .merge(("temp_dir", &temp_dir));
 
     let mut rocket = rocket::custom(figment)
-        .manage(Capabilities { videos: videos_enabled })
+        .manage(Capabilities {
+            videos: videos_enabled,
+        })
         .mount(
             "/api",
             routes![
@@ -328,6 +331,11 @@ pub async fn init_rocket(
                 api_delete_syllabus_attempt,
                 api_list_syllabus_attempts,
                 api_list_syllabus_technique_videos,
+                api_activity_feed,
+                api_activity_unread_count,
+                api_activity_mark_all_read,
+                api_activity_mark_one_read,
+                api_activity_mark_one_unread,
             ],
         )
         .register(

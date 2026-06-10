@@ -7,7 +7,7 @@ use chrono::NaiveDateTime;
 use sqlx::{Pool, Sqlite};
 use tracing::{info, instrument};
 
-use crate::db::activity::{emit, NewActivity, Verb};
+use crate::db::activity::{NewActivity, Verb, emit};
 use crate::error::AppError;
 use crate::models::Tag;
 

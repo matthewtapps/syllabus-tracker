@@ -1,8 +1,7 @@
 use once_cell::sync::Lazy;
 use opentelemetry::{
-    global,
+    KeyValue, global,
     metrics::{Counter, Gauge, Histogram, Meter},
-    KeyValue,
 };
 
 pub struct VideoMetrics {
@@ -66,7 +65,9 @@ impl VideoMetrics {
                 .build(),
             transcode_duration_ms: meter
                 .u64_histogram("video_transcode_duration_ms")
-                .with_description("Time spent in ffmpeg per upload (skipped when already H.264 mp4)")
+                .with_description(
+                    "Time spent in ffmpeg per upload (skipped when already H.264 mp4)",
+                )
                 .with_unit("ms")
                 .build(),
             s3_put_duration_ms: meter

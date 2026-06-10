@@ -741,8 +741,11 @@ pub fn planned_step_descriptions(changes: &ChangesNeeded) -> Vec<String> {
         steps.push(format!("Create new table {}", name));
     }
 
-    let mut modified_tables: Vec<&str> =
-        changes.modified_tables.iter().map(|t| t.name.as_str()).collect();
+    let mut modified_tables: Vec<&str> = changes
+        .modified_tables
+        .iter()
+        .map(|t| t.name.as_str())
+        .collect();
     modified_tables.sort();
     for name in modified_tables {
         steps.push(modified_table_description(name));
