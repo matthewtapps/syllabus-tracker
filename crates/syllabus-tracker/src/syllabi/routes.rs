@@ -336,7 +336,8 @@ pub async fn api_apply_assignment_diff(
     for entry in &body.missing_actions {
         match entry.action {
             MissingAction::AddToStudent => {
-                db::add_technique_to_assignment(db, assignment.id, entry.technique_id).await?;
+                db::add_technique_to_assignment(db, assignment.id, entry.technique_id, user.id)
+                    .await?;
                 applied += 1;
             }
             MissingAction::Ignore => {}
@@ -371,7 +372,7 @@ pub async fn api_add_technique_to_student_syllabus(
     let assignment = db::get_assignment(db, sid, syid)
         .await?
         .ok_or(Status::NotFound)?;
-    let id = db::add_technique_to_assignment(db, assignment.id, body.technique_id).await?;
+    let id = db::add_technique_to_assignment(db, assignment.id, body.technique_id, user.id).await?;
     Ok(Json(SstIdResponse { id }))
 }
 

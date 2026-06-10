@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod tests {
-    use crate::db::{emit, NewActivity, Verb};
+    use crate::db::{NewActivity, Verb, emit};
     use crate::test::test_utils::TestDbBuilder;
 
     #[rocket::async_test]
@@ -125,7 +125,7 @@ mod tests {
             .await
             .unwrap();
         let armbar = db.technique_id("Armbar").unwrap();
-        let sst_id = crate::db::add_technique_to_assignment(&db.pool, aid, armbar)
+        let sst_id = crate::db::add_technique_to_assignment(&db.pool, aid, armbar, coach)
             .await
             .unwrap();
 
@@ -260,7 +260,7 @@ mod tests {
         let aid = crate::db::assign(&db.pool, coach, alice, sid)
             .await
             .unwrap();
-        let sst_id = crate::db::add_technique_to_assignment(&db.pool, aid, armbar)
+        let sst_id = crate::db::add_technique_to_assignment(&db.pool, aid, armbar, coach)
             .await
             .unwrap();
 
@@ -353,5 +353,180 @@ mod tests {
         assert_eq!(row.a, alice);
         assert_eq!(row.t, Some(alice));
         assert_eq!(row.tech, Some(armbar));
+    }
+
+    #[rocket::async_test]
+    async fn update_sst_status_emits_status_changed_with_from_to() {
+        use crate::auth::{Role, User};
+        use crate::db::SstUpdate;
+
+        let db = TestDbBuilder::new()
+            .coach("coach", None)
+            .student("alice", None)
+            .technique("Armbar", "", Some("coach"))
+            .build()
+            .await
+            .unwrap();
+        let coach = db.user_id("coach").unwrap();
+        let alice = db.user_id("alice").unwrap();
+        let armbar = db.technique_id("Armbar").unwrap();
+
+        let sid = crate::db::create_syllabus(&db.pool, "S", None, coach)
+            .await
+            .unwrap();
+        let aid = crate::db::assign(&db.pool, coach, alice, sid)
+            .await
+            .unwrap();
+        let sst_id = crate::db::add_technique_to_assignment(&db.pool, aid, armbar, coach)
+            .await
+            .unwrap();
+
+        // Clear activity rows from setup so we have a clean slate.
+        sqlx::query!("DELETE FROM activity")
+            .execute(&db.pool)
+            .await
+            .unwrap();
+
+        let actor = User {
+            id: alice,
+            username: "alice".into(),
+            role: Role::Student,
+            display_name: "Alice".into(),
+            archived: false,
+            graduated_at: None,
+            email: None,
+            claimed_at: None,
+            approved_at: None,
+            first_name: None,
+            last_name: None,
+            reset_requested_at: None,
+            last_update: None,
+            last_coach_update_at: None,
+            total_techniques: None,
+            red_count: None,
+            amber_count: None,
+            green_count: None,
+            has_unseen_activity: None,
+            last_student_initiative_at: None,
+            last_watch_at: None,
+            last_watch_video_title: None,
+        };
+
+        crate::db::update_sst(
+            &db.pool,
+            sst_id,
+            &actor,
+            &SstUpdate {
+                status: Some("green".into()),
+                student_notes: None,
+                coach_notes: None,
+            },
+        )
+        .await
+        .unwrap();
+
+        let row = sqlx::query!(
+            r#"SELECT verb AS "v!: String",
+                      payload_json AS "p?",
+                      sst_id AS "sst?: i64",
+                      technique_id AS "tech?: i64",
+                      syllabus_id AS "syl?: i64",
+                      target_student_id AS "t?: i64"
+               FROM activity WHERE verb = 'sst_status_changed'"#
+        )
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+        assert_eq!(row.v, "sst_status_changed");
+        assert_eq!(row.sst, Some(sst_id));
+        assert_eq!(row.tech, Some(armbar));
+        assert_eq!(row.syl, Some(sid));
+        assert_eq!(row.t, Some(alice));
+        let payload: serde_json::Value = serde_json::from_str(&row.p.unwrap()).unwrap();
+        assert_eq!(payload["from"], "red");
+        assert_eq!(payload["to"], "green");
+    }
+
+    #[rocket::async_test]
+    async fn update_sst_multiple_fields_emits_one_row_per_field() {
+        use crate::auth::{Role, User};
+        use crate::db::SstUpdate;
+
+        let db = TestDbBuilder::new()
+            .coach("coach", None)
+            .student("alice", None)
+            .technique("Armbar", "", Some("coach"))
+            .build()
+            .await
+            .unwrap();
+        let coach = db.user_id("coach").unwrap();
+        let alice = db.user_id("alice").unwrap();
+        let armbar = db.technique_id("Armbar").unwrap();
+
+        let sid = crate::db::create_syllabus(&db.pool, "S", None, coach)
+            .await
+            .unwrap();
+        let aid = crate::db::assign(&db.pool, coach, alice, sid)
+            .await
+            .unwrap();
+        let sst_id = crate::db::add_technique_to_assignment(&db.pool, aid, armbar, coach)
+            .await
+            .unwrap();
+
+        // Clear activity rows from setup.
+        sqlx::query!("DELETE FROM activity")
+            .execute(&db.pool)
+            .await
+            .unwrap();
+
+        let actor = User {
+            id: alice,
+            username: "alice".into(),
+            role: Role::Student,
+            display_name: "Alice".into(),
+            archived: false,
+            graduated_at: None,
+            email: None,
+            claimed_at: None,
+            approved_at: None,
+            first_name: None,
+            last_name: None,
+            reset_requested_at: None,
+            last_update: None,
+            last_coach_update_at: None,
+            total_techniques: None,
+            red_count: None,
+            amber_count: None,
+            green_count: None,
+            has_unseen_activity: None,
+            last_student_initiative_at: None,
+            last_watch_at: None,
+            last_watch_video_title: None,
+        };
+
+        crate::db::update_sst(
+            &db.pool,
+            sst_id,
+            &actor,
+            &SstUpdate {
+                status: Some("amber".into()),
+                student_notes: Some("working on it".into()),
+                coach_notes: None,
+            },
+        )
+        .await
+        .unwrap();
+
+        let rows = sqlx::query!(r#"SELECT verb AS "v!: String" FROM activity ORDER BY verb"#)
+            .fetch_all(&db.pool)
+            .await
+            .unwrap();
+        let verbs: Vec<String> = rows.into_iter().map(|r| r.v).collect();
+        assert_eq!(
+            verbs,
+            vec!["sst_status_changed", "sst_student_notes_edited"],
+            "exactly two rows: one per present field"
+        );
+        let _ = sst_id;
     }
 }
