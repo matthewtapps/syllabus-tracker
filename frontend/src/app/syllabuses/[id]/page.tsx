@@ -218,21 +218,10 @@ function SyllabusDetail({ syllabusId }: { syllabusId: number }) {
       />
 
       <section className="space-y-2">
-        <div className="flex items-end justify-between gap-2">
-          <h2 className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-            <Users className="h-3.5 w-3.5" aria-hidden />
-            Assigned students
-          </h2>
-          <Button
-            size="sm"
-            variant="outline"
-            className="gap-1.5"
-            onClick={() => setAssignOpen(true)}
-          >
-            <UserPlus className="h-4 w-4" aria-hidden />
-            Assign student
-          </Button>
-        </div>
+        <h2 className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          <Users className="h-3.5 w-3.5" aria-hidden />
+          Assigned students
+        </h2>
         {assignedIds.length > 0 && (
           <div className="relative">
             <Search
@@ -247,6 +236,14 @@ function SyllabusDetail({ syllabusId }: { syllabusId: number }) {
             />
           </div>
         )}
+        <Button
+          variant="outline"
+          className="w-full gap-1.5"
+          onClick={() => setAssignOpen(true)}
+        >
+          <UserPlus className="h-4 w-4" aria-hidden />
+          Assign student
+        </Button>
         <div className="overflow-hidden rounded-lg border border-border bg-card">
           {assignedIds.length === 0 ? (
             <p className="px-6 py-8 text-center text-sm text-muted-foreground">
@@ -857,20 +854,9 @@ function TechniquesSection({
 
   return (
     <section className="space-y-2">
-      <div className="flex items-end justify-between gap-2">
-        <h2 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-          Techniques
-        </h2>
-        <Button
-          size="sm"
-          variant="outline"
-          className="gap-1.5"
-          onClick={onAdd}
-        >
-          <Plus className="h-4 w-4" aria-hidden />
-          Add technique
-        </Button>
-      </div>
+      <h2 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+        Techniques
+      </h2>
       {techniques.length > 0 && (
         <div className="space-y-2">
           <div className="relative">
@@ -922,6 +908,14 @@ function TechniquesSection({
           </p>
         </div>
       )}
+      <Button
+        variant="outline"
+        className="w-full gap-1.5"
+        onClick={onAdd}
+      >
+        <Plus className="h-4 w-4" aria-hidden />
+        Add technique
+      </Button>
       <div className="overflow-hidden rounded-lg border border-border bg-card">
         {techniques.length === 0 ? (
           <EmptyState
