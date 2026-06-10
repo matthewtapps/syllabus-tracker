@@ -1,3 +1,9 @@
+// Legacy assigned-techniques surface, dormant since PR 5. Backend
+// stays mounted so the /student/:id/legacy frontend route can still
+// load it side-by-side with the new syllabus stack while coaches
+// migrate prod students. TODO: remove after 2026-09-10 once cutover is
+// confirmed complete.
+
 use std::collections::{HashMap, hash_map::Entry};
 
 use chrono::{NaiveDateTime, Utc};

@@ -1,3 +1,9 @@
+// Legacy attempts table for the dormant student_techniques surface
+// (PR 5). New attempts flow through `db/syllabus_attempts.rs` against
+// SST rows. This module stays mounted while the /student/:id/legacy
+// frontend route is reachable for prod migration. TODO: remove after
+// 2026-09-10.
+
 use chrono::{NaiveDateTime, Utc};
 use sqlx::{Pool, Sqlite};
 use tracing::{info, instrument};

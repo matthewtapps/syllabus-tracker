@@ -60,7 +60,7 @@ import type { Status } from "@/lib/status";
 import { AttemptButton } from "../components/attempt-button";
 import { NotesEditor } from "../components/notes-editor";
 import { TagRemoveDialog } from "../components/tag-remove-dialog";
-import { TagsEditor } from "../components/tags-editor";
+import { TagsEditor } from "@/components/tags-editor";
 
 const RECENT_WINDOW_DAYS = 30;
 

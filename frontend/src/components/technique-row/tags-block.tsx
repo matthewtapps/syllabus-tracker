@@ -3,7 +3,7 @@ import { X as XIcon } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { TagsEditor } from "@/app/student-techniques/components/tags-editor";
+import { TagsEditor } from "@/components/tags-editor";
 import { useAllTags } from "@/lib/queries";
 import { useRemoveTagFromTechnique } from "@/lib/mutations";
 import type { Tag } from "@/lib/api";

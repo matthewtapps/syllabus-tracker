@@ -1,12 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
 import { BookOpen, Search, X as XIcon } from 'lucide-react';
 import { Accordion } from '@/components/ui/accordion';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Separator } from '@/components/ui/separator';
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { EmptyState } from '@/components/empty-state';
 import { TechniqueRow } from '@/components/technique-row';
 import {
@@ -18,7 +17,6 @@ import { useUser } from '@/lib/current-user-context';
 import { isCoachOrAdmin } from '@/lib/api';
 
 export default function LibraryPage() {
-  const navigate = useNavigate();
   const user = useUser();
   const isCoach = isCoachOrAdmin(user);
 
@@ -118,20 +116,9 @@ export default function LibraryPage() {
         <BookOpen className="h-4 w-4" aria-hidden />
         Global Technique Library
       </h1>
-      {isCoach && (
-        <Tabs
-          value="library"
-          onValueChange={(v) => {
-            if (v === 'collections') navigate('/collections');
-          }}
-          className="mb-4"
-        >
-          <TabsList>
-            <TabsTrigger value="library">All techniques</TabsTrigger>
-            <TabsTrigger value="collections">Collections</TabsTrigger>
-          </TabsList>
-        </Tabs>
-      )}
+      {/* Legacy 'Collections' tab removed in PR 5; the /legacy/collections
+       *  URL is still reachable for prod migration but not surfaced in
+       *  navigation. */}
 
       <div className="mb-4 relative">
         <Search
