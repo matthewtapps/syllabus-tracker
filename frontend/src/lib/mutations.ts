@@ -837,3 +837,187 @@ export function useUnpinTechnique(studentId: number) {
     },
   });
 }
+
+// ============================================================
+// Syllabuses (PR 3)
+// ============================================================
+
+import {
+  addTechniqueToSyllabusApi,
+  assignSyllabusApi,
+  createSyllabusApi,
+  createSyllabusAttemptApi,
+  deleteSyllabusApi,
+  deleteSyllabusAttemptApi,
+  removeTechniqueFromSyllabusApi,
+  unassignSyllabusApi,
+  updateSstApi,
+  updateSyllabusApi,
+  updateSyllabusAttemptApi,
+  type PropagationMode,
+} from "./api";
+
+export function useCreateSyllabus() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: { name: string; description?: string }) =>
+      createSyllabusApi(data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: qk.syllabuses() }),
+  });
+}
+
+export function useUpdateSyllabus() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: {
+      syllabusId: number;
+      data: { name?: string; description?: string | null };
+    }) => updateSyllabusApi(vars.syllabusId, vars.data),
+    onSuccess: (_res, vars) => {
+      qc.invalidateQueries({ queryKey: qk.syllabuses() });
+      qc.invalidateQueries({ queryKey: qk.syllabus(vars.syllabusId) });
+    },
+  });
+}
+
+export function useDeleteSyllabus() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (syllabusId: number) => deleteSyllabusApi(syllabusId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: qk.syllabuses() });
+      qc.invalidateQueries({ predicate: qk.matches.anySyllabus });
+    },
+  });
+}
+
+export function useAddTechniqueToSyllabus() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: {
+      syllabusId: number;
+      techniqueId: number;
+      propagation: PropagationMode;
+    }) =>
+      addTechniqueToSyllabusApi(
+        vars.syllabusId,
+        vars.techniqueId,
+        vars.propagation,
+      ),
+    onSuccess: (_res, vars) => {
+      qc.invalidateQueries({ queryKey: qk.syllabus(vars.syllabusId) });
+      // A Cascade write may have mutated SST in every active assignment.
+      qc.invalidateQueries({
+        predicate: qk.matches.anyStudentSyllabusTechniques,
+      });
+    },
+  });
+}
+
+export function useRemoveTechniqueFromSyllabus() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: {
+      syllabusId: number;
+      techniqueId: number;
+      propagation: PropagationMode;
+    }) =>
+      removeTechniqueFromSyllabusApi(
+        vars.syllabusId,
+        vars.techniqueId,
+        vars.propagation,
+      ),
+    onSuccess: (_res, vars) => {
+      qc.invalidateQueries({ queryKey: qk.syllabus(vars.syllabusId) });
+      qc.invalidateQueries({
+        predicate: qk.matches.anyStudentSyllabusTechniques,
+      });
+    },
+  });
+}
+
+export function useAssignSyllabusToStudent() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: { studentId: number; syllabusId: number }) =>
+      assignSyllabusApi(vars.studentId, vars.syllabusId),
+    onSuccess: (_res, vars) => {
+      qc.invalidateQueries({ queryKey: qk.studentSyllabuses(vars.studentId) });
+      qc.invalidateQueries({
+        queryKey: qk.studentSyllabusTechniques(vars.studentId, vars.syllabusId),
+      });
+    },
+  });
+}
+
+export function useUnassignSyllabusFromStudent() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: { studentId: number; syllabusId: number }) =>
+      unassignSyllabusApi(vars.studentId, vars.syllabusId),
+    onSuccess: (_res, vars) => {
+      qc.invalidateQueries({ queryKey: qk.studentSyllabuses(vars.studentId) });
+    },
+  });
+}
+
+export function useUpdateStudentSyllabusTechnique() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: {
+      sstId: number;
+      studentId: number;
+      syllabusId: number;
+      data: { status?: string; student_notes?: string; coach_notes?: string };
+    }) => updateSstApi(vars.sstId, vars.data),
+    onSuccess: (_res, vars) => {
+      qc.invalidateQueries({
+        queryKey: qk.studentSyllabusTechniques(vars.studentId, vars.syllabusId),
+      });
+      qc.invalidateQueries({ queryKey: qk.studentSyllabuses(vars.studentId) });
+    },
+  });
+}
+
+export function useCreateSyllabusAttempt() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: {
+      sstId: number;
+      data: { attempted_at: string; coach_note?: string; student_note?: string };
+    }) => createSyllabusAttemptApi(vars.sstId, vars.data),
+    onSuccess: (_res, vars) => {
+      qc.invalidateQueries({ queryKey: qk.syllabusAttempts(vars.sstId) });
+      qc.invalidateQueries({
+        predicate: qk.matches.anyStudentSyllabusTechniques,
+      });
+    },
+  });
+}
+
+export function useUpdateSyllabusAttempt() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: {
+      attemptId: number;
+      sstId: number;
+      data: {
+        attempted_at?: string;
+        coach_note?: string | null;
+        student_note?: string | null;
+      };
+    }) => updateSyllabusAttemptApi(vars.attemptId, vars.data),
+    onSuccess: (_res, vars) =>
+      qc.invalidateQueries({ queryKey: qk.syllabusAttempts(vars.sstId) }),
+  });
+}
+
+export function useDeleteSyllabusAttempt() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: { attemptId: number; sstId: number }) =>
+      deleteSyllabusAttemptApi(vars.attemptId),
+    onSuccess: (_res, vars) =>
+      qc.invalidateQueries({ queryKey: qk.syllabusAttempts(vars.sstId) }),
+  });
+}

@@ -1263,3 +1263,278 @@ export async function getAdminStorage(): Promise<StorageOverview> {
   if (!response.ok) throw response;
   return (await response.json()) as StorageOverview;
 }
+
+// ============================================================
+// Syllabus stack (PR 3)
+// ============================================================
+
+export interface Syllabus {
+  id: number;
+  name: string;
+  description: string;
+  created_at: string;
+  created_by_id: number | null;
+  updated_at: string;
+}
+
+export interface SyllabusTechniqueRow {
+  technique_id: number;
+  name: string;
+  description: string;
+  position: number;
+  added_at: string;
+  tags: Tag[];
+}
+
+export interface SyllabusDetailResponse extends Syllabus {
+  techniques: SyllabusTechniqueRow[];
+}
+
+export interface SyllabusAssignment {
+  id: number;
+  student_id: number;
+  syllabus_id: number;
+  syllabus_name: string;
+  assigned_at: string;
+  assigned_by_id: number | null;
+  unassigned_at: string | null;
+  unassigned_by_id: number | null;
+  graduated_at: string | null;
+  graduated_by_id: number | null;
+  red_count: number;
+  amber_count: number;
+  green_count: number;
+  total_count: number;
+}
+
+export interface SstRow {
+  id: number;
+  assignment_id: number;
+  technique_id: number;
+  technique_name: string;
+  technique_description: string;
+  status: "red" | "amber" | "green";
+  student_notes: string;
+  coach_notes: string;
+  hidden_at: string | null;
+  created_at: string;
+  updated_at: string;
+  last_coach_update_at: string | null;
+  last_coach_update_by_id: number | null;
+  last_student_update_at: string | null;
+  last_student_update_by_id: number | null;
+  tags: Tag[];
+  attempt_count: number;
+  last_attempt_at: string | null;
+}
+
+export interface StudentSyllabusDetailResponse {
+  assignment: SyllabusAssignment;
+  techniques: SstRow[];
+}
+
+export interface SyllabusAttempt {
+  id: number;
+  student_syllabus_technique_id: number;
+  recorded_by_id: number;
+  attempted_at: string;
+  coach_note: string | null;
+  coach_note_by_id: number | null;
+  coach_note_at: string | null;
+  student_note: string | null;
+  student_note_at: string | null;
+  created_at: string;
+}
+
+export type PropagationMode = "syllabus_only" | "cascade";
+
+export async function getSyllabuses(): Promise<Syllabus[]> {
+  const response = await fetch("/api/syllabuses", { credentials: "include" });
+  if (!response.ok) throw response;
+  return await response.json();
+}
+
+export async function getSyllabusDetail(
+  syllabusId: number,
+): Promise<SyllabusDetailResponse> {
+  const response = await fetch(`/api/syllabuses/${syllabusId}`, {
+    credentials: "include",
+  });
+  if (!response.ok) throw response;
+  return await response.json();
+}
+
+export async function createSyllabusApi(data: {
+  name: string;
+  description?: string;
+}): Promise<{ id: number }> {
+  const response = await fetch("/api/syllabuses", {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+  if (!response.ok) throw response;
+  return await response.json();
+}
+
+export async function updateSyllabusApi(
+  syllabusId: number,
+  data: { name?: string; description?: string | null },
+): Promise<void> {
+  const response = await fetch(`/api/syllabuses/${syllabusId}`, {
+    method: "PATCH",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+  if (!response.ok) throw response;
+}
+
+export async function deleteSyllabusApi(syllabusId: number): Promise<void> {
+  const response = await fetch(`/api/syllabuses/${syllabusId}`, {
+    method: "DELETE",
+    credentials: "include",
+  });
+  if (!response.ok) throw response;
+}
+
+export async function addTechniqueToSyllabusApi(
+  syllabusId: number,
+  techniqueId: number,
+  propagation: PropagationMode,
+): Promise<void> {
+  const response = await fetch(`/api/syllabuses/${syllabusId}/techniques`, {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ technique_id: techniqueId, propagation }),
+  });
+  if (!response.ok) throw response;
+}
+
+export async function removeTechniqueFromSyllabusApi(
+  syllabusId: number,
+  techniqueId: number,
+  propagation: PropagationMode,
+): Promise<void> {
+  const url = `/api/syllabuses/${syllabusId}/techniques/${techniqueId}?propagation=${propagation}`;
+  const response = await fetch(url, {
+    method: "DELETE",
+    credentials: "include",
+  });
+  if (!response.ok) throw response;
+}
+
+export async function assignSyllabusApi(
+  studentId: number,
+  syllabusId: number,
+): Promise<{ id: number }> {
+  const response = await fetch(
+    `/api/student/${studentId}/syllabuses/${syllabusId}/assignment`,
+    { method: "POST", credentials: "include" },
+  );
+  if (!response.ok) throw response;
+  return await response.json();
+}
+
+export async function unassignSyllabusApi(
+  studentId: number,
+  syllabusId: number,
+): Promise<void> {
+  const response = await fetch(
+    `/api/student/${studentId}/syllabuses/${syllabusId}/assignment`,
+    { method: "DELETE", credentials: "include" },
+  );
+  if (!response.ok) throw response;
+}
+
+export async function getStudentSyllabusesApi(
+  studentId: number,
+): Promise<SyllabusAssignment[]> {
+  const response = await fetch(`/api/student/${studentId}/syllabuses`, {
+    credentials: "include",
+  });
+  if (!response.ok) throw response;
+  return await response.json();
+}
+
+export async function getStudentSyllabusTechniquesApi(
+  studentId: number,
+  syllabusId: number,
+): Promise<StudentSyllabusDetailResponse> {
+  const response = await fetch(
+    `/api/student/${studentId}/syllabuses/${syllabusId}/techniques`,
+    { credentials: "include" },
+  );
+  if (!response.ok) throw response;
+  return await response.json();
+}
+
+export async function updateSstApi(
+  sstId: number,
+  data: { status?: string; student_notes?: string; coach_notes?: string },
+): Promise<void> {
+  const response = await fetch(`/api/student_syllabus_techniques/${sstId}`, {
+    method: "PATCH",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+  if (!response.ok) throw response;
+}
+
+export async function listSyllabusAttemptsApi(
+  sstId: number,
+): Promise<SyllabusAttempt[]> {
+  const response = await fetch(
+    `/api/student_syllabus_techniques/${sstId}/attempts`,
+    { credentials: "include" },
+  );
+  if (!response.ok) throw response;
+  return await response.json();
+}
+
+export async function createSyllabusAttemptApi(
+  sstId: number,
+  data: { attempted_at: string; coach_note?: string; student_note?: string },
+): Promise<{ id: number }> {
+  const response = await fetch(
+    `/api/student_syllabus_techniques/${sstId}/attempts`,
+    {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    },
+  );
+  if (!response.ok) throw response;
+  return await response.json();
+}
+
+export async function updateSyllabusAttemptApi(
+  attemptId: number,
+  data: {
+    attempted_at?: string;
+    coach_note?: string | null;
+    student_note?: string | null;
+  },
+): Promise<void> {
+  const response = await fetch(`/api/syllabus_attempts/${attemptId}`, {
+    method: "PATCH",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+  if (!response.ok) throw response;
+}
+
+export async function deleteSyllabusAttemptApi(
+  attemptId: number,
+): Promise<void> {
+  const response = await fetch(`/api/syllabus_attempts/${attemptId}`, {
+    method: "DELETE",
+    credentials: "include",
+  });
+  if (!response.ok) throw response;
+}

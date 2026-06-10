@@ -40,6 +40,30 @@ export const qk = {
   pinnedTechniques: (studentId: number) =>
     ["student", studentId, "pinned_techniques"] as const,
 
+  syllabuses: () => ["syllabuses"] as const,
+  syllabus: (sid: number) => ["syllabus", sid] as const,
+  syllabusTechniques: (sid: number) => ["syllabus", sid, "techniques"] as const,
+  studentSyllabuses: (studentId: number) =>
+    ["student", studentId, "syllabuses"] as const,
+  studentSyllabusTechniques: (studentId: number, syllabusId: number) =>
+    ["student", studentId, "syllabus", syllabusId, "techniques"] as const,
+  syllabusAttempts: (sstId: number) =>
+    ["syllabus", "sst", sstId, "attempts"] as const,
+  syllabusTechniqueVideos: (
+    studentId: number,
+    syllabusId: number,
+    techniqueId: number,
+  ) =>
+    [
+      "student",
+      studentId,
+      "syllabus",
+      syllabusId,
+      "technique",
+      techniqueId,
+      "videos",
+    ] as const,
+
   techniqueVideos: (techniqueId: number, forStudent: number | null = null) =>
     ["technique", techniqueId, "videos", forStudent] as const,
   // Prefix matcher for all `techniqueVideos` cache buckets for a technique,
@@ -66,5 +90,10 @@ export const qk = {
     anyCollection: (q: Query) => q.queryKey[0] === "collection",
     anyTechniqueVideos: (q: Query) =>
       q.queryKey[0] === "technique" && q.queryKey[2] === "videos",
+    anyStudentSyllabusTechniques: (q: Query) =>
+      q.queryKey[0] === "student" &&
+      q.queryKey[2] === "syllabus" &&
+      q.queryKey[4] === "techniques",
+    anySyllabus: (q: Query) => q.queryKey[0] === "syllabus",
   },
 };
