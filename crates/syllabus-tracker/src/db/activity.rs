@@ -7,7 +7,7 @@
 
 use chrono::{NaiveDateTime, Utc};
 use serde_json::json;
-use sqlx::{Sqlite, Transaction};
+use sqlx::{Pool, Sqlite, Transaction};
 
 use crate::error::AppError;
 
@@ -546,6 +546,184 @@ pub async fn affected_students_for_technique(
     .fetch_all(&mut **tx)
     .await?;
     Ok(ids)
+}
+
+/// Counts returned by `run_backfill` (one field per source table / verb).
+#[derive(Debug, Default)]
+pub struct BackfillCounts {
+    pub attempts: i64,
+    pub student_notes: i64,
+    pub coach_notes: i64,
+    pub watches: i64,
+    pub assignments: i64,
+    pub graduations: i64,
+    pub pins: i64,
+}
+
+/// Seed the `activity` table from existing source tables. Idempotent: if
+/// `activity` already contains rows the function returns a default-zeroed
+/// `BackfillCounts` immediately. Otherwise it runs one `INSERT ... SELECT`
+/// per source inside a single transaction and counts rows affected.
+///
+/// Backfill writes INSERTs directly (not via `emit`) so `occurred_at` is
+/// set from the source column rather than `now`, and coalescing is bypassed.
+pub async fn run_backfill(pool: &Pool<Sqlite>) -> Result<BackfillCounts, AppError> {
+    let existing = sqlx::query_scalar!(r#"SELECT COUNT(*) AS "c!: i64" FROM activity"#)
+        .fetch_one(pool)
+        .await?;
+    if existing > 0 {
+        return Ok(BackfillCounts::default());
+    }
+
+    let mut tx = pool.begin().await?;
+
+    // Attempts: actor = recorded_by_id, target = student via SST + assignment join,
+    // denormalise sst_id / technique_id / syllabus_id, payload = attempt_pointer.
+    let attempts = sqlx::query!(
+        r#"INSERT INTO activity
+               (occurred_at, verb, actor_user_id, target_student_id,
+                technique_id, syllabus_id, sst_id, payload_json)
+           SELECT
+               sa.created_at,
+               'attempt_logged',
+               sa.recorded_by_id,
+               asn.student_id,
+               sst.technique_id,
+               asn.syllabus_id,
+               sst.id,
+               json_object('attempt_id', sa.id)
+           FROM syllabus_attempts sa
+           JOIN student_syllabus_techniques sst
+               ON sst.id = sa.student_syllabus_technique_id
+           JOIN syllabus_assignments asn
+               ON asn.id = sst.assignment_id"#
+    )
+    .execute(&mut *tx)
+    .await?
+    .rows_affected() as i64;
+
+    // SST student notes: actor = last_student_update_by_id, target = student via assignment.
+    let student_notes = sqlx::query!(
+        r#"INSERT INTO activity
+               (occurred_at, verb, actor_user_id, target_student_id,
+                technique_id, syllabus_id, sst_id)
+           SELECT
+               sst.last_student_update_at,
+               'sst_student_notes_edited',
+               sst.last_student_update_by_id,
+               asn.student_id,
+               sst.technique_id,
+               asn.syllabus_id,
+               sst.id
+           FROM student_syllabus_techniques sst
+           JOIN syllabus_assignments asn ON asn.id = sst.assignment_id
+           WHERE sst.last_student_update_at IS NOT NULL
+             AND sst.last_student_update_by_id IS NOT NULL"#
+    )
+    .execute(&mut *tx)
+    .await?
+    .rows_affected() as i64;
+
+    // SST coach notes: actor = last_coach_update_by_id, target = student via assignment.
+    let coach_notes = sqlx::query!(
+        r#"INSERT INTO activity
+               (occurred_at, verb, actor_user_id, target_student_id,
+                technique_id, syllabus_id, sst_id)
+           SELECT
+               sst.last_coach_update_at,
+               'sst_coach_notes_edited',
+               sst.last_coach_update_by_id,
+               asn.student_id,
+               sst.technique_id,
+               asn.syllabus_id,
+               sst.id
+           FROM student_syllabus_techniques sst
+           JOIN syllabus_assignments asn ON asn.id = sst.assignment_id
+           WHERE sst.last_coach_update_at IS NOT NULL
+             AND sst.last_coach_update_by_id IS NOT NULL"#
+    )
+    .execute(&mut *tx)
+    .await?
+    .rows_affected() as i64;
+
+    // Video watches: actor = target = user_id, occurred_at = first_watched_at.
+    let watches = sqlx::query!(
+        r#"INSERT INTO activity
+               (occurred_at, verb, actor_user_id, target_student_id, video_id)
+           SELECT
+               vwa.first_watched_at,
+               'video_watched',
+               vwa.user_id,
+               vwa.user_id,
+               vwa.video_id
+           FROM video_watch_aggregates vwa
+           WHERE vwa.first_watched_at IS NOT NULL"#
+    )
+    .execute(&mut *tx)
+    .await?
+    .rows_affected() as i64;
+
+    // Assignments: actor = assigned_by_id (fallback to student_id when NULL),
+    // target = student, occurred_at = assigned_at.
+    let assignments = sqlx::query!(
+        r#"INSERT INTO activity
+               (occurred_at, verb, actor_user_id, target_student_id, syllabus_id)
+           SELECT
+               sa.assigned_at,
+               'syllabus_assigned',
+               COALESCE(sa.assigned_by_id, sa.student_id),
+               sa.student_id,
+               sa.syllabus_id
+           FROM syllabus_assignments sa"#
+    )
+    .execute(&mut *tx)
+    .await?
+    .rows_affected() as i64;
+
+    // Graduations: same source, different verb, only rows where graduated_at IS NOT NULL.
+    let graduations = sqlx::query!(
+        r#"INSERT INTO activity
+               (occurred_at, verb, actor_user_id, target_student_id, syllabus_id)
+           SELECT
+               sa.graduated_at,
+               'syllabus_graduated',
+               COALESCE(sa.graduated_by_id, sa.student_id),
+               sa.student_id,
+               sa.syllabus_id
+           FROM syllabus_assignments sa
+           WHERE sa.graduated_at IS NOT NULL"#
+    )
+    .execute(&mut *tx)
+    .await?
+    .rows_affected() as i64;
+
+    // Pins: actor = target = student_id.
+    let pins = sqlx::query!(
+        r#"INSERT INTO activity
+               (occurred_at, verb, actor_user_id, target_student_id, technique_id)
+           SELECT
+               spt.pinned_at,
+               'technique_pinned',
+               spt.student_id,
+               spt.student_id,
+               spt.technique_id
+           FROM student_pinned_techniques spt"#
+    )
+    .execute(&mut *tx)
+    .await?
+    .rows_affected() as i64;
+
+    tx.commit().await?;
+
+    Ok(BackfillCounts {
+        attempts,
+        student_notes,
+        coach_notes,
+        watches,
+        assignments,
+        graduations,
+        pins,
+    })
 }
 
 #[cfg(test)]

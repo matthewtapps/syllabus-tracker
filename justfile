@@ -173,6 +173,12 @@ seed: migrate
     SQLX_OFFLINE=true DATABASE_URL=sqlite://data/sqlite.db SCHEMA_PATH=./config/schema.sql \
         cargo run -p syllabus-tracker --bin seed
 
+# One-shot idempotent historical activity backfill. Run once at deploy.
+[group('db')]
+backfill-activity: migrate
+    SQLX_OFFLINE=true DATABASE_URL=sqlite://data/sqlite.db SCHEMA_PATH=./config/schema.sql \
+        cargo run -p syllabus-tracker --bin backfill_activity
+
 # Wipe just the attempts table then reseed (keeps users/techniques).
 [group('db')]
 reseed-attempts:

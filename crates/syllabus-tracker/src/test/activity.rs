@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod tests {
-    use crate::db::{NewActivity, Verb, WatchEventInput, emit, ingest_watch_events};
+    use crate::db::{NewActivity, Verb, WatchEventInput, emit, ingest_watch_events, run_backfill};
     use crate::test::test_utils::TestDbBuilder;
 
     #[rocket::async_test]
@@ -862,6 +862,107 @@ mod tests {
             count_final, 1,
             "still one row after further progress (coalesced or already crossed)"
         );
+    }
+
+    #[rocket::async_test]
+    async fn backfill_is_idempotent_and_seeds_expected_counts() {
+        use crate::auth::{Role, User};
+        use chrono::Utc;
+
+        let db = TestDbBuilder::new()
+            .coach("coach", None)
+            .student("alice", None)
+            .technique("Armbar", "", Some("coach"))
+            .build()
+            .await
+            .unwrap();
+        let coach = db.user_id("coach").unwrap();
+        let alice = db.user_id("alice").unwrap();
+        let armbar = db.technique_id("Armbar").unwrap();
+
+        // Seed one assignment (emits syllabus_assigned).
+        let sid = crate::db::create_syllabus(&db.pool, "S", None, coach)
+            .await
+            .unwrap();
+        let aid = crate::db::assign(&db.pool, coach, alice, sid)
+            .await
+            .unwrap();
+
+        // Seed one attempt (emits attempt_logged).
+        let sst_id = crate::db::add_technique_to_assignment(&db.pool, aid, armbar, coach)
+            .await
+            .unwrap();
+        let actor = User {
+            id: coach,
+            username: "coach".into(),
+            role: Role::Coach,
+            display_name: "Coach".into(),
+            archived: false,
+            graduated_at: None,
+            email: None,
+            claimed_at: None,
+            approved_at: None,
+            first_name: None,
+            last_name: None,
+            reset_requested_at: None,
+            last_update: None,
+            last_coach_update_at: None,
+            total_techniques: None,
+            red_count: None,
+            amber_count: None,
+            green_count: None,
+            has_unseen_activity: None,
+            last_student_initiative_at: None,
+            last_watch_at: None,
+            last_watch_video_title: None,
+        };
+        crate::db::create_syllabus_attempt(
+            &db.pool,
+            &actor,
+            sst_id,
+            &crate::db::CreateSyllabusAttempt {
+                attempted_at: Utc::now().naive_utc(),
+                coach_note: None,
+                student_note: None,
+            },
+        )
+        .await
+        .unwrap();
+
+        // Seed one pin (emits technique_pinned).
+        crate::db::pin_technique(&db.pool, alice, armbar)
+            .await
+            .unwrap();
+
+        // Clear all activity rows emitted by the setup helpers.
+        sqlx::query!("DELETE FROM activity")
+            .execute(&db.pool)
+            .await
+            .unwrap();
+
+        // First call: runs the backfill.
+        let counts = run_backfill(&db.pool).await.unwrap();
+        assert_eq!(counts.attempts, 1, "one attempt backfilled");
+        assert_eq!(counts.assignments, 1, "one assignment backfilled");
+        assert_eq!(counts.pins, 1, "one pin backfilled");
+
+        let total: i64 = sqlx::query_scalar!(r#"SELECT COUNT(*) AS "c!: i64" FROM activity"#)
+            .fetch_one(&db.pool)
+            .await
+            .unwrap();
+        assert!(total >= 3, "activity table has rows after backfill");
+
+        // Second call: no-op because activity table is now non-empty.
+        let counts2 = run_backfill(&db.pool).await.unwrap();
+        assert_eq!(counts2.attempts, 0, "second run is a no-op");
+        assert_eq!(counts2.assignments, 0, "second run is a no-op");
+        assert_eq!(counts2.pins, 0, "second run is a no-op");
+
+        let total2: i64 = sqlx::query_scalar!(r#"SELECT COUNT(*) AS "c!: i64" FROM activity"#)
+            .fetch_one(&db.pool)
+            .await
+            .unwrap();
+        assert_eq!(total2, total, "row count unchanged on second run");
     }
 
     #[rocket::async_test]

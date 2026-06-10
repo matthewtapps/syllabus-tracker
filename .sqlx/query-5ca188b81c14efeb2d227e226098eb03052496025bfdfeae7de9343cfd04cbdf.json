@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO activity\n               (occurred_at, verb, actor_user_id, target_student_id, syllabus_id)\n           SELECT\n               sa.graduated_at,\n               'syllabus_graduated',\n               COALESCE(sa.graduated_by_id, sa.student_id),\n               sa.student_id,\n               sa.syllabus_id\n           FROM syllabus_assignments sa\n           WHERE sa.graduated_at IS NOT NULL",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": []
+  },
+  "hash": "5ca188b81c14efeb2d227e226098eb03052496025bfdfeae7de9343cfd04cbdf"
+}
