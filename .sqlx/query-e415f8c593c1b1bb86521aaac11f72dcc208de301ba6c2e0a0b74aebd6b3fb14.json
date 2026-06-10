@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT seen AS \"s!: bool\" FROM activity_seen_overrides\n               WHERE viewer_user_id = ? AND activity_id = ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "s!: bool",
+        "ordinal": 0,
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "e415f8c593c1b1bb86521aaac11f72dcc208de301ba6c2e0a0b74aebd6b3fb14"
+}

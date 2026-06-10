@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT COALESCE(MAX(id), 0) AS \"m!: i64\"\n                   FROM activity\n                   WHERE target_student_id = ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "m!: i64",
+        "ordinal": 0,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "ffb7af31a8cf3f2bf5a85e6f1e7d368be0c09c27cf2cd012503dba47ac3b043c"
+}
