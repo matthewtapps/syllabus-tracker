@@ -2,7 +2,8 @@
 extern crate rocket;
 
 pub use syllabus_tracker::{
-    api, auth, capabilities, catchers, db, env, error, models, telemetry, validation, videos,
+    api, auth, capabilities, catchers, db, env, error, models, syllabuses, telemetry, validation,
+    videos,
 };
 
 #[cfg(test)]
@@ -41,6 +42,14 @@ use migration_engine::migrations::{get_schema_changes, read_schema_file_to_strin
 use telemetry::TelemetryFairing;
 use telemetry::init_tracing;
 use thiserror::Error;
+use syllabuses::{
+    api_add_technique_to_syllabus, api_assign_syllabus, api_create_syllabus,
+    api_create_syllabus_attempt, api_delete_syllabus, api_delete_syllabus_attempt,
+    api_get_syllabus, api_list_student_syllabus_techniques, api_list_student_syllabuses,
+    api_list_syllabus_attempts, api_list_syllabus_technique_videos, api_list_syllabuses,
+    api_remove_technique_from_syllabus, api_unassign_syllabus, api_update_syllabus,
+    api_update_syllabus_attempt, api_update_sst,
+};
 use videos::{
     api_admin_storage, api_dashboard_video_overview, api_delete_video, api_list_technique_videos,
     api_my_watch_state, api_reorder_videos, api_replace_video,
@@ -293,6 +302,23 @@ pub async fn init_rocket(
                 api_attempt_summary,
                 api_attempt_heatmap,
                 api_attempt_sparkline,
+                api_list_syllabuses,
+                api_create_syllabus,
+                api_get_syllabus,
+                api_update_syllabus,
+                api_delete_syllabus,
+                api_add_technique_to_syllabus,
+                api_remove_technique_from_syllabus,
+                api_assign_syllabus,
+                api_unassign_syllabus,
+                api_list_student_syllabuses,
+                api_list_student_syllabus_techniques,
+                api_update_sst,
+                api_create_syllabus_attempt,
+                api_update_syllabus_attempt,
+                api_delete_syllabus_attempt,
+                api_list_syllabus_attempts,
+                api_list_syllabus_technique_videos,
             ],
         )
         .register(
