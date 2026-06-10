@@ -11,6 +11,7 @@ import {
   GraduationCap,
   type LucideIcon,
   PlayCircle,
+  Sparkles,
   Users,
 } from 'lucide-react';
 import type { User } from '@/lib/api';
@@ -428,9 +429,9 @@ function sstOverviewToTechnique(t: StudentSyllabusTechniqueOverview): Technique 
     coach_notes: '',
     created_at: t.updated_at,
     updated_at: t.updated_at,
-    last_coach_update_at: null,
+    last_coach_update_at: t.last_coach_update_at,
     last_coach_update_by_name: null,
-    last_student_update_at: null,
+    last_student_update_at: t.last_student_update_at,
     last_student_update_by_name: null,
     has_unseen_activity: false,
     collection_id: null,
@@ -480,6 +481,29 @@ function StudentDashboard() {
       .filter((t) => t.status === 'green')
       .sort((a, b) => Date.parse(b.updated_at) - Date.parse(a.updated_at))
       .slice(0, 3)
+      .map((t) => sstOverviewToTechnique(t));
+  }, [techniques]);
+
+  // Techniques with recent coach attention the student hasn't yet responded to:
+  // not green, coach has touched it, and no student update since then (or ever).
+  const newFromCoach = useMemo<Technique[]>(() => {
+    return (techniques ?? [])
+      .filter((t) => {
+        if (t.status === 'green') return false;
+        if (!t.last_coach_update_at) return false;
+        if (
+          t.last_student_update_at &&
+          t.last_student_update_at >= t.last_coach_update_at
+        )
+          return false;
+        return true;
+      })
+      .sort(
+        (a, b) =>
+          Date.parse(b.last_coach_update_at ?? '0') -
+          Date.parse(a.last_coach_update_at ?? '0'),
+      )
+      .slice(0, 5)
       .map((t) => sstOverviewToTechnique(t));
   }, [techniques]);
 
@@ -549,6 +573,16 @@ function StudentDashboard() {
           )}
 
           <div className="space-y-6">
+            {newFromCoach.length > 0 && (
+              <TechniqueSection
+                title="New from your coach"
+                icon={Sparkles}
+                techniques={newFromCoach}
+                studentId={user.id}
+                showCoachTimestamp
+              />
+            )}
+
             {recentAttempts.length > 0 && (
               <RecentAttemptsSection
                 attempts={recentAttempts}

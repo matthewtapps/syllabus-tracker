@@ -1723,6 +1723,8 @@ export interface StudentSyllabusTechniqueOverview {
   status: "red" | "amber" | "green";
   updated_at: string;
   last_attempt_at: string | null;
+  last_coach_update_at: string | null;
+  last_student_update_at: string | null;
 }
 
 export async function getStudentSyllabusTechniquesFlat(
