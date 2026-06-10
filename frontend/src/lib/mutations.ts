@@ -946,6 +946,9 @@ export function useAssignSyllabusToStudent() {
       qc.invalidateQueries({
         queryKey: qk.studentSyllabusTechniques(vars.studentId, vars.syllabusId),
       });
+      // Per-syllabus student list + the list page's active assignment count.
+      qc.invalidateQueries({ queryKey: qk.syllabusStudents(vars.syllabusId) });
+      qc.invalidateQueries({ queryKey: qk.syllabuses() });
     },
   });
 }
@@ -957,6 +960,8 @@ export function useUnassignSyllabusFromStudent() {
       unassignSyllabusApi(vars.studentId, vars.syllabusId),
     onSuccess: (_res, vars) => {
       qc.invalidateQueries({ queryKey: qk.studentSyllabuses(vars.studentId) });
+      qc.invalidateQueries({ queryKey: qk.syllabusStudents(vars.syllabusId) });
+      qc.invalidateQueries({ queryKey: qk.syllabuses() });
     },
   });
 }

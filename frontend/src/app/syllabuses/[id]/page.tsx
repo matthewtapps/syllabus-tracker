@@ -6,6 +6,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
   Dialog,
   DialogContent,
@@ -14,6 +15,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { Switch } from '@/components/ui/switch';
 import {
   Form,
   FormControl,
@@ -34,7 +36,6 @@ import {
 } from '@/lib/queries';
 import {
   useAddTechniqueToSyllabus,
-  useAssignSyllabusToStudent,
   useDeleteSyllabus,
   useRemoveTechniqueFromSyllabus,
   useUpdateSyllabus,
@@ -44,6 +45,7 @@ import {
   useFormWithValidation,
 } from '@/components/hooks/useFormErrors';
 import type { PropagationMode, User } from '@/lib/api';
+import { AssignStudentDialog } from '../components/assign-student-dialog';
 
 const editSchema = z.object({
   name: z.string().min(1, 'Name is required').max(100, 'Name is too long'),
@@ -270,7 +272,7 @@ function SyllabusDetail({ syllabusId }: { syllabusId: number }) {
         open={assignOpen}
         onOpenChange={setAssignOpen}
         syllabusId={syllabusId}
-        assignedIds={assignedIds}
+        syllabusName={syllabus.name}
       />
       <DeleteSyllabusDialog
         open={deleteOpen}
@@ -382,119 +384,258 @@ function AddTechniqueDialog({
     [libraryQuery.data, existingTechniqueIds],
   );
   const addMutation = useAddTechniqueToSyllabus();
-  const [propagation, setPropagation] = useState<PropagationMode>('cascade');
+  const [propagateToActive, setPropagateToActive] = useState(true);
   const [search, setSearch] = useState('');
+  const [activeTags, setActiveTags] = useState<string[]>([]);
+  const [selected, setSelected] = useState<Set<number>>(new Set());
+
+  // Reset everything when the modal closes so re-open starts clean.
+  useEffect(() => {
+    if (!open) {
+      setSelected(new Set());
+      setSearch('');
+      setActiveTags([]);
+    }
+  }, [open]);
+
+  const availableTags = useMemo(() => {
+    const set = new Set<string>();
+    techniques.forEach((t) => t.tags.forEach((tag) => set.add(tag.name)));
+    return Array.from(set).sort();
+  }, [techniques]);
 
   const filtered = useMemo(() => {
     const needle = search.trim().toLowerCase();
-    if (!needle) return techniques;
-    return techniques.filter((t) => t.name.toLowerCase().includes(needle));
-  }, [techniques, search]);
+    return techniques.filter((t) => {
+      const matchesText =
+        !needle ||
+        t.name.toLowerCase().includes(needle) ||
+        t.description.toLowerCase().includes(needle) ||
+        t.tags.some((tag) => tag.name.toLowerCase().includes(needle));
+      const matchesTags =
+        activeTags.length === 0 ||
+        activeTags.every((tag) => t.tags.some((x) => x.name === tag));
+      return matchesText && matchesTags;
+    });
+  }, [techniques, search, activeTags]);
 
-  async function handleAdd(techniqueId: number, name: string) {
-    try {
-      await addMutation.mutateAsync({
-        syllabusId,
-        techniqueId,
-        propagation,
-      });
-      toast.success(`Added ${name}`);
-    } catch {
-      toast.error('Failed to add technique');
+  // Counters for the "X of Y" line. Selection is independent of the
+  // filter: hiding a row via search or tag doesn't deselect it.
+  const visibleSelectedCount = useMemo(
+    () => filtered.filter((t) => selected.has(t.id)).length,
+    [filtered, selected],
+  );
+  const allVisibleSelected =
+    filtered.length > 0 && visibleSelectedCount === filtered.length;
+
+  function toggle(id: number) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function toggleTag(tag: string) {
+    setActiveTags((prev) =>
+      prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag],
+    );
+  }
+
+  function selectAllVisible() {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      filtered.forEach((t) => next.add(t.id));
+      return next;
+    });
+  }
+
+  function deselectAllVisible() {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      filtered.forEach((t) => next.delete(t.id));
+      return next;
+    });
+  }
+
+  async function handleAdd() {
+    if (selected.size === 0) return;
+    const propagation: PropagationMode = propagateToActive
+      ? 'cascade'
+      : 'syllabus_only';
+    const ids = Array.from(selected);
+    let added = 0;
+    for (const id of ids) {
+      try {
+        await addMutation.mutateAsync({
+          syllabusId,
+          techniqueId: id,
+          propagation,
+        });
+        added += 1;
+      } catch {
+        toast.error(`Failed after adding ${added} of ${ids.length}`);
+        return;
+      }
     }
+    toast.success(
+      added === 1 ? 'Added 1 technique' : `Added ${added} techniques`,
+    );
+    onOpenChange(false);
   }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg">
+      <DialogContent
+        className="flex max-h-[90vh] flex-col gap-3"
+        aria-describedby={undefined}
+      >
         <DialogHeader>
-          <DialogTitle>Add technique</DialogTitle>
-          <DialogDescription>
-            Pick a technique from the library to add to this syllabus.
-          </DialogDescription>
+          <DialogTitle>Add techniques</DialogTitle>
         </DialogHeader>
-        <div className="space-y-3">
-          <Input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search techniques"
-          />
-          <fieldset className="space-y-1.5 rounded-md border border-border p-3">
-            <legend className="px-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-              Apply to existing assignments
-            </legend>
-            <label className="flex items-start gap-2 text-sm">
-              <input
-                type="radio"
-                name="add-propagation"
-                value="cascade"
-                checked={propagation === 'cascade'}
-                onChange={() => setPropagation('cascade')}
-                className="mt-1"
-              />
-              <span>
-                <span className="block font-medium">Add to every active assignment</span>
-                <span className="text-xs text-muted-foreground">
-                  Students working through this syllabus get a new red entry.
-                </span>
-              </span>
-            </label>
-            <label className="flex items-start gap-2 text-sm">
-              <input
-                type="radio"
-                name="add-propagation"
-                value="syllabus_only"
-                checked={propagation === 'syllabus_only'}
-                onChange={() => setPropagation('syllabus_only')}
-                className="mt-1"
-              />
-              <span>
-                <span className="block font-medium">Just this syllabus</span>
-                <span className="text-xs text-muted-foreground">
-                  Existing assignments do not change. Future assignments include it.
-                </span>
-              </span>
-            </label>
-          </fieldset>
-          <div className="max-h-64 overflow-y-auto rounded border border-border bg-card">
-            {filtered.length === 0 ? (
-              <p className="px-4 py-6 text-center text-xs text-muted-foreground">
-                {techniques.length === 0
-                  ? 'Every library technique is already in this syllabus.'
-                  : 'No techniques match the search.'}
-              </p>
-            ) : (
-              <ul className="divide-y divide-border">
-                {filtered.map((t) => (
-                  <li
-                    key={t.id}
-                    className="flex items-center justify-between gap-2 px-3 py-2"
-                  >
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-medium">{t.name}</p>
-                      {t.description && (
-                        <p className="truncate text-xs text-muted-foreground">
-                          {t.description}
-                        </p>
-                      )}
-                    </div>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => handleAdd(t.id, t.name)}
-                      disabled={addMutation.isPending}
-                    >
-                      Add
-                    </Button>
-                  </li>
-                ))}
-              </ul>
+
+        <Input
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search techniques"
+        />
+
+        {availableTags.length > 0 && (
+          <div className="flex flex-wrap gap-1.5">
+            {availableTags.map((tag) => {
+              const on = activeTags.includes(tag);
+              return (
+                <Badge
+                  key={tag}
+                  variant={on ? 'default' : 'outline'}
+                  className="cursor-pointer select-none"
+                  onClick={() => toggleTag(tag)}
+                >
+                  {tag}
+                </Badge>
+              );
+            })}
+            {activeTags.length > 0 && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-6 px-2 text-xs"
+                onClick={() => setActiveTags([])}
+              >
+                Clear
+              </Button>
             )}
           </div>
+        )}
+
+        <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
+          <span>
+            <span className="font-medium text-foreground">
+              {selected.size}
+            </span>{' '}
+            selected · {filtered.length} of {techniques.length} shown
+          </span>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="h-6 px-2 text-xs"
+            disabled={filtered.length === 0}
+            onClick={allVisibleSelected ? deselectAllVisible : selectAllVisible}
+          >
+            {allVisibleSelected ? 'Deselect all visible' : 'Select all visible'}
+          </Button>
         </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
-            Done
+
+        <div className="min-h-0 flex-1 overflow-y-auto rounded border border-border bg-card">
+          {filtered.length === 0 ? (
+            <p className="px-4 py-6 text-center text-xs text-muted-foreground">
+              {techniques.length === 0
+                ? 'Every library technique is already in this syllabus.'
+                : 'No techniques match the current filters.'}
+            </p>
+          ) : (
+            <ul className="divide-y divide-border">
+              {filtered.map((t) => {
+                const checked = selected.has(t.id);
+                return (
+                  <li key={t.id}>
+                    <label
+                      htmlFor={`add-tech-${t.id}`}
+                      className="flex cursor-pointer items-start gap-3 px-3 py-2 transition-colors hover:bg-muted/40"
+                    >
+                      <Checkbox
+                        id={`add-tech-${t.id}`}
+                        checked={checked}
+                        onCheckedChange={() => toggle(t.id)}
+                        className="mt-0.5"
+                      />
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-medium">{t.name}</p>
+                        {t.tags.length > 0 && (
+                          <div className="mt-1 flex flex-wrap gap-1">
+                            {t.tags.map((tag) => (
+                              <Badge
+                                key={tag.id}
+                                variant="outline"
+                                className="px-1.5 py-0 text-[10px]"
+                              >
+                                {tag.name}
+                              </Badge>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </label>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </div>
+
+        <label
+          htmlFor="add-propagate-switch"
+          className="flex cursor-pointer items-center justify-between gap-3 rounded-md border border-border bg-muted/30 p-3"
+        >
+          <span className="min-w-0 flex-1">
+            <span className="block text-sm font-medium">
+              Update active assignments
+            </span>
+            <span className="block text-xs text-muted-foreground">
+              Students currently working through this syllabus get a new technique.
+            </span>
+          </span>
+          <Switch
+            id="add-propagate-switch"
+            checked={propagateToActive}
+            onCheckedChange={setPropagateToActive}
+          />
+        </label>
+
+        <DialogFooter className="grid grid-cols-2 gap-2 sm:flex-none sm:justify-stretch">
+          <Button
+            variant="outline"
+            onClick={() => onOpenChange(false)}
+            disabled={addMutation.isPending}
+            className="w-full"
+          >
+            Cancel
+          </Button>
+          <Button
+            onClick={handleAdd}
+            disabled={selected.size === 0 || addMutation.isPending}
+            className="w-full"
+          >
+            {addMutation.isPending
+              ? 'Adding...'
+              : selected.size === 0
+                ? 'Add'
+                : selected.size === 1
+                  ? 'Add 1 technique'
+                  : `Add ${selected.size} techniques`}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -588,107 +729,6 @@ function RemoveTechniqueDialog({
             onClick={handleConfirm}
           >
             Remove
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-function AssignStudentDialog({
-  open,
-  onOpenChange,
-  syllabusId,
-  assignedIds,
-}: {
-  open: boolean;
-  onOpenChange: (b: boolean) => void;
-  syllabusId: number;
-  assignedIds: number[];
-}) {
-  const studentsQuery = useStudents('alphabetical', false);
-  const assignMutation = useAssignSyllabusToStudent();
-  const [search, setSearch] = useState('');
-  const assigned = useMemo(() => new Set(assignedIds), [assignedIds]);
-  const students = useMemo(
-    () => (studentsQuery.data ?? []).filter((s: User) => s.role === 'student'),
-    [studentsQuery.data],
-  );
-  const filtered = useMemo(() => {
-    const needle = search.trim().toLowerCase();
-    if (!needle) return students;
-    return students.filter(
-      (s: User) =>
-        (s.display_name?.toLowerCase().includes(needle) ?? false) ||
-        s.username.toLowerCase().includes(needle),
-    );
-  }, [students, search]);
-
-  async function handleAssign(student: User) {
-    try {
-      await assignMutation.mutateAsync({
-        studentId: student.id,
-        syllabusId,
-      });
-      toast.success(`Assigned ${student.display_name || student.username}`);
-    } catch {
-      toast.error('Failed to assign');
-    }
-  }
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg">
-        <DialogHeader>
-          <DialogTitle>Assign syllabus</DialogTitle>
-          <DialogDescription>
-            Pick a student. They will see the syllabus immediately with every technique at red.
-          </DialogDescription>
-        </DialogHeader>
-        <Input
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search students"
-        />
-        <div className="max-h-72 overflow-y-auto rounded border border-border bg-card">
-          {filtered.length === 0 ? (
-            <p className="px-4 py-6 text-center text-xs text-muted-foreground">
-              No matching students.
-            </p>
-          ) : (
-            <ul className="divide-y divide-border">
-              {filtered.map((s: User) => {
-                const already = assigned.has(s.id);
-                return (
-                  <li
-                    key={s.id}
-                    className="flex items-center justify-between gap-2 px-3 py-2"
-                  >
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-medium">
-                        {s.display_name || s.username}
-                      </p>
-                      <p className="truncate text-xs text-muted-foreground">
-                        {s.username}
-                      </p>
-                    </div>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      disabled={already || assignMutation.isPending}
-                      onClick={() => handleAssign(s)}
-                    >
-                      {already ? 'Assigned' : 'Assign'}
-                    </Button>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-        </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
-            Done
           </Button>
         </DialogFooter>
       </DialogContent>

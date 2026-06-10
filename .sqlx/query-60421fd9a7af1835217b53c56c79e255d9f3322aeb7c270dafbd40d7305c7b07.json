@@ -1,0 +1,62 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT s.id AS \"id!: i64\",\n                  s.name AS \"name!: String\",\n                  s.description,\n                  s.created_at AS \"created_at!: NaiveDateTime\",\n                  s.created_by_id,\n                  s.updated_at AS \"updated_at!: NaiveDateTime\",\n                  COALESCE((SELECT COUNT(*) FROM syllabus_techniques st WHERE st.syllabus_id = s.id), 0) AS \"technique_count!: i64\",\n                  COALESCE((SELECT COUNT(*) FROM syllabus_assignments sa WHERE sa.syllabus_id = s.id AND sa.unassigned_at IS NULL), 0) AS \"active_assignment_count!: i64\"\n           FROM syllabuses s\n           WHERE s.id = ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "id!: i64",
+        "ordinal": 0,
+        "type_info": "Integer"
+      },
+      {
+        "name": "name!: String",
+        "ordinal": 1,
+        "type_info": "Text"
+      },
+      {
+        "name": "description",
+        "ordinal": 2,
+        "type_info": "Text"
+      },
+      {
+        "name": "created_at!: NaiveDateTime",
+        "ordinal": 3,
+        "type_info": "Datetime"
+      },
+      {
+        "name": "created_by_id",
+        "ordinal": 4,
+        "type_info": "Integer"
+      },
+      {
+        "name": "updated_at!: NaiveDateTime",
+        "ordinal": 5,
+        "type_info": "Datetime"
+      },
+      {
+        "name": "technique_count!: i64",
+        "ordinal": 6,
+        "type_info": "Integer"
+      },
+      {
+        "name": "active_assignment_count!: i64",
+        "ordinal": 7,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      false,
+      true,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "60421fd9a7af1835217b53c56c79e255d9f3322aeb7c270dafbd40d7305c7b07"
+}

@@ -1,6 +1,13 @@
 import { useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Plus, Search, NotebookPen } from 'lucide-react';
+import {
+  FolderKanban,
+  NotebookPen,
+  Plus,
+  Search,
+  UserPlus,
+  Users,
+} from 'lucide-react';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { toast } from 'sonner';
@@ -32,6 +39,7 @@ import {
   handleApiFormError,
   useFormWithValidation,
 } from '@/components/hooks/useFormErrors';
+import { AssignStudentDialog } from './components/assign-student-dialog';
 
 const createSchema = z.object({
   name: z
@@ -51,6 +59,11 @@ export default function SyllabusesPage() {
   );
   const [search, setSearch] = useState('');
   const [createOpen, setCreateOpen] = useState(false);
+  // Target of the quick-assign button. `null` when the dialog is closed.
+  const [assignTarget, setAssignTarget] = useState<
+    | { syllabusId: number; syllabusName: string }
+    | null
+  >(null);
 
   const filtered = useMemo(() => {
     const needle = search.trim().toLowerCase();
@@ -126,23 +139,67 @@ export default function SyllabusesPage() {
         ) : (
           <ul className="divide-y divide-border">
             {filtered.map((s) => (
-              <li key={s.id}>
+              <li
+                key={s.id}
+                className="flex items-stretch transition-colors hover:bg-muted/40"
+              >
                 <Link
                   to={`/syllabuses/${s.id}`}
-                  className="block px-4 py-3 transition-colors hover:bg-muted/40"
+                  className="min-w-0 flex-1 space-y-1 px-4 py-3"
                 >
-                  <p className="text-sm font-semibold">{s.name}</p>
+                  <p className="truncate text-sm font-semibold">{s.name}</p>
                   {s.description && (
                     <p className="line-clamp-2 text-xs text-muted-foreground">
                       {s.description}
                     </p>
                   )}
+                  <p className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
+                    <span className="inline-flex items-center gap-1">
+                      <FolderKanban className="h-3 w-3 shrink-0" aria-hidden />
+                      {s.technique_count}{' '}
+                      {s.technique_count === 1 ? 'technique' : 'techniques'}
+                    </span>
+                    <span className="inline-flex items-center gap-1">
+                      <Users className="h-3 w-3 shrink-0" aria-hidden />
+                      {s.active_assignment_count}{' '}
+                      {s.active_assignment_count === 1 ? 'student' : 'students'}
+                    </span>
+                  </p>
                 </Link>
+                <div className="flex shrink-0 items-center pr-3 pl-1">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="gap-1.5"
+                    aria-label={`Assign ${s.name} to a student`}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setAssignTarget({
+                        syllabusId: s.id,
+                        syllabusName: s.name,
+                      });
+                    }}
+                  >
+                    <UserPlus className="h-3.5 w-3.5" aria-hidden />
+                    <span>Assign</span>
+                  </Button>
+                </div>
               </li>
             ))}
           </ul>
         )}
       </div>
+
+      <AssignStudentDialog
+        open={assignTarget !== null}
+        onOpenChange={(b) => {
+          if (!b) setAssignTarget(null);
+        }}
+        syllabusId={assignTarget?.syllabusId ?? 0}
+        syllabusName={assignTarget?.syllabusName}
+      />
     </div>
   );
 }

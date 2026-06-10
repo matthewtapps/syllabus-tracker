@@ -32,6 +32,10 @@ pub struct Syllabus {
     pub created_at: String,
     pub created_by_id: Option<i64>,
     pub updated_at: String,
+    /// How many techniques the syllabus currently contains.
+    pub technique_count: i64,
+    /// How many active (not soft-unassigned) student assignments exist.
+    pub active_assignment_count: i64,
 }
 
 #[derive(Debug, Serialize)]
@@ -51,14 +55,16 @@ fn rfc3339(dt: NaiveDateTime) -> String {
 #[instrument]
 pub async fn list_syllabuses(pool: &Pool<Sqlite>) -> Result<Vec<Syllabus>, AppError> {
     let rows = sqlx::query!(
-        r#"SELECT id AS "id!: i64",
-                  name AS "name!: String",
-                  description,
-                  created_at AS "created_at!: NaiveDateTime",
-                  created_by_id,
-                  updated_at AS "updated_at!: NaiveDateTime"
-           FROM syllabuses
-           ORDER BY name"#
+        r#"SELECT s.id AS "id!: i64",
+                  s.name AS "name!: String",
+                  s.description,
+                  s.created_at AS "created_at!: NaiveDateTime",
+                  s.created_by_id,
+                  s.updated_at AS "updated_at!: NaiveDateTime",
+                  COALESCE((SELECT COUNT(*) FROM syllabus_techniques st WHERE st.syllabus_id = s.id), 0) AS "technique_count!: i64",
+                  COALESCE((SELECT COUNT(*) FROM syllabus_assignments sa WHERE sa.syllabus_id = s.id AND sa.unassigned_at IS NULL), 0) AS "active_assignment_count!: i64"
+           FROM syllabuses s
+           ORDER BY s.name"#
     )
     .fetch_all(pool)
     .await?;
@@ -71,6 +77,8 @@ pub async fn list_syllabuses(pool: &Pool<Sqlite>) -> Result<Vec<Syllabus>, AppEr
             created_at: rfc3339(r.created_at),
             created_by_id: r.created_by_id,
             updated_at: rfc3339(r.updated_at),
+            technique_count: r.technique_count,
+            active_assignment_count: r.active_assignment_count,
         })
         .collect())
 }
@@ -81,14 +89,16 @@ pub async fn get_syllabus(
     id: i64,
 ) -> Result<Option<Syllabus>, AppError> {
     let row = sqlx::query!(
-        r#"SELECT id AS "id!: i64",
-                  name AS "name!: String",
-                  description,
-                  created_at AS "created_at!: NaiveDateTime",
-                  created_by_id,
-                  updated_at AS "updated_at!: NaiveDateTime"
-           FROM syllabuses
-           WHERE id = ?"#,
+        r#"SELECT s.id AS "id!: i64",
+                  s.name AS "name!: String",
+                  s.description,
+                  s.created_at AS "created_at!: NaiveDateTime",
+                  s.created_by_id,
+                  s.updated_at AS "updated_at!: NaiveDateTime",
+                  COALESCE((SELECT COUNT(*) FROM syllabus_techniques st WHERE st.syllabus_id = s.id), 0) AS "technique_count!: i64",
+                  COALESCE((SELECT COUNT(*) FROM syllabus_assignments sa WHERE sa.syllabus_id = s.id AND sa.unassigned_at IS NULL), 0) AS "active_assignment_count!: i64"
+           FROM syllabuses s
+           WHERE s.id = ?"#,
         id,
     )
     .fetch_optional(pool)
@@ -100,6 +110,8 @@ pub async fn get_syllabus(
         created_at: rfc3339(r.created_at),
         created_by_id: r.created_by_id,
         updated_at: rfc3339(r.updated_at),
+        technique_count: r.technique_count,
+        active_assignment_count: r.active_assignment_count,
     }))
 }
 
