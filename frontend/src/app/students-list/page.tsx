@@ -158,10 +158,10 @@ export default function StudentsList() {
           variant="ghost"
           size="icon"
           className="h-9 w-9"
-          aria-label={`View ${student.display_name || student.username}'s syllabuses`}
+          aria-label={`View ${student.display_name || student.username}'s syllabi`}
         >
           <Link
-            to={`/student/${student.id}/syllabuses`}
+            to={`/student/${student.id}/syllabi`}
             onClick={(e) => e.stopPropagation()}
           >
             <NotebookPen className="h-4 w-4" aria-hidden />

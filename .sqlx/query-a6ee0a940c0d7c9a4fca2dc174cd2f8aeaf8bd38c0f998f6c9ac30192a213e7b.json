@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "DELETE FROM syllabuses WHERE id = ?",
+  "query": "DELETE FROM syllabi WHERE id = ?",
   "describe": {
     "columns": [],
     "parameters": {
@@ -8,5 +8,5 @@
     },
     "nullable": []
   },
-  "hash": "5ba966ac3582e7ab11653eb5d8881502d8f809378d90266ab8b8ee1373e4c16a"
+  "hash": "a6ee0a940c0d7c9a4fca2dc174cd2f8aeaf8bd38c0f998f6c9ac30192a213e7b"
 }

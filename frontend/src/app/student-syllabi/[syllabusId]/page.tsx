@@ -24,7 +24,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { EmptyState } from '@/components/empty-state';
 import { TechniqueRow } from '@/components/technique-row';
-import { useStudentSyllabusTechniques } from '@/lib/queries';
+import { useAllUsers, useStudentSyllabusTechniques } from '@/lib/queries';
 import {
   useSetAssignmentGraduated,
   useUnassignSyllabusFromStudent,
@@ -88,7 +88,13 @@ function Detail({
 }) {
   const navigate = useNavigate();
   const query = useStudentSyllabusTechniques(studentId, syllabusId);
+  const usersQuery = useAllUsers();
   const assignment = query.data?.assignment;
+  const studentName = useMemo(() => {
+    if (isOwnView) return null;
+    const u = (usersQuery.data ?? []).find((u) => u.id === studentId);
+    return u ? u.display_name || u.username : null;
+  }, [isOwnView, usersQuery.data, studentId]);
   const techniques = useMemo(
     () => query.data?.techniques ?? [],
     [query.data?.techniques],
@@ -152,7 +158,7 @@ function Detail({
         },
       });
       setUnassignOpen(false);
-      navigate(`/student/${studentId}/syllabuses`);
+      navigate(`/student/${studentId}/syllabi`);
     } catch {
       toast.error('Failed to unassign');
     }
@@ -175,7 +181,7 @@ function Detail({
           action={
             <Button
               variant="outline"
-              onClick={() => navigate(`/student/${studentId}/syllabuses`)}
+              onClick={() => navigate(`/student/${studentId}/syllabi`)}
             >
               Back
             </Button>
@@ -192,16 +198,18 @@ function Detail({
           variant="ghost"
           size="sm"
           className="mb-3 -ml-2 gap-1.5"
-          onClick={() => navigate(`/student/${studentId}/syllabuses`)}
+          onClick={() => navigate(`/student/${studentId}/syllabi`)}
         >
           <ArrowLeft className="h-4 w-4" aria-hidden />
-          Back to syllabuses
+          Back to syllabi
         </Button>
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0">
             <h1 className="flex items-center gap-2 text-base font-semibold">
               <NotebookPen className="h-4 w-4" aria-hidden />
-              {assignment.syllabus_name}
+              {studentName
+                ? `${studentName}'s ${assignment.syllabus_name}`
+                : assignment.syllabus_name}
             </h1>
             <p className="text-xs text-muted-foreground">
               {assignment.total_count}{' '}

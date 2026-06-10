@@ -33,7 +33,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { TracedForm } from '@/components/traced-form';
 import { EmptyState } from '@/components/empty-state';
-import { useSyllabuses } from '@/lib/queries';
+import { useSyllabi } from '@/lib/queries';
 import { useCreateSyllabus } from '@/lib/mutations';
 import {
   handleApiFormError,
@@ -50,12 +50,12 @@ const createSchema = z.object({
 });
 type CreateValues = z.infer<typeof createSchema>;
 
-export default function SyllabusesPage() {
+export default function SyllabiPage() {
   const navigate = useNavigate();
-  const syllabusesQuery = useSyllabuses();
-  const syllabuses = useMemo(
-    () => syllabusesQuery.data ?? [],
-    [syllabusesQuery.data],
+  const syllabiQuery = useSyllabi();
+  const syllabi = useMemo(
+    () => syllabiQuery.data ?? [],
+    [syllabiQuery.data],
   );
   const [search, setSearch] = useState('');
   const [createOpen, setCreateOpen] = useState(false);
@@ -67,13 +67,13 @@ export default function SyllabusesPage() {
 
   const filtered = useMemo(() => {
     const needle = search.trim().toLowerCase();
-    if (!needle) return syllabuses;
-    return syllabuses.filter(
+    if (!needle) return syllabi;
+    return syllabi.filter(
       (s) =>
         s.name.toLowerCase().includes(needle) ||
         s.description.toLowerCase().includes(needle),
     );
-  }, [syllabuses, search]);
+  }, [syllabi, search]);
 
   return (
     <div className="container mx-auto px-4 py-6 sm:px-6 md:py-8">
@@ -92,7 +92,7 @@ export default function SyllabusesPage() {
           <CreateSyllabusDialog
             onCreated={(id) => {
               setCreateOpen(false);
-              navigate(`/syllabuses/${id}`);
+              navigate(`/syllabi/${id}`);
             }}
           />
         </Dialog>
@@ -104,7 +104,7 @@ export default function SyllabusesPage() {
           aria-hidden
         />
         <Input
-          placeholder="Search syllabuses"
+          placeholder="Search syllabi"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           className="pl-9"
@@ -112,7 +112,7 @@ export default function SyllabusesPage() {
       </div>
 
       <div className="overflow-hidden rounded-lg border border-border bg-card">
-        {syllabusesQuery.isLoading ? (
+        {syllabiQuery.isLoading ? (
           <div className="divide-y divide-border">
             {Array.from({ length: 4 }).map((_, i) => (
               <div key={i} className="px-4 py-4">
@@ -121,15 +121,15 @@ export default function SyllabusesPage() {
               </div>
             ))}
           </div>
-        ) : syllabuses.length === 0 ? (
+        ) : syllabi.length === 0 ? (
           <EmptyState
             icon={NotebookPen}
-            title="No syllabuses yet"
+            title="No syllabi yet"
             description="Create your first syllabus to start curating techniques for your students."
           />
         ) : filtered.length === 0 ? (
           <p className="px-6 py-10 text-center text-sm text-muted-foreground">
-            No syllabuses match the current search.
+            No syllabi match the current search.
           </p>
         ) : (
           <ul className="divide-y divide-border">
@@ -139,7 +139,7 @@ export default function SyllabusesPage() {
                 className="flex items-stretch transition-colors hover:bg-muted/40"
               >
                 <Link
-                  to={`/syllabuses/${s.id}`}
+                  to={`/syllabi/${s.id}`}
                   className="min-w-0 flex-1 space-y-1 px-4 py-3"
                 >
                   <p className="truncate text-sm font-semibold">{s.name}</p>

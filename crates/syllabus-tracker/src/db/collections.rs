@@ -1,5 +1,5 @@
 // Legacy collections surface, dormant since PR 5. Replaced
-// conceptually by syllabuses + syllabus_techniques. Backend stays
+// conceptually by syllabi + syllabus_techniques. Backend stays
 // mounted so the /legacy/collections frontend route remains reachable
 // for prod migration. TODO: remove after 2026-09-10.
 

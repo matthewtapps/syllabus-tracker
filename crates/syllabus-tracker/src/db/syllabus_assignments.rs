@@ -22,7 +22,7 @@ pub struct SyllabusAssignment {
     pub graduated_by_id: Option<i64>,
     /// Progress summary across visible (non-hidden) SST rows. Cheap to
     /// compute alongside the assignment row and surfaces on the student's
-    /// "my syllabuses" list as a progress chip.
+    /// "my syllabi" list as a progress chip.
     pub red_count: i64,
     pub amber_count: i64,
     pub green_count: i64,
@@ -55,7 +55,7 @@ pub async fn list_assignments_for_student(
                   COALESCE(SUM(CASE WHEN sst.status = 'green' AND sst.hidden_at IS NULL THEN 1 ELSE 0 END), 0) AS "green_count!: i64",
                   COALESCE(SUM(CASE WHEN sst.hidden_at IS NULL THEN 1 ELSE 0 END), 0) AS "total_count!: i64"
            FROM syllabus_assignments a
-           JOIN syllabuses s ON s.id = a.syllabus_id
+           JOIN syllabi s ON s.id = a.syllabus_id
            LEFT JOIN student_syllabus_techniques sst ON sst.assignment_id = a.id
            WHERE a.student_id = ?
              AND (? = 1 OR a.unassigned_at IS NULL)
@@ -109,7 +109,7 @@ pub async fn get_assignment(
                   COALESCE(SUM(CASE WHEN sst.status = 'green' AND sst.hidden_at IS NULL THEN 1 ELSE 0 END), 0) AS "green_count!: i64",
                   COALESCE(SUM(CASE WHEN sst.hidden_at IS NULL THEN 1 ELSE 0 END), 0) AS "total_count!: i64"
            FROM syllabus_assignments a
-           JOIN syllabuses s ON s.id = a.syllabus_id
+           JOIN syllabi s ON s.id = a.syllabus_id
            LEFT JOIN student_syllabus_techniques sst ON sst.assignment_id = a.id
            WHERE a.student_id = ? AND a.syllabus_id = ?
            GROUP BY a.id"#,

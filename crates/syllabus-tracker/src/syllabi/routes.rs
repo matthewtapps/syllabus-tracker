@@ -42,13 +42,13 @@ impl From<PropagationParam> for PropagationMode {
 // Syllabus CRUD
 // ============================================================
 
-#[get("/syllabuses")]
-pub async fn api_list_syllabuses(
+#[get("/syllabi")]
+pub async fn api_list_syllabi(
     user: User,
     db: &State<Pool<Sqlite>>,
 ) -> ApiResult<Json<Vec<db::Syllabus>>> {
-    user.require_permission(Permission::ManageSyllabuses)?;
-    let rows = db::list_syllabuses(db).await?;
+    user.require_permission(Permission::ManageSyllabi)?;
+    let rows = db::list_syllabi(db).await?;
     Ok(Json(rows))
 }
 
@@ -65,13 +65,13 @@ pub struct SyllabusIdResponse {
     pub id: i64,
 }
 
-#[post("/syllabuses", data = "<body>")]
+#[post("/syllabi", data = "<body>")]
 pub async fn api_create_syllabus(
     user: User,
     body: Json<CreateSyllabusRequest>,
     db: &State<Pool<Sqlite>>,
 ) -> ApiResult<Json<SyllabusIdResponse>> {
-    user.require_permission(Permission::ManageSyllabuses)?;
+    user.require_permission(Permission::ManageSyllabi)?;
     body.validate()?;
     let id = db::create_syllabus(db, &body.name, body.description.as_deref(), user.id).await?;
     Ok(Json(SyllabusIdResponse { id }))
@@ -84,24 +84,24 @@ pub struct SyllabusDetailResponse {
     pub techniques: Vec<db::SyllabusTechniqueRow>,
 }
 
-#[get("/syllabuses/<sid>/students")]
+#[get("/syllabi/<sid>/students")]
 pub async fn api_list_syllabus_students(
     sid: i64,
     user: User,
     db: &State<Pool<Sqlite>>,
 ) -> ApiResult<Json<Vec<i64>>> {
-    user.require_permission(Permission::ManageSyllabuses)?;
+    user.require_permission(Permission::ManageSyllabi)?;
     let ids = db::list_students_assigned_to_syllabus(db, sid).await?;
     Ok(Json(ids))
 }
 
-#[get("/syllabuses/<sid>")]
+#[get("/syllabi/<sid>")]
 pub async fn api_get_syllabus(
     sid: i64,
     user: User,
     db: &State<Pool<Sqlite>>,
 ) -> ApiResult<Json<SyllabusDetailResponse>> {
-    user.require_permission(Permission::ManageSyllabuses)?;
+    user.require_permission(Permission::ManageSyllabi)?;
     let syllabus = db::get_syllabus(db, sid)
         .await?
         .ok_or(Status::NotFound)?;
@@ -119,14 +119,14 @@ pub struct UpdateSyllabusRequest {
     pub description: Option<Option<String>>,
 }
 
-#[patch("/syllabuses/<sid>", data = "<body>")]
+#[patch("/syllabi/<sid>", data = "<body>")]
 pub async fn api_update_syllabus(
     sid: i64,
     user: User,
     body: Json<UpdateSyllabusRequest>,
     db: &State<Pool<Sqlite>>,
 ) -> ApiResult<Status> {
-    user.require_permission(Permission::ManageSyllabuses)?;
+    user.require_permission(Permission::ManageSyllabi)?;
     body.validate()?;
     db::update_syllabus(
         db,
@@ -140,13 +140,13 @@ pub async fn api_update_syllabus(
     Ok(Status::NoContent)
 }
 
-#[delete("/syllabuses/<sid>")]
+#[delete("/syllabi/<sid>")]
 pub async fn api_delete_syllabus(
     sid: i64,
     user: User,
     db: &State<Pool<Sqlite>>,
 ) -> ApiResult<Status> {
-    user.require_permission(Permission::ManageSyllabuses)?;
+    user.require_permission(Permission::ManageSyllabi)?;
     db::delete_syllabus(db, sid).await?;
     Ok(Status::NoContent)
 }
@@ -157,21 +157,21 @@ pub struct AddTechniqueToSyllabusRequest {
     pub propagation: PropagationParam,
 }
 
-#[post("/syllabuses/<sid>/techniques", data = "<body>")]
+#[post("/syllabi/<sid>/techniques", data = "<body>")]
 pub async fn api_add_technique_to_syllabus(
     sid: i64,
     user: User,
     body: Json<AddTechniqueToSyllabusRequest>,
     db: &State<Pool<Sqlite>>,
 ) -> ApiResult<Status> {
-    user.require_permission(Permission::ManageSyllabuses)?;
+    user.require_permission(Permission::ManageSyllabi)?;
     let payload = body.into_inner();
     let mode: PropagationMode = payload.propagation.into();
     db::add_technique_to_syllabus(db, sid, payload.technique_id, user.id, mode).await?;
     Ok(Status::NoContent)
 }
 
-#[delete("/syllabuses/<sid>/techniques/<tid>?<propagation>")]
+#[delete("/syllabi/<sid>/techniques/<tid>?<propagation>")]
 pub async fn api_remove_technique_from_syllabus(
     sid: i64,
     tid: i64,
@@ -179,7 +179,7 @@ pub async fn api_remove_technique_from_syllabus(
     user: User,
     db: &State<Pool<Sqlite>>,
 ) -> ApiResult<Status> {
-    user.require_permission(Permission::ManageSyllabuses)?;
+    user.require_permission(Permission::ManageSyllabi)?;
     let mode = match propagation.as_deref() {
         Some("cascade") => PropagationMode::Cascade,
         Some("syllabus_only") | None => PropagationMode::SyllabusOnly,
@@ -193,26 +193,26 @@ pub async fn api_remove_technique_from_syllabus(
 // Assignment lifecycle
 // ============================================================
 
-#[post("/student/<sid>/syllabuses/<syid>/assignment")]
+#[post("/student/<sid>/syllabi/<syid>/assignment")]
 pub async fn api_assign_syllabus(
     sid: i64,
     syid: i64,
     user: User,
     db: &State<Pool<Sqlite>>,
 ) -> ApiResult<Json<SyllabusIdResponse>> {
-    user.require_permission(Permission::ManageSyllabuses)?;
+    user.require_permission(Permission::ManageSyllabi)?;
     let id = db::assign(db, user.id, sid, syid).await?;
     Ok(Json(SyllabusIdResponse { id }))
 }
 
-#[delete("/student/<sid>/syllabuses/<syid>/assignment")]
+#[delete("/student/<sid>/syllabi/<syid>/assignment")]
 pub async fn api_unassign_syllabus(
     sid: i64,
     syid: i64,
     user: User,
     db: &State<Pool<Sqlite>>,
 ) -> ApiResult<Status> {
-    user.require_permission(Permission::ManageSyllabuses)?;
+    user.require_permission(Permission::ManageSyllabi)?;
     let assignment = db::get_assignment(db, sid, syid)
         .await?
         .ok_or(Status::NotFound)?;
@@ -226,7 +226,7 @@ pub struct GraduateAssignmentRequest {
 }
 
 #[patch(
-    "/student/<sid>/syllabuses/<syid>/assignment",
+    "/student/<sid>/syllabi/<syid>/assignment",
     data = "<body>"
 )]
 pub async fn api_set_assignment_graduated(
@@ -236,7 +236,7 @@ pub async fn api_set_assignment_graduated(
     body: Json<GraduateAssignmentRequest>,
     db: &State<Pool<Sqlite>>,
 ) -> ApiResult<Status> {
-    user.require_permission(Permission::ManageSyllabuses)?;
+    user.require_permission(Permission::ManageSyllabi)?;
     let assignment = db::get_assignment(db, sid, syid)
         .await?
         .ok_or(Status::NotFound)?;
@@ -252,14 +252,14 @@ pub async fn api_set_assignment_graduated(
 // Diff view + apply
 // ============================================================
 
-#[get("/student/<sid>/syllabuses/<syid>/assignment/diff")]
+#[get("/student/<sid>/syllabi/<syid>/assignment/diff")]
 pub async fn api_assignment_diff(
     sid: i64,
     syid: i64,
     user: User,
     db: &State<Pool<Sqlite>>,
 ) -> ApiResult<Json<db::SyllabusAssignmentDiff>> {
-    user.require_permission(Permission::ManageSyllabuses)?;
+    user.require_permission(Permission::ManageSyllabi)?;
     let assignment = db::get_assignment(db, sid, syid)
         .await?
         .ok_or(Status::NotFound)?;
@@ -307,7 +307,7 @@ pub struct DiffApplyResponse {
 }
 
 #[post(
-    "/student/<sid>/syllabuses/<syid>/assignment/diff/apply",
+    "/student/<sid>/syllabi/<syid>/assignment/diff/apply",
     data = "<body>"
 )]
 pub async fn api_apply_assignment_diff(
@@ -317,7 +317,7 @@ pub async fn api_apply_assignment_diff(
     body: Json<DiffApplyRequest>,
     db: &State<Pool<Sqlite>>,
 ) -> ApiResult<Json<DiffApplyResponse>> {
-    user.require_permission(Permission::ManageSyllabuses)?;
+    user.require_permission(Permission::ManageSyllabi)?;
     let assignment = db::get_assignment(db, sid, syid)
         .await?
         .ok_or(Status::NotFound)?;
@@ -370,7 +370,7 @@ pub struct SstIdResponse {
 }
 
 #[post(
-    "/student/<sid>/syllabuses/<syid>/techniques",
+    "/student/<sid>/syllabi/<syid>/techniques",
     data = "<body>"
 )]
 pub async fn api_add_technique_to_student_syllabus(
@@ -380,7 +380,7 @@ pub async fn api_add_technique_to_student_syllabus(
     body: Json<AddTechniqueToStudentRequest>,
     db: &State<Pool<Sqlite>>,
 ) -> ApiResult<Json<SstIdResponse>> {
-    user.require_permission(Permission::ManageSyllabuses)?;
+    user.require_permission(Permission::ManageSyllabi)?;
     let assignment = db::get_assignment(db, sid, syid)
         .await?
         .ok_or(Status::NotFound)?;
@@ -404,7 +404,7 @@ pub async fn api_set_sst_hidden(
     body: Json<SetSstHiddenRequest>,
     db: &State<Pool<Sqlite>>,
 ) -> ApiResult<Status> {
-    user.require_permission(Permission::ManageSyllabuses)?;
+    user.require_permission(Permission::ManageSyllabi)?;
     let owner = db::get_owner(db, sst_id).await?.ok_or(Status::NotFound)?;
     let _ = owner;
     db::set_hidden(db, user.id, sst_id, body.hidden).await?;
@@ -422,7 +422,7 @@ pub struct SetVideoSyllabusVisibilityRequest {
 }
 
 #[put(
-    "/student/<sid>/syllabuses/<syid>/videos/<vid>/visibility",
+    "/student/<sid>/syllabi/<syid>/videos/<vid>/visibility",
     data = "<body>"
 )]
 pub async fn api_set_video_syllabus_visibility(
@@ -433,7 +433,7 @@ pub async fn api_set_video_syllabus_visibility(
     body: Json<SetVideoSyllabusVisibilityRequest>,
     db: &State<Pool<Sqlite>>,
 ) -> ApiResult<Status> {
-    user.require_permission(Permission::ManageSyllabuses)?;
+    user.require_permission(Permission::ManageSyllabi)?;
     db::set_video_syllabus_visibility(db, vid, syid, sid, body.visible, user.id).await?;
     Ok(Status::NoContent)
 }
@@ -442,8 +442,8 @@ pub async fn api_set_video_syllabus_visibility(
 // Student-facing syllabus reads
 // ============================================================
 
-#[get("/student/<sid>/syllabuses")]
-pub async fn api_list_student_syllabuses(
+#[get("/student/<sid>/syllabi")]
+pub async fn api_list_student_syllabi(
     sid: i64,
     user: User,
     db: &State<Pool<Sqlite>>,
@@ -461,7 +461,7 @@ pub struct StudentSyllabusDetailResponse {
     pub techniques: Vec<db::SstRow>,
 }
 
-#[get("/student/<sid>/syllabuses/<syid>/techniques")]
+#[get("/student/<sid>/syllabi/<syid>/techniques")]
 pub async fn api_list_student_syllabus_techniques(
     sid: i64,
     syid: i64,
@@ -475,7 +475,7 @@ pub async fn api_list_student_syllabus_techniques(
         .await?
         .ok_or(Status::NotFound)?;
     if assignment.unassigned_at.is_some()
-        && !user.has_permission(Permission::ManageSyllabuses)
+        && !user.has_permission(Permission::ManageSyllabi)
     {
         return Err(Status::NotFound.into());
     }
@@ -667,7 +667,7 @@ pub struct SyllabusVideoListResponse {
     pub videos: Vec<crate::models::Video>,
 }
 
-#[get("/student/<sid>/syllabuses/<syid>/techniques/<tid>/videos")]
+#[get("/student/<sid>/syllabi/<syid>/techniques/<tid>/videos")]
 pub async fn api_list_syllabus_technique_videos(
     sid: i64,
     syid: i64,

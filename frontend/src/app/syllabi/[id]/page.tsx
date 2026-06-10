@@ -93,7 +93,7 @@ export default function SyllabusDetailPage() {
   const params = useParams<{ id: string }>();
   const syllabusId = params.id ? parseInt(params.id, 10) : NaN;
   if (!Number.isFinite(syllabusId)) {
-    return <Navigate to="/syllabuses" replace />;
+    return <Navigate to="/syllabi" replace />;
   }
   return <SyllabusDetail syllabusId={syllabusId} />;
 }
@@ -136,8 +136,8 @@ function SyllabusDetail({ syllabusId }: { syllabusId: number }) {
           title="Syllabus not found"
           description="It may have been deleted or you may not have access."
           action={
-            <Button variant="outline" onClick={() => navigate('/syllabuses')}>
-              Back to syllabuses
+            <Button variant="outline" onClick={() => navigate('/syllabi')}>
+              Back to syllabi
             </Button>
           }
         />
@@ -150,7 +150,7 @@ function SyllabusDetail({ syllabusId }: { syllabusId: number }) {
     try {
       await deleteMutation.mutateAsync(syllabusId);
       toast.success(`Deleted ${syllabusName}`);
-      navigate('/syllabuses');
+      navigate('/syllabi');
     } catch {
       toast.error('Failed to delete syllabus');
     }
@@ -163,7 +163,7 @@ function SyllabusDetail({ syllabusId }: { syllabusId: number }) {
           variant="ghost"
           size="sm"
           className="mb-3 -ml-2 gap-1.5"
-          onClick={() => navigate('/syllabuses')}
+          onClick={() => navigate('/syllabi')}
         >
           <ArrowLeft className="h-4 w-4" aria-hidden />
           Back to Syllabus Library
@@ -788,7 +788,7 @@ function AssignedStudentsList({
         return (
           <li key={id}>
             <Link
-              to={`/student/${id}/syllabuses/${syllabusId}`}
+              to={`/student/${id}/syllabi/${syllabusId}`}
               className="block px-4 py-3 transition-colors hover:bg-muted/40"
             >
               <p className="truncate text-sm font-medium">

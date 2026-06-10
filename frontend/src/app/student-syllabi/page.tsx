@@ -3,12 +3,12 @@ import { Link, Navigate, useParams } from 'react-router-dom';
 import { NotebookPen } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/empty-state';
-import { useStudentSyllabuses } from '@/lib/queries';
+import { useAllUsers, useStudentSyllabi } from '@/lib/queries';
 import { useUser } from '@/lib/current-user-context';
 import { isCoachOrAdmin } from '@/lib/api';
 import { cn } from '@/lib/utils';
 
-export default function StudentSyllabusesPage() {
+export default function StudentSyllabiPage() {
   const params = useParams<{ id: string }>();
   const studentId = params.id ? parseInt(params.id, 10) : NaN;
   const user = useUser();
@@ -23,27 +23,39 @@ export default function StudentSyllabusesPage() {
     return <Navigate to="/dashboard" replace />;
   }
 
-  return <StudentSyllabusesList studentId={studentId} isOwnView={isOwner} />;
+  return <StudentSyllabiList studentId={studentId} isOwnView={isOwner} />;
 }
 
-function StudentSyllabusesList({
+function StudentSyllabiList({
   studentId,
   isOwnView,
 }: {
   studentId: number;
   isOwnView: boolean;
 }) {
-  const query = useStudentSyllabuses(studentId);
+  const query = useStudentSyllabi(studentId);
+  const usersQuery = useAllUsers();
   const assignments = useMemo(() => query.data ?? [], [query.data]);
+  const studentName = useMemo(() => {
+    if (isOwnView) return null;
+    const u = (usersQuery.data ?? []).find((u) => u.id === studentId);
+    return u ? u.display_name || u.username : null;
+  }, [isOwnView, usersQuery.data, studentId]);
   const loading = query.isLoading;
-  const error = query.error ? 'Failed to load syllabuses.' : null;
+  const error = query.error ? 'Failed to load syllabi.' : null;
+
+  const title = isOwnView
+    ? 'My Syllabus Library'
+    : studentName
+      ? `${studentName}'s Syllabus Library`
+      : 'Syllabus Library';
 
   return (
     <div className="container mx-auto px-4 py-6 sm:px-6 md:py-8">
       <div className="mb-4">
         <h1 className="flex items-center gap-2 text-base font-semibold">
           <NotebookPen className="h-4 w-4" aria-hidden />
-          {isOwnView ? 'My Syllabus Library' : 'Syllabus Library'}
+          {title}
         </h1>
       </div>
 
@@ -67,7 +79,7 @@ function StudentSyllabusesList({
         ) : assignments.length === 0 ? (
           <EmptyState
             icon={NotebookPen}
-            title="No syllabuses yet"
+            title="No syllabi yet"
             description={
               isOwnView
                 ? 'A coach has not assigned you a syllabus yet.'
@@ -79,7 +91,7 @@ function StudentSyllabusesList({
             {assignments.map((a) => (
               <li key={a.id}>
                 <Link
-                  to={`/student/${studentId}/syllabuses/${a.syllabus_id}`}
+                  to={`/student/${studentId}/syllabi/${a.syllabus_id}`}
                   className="flex items-start justify-between gap-3 px-4 py-3 transition-colors hover:bg-muted/40"
                 >
                   <div className="min-w-0 flex-1">
