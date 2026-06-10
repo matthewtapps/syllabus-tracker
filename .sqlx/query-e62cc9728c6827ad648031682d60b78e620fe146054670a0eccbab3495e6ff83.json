@@ -1,0 +1,32 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT verb AS \"verb!: String\",\n                      actor_user_id AS \"actor_user_id!: i64\",\n                      target_student_id AS \"target_student_id?: i64\"\n               FROM activity",
+  "describe": {
+    "columns": [
+      {
+        "name": "verb!: String",
+        "ordinal": 0,
+        "type_info": "Text"
+      },
+      {
+        "name": "actor_user_id!: i64",
+        "ordinal": 1,
+        "type_info": "Integer"
+      },
+      {
+        "name": "target_student_id?: i64",
+        "ordinal": 2,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "e62cc9728c6827ad648031682d60b78e620fe146054670a0eccbab3495e6ff83"
+}

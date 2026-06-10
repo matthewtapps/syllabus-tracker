@@ -5,16 +5,9 @@
 //! with the event it records. This module never deserialises payloads; the
 //! typed read side lands in PR 2 (`db/activity_read.rs`).
 
-#[allow(unused_imports)]
-use chrono::{NaiveDateTime, Utc};
-#[allow(unused_imports)]
-use serde::Serialize;
-#[allow(unused_imports)]
-use serde_json::json;
-#[allow(unused_imports)]
+use chrono::Utc;
 use sqlx::{Sqlite, Transaction};
 
-#[allow(unused_imports)]
 use crate::error::AppError;
 
 /// Which real FK column a verb treats as its "primary entity" for coalescing.
@@ -265,6 +258,35 @@ pub mod payload {
     }
 }
 
+/// 30-second coalescing window (see Task 5). Constant, tunable later.
+#[allow(dead_code)]
+const COALESCE_WINDOW_SECS: i64 = 30;
+
+/// Insert (or coalesce, Task 5) an activity row inside the caller's
+/// transaction. Atomic with the event being recorded.
+pub async fn emit(tx: &mut Transaction<'_, Sqlite>, ev: NewActivity) -> Result<(), AppError> {
+    let now = Utc::now().naive_utc();
+    let verb = ev.verb.as_str();
+    sqlx::query!(
+        "INSERT INTO activity
+            (occurred_at, verb, actor_user_id, target_student_id,
+             technique_id, syllabus_id, sst_id, video_id, payload_json)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        now,
+        verb,
+        ev.actor_user_id,
+        ev.target_student_id,
+        ev.technique_id,
+        ev.syllabus_id,
+        ev.sst_id,
+        ev.video_id,
+        ev.payload_json,
+    )
+    .execute(&mut **tx)
+    .await?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod registry_tests {
     use super::{EntityKind, Verb};
@@ -310,14 +332,17 @@ mod registry_tests {
             Verb::SyllabusTechniqueAdded.primary_entity(),
             EntityKind::Syllabus
         );
-        assert_eq!(Verb::TechniqueEdited.primary_entity(), EntityKind::Technique);
+        assert_eq!(
+            Verb::TechniqueEdited.primary_entity(),
+            EntityKind::Technique
+        );
         assert_eq!(Verb::VideoAdded.primary_entity(), EntityKind::Video);
     }
 }
 
 #[cfg(test)]
 mod payload_tests {
-    use super::{payload, NewActivity, Verb};
+    use super::{NewActivity, Verb, payload};
 
     #[test]
     fn status_change_payload_shape() {
@@ -337,7 +362,9 @@ mod payload_tests {
 
     #[test]
     fn new_activity_builder_defaults_entities_to_none() {
-        let ev = NewActivity::new(Verb::TechniquePinned, 7).target_student(7).technique(3);
+        let ev = NewActivity::new(Verb::TechniquePinned, 7)
+            .target_student(7)
+            .technique(3);
         assert_eq!(ev.actor_user_id, 7);
         assert_eq!(ev.target_student_id, Some(7));
         assert_eq!(ev.technique_id, Some(3));
