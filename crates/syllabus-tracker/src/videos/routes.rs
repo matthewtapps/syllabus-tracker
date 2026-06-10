@@ -249,9 +249,13 @@ pub async fn api_list_technique_videos(
 ) -> Result<Json<ListVideosResponse>, Status> {
     let is_coach = user.has_permission(crate::auth::Permission::ViewAllStudents);
     let videos = if !is_coach {
-        // Students always see only what's effectively visible to them,
-        // regardless of any for_student query param a client tries to pass.
-        db::list_videos_for_technique_visible_to(pool.inner(), tid, user.id)
+        // Library context: students see the globally-visible list only.
+        // Per-student video_student_visibility overrides are NOT applied
+        // here; they are a legacy concept (now replaced in PR 3+ by the
+        // per-(student, syllabus) override table for syllabus context).
+        // The `for_student` query param is intentionally ignored for
+        // student callers regardless of value.
+        db::list_videos_for_technique_global_visible(pool.inner(), tid)
             .await
             .map_err(Status::from)?
     } else {
