@@ -310,11 +310,11 @@ mod tests {
 
         let _ = login_test_user(&client, "student_user", "password123").await;
 
-        let resp = client.get("/api/syllabuses").dispatch().await;
+        let resp = client.get("/api/syllabi").dispatch().await;
         assert_eq!(resp.status(), Status::Forbidden);
 
         let resp = client
-            .post("/api/syllabuses")
+            .post("/api/syllabi")
             .header(ContentType::JSON)
             .body(json!({ "name": "x" }).to_string())
             .dispatch()
@@ -332,7 +332,7 @@ mod tests {
 
         let _ = login_test_user(&client, "student_user", "password123").await;
         let resp = client
-            .get(format!("/api/student/{}/syllabuses", student_id))
+            .get(format!("/api/student/{}/syllabi", student_id))
             .dispatch()
             .await;
         assert_eq!(resp.status(), Status::Ok);
@@ -777,7 +777,7 @@ mod pr4_tests {
 
         let resp = client
             .post(format!(
-                "/api/student/{}/syllabuses/{}/assignment/diff/apply",
+                "/api/student/{}/syllabi/{}/assignment/diff/apply",
                 student_id, syllabus_id
             ))
             .header(ContentType::JSON)

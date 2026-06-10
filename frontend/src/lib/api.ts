@@ -1052,7 +1052,7 @@ export async function listVideos(
   if (opts?.syllabus) {
     const { studentId, syllabusId } = opts.syllabus;
     const response = await fetch(
-      `/api/student/${studentId}/syllabuses/${syllabusId}/techniques/${techniqueId}/videos`,
+      `/api/student/${studentId}/syllabi/${syllabusId}/techniques/${techniqueId}/videos`,
       { credentials: "include" },
     );
     if (!response.ok) throw new Error("Failed to load videos");
@@ -1367,8 +1367,8 @@ export interface SyllabusAttempt {
 
 export type PropagationMode = "syllabus_only" | "cascade";
 
-export async function getSyllabuses(): Promise<Syllabus[]> {
-  const response = await fetch("/api/syllabuses", { credentials: "include" });
+export async function getSyllabi(): Promise<Syllabus[]> {
+  const response = await fetch("/api/syllabi", { credentials: "include" });
   if (!response.ok) throw response;
   return await response.json();
 }
@@ -1376,7 +1376,7 @@ export async function getSyllabuses(): Promise<Syllabus[]> {
 export async function getSyllabusDetail(
   syllabusId: number,
 ): Promise<SyllabusDetailResponse> {
-  const response = await fetch(`/api/syllabuses/${syllabusId}`, {
+  const response = await fetch(`/api/syllabi/${syllabusId}`, {
     credentials: "include",
   });
   if (!response.ok) throw response;
@@ -1387,7 +1387,7 @@ export async function createSyllabusApi(data: {
   name: string;
   description?: string;
 }): Promise<{ id: number }> {
-  const response = await fetch("/api/syllabuses", {
+  const response = await fetch("/api/syllabi", {
     method: "POST",
     credentials: "include",
     headers: { "Content-Type": "application/json" },
@@ -1401,7 +1401,7 @@ export async function updateSyllabusApi(
   syllabusId: number,
   data: { name?: string; description?: string | null },
 ): Promise<void> {
-  const response = await fetch(`/api/syllabuses/${syllabusId}`, {
+  const response = await fetch(`/api/syllabi/${syllabusId}`, {
     method: "PATCH",
     credentials: "include",
     headers: { "Content-Type": "application/json" },
@@ -1411,7 +1411,7 @@ export async function updateSyllabusApi(
 }
 
 export async function deleteSyllabusApi(syllabusId: number): Promise<void> {
-  const response = await fetch(`/api/syllabuses/${syllabusId}`, {
+  const response = await fetch(`/api/syllabi/${syllabusId}`, {
     method: "DELETE",
     credentials: "include",
   });
@@ -1423,7 +1423,7 @@ export async function addTechniqueToSyllabusApi(
   techniqueId: number,
   propagation: PropagationMode,
 ): Promise<void> {
-  const response = await fetch(`/api/syllabuses/${syllabusId}/techniques`, {
+  const response = await fetch(`/api/syllabi/${syllabusId}/techniques`, {
     method: "POST",
     credentials: "include",
     headers: { "Content-Type": "application/json" },
@@ -1437,7 +1437,7 @@ export async function removeTechniqueFromSyllabusApi(
   techniqueId: number,
   propagation: PropagationMode,
 ): Promise<void> {
-  const url = `/api/syllabuses/${syllabusId}/techniques/${techniqueId}?propagation=${propagation}`;
+  const url = `/api/syllabi/${syllabusId}/techniques/${techniqueId}?propagation=${propagation}`;
   const response = await fetch(url, {
     method: "DELETE",
     credentials: "include",
@@ -1450,7 +1450,7 @@ export async function assignSyllabusApi(
   syllabusId: number,
 ): Promise<{ id: number }> {
   const response = await fetch(
-    `/api/student/${studentId}/syllabuses/${syllabusId}/assignment`,
+    `/api/student/${studentId}/syllabi/${syllabusId}/assignment`,
     { method: "POST", credentials: "include" },
   );
   if (!response.ok) throw response;
@@ -1462,16 +1462,16 @@ export async function unassignSyllabusApi(
   syllabusId: number,
 ): Promise<void> {
   const response = await fetch(
-    `/api/student/${studentId}/syllabuses/${syllabusId}/assignment`,
+    `/api/student/${studentId}/syllabi/${syllabusId}/assignment`,
     { method: "DELETE", credentials: "include" },
   );
   if (!response.ok) throw response;
 }
 
-export async function getStudentSyllabusesApi(
+export async function getStudentSyllabiApi(
   studentId: number,
 ): Promise<SyllabusAssignment[]> {
-  const response = await fetch(`/api/student/${studentId}/syllabuses`, {
+  const response = await fetch(`/api/student/${studentId}/syllabi`, {
     credentials: "include",
   });
   if (!response.ok) throw response;
@@ -1483,7 +1483,7 @@ export async function getStudentSyllabusTechniquesApi(
   syllabusId: number,
 ): Promise<StudentSyllabusDetailResponse> {
   const response = await fetch(
-    `/api/student/${studentId}/syllabuses/${syllabusId}/techniques`,
+    `/api/student/${studentId}/syllabi/${syllabusId}/techniques`,
     { credentials: "include" },
   );
   if (!response.ok) throw response;
@@ -1561,7 +1561,7 @@ export async function deleteSyllabusAttemptApi(
 export async function listSyllabusStudentsApi(
   syllabusId: number,
 ): Promise<number[]> {
-  const response = await fetch(`/api/syllabuses/${syllabusId}/students`, {
+  const response = await fetch(`/api/syllabi/${syllabusId}/students`, {
     credentials: "include",
   });
   if (!response.ok) throw response;
@@ -1614,7 +1614,7 @@ export async function setAssignmentGraduatedApi(
   graduatedAt: string | null,
 ): Promise<void> {
   const response = await fetch(
-    `/api/student/${studentId}/syllabuses/${syllabusId}/assignment`,
+    `/api/student/${studentId}/syllabi/${syllabusId}/assignment`,
     {
       method: "PATCH",
       credentials: "include",
@@ -1630,7 +1630,7 @@ export async function getAssignmentDiffApi(
   syllabusId: number,
 ): Promise<SyllabusAssignmentDiff> {
   const response = await fetch(
-    `/api/student/${studentId}/syllabuses/${syllabusId}/assignment/diff`,
+    `/api/student/${studentId}/syllabi/${syllabusId}/assignment/diff`,
     { credentials: "include" },
   );
   if (!response.ok) throw response;
@@ -1646,7 +1646,7 @@ export async function applyAssignmentDiffApi(
   },
 ): Promise<{ applied: number }> {
   const response = await fetch(
-    `/api/student/${studentId}/syllabuses/${syllabusId}/assignment/diff/apply`,
+    `/api/student/${studentId}/syllabi/${syllabusId}/assignment/diff/apply`,
     {
       method: "POST",
       credentials: "include",
@@ -1664,7 +1664,7 @@ export async function addTechniqueToStudentSyllabusApi(
   techniqueId: number,
 ): Promise<{ id: number }> {
   const response = await fetch(
-    `/api/student/${studentId}/syllabuses/${syllabusId}/techniques`,
+    `/api/student/${studentId}/syllabi/${syllabusId}/techniques`,
     {
       method: "POST",
       credentials: "include",
@@ -1699,7 +1699,7 @@ export async function setVideoSyllabusVisibilityApi(
   visible: boolean | null,
 ): Promise<void> {
   const response = await fetch(
-    `/api/student/${studentId}/syllabuses/${syllabusId}/videos/${videoId}/visibility`,
+    `/api/student/${studentId}/syllabi/${syllabusId}/videos/${videoId}/visibility`,
     {
       method: "PUT",
       credentials: "include",

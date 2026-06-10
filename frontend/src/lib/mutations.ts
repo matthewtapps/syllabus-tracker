@@ -839,7 +839,7 @@ export function useUnpinTechnique(studentId: number) {
 }
 
 // ============================================================
-// Syllabuses (PR 3)
+// Syllabi (PR 3)
 // ============================================================
 
 import {
@@ -862,7 +862,7 @@ export function useCreateSyllabus() {
   return useMutation({
     mutationFn: (data: { name: string; description?: string }) =>
       createSyllabusApi(data),
-    onSuccess: () => qc.invalidateQueries({ queryKey: qk.syllabuses() }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: qk.syllabi() }),
   });
 }
 
@@ -874,7 +874,7 @@ export function useUpdateSyllabus() {
       data: { name?: string; description?: string | null };
     }) => updateSyllabusApi(vars.syllabusId, vars.data),
     onSuccess: (_res, vars) => {
-      qc.invalidateQueries({ queryKey: qk.syllabuses() });
+      qc.invalidateQueries({ queryKey: qk.syllabi() });
       qc.invalidateQueries({ queryKey: qk.syllabus(vars.syllabusId) });
     },
   });
@@ -885,7 +885,7 @@ export function useDeleteSyllabus() {
   return useMutation({
     mutationFn: (syllabusId: number) => deleteSyllabusApi(syllabusId),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: qk.syllabuses() });
+      qc.invalidateQueries({ queryKey: qk.syllabi() });
       qc.invalidateQueries({ predicate: qk.matches.anySyllabus });
     },
   });
@@ -942,13 +942,13 @@ export function useAssignSyllabusToStudent() {
     mutationFn: (vars: { studentId: number; syllabusId: number }) =>
       assignSyllabusApi(vars.studentId, vars.syllabusId),
     onSuccess: (_res, vars) => {
-      qc.invalidateQueries({ queryKey: qk.studentSyllabuses(vars.studentId) });
+      qc.invalidateQueries({ queryKey: qk.studentSyllabi(vars.studentId) });
       qc.invalidateQueries({
         queryKey: qk.studentSyllabusTechniques(vars.studentId, vars.syllabusId),
       });
       // Per-syllabus student list + the list page's active assignment count.
       qc.invalidateQueries({ queryKey: qk.syllabusStudents(vars.syllabusId) });
-      qc.invalidateQueries({ queryKey: qk.syllabuses() });
+      qc.invalidateQueries({ queryKey: qk.syllabi() });
     },
   });
 }
@@ -959,9 +959,9 @@ export function useUnassignSyllabusFromStudent() {
     mutationFn: (vars: { studentId: number; syllabusId: number }) =>
       unassignSyllabusApi(vars.studentId, vars.syllabusId),
     onSuccess: (_res, vars) => {
-      qc.invalidateQueries({ queryKey: qk.studentSyllabuses(vars.studentId) });
+      qc.invalidateQueries({ queryKey: qk.studentSyllabi(vars.studentId) });
       qc.invalidateQueries({ queryKey: qk.syllabusStudents(vars.syllabusId) });
-      qc.invalidateQueries({ queryKey: qk.syllabuses() });
+      qc.invalidateQueries({ queryKey: qk.syllabi() });
     },
   });
 }
@@ -979,7 +979,7 @@ export function useUpdateStudentSyllabusTechnique() {
       qc.invalidateQueries({
         queryKey: qk.studentSyllabusTechniques(vars.studentId, vars.syllabusId),
       });
-      qc.invalidateQueries({ queryKey: qk.studentSyllabuses(vars.studentId) });
+      qc.invalidateQueries({ queryKey: qk.studentSyllabi(vars.studentId) });
     },
   });
 }
@@ -1061,7 +1061,7 @@ export function useSetAssignmentGraduated() {
       qc.invalidateQueries({
         queryKey: qk.studentSyllabusTechniques(vars.studentId, vars.syllabusId),
       });
-      qc.invalidateQueries({ queryKey: qk.studentSyllabuses(vars.studentId) });
+      qc.invalidateQueries({ queryKey: qk.studentSyllabi(vars.studentId) });
     },
   });
 }

@@ -224,7 +224,7 @@ CREATE INDEX IF NOT EXISTS idx_spt_student ON student_pinned_techniques (student
 -- Coach-owned, reusable, named collection of techniques. Replaces the
 -- conceptual use of `collections` going forward; legacy `collections`
 -- stays on disk but loses all UI call sites by PR 5.
-CREATE TABLE IF NOT EXISTS syllabuses (
+CREATE TABLE IF NOT EXISTS syllabi (
     id            INTEGER PRIMARY KEY,
     name          TEXT NOT NULL,
     description   TEXT,
@@ -235,7 +235,7 @@ CREATE TABLE IF NOT EXISTS syllabuses (
 
 -- Membership of techniques in a syllabus, with display ordering.
 CREATE TABLE IF NOT EXISTS syllabus_techniques (
-    syllabus_id  INTEGER NOT NULL REFERENCES syllabuses (id) ON DELETE CASCADE,
+    syllabus_id  INTEGER NOT NULL REFERENCES syllabi (id) ON DELETE CASCADE,
     technique_id INTEGER NOT NULL REFERENCES techniques (id) ON DELETE CASCADE,
     position     INTEGER NOT NULL DEFAULT 0,
     added_at     TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -252,7 +252,7 @@ CREATE INDEX IF NOT EXISTS idx_st_position
 CREATE TABLE IF NOT EXISTS syllabus_assignments (
     id               INTEGER PRIMARY KEY,
     student_id       INTEGER NOT NULL REFERENCES users (id) ON DELETE CASCADE,
-    syllabus_id      INTEGER NOT NULL REFERENCES syllabuses (id) ON DELETE CASCADE,
+    syllabus_id      INTEGER NOT NULL REFERENCES syllabi (id) ON DELETE CASCADE,
     assigned_at      TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     assigned_by_id   INTEGER REFERENCES users (id),
     unassigned_at    TIMESTAMP,
@@ -322,7 +322,7 @@ CREATE INDEX IF NOT EXISTS idx_sat_recorder
 -- Library context (PR 1) ignores these and shows global visibility.
 CREATE TABLE IF NOT EXISTS student_syllabus_video_visibility (
     student_id    INTEGER NOT NULL REFERENCES users (id) ON DELETE CASCADE,
-    syllabus_id   INTEGER NOT NULL REFERENCES syllabuses (id) ON DELETE CASCADE,
+    syllabus_id   INTEGER NOT NULL REFERENCES syllabi (id) ON DELETE CASCADE,
     video_id      INTEGER NOT NULL REFERENCES videos (id) ON DELETE CASCADE,
     visible       BOOLEAN NOT NULL,
     created_at    TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,

@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
+import { toast } from "sonner";
 import { login } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -45,7 +46,7 @@ export function LoginForm({ onSuccess, className, ...props }: LoginFormProps) {
         onSuccess();
         navigate("/dashboard");
       } else {
-        throw new Error(response.error || "Login failed");
+        toast.error(response.error || "Login failed");
       }
     } finally {
       setIsLoading(false);

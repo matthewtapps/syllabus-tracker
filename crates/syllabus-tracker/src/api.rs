@@ -1258,7 +1258,7 @@ pub async fn api_reset_user_claim(
     }))
 }
 
-// ---- Collections / syllabuses ----
+// ---- Collections / syllabi ----
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct CollectionResponse {

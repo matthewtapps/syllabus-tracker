@@ -53,7 +53,7 @@ fn rfc3339(dt: NaiveDateTime) -> String {
 }
 
 #[instrument]
-pub async fn list_syllabuses(pool: &Pool<Sqlite>) -> Result<Vec<Syllabus>, AppError> {
+pub async fn list_syllabi(pool: &Pool<Sqlite>) -> Result<Vec<Syllabus>, AppError> {
     let rows = sqlx::query!(
         r#"SELECT s.id AS "id!: i64",
                   s.name AS "name!: String",
@@ -63,7 +63,7 @@ pub async fn list_syllabuses(pool: &Pool<Sqlite>) -> Result<Vec<Syllabus>, AppEr
                   s.updated_at AS "updated_at!: NaiveDateTime",
                   COALESCE((SELECT COUNT(*) FROM syllabus_techniques st WHERE st.syllabus_id = s.id), 0) AS "technique_count!: i64",
                   COALESCE((SELECT COUNT(*) FROM syllabus_assignments sa WHERE sa.syllabus_id = s.id AND sa.unassigned_at IS NULL), 0) AS "active_assignment_count!: i64"
-           FROM syllabuses s
+           FROM syllabi s
            ORDER BY s.name"#
     )
     .fetch_all(pool)
@@ -97,7 +97,7 @@ pub async fn get_syllabus(
                   s.updated_at AS "updated_at!: NaiveDateTime",
                   COALESCE((SELECT COUNT(*) FROM syllabus_techniques st WHERE st.syllabus_id = s.id), 0) AS "technique_count!: i64",
                   COALESCE((SELECT COUNT(*) FROM syllabus_assignments sa WHERE sa.syllabus_id = s.id AND sa.unassigned_at IS NULL), 0) AS "active_assignment_count!: i64"
-           FROM syllabuses s
+           FROM syllabi s
            WHERE s.id = ?"#,
         id,
     )
@@ -123,7 +123,7 @@ pub async fn create_syllabus(
     coach_id: i64,
 ) -> Result<i64, AppError> {
     let res = sqlx::query!(
-        "INSERT INTO syllabuses (name, description, created_by_id)
+        "INSERT INTO syllabi (name, description, created_by_id)
          VALUES (?, ?, ?)",
         name,
         description,
@@ -145,7 +145,7 @@ pub async fn update_syllabus(
     match (name, description) {
         (Some(n), Some(d)) => {
             sqlx::query!(
-                "UPDATE syllabuses SET name = ?, description = ?, updated_at = ? WHERE id = ?",
+                "UPDATE syllabi SET name = ?, description = ?, updated_at = ? WHERE id = ?",
                 n,
                 d,
                 now,
@@ -156,7 +156,7 @@ pub async fn update_syllabus(
         }
         (Some(n), None) => {
             sqlx::query!(
-                "UPDATE syllabuses SET name = ?, updated_at = ? WHERE id = ?",
+                "UPDATE syllabi SET name = ?, updated_at = ? WHERE id = ?",
                 n,
                 now,
                 id
@@ -166,7 +166,7 @@ pub async fn update_syllabus(
         }
         (None, Some(d)) => {
             sqlx::query!(
-                "UPDATE syllabuses SET description = ?, updated_at = ? WHERE id = ?",
+                "UPDATE syllabi SET description = ?, updated_at = ? WHERE id = ?",
                 d,
                 now,
                 id
@@ -181,7 +181,7 @@ pub async fn update_syllabus(
 
 #[instrument]
 pub async fn delete_syllabus(pool: &Pool<Sqlite>, id: i64) -> Result<(), AppError> {
-    sqlx::query!("DELETE FROM syllabuses WHERE id = ?", id)
+    sqlx::query!("DELETE FROM syllabi WHERE id = ?", id)
         .execute(pool)
         .await?;
     Ok(())

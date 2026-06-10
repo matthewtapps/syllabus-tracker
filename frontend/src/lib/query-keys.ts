@@ -40,12 +40,12 @@ export const qk = {
   pinnedTechniques: (studentId: number) =>
     ["student", studentId, "pinned_techniques"] as const,
 
-  syllabuses: () => ["syllabuses"] as const,
+  syllabi: () => ["syllabi"] as const,
   syllabus: (sid: number) => ["syllabus", sid] as const,
   syllabusTechniques: (sid: number) => ["syllabus", sid, "techniques"] as const,
   syllabusStudents: (sid: number) => ["syllabus", sid, "students"] as const,
-  studentSyllabuses: (studentId: number) =>
-    ["student", studentId, "syllabuses"] as const,
+  studentSyllabi: (studentId: number) =>
+    ["student", studentId, "syllabi"] as const,
   studentSyllabusTechniques: (studentId: number, syllabusId: number) =>
     ["student", studentId, "syllabus", syllabusId, "techniques"] as const,
   syllabusAttempts: (sstId: number) =>

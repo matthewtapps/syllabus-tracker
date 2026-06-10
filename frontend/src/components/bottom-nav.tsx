@@ -49,10 +49,10 @@ function buildTabs(user: User): Tab[] {
       label: 'Library',
       icon: Library,
     });
-    tabs.push({ to: '/syllabuses', label: 'Syllabi', icon: NotebookPen });
+    tabs.push({ to: '/syllabi', label: 'Syllabi', icon: NotebookPen });
   } else {
     tabs.push({
-      to: `/student/${user.id}/syllabuses`,
+      to: `/student/${user.id}/syllabi`,
       label: 'Syllabi',
       icon: NotebookPen,
     });

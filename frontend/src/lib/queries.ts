@@ -19,12 +19,12 @@ import {
   getStudentLibrary,
   getStudentPinnedTechniques,
   getStudentSyllabusTechniquesApi,
-  getStudentSyllabusesApi,
+  getStudentSyllabiApi,
   getStudentTechniqueDetail,
   getStudentTechniques,
   getStudents,
   getSyllabusDetail,
-  getSyllabuses,
+  getSyllabi,
   listSyllabusStudentsApi,
   getTechniquesForAssignment,
   listSyllabusAttemptsApi,
@@ -308,12 +308,12 @@ export function useAdminStorage(enabled: boolean = true) {
   });
 }
 
-// ---- Syllabuses ----
+// ---- Syllabi ----
 
-export function useSyllabuses() {
+export function useSyllabi() {
   return useQuery({
-    queryKey: qk.syllabuses(),
-    queryFn: getSyllabuses,
+    queryKey: qk.syllabi(),
+    queryFn: getSyllabi,
   });
 }
 
@@ -327,12 +327,12 @@ export function useSyllabus(syllabusId: number | undefined) {
   });
 }
 
-export function useStudentSyllabuses(studentId: number | undefined) {
+export function useStudentSyllabi(studentId: number | undefined) {
   return useQuery({
-    queryKey: qk.studentSyllabuses(studentId ?? 0),
+    queryKey: qk.studentSyllabi(studentId ?? 0),
     queryFn:
       typeof studentId === "number" && Number.isFinite(studentId)
-        ? () => getStudentSyllabusesApi(studentId)
+        ? () => getStudentSyllabiApi(studentId)
         : skipToken,
   });
 }

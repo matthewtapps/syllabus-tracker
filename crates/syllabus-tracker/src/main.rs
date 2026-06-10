@@ -2,7 +2,7 @@
 extern crate rocket;
 
 pub use syllabus_tracker::{
-    api, auth, capabilities, catchers, db, env, error, models, syllabuses, telemetry, validation,
+    api, auth, capabilities, catchers, db, env, error, models, syllabi, telemetry, validation,
     videos,
 };
 
@@ -42,13 +42,13 @@ use migration_engine::migrations::{get_schema_changes, read_schema_file_to_strin
 use telemetry::TelemetryFairing;
 use telemetry::init_tracing;
 use thiserror::Error;
-use syllabuses::{
+use syllabi::{
     api_add_technique_to_student_syllabus, api_add_technique_to_syllabus,
     api_apply_assignment_diff, api_assign_syllabus, api_assignment_diff, api_create_syllabus,
     api_create_syllabus_attempt, api_delete_syllabus, api_delete_syllabus_attempt,
-    api_get_syllabus, api_list_student_syllabus_techniques, api_list_student_syllabuses,
+    api_get_syllabus, api_list_student_syllabus_techniques, api_list_student_syllabi,
     api_list_syllabus_attempts, api_list_syllabus_students, api_list_syllabus_technique_videos,
-    api_list_syllabuses, api_remove_technique_from_syllabus, api_set_assignment_graduated,
+    api_list_syllabi, api_remove_technique_from_syllabus, api_set_assignment_graduated,
     api_set_sst_hidden, api_set_video_syllabus_visibility, api_unassign_syllabus,
     api_update_syllabus, api_update_syllabus_attempt, api_update_sst,
 };
@@ -304,7 +304,7 @@ pub async fn init_rocket(
                 api_attempt_summary,
                 api_attempt_heatmap,
                 api_attempt_sparkline,
-                api_list_syllabuses,
+                api_list_syllabi,
                 api_list_syllabus_students,
                 api_create_syllabus,
                 api_get_syllabus,
@@ -320,7 +320,7 @@ pub async fn init_rocket(
                 api_add_technique_to_student_syllabus,
                 api_set_sst_hidden,
                 api_set_video_syllabus_visibility,
-                api_list_student_syllabuses,
+                api_list_student_syllabi,
                 api_list_student_syllabus_techniques,
                 api_update_sst,
                 api_create_syllabus_attempt,

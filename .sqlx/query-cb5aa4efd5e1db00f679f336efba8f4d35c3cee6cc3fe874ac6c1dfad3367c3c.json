@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT s.id AS \"id!: i64\",\n                  s.name AS \"name!: String\",\n                  s.description,\n                  s.created_at AS \"created_at!: NaiveDateTime\",\n                  s.created_by_id,\n                  s.updated_at AS \"updated_at!: NaiveDateTime\",\n                  COALESCE((SELECT COUNT(*) FROM syllabus_techniques st WHERE st.syllabus_id = s.id), 0) AS \"technique_count!: i64\",\n                  COALESCE((SELECT COUNT(*) FROM syllabus_assignments sa WHERE sa.syllabus_id = s.id AND sa.unassigned_at IS NULL), 0) AS \"active_assignment_count!: i64\"\n           FROM syllabuses s\n           ORDER BY s.name",
+  "query": "SELECT s.id AS \"id!: i64\",\n                  s.name AS \"name!: String\",\n                  s.description,\n                  s.created_at AS \"created_at!: NaiveDateTime\",\n                  s.created_by_id,\n                  s.updated_at AS \"updated_at!: NaiveDateTime\",\n                  COALESCE((SELECT COUNT(*) FROM syllabus_techniques st WHERE st.syllabus_id = s.id), 0) AS \"technique_count!: i64\",\n                  COALESCE((SELECT COUNT(*) FROM syllabus_assignments sa WHERE sa.syllabus_id = s.id AND sa.unassigned_at IS NULL), 0) AS \"active_assignment_count!: i64\"\n           FROM syllabi s\n           WHERE s.id = ?",
   "describe": {
     "columns": [
       {
@@ -45,7 +45,7 @@
       }
     ],
     "parameters": {
-      "Right": 0
+      "Right": 1
     },
     "nullable": [
       false,
@@ -58,5 +58,5 @@
       false
     ]
   },
-  "hash": "d3a84254b7e941dc51a157393899834e744ce05cef9694c2f0f2f26a0e873c86"
+  "hash": "cb5aa4efd5e1db00f679f336efba8f4d35c3cee6cc3fe874ac6c1dfad3367c3c"
 }

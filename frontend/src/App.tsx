@@ -40,11 +40,11 @@ const RegisterUserPage = lazy(() => import('./app/registration/page'));
 const AdminPage = lazy(() => import('./app/admin/page'));
 const LibraryPage = lazy(() => import('./app/library/page'));
 const StudentPinnedPage = lazy(() => import('./app/student-pinned/page'));
-const SyllabusesPage = lazy(() => import('./app/syllabuses/page'));
-const SyllabusDetailPage = lazy(() => import('./app/syllabuses/[id]/page'));
-const StudentSyllabusesPage = lazy(() => import('./app/student-syllabuses/page'));
+const SyllabiPage = lazy(() => import('./app/syllabi/page'));
+const SyllabusDetailPage = lazy(() => import('./app/syllabi/[id]/page'));
+const StudentSyllabiPage = lazy(() => import('./app/student-syllabi/page'));
 const StudentSyllabusDetailPage = lazy(
-  () => import('./app/student-syllabuses/[syllabusId]/page'),
+  () => import('./app/student-syllabi/[syllabusId]/page'),
 );
 const InvitePage = lazy(() => import('./app/invite/page'));
 const RegisterPage = lazy(() => import('./app/register/page'));
@@ -296,15 +296,15 @@ function AuthedRoutes() {
         }
       />
       <Route
-        path="/syllabuses"
+        path="/syllabi"
         element={
           <RequireCoach>
-            <SyllabusesPage />
+            <SyllabiPage />
           </RequireCoach>
         }
       />
       <Route
-        path="/syllabuses/:id"
+        path="/syllabi/:id"
         element={
           <RequireCoach>
             <SyllabusDetailPage />
@@ -312,15 +312,15 @@ function AuthedRoutes() {
         }
       />
       <Route
-        path="/student/:id/syllabuses"
+        path="/student/:id/syllabi"
         element={
           <RequireAuth>
-            <StudentSyllabusesPage />
+            <StudentSyllabiPage />
           </RequireAuth>
         }
       />
       <Route
-        path="/student/:id/syllabuses/:syllabusId"
+        path="/student/:id/syllabi/:syllabusId"
         element={
           <RequireAuth>
             <StudentSyllabusDetailPage />
