@@ -2048,7 +2048,77 @@ pub async fn api_student_activity_feed(
     Ok(Json(rows))
 }
 
+// ---- Shared helpers ---------------------------------------------------------
+
+/// Resolves the from/to window for heatmap queries.
+/// Defaults: from = today minus 365 days, to = today.
+/// Returns `Err(ApiError)` if either string is present but not YYYY-MM-DD.
+fn resolve_heatmap_window(
+    params: &HeatmapQuery,
+) -> Result<(chrono::NaiveDate, chrono::NaiveDate), ApiError> {
+    let today = chrono::Utc::now().date_naive();
+    let default_from = today - chrono::Duration::days(365);
+    let from = match params.from.as_deref() {
+        Some(s) => chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d")
+            .map_err(|_| ApiError::from(Status::BadRequest))?,
+        None => default_from,
+    };
+    let to = match params.to.as_deref() {
+        Some(s) => chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d")
+            .map_err(|_| ApiError::from(Status::BadRequest))?,
+        None => today,
+    };
+    Ok((from, to))
+}
+
 // ---- Coach dashboard recently-active route (Task 24) -----------------------
+
+// ---- New syllabus-backed student dashboard routes --------------------------
+
+#[get("/student/<id>/syllabus_techniques")]
+pub async fn api_student_syllabus_techniques_flat(
+    id: i64,
+    user: User,
+    db: &State<Pool<Sqlite>>,
+) -> ApiResult<Json<Vec<crate::db::StudentSyllabusTechniqueOverview>>> {
+    if user.id != id && !user.has_permission(Permission::ViewAllStudents) {
+        return Err(Status::Forbidden.into());
+    }
+    Ok(Json(crate::db::list_sst_flat_for_student(db, id).await?))
+}
+
+#[get("/student/<id>/syllabus_attempts/recent?<params..>")]
+pub async fn api_student_recent_syllabus_attempts(
+    id: i64,
+    params: RecentAttemptsQuery,
+    user: User,
+    db: &State<Pool<Sqlite>>,
+) -> ApiResult<Json<Vec<crate::models::AttemptListItem>>> {
+    if user.id != id && !user.has_permission(Permission::ViewAllStudents) {
+        return Err(Status::Forbidden.into());
+    }
+    let limit = params.limit.unwrap_or(5).clamp(1, 50);
+    Ok(Json(
+        crate::db::list_recent_syllabus_attempts_for_student(db, id, limit).await?,
+    ))
+}
+
+#[get("/student/<id>/syllabus_attempts/heatmap?<params..>")]
+pub async fn api_student_syllabus_attempt_heatmap(
+    id: i64,
+    params: HeatmapQuery,
+    user: User,
+    db: &State<Pool<Sqlite>>,
+) -> ApiResult<Json<Vec<crate::models::AttemptBucket>>> {
+    if user.id != id && !user.has_permission(Permission::ViewAllStudents) {
+        return Err(Status::Forbidden.into());
+    }
+    // Reuse the same default window the legacy heatmap route uses.
+    let (from, to) = resolve_heatmap_window(&params)?;
+    Ok(Json(
+        crate::db::syllabus_attempt_buckets_for_student(db, id, from, to).await?,
+    ))
+}
 
 /// `GET /api/activity/recently_active?limit=`
 ///

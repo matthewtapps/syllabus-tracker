@@ -8,6 +8,8 @@ use serde::Serialize;
 use sqlx::{Pool, Sqlite};
 use tracing::{info, instrument};
 
+use crate::models::{AttemptBucket, AttemptListItem};
+
 use crate::auth::{Permission, Role, User};
 use crate::db::activity::{NewActivity, Verb, emit, payload};
 use crate::error::AppError;
@@ -305,4 +307,86 @@ pub async fn get_syllabus_attempt_sst_id(
     .fetch_optional(pool)
     .await?;
     Ok(id)
+}
+
+/// Recent attempts across all of a student's active assignments, newest first.
+/// Mirrors the legacy `list_recent_attempts_for_student` shape on the new
+/// tables. `AttemptListItem.student_technique_id` carries the SST id here.
+#[instrument]
+pub async fn list_recent_syllabus_attempts_for_student(
+    pool: &Pool<Sqlite>,
+    student_id: i64,
+    limit: i64,
+) -> Result<Vec<AttemptListItem>, AppError> {
+    let rows = sqlx::query!(
+        r#"SELECT sa.id AS "id!: i64",
+                  sa.student_syllabus_technique_id AS "sst_id!: i64",
+                  sst.technique_id AS "technique_id!: i64",
+                  t.name AS "technique_name!: String",
+                  sa.attempted_at AS "attempted_at!: NaiveDateTime",
+                  sa.coach_note, sa.student_note
+           FROM syllabus_attempts sa
+           JOIN student_syllabus_techniques sst ON sst.id = sa.student_syllabus_technique_id
+           JOIN syllabus_assignments asn ON asn.id = sst.assignment_id
+           JOIN techniques t ON t.id = sst.technique_id
+           WHERE asn.student_id = ?
+           ORDER BY sa.attempted_at DESC, sa.id DESC
+           LIMIT ?"#,
+        student_id,
+        limit,
+    )
+    .fetch_all(pool)
+    .await?;
+    Ok(rows
+        .into_iter()
+        .map(|r| AttemptListItem {
+            id: r.id,
+            student_technique_id: r.sst_id,
+            technique_id: r.technique_id,
+            technique_name: r.technique_name,
+            attempted_at: DateTime::<Utc>::from_naive_utc_and_offset(r.attempted_at, Utc),
+            coach_note: r.coach_note,
+            student_note: r.student_note,
+        })
+        .collect())
+}
+
+/// Daily attempt-count buckets across all of a student's assignments, for the
+/// dashboard heatmap. Mirrors legacy `attempt_buckets_for_student`.
+#[instrument]
+pub async fn syllabus_attempt_buckets_for_student(
+    pool: &Pool<Sqlite>,
+    student_id: i64,
+    from: chrono::NaiveDate,
+    to: chrono::NaiveDate,
+) -> Result<Vec<AttemptBucket>, AppError> {
+    let from_str = from.format("%Y-%m-%d").to_string();
+    let to_str = to.format("%Y-%m-%d").to_string();
+    let rows = sqlx::query!(
+        r#"SELECT date(sa.attempted_at) as "date!: String",
+                  COUNT(*) as "count!: i64"
+           FROM syllabus_attempts sa
+           JOIN student_syllabus_techniques sst ON sst.id = sa.student_syllabus_technique_id
+           JOIN syllabus_assignments asn ON asn.id = sst.assignment_id
+           WHERE asn.student_id = ?
+             AND date(sa.attempted_at) >= ? AND date(sa.attempted_at) <= ?
+           GROUP BY date(sa.attempted_at)
+           ORDER BY 1"#,
+        student_id,
+        from_str,
+        to_str,
+    )
+    .fetch_all(pool)
+    .await?;
+    Ok(rows
+        .into_iter()
+        .filter_map(|r| {
+            chrono::NaiveDate::parse_from_str(&r.date, "%Y-%m-%d")
+                .ok()
+                .map(|date| AttemptBucket {
+                    date,
+                    count: r.count,
+                })
+        })
+        .collect())
 }

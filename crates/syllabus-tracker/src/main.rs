@@ -26,9 +26,10 @@ use api::{
     api_pin_technique, api_recent_attempts, api_recently_active_students, api_register_user,
     api_remove_tag_from_technique, api_remove_technique_from_collection,
     api_request_password_reset, api_reset_user_claim, api_self_register, api_set_student_graduated,
-    api_student_activity_feed, api_unpin_technique, api_update_attempt, api_update_collection,
-    api_update_library_technique, api_update_profile, api_update_student_technique,
-    api_update_user, health,
+    api_student_activity_feed, api_student_recent_syllabus_attempts,
+    api_student_syllabus_attempt_heatmap, api_student_syllabus_techniques_flat,
+    api_unpin_technique, api_update_attempt, api_update_collection, api_update_library_technique,
+    api_update_profile, api_update_student_technique, api_update_user, health,
 };
 use auth::unauthorized_api;
 use capabilities::{Capabilities, api_capabilities};
@@ -339,6 +340,9 @@ pub async fn init_rocket(
                 api_activity_mark_one_read,
                 api_activity_mark_one_unread,
                 api_recently_active_students,
+                api_student_syllabus_techniques_flat,
+                api_student_recent_syllabus_attempts,
+                api_student_syllabus_attempt_heatmap,
             ],
         )
         .register(

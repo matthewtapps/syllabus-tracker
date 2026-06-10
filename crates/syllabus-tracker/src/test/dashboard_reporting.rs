@@ -71,6 +71,74 @@ mod tests {
     }
 
     #[rocket::async_test]
+    async fn recent_syllabus_attempts_scoped_to_student() {
+        use crate::db::{
+            CreateSyllabusAttempt, create_syllabus_attempt,
+            list_recent_syllabus_attempts_for_student,
+        };
+        let db = TestDbBuilder::new()
+            .coach("coach", None)
+            .student("alice", None)
+            .technique("Armbar", "", Some("coach"))
+            .build()
+            .await
+            .unwrap();
+        let coach = db.user_id("coach").unwrap();
+        let alice = db.user_id("alice").unwrap();
+        let armbar = db.technique_id("Armbar").unwrap();
+        let sid = create_syllabus(&db.pool, "S", None, coach).await.unwrap();
+        let aid = assign(&db.pool, coach, alice, sid).await.unwrap();
+        let sst = add_technique_to_assignment(&db.pool, aid, armbar, coach)
+            .await
+            .unwrap();
+        create_syllabus_attempt(
+            &db.pool,
+            &coach_actor(coach),
+            sst,
+            &CreateSyllabusAttempt {
+                attempted_at: chrono::Utc::now().naive_utc(),
+                coach_note: None,
+                student_note: None,
+            },
+        )
+        .await
+        .unwrap();
+
+        let recent = list_recent_syllabus_attempts_for_student(&db.pool, alice, 5)
+            .await
+            .unwrap();
+        assert_eq!(recent.len(), 1);
+        assert_eq!(recent[0].technique_name, "Armbar");
+    }
+
+    #[rocket::async_test]
+    async fn flat_sst_list_spans_all_active_assignments() {
+        use crate::db::list_sst_flat_for_student;
+        let db = TestDbBuilder::new()
+            .coach("coach", None)
+            .student("alice", None)
+            .technique("Armbar", "", Some("coach"))
+            .technique("Triangle", "", Some("coach"))
+            .build()
+            .await
+            .unwrap();
+        let coach = db.user_id("coach").unwrap();
+        let alice = db.user_id("alice").unwrap();
+        let sid = create_syllabus(&db.pool, "S", None, coach).await.unwrap();
+        let aid = assign(&db.pool, coach, alice, sid).await.unwrap();
+        add_technique_to_assignment(&db.pool, aid, db.technique_id("Armbar").unwrap(), coach)
+            .await
+            .unwrap();
+        add_technique_to_assignment(&db.pool, aid, db.technique_id("Triangle").unwrap(), coach)
+            .await
+            .unwrap();
+
+        let rows = list_sst_flat_for_student(&db.pool, alice).await.unwrap();
+        assert_eq!(rows.len(), 2);
+        assert!(rows.iter().all(|r| r.status == "red"));
+    }
+
+    #[rocket::async_test]
     async fn unseen_flag_set_when_student_activity_newer_than_coach() {
         let db = TestDbBuilder::new()
             .coach("coach", None)

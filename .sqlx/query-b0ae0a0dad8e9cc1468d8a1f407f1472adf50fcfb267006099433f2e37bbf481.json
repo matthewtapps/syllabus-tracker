@@ -1,0 +1,56 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT sa.id AS \"id!: i64\",\n                  sa.student_syllabus_technique_id AS \"sst_id!: i64\",\n                  sst.technique_id AS \"technique_id!: i64\",\n                  t.name AS \"technique_name!: String\",\n                  sa.attempted_at AS \"attempted_at!: NaiveDateTime\",\n                  sa.coach_note, sa.student_note\n           FROM syllabus_attempts sa\n           JOIN student_syllabus_techniques sst ON sst.id = sa.student_syllabus_technique_id\n           JOIN syllabus_assignments asn ON asn.id = sst.assignment_id\n           JOIN techniques t ON t.id = sst.technique_id\n           WHERE asn.student_id = ?\n           ORDER BY sa.attempted_at DESC, sa.id DESC\n           LIMIT ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "id!: i64",
+        "ordinal": 0,
+        "type_info": "Integer"
+      },
+      {
+        "name": "sst_id!: i64",
+        "ordinal": 1,
+        "type_info": "Integer"
+      },
+      {
+        "name": "technique_id!: i64",
+        "ordinal": 2,
+        "type_info": "Integer"
+      },
+      {
+        "name": "technique_name!: String",
+        "ordinal": 3,
+        "type_info": "Text"
+      },
+      {
+        "name": "attempted_at!: NaiveDateTime",
+        "ordinal": 4,
+        "type_info": "Datetime"
+      },
+      {
+        "name": "coach_note",
+        "ordinal": 5,
+        "type_info": "Text"
+      },
+      {
+        "name": "student_note",
+        "ordinal": 6,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": [
+      true,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true
+    ]
+  },
+  "hash": "b0ae0a0dad8e9cc1468d8a1f407f1472adf50fcfb267006099433f2e37bbf481"
+}
