@@ -299,9 +299,17 @@ function UnauthedRoutes({ onAuthSuccess }: { onAuthSuccess: () => void }) {
 }
 
 function AppToaster() {
+  // Bottom-center matches the mobile convention (Material Snackbars, iOS
+  // bottom banners, sonner's own examples): the toast sits close to the
+  // thumb and stays clear of the page header / breadcrumbs at the top.
+  // mobileOffset lifts the toast above the fixed bottom-nav strip on
+  // small screens; the nav is `sm:hidden`, so above the `sm` breakpoint
+  // the default offset is enough.
   return (
     <Toaster
-      position="top-center"
+      position="bottom-center"
+      offset="24px"
+      mobileOffset={{ bottom: "calc(env(safe-area-inset-bottom) + 72px)" }}
       closeButton
       toastOptions={{
         classNames: {

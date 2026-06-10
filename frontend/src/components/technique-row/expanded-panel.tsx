@@ -4,7 +4,6 @@ import { DescriptionBlock } from "./description-block";
 import { TagsBlock } from "./tags-block";
 import { LibraryStatsBlock } from "./library-stats-block";
 import { VideosBlock } from "./videos-block";
-import { PinButton } from "./pin-button";
 import {
   AttemptsBlock,
   EditDefinitionBlock,
@@ -73,8 +72,6 @@ function BlockRenderer({
           onVideoScrolled={onVideoScrolled}
         />
       );
-    case "pin-button":
-      return <PinButton />;
     case "edit-definition":
       return <EditDefinitionBlock />;
     case "notes-student":

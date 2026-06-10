@@ -1,13 +1,19 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useParams, Navigate } from 'react-router-dom';
 import { Pin } from 'lucide-react';
+import { toast } from 'sonner';
 import { Accordion } from '@/components/ui/accordion';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/empty-state';
 import { TechniqueRow } from '@/components/technique-row';
 import { useStudentPinnedTechniques } from '@/lib/queries';
+import { usePinTechnique, useUnpinTechnique } from '@/lib/mutations';
 import { useUser } from '@/lib/current-user-context';
 import { isCoachOrAdmin } from '@/lib/api';
+import type { LibraryTechniqueRow } from '@/lib/api';
+import { cn } from '@/lib/utils';
+
+const EXIT_MS = 220;
 
 export default function StudentPinnedPage() {
   const params = useParams<{ id: string }>();
@@ -35,10 +41,53 @@ function PinnedListing({
   isOwnView: boolean;
 }) {
   const [expandedValue, setExpandedValue] = useState<string>('');
+  const [exitingIds, setExitingIds] = useState<Set<number>>(new Set());
   const query = useStudentPinnedTechniques(studentId);
+  const pinMutation = usePinTechnique(studentId);
+  const unpinMutation = useUnpinTechnique(studentId);
   const techniques = useMemo(() => query.data ?? [], [query.data]);
   const loading = query.isLoading;
   const error = query.error ? 'Failed to load pinned techniques.' : null;
+
+  // Two-phase unpin so the row can animate out: flag the row for exit
+  // styling, wait for the transition to play, then fire the mutation. The
+  // toast carries an Undo button that re-pins the technique; the optimistic
+  // pin mutation slips the row back into the cache.
+  const handleUnpinIntent = useCallback(
+    (technique: LibraryTechniqueRow) => {
+      setExitingIds((prev) => {
+        if (prev.has(technique.id)) return prev;
+        const next = new Set(prev);
+        next.add(technique.id);
+        return next;
+      });
+      window.setTimeout(async () => {
+        try {
+          await unpinMutation.mutateAsync(technique.id);
+          toast.success(`Unpinned ${technique.name}`, {
+            action: {
+              label: 'Undo',
+              onClick: () => {
+                pinMutation.mutate(technique);
+              },
+            },
+          });
+        } catch (err) {
+          toast.error(
+            err instanceof Error ? err.message : 'Failed to unpin technique',
+          );
+        } finally {
+          setExitingIds((prev) => {
+            if (!prev.has(technique.id)) return prev;
+            const next = new Set(prev);
+            next.delete(technique.id);
+            return next;
+          });
+        }
+      }, EXIT_MS);
+    },
+    [pinMutation, unpinMutation],
+  );
 
   return (
     <div className="container mx-auto px-4 py-6 sm:px-6 md:py-8">
@@ -74,15 +123,20 @@ function PinnedListing({
             </Button>
           </div>
         ) : techniques.length === 0 ? (
-          <EmptyState
-            icon={Pin}
-            title="No pins yet"
-            description={
-              isOwnView
-                ? 'Pin techniques from the library to keep them within reach.'
-                : 'This student has not pinned anything from the library yet.'
-            }
-          />
+          // animate-in fires every mount, so the empty state slides down
+          // from the top after the last technique finishes sliding away
+          // (rather than snapping into place).
+          <div className="animate-in fade-in-0 slide-in-from-top-2 duration-300">
+            <EmptyState
+              icon={Pin}
+              title="No pins yet"
+              description={
+                isOwnView
+                  ? 'Pin techniques from the library to keep them within reach.'
+                  : 'This student has not pinned anything from the library yet.'
+              }
+            />
+          </div>
         ) : (
           <Accordion
             type="single"
@@ -92,14 +146,30 @@ function PinnedListing({
           >
             {techniques.map((t) => {
               const value = String(t.id);
+              const exiting = exitingIds.has(t.id);
               return (
-                <TechniqueRow
+                <div
                   key={t.id}
-                  technique={t}
-                  context={{ kind: 'student-pinned', studentId }}
-                  value={value}
-                  isOpen={expandedValue === value}
-                />
+                  className={cn(
+                    'grid transition-[grid-template-rows,opacity] duration-200 ease-out',
+                    exiting
+                      ? 'grid-rows-[0fr] opacity-0 pointer-events-none'
+                      : 'grid-rows-[1fr] opacity-100',
+                  )}
+                >
+                  <div className="min-h-0 overflow-hidden">
+                    <TechniqueRow
+                      technique={t}
+                      context={{
+                        kind: 'student-pinned',
+                        studentId,
+                        onUnpinIntent: isOwnView ? handleUnpinIntent : undefined,
+                      }}
+                      value={value}
+                      isOpen={expandedValue === value}
+                    />
+                  </div>
+                </div>
               );
             })}
           </Accordion>

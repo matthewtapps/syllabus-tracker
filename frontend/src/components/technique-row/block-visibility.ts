@@ -2,13 +2,14 @@ import type { Role } from "@/lib/api";
 import type { RowContext } from "./technique-row-context";
 
 // Stable ids for each block the expanded panel can render. Adding a new
-// block means adding an entry here and a case to expanded-panel.tsx.
+// block means adding an entry here and a case to expanded-panel.tsx. The
+// pin button is NOT a body block; it's rendered inline in the row header
+// so it's reachable without expanding the row.
 export type BlockId =
   | "description"
   | "tags"
   | "library-stats"
   | "videos"
-  | "pin-button"
   | "edit-definition"
   | "notes-student"
   | "notes-coach"
@@ -26,12 +27,12 @@ export type RowKind = RowContext["kind"];
 // student-syllabus blocks that are currently listed but rendered as stubs.
 export const BLOCK_VISIBILITY = {
   "global-library": {
-    student: ["description", "tags", "videos", "pin-button"],
+    student: ["description", "tags", "videos"],
     coach: ["description", "tags", "library-stats", "videos", "edit-definition"],
     admin: ["description", "tags", "library-stats", "videos", "edit-definition"],
   },
   "student-pinned": {
-    student: ["description", "tags", "videos", "pin-button"],
+    student: ["description", "tags", "videos"],
     coach: ["description", "tags", "videos"],
     admin: ["description", "tags", "videos"],
   },

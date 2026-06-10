@@ -1,13 +1,16 @@
 import { useEffect, useMemo, useState } from "react";
+import * as AccordionPrimitive from "@radix-ui/react-accordion";
+import { ChevronDownIcon } from "lucide-react";
 import type { LibraryTechniqueRow } from "@/lib/api";
 import { useUser } from "@/lib/current-user-context";
 import {
   AccordionContent,
   AccordionItem,
-  AccordionTrigger,
 } from "@/components/ui/accordion";
+import { cn } from "@/lib/utils";
 import { ExpandedPanel } from "./expanded-panel";
 import { Header } from "./header";
+import { PinButton } from "./pin-button";
 import {
   TechniqueRowContext,
   type RowContext,
@@ -44,11 +47,18 @@ function useDelayedFalse(open: boolean, delay = 250): boolean {
 }
 
 // One row component for every surface (global library, student pinned,
-// student syllabus). The internal compound context populates `role`,
+// student syllabus). Internal compound context populates `role`,
 // `viewerIsOwner`, and the discriminated row context once at the top so
-// hot block lists do not re-subscribe to useUser() per row. Trigger and
-// content live inside the same Radix Accordion item so opening flows
-// directly out of the header instead of stacking a second card below.
+// hot block lists do not re-subscribe to useUser() per row. The pin
+// button sits in the row chrome (next to the chevron) so students can
+// pin/unpin without expanding the row.
+//
+// We render two AccordionPrimitive.Triggers in the same Item: the title
+// area on the left (keyboard focusable, the canonical control) and the
+// trailing chevron strip (mouse-only, tabIndex=-1 + aria-hidden) so
+// tapping the caret on touch still toggles. The pin button is a real
+// <button> placed between them, not nested, so it doesn't violate the
+// "no interactive content inside a button" rule.
 export function TechniqueRow({
   technique,
   context,
@@ -80,16 +90,52 @@ export function TechniqueRow({
     [context, technique, user.role, viewerIsOwner],
   );
 
+  // The pin button is reachable from the row chrome (no expand required)
+  // for student viewers on the global library and student-pinned
+  // surfaces. Coaches viewing either surface, and any student-syllabus
+  // surface, don't render it.
+  const showPinButton =
+    viewerIsOwner &&
+    (context.kind === "global-library" || context.kind === "student-pinned");
+
   return (
     <TechniqueRowContext.Provider value={ctxValue}>
       <AccordionItem
         value={value}
         id={`technique-row-${technique.id}`}
-        className="border-b last:border-b-0"
+        className="group border-b last:border-b-0"
       >
-        <AccordionTrigger className="px-4 py-3 hover:bg-muted/40 hover:no-underline data-[state=open]:bg-muted/30">
-          <Header />
-        </AccordionTrigger>
+        <AccordionPrimitive.Header asChild>
+          <div
+            className={cn(
+              "flex items-stretch transition-colors",
+              "hover:bg-muted/40 group-data-[state=open]:bg-muted/30",
+            )}
+          >
+            <AccordionPrimitive.Trigger
+              className={cn(
+                "flex min-w-0 flex-1 items-start gap-3 px-4 py-3 text-left text-sm font-medium outline-none",
+                "focus-visible:bg-muted/50",
+              )}
+            >
+              <Header />
+            </AccordionPrimitive.Trigger>
+            {showPinButton && (
+              <div className="flex shrink-0 items-center pl-1">
+                <PinButton />
+              </div>
+            )}
+            <AccordionPrimitive.Trigger
+              tabIndex={-1}
+              aria-hidden
+              className="flex shrink-0 items-center px-3 outline-none focus-visible:bg-muted/50"
+            >
+              <ChevronDownIcon
+                className="h-4 w-4 text-muted-foreground transition-transform duration-200 group-data-[state=open]:rotate-180"
+              />
+            </AccordionPrimitive.Trigger>
+          </div>
+        </AccordionPrimitive.Header>
         <AccordionContent className="px-4 pb-4 pt-1">
           {renderContent ? (
             <ExpandedPanel
