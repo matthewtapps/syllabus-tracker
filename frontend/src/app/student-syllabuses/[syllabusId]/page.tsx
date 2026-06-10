@@ -1,8 +1,9 @@
 import { useMemo, useState } from 'react';
 import { Navigate, useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, NotebookPen, Trash2 } from 'lucide-react';
+import { ArrowLeft, NotebookPen, Search, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Accordion } from '@/components/ui/accordion';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -12,6 +13,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
 import { EmptyState } from '@/components/empty-state';
 import { TechniqueRow } from '@/components/technique-row';
 import { useStudentSyllabusTechniques } from '@/lib/queries';
@@ -79,7 +81,38 @@ function Detail({
   );
   const [expandedValue, setExpandedValue] = useState<string>('');
   const [unassignOpen, setUnassignOpen] = useState(false);
+  const [search, setSearch] = useState('');
+  const [activeTags, setActiveTags] = useState<string[]>([]);
   const unassignMutation = useUnassignSyllabusFromStudent();
+
+  const availableTags = useMemo(() => {
+    const set = new Set<string>();
+    techniques.forEach((sst) => sst.tags.forEach((tag) => set.add(tag.name)));
+    return Array.from(set).sort();
+  }, [techniques]);
+
+  const filtered = useMemo(() => {
+    const needle = search.trim().toLowerCase();
+    return techniques.filter((sst) => {
+      const matchesText =
+        !needle ||
+        sst.technique_name.toLowerCase().includes(needle) ||
+        sst.technique_description.toLowerCase().includes(needle) ||
+        sst.tags.some((tag) => tag.name.toLowerCase().includes(needle));
+      const matchesTags =
+        activeTags.length === 0 ||
+        activeTags.every((tag) =>
+          sst.tags.some((x) => x.name === tag),
+        );
+      return matchesText && matchesTags;
+    });
+  }, [techniques, search, activeTags]);
+
+  function toggleTag(tag: string) {
+    setActiveTags((prev) =>
+      prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag],
+    );
+  }
 
   async function handleUnassign() {
     try {
@@ -171,6 +204,58 @@ function Detail({
         </div>
       </div>
 
+      {techniques.length > 0 && (
+        <div className="space-y-3">
+          <div className="relative">
+            <Search
+              className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
+              aria-hidden
+            />
+            <Input
+              placeholder="Search techniques"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="pl-9"
+            />
+          </div>
+          {availableTags.length > 0 && (
+            <div className="flex flex-wrap gap-1.5">
+              {availableTags.map((tag) => {
+                const active = activeTags.includes(tag);
+                return (
+                  <Badge
+                    key={tag}
+                    variant={active ? 'default' : 'outline'}
+                    className="cursor-pointer select-none"
+                    onClick={() => toggleTag(tag)}
+                  >
+                    {tag}
+                  </Badge>
+                );
+              })}
+              {activeTags.length > 0 && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 px-2 text-xs"
+                  onClick={() => setActiveTags([])}
+                >
+                  Clear
+                </Button>
+              )}
+            </div>
+          )}
+          <p className="text-xs text-muted-foreground">
+            {filtered.length === techniques.length
+              ? `${techniques.length} ${
+                  techniques.length === 1 ? 'technique' : 'techniques'
+                }`
+              : `${filtered.length} of ${techniques.length} techniques`}
+          </p>
+        </div>
+      )}
+
       <div className="overflow-hidden rounded-lg border border-border bg-card">
         {techniques.length === 0 ? (
           <EmptyState
@@ -178,6 +263,10 @@ function Detail({
             title="No techniques yet"
             description="The coach hasn't added any techniques to this syllabus yet."
           />
+        ) : filtered.length === 0 ? (
+          <p className="px-6 py-10 text-center text-sm text-muted-foreground">
+            No techniques match the current filters.
+          </p>
         ) : (
           <Accordion
             type="single"
@@ -185,7 +274,7 @@ function Detail({
             value={expandedValue}
             onValueChange={setExpandedValue}
           >
-            {techniques.map((sst) => {
+            {filtered.map((sst) => {
               const value = `sst-${sst.id}`;
               return (
                 <TechniqueRow
