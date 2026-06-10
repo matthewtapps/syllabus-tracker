@@ -9,11 +9,14 @@ import {
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 import { Layout } from './components/layout';
 import { SwUpdateToast } from './components/sw-update-toast';
+import { AuthErrorBoundary } from './components/auth-error-boundary';
 import { RequireAdmin, RequireAuth, RequireCoach } from './components/route-guards';
 import { TelemetryProvider } from './context/telemetry';
 import { CapabilitiesProvider } from './context/capabilities';
+import { CurrentUserProvider } from './lib/current-user';
 import { useCapabilities, useCurrentUser } from './lib/queries';
 import { qk } from './lib/query-keys';
+import type { User } from './lib/api';
 
 const LoginPage = lazy(() => import('./app/login/page'));
 const StudentTechniques = lazy(() => import('./app/student-techniques/page'));
@@ -25,6 +28,7 @@ const RegisterUserPage = lazy(() => import('./app/registration/page'));
 const AdminPage = lazy(() => import('./app/admin/page'));
 const CollectionsPage = lazy(() => import('./app/collections/page'));
 const LibraryPage = lazy(() => import('./app/library/page'));
+const StudentPinnedPage = lazy(() => import('./app/student-pinned/page'));
 const CollectionDetailPage = lazy(() => import('./app/collections/[id]/page'));
 const InvitePage = lazy(() => import('./app/invite/page'));
 const RegisterPage = lazy(() => import('./app/register/page'));
@@ -119,133 +123,201 @@ function AppShell() {
     <Router>
       <TelemetryProvider>
         <CapabilitiesProvider value={capabilities}>
-        <Layout user={user} onLogout={handleLogout}>
-          <Suspense fallback={<RouteLoading />}>
-          {/* The `user!` assertions on protected routes are safe: each one
-              sits inside RequireAuth/RequireCoach/RequireAdmin, which
-              redirect when user is null before the inner element renders. */}
-          <Routes>
-            <Route
-              path="/login"
-              element={user ? <Navigate to="/dashboard" replace /> : <LoginPage onLoginSuccess={handleAuthSuccess} />}
-            />
-            <Route
-              path="/invite/:token"
-              element={<InvitePage onClaimSuccess={handleAuthSuccess} />}
-            />
-            <Route
-              path="/register"
-              element={user ? <Navigate to="/dashboard" replace /> : <RegisterPage onRegisterSuccess={handleAuthSuccess} />}
-            />
-            <Route
-              path="/forgot-password"
-              element={user ? <Navigate to="/dashboard" replace /> : <ForgotPasswordPage />}
-            />
-            <Route
-              path="/student/:id"
-              element={
-                <RequireAuth>
-                  <StudentTechniques user={user!} />
-                </RequireAuth>
-              }
-            />
-            <Route
-              path="/student/:id/technique/:techniqueId"
-              element={
-                <RequireAuth>
-                  <StudentTechniqueDetail user={user!} />
-                </RequireAuth>
-              }
-            />
-            <Route
-              path="/students"
-              element={
-                <RequireCoach>
-                  <StudentsList user={user!} />
-                </RequireCoach>
-              }
-            />
-            <Route
-              path="/dashboard"
-              element={
-                <RequireAuth>
-                  <Dashboard user={user!} />
-                </RequireAuth>
-              }
-            />
-            <Route
-              path="/profile"
-              element={
-                <RequireAuth>
-                  <ProfilePage />
-                </RequireAuth>
-              }
-            />
-            <Route
-              path="/register-user"
-              element={
-                <RequireCoach>
-                  <RegisterUserPage user={user!} />
-                </RequireCoach>
-              }
-            />
-            <Route
-              path="/admin"
-              element={
-                <RequireAdmin>
-                  <AdminPage />
-                </RequireAdmin>
-              }
-            />
-            <Route
-              path="/library"
-              element={
-                <RequireCoach>
-                  <LibraryPage />
-                </RequireCoach>
-              }
-            />
-            <Route
-              path="/collections"
-              element={
-                <RequireCoach>
-                  <CollectionsPage />
-                </RequireCoach>
-              }
-            />
-            <Route
-              path="/collections/:id"
-              element={
-                <RequireCoach>
-                  <CollectionDetailPage />
-                </RequireCoach>
-              }
-            />
-            <Route path="/" element={<Navigate to={user ? "/dashboard" : "/login"} replace />} />
-          </Routes>
-          </Suspense>
-        </Layout>
+          {user ? (
+            <AuthedAppShell user={user} onLogout={handleLogout} />
+          ) : (
+            <UnauthedShell onAuthSuccess={handleAuthSuccess} />
+          )}
+          <SwUpdateToast />
+          <AppToaster />
         </CapabilitiesProvider>
-        <SwUpdateToast />
-        <Toaster
-          position="top-center"
-          closeButton
-          toastOptions={{
-            classNames: {
-              toast: "group toast group-[.toast-group]:bg-background group-[.toast-group]:text-foreground group-[.toast-group]:border-border group-[.toast-group]:shadow-lg",
-              title: "text-sm font-semibold",
-              description: "text-sm opacity-90",
-              actionButton: "bg-primary text-primary-foreground",
-              cancelButton: "bg-muted text-muted-foreground",
-              error: "!bg-destructive/15 !border-destructive/30 !text-destructive",
-              success: "!bg-default/15 !border-default/30 !text-default-foreground",
-              warning: "!bg-secondary/20 !border-secondary/30 !text-secondary-foreground",
-              info: "!bg-default/15 !border-default/30 !text-default-foreground",
-            },
-          }}
-        />
       </TelemetryProvider>
     </Router>
+  );
+}
+
+// Authenticated subtree. CurrentUserProvider is mounted here so useUser()
+// can be called from any descendant page or component. AuthErrorBoundary
+// wraps the provider so an unexpected useUser() throw (provider missing,
+// user vanished mid-session) renders a recovery panel instead of unmounting
+// the whole app.
+function AuthedAppShell({
+  user,
+  onLogout,
+}: {
+  user: User;
+  onLogout: () => void;
+}) {
+  return (
+    <AuthErrorBoundary>
+      <CurrentUserProvider user={user}>
+        <Layout user={user} onLogout={onLogout}>
+          <Suspense fallback={<RouteLoading />}>
+            <AuthedRoutes user={user} />
+          </Suspense>
+        </Layout>
+      </CurrentUserProvider>
+    </AuthErrorBoundary>
+  );
+}
+
+// Unauthenticated subtree. Login / register / invite / forgot-password
+// render outside the provider so useUser() callsites never see a null
+// value and the error boundary's recovery panel is reserved for the case
+// where auth actually broke.
+function UnauthedShell({ onAuthSuccess }: { onAuthSuccess: () => void }) {
+  return (
+    <Layout user={null} onLogout={() => undefined}>
+      <Suspense fallback={<RouteLoading />}>
+        <UnauthedRoutes onAuthSuccess={onAuthSuccess} />
+      </Suspense>
+    </Layout>
+  );
+}
+
+// PR 1 keeps the user prop on existing pages; PR 2 sweeps these to use
+// useUser() directly. New PR 1 pages (student-pinned) call useUser()
+// themselves and do not receive the prop.
+function AuthedRoutes({ user }: { user: User }) {
+  return (
+    <Routes>
+      <Route path="/login" element={<Navigate to="/dashboard" replace />} />
+      <Route path="/register" element={<Navigate to="/dashboard" replace />} />
+      <Route path="/forgot-password" element={<Navigate to="/dashboard" replace />} />
+      <Route
+        path="/student/:id"
+        element={
+          <RequireAuth>
+            <StudentTechniques user={user} />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/student/:id/technique/:techniqueId"
+        element={
+          <RequireAuth>
+            <StudentTechniqueDetail user={user} />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/students"
+        element={
+          <RequireCoach>
+            <StudentsList user={user} />
+          </RequireCoach>
+        }
+      />
+      <Route
+        path="/dashboard"
+        element={
+          <RequireAuth>
+            <Dashboard user={user} />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/profile"
+        element={
+          <RequireAuth>
+            <ProfilePage />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/register-user"
+        element={
+          <RequireCoach>
+            <RegisterUserPage user={user} />
+          </RequireCoach>
+        }
+      />
+      <Route
+        path="/admin"
+        element={
+          <RequireAdmin>
+            <AdminPage />
+          </RequireAdmin>
+        }
+      />
+      <Route
+        path="/library"
+        element={
+          <RequireAuth>
+            <LibraryPage />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/student/:id/pinned"
+        element={
+          <RequireAuth>
+            <StudentPinnedPage />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/collections"
+        element={
+          <RequireCoach>
+            <CollectionsPage />
+          </RequireCoach>
+        }
+      />
+      <Route
+        path="/collections/:id"
+        element={
+          <RequireCoach>
+            <CollectionDetailPage />
+          </RequireCoach>
+        }
+      />
+      <Route path="/" element={<Navigate to="/dashboard" replace />} />
+      <Route path="*" element={<Navigate to="/dashboard" replace />} />
+    </Routes>
+  );
+}
+
+function UnauthedRoutes({ onAuthSuccess }: { onAuthSuccess: () => void }) {
+  return (
+    <Routes>
+      <Route
+        path="/login"
+        element={<LoginPage onLoginSuccess={onAuthSuccess} />}
+      />
+      <Route
+        path="/invite/:token"
+        element={<InvitePage onClaimSuccess={onAuthSuccess} />}
+      />
+      <Route
+        path="/register"
+        element={<RegisterPage onRegisterSuccess={onAuthSuccess} />}
+      />
+      <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+      <Route path="*" element={<Navigate to="/login" replace />} />
+    </Routes>
+  );
+}
+
+function AppToaster() {
+  return (
+    <Toaster
+      position="top-center"
+      closeButton
+      toastOptions={{
+        classNames: {
+          toast: "group toast group-[.toast-group]:bg-background group-[.toast-group]:text-foreground group-[.toast-group]:border-border group-[.toast-group]:shadow-lg",
+          title: "text-sm font-semibold",
+          description: "text-sm opacity-90",
+          actionButton: "bg-primary text-primary-foreground",
+          cancelButton: "bg-muted text-muted-foreground",
+          error: "!bg-destructive/15 !border-destructive/30 !text-destructive",
+          success: "!bg-default/15 !border-default/30 !text-default-foreground",
+          warning: "!bg-secondary/20 !border-secondary/30 !text-secondary-foreground",
+          info: "!bg-default/15 !border-default/30 !text-default-foreground",
+        },
+      }}
+    />
   );
 }
 

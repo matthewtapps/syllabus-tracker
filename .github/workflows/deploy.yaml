@@ -170,6 +170,31 @@ jobs:
         env:
           SQLX_OFFLINE: "true"
 
+  # Frontend component tests via Vitest Browser Mode (Playwright /
+  # Chromium). Runs on every push and PR. Kept separate from the build
+  # job so a test failure fails fast without spinning up docker buildx.
+  frontend_test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.8.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+      - name: Install frontend deps
+        run: pnpm install --frozen-lockfile
+        working-directory: frontend
+      - name: Install Playwright browsers
+        run: pnpm exec playwright install --with-deps chromium
+        working-directory: frontend
+      - name: Run vitest
+        run: pnpm test
+        working-directory: frontend
+
   apply_tofu:
     needs: read_platform
     if: github.event_name != 'pull_request' && needs.read_platform.outputs.host_age_ready == 'true'
@@ -200,7 +225,7 @@ jobs:
   # pushed to GHCR for the deploy chain; on pull_request the build
   # runs as a deployability check with push: false and no GHCR login.
   build_backend:
-    needs: [lint, test, sqlx-check]
+    needs: [lint, test, sqlx-check, frontend_test]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -227,7 +252,7 @@ jobs:
   # honeycomb key is left blank: the build is a deployability check, not
   # a deployable artifact.
   build_frontend:
-    needs: [lint, test, sqlx-check]
+    needs: [lint, test, sqlx-check, frontend_test]
     runs-on: ubuntu-latest
     environment: production   # needs PLATFORM_STATE_R2_* secrets for tofu state read on push events
     steps:

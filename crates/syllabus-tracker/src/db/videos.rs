@@ -199,9 +199,43 @@ pub async fn list_videos_for_technique(
     Ok(rows.into_iter().map(Video::from).collect())
 }
 
+/// Lists the globally-visible (not soft-deleted, not globally-hidden) videos
+/// for a technique. Used by the library video read for student viewers. The
+/// legacy per-student `video_student_visibility` table is intentionally NOT
+/// joined: library context is "see the technique in the abstract", and
+/// per-student overrides only apply inside a syllabus assignment.
+#[instrument(skip(pool))]
+pub async fn list_videos_for_technique_global_visible(
+    pool: &Pool<Sqlite>,
+    technique_id: i64,
+) -> Result<Vec<Video>, AppError> {
+    let rows = sqlx::query_as!(
+        DbVideo,
+        "SELECT id, technique_id, title, description, position, kind,
+                processing_status, processing_error, storage_key, bytes,
+                duration_seconds, width, height,
+                external_url, external_host, external_video_id, uploaded_by_id,
+                created_at, updated_at, hidden_at
+         FROM videos
+         WHERE technique_id = ?
+           AND deleted_at IS NULL
+           AND hidden_at IS NULL
+         ORDER BY position ASC, id ASC",
+        technique_id,
+    )
+    .fetch_all(pool)
+    .await?;
+    Ok(rows.into_iter().map(Video::from).collect())
+}
+
 /// Lists videos for a technique, filtered to what `student_id` should
 /// actually see (effective visibility: per-student override beats global
 /// hide, soft-deleted videos always excluded).
+#[deprecated(
+    note = "Legacy per-student visibility join. Library reads should use \
+            list_videos_for_technique_global_visible; syllabus-context \
+            reads (PR 3+) use the per-syllabus override table."
+)]
 #[instrument(skip(pool))]
 pub async fn list_videos_for_technique_visible_to(
     pool: &Pool<Sqlite>,

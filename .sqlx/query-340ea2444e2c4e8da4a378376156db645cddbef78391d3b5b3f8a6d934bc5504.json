@@ -1,0 +1,62 @@
+{
+  "db_name": "SQLite",
+  "query": "\n        SELECT\n            t.id AS \"id!: i64\",\n            t.name,\n            t.description,\n            spt.pinned_at AS \"pinned_at!: NaiveDateTime\",\n            COALESCE((SELECT COUNT(*) FROM collection_techniques ct WHERE ct.technique_id = t.id), 0) AS \"collection_count!: i64\",\n            COALESCE((SELECT COUNT(DISTINCT st.student_id) FROM student_techniques st WHERE st.technique_id = t.id), 0) AS \"student_count!: i64\",\n            COALESCE((SELECT COUNT(*) FROM videos v WHERE v.technique_id = t.id AND v.deleted_at IS NULL), 0) AS \"video_count!: i64\",\n            (SELECT MAX(st.updated_at) FROM student_techniques st WHERE st.technique_id = t.id) AS \"last_activity_at?: NaiveDateTime\"\n        FROM student_pinned_techniques spt\n        JOIN techniques t ON t.id = spt.technique_id\n        WHERE spt.student_id = ?\n        ORDER BY spt.pinned_at DESC\n        ",
+  "describe": {
+    "columns": [
+      {
+        "name": "id!: i64",
+        "ordinal": 0,
+        "type_info": "Integer"
+      },
+      {
+        "name": "name",
+        "ordinal": 1,
+        "type_info": "Text"
+      },
+      {
+        "name": "description",
+        "ordinal": 2,
+        "type_info": "Text"
+      },
+      {
+        "name": "pinned_at!: NaiveDateTime",
+        "ordinal": 3,
+        "type_info": "Datetime"
+      },
+      {
+        "name": "collection_count!: i64",
+        "ordinal": 4,
+        "type_info": "Null"
+      },
+      {
+        "name": "student_count!: i64",
+        "ordinal": 5,
+        "type_info": "Null"
+      },
+      {
+        "name": "video_count!: i64",
+        "ordinal": 6,
+        "type_info": "Null"
+      },
+      {
+        "name": "last_activity_at?: NaiveDateTime",
+        "ordinal": 7,
+        "type_info": "Null"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      true,
+      false,
+      true,
+      false,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "340ea2444e2c4e8da4a378376156db645cddbef78391d3b5b3f8a6d934bc5504"
+}

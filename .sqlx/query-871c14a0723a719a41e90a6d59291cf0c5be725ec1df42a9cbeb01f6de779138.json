@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "DELETE FROM student_pinned_techniques WHERE student_id = ? AND technique_id = ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "871c14a0723a719a41e90a6d59291cf0c5be725ec1df42a9cbeb01f6de779138"
+}

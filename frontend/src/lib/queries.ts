@@ -16,6 +16,8 @@ import {
   getLibraryTechniques,
   getLibraryTechniqueStats,
   getRecentAttemptsForStudent,
+  getStudentLibrary,
+  getStudentPinnedTechniques,
   getStudentTechniqueDetail,
   getStudentTechniques,
   getStudents,
@@ -190,6 +192,26 @@ export function useLibraryTechniques() {
   return useQuery({
     queryKey: qk.libraryTechniques(),
     queryFn: getLibraryTechniques,
+  });
+}
+
+export function useStudentLibrary(studentId: number | undefined) {
+  return useQuery({
+    queryKey: qk.studentLibrary(studentId ?? 0),
+    queryFn:
+      typeof studentId === "number" && Number.isFinite(studentId)
+        ? () => getStudentLibrary(studentId)
+        : skipToken,
+  });
+}
+
+export function useStudentPinnedTechniques(studentId: number | undefined) {
+  return useQuery({
+    queryKey: qk.pinnedTechniques(studentId ?? 0),
+    queryFn:
+      typeof studentId === "number" && Number.isFinite(studentId)
+        ? () => getStudentPinnedTechniques(studentId)
+        : skipToken,
   });
 }
 

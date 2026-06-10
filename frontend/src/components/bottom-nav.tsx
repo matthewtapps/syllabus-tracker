@@ -6,6 +6,7 @@ import {
   LayoutDashboard,
   Library,
   LogOut,
+  Pin,
   Shield,
   UserPlus,
   UserRound,
@@ -44,12 +45,14 @@ function buildTabs(user: User): Tab[] {
     tabs.push({ to: '/students', label: 'Students', icon: Users });
     tabs.push({
       to: '/library',
-      label: 'Techniques',
+      label: 'Library',
       icon: Library,
       alsoActiveOn: ['/collections'],
     });
   } else {
     tabs.push({ to: `/student/${user.id}`, label: 'My techniques', icon: Library });
+    tabs.push({ to: '/library', label: 'Library', icon: Library });
+    tabs.push({ to: `/student/${user.id}/pinned`, label: 'Pinned', icon: Pin });
   }
   return tabs;
 }

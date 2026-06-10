@@ -11,6 +11,7 @@ pub enum Permission {
     EditOwnProfile,
     ViewOwnTechniques,
     EditOwnNotes,
+    ViewLibrary,
 
     ViewAllStudents,
     EditAllTechniques,
@@ -44,6 +45,7 @@ static STUDENT_PERMISSIONS: Lazy<HashSet<Permission>> = Lazy::new(|| {
     permissions.insert(Permission::EditOwnProfile);
     permissions.insert(Permission::ViewOwnTechniques);
     permissions.insert(Permission::EditOwnNotes);
+    permissions.insert(Permission::ViewLibrary);
 
     permissions
 });
