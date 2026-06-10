@@ -4,16 +4,21 @@ import {
   BookOpen,
   ChevronRight,
   GraduationCap,
+  History,
   NotebookPen,
   Pin,
   UserRound,
 } from 'lucide-react';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
-import { useAllUsers, useStudentSyllabuses } from '@/lib/queries';
+import {
+  useAllUsers,
+  useRecentAttempts,
+} from '@/lib/queries';
 import { useUser } from '@/lib/current-user-context';
 import { isCoachOrAdmin } from '@/lib/api';
 import { cn } from '@/lib/utils';
+import { formatRelative } from '@/lib/dates';
 import type { User } from '@/lib/api';
 
 function initials(u: Pick<User, 'display_name' | 'username'>): string {
@@ -58,14 +63,10 @@ function ProfileHub({
     if (isOwnView) return viewer;
     return (usersQuery.data ?? []).find((u) => u.id === studentId);
   }, [isOwnView, viewer, usersQuery.data, studentId]);
-  const syllabusesQuery = useStudentSyllabuses(studentId);
-  const assignments = useMemo(
-    () => syllabusesQuery.data ?? [],
-    [syllabusesQuery.data],
-  );
+  const recentQuery = useRecentAttempts(studentId, 5);
+  const recent = useMemo(() => recentQuery.data ?? [], [recentQuery.data]);
 
-  const loading =
-    (!isOwnView && usersQuery.isLoading) || syllabusesQuery.isLoading;
+  const loading = !isOwnView && usersQuery.isLoading;
 
   if (loading || !student) {
     return (
@@ -119,84 +120,73 @@ function ProfileHub({
           {isOwnView ? 'Your spaces' : `${displayName}'s spaces`}
         </h2>
         <div className="overflow-hidden rounded-lg border border-border bg-card">
+          {/* The Library is a global gym-wide resource. Students see a link
+            * to their own library view; coaches don't need it here since
+            * the Library nav entry already takes them there. */}
+          {isOwnView && (
+            <HubLink to="/library" icon={BookOpen} title="Library" />
+          )}
           <HubLink
-            to="/library"
-            icon={BookOpen}
-            title="Library"
-            description={
-              isOwnView
-                ? 'Every technique in the gym.'
-                : "Coach view of the global library."
-            }
-          />
-          <HubLink
-            to={`/student/${studentId}/syllabuses`}
+            to={`/student/${studentId}/syllabi`}
             icon={NotebookPen}
-            title={isOwnView ? 'My syllabuses' : 'Syllabuses'}
-            description={
-              assignments.length === 0
-                ? 'No active syllabuses yet.'
-                : `${assignments.length} active${
-                    assignments.length === 1 ? '' : ' syllabuses'
-                  }`
-            }
+            title={isOwnView ? 'My syllabi' : 'Syllabi'}
           />
           <HubLink
             to={`/student/${studentId}/pinned`}
             icon={Pin}
             title={isOwnView ? 'Pinned' : 'Pinned techniques'}
-            description={
-              isOwnView
-                ? 'Quick-access techniques you have pinned.'
-                : 'Techniques this student has pinned.'
-            }
             last
           />
         </div>
       </section>
 
-      {assignments.length > 0 && (
-        <section className="space-y-2">
-          <h2 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-            Active syllabuses
-          </h2>
-          <ul className="divide-y divide-border overflow-hidden rounded-lg border border-border bg-card">
-            {assignments.map((a) => (
-              <li key={a.id}>
-                <Link
-                  to={`/student/${studentId}/syllabuses/${a.syllabus_id}`}
-                  className="flex items-center justify-between gap-3 px-4 py-3 transition-colors hover:bg-muted/40"
+      <section className="space-y-2">
+        <h2 className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          <History className="h-3.5 w-3.5" aria-hidden />
+          Recent activity
+        </h2>
+        <div className="overflow-hidden rounded-lg border border-border bg-card">
+          {recentQuery.isLoading ? (
+            <div className="divide-y divide-border">
+              {Array.from({ length: 3 }).map((_, i) => (
+                <div key={i} className="px-4 py-3">
+                  <div className="h-3 w-1/3 animate-pulse rounded bg-muted" />
+                  <div className="mt-2 h-3 w-1/4 animate-pulse rounded bg-muted" />
+                </div>
+              ))}
+            </div>
+          ) : recent.length === 0 ? (
+            <p className="px-6 py-8 text-center text-sm text-muted-foreground">
+              {isOwnView
+                ? 'You have not logged any attempts yet.'
+                : `${displayName} has not logged any attempts yet.`}
+            </p>
+          ) : (
+            <ul className="divide-y divide-border">
+              {recent.map((a) => (
+                <li
+                  key={a.id}
+                  className="flex items-start justify-between gap-3 px-4 py-3"
                 >
                   <div className="min-w-0 flex-1 space-y-0.5">
-                    <p className="flex items-center gap-2 truncate text-sm font-medium">
-                      {a.syllabus_name}
-                      {a.graduated_at && (
-                        <Badge
-                          variant="outline"
-                          className="gap-1 border-status-green/40 text-status-green"
-                        >
-                          <GraduationCap className="h-3 w-3" aria-hidden />
-                          Graduated
-                        </Badge>
-                      )}
+                    <p className="truncate text-sm font-medium">
+                      {a.technique_name}
                     </p>
-                    <p className="text-xs text-muted-foreground">
-                      {a.total_count}{' '}
-                      {a.total_count === 1 ? 'technique' : 'techniques'}
-                      {a.green_count > 0 && ` · ${a.green_count} done`}
-                      {a.amber_count > 0 && ` · ${a.amber_count} doing`}
-                    </p>
+                    {(a.student_note || a.coach_note) && (
+                      <p className="line-clamp-1 text-xs text-muted-foreground">
+                        {a.student_note || a.coach_note}
+                      </p>
+                    )}
                   </div>
-                  <ChevronRight
-                    className="h-4 w-4 shrink-0 text-muted-foreground"
-                    aria-hidden
-                  />
-                </Link>
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
+                  <span className="shrink-0 text-xs text-muted-foreground">
+                    {formatRelative(a.attempted_at)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </section>
     </div>
   );
 }
@@ -205,13 +195,11 @@ function HubLink({
   to,
   icon: Icon,
   title,
-  description,
   last,
 }: {
   to: string;
   icon: typeof UserRound;
   title: string;
-  description: string;
   last?: boolean;
 }) {
   return (
@@ -223,10 +211,7 @@ function HubLink({
       )}
     >
       <Icon className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
-      <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-medium">{title}</p>
-        <p className="truncate text-xs text-muted-foreground">{description}</p>
-      </div>
+      <p className="min-w-0 flex-1 truncate text-sm font-medium">{title}</p>
       <ChevronRight
         className="h-4 w-4 shrink-0 text-muted-foreground"
         aria-hidden

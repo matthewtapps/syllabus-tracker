@@ -1,4 +1,4 @@
-import { FolderOpen, PlayIcon, Users } from "lucide-react";
+import { PlayIcon, Target } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useTechniqueRow } from "./technique-row-context";
 
@@ -7,9 +7,11 @@ import { useTechniqueRow } from "./technique-row-context";
 // panel only, so the collapsed row stays a single-line title plus a thin
 // meta strip.
 //
-// The meta strip shows student/collection counts to coaches only — these
-// are coach-relevant aggregates. Students see only the video count, and
-// the strip hides entirely when there is nothing to show.
+// The meta strip shows the video count and, in student-syllabus context,
+// also the number of attempts the student has logged on this technique.
+// Legacy aggregate counts (students assigned, collection membership) are
+// not surfaced here -- those belong in the library stats expanded block
+// for the global-library coach view.
 //
 // Title truncates with ellipsis when collapsed (so the row stays compact
 // in a long list) but wraps freely when the row is open, so long names
@@ -20,11 +22,16 @@ import { useTechniqueRow } from "./technique-row-context";
 // In student-syllabus context the row also shows a status dot (red /
 // amber / green) so coaches and students can scan progress at a glance.
 export function Header() {
-  const { context, technique, role } = useTechniqueRow();
-  const isCoach = role === "coach" || role === "admin";
-  const showVideoMeta = isCoach || technique.video_count > 0;
+  const { context, technique } = useTechniqueRow();
   const status =
     context.kind === "student-syllabus" ? context.sst.status : null;
+  const attemptCount =
+    context.kind === "student-syllabus" ? context.sst.attempt_count : null;
+
+  // Meta strip: video count is always shown; attempt count only in the
+  // student-syllabus context (visible to both the owning student and any
+  // coach viewing them).
+  const showMeta = technique.video_count > 0 || attemptCount !== null;
 
   return (
     <div className="flex min-w-0 flex-1 items-start gap-2.5">
@@ -43,20 +50,17 @@ export function Header() {
         <p className="truncate text-sm font-semibold leading-tight group-data-[state=open]:overflow-visible group-data-[state=open]:whitespace-normal group-data-[state=open]:break-words">
           {technique.name}
         </p>
-        {(isCoach || showVideoMeta) && (
+        {showMeta && (
           <span className="flex min-w-0 items-center gap-1.5 truncate whitespace-nowrap text-xs text-muted-foreground">
-            {isCoach && (
-              <>
-                <Users className="h-3 w-3 shrink-0" aria-hidden />
-                <span>{technique.student_count}</span>
-                <span aria-hidden>·</span>
-                <FolderOpen className="h-3 w-3 shrink-0" aria-hidden />
-                <span>{technique.collection_count}</span>
-                <span aria-hidden>·</span>
-              </>
-            )}
             <PlayIcon className="h-3 w-3 shrink-0" aria-hidden />
             <span>{technique.video_count}</span>
+            {attemptCount !== null && (
+              <>
+                <span aria-hidden>·</span>
+                <Target className="h-3 w-3 shrink-0" aria-hidden />
+                <span>{attemptCount}</span>
+              </>
+            )}
           </span>
         )}
       </div>
