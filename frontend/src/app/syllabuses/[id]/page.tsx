@@ -1,6 +1,16 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, Navigate, useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, NotebookPen, Pencil, Plus, Trash2, UserPlus, Users, X } from 'lucide-react';
+import {
+  ArrowLeft,
+  NotebookPen,
+  Pencil,
+  Plus,
+  Search,
+  Trash2,
+  UserPlus,
+  Users,
+  X,
+} from 'lucide-react';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { toast } from 'sonner';
@@ -28,6 +38,8 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { TracedForm } from '@/components/traced-form';
 import { EmptyState } from '@/components/empty-state';
+import { Accordion } from '@/components/ui/accordion';
+import { TechniqueRow } from '@/components/technique-row';
 import {
   useLibraryTechniques,
   useStudents,
@@ -44,7 +56,12 @@ import {
   handleApiFormError,
   useFormWithValidation,
 } from '@/components/hooks/useFormErrors';
-import type { PropagationMode, User } from '@/lib/api';
+import type {
+  LibraryTechniqueRow,
+  PropagationMode,
+  SyllabusTechniqueRow,
+  User,
+} from '@/lib/api';
 import { AssignStudentDialog } from '../components/assign-student-dialog';
 
 const editSchema = z.object({
@@ -52,6 +69,25 @@ const editSchema = z.object({
   description: z.string().max(1000).optional(),
 });
 type EditValues = z.infer<typeof editSchema>;
+
+// The syllabus detail endpoint returns SyllabusTechniqueRow shape; the
+// shared TechniqueRow expects LibraryTechniqueRow. Adapt at the page
+// boundary -- aggregate counts default to 0 since the detail response
+// does not carry them.
+function toLibraryShape(t: SyllabusTechniqueRow): LibraryTechniqueRow {
+  return {
+    id: t.technique_id,
+    name: t.name,
+    description: t.description,
+    tags: t.tags,
+    collection_ids: [],
+    collection_count: 0,
+    student_count: 0,
+    video_count: 0,
+    last_activity_at: null,
+    is_pinned: false,
+  };
+}
 
 export default function SyllabusDetailPage() {
   const params = useParams<{ id: string }>();
@@ -77,6 +113,10 @@ function SyllabusDetail({ syllabusId }: { syllabusId: number }) {
   const [addOpen, setAddOpen] = useState(false);
   const [assignOpen, setAssignOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [techSearch, setTechSearch] = useState('');
+  const [techTags, setTechTags] = useState<string[]>([]);
+  const [techExpanded, setTechExpanded] = useState<string>('');
+  const [studentSearch, setStudentSearch] = useState('');
 
   const deleteMutation = useDeleteSyllabus();
 
@@ -165,67 +205,17 @@ function SyllabusDetail({ syllabusId }: { syllabusId: number }) {
         )}
       </div>
 
-      <section className="space-y-2">
-        <div className="flex items-end justify-between gap-2">
-          <h2 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-            Techniques
-          </h2>
-          <Button
-            size="sm"
-            variant="outline"
-            className="gap-1.5"
-            onClick={() => setAddOpen(true)}
-          >
-            <Plus className="h-4 w-4" aria-hidden />
-            Add technique
-          </Button>
-        </div>
-        <div className="overflow-hidden rounded-lg border border-border bg-card">
-          {syllabus.techniques.length === 0 ? (
-            <EmptyState
-              icon={NotebookPen}
-              title="No techniques yet"
-              description="Add techniques from the library to build out this syllabus."
-            />
-          ) : (
-            <ul className="divide-y divide-border">
-              {syllabus.techniques.map((t) => (
-                <li
-                  key={t.technique_id}
-                  className="flex items-center justify-between gap-2 px-4 py-3"
-                >
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium">{t.name}</p>
-                    {t.tags.length > 0 && (
-                      <div className="mt-1 flex flex-wrap gap-1">
-                        {t.tags.map((tag) => (
-                          <Badge
-                            key={tag.id}
-                            variant="outline"
-                            className="px-1.5 py-0 text-[10px]"
-                          >
-                            {tag.name}
-                          </Badge>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() =>
-                      setRemoveTarget({ id: t.technique_id, name: t.name })
-                    }
-                    aria-label={`Remove ${t.name}`}
-                  >
-                    <X className="h-4 w-4 text-muted-foreground" aria-hidden />
-                  </Button>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-      </section>
+      <TechniquesSection
+        techniques={syllabus.techniques}
+        techSearch={techSearch}
+        setTechSearch={setTechSearch}
+        techTags={techTags}
+        setTechTags={setTechTags}
+        techExpanded={techExpanded}
+        setTechExpanded={setTechExpanded}
+        onAdd={() => setAddOpen(true)}
+        onRemove={(id, name) => setRemoveTarget({ id, name })}
+      />
 
       <section className="space-y-2">
         <div className="flex items-end justify-between gap-2">
@@ -243,6 +233,20 @@ function SyllabusDetail({ syllabusId }: { syllabusId: number }) {
             Assign student
           </Button>
         </div>
+        {assignedIds.length > 0 && (
+          <div className="relative">
+            <Search
+              className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
+              aria-hidden
+            />
+            <Input
+              placeholder="Search students"
+              value={studentSearch}
+              onChange={(e) => setStudentSearch(e.target.value)}
+              className="pl-9"
+            />
+          </div>
+        )}
         <div className="overflow-hidden rounded-lg border border-border bg-card">
           {assignedIds.length === 0 ? (
             <p className="px-6 py-8 text-center text-sm text-muted-foreground">
@@ -252,6 +256,7 @@ function SyllabusDetail({ syllabusId }: { syllabusId: number }) {
             <AssignedStudentsList
               studentIds={assignedIds}
               syllabusId={syllabusId}
+              filterText={studentSearch}
             />
           )}
         </div>
@@ -742,9 +747,11 @@ function RemoveTechniqueDialog({
 function AssignedStudentsList({
   studentIds,
   syllabusId,
+  filterText,
 }: {
   studentIds: number[];
   syllabusId: number;
+  filterText: string;
 }) {
   const usersQuery = useStudents('alphabetical', false);
   const studentsById = useMemo(() => {
@@ -753,9 +760,30 @@ function AssignedStudentsList({
     return map;
   }, [usersQuery.data]);
 
+  const filtered = useMemo(() => {
+    const needle = filterText.trim().toLowerCase();
+    if (!needle) return studentIds;
+    return studentIds.filter((id) => {
+      const u = studentsById.get(id);
+      if (!u) return false;
+      return (
+        (u.display_name?.toLowerCase().includes(needle) ?? false) ||
+        u.username.toLowerCase().includes(needle)
+      );
+    });
+  }, [studentIds, studentsById, filterText]);
+
+  if (filtered.length === 0) {
+    return (
+      <p className="px-6 py-8 text-center text-sm text-muted-foreground">
+        No students match the search.
+      </p>
+    );
+  }
+
   return (
     <ul className="divide-y divide-border">
-      {studentIds.map((id) => {
+      {filtered.map((id) => {
         const user = studentsById.get(id);
         return (
           <li key={id}>
@@ -776,6 +804,178 @@ function AssignedStudentsList({
         );
       })}
     </ul>
+  );
+}
+
+function TechniquesSection({
+  techniques,
+  techSearch,
+  setTechSearch,
+  techTags,
+  setTechTags,
+  techExpanded,
+  setTechExpanded,
+  onAdd,
+  onRemove,
+}: {
+  techniques: SyllabusTechniqueRow[];
+  techSearch: string;
+  setTechSearch: (v: string) => void;
+  techTags: string[];
+  setTechTags: (v: string[]) => void;
+  techExpanded: string;
+  setTechExpanded: (v: string) => void;
+  onAdd: () => void;
+  onRemove: (techniqueId: number, name: string) => void;
+}) {
+  const availableTags = useMemo(() => {
+    const set = new Set<string>();
+    techniques.forEach((t) => t.tags.forEach((tag) => set.add(tag.name)));
+    return Array.from(set).sort();
+  }, [techniques]);
+
+  const filtered = useMemo(() => {
+    const needle = techSearch.trim().toLowerCase();
+    return techniques.filter((t) => {
+      const matchesText =
+        !needle ||
+        t.name.toLowerCase().includes(needle) ||
+        t.description.toLowerCase().includes(needle) ||
+        t.tags.some((tag) => tag.name.toLowerCase().includes(needle));
+      const matchesTags =
+        techTags.length === 0 ||
+        techTags.every((tag) => t.tags.some((x) => x.name === tag));
+      return matchesText && matchesTags;
+    });
+  }, [techniques, techSearch, techTags]);
+
+  function toggleTag(tag: string) {
+    setTechTags(
+      techTags.includes(tag) ? techTags.filter((t) => t !== tag) : [...techTags, tag],
+    );
+  }
+
+  return (
+    <section className="space-y-2">
+      <div className="flex items-end justify-between gap-2">
+        <h2 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          Techniques
+        </h2>
+        <Button
+          size="sm"
+          variant="outline"
+          className="gap-1.5"
+          onClick={onAdd}
+        >
+          <Plus className="h-4 w-4" aria-hidden />
+          Add technique
+        </Button>
+      </div>
+      {techniques.length > 0 && (
+        <div className="space-y-2">
+          <div className="relative">
+            <Search
+              className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
+              aria-hidden
+            />
+            <Input
+              placeholder="Search techniques"
+              value={techSearch}
+              onChange={(e) => setTechSearch(e.target.value)}
+              className="pl-9"
+            />
+          </div>
+          {availableTags.length > 0 && (
+            <div className="flex flex-wrap gap-1.5">
+              {availableTags.map((tag) => {
+                const active = techTags.includes(tag);
+                return (
+                  <Badge
+                    key={tag}
+                    variant={active ? 'default' : 'outline'}
+                    className="cursor-pointer select-none"
+                    onClick={() => toggleTag(tag)}
+                  >
+                    {tag}
+                  </Badge>
+                );
+              })}
+              {techTags.length > 0 && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 px-2 text-xs"
+                  onClick={() => setTechTags([])}
+                >
+                  Clear
+                </Button>
+              )}
+            </div>
+          )}
+          <p className="text-xs text-muted-foreground">
+            {filtered.length === techniques.length
+              ? `${techniques.length} ${
+                  techniques.length === 1 ? 'technique' : 'techniques'
+                }`
+              : `${filtered.length} of ${techniques.length} techniques`}
+          </p>
+        </div>
+      )}
+      <div className="overflow-hidden rounded-lg border border-border bg-card">
+        {techniques.length === 0 ? (
+          <EmptyState
+            icon={NotebookPen}
+            title="No techniques yet"
+            description="Add techniques from the library to build out this syllabus."
+          />
+        ) : filtered.length === 0 ? (
+          <p className="px-6 py-10 text-center text-sm text-muted-foreground">
+            No techniques match the current filters.
+          </p>
+        ) : (
+          <Accordion
+            type="single"
+            collapsible
+            value={techExpanded}
+            onValueChange={setTechExpanded}
+          >
+            {filtered.map((t) => {
+              const value = String(t.technique_id);
+              // Wrapper owns the inter-row divider since the AccordionItem
+              // inside becomes the sole child of its grid cell and its own
+              // `last:border-b-0` strips itself.
+              return (
+                <div
+                  key={t.technique_id}
+                  className="flex items-stretch border-b border-border last:border-b-0"
+                >
+                  <div className="min-w-0 flex-1">
+                    <TechniqueRow
+                      technique={toLibraryShape(t)}
+                      context={{ kind: 'global-library' }}
+                      value={value}
+                      isOpen={techExpanded === value}
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onRemove(t.technique_id, t.name);
+                    }}
+                    aria-label={`Remove ${t.name}`}
+                    className="flex shrink-0 items-center px-3 text-muted-foreground transition-colors hover:bg-muted/40 hover:text-destructive"
+                  >
+                    <X className="h-4 w-4" aria-hidden />
+                  </button>
+                </div>
+              );
+            })}
+          </Accordion>
+        )}
+      </div>
+    </section>
   );
 }
 

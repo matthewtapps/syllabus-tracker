@@ -78,15 +78,10 @@ export default function SyllabusesPage() {
   return (
     <div className="container mx-auto px-4 py-6 sm:px-6 md:py-8">
       <div className="mb-4 flex items-end justify-between gap-3">
-        <div>
-          <h1 className="flex items-center gap-2 text-base font-semibold">
-            <NotebookPen className="h-4 w-4" aria-hidden />
-            Syllabuses
-          </h1>
-          <p className="text-xs text-muted-foreground">
-            Reusable collections of techniques you assign to students.
-          </p>
-        </div>
+        <h1 className="flex items-center gap-2 text-base font-semibold">
+          <NotebookPen className="h-4 w-4" aria-hidden />
+          Syllabus Library
+        </h1>
         <Dialog open={createOpen} onOpenChange={setCreateOpen}>
           <DialogTrigger asChild>
             <Button size="sm" className="gap-1.5">
@@ -170,8 +165,7 @@ export default function SyllabusesPage() {
                   <Button
                     type="button"
                     variant="outline"
-                    size="sm"
-                    className="gap-1.5"
+                    size="icon"
                     aria-label={`Assign ${s.name} to a student`}
                     onClick={(e) => {
                       e.preventDefault();
@@ -182,8 +176,7 @@ export default function SyllabusesPage() {
                       });
                     }}
                   >
-                    <UserPlus className="h-3.5 w-3.5" aria-hidden />
-                    <span>Assign</span>
+                    <UserPlus className="h-4 w-4" aria-hidden />
                   </Button>
                 </div>
               </li>
