@@ -11,7 +11,6 @@ import {
   GraduationCap,
   type LucideIcon,
   PlayCircle,
-  Sparkles,
   Users,
 } from 'lucide-react';
 import type { User } from '@/lib/api';
@@ -19,11 +18,11 @@ import { useUser } from '@/lib/current-user-context';
 import { toast } from 'sonner';
 import { type InviteResponse, type RecentAttemptItem } from '@/lib/api';
 import {
-  useAttemptHeatmap,
   useLibraryStats,
-  useRecentAttempts,
   useRecentlyActiveStudents,
-  useStudentTechniques,
+  useStudentSyllabusTechniquesFlat,
+  useRecentSyllabusAttempts,
+  useSyllabusAttemptHeatmap,
   useStudents,
 } from '@/lib/queries';
 import { useApproveUser, useResetUserClaim } from '@/lib/mutations';
@@ -38,7 +37,7 @@ import {
 } from '@/components/ui/dialog';
 import { ClaimLinkPanel } from '@/components/claim-link-panel';
 import { StudentRow } from '@/components/student-row';
-import type { RecentlyActiveStudent, Technique } from '@/lib/api';
+import type { RecentlyActiveStudent, StudentSyllabusTechniqueOverview, Technique } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { formatRelative } from '@/lib/dates';
 import { statusToDotClass } from '@/lib/status';
@@ -415,12 +414,39 @@ function rosterEmptyMessage(tab: RosterTab): string {
   }
 }
 
+// Minimal adapter: maps a StudentSyllabusTechniqueOverview onto the Technique
+// shape expected by TechniqueSection. Only the fields TechniqueSection reads
+// are populated; the rest are set to safe empty values.
+function sstOverviewToTechnique(t: StudentSyllabusTechniqueOverview): Technique {
+  return {
+    id: t.sst_id,
+    technique_id: t.technique_id,
+    technique_name: t.technique_name,
+    technique_description: '',
+    status: t.status,
+    student_notes: '',
+    coach_notes: '',
+    created_at: t.updated_at,
+    updated_at: t.updated_at,
+    last_coach_update_at: null,
+    last_coach_update_by_name: null,
+    last_student_update_at: null,
+    last_student_update_by_name: null,
+    has_unseen_activity: false,
+    collection_id: null,
+    collection_name: null,
+    tags: [],
+    attempt_count: 0,
+    last_attempt_at: t.last_attempt_at,
+  };
+}
+
 function StudentDashboard() {
   const user = useUser();
-  const techniquesQuery = useStudentTechniques(user.id);
-  const recentAttemptsQuery = useRecentAttempts(user.id, 5);
-  const heatmapQuery = useAttemptHeatmap(user.id);
-  const techniques = techniquesQuery.data?.techniques ?? null;
+  const techniquesQuery = useStudentSyllabusTechniquesFlat(user.id);
+  const recentAttemptsQuery = useRecentSyllabusAttempts(user.id, 5);
+  const heatmapQuery = useSyllabusAttemptHeatmap(user.id);
+  const techniques = techniquesQuery.data ?? null;
   const recentAttempts: RecentAttemptItem[] = recentAttemptsQuery.data ?? [];
   const heatmap = heatmapQuery.data ?? [];
   const loading = techniquesQuery.isLoading;
@@ -438,29 +464,23 @@ function StudentDashboard() {
   const pctDone = total > 0 ? Math.round((counts.green / total) * 100) : 0;
   const isGraduate = !!user.graduated_at;
 
-  const currentlyWorking = useMemo(() => {
+  // Techniques the student is actively working on: amber status, most recently
+  // updated first. Mapped to the Technique shape expected by TechniqueSection.
+  const currentlyWorking = useMemo<Technique[]>(() => {
     return (techniques ?? [])
       .filter((t) => t.status === 'amber')
       .sort((a, b) => Date.parse(b.updated_at) - Date.parse(a.updated_at))
-      .slice(0, 5);
+      .slice(0, 5)
+      .map((t) => sstOverviewToTechnique(t));
   }, [techniques]);
 
-  const recentlyDone = useMemo(() => {
+  // Techniques the student has marked green, most recently updated first.
+  const recentlyDone = useMemo<Technique[]>(() => {
     return (techniques ?? [])
       .filter((t) => t.status === 'green')
       .sort((a, b) => Date.parse(b.updated_at) - Date.parse(a.updated_at))
-      .slice(0, 3);
-  }, [techniques]);
-
-  const newFromCoach = useMemo(() => {
-    return (techniques ?? [])
-      .filter((t) => t.has_unseen_activity)
-      .sort(
-        (a, b) =>
-          Date.parse(b.last_coach_update_at ?? '0') -
-          Date.parse(a.last_coach_update_at ?? '0'),
-      )
-      .slice(0, 5);
+      .slice(0, 3)
+      .map((t) => sstOverviewToTechnique(t));
   }, [techniques]);
 
   const greetingName = user.display_name || user.username;
@@ -529,16 +549,6 @@ function StudentDashboard() {
           )}
 
           <div className="space-y-6">
-            {newFromCoach.length > 0 && (
-              <TechniqueSection
-                title="New from your coach"
-                icon={Sparkles}
-                techniques={newFromCoach}
-                studentId={user.id}
-                showCoachTimestamp
-              />
-            )}
-
             {recentAttempts.length > 0 && (
               <RecentAttemptsSection
                 attempts={recentAttempts}
