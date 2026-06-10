@@ -632,8 +632,7 @@ function RecentAttemptsSection({
 }
 
 // Build a minimal ActivityRow-shaped object from a RecentlyActiveStudent so
-// activityLine can format the verb copy. Fields not present on the recently-
-// active row are left null; activityLine falls back to generic copy gracefully.
+// activityLine can format the verb copy and produce deep-link hrefs.
 function recentlyActiveToActivityRow(r: RecentlyActiveStudent): ActivityRow {
   return {
     id: 0,
@@ -642,12 +641,12 @@ function recentlyActiveToActivityRow(r: RecentlyActiveStudent): ActivityRow {
     actor_user_id: r.student_id,
     actor_name: r.student_name,
     target_student_id: r.student_id,
-    technique_id: null,
+    technique_id: r.technique_id ?? null,
     technique_name: r.technique_name ?? null,
-    syllabus_id: null,
+    syllabus_id: r.syllabus_id ?? null,
     syllabus_name: r.syllabus_name ?? null,
     sst_id: null,
-    video_id: null,
+    video_id: r.video_id ?? null,
     video_title: r.video_title ?? null,
     payload_json: r.payload_json ?? null,
     unread: false,
@@ -692,7 +691,7 @@ function RecentlyActivePanel({
               >
                 <div className="min-w-0 flex-1 space-y-0.5">
                   <p className="truncate text-sm font-medium">
-                    {row.student_name}
+                    {row.student_name ?? 'A student'}
                   </p>
                   <p className="truncate text-xs text-muted-foreground">
                     {line.href ? (
