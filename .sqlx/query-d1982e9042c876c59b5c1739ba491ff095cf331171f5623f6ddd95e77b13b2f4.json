@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT a.student_id AS \"student_id!: i64\"\n           FROM student_syllabus_techniques sst\n           JOIN syllabus_assignments a ON a.id = sst.assignment_id\n           WHERE sst.id = ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "student_id!: i64",
+        "ordinal": 0,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "d1982e9042c876c59b5c1739ba491ff095cf331171f5623f6ddd95e77b13b2f4"
+}

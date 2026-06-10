@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "DELETE FROM syllabus_techniques\n         WHERE syllabus_id = ? AND technique_id = ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "47aeb56041901fe8a4dcf85b38290d01a958f109d2ccd3e89b7f2fce1bf72f85"
+}

@@ -1,0 +1,50 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT id AS \"id!: i64\",\n                  name AS \"name!: String\",\n                  description,\n                  created_at AS \"created_at!: NaiveDateTime\",\n                  created_by_id,\n                  updated_at AS \"updated_at!: NaiveDateTime\"\n           FROM syllabuses\n           ORDER BY name",
+  "describe": {
+    "columns": [
+      {
+        "name": "id!: i64",
+        "ordinal": 0,
+        "type_info": "Integer"
+      },
+      {
+        "name": "name!: String",
+        "ordinal": 1,
+        "type_info": "Text"
+      },
+      {
+        "name": "description",
+        "ordinal": 2,
+        "type_info": "Text"
+      },
+      {
+        "name": "created_at!: NaiveDateTime",
+        "ordinal": 3,
+        "type_info": "Datetime"
+      },
+      {
+        "name": "created_by_id",
+        "ordinal": 4,
+        "type_info": "Integer"
+      },
+      {
+        "name": "updated_at!: NaiveDateTime",
+        "ordinal": 5,
+        "type_info": "Datetime"
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      false,
+      true,
+      false
+    ]
+  },
+  "hash": "3058ff63d6e1dbd6e49362ad599306754b4e68cb177ef44a682e7263fc34efc9"
+}

@@ -1,0 +1,98 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT a.id AS \"id!: i64\",\n                  a.student_id AS \"student_id!: i64\",\n                  a.syllabus_id AS \"syllabus_id!: i64\",\n                  s.name AS \"syllabus_name!: String\",\n                  a.assigned_at AS \"assigned_at!: NaiveDateTime\",\n                  a.assigned_by_id,\n                  a.unassigned_at AS \"unassigned_at?: NaiveDateTime\",\n                  a.unassigned_by_id,\n                  a.graduated_at AS \"graduated_at?: NaiveDateTime\",\n                  a.graduated_by_id,\n                  COALESCE(SUM(CASE WHEN sst.status = 'red'   AND sst.hidden_at IS NULL THEN 1 ELSE 0 END), 0) AS \"red_count!: i64\",\n                  COALESCE(SUM(CASE WHEN sst.status = 'amber' AND sst.hidden_at IS NULL THEN 1 ELSE 0 END), 0) AS \"amber_count!: i64\",\n                  COALESCE(SUM(CASE WHEN sst.status = 'green' AND sst.hidden_at IS NULL THEN 1 ELSE 0 END), 0) AS \"green_count!: i64\",\n                  COALESCE(SUM(CASE WHEN sst.hidden_at IS NULL THEN 1 ELSE 0 END), 0) AS \"total_count!: i64\"\n           FROM syllabus_assignments a\n           JOIN syllabuses s ON s.id = a.syllabus_id\n           LEFT JOIN student_syllabus_techniques sst ON sst.assignment_id = a.id\n           WHERE a.student_id = ? AND a.syllabus_id = ?\n           GROUP BY a.id",
+  "describe": {
+    "columns": [
+      {
+        "name": "id!: i64",
+        "ordinal": 0,
+        "type_info": "Integer"
+      },
+      {
+        "name": "student_id!: i64",
+        "ordinal": 1,
+        "type_info": "Integer"
+      },
+      {
+        "name": "syllabus_id!: i64",
+        "ordinal": 2,
+        "type_info": "Integer"
+      },
+      {
+        "name": "syllabus_name!: String",
+        "ordinal": 3,
+        "type_info": "Text"
+      },
+      {
+        "name": "assigned_at!: NaiveDateTime",
+        "ordinal": 4,
+        "type_info": "Datetime"
+      },
+      {
+        "name": "assigned_by_id",
+        "ordinal": 5,
+        "type_info": "Integer"
+      },
+      {
+        "name": "unassigned_at?: NaiveDateTime",
+        "ordinal": 6,
+        "type_info": "Datetime"
+      },
+      {
+        "name": "unassigned_by_id",
+        "ordinal": 7,
+        "type_info": "Integer"
+      },
+      {
+        "name": "graduated_at?: NaiveDateTime",
+        "ordinal": 8,
+        "type_info": "Datetime"
+      },
+      {
+        "name": "graduated_by_id",
+        "ordinal": 9,
+        "type_info": "Integer"
+      },
+      {
+        "name": "red_count!: i64",
+        "ordinal": 10,
+        "type_info": "Null"
+      },
+      {
+        "name": "amber_count!: i64",
+        "ordinal": 11,
+        "type_info": "Null"
+      },
+      {
+        "name": "green_count!: i64",
+        "ordinal": 12,
+        "type_info": "Null"
+      },
+      {
+        "name": "total_count!: i64",
+        "ordinal": 13,
+        "type_info": "Null"
+      }
+    ],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": [
+      true,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "0f848f9ec8ae4e4291b41270c8f45d5ed1dfc96b048455bf6932362ebc6a5a6e"
+}

@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE syllabuses SET name = ?, description = ?, updated_at = ? WHERE id = ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 4
+    },
+    "nullable": []
+  },
+  "hash": "722d986041a3f2a59adb36cbea8ddbea772af12553dbf6b41e5be168dcd5d3d6"
+}

@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE syllabus_assignments\n             SET unassigned_at = NULL,\n                 unassigned_by_id = NULL,\n                 assigned_at = CURRENT_TIMESTAMP,\n                 assigned_by_id = ?\n             WHERE id = ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "a45a8739d13872cd4a506c2d1f1498e4a763214f9c7074440fd48b3108b6a693"
+}
