@@ -420,6 +420,73 @@ async fn merge_payload(
     ))
 }
 
+/// Write one activity row per affected student, reusing `ev` as a template
+/// (its `target_student_id` is overwritten per student). Each per-student row
+/// coalesces independently. If `affected` is empty, write a single coach-only
+/// row with `target_student_id = NULL` so the coach view still records it.
+pub async fn emit_fanout(
+    tx: &mut Transaction<'_, Sqlite>,
+    ev: NewActivity,
+    affected: &[i64],
+) -> Result<(), AppError> {
+    if affected.is_empty() {
+        let mut coach_only = ev;
+        coach_only.target_student_id = None;
+        return emit(tx, coach_only).await;
+    }
+    for &student_id in affected {
+        let mut row = ev.clone();
+        row.target_student_id = Some(student_id);
+        emit(tx, row).await?;
+    }
+    Ok(())
+}
+
+/// Students with an active (unassigned_at IS NULL) assignment to this syllabus.
+pub async fn affected_students_for_syllabus(
+    tx: &mut Transaction<'_, Sqlite>,
+    syllabus_id: i64,
+) -> Result<Vec<i64>, AppError> {
+    let ids = sqlx::query_scalar!(
+        r#"SELECT DISTINCT student_id AS "id!: i64"
+           FROM syllabus_assignments
+           WHERE syllabus_id = ? AND unassigned_at IS NULL
+           ORDER BY student_id"#,
+        syllabus_id,
+    )
+    .fetch_all(&mut **tx)
+    .await?;
+    Ok(ids)
+}
+
+/// Union of {students with this technique in an active assigned syllabus} and
+/// {students who pinned this technique}.
+pub async fn affected_students_for_technique(
+    tx: &mut Transaction<'_, Sqlite>,
+    technique_id: i64,
+) -> Result<Vec<i64>, AppError> {
+    let ids = sqlx::query_scalar!(
+        r#"SELECT student_id AS "id!: i64" FROM (
+               SELECT a.student_id
+               FROM syllabus_assignments a
+               JOIN student_syllabus_techniques sst ON sst.assignment_id = a.id
+               WHERE a.unassigned_at IS NULL
+                 AND sst.technique_id = ?
+                 AND sst.hidden_at IS NULL
+               UNION
+               SELECT student_id
+               FROM student_pinned_techniques
+               WHERE technique_id = ?
+           )
+           ORDER BY student_id"#,
+        technique_id,
+        technique_id,
+    )
+    .fetch_all(&mut **tx)
+    .await?;
+    Ok(ids)
+}
+
 #[cfg(test)]
 mod registry_tests {
     use super::{EntityKind, Verb};

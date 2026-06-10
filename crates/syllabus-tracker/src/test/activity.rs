@@ -152,4 +152,89 @@ mod tests {
         assert_eq!(v["from"], "red", "keeps original from");
         assert_eq!(v["to"], "green", "takes latest to");
     }
+
+    #[rocket::async_test]
+    async fn fanout_writes_one_row_per_active_assignment_for_syllabus() {
+        use crate::db::{affected_students_for_syllabus, emit_fanout};
+        let db = TestDbBuilder::new()
+            .coach("coach", None)
+            .student("alice", None)
+            .student("bob", None)
+            .technique("Armbar", "", Some("coach"))
+            .build()
+            .await
+            .unwrap();
+        let coach = db.user_id("coach").unwrap();
+        let alice = db.user_id("alice").unwrap();
+        let bob = db.user_id("bob").unwrap();
+        let armbar = db.technique_id("Armbar").unwrap();
+
+        let sid = crate::db::create_syllabus(&db.pool, "S", None, coach)
+            .await
+            .unwrap();
+        crate::db::add_technique_to_syllabus(
+            &db.pool,
+            sid,
+            armbar,
+            coach,
+            crate::db::PropagationMode::SyllabusOnly,
+        )
+        .await
+        .unwrap();
+        crate::db::assign(&db.pool, coach, alice, sid)
+            .await
+            .unwrap();
+        crate::db::assign(&db.pool, coach, bob, sid).await.unwrap();
+
+        let mut tx = db.pool.begin().await.unwrap();
+        let affected = affected_students_for_syllabus(&mut tx, sid).await.unwrap();
+        emit_fanout(
+            &mut tx,
+            NewActivity::new(Verb::SyllabusTechniqueAdded, coach).syllabus(sid),
+            &affected,
+        )
+        .await
+        .unwrap();
+        tx.commit().await.unwrap();
+
+        let rows = sqlx::query!(
+            r#"SELECT target_student_id AS "t?: i64" FROM activity
+               WHERE verb = 'syllabus_technique_added' ORDER BY target_student_id"#
+        )
+        .fetch_all(&db.pool)
+        .await
+        .unwrap();
+        let targets: Vec<Option<i64>> = rows.into_iter().map(|r| r.t).collect();
+        assert_eq!(targets, vec![Some(alice), Some(bob)]);
+    }
+
+    #[rocket::async_test]
+    async fn fanout_empty_set_writes_one_coach_only_null_row() {
+        use crate::db::emit_fanout;
+        let db = TestDbBuilder::new()
+            .coach("coach", None)
+            .build()
+            .await
+            .unwrap();
+        let coach = db.user_id("coach").unwrap();
+        let sid = crate::db::create_syllabus(&db.pool, "Empty", None, coach)
+            .await
+            .unwrap();
+
+        let mut tx = db.pool.begin().await.unwrap();
+        emit_fanout(
+            &mut tx,
+            NewActivity::new(Verb::SyllabusTechniqueAdded, coach).syllabus(sid),
+            &[],
+        )
+        .await
+        .unwrap();
+        tx.commit().await.unwrap();
+
+        let row = sqlx::query!(r#"SELECT target_student_id AS "t?: i64" FROM activity"#)
+            .fetch_one(&db.pool)
+            .await
+            .unwrap();
+        assert_eq!(row.t, None, "empty fan-out writes a single coach-only row");
+    }
 }
