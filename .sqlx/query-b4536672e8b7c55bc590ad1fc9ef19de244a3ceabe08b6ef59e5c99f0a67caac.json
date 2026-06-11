@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO activity\n               (occurred_at, verb, actor_user_id, target_student_id,\n                video_id, technique_id, syllabus_id, sst_id, context_kind, payload_json)\n           SELECT\n               vwa.last_watched_at,\n               'video_watched',\n               vwa.user_id,\n               vwa.user_id,\n               vwa.video_id,\n               v.technique_id,\n               ctx.syllabus_id,\n               ctx.sst_id,\n               CASE WHEN ctx.sst_id IS NOT NULL THEN 'syllabus' ELSE 'library' END,\n               json_object(\n                   'cumulative_seconds', vwa.total_seconds_watched,\n                   'duration_seconds',\n                   CAST(vwa.total_seconds_watched / MAX(vwa.play_count, 1) AS INTEGER)\n               )\n           FROM video_watch_aggregates vwa\n           JOIN videos v ON v.id = vwa.video_id\n           LEFT JOIN (\n               SELECT a.student_id, a.syllabus_id, sst.id AS sst_id, sst.technique_id\n               FROM student_syllabus_techniques sst\n               JOIN syllabus_assignments a ON a.id = sst.assignment_id\n               WHERE a.unassigned_at IS NULL\n                 AND a.graduated_at IS NULL\n                 AND NOT EXISTS (\n                     SELECT 1\n                     FROM student_syllabus_techniques sst2\n                     JOIN syllabus_assignments a2 ON a2.id = sst2.assignment_id\n                     WHERE a2.student_id = a.student_id\n                       AND sst2.technique_id = sst.technique_id\n                       AND a2.unassigned_at IS NULL\n                       AND a2.graduated_at IS NULL\n                       AND sst2.id < sst.id\n                 )\n           ) ctx ON ctx.student_id = vwa.user_id AND ctx.technique_id = v.technique_id\n           WHERE vwa.last_watched_at IS NOT NULL",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": []
+  },
+  "hash": "b4536672e8b7c55bc590ad1fc9ef19de244a3ceabe08b6ef59e5c99f0a67caac"
+}
