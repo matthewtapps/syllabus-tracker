@@ -134,4 +134,39 @@ mod tests {
         let digest = activity_digest(&db.pool).await.unwrap();
         assert_eq!(metric(&digest, "active_students").count, 0);
     }
+
+    #[rocket::async_test]
+    async fn dashboard_feed_includes_engagement_excludes_coach_curation() {
+        use crate::db::dashboard_activity_feed;
+        let db = TestDbBuilder::new()
+            .coach("coach", None)
+            .student("alice", None)
+            .technique("Armbar", "", Some("coach"))
+            .build()
+            .await
+            .unwrap();
+        let coach = db.user_id("coach").unwrap();
+        let alice = db.user_id("alice").unwrap();
+        let armbar = db.technique_id("Armbar").unwrap();
+
+        let mut tx = db.pool.begin().await.unwrap();
+        // Student engagement: should appear.
+        emit(&mut tx, NewActivity::new(Verb::AttemptLogged, alice).target_student(alice).technique(armbar)).await.unwrap();
+        // Coach curation: should NOT appear in the engagement feed.
+        emit(&mut tx, NewActivity::new(Verb::SyllabusTechniqueAdded, coach).target_student(alice).technique(armbar)).await.unwrap();
+        tx.commit().await.unwrap();
+
+        let rows = dashboard_activity_feed(&db.pool, 30).await.unwrap();
+        assert_eq!(rows.len(), 1, "only the student engagement row");
+        assert_eq!(rows[0].verb, "attempt_logged");
+        assert!(!rows[0].unread, "dashboard feed never sets unread");
+
+        // syllabus_graduated surfaces regardless of actor role.
+        let mut tx = db.pool.begin().await.unwrap();
+        emit(&mut tx, NewActivity::new(Verb::SyllabusGraduated, coach).target_student(alice)).await.unwrap();
+        tx.commit().await.unwrap();
+        let rows = dashboard_activity_feed(&db.pool, 30).await.unwrap();
+        assert!(rows.iter().any(|r| r.verb == "syllabus_graduated"), "coach graduation surfaces");
+        assert!(rows.iter().any(|r| r.verb == "attempt_logged"), "student attempt still present");
+    }
 }

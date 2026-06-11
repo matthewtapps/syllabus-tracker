@@ -448,6 +448,77 @@ pub async fn recently_active_students(
         .collect())
 }
 
+/// Gym-wide recent student-engagement events for the coach dashboard glance.
+/// Read-only: unlike the cursor-advancing `/activity/feed` route, this never
+/// touches `activity_cursors`, so opening the dashboard does not clear the
+/// navbar unread badge. `unread` is always false here (the dashboard does not
+/// render unread styling).
+pub async fn dashboard_activity_feed(
+    pool: &Pool<Sqlite>,
+    limit: i64,
+) -> Result<Vec<ActivityRow>, AppError> {
+    let rows = sqlx::query!(
+        r#"SELECT act.id                AS "id!: i64",
+                  act.occurred_at       AS "occurred_at!: String",
+                  act.verb              AS "verb!: String",
+                  act.actor_user_id     AS "actor_user_id!: i64",
+                  u.display_name        AS "actor_name?: String",
+                  act.target_student_id AS "target_student_id?: i64",
+                  act.technique_id      AS "technique_id?: i64",
+                  t.name                AS "technique_name?: String",
+                  act.syllabus_id       AS "syllabus_id?: i64",
+                  s.name                AS "syllabus_name?: String",
+                  act.sst_id            AS "sst_id?: i64",
+                  act.video_id          AS "video_id?: i64",
+                  v.title               AS "video_title?: String",
+                  act.payload_json      AS "payload_json?: String"
+           FROM activity act
+           JOIN users u           ON u.id = act.actor_user_id
+           LEFT JOIN techniques t ON t.id = act.technique_id
+           LEFT JOIN syllabi s    ON s.id = act.syllabus_id
+           LEFT JOIN videos v     ON v.id = act.video_id
+           WHERE (
+                   u.role = 'student'
+                   AND act.verb IN (
+                     -- Positive student-engagement verbs only. Undo/delete and
+                     -- coach-curation verbs (technique_unpinned, attempt_deleted,
+                     -- sst_added/hidden, syllabus_technique_added, etc.) are
+                     -- history, not dashboard signal. syllabus_graduated is the
+                     -- one milestone surfaced regardless of who fired it.
+                     'video_watched', 'attempt_logged', 'attempt_edited',
+                     'sst_status_changed', 'sst_student_notes_edited', 'technique_pinned'
+                   )
+                 )
+              OR act.verb = 'syllabus_graduated'
+           ORDER BY act.occurred_at DESC, act.id DESC
+           LIMIT ?"#,
+        limit,
+    )
+    .fetch_all(pool)
+    .await?;
+
+    Ok(rows
+        .into_iter()
+        .map(|r| ActivityRow {
+            id: r.id,
+            occurred_at: r.occurred_at,
+            verb: r.verb,
+            actor_user_id: r.actor_user_id,
+            actor_name: r.actor_name,
+            target_student_id: r.target_student_id,
+            technique_id: r.technique_id,
+            technique_name: r.technique_name,
+            syllabus_id: r.syllabus_id,
+            syllabus_name: r.syllabus_name,
+            sst_id: r.sst_id,
+            video_id: r.video_id,
+            video_title: r.video_title,
+            payload_json: r.payload_json,
+            unread: false,
+        })
+        .collect())
+}
+
 /// Count unread rows in the viewer's feed.
 ///
 /// An unread row satisfies ALL of:
