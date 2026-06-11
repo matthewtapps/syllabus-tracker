@@ -32,6 +32,9 @@ import type { WatchContext } from "./useWatchTracker";
 interface VideoListProps {
   techniqueId: number;
   canManage: boolean;
+  /** When true, each video row shows a muted per-video play count. Should
+   * only be passed as true when the current viewer is a coach or admin. */
+  isCoach?: boolean;
   reloadKey?: number;
   /** When set, the list is fetched in the context of viewing this student's
    * techniques: coaches see per-student override info per row and the
@@ -57,6 +60,7 @@ interface VideoListProps {
 export function VideoList({
   techniqueId,
   canManage,
+  isCoach = false,
   reloadKey = 0,
   forStudent,
   studentDisplayName,
@@ -214,6 +218,7 @@ export function VideoList({
                   video={video}
                   techniqueId={techniqueId}
                   canManage={canManage}
+                  isCoach={isCoach}
                   forStudent={forStudent}
                   studentDisplayName={studentDisplayName}
                   syllabus={syllabus}
@@ -232,6 +237,7 @@ export function VideoList({
               video={video}
               techniqueId={techniqueId}
               canManage={canManage}
+              isCoach={isCoach}
               forStudent={forStudent}
               studentDisplayName={studentDisplayName}
               syllabus={syllabus}
@@ -251,6 +257,7 @@ interface SortableVideoRowProps {
   video: Video;
   techniqueId: number;
   canManage: boolean;
+  isCoach?: boolean;
   forStudent?: number;
   studentDisplayName?: string;
   syllabus?: { studentId: number; syllabusId: number };
@@ -262,6 +269,7 @@ function SortableVideoRow({
   video,
   techniqueId,
   canManage,
+  isCoach = false,
   forStudent,
   studentDisplayName,
   syllabus,
@@ -306,6 +314,7 @@ function SortableVideoRow({
         video={video}
         techniqueId={techniqueId}
         canManage={canManage}
+        isCoach={isCoach}
         forStudent={forStudent}
         studentDisplayName={studentDisplayName}
         syllabus={syllabus}

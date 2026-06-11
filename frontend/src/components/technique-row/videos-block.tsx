@@ -15,7 +15,8 @@ export function VideosBlock({
   scrollToVideoId,
   onVideoScrolled,
 }: VideosBlockProps) {
-  const { context, technique } = useTechniqueRow();
+  const { context, technique, role } = useTechniqueRow();
+  const isCoach = role === "coach" || role === "admin";
   const [reloadKey, setReloadKey] = useState(0);
 
   // student-syllabus context: fetch via the per-(student, syllabus,
@@ -61,6 +62,7 @@ export function VideosBlock({
       <VideoList
         techniqueId={technique.id}
         canManage={canManage}
+        isCoach={isCoach}
         reloadKey={reloadKey}
         syllabus={syllabus}
         scrollToVideoId={scrollToVideoId}

@@ -8,7 +8,6 @@ import type { RowContext } from "./technique-row-context";
 export type BlockId =
   | "description"
   | "tags"
-  | "library-stats"
   | "videos"
   | "status"
   | "edit-definition"
@@ -29,8 +28,8 @@ export type RowKind = RowContext["kind"];
 export const BLOCK_VISIBILITY = {
   "global-library": {
     student: ["description", "tags", "videos"],
-    coach: ["description", "tags", "library-stats", "videos", "edit-definition"],
-    admin: ["description", "tags", "library-stats", "videos", "edit-definition"],
+    coach: ["description", "tags", "videos", "edit-definition"],
+    admin: ["description", "tags", "videos", "edit-definition"],
   },
   "student-pinned": {
     student: ["description", "tags", "videos"],
