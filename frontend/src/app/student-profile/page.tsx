@@ -18,8 +18,7 @@ import {
 import { useUser } from '@/lib/current-user-context';
 import { isCoachOrAdmin } from '@/lib/api';
 import { cn } from '@/lib/utils';
-import { formatRelative } from '@/lib/dates';
-import { activityLine } from '@/lib/activity-line';
+import { ActivityFeedList } from '@/components/activity-feed-list';
 import type { User } from '@/lib/api';
 
 function initials(u: Pick<User, 'display_name' | 'username'>): string {
@@ -148,52 +147,12 @@ function ProfileHub({
           Recent activity
         </h2>
         <div className="overflow-hidden rounded-lg border border-border bg-card">
-          {feedQuery.isLoading ? (
-            <div className="divide-y divide-border">
-              {Array.from({ length: 3 }).map((_, i) => (
-                <div key={i} className="px-4 py-3">
-                  <div className="h-3 w-1/3 animate-pulse rounded bg-muted" />
-                  <div className="mt-2 h-3 w-1/4 animate-pulse rounded bg-muted" />
-                </div>
-              ))}
-            </div>
-          ) : (feedQuery.data ?? []).length === 0 ? (
-            <p className="px-6 py-8 text-center text-sm text-muted-foreground">
-              {isOwnView
-                ? 'No activity recorded yet.'
-                : `No activity recorded for ${displayName} yet.`}
-            </p>
-          ) : (
-            <ul className="divide-y divide-border">
-              {(feedQuery.data ?? []).slice(0, 10).map((row) => {
-                const line = activityLine(row);
-                return (
-                  <li
-                    key={row.id}
-                    className="flex items-start justify-between gap-3 px-4 py-3"
-                  >
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm">
-                        {line.href ? (
-                          <Link
-                            to={line.href}
-                            className="underline-offset-2 hover:underline"
-                          >
-                            {line.text}
-                          </Link>
-                        ) : (
-                          line.text
-                        )}
-                      </p>
-                    </div>
-                    <span className="shrink-0 text-xs text-muted-foreground">
-                      {formatRelative(row.occurred_at)}
-                    </span>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
+          <ActivityFeedList
+            rows={feedQuery.data ?? []}
+            isLoading={feedQuery.isLoading}
+            showAvatar={false}
+            emptyText="No activity recorded yet."
+          />
         </div>
       </section>
     </div>
