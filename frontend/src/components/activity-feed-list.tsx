@@ -1,7 +1,9 @@
 import { Link } from "react-router-dom";
+import { NotebookPen, Globe } from "lucide-react";
 import { StudentAvatar } from "@/components/student-avatar";
 import { activityLine, type ActivityRow } from "@/lib/activity-line";
 import { coalesceActivity, coalescedSuffix } from "@/lib/activity-coalesce";
+import { activitySurface } from "@/lib/view-context";
 import { formatRelativeShort } from "@/lib/dates";
 import { cn } from "@/lib/utils";
 
@@ -56,6 +58,7 @@ export function ActivityFeedList({
     <ul className="divide-y divide-border">
       {shown.map((item) => {
         const line = activityLine(item.row);
+        const surface = activitySurface(item.row);
         const subject = line.subject
           ? `${line.subject}${coalescedSuffix(item)}`
           : coalescedSuffix(item).trim() || undefined;
@@ -80,6 +83,16 @@ export function ActivityFeedList({
               <p className="mt-0.5 text-sm text-muted-foreground">
                 {subject ? `${line.verb} ${subject}` : line.verb}
               </p>
+              {surface && (
+                <span className="mt-1 inline-flex items-center gap-1 text-xs text-muted-foreground">
+                  {surface.kind === "syllabus" ? (
+                    <NotebookPen className="h-3 w-3 shrink-0" aria-hidden />
+                  ) : (
+                    <Globe className="h-3 w-3 shrink-0" aria-hidden />
+                  )}
+                  <span className="truncate">{surface.label}</span>
+                </span>
+              )}
             </div>
           </>
         );

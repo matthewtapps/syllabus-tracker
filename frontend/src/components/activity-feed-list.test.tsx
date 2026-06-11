@@ -83,4 +83,33 @@ describe("ActivityFeedList", () => {
     // The suffix is appended to the subject text node inside the description <p>.
     expect(screen.getByText(/Armbar and 1 more/)).toBeInTheDocument();
   });
+
+  // --- context surface chip (plan Task 12) ---
+  test("syllabus-context row shows the syllabus name chip", () => {
+    renderWithProviders(
+      <ActivityFeedList rows={[row({ syllabus_name: "Blue Belt" })]} isLoading={false} />,
+    );
+    expect(screen.getByText("Blue Belt")).toBeInTheDocument();
+  });
+
+  test("library-context video_watched row shows the Library chip", () => {
+    renderWithProviders(
+      <ActivityFeedList
+        rows={[
+          row({
+            verb: "video_watched",
+            context_kind: "library",
+            technique_id: 5,
+            video_id: 7,
+            video_title: "Triangle setup",
+            syllabus_id: null,
+            sst_id: null,
+            syllabus_name: null,
+          }),
+        ]}
+        isLoading={false}
+      />,
+    );
+    expect(screen.getByText("Library")).toBeInTheDocument();
+  });
 });

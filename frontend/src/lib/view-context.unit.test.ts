@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { viewContextHref, rowToViewContext } from "./view-context";
+import { viewContextHref, rowToViewContext, activitySurface } from "./view-context";
 
 describe("viewContextHref", () => {
   test("library context without video", () => {
@@ -130,6 +130,51 @@ describe("rowToViewContext", () => {
         sst_id: null,
         technique_id: null,
         video_id: null,
+      }),
+    ).toBeNull();
+  });
+});
+
+describe("activitySurface", () => {
+  test("syllabus action shows the syllabus name", () => {
+    expect(
+      activitySurface({
+        verb: "attempt_logged",
+        context_kind: null,
+        target_student_id: 4,
+        syllabus_id: 2,
+        sst_id: 42,
+        technique_id: 9,
+        video_id: null,
+        syllabus_name: "Blue Belt",
+      }),
+    ).toEqual({ kind: "syllabus", label: "Blue Belt" });
+  });
+  test("library video shows Library", () => {
+    expect(
+      activitySurface({
+        verb: "video_watched",
+        context_kind: "library",
+        target_student_id: 4,
+        syllabus_id: null,
+        sst_id: null,
+        technique_id: 9,
+        video_id: 7,
+        syllabus_name: null,
+      }),
+    ).toEqual({ kind: "library", label: "Library" });
+  });
+  test("no resolvable surface returns null", () => {
+    expect(
+      activitySurface({
+        verb: "syllabus_assigned",
+        context_kind: null,
+        target_student_id: 4,
+        syllabus_id: 2,
+        sst_id: null,
+        technique_id: null,
+        video_id: null,
+        syllabus_name: "Blue Belt",
       }),
     ).toBeNull();
   });

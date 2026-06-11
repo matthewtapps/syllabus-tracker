@@ -94,3 +94,25 @@ export function rowToViewContext(row: ViewContextRow): ViewContext | null {
   }
   return null;
 }
+
+export interface ActivitySurface {
+  kind: ViewContext["kind"];
+  /** Display label: the syllabus name for syllabus actions, "Library" for global. */
+  label: string;
+}
+
+/**
+ * The surface chip for an activity row: derived from the same ViewContext model
+ * so it stays consistent with the deep link, and extends with new kinds. Returns
+ * null when there is no resolvable surface (no chip shown).
+ */
+export function activitySurface(
+  row: ViewContextRow & { syllabus_name: string | null },
+): ActivitySurface | null {
+  const ctx = rowToViewContext(row);
+  if (!ctx) return null;
+  if (ctx.kind === "syllabus") {
+    return { kind: "syllabus", label: row.syllabus_name ?? "Syllabus" };
+  }
+  return { kind: "library", label: "Library" };
+}
