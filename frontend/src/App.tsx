@@ -8,6 +8,7 @@ import {
 } from '@tanstack/react-query';
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 import { Layout } from './components/layout';
+import { AppBreadcrumbs } from './components/breadcrumbs/app-breadcrumbs';
 import { SwUpdateToast } from './components/sw-update-toast';
 import { AuthErrorBoundary } from './components/auth-error-boundary';
 import { RequireAdmin, RequireAuth, RequireCoach } from './components/route-guards';
@@ -169,6 +170,9 @@ function AuthedAppShell({
     <AuthErrorBoundary>
       <CurrentUserProvider user={user}>
         <Layout user={user} onLogout={onLogout}>
+          <div className="container mx-auto px-4 pt-4 sm:px-6">
+            <AppBreadcrumbs />
+          </div>
           <Suspense fallback={<RouteLoading />}>
             <AuthedRoutes />
           </Suspense>

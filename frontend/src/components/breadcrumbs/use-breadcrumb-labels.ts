@@ -38,7 +38,7 @@ export function useBreadcrumbLabels(chain: RawCrumb[]): (crumb: RawCrumb) => str
   const studentSyllabiQuery = useStudentSyllabi(studentId);
   const studentSyllabusEntry =
     typeof syllabusId === "number" && Number.isFinite(syllabusId)
-      ? (studentSyllabiQuery.data ?? []).find((s) => s.id === syllabusId)
+      ? (studentSyllabiQuery.data ?? []).find((s) => s.syllabus_id === syllabusId)
       : undefined;
   const studentSyllabusName = studentSyllabusEntry
     ? studentSyllabusEntry.syllabus_name

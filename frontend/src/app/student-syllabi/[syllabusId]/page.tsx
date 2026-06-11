@@ -23,7 +23,6 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
-import { BackButton } from '@/components/back-button';
 import { EmptyState } from '@/components/empty-state';
 import { TechniqueRow } from '@/components/technique-row';
 import { useAllUsers, useStudentSyllabusTechniques } from '@/lib/queries';
@@ -219,7 +218,6 @@ function Detail({
   return (
     <div className="container mx-auto px-4 py-6 sm:px-6 md:py-8 space-y-4">
       <div>
-        <BackButton fallback={`/student/${studentId}/syllabi`} className="mb-3 -ml-2 gap-1.5" />
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0">
             <h1 className="flex items-center gap-2 text-base font-semibold">

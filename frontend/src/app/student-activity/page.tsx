@@ -1,7 +1,6 @@
 import { useMemo } from 'react';
 import { Navigate, useParams } from 'react-router-dom';
 import { History } from 'lucide-react';
-import { BackButton } from '@/components/back-button';
 import { ActivityFeedList } from '@/components/activity-feed-list';
 import { useStudentActivityFeed, useAllUsers } from '@/lib/queries';
 import { useUser } from '@/lib/current-user-context';
@@ -64,7 +63,6 @@ function ActivityHub({
   return (
     <div className="container mx-auto px-4 py-6 sm:px-6 md:py-8 space-y-4">
       <div>
-        <BackButton fallback={`/student/${studentId}`} />
         <h1 className="flex items-center gap-2 text-base font-semibold">
           <History className="h-4 w-4" aria-hidden />
           {title}

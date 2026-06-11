@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, Navigate, useNavigate, useParams } from 'react-router-dom';
 import {
-  ArrowLeft,
   NotebookPen,
   Pencil,
   Plus,
@@ -159,15 +158,6 @@ function SyllabusDetail({ syllabusId }: { syllabusId: number }) {
   return (
     <div className="container mx-auto px-4 py-6 sm:px-6 md:py-8 space-y-6">
       <div>
-        <Button
-          variant="ghost"
-          size="sm"
-          className="mb-3 -ml-2 gap-1.5"
-          onClick={() => navigate('/syllabi')}
-        >
-          <ArrowLeft className="h-4 w-4" aria-hidden />
-          Back to Syllabus Library
-        </Button>
         {editing ? (
           <EditHeader syllabus={syllabus} onDone={() => setEditing(false)} />
         ) : (
