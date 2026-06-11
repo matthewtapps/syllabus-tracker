@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useMemo, useState } from 'react';
 import { BookOpen, Search, X as XIcon } from 'lucide-react';
+import { useFocusTarget } from '@/components/hooks/useFocusTarget';
 import { Accordion } from '@/components/ui/accordion';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -27,40 +27,26 @@ export default function LibraryPage() {
   const loading = techniquesQuery.isLoading;
   const error = techniquesQuery.error ? 'Failed to load techniques.' : null;
 
-  const [searchParams, setSearchParams] = useSearchParams();
   const [expandedValue, setExpandedValue] = useState<string>('');
   const [scrollToVideoId, setScrollToVideoId] = useState<number | null>(null);
   const [search, setSearch] = useState('');
   const [activeTags, setActiveTags] = useState<string[]>([]);
 
-  // Honor `?technique=<id>&video=<id>` arriving from the dashboard "recently
-  // watched" link. Runs once per arrival; the consumed params are stripped
-  // so back/forward doesn't re-trigger.
-  const didConsumeFocusRef = useRef(false);
-  useEffect(() => {
-    if (didConsumeFocusRef.current) return;
-    if (techniques.length === 0) return;
-    const rawTech = searchParams.get('technique');
-    if (!rawTech) return;
-    const techId = parseInt(rawTech, 10);
-    if (!Number.isFinite(techId)) return;
-    if (!techniques.some((t) => t.id === techId)) return;
-    didConsumeFocusRef.current = true;
-    setExpandedValue(String(techId));
-    const rawVid = searchParams.get('video');
-    const vidId = rawVid ? parseInt(rawVid, 10) : NaN;
-    if (Number.isFinite(vidId)) setScrollToVideoId(vidId);
-    setSearchParams((prev) => {
-      const next = new URLSearchParams(prev);
-      next.delete('technique');
-      next.delete('video');
-      return next;
-    }, { replace: true });
-    requestAnimationFrame(() => {
-      const el = document.getElementById(`technique-row-${techId}`);
-      el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    });
-  }, [searchParams, setSearchParams, techniques]);
+  useFocusTarget({
+    ready: techniques.length > 0,
+    onFocus: (ref, videoId) => {
+      if (ref.type !== 'technique') return false;
+      if (!techniques.some((t) => t.id === ref.id)) return false;
+      setExpandedValue(String(ref.id));
+      if (videoId != null) setScrollToVideoId(videoId);
+      requestAnimationFrame(() => {
+        document
+          .getElementById(`technique-row-${ref.id}`)
+          ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
+      return true;
+    },
+  });
 
   const availableTags = useMemo(() => {
     const set = new Set<string>();

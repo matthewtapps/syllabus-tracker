@@ -60,7 +60,7 @@ export function VideoOverviewCard({ className }: VideoOverviewCardProps) {
                     className="flex items-center justify-between gap-3 text-sm"
                   >
                     <Link
-                      to={`/library?technique=${row.technique_id}&video=${row.video_id}`}
+                      to={`/library?focus=technique:${row.technique_id}&video=${row.video_id}`}
                       className="min-w-0 flex-1 truncate text-foreground underline-offset-2 hover:underline"
                     >
                       {row.video_title}
