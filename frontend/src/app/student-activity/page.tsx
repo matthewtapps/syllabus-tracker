@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
-import { Navigate, useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, History } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { Navigate, useParams } from 'react-router-dom';
+import { History } from 'lucide-react';
+import { BackButton } from '@/components/back-button';
 import { ActivityFeedList } from '@/components/activity-feed-list';
 import { useStudentActivityFeed, useAllUsers } from '@/lib/queries';
 import { useUser } from '@/lib/current-user-context';
@@ -32,7 +32,6 @@ function ActivityHub({
   studentId: number;
   isOwnView: boolean;
 }) {
-  const navigate = useNavigate();
   const viewer = useUser();
   const usersQuery = useAllUsers();
   const student = useMemo(() => {
@@ -65,15 +64,7 @@ function ActivityHub({
   return (
     <div className="container mx-auto px-4 py-6 sm:px-6 md:py-8 space-y-4">
       <div>
-        <Button
-          variant="ghost"
-          size="sm"
-          className="mb-3 -ml-2 gap-1.5"
-          onClick={() => navigate(-1)}
-        >
-          <ArrowLeft className="h-4 w-4" aria-hidden />
-          Back
-        </Button>
+        <BackButton fallback={`/student/${studentId}`} />
         <h1 className="flex items-center gap-2 text-base font-semibold">
           <History className="h-4 w-4" aria-hidden />
           {title}
