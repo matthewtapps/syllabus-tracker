@@ -349,6 +349,22 @@ jobs:
           chmod 600 ~/.ssh/id_ed25519
           ssh-keyscan -H "$VM_IP" >> ~/.ssh/known_hosts
 
+      - name: Free disk on host (prune old docker images)
+        # The host accumulates one image per deploy; without pruning it
+        # eventually fills the disk and blocks the next deploy (the secrets
+        # rsync below fails with "No space left on device"). Runs BEFORE
+        # shipping so a near-full disk self-heals. Keeps a week of images for
+        # rollback (until=168h); images in use by running containers are never
+        # removed; volumes are never touched.
+        run: |
+          ssh -i ~/.ssh/id_ed25519 "deploy@$VM_IP" '
+            echo "disk before:"; df -h / | tail -1
+            docker image prune -af --filter "until=168h" || true
+            docker builder prune -f --filter "until=168h" || true
+            docker container prune -f || true
+            echo "disk after:"; df -h / | tail -1
+          '
+
       - name: Build sillybus-honeycomb.enc.env from platform state
         # Honeycomb ingest keys live in platform tofu state (minted by
         # IaC, rotated via `tofu apply -replace`). Pulling them per-deploy
