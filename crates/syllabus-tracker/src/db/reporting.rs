@@ -46,6 +46,8 @@ struct UserWithActivityDto {
     pub latest_student_note_at: Option<NaiveDateTime>,
     pub latest_watch_at: Option<NaiveDateTime>,
     pub latest_watch_video_title: Option<String>,
+    pub last_student_activity_at: Option<NaiveDateTime>,
+    pub last_coach_activity_at: Option<NaiveDateTime>,
 }
 
 #[instrument(skip(pool))]
@@ -90,7 +92,17 @@ pub async fn get_students_by_recent_updates(
                JOIN videos v ON v.id = a.video_id
               WHERE a.user_id = u.id AND v.deleted_at IS NULL
               ORDER BY a.last_watched_at DESC
-              LIMIT 1) as "latest_watch_video_title?: String"
+              LIMIT 1) as "latest_watch_video_title?: String",
+            (SELECT MAX(a.occurred_at)
+               FROM activity a
+              WHERE a.target_student_id = u.id
+                AND a.actor_user_id = u.id) as "last_student_activity_at?: NaiveDateTime",
+            (SELECT MAX(a.occurred_at)
+               FROM activity a
+               JOIN users au ON au.id = a.actor_user_id
+              WHERE a.target_student_id = u.id
+                AND a.actor_user_id <> u.id
+                AND au.role IN ('coach', 'admin')) as "last_coach_activity_at?: NaiveDateTime"
         FROM users u
         LEFT JOIN syllabus_assignments sa
                ON sa.student_id = u.id AND sa.unassigned_at IS NULL
@@ -144,6 +156,12 @@ pub async fn get_students_by_recent_updates(
                 last_student_initiative_at: initiative.map(|dt| naive_to_utc(dt).to_rfc3339()),
                 last_watch_at: dto.latest_watch_at.map(|dt| naive_to_utc(dt).to_rfc3339()),
                 last_watch_video_title: dto.latest_watch_video_title,
+                last_student_activity_at: dto
+                    .last_student_activity_at
+                    .map(|dt| naive_to_utc(dt).to_rfc3339()),
+                last_coach_activity_at: dto
+                    .last_coach_activity_at
+                    .map(|dt| naive_to_utc(dt).to_rfc3339()),
             }
         })
         .collect();

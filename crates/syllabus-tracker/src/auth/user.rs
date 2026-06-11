@@ -21,15 +21,21 @@ pub struct User {
     pub last_name: Option<String>,
     pub reset_requested_at: Option<String>,
     pub last_update: Option<String>,
+    /// SST/watch-derived proxy. Drives the unseen heuristic and sort order.
     pub last_coach_update_at: Option<String>,
     pub total_techniques: Option<i64>,
     pub red_count: Option<i64>,
     pub amber_count: Option<i64>,
     pub green_count: Option<i64>,
     pub has_unseen_activity: Option<bool>,
+    /// SST/watch-derived proxy of the student's own recent initiative.
     pub last_student_initiative_at: Option<String>,
     pub last_watch_at: Option<String>,
     pub last_watch_video_title: Option<String>,
+    /// Activity-log timestamp of the student's most recent own action.
+    pub last_student_activity_at: Option<String>,
+    /// Activity-log timestamp of the most recent coach/admin action on this student.
+    pub last_coach_activity_at: Option<String>,
 }
 
 #[derive(sqlx::FromRow, Clone)]
@@ -77,6 +83,8 @@ impl From<DbUser> for User {
             last_student_initiative_at: None,
             last_watch_at: None,
             last_watch_video_title: None,
+            last_student_activity_at: None,
+            last_coach_activity_at: None,
         }
     }
 }
