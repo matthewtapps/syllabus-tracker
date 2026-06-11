@@ -2,8 +2,8 @@
  * ActivityFeedList rendering tests (browser project).
  *
  * Verifies the list renders actor names and activity lines, shows custom empty
- * text when there are no rows, applies the "and N more" coalescing suffix, and
- * wraps linkable rows in a whole-row anchor.
+ * text when there are no rows, applies the stretched-link pattern (overlay
+ * anchor + separate N-more link), and shows the context surface chip.
  */
 import { describe, expect, test } from "vitest";
 import { screen } from "@testing-library/react";
@@ -34,14 +34,19 @@ function row(overrides: Partial<ActivityRow> = {}): ActivityRow {
 }
 
 describe("ActivityFeedList", () => {
-  // --- whole-row link behavior (plan Task 5 requirement) ---
-  test("renders the whole row as a link to the deep-link href", () => {
+  // --- stretched-link: whole-row overlay (plan Task 14) ---
+  test("renders the overlay link with aria-label pointing to the deep-link href", () => {
     renderWithProviders(<ActivityFeedList rows={[row({})]} isLoading={false} />);
-    const link = screen.getByRole("link");
+    // The overlay anchor has no visible text; find it by its aria-label.
+    const link = screen.getByRole("link", { name: /Alex Rivera logged an attempt on Knee Cut Pass/i });
     expect(link.getAttribute("href")).toBe("/student/4/syllabi/2?focus=sst:42");
-    expect(link.textContent).toContain("Alex Rivera");
-    expect(link.textContent).toContain("logged an attempt on");
-    expect(link.textContent).toContain("Knee Cut Pass");
+  });
+
+  test("renders actor name and activity text inside the content div", () => {
+    renderWithProviders(<ActivityFeedList rows={[row({})]} isLoading={false} />);
+    expect(screen.getByText("Alex Rivera")).toBeTruthy();
+    expect(screen.getByText(/logged an attempt on/)).toBeTruthy();
+    expect(screen.getByText(/Knee Cut Pass/)).toBeTruthy();
   });
 
   test("renders a non-link row when there is no href", () => {
@@ -52,7 +57,7 @@ describe("ActivityFeedList", () => {
       />,
     );
     expect(screen.queryByRole("link")).toBeNull();
-    expect(screen.getByText("performed an action")).toBeInTheDocument();
+    expect(screen.getByText("performed an action")).toBeTruthy();
   });
 
   // --- existing coverage (layout-adapted) ---
@@ -60,19 +65,20 @@ describe("ActivityFeedList", () => {
     renderWithProviders(
       <ActivityFeedList rows={[row({ technique_name: "Armbar" })]} isLoading={false} />,
     );
-    expect(screen.getByText("Alex Rivera")).toBeInTheDocument();
-    // verb and subject are rendered as a single uniform line now.
-    expect(screen.getByText(/logged an attempt on Armbar/)).toBeInTheDocument();
+    expect(screen.getByText("Alex Rivera")).toBeTruthy();
+    expect(screen.getByText("logged an attempt on")).toBeTruthy();
+    expect(screen.getByText("Armbar")).toBeTruthy();
   });
 
   test("empty state shows emptyText", () => {
     renderWithProviders(
       <ActivityFeedList rows={[]} isLoading={false} emptyText="Nothing here yet." />,
     );
-    expect(screen.getByText("Nothing here yet.")).toBeInTheDocument();
+    expect(screen.getByText("Nothing here yet.")).toBeTruthy();
   });
 
-  test("with coalesce, two consecutive same-actor same-verb rows show 'and 1 more' suffix", () => {
+  // --- coalesced feed: separate N-more link (plan Task 14) ---
+  test("coalesced feed renders an overlay link AND a separate N-more link to the student activity page", () => {
     const rows = [
       row({ id: 2, technique_name: "Armbar" }),
       row({ id: 1, technique_name: "Triangle" }),
@@ -80,16 +86,66 @@ describe("ActivityFeedList", () => {
     renderWithProviders(
       <ActivityFeedList rows={rows} isLoading={false} coalesce />,
     );
-    // The suffix is appended to the subject text node inside the description <p>.
-    expect(screen.getByText(/Armbar and 1 more/)).toBeInTheDocument();
+    // There should be exactly two links: the overlay and the N-more.
+    const links = screen.getAllByRole("link");
+    expect(links).toHaveLength(2);
+
+    // The N-more link now has its own aria-label and points to the per-student activity page.
+    const nMoreLink = screen.getByRole("link", { name: /See all of Alex Rivera's activity/i });
+    expect(nMoreLink.getAttribute("href")).toBe("/student/2/activity");
+
+    // The overlay link still points to the deep-link destination.
+    const overlayLink = screen.getByRole("link", { name: /Alex Rivera logged an attempt on Armbar/i });
+    expect(overlayLink.getAttribute("href")).toBe("/student/4/syllabi/2?focus=sst:42");
   });
 
-  // --- context surface chip (plan Task 12) ---
+  // --- new: no-href coalesced row keeps the N-more link ---
+  test("coalesced no-href rows: no overlay link but N-more link to student activity page is still present", () => {
+    // Use a verb that yields no href when technique fields are missing (default branch).
+    const noHrefRow = (id: number) =>
+      row({
+        id,
+        verb: "sst_hidden",
+        technique_id: null,
+        technique_name: null,
+        sst_id: null,
+        syllabus_id: null,
+        syllabus_name: null,
+      });
+    renderWithProviders(
+      <ActivityFeedList rows={[noHrefRow(1), noHrefRow(2)]} isLoading={false} coalesce />,
+    );
+    // No overlay link should be rendered (line.href is undefined).
+    const links = screen.getAllByRole("link");
+    // Only the N-more link should be present (no overlay).
+    expect(links).toHaveLength(1);
+    const nMoreLink = links[0];
+    expect(nMoreLink.getAttribute("href")).toBe("/student/2/activity");
+    expect(nMoreLink).toBeTruthy();
+  });
+
+  // --- new: detailed prop shows absolute timestamp and full actor name ---
+  test("detailed prop shows absolute timestamp and full actor name", () => {
+    const fixedDate = new Date("2026-03-15T10:00:00.000Z").toISOString();
+    renderWithProviders(
+      <ActivityFeedList
+        rows={[row({ occurred_at: fixedDate, actor_name: "Jordan Blake" })]}
+        isLoading={false}
+        detailed
+      />,
+    );
+    // The year 2026 should appear in the absolute timestamp format.
+    expect(screen.getByText(/2026/)).toBeTruthy();
+    // The full actor name should be present in the DOM.
+    expect(screen.getByText("Jordan Blake")).toBeTruthy();
+  });
+
+  // --- context surface chip (plan Task 12, preserved in Task 14) ---
   test("syllabus-context row shows the syllabus name chip", () => {
     renderWithProviders(
       <ActivityFeedList rows={[row({ syllabus_name: "Blue Belt" })]} isLoading={false} />,
     );
-    expect(screen.getByText("Blue Belt")).toBeInTheDocument();
+    expect(screen.getByText("Blue Belt")).toBeTruthy();
   });
 
   test("library-context video_watched row shows the Library chip", () => {
@@ -110,6 +166,6 @@ describe("ActivityFeedList", () => {
         isLoading={false}
       />,
     );
-    expect(screen.getByText("Library")).toBeInTheDocument();
+    expect(screen.getByText("Library")).toBeTruthy();
   });
 });

@@ -2,9 +2,9 @@ import { Link } from "react-router-dom";
 import { NotebookPen, Globe } from "lucide-react";
 import { StudentAvatar } from "@/components/student-avatar";
 import { activityLine, type ActivityRow } from "@/lib/activity-line";
-import { coalesceActivity, coalescedSuffix } from "@/lib/activity-coalesce";
+import { coalesceActivity } from "@/lib/activity-coalesce";
 import { activitySurface } from "@/lib/view-context";
-import { formatRelativeShort } from "@/lib/dates";
+import { formatAbsolute, formatRelativeShort } from "@/lib/dates";
 import { cn } from "@/lib/utils";
 
 interface ActivityFeedListProps {
@@ -17,6 +17,8 @@ interface ActivityFeedListProps {
   /** Hide the per-row avatar (e.g. a single-student profile feed). Default shows it. */
   showAvatar?: boolean;
   emptyText?: string;
+  /** Show absolute timestamps and full text without truncation. Default false. */
+  detailed?: boolean;
 }
 
 /**
@@ -31,6 +33,7 @@ export function ActivityFeedList({
   maxRows,
   showAvatar = true,
   emptyText = "No recent activity yet.",
+  detailed = false,
 }: ActivityFeedListProps) {
   if (isLoading) {
     return (
@@ -54,63 +57,74 @@ export function ActivityFeedList({
     : rows.map((row) => ({ row, count: 1, extraTechniques: [] }));
   const shown = maxRows ? items.slice(0, maxRows) : items;
 
+  const rowClasses = "flex items-start gap-3 px-4 py-3";
+
   return (
     <ul className="divide-y divide-border">
       {shown.map((item) => {
         const line = activityLine(item.row);
         const surface = activitySurface(item.row);
-        const subject = line.subject
-          ? `${line.subject}${coalescedSuffix(item)}`
-          : coalescedSuffix(item).trim() || undefined;
+        const studentActivityHref = `/student/${item.row.actor_user_id}/activity`;
+        const ariaLabel = `${item.row.actor_name ?? "A student"} ${line.verb}${line.subject ? ` ${line.subject}` : ""}`;
 
-        const inner = (
-          <>
-            {showAvatar && (
-              <StudentAvatar
-                id={item.row.actor_user_id}
-                name={item.row.actor_name ?? "?"}
-              />
-            )}
-            <div className="min-w-0 flex-1">
-              <div className="flex items-baseline justify-between gap-2">
-                <p className="truncate text-sm font-medium">
-                  {item.row.actor_name ?? "A student"}
-                </p>
-                <span className="shrink-0 text-xs text-muted-foreground">
-                  {formatRelativeShort(item.row.occurred_at)}
-                </span>
-              </div>
-              <p className="mt-0.5 text-sm text-muted-foreground">
-                {subject ? `${line.verb} ${subject}` : line.verb}
-              </p>
-              {surface && (
-                <span className="mt-1 inline-flex items-center gap-1 text-xs text-muted-foreground">
-                  {surface.kind === "syllabus" ? (
-                    <NotebookPen className="h-3 w-3 shrink-0" aria-hidden />
-                  ) : (
-                    <Globe className="h-3 w-3 shrink-0" aria-hidden />
-                  )}
-                  <span className="truncate">{surface.label}</span>
-                </span>
-              )}
-            </div>
-          </>
-        );
-
-        const rowClasses = "flex items-start gap-3 px-4 py-3";
+        const hideDup = line.href ? true : undefined;
         const key = `${item.row.actor_user_id}-${item.row.id}-${item.row.occurred_at}`;
         return (
-          <li key={key}>
-            {line.href ? (
+          <li key={key} className="relative">
+            {line.href && (
               <Link
                 to={line.href}
-                className={cn(rowClasses, "transition-colors hover:bg-muted/40")}
-              >
-                {inner}
-              </Link>
-            ) : (
-              <div className={rowClasses}>{inner}</div>
+                aria-label={ariaLabel}
+                className="absolute inset-0 z-0 transition-colors hover:bg-muted/40"
+              />
             )}
+            <div className={cn(rowClasses, "relative z-10", line.href && "pointer-events-none")}>
+              {showAvatar && (
+                <span aria-hidden={hideDup}>
+                  <StudentAvatar id={item.row.actor_user_id} name={item.row.actor_name ?? "?"} />
+                </span>
+              )}
+              <div className="min-w-0 flex-1">
+                <div aria-hidden={hideDup} className="flex items-baseline justify-between gap-2">
+                  <p className={cn("text-sm font-medium", detailed ? "" : "truncate")}>
+                    {item.row.actor_name ?? "A student"}
+                  </p>
+                  <span className="shrink-0 text-xs text-muted-foreground">
+                    {detailed
+                      ? formatAbsolute(item.row.occurred_at)
+                      : formatRelativeShort(item.row.occurred_at)}
+                  </span>
+                </div>
+                <p className="mt-0.5 text-sm text-muted-foreground">
+                  <span aria-hidden={hideDup}>
+                    {line.verb}
+                    {line.subject ? ` ${line.subject}` : ""}
+                  </span>
+                  {item.count > 1 && (
+                    <>
+                      {" "}
+                      <Link
+                        to={studentActivityHref}
+                        aria-label={`See all of ${item.row.actor_name ?? "this student"}'s activity`}
+                        className="pointer-events-auto relative z-20 font-medium text-foreground underline underline-offset-2 hover:no-underline"
+                      >
+                        and {item.count - 1} more
+                      </Link>
+                    </>
+                  )}
+                </p>
+                {surface && (
+                  <span aria-hidden={hideDup} className="mt-1 inline-flex items-center gap-1 text-xs text-muted-foreground">
+                    {surface.kind === "syllabus" ? (
+                      <NotebookPen className="h-3 w-3 shrink-0" aria-hidden />
+                    ) : (
+                      <Globe className="h-3 w-3 shrink-0" aria-hidden />
+                    )}
+                    <span className={detailed ? "" : "truncate"}>{surface.label}</span>
+                  </span>
+                )}
+              </div>
+            </div>
           </li>
         );
       })}
