@@ -1,13 +1,12 @@
 /**
  * RecentActivityFeed panel rendering tests (browser project).
  *
- * Mocks getDashboardActivityFeed from the api module and asserts that actor
- * name and the activity line text are rendered. Verifies no "See all" link is
- * present (the browsable feed is a future feature).
+ * Stubs window.fetch to serve a single ActivityRow and asserts that actor name
+ * and activity line text are rendered. Verifies no "See all" link is present
+ * (the browsable feed is a future feature).
  */
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { screen } from "@testing-library/react";
-import * as api from "@/lib/api";
+import { screen, waitFor } from "@testing-library/react";
 import { RecentActivityFeed } from "./recent-activity-feed";
 import { renderWithProviders } from "@/test/render";
 import type { ActivityRow } from "@/lib/api";
@@ -30,34 +29,51 @@ const mockRow: ActivityRow = {
   unread: false,
 };
 
+function makeStubFetch(rows: ActivityRow[]) {
+  const mockFn = vi.fn().mockImplementation((url: string) => {
+    if (url.includes("/api/dashboard/activity_feed")) {
+      return Promise.resolve(
+        new Response(JSON.stringify(rows), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      );
+    }
+    return Promise.resolve(new Response(JSON.stringify({}), { status: 200 }));
+  });
+  return mockFn;
+}
+
 describe("RecentActivityFeed", () => {
-  let feedSpy: ReturnType<typeof vi.spyOn> | null = null;
+  let fetchSpy: ReturnType<typeof vi.spyOn> | null = null;
 
   afterEach(() => {
-    feedSpy?.mockRestore();
+    fetchSpy?.mockRestore();
   });
 
   test("renders actor name and activity line text", async () => {
-    feedSpy = vi
-      .spyOn(api, "getDashboardActivityFeed")
-      .mockResolvedValue([mockRow]);
+    fetchSpy = vi
+      .spyOn(window, "fetch")
+      .mockImplementation(makeStubFetch([mockRow]));
 
     renderWithProviders(<RecentActivityFeed />);
 
-    expect(await screen.findByText("Sam Khan")).toBeInTheDocument();
-    expect(
-      await screen.findByText(/logged an attempt on Triangle/),
-    ).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByText("Sam Khan")).toBeInTheDocument();
+    });
+    expect(screen.getByText(/logged an attempt on Triangle/)).toBeInTheDocument();
   });
 
   test("does not render a See all link", async () => {
-    feedSpy = vi
-      .spyOn(api, "getDashboardActivityFeed")
-      .mockResolvedValue([mockRow]);
+    fetchSpy = vi
+      .spyOn(window, "fetch")
+      .mockImplementation(makeStubFetch([mockRow]));
 
     renderWithProviders(<RecentActivityFeed />);
 
-    await screen.findByText("Sam Khan");
+    await waitFor(() => {
+      expect(screen.getByText("Sam Khan")).toBeInTheDocument();
+    });
     expect(screen.queryByRole("link", { name: /see all/i })).toBeNull();
   });
 });

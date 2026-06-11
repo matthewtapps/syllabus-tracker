@@ -1,16 +1,16 @@
 /**
  * ActivityDigest tile rendering tests (browser project).
  *
- * Mocks getActivityDigest from the api module and asserts the four metric
- * tiles are rendered with the correct labels and counts.
+ * Stubs window.fetch to serve a synthetic ActivityDigest payload and asserts
+ * the four metric tiles render with the correct labels, counts, and delta text.
  */
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { screen } from "@testing-library/react";
-import * as api from "@/lib/api";
+import { screen, waitFor } from "@testing-library/react";
 import { ActivityDigest } from "./activity-digest";
 import { renderWithProviders } from "@/test/render";
 import type { ActivityDigest as ActivityDigestType } from "@/lib/api";
 
+// Deltas: +7 (positive), +4 (positive), -2 (negative), 0 (no change).
 const mockDigest: ActivityDigestType = {
   window_days: 7,
   metrics: [
@@ -49,41 +49,64 @@ const mockDigest: ActivityDigestType = {
   ],
 };
 
+function makeStubFetch(digest: ActivityDigestType | null, status = 200) {
+  const mockFn = vi.fn().mockImplementation((url: string) => {
+    if (url.includes("/api/dashboard/activity_digest")) {
+      if (status !== 200) {
+        return Promise.resolve(new Response("err", { status }));
+      }
+      return Promise.resolve(
+        new Response(JSON.stringify(digest), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      );
+    }
+    return Promise.resolve(new Response(JSON.stringify({}), { status: 200 }));
+  });
+  return mockFn;
+}
+
 describe("ActivityDigest", () => {
-  let digestSpy: ReturnType<typeof vi.spyOn> | null = null;
+  let fetchSpy: ReturnType<typeof vi.spyOn> | null = null;
 
   afterEach(() => {
-    digestSpy?.mockRestore();
+    fetchSpy?.mockRestore();
   });
 
   test("renders all four metric tiles with correct labels and counts", async () => {
-    digestSpy = vi
-      .spyOn(api, "getActivityDigest")
-      .mockResolvedValue(mockDigest);
+    fetchSpy = vi
+      .spyOn(window, "fetch")
+      .mockImplementation(makeStubFetch(mockDigest));
 
     renderWithProviders(<ActivityDigest />);
 
-    expect(await screen.findByText("Attempts logged")).toBeInTheDocument();
-    expect(await screen.findByText("37")).toBeInTheDocument();
-    expect(await screen.findByText("Active students")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByText("Attempts logged")).toBeInTheDocument();
+    });
+    expect(screen.getByText("37")).toBeInTheDocument();
+    expect(screen.getByText("Active students")).toBeInTheDocument();
   });
 
   test("renders delta text for positive, negative, and zero deltas", async () => {
-    digestSpy = vi
-      .spyOn(api, "getActivityDigest")
-      .mockResolvedValue(mockDigest);
+    fetchSpy = vi
+      .spyOn(window, "fetch")
+      .mockImplementation(makeStubFetch(mockDigest));
 
     renderWithProviders(<ActivityDigest />);
 
-    expect(await screen.findByText("Up 7 vs last week")).toBeInTheDocument();
-    expect(await screen.findByText("2 fewer vs last week")).toBeInTheDocument();
-    expect(await screen.findByText("No change vs last week")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByText("Up 7 vs last week")).toBeInTheDocument();
+    });
+    expect(screen.getByText("Up 4 vs last week")).toBeInTheDocument();
+    expect(screen.getByText("2 fewer vs last week")).toBeInTheDocument();
+    expect(screen.getByText("No change vs last week")).toBeInTheDocument();
   });
 
   test("shows error state when the query rejects", async () => {
-    digestSpy = vi
-      .spyOn(api, "getActivityDigest")
-      .mockRejectedValue(new Error("network error"));
+    fetchSpy = vi
+      .spyOn(window, "fetch")
+      .mockImplementation(makeStubFetch(null, 500));
 
     renderWithProviders(<ActivityDigest />);
 
