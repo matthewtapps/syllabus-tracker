@@ -1,22 +1,14 @@
 import { type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { Archive, ChevronRight, Clock, GraduationCap, PlayCircle } from "lucide-react";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import type { User } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { formatRelative } from "@/lib/dates";
+import { StudentAvatar } from "@/components/student-avatar";
 
 const WATCH_RECENT_DAYS = 7;
-
-function initials(user: Pick<User, "display_name" | "username">): string {
-  const source = user.display_name?.trim() || user.username || "";
-  const parts = source.split(/\s+/).filter(Boolean);
-  if (parts.length === 0) return "?";
-  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
-  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
-}
 
 interface StudentRowProps {
   student: User;
@@ -60,9 +52,7 @@ export function StudentRow({
         to={target}
         className="flex min-w-0 flex-1 items-center gap-4 px-4 py-4 focus-visible:outline-none"
       >
-        <Avatar size="lg" className="shrink-0">
-          <AvatarFallback>{initials(student)}</AvatarFallback>
-        </Avatar>
+        <StudentAvatar id={student.id} name={student.display_name || student.username} size="lg" />
 
         <div className="min-w-0 flex-1 space-y-1.5">
           <div className="flex items-center gap-2">

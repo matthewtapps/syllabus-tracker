@@ -15,8 +15,10 @@ import { type User, isAdmin } from '@/lib/api';
 import { useUser } from '@/lib/current-user-context';
 import { useStudents } from '@/lib/queries';
 import { useSetStudentGraduated, useToggleUserArchived } from '@/lib/mutations';
+import { categorizeStudent, isStudentLed } from '@/lib/student-triage';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   DropdownMenu,
@@ -37,19 +39,29 @@ import { StudentRow } from '@/components/student-row';
 import { GraduateConfirmDialog } from '@/components/graduate-confirm-dialog';
 
 type SortBy = 'recent_update' | 'alphabetical';
-type StatusTab = 'active' | 'graduated' | 'archived' | 'all';
 
-const STATUS_TABS: { value: StatusTab; label: string }[] = [
+type ActivityTab = 'active' | 'coach_led' | 'quiet';
+
+const ACTIVITY_TABS: { value: ActivityTab; label: string }[] = [
   { value: 'active', label: 'Active' },
-  { value: 'graduated', label: 'Graduated' },
-  { value: 'archived', label: 'Archived' },
-  { value: 'all', label: 'All' },
+  { value: 'coach_led', label: 'Coach-led' },
+  { value: 'quiet', label: 'Quiet' },
 ];
 
-const STATUS_TAB_VALUES = new Set<StatusTab>(['active', 'graduated', 'archived', 'all']);
+const ACTIVITY_TAB_VALUES = new Set<ActivityTab>(['active', 'coach_led', 'quiet']);
 
-function isStatusTab(value: string | null): value is StatusTab {
-  return value !== null && STATUS_TAB_VALUES.has(value as StatusTab);
+function isActivityTab(v: string | null): v is ActivityTab {
+  return v !== null && ACTIVITY_TAB_VALUES.has(v as ActivityTab);
+}
+
+function flavour(tab: ActivityTab, studentLedOnly: boolean): string {
+  if (tab === 'active') {
+    return studentLedOnly
+      ? 'Active on their own, with no recent updates from you.'
+      : 'Students with activity of their own lately, whether or not you\'ve updated them.';
+  }
+  if (tab === 'coach_led') return 'You\'ve updated them recently, with no recent activity from the student.';
+  return 'No recent activity from either side.';
 }
 
 export default function StudentsList() {
@@ -86,8 +98,9 @@ export default function StudentsList() {
     }, { replace: true });
   }
   const tabParam = searchParams.get('tab');
-  const statusTab: StatusTab = isStatusTab(tabParam) ? tabParam : 'active';
-  function setStatusTab(next: StatusTab) {
+  const activityTab: ActivityTab = isActivityTab(tabParam) ? tabParam : 'active';
+  const [studentLedOnly, setStudentLedOnly] = useState(false);
+  function setActivityTab(next: ActivityTab) {
     setSearchParams(
       (prev) => {
         const params = new URLSearchParams(prev);
@@ -97,36 +110,39 @@ export default function StudentsList() {
       },
       { replace: true },
     );
+    setStudentLedOnly(false);
   }
   const [graduateTarget, setGraduateTarget] = useState<User | null>(null);
 
+  const now = useMemo(() => Date.now(), []);
+
+  const counts = useMemo(() => {
+    let active = 0, studentLed = 0, coach = 0, quiet = 0;
+    for (const s of students) {
+      const c = categorizeStudent(s, now);
+      if (c === 'active') { active++; if (isStudentLed(s, now)) studentLed++; }
+      else if (c === 'coach_led') coach++;
+      else quiet++;
+    }
+    return { active, studentLed, coach, quiet };
+  }, [students, now]);
+
   const filteredStudents = useMemo(() => {
     const needle = filter.trim().toLowerCase();
-    let result = students.filter((student) => {
-      if (statusTab === 'active') {
-        if (student.archived || student.graduated_at) return false;
-      } else if (statusTab === 'graduated') {
-        if (!student.graduated_at) return false;
-      } else if (statusTab === 'archived') {
-        if (!student.archived) return false;
+    let result = students.filter((s) => {
+      if (needle) {
+        const name = s.display_name?.toLowerCase() || '';
+        return name.includes(needle) || s.username.toLowerCase().includes(needle);
       }
-
-      if (!needle) return true;
-      const name = student.display_name?.toLowerCase() || '';
-      const username = student.username.toLowerCase();
-      return name.includes(needle) || username.includes(needle);
+      const c = categorizeStudent(s, now);
+      if (activityTab === 'active') return c === 'active' && (!studentLedOnly || isStudentLed(s, now));
+      return c === activityTab;
     });
-
     if (sortBy === 'alphabetical') {
-      result = [...result].sort((a, b) => {
-        const aName = a.display_name || a.username;
-        const bName = b.display_name || b.username;
-        return aName.localeCompare(bName);
-      });
+      result = [...result].sort((a, b) => (a.display_name || a.username).localeCompare(b.display_name || b.username));
     }
-
     return result;
-  }, [students, filter, sortBy, statusTab]);
+  }, [students, filter, sortBy, activityTab, studentLedOnly, now]);
 
   function handleUnGraduate(student: User) {
     graduateMutation.mutate(
@@ -212,10 +228,10 @@ export default function StudentsList() {
             aria-hidden
           />
           <Input
-            placeholder="Search students"
+            placeholder="Search for any student"
             value={filter}
             onChange={(e) => setFilter(e.target.value)}
-            aria-label="Search students"
+            aria-label="Search for any student"
             className="pl-9 pr-9"
           />
           {filter && (
@@ -238,20 +254,46 @@ export default function StudentsList() {
         </Button>
       </div>
 
-      <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <Tabs value={statusTab} onValueChange={(v) => setStatusTab(v as StatusTab)}>
-          <TabsList className="w-full sm:w-auto">
-            {STATUS_TABS.map(({ value, label }) => (
-              <TabsTrigger
-                key={value}
-                value={value}
-                className="flex-1 px-2 sm:flex-initial sm:px-3"
+      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="flex flex-col gap-2">
+          <Tabs value={activityTab} onValueChange={(v) => setActivityTab(v as ActivityTab)}>
+            <TabsList className="w-full sm:w-auto">
+              {ACTIVITY_TABS.map(({ value, label }) => (
+                <TabsTrigger
+                  key={value}
+                  value={value}
+                  className="flex-1 px-2 sm:flex-initial sm:px-3"
+                >
+                  {label}{' '}
+                  <span className="ml-1 rounded-full bg-muted px-1.5 py-0.5 text-xs font-medium text-muted-foreground tabular-nums">
+                    {value === 'active' ? counts.active : value === 'coach_led' ? counts.coach : counts.quiet}
+                  </span>
+                </TabsTrigger>
+              ))}
+            </TabsList>
+          </Tabs>
+
+          {activityTab === 'active' && (
+            <div className="flex items-center gap-2">
+              <Badge
+                variant={!studentLedOnly ? 'default' : 'outline'}
+                className="cursor-pointer select-none"
+                onClick={() => setStudentLedOnly(false)}
               >
-                {label}
-              </TabsTrigger>
-            ))}
-          </TabsList>
-        </Tabs>
+                Everyone
+              </Badge>
+              <Badge
+                variant={studentLedOnly ? 'default' : 'outline'}
+                className="cursor-pointer select-none"
+                onClick={() => setStudentLedOnly(true)}
+              >
+                Student-led {counts.studentLed}
+              </Badge>
+            </div>
+          )}
+
+          <p className="mb-2 text-xs text-muted-foreground">{flavour(activityTab, studentLedOnly)}</p>
+        </div>
 
         <Select value={sortBy} onValueChange={(v) => setSortBy(v as SortBy)}>
           <SelectTrigger className="w-full sm:w-[180px]">
@@ -284,7 +326,7 @@ export default function StudentsList() {
               <StudentRow
                 key={student.id}
                 student={student}
-                href={`/student/${student.id}${statusTab !== 'active' ? `?from_tab=${statusTab}` : ''}`}
+                href={`/student/${student.id}`}
                 actions={rowActions(student)}
               />
             ))}
@@ -308,11 +350,7 @@ export default function StudentsList() {
             description={
               filter
                 ? 'Try a different search or clear the filter.'
-                : statusTab === 'graduated'
-                  ? 'No graduated students.'
-                  : statusTab === 'archived'
-                    ? 'No archived students.'
-                    : 'No students in this view.'
+                : 'No students in this view.'
             }
             action={
               filter && (
