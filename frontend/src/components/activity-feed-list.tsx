@@ -1,11 +1,66 @@
 import { Link } from "react-router-dom";
-import { NotebookPen, Globe } from "lucide-react";
+import {
+  Activity,
+  ClipboardList,
+  CircleDot,
+  Dumbbell,
+  Eye,
+  Globe,
+  GraduationCap,
+  Minus,
+  NotebookPen,
+  Pencil,
+  Pin,
+  PlayCircle,
+  Plus,
+  Video,
+  type LucideIcon,
+} from "lucide-react";
 import { StudentAvatar } from "@/components/student-avatar";
 import { activityLine, type ActivityRow } from "@/lib/activity-line";
 import { coalesceActivity } from "@/lib/activity-coalesce";
 import { activitySurface } from "@/lib/view-context";
 import { formatAbsolute, formatRelativeShort } from "@/lib/dates";
 import { cn } from "@/lib/utils";
+
+function verbIcon(verb: string): LucideIcon {
+  switch (verb) {
+    case "attempt_logged":
+    case "attempt_edited":
+    case "attempt_deleted":
+      return Dumbbell;
+    case "video_watched":
+      return PlayCircle;
+    case "video_added":
+      return Video;
+    case "video_visibility_set":
+    case "sst_unhidden":
+      return Eye;
+    case "sst_status_changed":
+      return CircleDot;
+    case "sst_student_notes_edited":
+    case "sst_coach_notes_edited":
+      return NotebookPen;
+    case "technique_pinned":
+    case "technique_unpinned":
+      return Pin;
+    case "syllabus_assigned":
+    case "syllabus_unassigned":
+      return ClipboardList;
+    case "syllabus_graduated":
+      return GraduationCap;
+    case "syllabus_technique_added":
+    case "sst_added":
+      return Plus;
+    case "syllabus_technique_removed":
+    case "sst_hidden":
+      return Minus;
+    case "technique_edited":
+      return Pencil;
+    default:
+      return Activity;
+  }
+}
 
 interface ActivityFeedListProps {
   rows: ActivityRow[];
@@ -69,6 +124,7 @@ export function ActivityFeedList({
 
         const hideDup = line.href ? true : undefined;
         const key = `${item.row.actor_user_id}-${item.row.id}-${item.row.occurred_at}`;
+        const VerbIcon = verbIcon(item.row.verb);
         return (
           <li key={key} className="relative">
             {line.href && (
@@ -79,9 +135,17 @@ export function ActivityFeedList({
               />
             )}
             <div className={cn(rowClasses, "relative z-10", line.href && "pointer-events-none")}>
-              {showAvatar && (
+              {showAvatar ? (
                 <span aria-hidden={hideDup}>
                   <StudentAvatar id={item.row.actor_user_id} name={item.row.actor_name ?? "?"} />
+                </span>
+              ) : (
+                <span
+                  data-testid="verb-icon-container"
+                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground"
+                  aria-hidden
+                >
+                  <VerbIcon className="h-4 w-4" />
                 </span>
               )}
               <div className="min-w-0 flex-1">

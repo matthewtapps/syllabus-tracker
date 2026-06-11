@@ -141,6 +141,21 @@ describe("ActivityFeedList", () => {
     expect(screen.getByText("Jordan Blake")).toBeTruthy();
   });
 
+  // --- Feature A: verb icon shown when showAvatar={false} ---
+  test("renders verb-icon container when showAvatar is false", () => {
+    renderWithProviders(
+      <ActivityFeedList rows={[row({})]} isLoading={false} showAvatar={false} />,
+    );
+    expect(screen.getByTestId("verb-icon-container")).toBeTruthy();
+  });
+
+  test("does not render verb-icon container when showAvatar is true", () => {
+    renderWithProviders(
+      <ActivityFeedList rows={[row({})]} isLoading={false} showAvatar />,
+    );
+    expect(screen.queryByTestId("verb-icon-container")).toBeNull();
+  });
+
   // --- context surface chip (plan Task 12, preserved in Task 14) ---
   test("syllabus-context row shows the syllabus name chip", () => {
     renderWithProviders(
