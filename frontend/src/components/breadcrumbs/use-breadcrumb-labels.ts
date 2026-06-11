@@ -13,7 +13,7 @@ import type { DynamicKey, RawCrumb } from "./breadcrumb-config";
 export function useBreadcrumbLabels(chain: RawCrumb[]): (crumb: RawCrumb) => string {
   // Extract param values used by dynamic resolvers. May be undefined when the
   // current route doesn't include those segments.
-  const studentIdRaw = chain.find((c) => c.params.id !== undefined)?.params.id;
+  const studentIdRaw = chain.find((c) => c.params.id !== undefined && c.pattern.startsWith("/student/"))?.params.id;
   const syllabusIdRaw = chain
     .find((c) => c.params.syllabusId !== undefined)
     ?.params.syllabusId;
