@@ -87,11 +87,7 @@ describe("ActivityFeedList", () => {
       <ActivityFeedList rows={rows} isLoading={false} coalesce />,
     );
 
-    // There should be exactly one link: the overlay for the representative row.
-    const links = screen.getAllByRole("link");
-    expect(links).toHaveLength(1);
-
-    // The overlay link still points to the deep-link destination.
+    // The overlay link for the representative row is present.
     const overlayLink = screen.getByRole("link", { name: /Alex Rivera logged an attempt on Armbar/i });
     expect(overlayLink.getAttribute("href")).toBe("/student/4/syllabi/2?focus=sst:42");
 
@@ -103,28 +99,35 @@ describe("ActivityFeedList", () => {
 
   test("coalesced toggle expands and reveals the additional member rows", () => {
     const rows = [
-      row({ id: 2, technique_name: "Armbar" }),
-      row({ id: 1, technique_name: "Triangle" }),
+      row({ id: 2, technique_name: "Armbar", sst_id: 42 }),
+      row({ id: 1, technique_name: "Triangle", sst_id: 43 }),
     ];
     renderWithProviders(
       <ActivityFeedList rows={rows} isLoading={false} coalesce />,
     );
 
-    // Triangle is the second member; it should NOT be visible yet.
-    expect(screen.queryByText(/Triangle/)).toBeNull();
+    // Before expansion, the toggle button is collapsed.
+    const toggleBtn = screen.getByRole("button", { name: /and 1 more/i });
+    expect(toggleBtn.getAttribute("aria-expanded")).toBe("false");
+
+    // The actor name "Alex Rivera" should appear exactly once (the representative row only).
+    expect(screen.getAllByText("Alex Rivera")).toHaveLength(1);
 
     // Click the toggle button.
-    const toggleBtn = screen.getByRole("button", { name: /and 1 more/i });
     fireEvent.click(toggleBtn);
 
-    // After expansion, Triangle appears and button label changes.
+    // After expansion, the button label changes and aria-expanded flips.
+    expect(screen.getByRole("button", { name: /Show less/i }).getAttribute("aria-expanded")).toBe("true");
+
+    // The second member is rendered as a compact line (subject text visible, no duplicate actor name).
+    // Triangle appears as part of the compact sub-list line text.
     expect(screen.getByText(/Triangle/)).toBeTruthy();
-    expect(screen.getByRole("button", { name: /Show less/i })).toBeTruthy();
+    // The actor name still appears exactly once (compact members have no actor name).
+    expect(screen.getAllByText("Alex Rivera")).toHaveLength(1);
 
     // Click again to collapse.
     fireEvent.click(screen.getByRole("button", { name: /Show less/i }));
-    expect(screen.queryByText(/Triangle/)).toBeNull();
-    expect(screen.getByRole("button", { name: /and 1 more/i })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /and 1 more/i }).getAttribute("aria-expanded")).toBe("false");
   });
 
   // --- no-href coalesced row: toggle button present, no overlay link ---

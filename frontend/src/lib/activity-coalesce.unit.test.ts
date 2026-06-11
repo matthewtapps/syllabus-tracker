@@ -14,7 +14,7 @@ function row(p: Partial<ActivityRow>): ActivityRow {
 }
 
 describe("coalesceActivity", () => {
-  it("collapses consecutive same-verb same-actor rows", () => {
+  it("collapses consecutive same-verb same-actor same-surface rows", () => {
     const r3 = row({ id: 3, technique_name: "Armbar" });
     const r2 = row({ id: 2, technique_name: "Triangle" });
     const r1 = row({ id: 1, verb: "video_watched", technique_name: "Kimura" });
@@ -39,6 +39,35 @@ describe("coalesceActivity", () => {
     expect(out).toHaveLength(2);
     expect(out[0].members).toHaveLength(1);
     expect(out[1].members).toHaveLength(1);
+  });
+
+  it("does not merge same-actor same-verb rows on different syllabus_ids", () => {
+    const out = coalesceActivity([
+      row({ id: 2, syllabus_id: 10, syllabus_name: "Blue Belt" }),
+      row({ id: 1, syllabus_id: 20, syllabus_name: "Purple Belt" }),
+    ]);
+    expect(out).toHaveLength(2);
+    expect(out[0].members).toHaveLength(1);
+    expect(out[1].members).toHaveLength(1);
+  });
+
+  it("merges same-actor same-verb rows on the same syllabus_id", () => {
+    const r2 = row({ id: 2, syllabus_id: 10, technique_name: "Armbar" });
+    const r1 = row({ id: 1, syllabus_id: 10, technique_name: "Triangle" });
+    const out = coalesceActivity([r2, r1]);
+    expect(out).toHaveLength(1);
+    expect(out[0].count).toBe(2);
+    expect(out[0].members).toHaveLength(2);
+    expect(out[0].members[0]).toBe(r2);
+    expect(out[0].members[1]).toBe(r1);
+  });
+
+  it("does not merge rows with different context_kind when no syllabus_id", () => {
+    const out = coalesceActivity([
+      row({ id: 2, syllabus_id: null, context_kind: "library" }),
+      row({ id: 1, syllabus_id: null, context_kind: null }),
+    ]);
+    expect(out).toHaveLength(2);
   });
 
   it("members[0] is the representative row", () => {

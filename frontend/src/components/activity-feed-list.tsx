@@ -228,23 +228,45 @@ export function ActivityFeedList({
 
         const opts: RowOptions = { showAvatar, detailed, coalesce, trailing: expandToggle };
 
+        const extraMembers = item.members.slice(1);
+
         return (
           <li key={key}>
             <div className="relative">
               <ActivityRowItem activityRow={item.members[0]} opts={opts} />
             </div>
-            {isExpanded &&
-              item.members.slice(1).map((memberRow) => {
-                const memberKey = `${memberRow.actor_user_id}-${memberRow.id}-${memberRow.occurred_at}`;
-                return (
-                  <div key={memberKey} className="relative border-l-2 border-border ml-4">
-                    <ActivityRowItem
-                      activityRow={memberRow}
-                      opts={{ showAvatar, detailed, coalesce, trailing: undefined }}
-                    />
-                  </div>
-                );
-              })}
+            {extraMembers.length > 0 && (
+              <div
+                className={cn(
+                  "grid transition-[grid-template-rows] duration-200 ease-out",
+                  isExpanded ? "grid-rows-[1fr]" : "grid-rows-[0fr]",
+                )}
+              >
+                <div className="overflow-hidden">
+                  <ul className="ml-4 border-l-2 border-border space-y-1.5 py-1">
+                    {extraMembers.map((memberRow) => {
+                      const memberKey = `${memberRow.actor_user_id}-${memberRow.id}-${memberRow.occurred_at}`;
+                      const memberLine = activityLine(memberRow);
+                      const lineText = memberLine.verb + (memberLine.subject ? ` ${memberLine.subject}` : "");
+                      return (
+                        <li key={memberKey} className="px-3">
+                          {memberLine.href ? (
+                            <Link
+                              to={memberLine.href}
+                              className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+                            >
+                              {lineText}
+                            </Link>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">{lineText}</span>
+                          )}
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </div>
+              </div>
+            )}
           </li>
         );
       })}

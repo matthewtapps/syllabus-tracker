@@ -12,15 +12,29 @@ export interface CoalescedActivity {
 }
 
 /**
- * Collapse runs of consecutive rows that share actor + verb into one entry, so
- * one keen student does not flood the feed. Input must already be sorted newest
- * first (as the feed endpoint returns it).
+ * Returns a stable surface key for a row so that groups share one surface/chip.
+ * Rows from different syllabi or different context kinds are not coalesced.
+ */
+function surfaceKey(row: ActivityRow): string {
+  if (row.syllabus_id != null) return `syllabus:${row.syllabus_id}`;
+  return row.context_kind ?? "none";
+}
+
+/**
+ * Collapse runs of consecutive rows that share actor + verb + surface into one
+ * entry, so one keen student does not flood the feed. Input must already be
+ * sorted newest first (as the feed endpoint returns it).
  */
 export function coalesceActivity(rows: ActivityRow[]): CoalescedActivity[] {
   const out: CoalescedActivity[] = [];
   for (const row of rows) {
     const last = out[out.length - 1];
-    if (last && last.row.actor_user_id === row.actor_user_id && last.row.verb === row.verb) {
+    if (
+      last &&
+      last.row.actor_user_id === row.actor_user_id &&
+      last.row.verb === row.verb &&
+      surfaceKey(last.row) === surfaceKey(row)
+    ) {
       last.count += 1;
       last.members.push(row);
       const name = row.technique_name;
