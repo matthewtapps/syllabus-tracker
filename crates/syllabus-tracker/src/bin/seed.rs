@@ -242,37 +242,66 @@ const SYLLABUS_DEFS: &[(&str, &str, &[&str])] = &[
     ),
 ];
 
-/// Per-student plan: (syllabus_indices, red_pct, amber_pct, days_since_coach, has_new_activity).
+/// Per-student plan:
+///   (syllabus_indices, red_pct, amber_pct, days_since_coach, has_new_activity,
+///    days_since_last_attempt)
+///
 /// Ordered to match STUDENT_NAMES. Empty syllabus_indices means not yet assigned.
-const STUDENT_PLANS: &[(&[usize], f64, f64, i64, bool)] = &[
-    // Alex -- most progressed, freshly active, has new student activity
-    (&[0, 1, 2], 0.10, 0.30, 0, true),
-    // Bianca -- active yesterday
-    (&[0, 1], 0.20, 0.30, 1, false),
-    // Marcus -- has new student activity since coach's last look
-    (&[0, 2], 0.25, 0.40, 3, true),
-    // Priya
-    (&[0, 4], 0.30, 0.40, 5, false),
-    // Diego
-    (&[0], 0.40, 0.30, 7, false),
-    // Sarah -- new activity
-    (&[0, 1], 0.30, 0.30, 10, true),
-    // Hiroshi
-    (&[0, 2], 0.25, 0.35, 14, false),
-    // Maya
-    (&[0], 0.50, 0.25, 18, false),
-    // Yusuf
-    (&[0], 0.60, 0.25, 21, false),
-    // Camila -- newer student
-    (&[0], 0.70, 0.20, 25, false),
-    // Tobias -- very new
-    (&[0], 0.80, 0.15, 30, false),
-    // Aisha -- just registered, no syllabi
-    (&[], 0.00, 0.00, 0, false),
-    // Jordan -- pending approval (claimed but unapproved)
-    (&[], 0.00, 0.00, 0, false),
-    // Robin -- active student who requested a password reset
-    (&[0, 3], 0.40, 0.40, 12, false),
+///
+/// Triage bucket intent (triage reads last_student_activity_at vs last_coach_activity_at,
+/// both within 14 days = "recent"):
+///
+///   Student-led  -- recent student attempt (days_since_last_attempt <= 10) AND
+///                   no recent coach activity (days_since_coach > 14):
+///                   Alex, Marcus, Sarah.
+///
+///   Both-active  -- recent student attempt (days_since_last_attempt <= 10) AND
+///                   recent coach activity (days_since_coach <= 14):
+///                   Bianca, Priya, Diego.
+///
+///   Coach-led    -- old student attempt (days_since_last_attempt > 16) AND
+///                   recent coach activity (days_since_coach < 10):
+///                   Hiroshi, Maya, Robin.
+///
+///   Quiet        -- old student attempt (days_since_last_attempt > 16) AND
+///                   old coach activity (days_since_coach > 20):
+///                   Yusuf, Camila, Tobias.
+///
+/// days_since_last_attempt controls the most-recent attempt timestamp; older
+/// attempts spread backwards from there in equal steps.
+type StudentPlan = (&'static [usize], f64, f64, i64, bool, i64);
+const STUDENT_PLANS: &[StudentPlan] = &[
+    // Alex -- Student-led: recent attempt (2 days), coach quiet (25 days).
+    (&[0, 1, 2], 0.10, 0.30, 25, true, 2),
+    // Bianca -- Both-active: recent attempt (1 day), recent coach (3 days).
+    (&[0, 1], 0.20, 0.30, 3, false, 1),
+    // Marcus -- Student-led: recent attempt (4 days), coach hasn't checked (18 days).
+    // Has new student activity since coach's last look.
+    (&[0, 2], 0.25, 0.40, 18, true, 4),
+    // Priya -- Both-active: recent attempt (6 days), recent coach (8 days).
+    (&[0, 4], 0.30, 0.40, 8, false, 6),
+    // Diego -- Both-active: recent attempt (9 days), recent coach (5 days).
+    (&[0], 0.40, 0.30, 5, false, 9),
+    // Sarah -- Student-led: recent attempt (3 days), coach absent (20 days).
+    // New activity flag marks an open thread.
+    (&[0, 1], 0.30, 0.30, 20, true, 3),
+    // Hiroshi -- Coach-led: old attempt (22 days), coach recently checked (7 days).
+    (&[0, 2], 0.25, 0.35, 7, false, 22),
+    // Maya -- Coach-led: old attempt (28 days), coach recently checked (4 days).
+    (&[0], 0.50, 0.25, 4, false, 28),
+    // Yusuf -- Quiet: old attempt (35 days), old coach (30 days).
+    (&[0], 0.60, 0.25, 30, false, 35),
+    // Camila -- Quiet: old attempt (45 days), old coach (28 days).
+    (&[0], 0.70, 0.20, 28, false, 45),
+    // Tobias -- Quiet: old attempt (60 days), old coach (35 days).
+    (&[0], 0.80, 0.15, 35, false, 60),
+    // Aisha -- just registered, no syllabi.
+    (&[], 0.00, 0.00, 0, false, 0),
+    // Jordan -- pending approval (claimed but unapproved).
+    (&[], 0.00, 0.00, 0, false, 0),
+    // Robin -- Coach-led: old attempt (19 days), coach recently engaged (6 days).
+    // Active student who requested a password reset.
+    (&[0, 3], 0.40, 0.40, 6, false, 19),
 ];
 
 /// Deterministic "shuffle by stride" so the seed is reproducible without
@@ -569,7 +598,7 @@ async fn run() -> Result<()> {
         std::collections::HashMap::new();
 
     for (student_idx, &student_id) in student_ids.iter().enumerate() {
-        let &(syllabus_indices, red_pct, amber_pct, days_since_coach, has_new_activity) =
+        let &(syllabus_indices, red_pct, amber_pct, days_since_coach, has_new_activity, _days_since_last_attempt) =
             &STUDENT_PLANS[student_idx];
 
         let coach_update_time = now - Duration::days(days_since_coach);
@@ -779,11 +808,12 @@ async fn run() -> Result<()> {
     }
     reporter.phase_finished();
 
-    // 10. Syllabus attempts: spread over ~90 days, status-driven count.
+    // 10. Syllabus attempts: most-recent attempt anchored to days_since_last_attempt
+    //     per student, older attempts spreading back from there. Status drives count.
     //     Skip SSTs that already have attempts (idempotency).
     reporter.phase_started(phases[10], None);
     for (student_idx, &student_id) in student_ids.iter().enumerate() {
-        let (syllabus_indices, ..) = STUDENT_PLANS[student_idx];
+        let (syllabus_indices, .., days_since_last_attempt) = STUDENT_PLANS[student_idx];
 
         for &syl_idx in syllabus_indices {
             let Some(&assignment_id) = assignment_map.get(&(student_id, syl_idx)) else {
@@ -826,7 +856,11 @@ async fn run() -> Result<()> {
                 }
 
                 for n in 0..target {
-                    let days_back = ((n as i64 + 1) * 90 / target as i64).min(89);
+                    // Most-recent attempt (n=0) is days_since_last_attempt ago;
+                    // earlier attempts (n=1,2,...) spread back an additional
+                    // ~7 days each so the history is plausible but not bunched.
+                    let days_back =
+                        days_since_last_attempt + (n as i64 * 7);
                     let hour_offset = ((sst_id + n as i64) % 12) - 6;
                     let attempted_at =
                         now - Duration::days(days_back) + Duration::hours(hour_offset);
@@ -1031,9 +1065,16 @@ async fn run() -> Result<()> {
                     continue;
                 }
                 for (v_idx, &video_id) in vids.iter().enumerate() {
-                    let first_watched =
-                        now - Duration::days(20 + student_idx as i64 * 2 + v_idx as i64);
-                    let last_watched = first_watched + Duration::days(3);
+                    // Spread watches across 0-25 days so a healthy number
+                    // land within the 7-day digest window while keeping some
+                    // older for a prior-week baseline. Modulus prevents
+                    // clustering and keeps the result deterministic.
+                    let days_ago =
+                        ((student_idx * 3 + v_idx * 5) % 26) as i64;
+                    let first_watched = now - Duration::days(days_ago);
+                    // last_watched must not exceed now; add up to 3 days but
+                    // clamp so future dates are impossible.
+                    let last_watched = (first_watched + Duration::days(3)).min(now);
                     let play_count = 1 + (student_idx + v_idx) as i64 % 4;
                     let completed_count = (play_count / 2).max(1);
                     let total_seconds = play_count * 180;

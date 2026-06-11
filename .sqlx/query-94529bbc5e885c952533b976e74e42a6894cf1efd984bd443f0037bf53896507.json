@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO activity\n               (occurred_at, verb, actor_user_id, target_student_id,\n                technique_id, syllabus_id, sst_id, payload_json)\n           SELECT\n               sa.attempted_at,\n               'attempt_logged',\n               sa.recorded_by_id,\n               asn.student_id,\n               sst.technique_id,\n               asn.syllabus_id,\n               sst.id,\n               json_object('attempt_id', sa.id)\n           FROM syllabus_attempts sa\n           JOIN student_syllabus_techniques sst\n               ON sst.id = sa.student_syllabus_technique_id\n           JOIN syllabus_assignments asn\n               ON asn.id = sst.assignment_id",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": []
+  },
+  "hash": "94529bbc5e885c952533b976e74e42a6894cf1efd984bd443f0037bf53896507"
+}
