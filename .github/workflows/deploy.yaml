@@ -353,14 +353,14 @@ jobs:
         # The host accumulates one image per deploy; without pruning it
         # eventually fills the disk and blocks the next deploy (the secrets
         # rsync below fails with "No space left on device"). Runs BEFORE
-        # shipping so a near-full disk self-heals. Keeps a week of images for
-        # rollback (until=168h); images in use by running containers are never
+        # shipping so a near-full disk self-heals. Keeps two days of images for
+        # rollback (until=48h); images in use by running containers are never
         # removed; volumes are never touched.
         run: |
           ssh -i ~/.ssh/id_ed25519 "deploy@$VM_IP" '
             echo "disk before:"; df -h / | tail -1
-            docker image prune -af --filter "until=168h" || true
-            docker builder prune -f --filter "until=168h" || true
+            docker image prune -af --filter "until=48h" || true
+            docker builder prune -f --filter "until=48h" || true
             docker container prune -f || true
             echo "disk after:"; df -h / | tail -1
           '
