@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { Link, Navigate, useParams } from 'react-router-dom';
+import { Navigate, useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, History } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ActivityFeedList } from '@/components/activity-feed-list';
@@ -32,6 +32,7 @@ function ActivityHub({
   studentId: number;
   isOwnView: boolean;
 }) {
+  const navigate = useNavigate();
   const viewer = useUser();
   const usersQuery = useAllUsers();
   const student = useMemo(() => {
@@ -68,12 +69,10 @@ function ActivityHub({
           variant="ghost"
           size="sm"
           className="mb-3 -ml-2 gap-1.5"
-          asChild
+          onClick={() => navigate(-1)}
         >
-          <Link to={`/student/${studentId}`}>
-            <ArrowLeft className="h-4 w-4" aria-hidden />
-            Back to profile
-          </Link>
+          <ArrowLeft className="h-4 w-4" aria-hidden />
+          Back
         </Button>
         <h1 className="flex items-center gap-2 text-base font-semibold">
           <History className="h-4 w-4" aria-hidden />
