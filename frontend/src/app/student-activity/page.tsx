@@ -58,7 +58,7 @@ function ActivityHub({
 
   const displayName = student.display_name || student.username;
 
-  const title = isOwnView ? 'Your activity' : `${displayName}'s activity`;
+  const title = isOwnView ? 'Your timeline' : `${displayName}'s timeline`;
 
   return (
     <div className="container mx-auto px-4 py-6 sm:px-6 md:py-8 space-y-4">
@@ -74,7 +74,7 @@ function ActivityHub({
           isLoading={feedQuery.isLoading}
           showAvatar={false}
           detailed
-          emptyText="No activity recorded yet."
+          emptyText="No activity yet."
         />
       </div>
     </div>

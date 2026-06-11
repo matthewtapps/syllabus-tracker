@@ -40,7 +40,7 @@ export const CRUMB_DEFS: CrumbDef[] = [
     parent: "/student/:id/syllabi",
   },
   { pattern: "/student/:id/pinned", label: "Pinned", parent: "/student/:id" },
-  { pattern: "/student/:id/activity", label: "Activity", parent: "/student/:id" },
+  { pattern: "/student/:id/activity", label: "Timeline", parent: "/student/:id" },
   { pattern: "/library", label: "Library", parent: null },
   { pattern: "/syllabi", label: "Syllabus library", parent: null },
   { pattern: "/syllabi/:id", label: { dynamic: "globalSyllabusName" }, parent: "/syllabi" },
