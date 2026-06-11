@@ -764,6 +764,56 @@ mod tests {
     }
 
     #[rocket::async_test]
+    async fn emit_persists_context_kind() {
+        let db = TestDbBuilder::new()
+            .coach("coach", None)
+            .student("alice", None)
+            .technique("Armbar", "", Some("coach"))
+            .build()
+            .await
+            .unwrap();
+        let coach = db.user_id("coach").unwrap();
+        let alice = db.user_id("alice").unwrap();
+        let armbar = db.technique_id("Armbar").unwrap();
+
+        // Insert a video directly so we have a video FK target.
+        let video_id: i64 = sqlx::query_scalar!(
+            r#"INSERT INTO videos (technique_id, title, position, kind, processing_status,
+                                   uploaded_by_id, duration_seconds)
+               VALUES (?, 'Test', 0, 'external', 'ready', ?, 60)
+               RETURNING id AS "id!: i64""#,
+            armbar,
+            coach,
+        )
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+
+        let mut tx = db.pool.begin().await.unwrap();
+        emit(
+            &mut tx,
+            NewActivity::new(Verb::VideoWatched, alice)
+                .target_student(alice)
+                .video(video_id)
+                .technique(armbar)
+                .context_kind("library"),
+        )
+        .await
+        .unwrap();
+        tx.commit().await.unwrap();
+
+        let kind = sqlx::query!(
+            r#"SELECT context_kind AS "context_kind?: String"
+               FROM activity WHERE verb = 'video_watched'"#
+        )
+        .fetch_one(&db.pool)
+        .await
+        .unwrap()
+        .context_kind;
+        assert_eq!(kind.as_deref(), Some("library"));
+    }
+
+    #[rocket::async_test]
     async fn crossing_watch_threshold_emits_video_watched_once() {
         let db = TestDbBuilder::new()
             .coach("coach", None)

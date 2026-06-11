@@ -343,7 +343,12 @@ CREATE TABLE IF NOT EXISTS activity (
     syllabus_id       INTEGER REFERENCES syllabi(id)    ON DELETE SET NULL,
     sst_id            INTEGER REFERENCES student_syllabus_techniques(id) ON DELETE SET NULL,
     video_id          INTEGER REFERENCES videos(id)     ON DELETE SET NULL,
-    payload_json      TEXT
+    payload_json      TEXT,
+    -- Names the surface a student was on when the activity happened, so the
+    -- feed can deep-link back to it without inferring from which reference
+    -- column is non-null. NULL when the verb implies its own context
+    -- (attempts/notes are always syllabus-scoped). Today: 'library' | 'syllabus'.
+    context_kind TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_activity_student

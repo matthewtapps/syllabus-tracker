@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT context_kind AS \"context_kind?: String\"\n               FROM activity WHERE verb = 'video_watched'",
+  "describe": {
+    "columns": [
+      {
+        "name": "context_kind?: String",
+        "ordinal": 0,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "b3f5705c7e65ad9f44e85fb3acf0cf1343625c6386f937154ef5cfeda73c4a3d"
+}

@@ -156,6 +156,7 @@ pub struct NewActivity {
     pub sst_id: Option<i64>,
     pub video_id: Option<i64>,
     pub payload_json: Option<String>,
+    pub context_kind: Option<&'static str>,
 }
 
 impl NewActivity {
@@ -169,6 +170,7 @@ impl NewActivity {
             sst_id: None,
             video_id: None,
             payload_json: None,
+            context_kind: None,
         }
     }
 
@@ -194,6 +196,13 @@ impl NewActivity {
     }
     pub fn payload(mut self, json: String) -> Self {
         self.payload_json = Some(json);
+        self
+    }
+
+    /// The surface the actor was on (for deep-linking). Only set where it is
+    /// not implied by the verb (currently video_watched).
+    pub fn context_kind(mut self, kind: &'static str) -> Self {
+        self.context_kind = Some(kind);
         self
     }
 
@@ -291,8 +300,8 @@ pub async fn emit(tx: &mut Transaction<'_, Sqlite>, ev: NewActivity) -> Result<(
     sqlx::query!(
         "INSERT INTO activity
             (occurred_at, verb, actor_user_id, target_student_id,
-             technique_id, syllabus_id, sst_id, video_id, payload_json)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+             technique_id, syllabus_id, sst_id, video_id, payload_json, context_kind)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         now,
         verb,
         ev.actor_user_id,
@@ -302,6 +311,7 @@ pub async fn emit(tx: &mut Transaction<'_, Sqlite>, ev: NewActivity) -> Result<(
         ev.sst_id,
         ev.video_id,
         ev.payload_json,
+        ev.context_kind,
     )
     .execute(&mut **tx)
     .await?;
