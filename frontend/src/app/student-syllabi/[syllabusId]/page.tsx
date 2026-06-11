@@ -1,5 +1,7 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { Navigate, useNavigate, useParams } from 'react-router-dom';
+import { useFocusTarget } from '@/components/hooks/useFocusTarget';
+import type { EntityRef } from '@/lib/entity-ref';
 import {
   ArrowLeft,
   GitCompare,
@@ -100,6 +102,7 @@ function Detail({
     [query.data?.techniques],
   );
   const [expandedValue, setExpandedValue] = useState<string>('');
+  const [scrollToVideoId, setScrollToVideoId] = useState<number | null>(null);
   const [unassignOpen, setUnassignOpen] = useState(false);
   const [graduateOpen, setGraduateOpen] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
@@ -108,6 +111,28 @@ function Detail({
   const [activeTags, setActiveTags] = useState<string[]>([]);
   const unassignMutation = useUnassignSyllabusFromStudent();
   const graduateMutation = useSetAssignmentGraduated();
+
+  const handleFocus = useCallback(
+    (ref: EntityRef, videoId: number | null) => {
+      if (ref.type !== 'sst') return false;
+      const target = techniques.find((sst) => sst.id === ref.id);
+      if (!target) return false;
+      setExpandedValue(`sst-${ref.id}`);
+      if (videoId != null) setScrollToVideoId(videoId);
+      requestAnimationFrame(() => {
+        document
+          .getElementById(`technique-row-${target.technique_id}`)
+          ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
+      return true;
+    },
+    [techniques],
+  );
+
+  useFocusTarget({
+    ready: techniques.length > 0,
+    onFocus: handleFocus,
+  });
 
   const availableTags = useMemo(() => {
     const set = new Set<string>();
@@ -355,6 +380,8 @@ function Detail({
                   }}
                   value={value}
                   isOpen={expandedValue === value}
+                  scrollToVideoId={expandedValue === value ? scrollToVideoId : null}
+                  onVideoScrolled={() => setScrollToVideoId(null)}
                 />
               );
             })}
