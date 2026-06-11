@@ -3,10 +3,11 @@
  *
  * Verifies the list renders actor names and activity lines, shows custom empty
  * text when there are no rows, applies the stretched-link pattern (overlay
- * anchor + separate N-more link), and shows the context surface chip.
+ * anchor), and shows the context surface chip. Coalesced groups expand in place
+ * via a toggle button rather than navigating to a separate page.
  */
 import { describe, expect, test } from "vitest";
-import { screen } from "@testing-library/react";
+import { screen, fireEvent } from "@testing-library/react";
 import { renderWithProviders } from "@/test/render";
 import { ActivityFeedList } from "./activity-feed-list";
 import type { ActivityRow } from "@/lib/activity-line";
@@ -34,7 +35,7 @@ function row(overrides: Partial<ActivityRow> = {}): ActivityRow {
 }
 
 describe("ActivityFeedList", () => {
-  // --- stretched-link: whole-row overlay (plan Task 14) ---
+  // --- stretched-link: whole-row overlay ---
   test("renders the overlay link with aria-label pointing to the deep-link href", () => {
     renderWithProviders(<ActivityFeedList rows={[row({})]} isLoading={false} />);
     // The overlay anchor has no visible text; find it by its aria-label.
@@ -60,14 +61,12 @@ describe("ActivityFeedList", () => {
     expect(screen.getByText("performed an action")).toBeTruthy();
   });
 
-  // --- existing coverage (layout-adapted) ---
+  // --- existing coverage ---
   test("renders actor name and activity line for one row", () => {
     renderWithProviders(
       <ActivityFeedList rows={[row({ technique_name: "Armbar" })]} isLoading={false} />,
     );
     expect(screen.getByText("Alex Rivera")).toBeTruthy();
-    // verb and subject render as one combined node now (no bolding), so match
-    // the whole phrase rather than the two pieces separately.
     expect(screen.getByText("logged an attempt on Armbar")).toBeTruthy();
   });
 
@@ -78,8 +77,8 @@ describe("ActivityFeedList", () => {
     expect(screen.getByText("Nothing here yet.")).toBeTruthy();
   });
 
-  // --- coalesced feed: separate N-more link (plan Task 14) ---
-  test("coalesced feed renders an overlay link AND a separate N-more link to the student activity page", () => {
+  // --- coalesced feed: expand in place via toggle button ---
+  test("coalesced feed renders an overlay link AND a toggle button (not a nav link) for grouped rows", () => {
     const rows = [
       row({ id: 2, technique_name: "Armbar" }),
       row({ id: 1, technique_name: "Triangle" }),
@@ -87,22 +86,49 @@ describe("ActivityFeedList", () => {
     renderWithProviders(
       <ActivityFeedList rows={rows} isLoading={false} coalesce />,
     );
-    // There should be exactly two links: the overlay and the N-more.
-    const links = screen.getAllByRole("link");
-    expect(links).toHaveLength(2);
 
-    // The N-more link now has its own aria-label and points to the per-student activity page.
-    const nMoreLink = screen.getByRole("link", { name: /See all of Alex Rivera's activity/i });
-    expect(nMoreLink.getAttribute("href")).toBe("/student/2/activity");
+    // There should be exactly one link: the overlay for the representative row.
+    const links = screen.getAllByRole("link");
+    expect(links).toHaveLength(1);
 
     // The overlay link still points to the deep-link destination.
     const overlayLink = screen.getByRole("link", { name: /Alex Rivera logged an attempt on Armbar/i });
     expect(overlayLink.getAttribute("href")).toBe("/student/4/syllabi/2?focus=sst:42");
+
+    // The N-more toggle is a button, not a link.
+    const toggleBtn = screen.getByRole("button", { name: /and \d+ more/i });
+    expect(toggleBtn).toBeTruthy();
+    expect(toggleBtn.getAttribute("aria-expanded")).toBe("false");
   });
 
-  // --- new: no-href coalesced row keeps the N-more link ---
-  test("coalesced no-href rows: no overlay link but N-more link to student activity page is still present", () => {
-    // Use a verb that yields no href when technique fields are missing (default branch).
+  test("coalesced toggle expands and reveals the additional member rows", () => {
+    const rows = [
+      row({ id: 2, technique_name: "Armbar" }),
+      row({ id: 1, technique_name: "Triangle" }),
+    ];
+    renderWithProviders(
+      <ActivityFeedList rows={rows} isLoading={false} coalesce />,
+    );
+
+    // Triangle is the second member; it should NOT be visible yet.
+    expect(screen.queryByText(/Triangle/)).toBeNull();
+
+    // Click the toggle button.
+    const toggleBtn = screen.getByRole("button", { name: /and 1 more/i });
+    fireEvent.click(toggleBtn);
+
+    // After expansion, Triangle appears and button label changes.
+    expect(screen.getByText(/Triangle/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: /Show less/i })).toBeTruthy();
+
+    // Click again to collapse.
+    fireEvent.click(screen.getByRole("button", { name: /Show less/i }));
+    expect(screen.queryByText(/Triangle/)).toBeNull();
+    expect(screen.getByRole("button", { name: /and 1 more/i })).toBeTruthy();
+  });
+
+  // --- no-href coalesced row: toggle button present, no overlay link ---
+  test("coalesced no-href rows: no overlay link but toggle button is present", () => {
     const noHrefRow = (id: number) =>
       row({
         id,
@@ -116,16 +142,14 @@ describe("ActivityFeedList", () => {
     renderWithProviders(
       <ActivityFeedList rows={[noHrefRow(1), noHrefRow(2)]} isLoading={false} coalesce />,
     );
-    // No overlay link should be rendered (line.href is undefined).
-    const links = screen.getAllByRole("link");
-    // Only the N-more link should be present (no overlay).
-    expect(links).toHaveLength(1);
-    const nMoreLink = links[0];
-    expect(nMoreLink.getAttribute("href")).toBe("/student/2/activity");
-    expect(nMoreLink).toBeTruthy();
+    // No overlay link (line.href is undefined).
+    expect(screen.queryByRole("link")).toBeNull();
+    // The toggle button is still present.
+    const toggleBtn = screen.getByRole("button", { name: /and \d+ more/i });
+    expect(toggleBtn).toBeTruthy();
   });
 
-  // --- new: detailed prop shows absolute timestamp and full actor name ---
+  // --- detailed prop shows absolute timestamp and full actor name ---
   test("detailed prop shows absolute timestamp and full actor name", () => {
     const fixedDate = new Date("2026-03-15T10:00:00.000Z").toISOString();
     renderWithProviders(
@@ -156,7 +180,7 @@ describe("ActivityFeedList", () => {
     expect(screen.queryByTestId("verb-icon")).toBeNull();
   });
 
-  // --- context surface chip (plan Task 12, preserved in Task 14) ---
+  // --- context surface chip ---
   test("syllabus-context row shows the syllabus name chip", () => {
     renderWithProviders(
       <ActivityFeedList rows={[row({ syllabus_name: "Blue Belt" })]} isLoading={false} />,

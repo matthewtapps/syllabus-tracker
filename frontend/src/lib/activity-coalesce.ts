@@ -5,8 +5,10 @@ export interface CoalescedActivity {
   row: ActivityRow;
   /** How many rows were merged (1 = no coalescing). */
   count: number;
-  /** Distinct other technique names in the group, for "and N more" copy. */
+  /** Distinct other technique names in the group, for display copy. */
   extraTechniques: string[];
+  /** All rows in the group, newest first. members[0] === row. */
+  members: ActivityRow[];
 }
 
 /**
@@ -20,12 +22,13 @@ export function coalesceActivity(rows: ActivityRow[]): CoalescedActivity[] {
     const last = out[out.length - 1];
     if (last && last.row.actor_user_id === row.actor_user_id && last.row.verb === row.verb) {
       last.count += 1;
+      last.members.push(row);
       const name = row.technique_name;
       if (name && name !== last.row.technique_name && !last.extraTechniques.includes(name)) {
         last.extraTechniques.push(name);
       }
     } else {
-      out.push({ row, count: 1, extraTechniques: [] });
+      out.push({ row, count: 1, extraTechniques: [], members: [row] });
     }
   }
   return out;

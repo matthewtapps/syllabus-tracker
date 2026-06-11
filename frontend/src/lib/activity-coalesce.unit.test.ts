@@ -15,15 +15,20 @@ function row(p: Partial<ActivityRow>): ActivityRow {
 
 describe("coalesceActivity", () => {
   it("collapses consecutive same-verb same-actor rows", () => {
-    const out = coalesceActivity([
-      row({ id: 3, technique_name: "Armbar" }),
-      row({ id: 2, technique_name: "Triangle" }),
-      row({ id: 1, verb: "video_watched", technique_name: "Kimura" }),
-    ]);
+    const r3 = row({ id: 3, technique_name: "Armbar" });
+    const r2 = row({ id: 2, technique_name: "Triangle" });
+    const r1 = row({ id: 1, verb: "video_watched", technique_name: "Kimura" });
+    const out = coalesceActivity([r3, r2, r1]);
     expect(out).toHaveLength(2);
     expect(out[0].count).toBe(2);
     expect(out[0].extraTechniques).toEqual(["Triangle"]);
     expect(out[1].count).toBe(1);
+    // members contains all grouped rows, newest first
+    expect(out[0].members).toHaveLength(2);
+    expect(out[0].members[0]).toBe(r3);
+    expect(out[0].members[1]).toBe(r2);
+    expect(out[1].members).toHaveLength(1);
+    expect(out[1].members[0]).toBe(r1);
   });
 
   it("does not merge across different actors", () => {
@@ -32,5 +37,19 @@ describe("coalesceActivity", () => {
       row({ id: 1, actor_user_id: 2 }),
     ]);
     expect(out).toHaveLength(2);
+    expect(out[0].members).toHaveLength(1);
+    expect(out[1].members).toHaveLength(1);
+  });
+
+  it("members[0] is the representative row", () => {
+    const r3 = row({ id: 3 });
+    const r2 = row({ id: 2 });
+    const r1 = row({ id: 1 });
+    const out = coalesceActivity([r3, r2, r1]);
+    expect(out).toHaveLength(1);
+    expect(out[0].count).toBe(3);
+    expect(out[0].members).toHaveLength(3);
+    expect(out[0].members[0]).toBe(r3);
+    expect(out[0].row).toBe(r3);
   });
 });
