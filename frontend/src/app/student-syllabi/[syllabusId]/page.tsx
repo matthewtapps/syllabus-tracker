@@ -217,71 +217,75 @@ function Detail({
 
   return (
     <div className="container mx-auto px-4 py-6 sm:px-6 md:py-8 space-y-4">
-      <div>
-        <div className="flex items-start justify-between gap-2">
-          <div className="min-w-0">
-            <h1 className="flex items-center gap-2 text-base font-semibold">
-              <NotebookPen className="h-4 w-4" aria-hidden />
-              {studentName
-                ? `${studentName}'s ${assignment.syllabus_name}`
-                : assignment.syllabus_name}
-            </h1>
-            <p className="text-xs text-muted-foreground">
-              {assignment.total_count}{' '}
-              {assignment.total_count === 1 ? 'technique' : 'techniques'}
-            </p>
-          </div>
-          {!isOwnView && (
-            <div className="flex shrink-0 flex-wrap items-center gap-1.5">
-              {assignment.graduated_at && (
-                <Badge variant="default" className="gap-1 bg-status-green text-foreground">
-                  <GraduationCap className="h-3 w-3" aria-hidden />
-                  Graduated
-                </Badge>
-              )}
-              <Button
+      <div className="space-y-1.5">
+        <h1 className="flex items-start gap-2 text-base font-semibold break-words">
+          <NotebookPen className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+          <span>
+            {studentName
+              ? `${studentName}'s ${assignment.syllabus_name}`
+              : assignment.syllabus_name}
+          </span>
+        </h1>
+        <p className="flex items-center gap-2 text-xs text-muted-foreground">
+          <span>
+            {assignment.total_count}{' '}
+            {assignment.total_count === 1 ? 'technique' : 'techniques'}
+          </span>
+          {assignment.graduated_at && (
+            <>
+              <span aria-hidden>·</span>
+              <Badge
                 variant="outline"
-                size="icon"
-                aria-label="Sync with current syllabus"
-                onClick={() => setDiffOpen(true)}
+                className="gap-1 border-status-green py-0 text-status-green"
               >
-                <GitCompare className="h-4 w-4" aria-hidden />
-              </Button>
-              <Button
-                variant="outline"
-                size="icon"
-                aria-label="Add technique to this student"
-                onClick={() => setAddOpen(true)}
-              >
-                <Plus className="h-4 w-4" aria-hidden />
-              </Button>
-              <Button
-                variant="outline"
-                size="icon"
-                aria-label={
-                  assignment.graduated_at
-                    ? 'Ungraduate this syllabus'
-                    : 'Graduate this syllabus'
-                }
-                onClick={() => setGraduateOpen(true)}
-                className={cn(
-                  assignment.graduated_at && 'text-status-green',
-                )}
-              >
-                <GraduationCap className="h-4 w-4" aria-hidden />
-              </Button>
-              <Button
-                variant="outline"
-                size="icon"
-                aria-label="Unassign syllabus"
-                onClick={() => setUnassignOpen(true)}
-                className="text-destructive"
-              >
-                <Trash2 className="h-4 w-4" aria-hidden />
-              </Button>
-            </div>
+                <GraduationCap className="h-3 w-3" aria-hidden />
+                Graduated
+              </Badge>
+            </>
           )}
-        </div>
+        </p>
+        {!isOwnView && (
+          <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+            <Button
+              variant="outline"
+              size="icon"
+              aria-label="Sync with current syllabus"
+              onClick={() => setDiffOpen(true)}
+            >
+              <GitCompare className="h-4 w-4" aria-hidden />
+            </Button>
+            <Button
+              variant="outline"
+              size="icon"
+              aria-label="Add technique to this student"
+              onClick={() => setAddOpen(true)}
+            >
+              <Plus className="h-4 w-4" aria-hidden />
+            </Button>
+            <Button
+              variant="outline"
+              size="icon"
+              aria-label={
+                assignment.graduated_at
+                  ? 'Ungraduate this syllabus'
+                  : 'Graduate this syllabus'
+              }
+              onClick={() => setGraduateOpen(true)}
+              className={cn(assignment.graduated_at && 'text-status-green')}
+            >
+              <GraduationCap className="h-4 w-4" aria-hidden />
+            </Button>
+            <Button
+              variant="outline"
+              size="icon"
+              aria-label="Unassign syllabus"
+              onClick={() => setUnassignOpen(true)}
+              className="text-destructive"
+            >
+              <Trash2 className="h-4 w-4" aria-hidden />
+            </Button>
+          </div>
+        )}
       </div>
 
       {techniques.length > 0 && (
