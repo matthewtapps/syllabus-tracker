@@ -4,7 +4,7 @@
 
 **Goal:** Replace the coach dashboard's stale status donut with a rolling activity digest and an event feed, and rebuild the student-list page as an activity-based triage, on top of reusable activity and avatar primitives.
 
-**Architecture:** Backend adds three reads off the existing `activity` log (a gym-wide digest, a peek feed that does not advance the read cursor, and two per-student activity timestamps on the students query) plus their routes. Frontend introduces three reusable primitives (a deterministic `studentColor`, a `StudentAvatar`, and a presentational `ActivityFeedList`) and wires them into the coach dashboard, the student list, the student profile, and a new `/activity` page.
+**Architecture:** Backend adds three reads off the existing `activity` log (a gym-wide digest, a peek feed that does not advance the read cursor, and two per-student activity timestamps on the students query) plus their routes. Frontend introduces three reusable primitives (a deterministic `studentColor`, a `StudentAvatar`, and a presentational `ActivityFeedList`) and wires them into the coach dashboard, the student list, and the student profile.
 
 **Tech Stack:** Rust / Rocket / sqlx (SQLite, compile-time-checked macros, offline `.sqlx/` cache), chrono, serde. Frontend: Vite + React 19 SPA, shadcn/ui, Tailwind v4, TanStack Query, react-router-dom v7, Vitest (node `.unit.test.ts` + browser `.test.tsx`).
 
@@ -40,7 +40,6 @@
 - `app/dashboard/components/sparkline.tsx` — tiny inline-SVG sparkline.
 - `app/dashboard/components/activity-digest.tsx` — the four-tile digest (B).
 - `app/dashboard/components/recent-activity-feed.tsx` — dashboard feed (C) wrapping `ActivityFeedList`.
-- `app/activity/page.tsx` — full activity feed page (`/activity`).
 
 **Frontend (modified)**
 - `lib/api.ts` — types + fetchers.
@@ -49,7 +48,6 @@
 - `app/students-list/page.tsx` — triage rebuild.
 - `components/student-row.tsx` — use `StudentAvatar`.
 - `app/student-profile/page.tsx` — use `ActivityFeedList`.
-- `App.tsx` — `/activity` route.
 
 The work is grouped into five stacked PRs. Each PR ends green and is independently reviewable.
 
@@ -1336,7 +1334,7 @@ import { expect, test, vi } from "vitest";
 import * as api from "@/lib/api";
 import { RecentActivityFeed } from "./recent-activity-feed";
 
-test("renders student events and a See all link", async () => {
+test("renders student events", async () => {
   vi.spyOn(api, "getDashboardActivityFeed").mockResolvedValue([
     {
       id: 1, occurred_at: new Date().toISOString(), verb: "attempt_logged",
@@ -1352,7 +1350,6 @@ test("renders student events and a See all link", async () => {
     </QueryClientProvider>,
   );
   await expect.element(screen.getByText("Sam Khan")).toBeInTheDocument();
-  await expect.element(screen.getByText("See all")).toBeInTheDocument();
 });
 ```
 
@@ -1366,7 +1363,6 @@ Expected: FAIL (module not found).
 `frontend/src/app/dashboard/components/recent-activity-feed.tsx`:
 
 ```tsx
-import { Link } from "react-router-dom";
 import { Activity } from "lucide-react";
 import { ActivityFeedList } from "@/components/activity-feed-list";
 import { useDashboardActivityFeed } from "@/lib/queries";
@@ -1375,14 +1371,9 @@ export function RecentActivityFeed() {
   const { data, isLoading } = useDashboardActivityFeed();
   return (
     <section className="mb-8 overflow-hidden rounded-lg border border-border bg-card">
-      <header className="flex items-center justify-between gap-2.5 border-b border-border px-4 py-3">
-        <div className="flex items-center gap-2.5">
-          <Activity className="h-4 w-4 text-muted-foreground" aria-hidden />
-          <h2 className="text-sm font-semibold">Recent activity</h2>
-        </div>
-        <Link to="/activity" className="text-xs text-primary underline-offset-2 hover:underline">
-          See all
-        </Link>
+      <header className="flex items-center gap-2.5 border-b border-border px-4 py-3">
+        <Activity className="h-4 w-4 text-muted-foreground" aria-hidden />
+        <h2 className="text-sm font-semibold">Recent activity</h2>
       </header>
       <ActivityFeedList
         rows={data ?? []}
@@ -1395,6 +1386,8 @@ export function RecentActivityFeed() {
   );
 }
 ```
+
+The feed shows the six most recent (coalesced) student events with no "see all" link. a richer, browsable feed is a separate future feature, out of scope here.
 
 - [ ] **Step 4: Run to verify it passes**
 
@@ -1768,101 +1761,9 @@ git commit -m "feat(students): Replace lifecycle tabs with activity triage"
 
 ---
 
-# PR 5 — Full activity page, profile reuse, cleanup
+# PR 5 — Profile reuse and cleanup
 
-### Task 14: `/activity` page
-
-**Files:**
-- Create: `frontend/src/app/activity/page.tsx`
-- Modify: `frontend/src/App.tsx` (route)
-- Test: `frontend/src/app/activity/activity.test.tsx`
-
-The full feed uses the cursor-advancing `useActivityFeed` (marking read is correct on a dedicated feed page) and the reusable `ActivityFeedList`.
-
-- [ ] **Step 1: Write the failing test**
-
-```tsx
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { MemoryRouter } from "react-router-dom";
-import { render } from "vitest-browser-react";
-import { expect, test, vi } from "vitest";
-import * as api from "@/lib/api";
-import ActivityPage from "./page";
-
-test("renders the activity feed", async () => {
-  vi.spyOn(api, "getActivityFeed").mockResolvedValue([
-    { id: 1, occurred_at: new Date().toISOString(), verb: "attempt_logged",
-      actor_user_id: 5, actor_name: "Sam Khan", target_student_id: 5,
-      technique_id: 9, technique_name: "Triangle", syllabus_id: null, syllabus_name: null,
-      sst_id: null, video_id: null, video_title: null, payload_json: null, unread: true },
-  ]);
-  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  const screen = render(
-    <QueryClientProvider client={qc}>
-      <MemoryRouter><ActivityPage /></MemoryRouter>
-    </QueryClientProvider>,
-  );
-  await expect.element(screen.getByText("Sam Khan")).toBeInTheDocument();
-});
-```
-
-(Confirm `useActivityFeed`'s fetcher is `getActivityFeed`; the hook passed `{ limit: 20 }`.)
-
-- [ ] **Step 2: Run to verify it fails**
-
-Run: `cd frontend && npx vitest run src/app/activity/activity.test.tsx`
-Expected: FAIL (module not found).
-
-- [ ] **Step 3: Implement the page**
-
-`frontend/src/app/activity/page.tsx`:
-
-```tsx
-import { History } from "lucide-react";
-import { ActivityFeedList } from "@/components/activity-feed-list";
-import { useActivityFeed } from "@/lib/queries";
-
-export default function ActivityPage() {
-  const { data, isLoading } = useActivityFeed();
-  return (
-    <div className="container mx-auto max-w-2xl px-4 py-6 sm:px-6 md:py-8">
-      <h1 className="mb-4 flex items-center gap-2 text-base font-semibold">
-        <History className="h-4 w-4" aria-hidden />
-        Activity
-      </h1>
-      <div className="overflow-hidden rounded-lg border border-border bg-card">
-        <ActivityFeedList rows={data ?? []} isLoading={isLoading} emptyText="No activity yet." />
-      </div>
-    </div>
-  );
-}
-```
-
-- [ ] **Step 4: Add the route**
-
-In `frontend/src/App.tsx`, lazy-import `ActivityPage` (match the existing lazy-import pattern) and add inside `AuthedRoutes`:
-
-```tsx
-<Route path="/activity" element={<Suspense fallback={<RouteLoading />}><ActivityPage /></Suspense>} />
-```
-
-(Mirror the exact wrapper the neighbouring routes use.)
-
-- [ ] **Step 5: Run to verify it passes**
-
-Run: `cd frontend && npx vitest run src/app/activity/activity.test.tsx`
-Expected: PASS.
-
-- [ ] **Step 6: Commit**
-
-```bash
-git add frontend/src/app/activity/page.tsx frontend/src/app/activity/activity.test.tsx frontend/src/App.tsx
-git commit -m "feat(activity): Add full activity feed page"
-```
-
----
-
-### Task 15: Refactor student-profile to reuse ActivityFeedList
+### Task 14: Refactor student-profile to reuse ActivityFeedList
 
 **Files:**
 - Modify: `frontend/src/app/student-profile/page.tsx`
@@ -1905,7 +1806,7 @@ git commit -m "refactor(profile): Reuse ActivityFeedList for recent activity"
 
 ---
 
-### Task 16: Remove dead recently-active code
+### Task 15: Remove dead recently-active code
 
 **Files:**
 - Modify: `frontend/src/lib/queries.ts`, `frontend/src/lib/api.ts` (remove `useRecentlyActiveStudents` + fetcher if unused)
@@ -1936,9 +1837,9 @@ git commit -m "chore(activity): Remove unused recently-active code"
 
 ## Self-review notes (already reconciled)
 
-- **`/activity` route did not exist.** Added in Task 14 as the "See all" target and the third reuse site for `ActivityFeedList`.
+- **No full `/activity` page.** A richer, social-style browsable feed is a separate future feature, out of scope. The dashboard feed shows six rows with no "see all" link.
 - **Existing `last_student_initiative_at` / `last_coach_update_at` are SST/watch proxies** (they miss attempts). Task 3 adds activity-log-derived `last_student_activity_at` / `last_coach_activity_at` instead; the old fields are left untouched for their existing consumers.
 - **Digest window (7d) vs triage threshold (14d)** are intentionally different (recent pulse vs staleness) and are separate constants.
-- **Peek vs cursor-advance:** the dashboard feed (Task 2) never advances the cursor; the `/activity` page (Task 14) reuses the existing cursor-advancing `useActivityFeed`, which is correct for a dedicated read surface.
-- **Reuse coverage:** `ActivityFeedList` is consumed by the dashboard feed (Task 10), the `/activity` page (Task 14), and the student profile (Task 15); `StudentAvatar` by the feed list and `StudentRow` (Task 13); the `Badge` chip pattern and `Tabs` are reused from the library page and the old students list.
+- **Peek (no cursor advance):** the dashboard feed (Task 2) never advances the read cursor, so opening the dashboard does not clear the navbar unread badge.
+- **Reuse coverage:** `ActivityFeedList` is consumed by the dashboard feed (Task 10) and the student profile (Task 14), and is the natural base for the future social feed; `StudentAvatar` by the feed list and `StudentRow` (Task 13); the `Badge` chip pattern and `Tabs` are reused from the library page and the old students list.
 ```

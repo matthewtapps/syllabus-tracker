@@ -21,7 +21,7 @@ We have the raw material to fix all of this: the activity log records 20 verbs, 
 3. Move student triage off the dashboard and onto the student-list page as **activity-based tabs**, dropping the lifecycle tabs.
 4. Introduce **deterministic per-student colors** so a student reads as "the blue one" across surfaces.
 
-Non-goals: the student dashboard (its donut stays), comments (a future verb that will slot into both B and the feed when it lands), and recoloring every avatar in the app (we do the feed and the roster now; profile pages can follow later).
+Non-goals: the student dashboard (its donut stays), comments (a future verb that will slot into both B and the feed when it lands), recoloring every avatar in the app (we do the feed and the roster now; profile pages can follow later), and a full browsable activity page (the planned social-style feed is a separate feature with its own design; the dashboard feed here is a compact summary only).
 
 ---
 
@@ -74,7 +74,7 @@ This set is deliberate: two "how much" metrics (training + studying), one breadt
 
 A per-event stream (not the current one-row-per-student), **student-engagement events only**: `video_watched`, `attempt_logged`, `attempt_edited`, `sst_status_changed`, `sst_student_notes_edited`, `technique_pinned`, and `syllabus_graduated` as a milestone. Coach-side / library actions are hidden (they are not news to the coach who did them).
 
-- **Six rows** + a "See all" link to the existing activity feed page (`/activity`).
+- **Six rows**, with no "see all" link. A richer, browsable social-style feed is a separate future feature, out of scope here.
 - Each row: a tinted avatar colored by **student identity** (see section 3), the formatted line via the existing `activityLine` helper, and a relative timestamp. The row deep-links via `activityLine`'s href. **No type-color and no legend** (type is already clear from the verb text).
 - **Coalescing:** consecutive same-verb events from the same student collapse into one line ("logged 3 attempts across Rear Naked Choke and 2 more") so one keen student does not flood the feed.
 
@@ -165,7 +165,7 @@ A pure helper so a student's color is stable forever and never stored.
 
 - Hero metric must be a rolling-window flow metric, not a converging state metric.
 - Digest tiles: Attempts logged, Videos watched, Active students, Techniques pinned; rolling 7 days vs previous 7; pins counted, not net of unpins.
-- Feed: student-engagement verbs only, six rows + See all, consecutive same-verb same-student coalescing, peek (no cursor advance).
+- Feed: student-engagement verbs only, six rows (no see-all; a social-style feed is a separate future feature), consecutive same-verb same-student coalescing, peek (no cursor advance).
 - Color encodes **student identity**, not activity type; deterministic from id via a curated dark-tuned palette; tinted avatars; no legend.
 - Triage labels are purely descriptive (no obligation): Active / Student-led / Coach-led / Quiet. Attribution is by actor role; recency boundary is the existing 14-day threshold.
 - Student-list lifecycle tabs are dropped; reaching all students is the search box's job; per-row graduate/archive actions remain.
