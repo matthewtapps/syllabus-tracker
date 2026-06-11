@@ -98,7 +98,7 @@ pub async fn activity_digest(pool: &Pool<Sqlite>) -> Result<ActivityDigest, AppE
     let mut metrics = Vec::with_capacity(4);
 
     for spec in &COUNT_METRICS {
-        let mut daily14 = vec![0i64; 14];
+        let mut daily14 = [0i64; 14];
         for r in count_rows.iter().filter(|r| r.verb == spec.verb) {
             if let Some(idx) = day_keys.iter().position(|d| *d == r.day) {
                 daily14[idx] = r.n;
@@ -116,7 +116,7 @@ pub async fn activity_digest(pool: &Pool<Sqlite>) -> Result<ActivityDigest, AppE
         });
     }
 
-    let mut active_daily14 = vec![0i64; 14];
+    let mut active_daily14 = [0i64; 14];
     for r in &active_rows {
         if let Some(idx) = day_keys.iter().position(|d| *d == r.day) {
             active_daily14[idx] = r.n;
