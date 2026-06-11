@@ -5,16 +5,14 @@
  * display line used by the dashboard, student recent-activity surface, and the
  * full activity page. Pure function; does not throw.
  *
- * href conventions (route paths from App.tsx):
- *   technique       -> /library  (no per-technique route exists; library is the
- *                       canonical browse surface for both roles)
- *   video           -> /library?technique=<id>&video=<id>  (existing deep-link
- *                       pattern used in video-overview-card)
- *   syllabus        -> /syllabi/<id>  (coach view; student view needs student id
- *                       which is not always in scope from the renderer alone)
- *   No href when the relevant entity id/name is null (entity was deleted and
- *   the FK was SET NULL).
+ * ActivityLine shape:
+ *   verb    - bold phrase, e.g. "logged an attempt on"
+ *   subject - trailing entity name in normal weight (when copy ends with it)
+ *   href    - deep-link URL (computed via rowToViewContext, with verb-specific
+ *             fallbacks for pins and assignment/curation verbs)
  */
+
+import { rowToViewContext, viewContextHref } from "./view-context";
 
 /** Canonical ActivityRow type. Exported so api.ts and callers can import it
  *  rather than re-declaring an identical shape. */
@@ -34,10 +32,14 @@ export interface ActivityRow {
   video_title: string | null;
   payload_json: string | null;
   unread: boolean;
+  context_kind: string | null;
 }
 
 export interface ActivityLine {
-  text: string;
+  /** Bold phrase, e.g. "logged an attempt on". */
+  verb: string;
+  /** Trailing entity name in normal weight, when the copy ends with it. */
+  subject?: string;
   href?: string;
 }
 
@@ -45,14 +47,6 @@ export interface ActivityLine {
 interface SstStatusChangedPayload {
   from: "red" | "amber" | "green";
   to: "red" | "amber" | "green";
-}
-
-interface TechniqueEditedPayload {
-  fields: {
-    name?: true;
-    description?: true;
-    tags?: { added: string[]; removed: string[] };
-  };
 }
 
 function parsePayload<T>(json: string | null): T | null {
@@ -64,206 +58,151 @@ function parsePayload<T>(json: string | null): T | null {
   }
 }
 
-function techniqueHref(row: ActivityRow): string | undefined {
-  if (!row.technique_id) return undefined;
-  return "/library";
+/** Deep-link href for a row: the typed ViewContext when resolvable, else the
+ *  verb-specific fallback. */
+function contextHref(row: ActivityRow): string | undefined {
+  const ctx = rowToViewContext(row);
+  return ctx ? viewContextHref(ctx) : undefined;
+}
+
+function pinnedHref(row: ActivityRow): string | undefined {
+  return row.target_student_id != null
+    ? `/student/${row.target_student_id}/pinned`
+    : undefined;
 }
 
 function syllabusHref(row: ActivityRow): string | undefined {
-  if (!row.syllabus_id) return undefined;
-  return `/syllabi/${row.syllabus_id}`;
+  return row.syllabus_id != null ? `/syllabi/${row.syllabus_id}` : undefined;
 }
 
-function videoHref(row: ActivityRow): string | undefined {
-  if (!row.video_id) return undefined;
-  if (row.technique_id) {
-    return `/library?technique=${row.technique_id}&video=${row.video_id}`;
+/** Library deep-link for a video that is not tied to a watch context (added /
+ *  visibility changed). Mirrors the pre-existing behavior in the new token form. */
+function libraryVideoHref(row: ActivityRow): string | undefined {
+  if (row.video_id == null) return undefined;
+  if (row.technique_id != null) {
+    return `/library?focus=technique:${row.technique_id}&video=${row.video_id}`;
   }
   return "/library";
 }
 
 /**
- * Maps an ActivityRow to a display line (text + optional deep-link href).
- * Never throws; falls back to plain copy when payload is missing or malformed.
+ * Maps an ActivityRow to a display line (verb + optional subject + optional
+ * deep-link href). Never throws; falls back to plain copy when payload is
+ * missing or malformed.
  */
 export function activityLine(row: ActivityRow): ActivityLine {
-  const tech = row.technique_name;
-  const syll = row.syllabus_name;
-  const vid = row.video_title;
+  const tech = row.technique_name ?? undefined;
+  const syll = row.syllabus_name ?? undefined;
+  const vid = row.video_title ?? undefined;
+  const deep = contextHref(row);
 
   switch (row.verb) {
     // --- attempt verbs ---
-    case "attempt_logged": {
-      return {
-        text: tech ? `logged an attempt on ${tech}` : "logged an attempt",
-        href: techniqueHref(row),
-      };
-    }
-    case "attempt_edited": {
-      return {
-        text: tech ? `edited an attempt on ${tech}` : "edited an attempt",
-        href: techniqueHref(row),
-      };
-    }
-    case "attempt_deleted": {
-      // Non-notifiable; plain history text; still link if technique present.
-      return {
-        text: tech ? `deleted an attempt on ${tech}` : "deleted an attempt",
-        href: techniqueHref(row),
-      };
-    }
+    case "attempt_logged":
+      return tech
+        ? { verb: "logged an attempt on", subject: tech, href: deep }
+        : { verb: "logged an attempt" };
+    case "attempt_edited":
+      return tech
+        ? { verb: "edited an attempt on", subject: tech, href: deep }
+        : { verb: "edited an attempt" };
+    case "attempt_deleted":
+      return tech
+        ? { verb: "deleted an attempt on", subject: tech, href: deep }
+        : { verb: "deleted an attempt" };
 
     // --- video verbs ---
-    case "video_watched": {
-      return {
-        text: vid ? `watched ${vid}` : "watched a video",
-        href: videoHref(row),
-      };
-    }
-    case "video_added": {
-      return {
-        text: vid ? `added video ${vid}` : "added a video",
-        href: videoHref(row),
-      };
-    }
-    case "video_visibility_set": {
-      // Non-notifiable; plain history.
-      return {
-        text: vid ? `changed visibility of ${vid}` : "changed video visibility",
-        href: videoHref(row),
-      };
-    }
+    case "video_watched":
+      return vid
+        ? { verb: "watched", subject: vid, href: deep }
+        : { verb: "watched a video" };
+    case "video_added":
+      return vid
+        ? { verb: "added video", subject: vid, href: libraryVideoHref(row) }
+        : { verb: "added a video" };
+    case "video_visibility_set":
+      return vid
+        ? { verb: "changed visibility of", subject: vid, href: libraryVideoHref(row) }
+        : { verb: "changed video visibility" };
 
     // --- sst status ---
     case "sst_status_changed": {
       const payload = parsePayload<SstStatusChangedPayload>(row.payload_json);
       if (payload?.to && tech) {
-        return {
-          text: `went ${payload.to} on ${tech}`,
-          href: techniqueHref(row),
-        };
+        return { verb: `went ${payload.to} on`, subject: tech, href: deep };
       }
-      return {
-        text: tech ? `updated status on ${tech}` : "updated a technique status",
-        href: techniqueHref(row),
-      };
+      return tech
+        ? { verb: "updated status on", subject: tech, href: deep }
+        : { verb: "updated a technique status" };
     }
 
     // --- sst notes ---
-    case "sst_student_notes_edited": {
-      return {
-        text: tech ? `updated student notes on ${tech}` : "updated student notes",
-        href: techniqueHref(row),
-      };
-    }
-    case "sst_coach_notes_edited": {
-      return {
-        text: tech ? `updated coach notes on ${tech}` : "updated coach notes",
-        href: techniqueHref(row),
-      };
-    }
+    case "sst_student_notes_edited":
+      return tech
+        ? { verb: "updated student notes on", subject: tech, href: deep }
+        : { verb: "updated student notes" };
+    case "sst_coach_notes_edited":
+      return tech
+        ? { verb: "updated coach notes on", subject: tech, href: deep }
+        : { verb: "updated coach notes" };
 
     // --- pin verbs ---
-    case "technique_pinned": {
-      return {
-        text: tech ? `pinned ${tech}` : "pinned a technique",
-        href: techniqueHref(row),
-      };
-    }
-    case "technique_unpinned": {
-      // Non-notifiable; plain history.
-      return {
-        text: tech ? `unpinned ${tech}` : "unpinned a technique",
-        href: techniqueHref(row),
-      };
-    }
+    case "technique_pinned":
+      return tech
+        ? { verb: "pinned", subject: tech, href: pinnedHref(row) }
+        : { verb: "pinned a technique" };
+    case "technique_unpinned":
+      return tech
+        ? { verb: "unpinned", subject: tech, href: pinnedHref(row) }
+        : { verb: "unpinned a technique" };
 
     // --- syllabus assignment verbs ---
-    case "syllabus_assigned": {
-      return {
-        text: syll ? `assigned to ${syll}` : "assigned to a syllabus",
-        href: syllabusHref(row),
-      };
-    }
-    case "syllabus_unassigned": {
-      // Non-notifiable; plain history.
-      return {
-        text: syll ? `unassigned from ${syll}` : "unassigned from a syllabus",
-        href: syllabusHref(row),
-      };
-    }
-    case "syllabus_graduated": {
-      return {
-        text: syll ? `graduated ${syll}` : "graduated a syllabus",
-        href: syllabusHref(row),
-      };
-    }
+    case "syllabus_assigned":
+      return syll
+        ? { verb: "assigned to", subject: syll, href: syllabusHref(row) }
+        : { verb: "assigned to a syllabus" };
+    case "syllabus_unassigned":
+      return syll
+        ? { verb: "unassigned from", subject: syll, href: syllabusHref(row) }
+        : { verb: "unassigned from a syllabus" };
+    case "syllabus_graduated":
+      return syll
+        ? { verb: "graduated", subject: syll, href: syllabusHref(row) }
+        : { verb: "graduated a syllabus" };
 
     // --- sst curation verbs ---
-    case "sst_added": {
-      return {
-        text: tech ? `added ${tech} to syllabus` : "added a technique to syllabus",
-        href: techniqueHref(row),
-      };
-    }
-    case "sst_hidden": {
-      // Non-notifiable; plain history.
-      return {
-        text: tech ? `hid ${tech}` : "hid a technique",
-        href: techniqueHref(row),
-      };
-    }
-    case "sst_unhidden": {
-      // Non-notifiable; plain history.
-      return {
-        text: tech ? `unhid ${tech}` : "unhid a technique",
-        href: techniqueHref(row),
-      };
-    }
+    case "sst_added":
+      return tech
+        ? { verb: `added ${tech} to syllabus`, href: syllabusHref(row) }
+        : { verb: "added a technique to syllabus" };
+    case "sst_hidden":
+      return tech ? { verb: "hid", subject: tech } : { verb: "hid a technique" };
+    case "sst_unhidden":
+      return tech ? { verb: "unhid", subject: tech } : { verb: "unhid a technique" };
 
     // --- syllabus technique fanout verbs ---
-    case "syllabus_technique_added": {
+    case "syllabus_technique_added":
       if (tech && syll) {
-        return {
-          text: `added ${tech} to ${syll}`,
-          href: syllabusHref(row),
-        };
+        // both names are essential; neither alone is the trailing subject
+        return { verb: `added ${tech} to ${syll}`, href: syllabusHref(row) };
       }
-      return {
-        text: tech ? `added ${tech} to a syllabus` : "added a technique to a syllabus",
-        href: syllabusHref(row) ?? techniqueHref(row),
-      };
-    }
-    case "syllabus_technique_removed": {
-      // Non-notifiable; plain history.
+      return tech
+        ? { verb: `added ${tech} to a syllabus`, href: syllabusHref(row) }
+        : { verb: "added a technique to a syllabus" };
+    case "syllabus_technique_removed":
       if (tech && syll) {
-        return {
-          text: `removed ${tech} from ${syll}`,
-          href: syllabusHref(row),
-        };
+        // both names are essential; neither alone is the trailing subject
+        return { verb: `removed ${tech} from ${syll}`, href: syllabusHref(row) };
       }
-      return {
-        text: tech
-          ? `removed ${tech} from a syllabus`
-          : "removed a technique from a syllabus",
-        href: syllabusHref(row) ?? techniqueHref(row),
-      };
-    }
+      return tech
+        ? { verb: `removed ${tech} from a syllabus`, href: syllabusHref(row) }
+        : { verb: "removed a technique from a syllabus" };
 
     // --- technique edited fanout ---
-    case "technique_edited": {
-      const payload = parsePayload<TechniqueEditedPayload>(row.payload_json);
-      // The payload shape records which fields changed, but the display line
-      // just says "edited X" regardless of which fields (keeps copy concise).
-      void payload; // parsed but not needed for copy
-      return {
-        text: tech ? `edited ${tech}` : "edited a technique",
-        href: techniqueHref(row),
-      };
-    }
+    case "technique_edited":
+      return tech ? { verb: "edited", subject: tech } : { verb: "edited a technique" };
 
-    default: {
-      return { text: "performed an action" };
-    }
+    default:
+      return { verb: "performed an action" };
   }
 }

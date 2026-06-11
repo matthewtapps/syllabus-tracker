@@ -56,7 +56,11 @@ export function ActivityFeedList({
     <ul className="divide-y divide-border">
       {shown.map((item) => {
         const line = activityLine(item.row);
-        const text = line.text + coalescedSuffix(item);
+        const lineSubject = line.subject ?? "";
+        const suffix = coalescedSuffix(item);
+        const text = lineSubject
+          ? `${line.verb} ${lineSubject}${suffix}`
+          : `${line.verb}${suffix}`;
         return (
           <li
             key={`${item.row.actor_user_id}-${item.row.id}-${item.row.occurred_at}`}

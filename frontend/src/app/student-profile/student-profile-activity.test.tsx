@@ -31,6 +31,7 @@ function buildActivityRow(overrides: Partial<ActivityRow> = {}): ActivityRow {
     video_title: null,
     payload_json: null,
     unread: false,
+    context_kind: null,
     ...overrides,
   };
 }
