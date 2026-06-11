@@ -1856,6 +1856,167 @@ git commit -m "feat(seed): Backfilled video-watch activity with mixed surface co
 
 ---
 
+## Task 14: Activity rows: stretched link + separate "N more" link + detailed variant
+
+User-requested: the coalesced "and N more" should be its OWN link (to a per-student activity page) distinct from the whole-row tap, and the feed should be able to show richer rows. A link inside a link is invalid HTML, so use the stretched-link pattern: the row's primary deep-link is an absolutely-positioned overlay; the visible content sits above it with `pointer-events-none` so clicks fall through to the overlay, and any interactive child (the "N more" link) re-enables `pointer-events-auto`.
+
+**Files:**
+- Modify: `frontend/src/components/activity-feed-list.tsx`
+- Modify: `frontend/src/components/activity-feed-list.test.tsx`
+
+- [ ] **Step 1: Restructure the row to the stretched-link pattern**
+
+Replace the per-row render so each `<li>` is `relative`, with the primary `<Link>` as an absolute overlay and the content above it:
+
+```tsx
+const rowClasses = "flex items-start gap-3 px-4 py-3";
+
+// inside the map:
+const studentActivityHref = `/student/${item.row.actor_user_id}/activity`;
+const ariaLabel = `${item.row.actor_name ?? "A student"} ${line.verb}${line.subject ? ` ${line.subject}` : ""}`;
+
+return (
+  <li key={key} className="relative">
+    {line.href && (
+      <Link
+        to={line.href}
+        aria-label={ariaLabel}
+        className="absolute inset-0 z-0 transition-colors hover:bg-muted/40"
+      />
+    )}
+    <div className={cn(rowClasses, "pointer-events-none relative z-10")}>
+      {showAvatar && (
+        <StudentAvatar id={item.row.actor_user_id} name={item.row.actor_name ?? "?"} />
+      )}
+      <div className="min-w-0 flex-1">
+        <div className="flex items-baseline justify-between gap-2">
+          <p className={cn("text-sm font-medium", detailed ? "" : "truncate")}>
+            {item.row.actor_name ?? "A student"}
+          </p>
+          <span className="shrink-0 text-xs text-muted-foreground">
+            {detailed ? formatAbsolute(item.row.occurred_at) : formatRelativeShort(item.row.occurred_at)}
+          </span>
+        </div>
+        <p className="mt-0.5 text-sm text-muted-foreground">
+          {line.verb}
+          {line.subject ? ` ${line.subject}` : ""}
+          {item.count > 1 && (
+            <>
+              {" "}
+              <Link
+                to={studentActivityHref}
+                className="pointer-events-auto relative z-20 font-medium text-foreground underline underline-offset-2 hover:no-underline"
+              >
+                and {item.count - 1} more
+              </Link>
+            </>
+          )}
+        </p>
+        {surface && (
+          <span className="mt-1 inline-flex items-center gap-1 text-xs text-muted-foreground">
+            {surface.kind === "syllabus" ? (
+              <NotebookPen className="h-3 w-3 shrink-0" aria-hidden />
+            ) : (
+              <Globe className="h-3 w-3 shrink-0" aria-hidden />
+            )}
+            <span className={detailed ? "" : "truncate"}>{surface.label}</span>
+          </span>
+        )}
+      </div>
+    </div>
+  </li>
+);
+```
+
+Notes:
+- The coalesced suffix is now the explicit `and {count - 1} more` link, replacing the old `coalescedSuffix` text folded into `subject`. Remove the prior `const subject = ...coalescedSuffix...` line and stop importing `coalescedSuffix` if it becomes unused (the `coalesceActivity` import stays for the item grouping; `coalescedSuffix` may now be unused, remove its import if so).
+- Add a `detailed?: boolean` prop (default false) to `ActivityFeedListProps`; thread it in.
+- Import `formatAbsolute` from `@/lib/dates` (it already exists).
+- Keep the loading and empty states unchanged.
+- When `line.href` is absent (non-interactive row), there is no overlay link; the "N more" link (if present) still works because it has `pointer-events-auto`. But note: without an overlay, the surrounding `pointer-events-none` content would block the "N more" link unless the row also sets the content interactive. Simplest rule: only apply `pointer-events-none` to the content `<div>` when `line.href` is set. So compute `cn(rowClasses, "relative z-10", line.href && "pointer-events-none")`.
+
+- [ ] **Step 2: Update the test**
+
+In `activity-feed-list.test.tsx`:
+- The whole-row link is now the overlay anchor. Update the "whole row is a link" test to find the link by its `aria-label` (or `getByRole('link', { name: /Alex Rivera/i })`) and assert its `href`.
+- Add a test: a coalesced feed (`coalesce` + two same-actor same-verb rows) renders a SEPARATE link with text matching `/and \d+ more/` whose href is `/student/<actorId>/activity`. Assert there are two distinct links in that row (the overlay + the "N more").
+- Keep the no-href and empty-state tests (a no-href row has no overlay link; if also coalesced, the "N more" link is still present).
+
+- [ ] **Step 3: Verify**
+
+Run: `cd frontend && npx tsc --noEmit && pnpm lint && pnpm vitest run --project node` (clean/green; the .test.tsx runs in CI).
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add frontend/src/components/activity-feed-list.tsx frontend/src/components/activity-feed-list.test.tsx
+git commit -m "feat(activity-feed): Made the coalesced count a separate link and added a detailed variant."
+```
+
+---
+
+## Task 15: Per-student activity page
+
+User-requested destination for the "N more" link: a minimal, uncoalesced per-student activity feed. This is the same route the future social feed will later upgrade; build only the minimal page now.
+
+**Files:**
+- Create: `frontend/src/app/student-activity/page.tsx`
+- Modify: `frontend/src/App.tsx` (add the route)
+- Modify: `frontend/src/app/student-profile/page.tsx` (add a "See all activity" link to the Recent activity section)
+- Test: `frontend/src/app/student-activity/student-activity.test.tsx`
+
+- [ ] **Step 1: Create the page**
+
+`frontend/src/app/student-activity/page.tsx`: resolve `studentId` from `useParams` (guard non-finite -> Navigate to /dashboard); enforce the same access rule as the profile page (owner or coach/admin, else Navigate). Resolve the student for the title via `useAllUsers` (coach) or `useUser` (owner), mirroring `student-profile/page.tsx`. Use `useStudentActivityFeed(studentId)` (already used by the profile). Render a header (back button + "<Name>'s activity" / "Your activity") and the feed:
+
+```tsx
+<ActivityFeedList
+  rows={feedQuery.data ?? []}
+  isLoading={feedQuery.isLoading}
+  showAvatar={false}
+  detailed
+  emptyText="No activity recorded yet."
+/>
+```
+
+(`coalesce` defaults false, so the page shows every event uncoalesced with full titles and absolute timestamps via `detailed`.) Default-export the component.
+
+- [ ] **Step 2: Add the route**
+
+In `frontend/src/App.tsx`, add a lazy import `const StudentActivityPage = lazy(() => import('./app/student-activity/page'));` and a route inside `AuthedRoutes`, guarded like the other `/student/:id/*` routes:
+
+```tsx
+<Route
+  path="/student/:id/activity"
+  element={
+    <RequireAuth>
+      <StudentActivityPage />
+    </RequireAuth>
+  }
+/>
+```
+
+- [ ] **Step 3: Link from the profile**
+
+In `frontend/src/app/student-profile/page.tsx`, in the "Recent activity" section header, add a "See all" `<Link to={\`/student/${studentId}/activity\`}>` (small, `text-xs`, right-aligned in the section header). Keep the existing capped `ActivityFeedList` there as-is.
+
+- [ ] **Step 4: Browser test**
+
+`student-activity.test.tsx` (CI-only): mount the page on `/student/4/activity` via `<Routes><Route path="/student/:id/activity" .../>`, `renderWithProviders` with a coach `buildUser`, stub `window.fetch` to return the student (users list) and a couple of activity rows for the student-feed endpoint (check `frontend/src/lib/queries.ts` for the exact `useStudentActivityFeed` URL). Assert a row's text renders and the feed is uncoalesced (no "N more"). Follow the `student-profile-activity.test.tsx` fetch-stub pattern; no `vi.spyOn` of api; no `as` casts.
+
+- [ ] **Step 5: Verify**
+
+Run: `cd frontend && npx tsc --noEmit && pnpm lint && pnpm vitest run --project node` (clean/green).
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add frontend/src/app/student-activity/page.tsx frontend/src/App.tsx frontend/src/app/student-profile/page.tsx frontend/src/app/student-activity/student-activity.test.tsx
+git commit -m "feat(activity): Added a per-student activity page for the coalesced count link."
+```
+
+---
+
 ## Final verification
 
 - [ ] **Frontend full check**
