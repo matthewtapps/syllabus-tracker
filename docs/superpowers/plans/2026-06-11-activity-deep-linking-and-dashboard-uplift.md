@@ -1677,6 +1677,185 @@ git commit -m "feat(dashboard): Removed the Ready for a syllabus queue."
 
 ---
 
+## Task 12: Context surface indicator chip on activity rows
+
+User-requested after seeing Task 5: each row should show which surface the action happened on (syllabus / global library / future targets) as a small icon + short label chip below the description. Chosen form: icon + short label (syllabus name for syllabus actions, "Library" for global, extensible to camps/matches later).
+
+**Files:**
+- Modify: `frontend/src/lib/view-context.ts` (add `activitySurface` pure helper)
+- Modify: `frontend/src/lib/view-context.unit.test.ts`
+- Modify: `frontend/src/components/activity-feed-list.tsx` (render the chip)
+- Modify: `frontend/src/components/activity-feed-list.test.tsx`
+
+- [ ] **Step 1: Add the pure surface helper + tests**
+
+In `frontend/src/lib/view-context.ts`, add:
+
+```ts
+export interface ActivitySurface {
+  kind: ViewContext["kind"];
+  /** Display label: the syllabus name for syllabus actions, "Library" for global. */
+  label: string;
+}
+
+/**
+ * The surface chip for an activity row: derived from the same ViewContext model
+ * so it stays consistent with the deep link, and extends with new kinds. Returns
+ * null when there is no resolvable surface (no chip shown).
+ */
+export function activitySurface(
+  row: ViewContextRow & { syllabus_name: string | null },
+): ActivitySurface | null {
+  const ctx = rowToViewContext(row);
+  if (!ctx) return null;
+  if (ctx.kind === "syllabus") {
+    return { kind: "syllabus", label: row.syllabus_name ?? "Syllabus" };
+  }
+  return { kind: "library", label: "Library" };
+}
+```
+
+Add tests to `view-context.unit.test.ts`:
+
+```ts
+import { activitySurface } from "./view-context";
+
+describe("activitySurface", () => {
+  test("syllabus action shows the syllabus name", () => {
+    expect(
+      activitySurface({
+        verb: "attempt_logged",
+        context_kind: null,
+        target_student_id: 4,
+        syllabus_id: 2,
+        sst_id: 42,
+        technique_id: 9,
+        video_id: null,
+        syllabus_name: "Blue Belt",
+      }),
+    ).toEqual({ kind: "syllabus", label: "Blue Belt" });
+  });
+  test("library video shows Library", () => {
+    expect(
+      activitySurface({
+        verb: "video_watched",
+        context_kind: "library",
+        target_student_id: 4,
+        syllabus_id: null,
+        sst_id: null,
+        technique_id: 9,
+        video_id: 7,
+        syllabus_name: null,
+      }),
+    ).toEqual({ kind: "library", label: "Library" });
+  });
+  test("no resolvable surface returns null", () => {
+    expect(
+      activitySurface({
+        verb: "syllabus_assigned",
+        context_kind: null,
+        target_student_id: 4,
+        syllabus_id: 2,
+        sst_id: null,
+        technique_id: null,
+        video_id: null,
+        syllabus_name: "Blue Belt",
+      }),
+    ).toBeNull();
+  });
+});
+```
+
+Run: `cd frontend && pnpm vitest run --project node src/lib/view-context.unit.test.ts` (expect pass).
+
+- [ ] **Step 2: Render the chip in `ActivityFeedList`**
+
+In `frontend/src/components/activity-feed-list.tsx`:
+- Import the helper and two lucide icons: `import { NotebookPen, Globe } from "lucide-react";` and `import { activitySurface } from "@/lib/view-context";`.
+- Inside the row map, after computing `line`, compute `const surface = activitySurface(item.row);`.
+- After the description `<p>`, render the chip when `surface` is set:
+
+```tsx
+{surface && (
+  <span className="mt-1 inline-flex items-center gap-1 text-xs text-muted-foreground">
+    {surface.kind === "syllabus" ? (
+      <NotebookPen className="h-3 w-3 shrink-0" aria-hidden />
+    ) : (
+      <Globe className="h-3 w-3 shrink-0" aria-hidden />
+    )}
+    <span className="truncate">{surface.label}</span>
+  </span>
+)}
+```
+
+Keep it inside the row's text column (part of the `inner` fragment), below the description line. The icons are decorative (`aria-hidden`); the label text carries the meaning.
+
+- [ ] **Step 3: Test the chip**
+
+Add to `activity-feed-list.test.tsx` an assertion that a syllabus-context row renders its syllabus name as a chip. The default `row()` fixture is `attempt_logged` with `syllabus_id: 2`/`sst_id: 42`; give it a `syllabus_name` (e.g. "Blue Belt") and assert `screen.getByText("Blue Belt")` is in the document. Add a `video_watched` library-context row (`context_kind: "library"`, `technique_id` set, `video_id` set) and assert `screen.getByText("Library")`.
+
+- [ ] **Step 4: Verify**
+
+Run: `cd frontend && npx tsc --noEmit && pnpm lint && pnpm vitest run --project node`. Expect clean / green.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add frontend/src/lib/view-context.ts frontend/src/lib/view-context.unit.test.ts frontend/src/components/activity-feed-list.tsx frontend/src/components/activity-feed-list.test.tsx
+git commit -m "feat(activity-feed): Added a context surface chip to activity rows."
+```
+
+---
+
+## Task 13: Seed video-watch activity (so the feed shows watches)
+
+User-requested: the seed data produces no `video_watched` activity, so the feed and digest never show watches. Live watches emit `video_watched` only when a play crosses the watch threshold (`record_watch`); the seed populates `video_watch_aggregates` directly and never emits the activity. Extend the seed's activity backfill to insert `video_watched` activity rows from the seeded watch data, with a realistic mix of syllabus-context and library-context watches.
+
+**Files:**
+- Modify: `crates/syllabus-tracker/src/db/activity.rs` (the `run_backfill` function) OR `crates/syllabus-tracker/src/bin/seed.rs`, whichever owns the activity backfill. Read `run_backfill` first to see the existing pattern (it direct-INSERTs activity rows from source tables, preserving source timestamps).
+- Modify: `.sqlx/` (regenerate).
+
+**Depends on:** Task 8 (the `context_kind` column must exist) and Task 9 (so the emit/columns are consistent). Run this AFTER Tasks 8 and 9.
+
+- [ ] **Step 1: Understand the existing backfill and watch seed**
+
+Read `run_backfill` in `crates/syllabus-tracker/src/db/activity.rs` (it backfills attempts and other verbs via direct INSERT ... SELECT from source tables). Read how the seed creates watch data: `grep -n "video_watch_aggregates\|last_watched_at\|first_watched_at\|days_ago" crates/syllabus-tracker/src/bin/seed.rs`. Note that prior work spread watch recency via `days_ago = ((student_idx*3 + v_idx*5) % 26)`, so some watches are within the last 7 days (these should surface in the feed/digest).
+
+- [ ] **Step 2: Add a `video_watched` backfill INSERT**
+
+In `run_backfill`, add an INSERT that creates one `video_watched` activity row per row in `video_watch_aggregates` (one per student+video that has watch data). For each:
+- `occurred_at` = the aggregate's `last_watched_at` (preserves the seeded spread; do NOT use now()).
+- `verb` = `'video_watched'`, `actor_user_id` = the watcher (`user_id`), `target_student_id` = the same user.
+- `video_id` = the video, `technique_id` = the video's technique (`videos.technique_id`).
+- `payload_json` = a `video_watched` payload (cumulative + duration); reuse `payload::video_watched(...)` shape or inline JSON matching it.
+- **Context mix:** set syllabus context for watches where the watcher has a matching non-graduated `student_syllabus_techniques` row for the video's technique (join `student_syllabus_techniques sst` -> `syllabus_assignments a` on the watcher + technique): set `syllabus_id` = `a.syllabus_id`, `sst_id` = `sst.id`, `context_kind` = `'syllabus'`. Otherwise set `context_kind` = `'library'` and leave `syllabus_id`/`sst_id` null (technique still set). If a video's technique maps to several of the watcher's ssts, pick one deterministically (e.g. `MIN(sst.id)`), so a single activity row is produced per student+video.
+
+Make the distribution realistic: most students should get at least one in-window watch (recent `last_watched_at`), and the mix should include both syllabus and library contexts across the seeded students so the new context chip shows both kinds. If the current seed's technique/syllabus overlap does not yield any library-context watches (every watched technique is in the student's syllabus), watch a few videos whose technique is NOT in the student's syllabus, or relax the join so some are library-context. Verify empirically in Step 4.
+
+- [ ] **Step 3: Regenerate the sqlx cache**
+
+Follow the "sqlx cache regen recipe" below (new query in `run_backfill` changes the cache). Then `just lint-backend` and `cargo nextest run -p syllabus-tracker` and `just sqlx-check`.
+
+- [ ] **Step 4: Verify the seed empirically (against a temp DB, never the running dev DB)**
+
+Seed a temp DB (the recipe seeds `/tmp/clean.db`). Then query it:
+
+```bash
+sqlite3 /tmp/clean.db "SELECT context_kind, COUNT(*) FROM activity WHERE verb='video_watched' GROUP BY context_kind;"
+sqlite3 /tmp/clean.db "SELECT COUNT(*) FROM activity WHERE verb='video_watched' AND occurred_at >= datetime('now','-6 days','start of day');"
+```
+
+Expect: both `syllabus` and `library` rows present, and a non-zero count in the last 7 days. If either is zero, adjust the distribution in Step 2 and re-verify.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add crates/syllabus-tracker/src/db/activity.rs crates/syllabus-tracker/src/bin/seed.rs .sqlx
+git commit -m "feat(seed): Backfilled video-watch activity with mixed surface context."
+```
+
+---
+
 ## Final verification
 
 - [ ] **Frontend full check**
