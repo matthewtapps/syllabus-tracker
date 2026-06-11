@@ -66,12 +66,12 @@
       {
         "name": "last_update?: NaiveDateTime",
         "ordinal": 12,
-        "type_info": "Null"
+        "type_info": "Text"
       },
       {
         "name": "last_coach_update_at?: NaiveDateTime",
         "ordinal": 13,
-        "type_info": "Null"
+        "type_info": "Text"
       },
       {
         "name": "total_techniques?: i64",
@@ -101,12 +101,12 @@
       {
         "name": "latest_student_note_at?: NaiveDateTime",
         "ordinal": 19,
-        "type_info": "Null"
+        "type_info": "Text"
       },
       {
         "name": "latest_watch_at?: NaiveDateTime",
         "ordinal": 20,
-        "type_info": "Null"
+        "type_info": "Text"
       },
       {
         "name": "latest_watch_video_title?: String",
