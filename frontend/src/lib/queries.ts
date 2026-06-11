@@ -3,7 +3,9 @@ import {
   getAdminStorage,
   getAllTags,
   getAllUsers,
+  getActivityDigest,
   getActivityFeed,
+  getDashboardActivityFeed,
   getStudentActivityFeed,
   getActivityUnreadCount,
   getAttemptHeatmap,
@@ -421,6 +423,22 @@ export function useStudentActivityFeed(studentId: number | undefined) {
       typeof studentId === "number" && Number.isFinite(studentId)
         ? () => getStudentActivityFeed(studentId, { limit: 20 })
         : skipToken,
+    staleTime: 30 * 1000,
+  });
+}
+
+export function useActivityDigest(enabled: boolean = true) {
+  return useQuery({
+    queryKey: qk.activityDigest(),
+    queryFn: enabled ? getActivityDigest : skipToken,
+    staleTime: 60 * 1000,
+  });
+}
+
+export function useDashboardActivityFeed(enabled: boolean = true) {
+  return useQuery({
+    queryKey: qk.dashboardActivityFeed(),
+    queryFn: enabled ? () => getDashboardActivityFeed(30) : skipToken,
     staleTime: 30 * 1000,
   });
 }

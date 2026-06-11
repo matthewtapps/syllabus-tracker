@@ -80,6 +80,8 @@ export const qk = {
   dashboardVideoOverview: () => ["dashboard", "videoOverview"] as const,
   recentlyActiveStudents: () => ["activity", "recentlyActive"] as const,
   activityFeed: () => ["activity", "feed"] as const,
+  activityDigest: () => ["activity", "digest"] as const,
+  dashboardActivityFeed: () => ["activity", "dashboard-feed"] as const,
   studentActivityFeed: (studentId: number) =>
     ["student", studentId, "activityFeed"] as const,
   activityUnreadCount: () => ["activity", "unreadCount"] as const,

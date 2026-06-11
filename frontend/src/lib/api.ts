@@ -95,6 +95,8 @@ export interface User {
   last_student_initiative_at?: string | null;
   last_watch_at?: string | null;
   last_watch_video_title?: string | null;
+  last_student_activity_at?: string | null;
+  last_coach_activity_at?: string | null;
 }
 
 export async function getCurrentUser(): Promise<User | null> {
@@ -1872,4 +1874,38 @@ export async function postMarkActivityUnread(id: number): Promise<void> {
     credentials: "include",
   });
   if (!response.ok) throw response;
+}
+
+// ============================================================
+// Dashboard digest + feed
+// ============================================================
+
+export interface DigestMetric {
+  key: string;
+  label: string;
+  count: number;
+  prev_count: number;
+  delta: number;
+  daily: number[];
+}
+
+export interface ActivityDigest {
+  window_days: number;
+  metrics: DigestMetric[];
+}
+
+export async function getActivityDigest(): Promise<ActivityDigest> {
+  const response = await fetch("/api/dashboard/activity_digest", {
+    credentials: "include",
+  });
+  if (!response.ok) throw response;
+  return (await response.json()) as ActivityDigest;
+}
+
+export async function getDashboardActivityFeed(limit = 30): Promise<ActivityRow[]> {
+  const response = await fetch(`/api/dashboard/activity_feed?limit=${limit}`, {
+    credentials: "include",
+  });
+  if (!response.ok) throw response;
+  return (await response.json()) as ActivityRow[];
 }
