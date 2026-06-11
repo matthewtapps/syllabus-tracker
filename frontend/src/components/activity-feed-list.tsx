@@ -2,7 +2,8 @@ import { Link } from "react-router-dom";
 import { StudentAvatar } from "@/components/student-avatar";
 import { activityLine, type ActivityRow } from "@/lib/activity-line";
 import { coalesceActivity, coalescedSuffix } from "@/lib/activity-coalesce";
-import { formatRelative } from "@/lib/dates";
+import { formatRelativeShort } from "@/lib/dates";
+import { cn } from "@/lib/utils";
 
 interface ActivityFeedListProps {
   rows: ActivityRow[];
@@ -17,10 +18,9 @@ interface ActivityFeedListProps {
 }
 
 /**
- * Presentational activity list shared by the coach dashboard, the student
- * profile, and other surfaces. It renders ActivityRow[] only. Callers choose
- * the data source, which is what makes it audience-agnostic (a coach passes
- * student activity, a student passes their own / coach activity).
+ * Presentational activity list shared by the coach dashboard and the student
+ * profile. Renders ActivityRow[] only. The whole row is one tappable link to
+ * the row's deep-link target; rows with no target render non-interactive.
  */
 export function ActivityFeedList({
   rows,
@@ -36,7 +36,7 @@ export function ActivityFeedList({
         {Array.from({ length: 3 }).map((_, i) => (
           <div key={i} className="px-4 py-3">
             <div className="h-3 w-1/3 animate-pulse rounded bg-muted" />
-            <div className="mt-2 h-3 w-1/4 animate-pulse rounded bg-muted" />
+            <div className="mt-2 h-3 w-2/3 animate-pulse rounded bg-muted" />
           </div>
         ))}
       </div>
@@ -56,34 +56,48 @@ export function ActivityFeedList({
     <ul className="divide-y divide-border">
       {shown.map((item) => {
         const line = activityLine(item.row);
-        const lineSubject = line.subject ?? "";
-        const suffix = coalescedSuffix(item);
-        const text = lineSubject
-          ? `${line.verb} ${lineSubject}${suffix}`
-          : `${line.verb}${suffix}`;
-        return (
-          <li
-            key={`${item.row.actor_user_id}-${item.row.id}-${item.row.occurred_at}`}
-            className="flex items-center gap-3 px-4 py-3"
-          >
+        const subject = line.subject
+          ? `${line.subject}${coalescedSuffix(item)}`
+          : coalescedSuffix(item).trim() || undefined;
+
+        const inner = (
+          <>
             {showAvatar && (
-              <StudentAvatar id={item.row.actor_user_id} name={item.row.actor_name ?? "?"} />
+              <StudentAvatar
+                id={item.row.actor_user_id}
+                name={item.row.actor_name ?? "?"}
+              />
             )}
-            <div className="min-w-0 flex-1 space-y-0.5">
-              <p className="truncate text-sm font-medium">{item.row.actor_name ?? "A student"}</p>
-              <p className="truncate text-xs text-muted-foreground">
-                {line.href ? (
-                  <Link to={line.href} className="underline-offset-2 hover:underline">
-                    {text}
-                  </Link>
-                ) : (
-                  text
-                )}
+            <div className="min-w-0 flex-1">
+              <div className="flex items-baseline justify-between gap-2">
+                <p className="truncate text-sm font-medium">
+                  {item.row.actor_name ?? "A student"}
+                </p>
+                <span className="shrink-0 text-xs text-muted-foreground">
+                  {formatRelativeShort(item.row.occurred_at)}
+                </span>
+              </div>
+              <p className="mt-0.5 text-sm text-muted-foreground">
+                {subject ? `${line.verb} ${subject}` : line.verb}
               </p>
             </div>
-            <span className="shrink-0 text-xs text-muted-foreground">
-              {formatRelative(item.row.occurred_at)}
-            </span>
+          </>
+        );
+
+        const rowClasses = "flex items-start gap-3 px-4 py-3";
+        const key = `${item.row.actor_user_id}-${item.row.id}-${item.row.occurred_at}`;
+        return (
+          <li key={key}>
+            {line.href ? (
+              <Link
+                to={line.href}
+                className={cn(rowClasses, "transition-colors hover:bg-muted/40")}
+              >
+                {inner}
+              </Link>
+            ) : (
+              <div className={rowClasses}>{inner}</div>
+            )}
           </li>
         );
       })}
