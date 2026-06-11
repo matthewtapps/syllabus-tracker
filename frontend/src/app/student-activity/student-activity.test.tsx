@@ -136,7 +136,7 @@ describe("StudentActivityPage", () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByText(/no activity recorded yet/i)).toBeInTheDocument();
+      expect(screen.getByText(/no activity yet/i)).toBeInTheDocument();
     });
     fetchSpy.mockRestore();
   });
@@ -155,7 +155,7 @@ describe("StudentActivityPage", () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByText(/Jordan Smith's activity/i)).toBeInTheDocument();
+      expect(screen.getByText(/Jordan Smith's timeline/i)).toBeInTheDocument();
     });
     fetchSpy.mockRestore();
   });
