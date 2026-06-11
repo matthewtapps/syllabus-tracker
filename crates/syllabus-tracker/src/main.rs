@@ -11,8 +11,9 @@ mod test;
 
 use api::api_get_all_users;
 use api::{
-    api_activity_feed, api_activity_mark_all_read, api_activity_mark_one_read,
-    api_activity_mark_one_unread, api_activity_unread_count, api_add_tag_to_technique,
+    api_activity_digest, api_activity_feed, api_activity_mark_all_read,
+    api_activity_mark_one_read, api_activity_mark_one_unread, api_activity_unread_count,
+    api_add_tag_to_technique, api_dashboard_activity_feed,
     api_add_techniques_to_collection, api_approve_user, api_assign_collection,
     api_assign_techniques, api_attempt_heatmap, api_attempt_sparkline, api_attempt_summary,
     api_change_password, api_claim_invite, api_create_and_assign_technique, api_create_attempt,
@@ -340,6 +341,8 @@ pub async fn init_rocket(
                 api_activity_mark_one_read,
                 api_activity_mark_one_unread,
                 api_recently_active_students,
+                api_activity_digest,
+                api_dashboard_activity_feed,
                 api_student_syllabus_techniques_flat,
                 api_student_recent_syllabus_attempts,
                 api_student_syllabus_attempt_heatmap,
