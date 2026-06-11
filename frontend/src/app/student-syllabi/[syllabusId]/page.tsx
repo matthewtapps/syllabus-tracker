@@ -96,10 +96,23 @@ function Detail({
     const u = (usersQuery.data ?? []).find((u) => u.id === studentId);
     return u ? u.display_name || u.username : null;
   }, [isOwnView, usersQuery.data, studentId]);
-  const techniques = useMemo(
-    () => query.data?.techniques ?? [],
-    [query.data?.techniques],
-  );
+  const techniques = useMemo(() => {
+    const rows = query.data?.techniques ?? [];
+    return [...rows].sort((a, b) => {
+      const latestOf = (sst: SstRow): number => {
+        const candidates = [
+          sst.last_attempt_at,
+          sst.last_coach_update_at,
+          sst.last_student_update_at,
+        ];
+        const timestamps = candidates
+          .filter((t): t is string => t != null)
+          .map((t) => new Date(t).getTime());
+        return timestamps.length > 0 ? Math.max(...timestamps) : 0;
+      };
+      return latestOf(b) - latestOf(a);
+    });
+  }, [query.data?.techniques]);
   const [expandedValue, setExpandedValue] = useState<string>('');
   const [scrollToVideoId, setScrollToVideoId] = useState<number | null>(null);
   const [unassignOpen, setUnassignOpen] = useState(false);
