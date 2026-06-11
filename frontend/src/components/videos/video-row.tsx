@@ -173,9 +173,9 @@ export function VideoRow({
         </button>
 
         {isCoach && typeof totalPlays === "number" && (
-          <span className="flex shrink-0 items-center gap-0.5 text-xs text-muted-foreground">
+          <span className="ml-auto inline-flex shrink-0 items-center gap-0.5 text-xs text-muted-foreground">
             <PlayIcon className="h-3 w-3" aria-hidden />
-            {totalPlays}
+            <span className="min-w-[1.5ch] tabular-nums">{totalPlays}</span>
           </span>
         )}
 
