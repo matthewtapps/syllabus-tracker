@@ -159,6 +159,7 @@ function ProfileHub({
             rows={feedQuery.data ?? []}
             isLoading={feedQuery.isLoading}
             showAvatar={false}
+            inlineAvatar
             emptyText="No activity recorded yet."
           />
         </div>

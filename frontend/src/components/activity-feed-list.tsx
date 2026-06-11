@@ -72,6 +72,13 @@ interface ActivityFeedListProps {
   maxRows?: number;
   /** Hide the per-row avatar (e.g. a single-student profile feed). Default shows it. */
   showAvatar?: boolean;
+  /**
+   * Show a small inline avatar immediately before the actor name on the
+   * representative row. Useful on mixed-actor feeds (timeline, profile) where
+   * the big left-column avatar is hidden but actors still need to be
+   * distinguishable at a glance. Default false.
+   */
+  inlineAvatar?: boolean;
   emptyText?: string;
   /** Show absolute timestamps and full text without truncation. Default false. */
   detailed?: boolean;
@@ -79,6 +86,7 @@ interface ActivityFeedListProps {
 
 interface RowOptions {
   showAvatar: boolean;
+  inlineAvatar: boolean;
   detailed: boolean;
   coalesce: boolean;
   /** Optional JSX appended inside the description <p> after the verb/subject. */
@@ -92,7 +100,7 @@ function ActivityRowItem({
   activityRow: ActivityRow;
   opts: RowOptions;
 }) {
-  const { showAvatar, detailed, coalesce, trailing } = opts;
+  const { showAvatar, inlineAvatar, detailed, coalesce, trailing } = opts;
   const line = activityLine(activityRow);
   const surface = activitySurface(activityRow);
   const ariaLabel = `${activityRow.actor_name ?? "A student"} ${line.verb}${line.subject ? ` ${line.subject}` : ""}`;
@@ -116,7 +124,16 @@ function ActivityRowItem({
         )}
         <div className="min-w-0 flex-1">
           <div aria-hidden={hideDup} className="flex items-baseline justify-between gap-2">
-            <p className={cn("text-sm font-medium", detailed ? "" : "truncate")}>
+            <p className={cn("flex items-center gap-1.5 text-sm font-medium", detailed ? "" : "truncate")}>
+              {inlineAvatar && (
+                <span data-testid="inline-avatar" className="pointer-events-auto shrink-0" aria-hidden>
+                  <StudentAvatar
+                    id={activityRow.actor_user_id}
+                    name={activityRow.actor_name ?? "?"}
+                    size="sm"
+                  />
+                </span>
+              )}
               {activityRow.actor_name ?? "A student"}
             </p>
             <span className="shrink-0 text-xs text-muted-foreground">
@@ -166,6 +183,7 @@ export function ActivityFeedList({
   coalesce = false,
   maxRows,
   showAvatar = true,
+  inlineAvatar = false,
   emptyText = "No recent activity yet.",
   detailed = false,
 }: ActivityFeedListProps) {
@@ -226,7 +244,7 @@ export function ActivityFeedList({
             </>
           ) : undefined;
 
-        const opts: RowOptions = { showAvatar, detailed, coalesce, trailing: expandToggle };
+        const opts: RowOptions = { showAvatar, inlineAvatar, detailed, coalesce, trailing: expandToggle };
 
         const extraMembers = item.members.slice(1);
 
@@ -243,22 +261,31 @@ export function ActivityFeedList({
                 )}
               >
                 <div className="overflow-hidden">
-                  <ul className="ml-4 border-l-2 border-border space-y-1.5 py-1">
+                  <ul className="ml-4 space-y-1 border-l-2 border-border py-1">
                     {extraMembers.map((memberRow) => {
                       const memberKey = `${memberRow.actor_user_id}-${memberRow.id}-${memberRow.occurred_at}`;
                       const memberLine = activityLine(memberRow);
-                      const lineText = memberLine.verb + (memberLine.subject ? ` ${memberLine.subject}` : "");
+                      // Show only the differing part: the subject (technique/video/syllabus).
+                      // Fall back to the verb text when no subject exists (rare).
+                      const displayText = memberLine.subject ?? memberLine.verb;
+                      const relTime = formatRelativeShort(memberRow.occurred_at);
+                      const inner = (
+                        <span className="flex min-w-0 items-baseline justify-between gap-2">
+                          <span className="truncate">{displayText}</span>
+                          <span className="shrink-0 text-muted-foreground">{relTime}</span>
+                        </span>
+                      );
                       return (
-                        <li key={memberKey} className="px-3">
+                        <li key={memberKey} className="px-3 text-xs text-muted-foreground">
                           {memberLine.href ? (
                             <Link
                               to={memberLine.href}
-                              className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+                              className="block transition-colors hover:text-foreground"
                             >
-                              {lineText}
+                              {inner}
                             </Link>
                           ) : (
-                            <span className="text-xs text-muted-foreground">{lineText}</span>
+                            <span className="block">{inner}</span>
                           )}
                         </li>
                       );

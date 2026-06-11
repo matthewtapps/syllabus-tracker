@@ -119,9 +119,12 @@ describe("ActivityFeedList", () => {
     // After expansion, the button label changes and aria-expanded flips.
     expect(screen.getByRole("button", { name: /Show less/i }).getAttribute("aria-expanded")).toBe("true");
 
-    // The second member is rendered as a compact line (subject text visible, no duplicate actor name).
-    // Triangle appears as part of the compact sub-list line text.
-    expect(screen.getByText(/Triangle/)).toBeTruthy();
+    // The second member is rendered showing the SUBJECT only (e.g. "Triangle"),
+    // not the full repeated verb phrase.
+    expect(screen.getByText("Triangle")).toBeTruthy();
+    // The verb phrase appears exactly once (on the representative row only, not repeated per member).
+    const verbMatches = screen.queryAllByText(/logged an attempt on/);
+    expect(verbMatches).toHaveLength(1);
     // The actor name still appears exactly once (compact members have no actor name).
     expect(screen.getAllByText("Alex Rivera")).toHaveLength(1);
 
@@ -210,5 +213,32 @@ describe("ActivityFeedList", () => {
       />,
     );
     expect(screen.getByText("Library")).toBeTruthy();
+  });
+
+  // --- inlineAvatar: small avatar rendered inline by the actor name ---
+  test("inlineAvatar with showAvatar=false renders a small inline avatar by the name", () => {
+    renderWithProviders(
+      <ActivityFeedList
+        rows={[row({})]}
+        isLoading={false}
+        showAvatar={false}
+        inlineAvatar
+      />,
+    );
+    // The inline avatar wrapper should be present.
+    expect(screen.getByTestId("inline-avatar")).toBeTruthy();
+    // The actor name should still appear.
+    expect(screen.getByText("Alex Rivera")).toBeTruthy();
+  });
+
+  test("without inlineAvatar, no inline avatar element is rendered", () => {
+    renderWithProviders(
+      <ActivityFeedList
+        rows={[row({})]}
+        isLoading={false}
+        showAvatar={false}
+      />,
+    );
+    expect(screen.queryByTestId("inline-avatar")).toBeNull();
   });
 });

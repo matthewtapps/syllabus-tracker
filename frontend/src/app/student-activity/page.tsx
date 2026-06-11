@@ -73,6 +73,7 @@ function ActivityHub({
           rows={feedQuery.data ?? []}
           isLoading={feedQuery.isLoading}
           showAvatar={false}
+          inlineAvatar
           detailed
           emptyText="No activity yet."
         />
