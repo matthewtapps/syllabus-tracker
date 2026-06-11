@@ -66,8 +66,9 @@ describe("ActivityFeedList", () => {
       <ActivityFeedList rows={[row({ technique_name: "Armbar" })]} isLoading={false} />,
     );
     expect(screen.getByText("Alex Rivera")).toBeTruthy();
-    expect(screen.getByText("logged an attempt on")).toBeTruthy();
-    expect(screen.getByText("Armbar")).toBeTruthy();
+    // verb and subject render as one combined node now (no bolding), so match
+    // the whole phrase rather than the two pieces separately.
+    expect(screen.getByText("logged an attempt on Armbar")).toBeTruthy();
   });
 
   test("empty state shows emptyText", () => {
