@@ -73,7 +73,7 @@ function NotesEditor({
       setEditing(false);
       return;
     }
-    if (!confirmGraduated()) return;
+    if (!(await confirmGraduated())) return;
     try {
       await mutation.mutateAsync({
         sstId,

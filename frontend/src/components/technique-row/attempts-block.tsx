@@ -89,7 +89,7 @@ function AddAttemptForm({
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!confirmGraduated()) return;
+    if (!(await confirmGraduated())) return;
     try {
       // Local-midnight ISO so the date the user picked is the date the
       // server records, regardless of their UTC offset.
@@ -170,7 +170,7 @@ function AttemptRow({ attempt }: { attempt: SyllabusAttempt }) {
   if (context.kind !== "student-syllabus") return null;
 
   async function handleDelete() {
-    if (!confirmGraduated()) return;
+    if (!(await confirmGraduated())) return;
     try {
       await deleteMutation.mutateAsync({
         attemptId: attempt.id,

@@ -15,6 +15,7 @@ import { RequireAdmin, RequireAuth, RequireCoach } from './components/route-guar
 import { TelemetryProvider } from './context/telemetry';
 import { CapabilitiesProvider } from './context/capabilities';
 import { CurrentUserProvider } from './lib/current-user';
+import { ConfirmProvider } from './components/confirm-dialog';
 import { useCapabilities, useCurrentUser } from './lib/queries';
 import { qk } from './lib/query-keys';
 import type { User } from './lib/api';
@@ -169,12 +170,14 @@ function AuthedAppShell({
   return (
     <AuthErrorBoundary>
       <CurrentUserProvider user={user}>
-        <Layout user={user} onLogout={onLogout}>
-          <AppBreadcrumbs />
-          <Suspense fallback={<RouteLoading />}>
-            <AuthedRoutes />
-          </Suspense>
-        </Layout>
+        <ConfirmProvider>
+          <Layout user={user} onLogout={onLogout}>
+            <AppBreadcrumbs />
+            <Suspense fallback={<RouteLoading />}>
+              <AuthedRoutes />
+            </Suspense>
+          </Layout>
+        </ConfirmProvider>
       </CurrentUserProvider>
     </AuthErrorBoundary>
   );

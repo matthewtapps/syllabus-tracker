@@ -19,7 +19,7 @@ export function StatusBlock() {
   const { sst, studentId, syllabusId } = context;
 
   async function handleChange(next: Status) {
-    if (!confirmGraduated()) return;
+    if (!(await confirmGraduated())) return;
     try {
       await mutation.mutateAsync({
         sstId: sst.id,

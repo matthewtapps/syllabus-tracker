@@ -20,7 +20,7 @@ export function HiddenToggleButton() {
   async function handleClick(e: React.MouseEvent) {
     e.preventDefault();
     e.stopPropagation();
-    if (!confirmGraduated()) return;
+    if (!(await confirmGraduated())) return;
     try {
       await mutation.mutateAsync({
         sstId: sst.id,
