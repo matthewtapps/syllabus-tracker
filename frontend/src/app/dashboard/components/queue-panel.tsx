@@ -1,13 +1,11 @@
 import type { ReactNode } from 'react';
-import { Copy, KeyRound, Sparkles, UserPlus } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { Copy, KeyRound, UserPlus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import type { User } from '@/lib/api';
 
 interface QueuePanelProps {
   resetRequests: User[];
   pendingApprovals: User[];
-  needsSyllabus: User[];
   onSendResetLink: (id: number) => void;
   onApprove: (id: number) => void;
 }
@@ -15,14 +13,12 @@ interface QueuePanelProps {
 export function QueuePanel({
   resetRequests,
   pendingApprovals,
-  needsSyllabus,
   onSendResetLink,
   onApprove,
 }: QueuePanelProps) {
   const empty =
     resetRequests.length === 0 &&
-    pendingApprovals.length === 0 &&
-    needsSyllabus.length === 0;
+    pendingApprovals.length === 0;
   if (empty) return null;
 
   return (
@@ -58,22 +54,6 @@ export function QueuePanel({
                 <StudentLabel student={s} />
                 <Button size="sm" onClick={() => onApprove(s.id)}>
                   Approve
-                </Button>
-              </li>
-            ))}
-          </QueueGroup>
-        )}
-
-        {needsSyllabus.length > 0 && (
-          <QueueGroup
-            icon={<Sparkles className="h-4 w-4 text-status-amber" aria-hidden />}
-            title="Ready for a syllabus"
-          >
-            {needsSyllabus.map((s) => (
-              <li key={s.id} className="flex items-center gap-3 px-3 py-2">
-                <StudentLabel student={s} />
-                <Button asChild size="sm" variant="outline">
-                  <Link to={`/student/${s.id}?from=dashboard`}>Open</Link>
                 </Button>
               </li>
             ))}

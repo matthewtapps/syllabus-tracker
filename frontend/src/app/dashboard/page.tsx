@@ -99,16 +99,6 @@ function CoachDashboard() {
     [activeStudents],
   );
 
-  const needsSyllabus = useMemo(
-    () =>
-      activeStudents.filter((s) => {
-        if ((s.total_techniques ?? 0) !== 0) return false;
-        if (s.claimed_at && !s.approved_at) return false;
-        return true;
-      }),
-    [activeStudents],
-  );
-
   const resetRequests = useMemo(
     () => activeStudents.filter((s) => s.reset_requested_at),
     [activeStudents],
@@ -223,7 +213,6 @@ function CoachDashboard() {
         <QueuePanel
           resetRequests={resetRequests}
           pendingApprovals={pendingApprovals}
-          needsSyllabus={needsSyllabus}
           onSendResetLink={handleSendResetLink}
           onApprove={handleApprove}
         />
