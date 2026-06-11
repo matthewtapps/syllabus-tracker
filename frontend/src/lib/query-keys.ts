@@ -78,7 +78,6 @@ export const qk = {
   videoStats: (videoId: number) => ["video", videoId, "stats"] as const,
 
   dashboardVideoOverview: () => ["dashboard", "videoOverview"] as const,
-  recentlyActiveStudents: () => ["activity", "recentlyActive"] as const,
   activityFeed: () => ["activity", "feed"] as const,
   activityDigest: () => ["activity", "digest"] as const,
   dashboardActivityFeed: () => ["activity", "dashboard-feed"] as const,

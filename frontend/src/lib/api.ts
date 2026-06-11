@@ -1775,20 +1775,6 @@ export async function getSyllabusAttemptHeatmap(
 import type { ActivityRow } from "./activity-line";
 export type { ActivityRow };
 
-export interface RecentlyActiveStudent {
-  student_id: number;
-  student_name: string | null;
-  verb: string;
-  occurred_at: string;
-  technique_id: number | null;
-  syllabus_id: number | null;
-  video_id: number | null;
-  technique_name: string | null;
-  syllabus_name: string | null;
-  video_title: string | null;
-  payload_json: string | null;
-}
-
 export interface ActivityUnreadCount {
   count: number;
 }
@@ -1815,16 +1801,6 @@ export async function getActivityUnreadCount(): Promise<ActivityUnreadCount> {
   });
   if (!response.ok) throw response;
   return (await response.json()) as ActivityUnreadCount;
-}
-
-export async function getRecentlyActiveStudents(
-  limit?: number,
-): Promise<RecentlyActiveStudent[]> {
-  const url = new URL("/api/activity/recently_active", window.location.origin);
-  if (limit !== undefined) url.searchParams.set("limit", String(limit));
-  const response = await fetch(url.toString(), { credentials: "include" });
-  if (!response.ok) throw response;
-  return (await response.json()) as RecentlyActiveStudent[];
 }
 
 /** Fetches activity rows scoped to a specific student.

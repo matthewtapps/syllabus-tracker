@@ -21,7 +21,6 @@ import {
   getLibraryTechniques,
   getLibraryTechniqueStats,
   getRecentAttemptsForStudent,
-  getRecentlyActiveStudents,
   getRecentSyllabusAttemptsForStudent,
   getStudentLibrary,
   getStudentPinnedTechniques,
@@ -449,15 +448,6 @@ export function useActivityUnreadCount(enabled: boolean = true) {
     queryFn: enabled ? getActivityUnreadCount : skipToken,
     staleTime: 30 * 1000,
     refetchOnWindowFocus: true,
-  });
-}
-
-// Coach/admin only: recently-active students from the activity stream.
-export function useRecentlyActiveStudents(enabled: boolean = true) {
-  return useQuery({
-    queryKey: qk.recentlyActiveStudents(),
-    queryFn: enabled ? () => getRecentlyActiveStudents(10) : skipToken,
-    staleTime: 60 * 1000,
   });
 }
 
