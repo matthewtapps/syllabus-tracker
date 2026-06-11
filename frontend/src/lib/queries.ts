@@ -415,12 +415,12 @@ export function useActivityFeed(enabled: boolean = true) {
 // Student-scoped activity feed. Returns rows where target_student_id = studentId.
 // Used by the student-profile page so a coach sees that student's activity
 // (not the gym-wide feed). The student can also call this for their own profile.
-export function useStudentActivityFeed(studentId: number | undefined) {
+export function useStudentActivityFeed(studentId: number | undefined, limit = 20) {
   return useQuery({
-    queryKey: qk.studentActivityFeed(studentId ?? 0),
+    queryKey: qk.studentActivityFeed(studentId ?? 0, limit),
     queryFn:
       typeof studentId === "number" && Number.isFinite(studentId)
-        ? () => getStudentActivityFeed(studentId, { limit: 20 })
+        ? () => getStudentActivityFeed(studentId, { limit })
         : skipToken,
     staleTime: 30 * 1000,
   });

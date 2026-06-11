@@ -142,10 +142,18 @@ function ProfileHub({
       </section>
 
       <section className="space-y-2">
-        <h2 className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-          <History className="h-3.5 w-3.5" aria-hidden />
-          Recent activity
-        </h2>
+        <div className="flex items-center gap-2">
+          <h2 className="flex flex-1 items-center gap-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            <History className="h-3.5 w-3.5" aria-hidden />
+            Recent activity
+          </h2>
+          <Link
+            to={`/student/${studentId}/activity`}
+            className="text-xs text-muted-foreground hover:text-foreground"
+          >
+            See all
+          </Link>
+        </div>
         <div className="overflow-hidden rounded-lg border border-border bg-card">
           <ActivityFeedList
             rows={feedQuery.data ?? []}

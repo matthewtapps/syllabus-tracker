@@ -81,8 +81,8 @@ export const qk = {
   activityFeed: () => ["activity", "feed"] as const,
   activityDigest: () => ["activity", "digest"] as const,
   dashboardActivityFeed: () => ["activity", "dashboard-feed"] as const,
-  studentActivityFeed: (studentId: number) =>
-    ["student", studentId, "activityFeed"] as const,
+  studentActivityFeed: (studentId: number, limit: number) =>
+    ["student", studentId, "activityFeed", limit] as const,
   activityUnreadCount: () => ["activity", "unreadCount"] as const,
   adminStorage: () => ["admin", "storage"] as const,
 
