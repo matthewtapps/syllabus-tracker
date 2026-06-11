@@ -1,0 +1,26 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT\n             COUNT(DISTINCT CASE WHEN a.occurred_at >= datetime('now', '-6 days', 'start of day')\n                                 THEN a.actor_user_id END) AS \"cur!: i64\",\n             COUNT(DISTINCT CASE WHEN a.occurred_at <  datetime('now', '-6 days', 'start of day')\n                                 THEN a.actor_user_id END) AS \"prev!: i64\"\n           FROM activity a\n           JOIN users u ON u.id = a.actor_user_id\n           WHERE u.role = 'student'\n             AND a.occurred_at >= datetime('now', '-13 days', 'start of day')",
+  "describe": {
+    "columns": [
+      {
+        "name": "cur!: i64",
+        "ordinal": 0,
+        "type_info": "Integer"
+      },
+      {
+        "name": "prev!: i64",
+        "ordinal": 1,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "3e9b15dc72800b11e9094bf10bea59d9ea5b2c5be5ddd93f6d23420e3feb106c"
+}

@@ -17,23 +17,24 @@ use validator::ValidationErrors;
 use crate::auth::UserSession;
 use crate::auth::{Permission, User};
 use crate::db::{
-    ActivityRow, AttemptSuggestion, Collection, add_tag_to_technique, add_techniques_to_collection,
+    ActivityDigest, ActivityRow, AttemptSuggestion, Collection, activity_digest,
+    add_tag_to_technique, add_techniques_to_collection,
     add_techniques_to_student, advance_cursor_to, approve_user, assign_collection_to_student,
     attempt_buckets_for_student, attempt_summary_for_student, attempt_weekly_buckets_for_technique,
     authenticate_user, claim_invite, count_techniques, create_and_assign_technique, create_attempt,
     create_collection, create_invite_token, create_self_registered_user, create_tag,
     create_technique_in_collection, create_user, create_user_session, create_user_stub,
-    delete_attempt, delete_collection, delete_tag, feed, feed_max_id, find_user_by_username,
-    find_valid_invite_token, get_all_collections, get_all_tags, get_all_users, get_collection,
-    get_student_technique, get_student_techniques, get_students_by_recent_updates,
-    get_students_with_collection, get_tags_for_technique, get_unassigned_techniques, get_user,
-    invalidate_session, list_attempts, list_recent_attempts_for_student, mark_all_read,
-    mark_one_read, mark_one_unread, mark_student_technique_seen, recently_active_students,
-    remove_tag_from_technique, remove_technique_from_collection, request_password_reset,
-    reset_user_claim, set_user_archived, set_user_graduated, unread_count, update_attempt_note,
-    update_attempt_timestamp, update_collection, update_student_notes, update_student_technique,
-    update_technique, update_user_display_name, update_user_password, update_user_role,
-    update_username,
+    dashboard_activity_feed, delete_attempt, delete_collection, delete_tag, feed, feed_max_id,
+    find_user_by_username, find_valid_invite_token, get_all_collections, get_all_tags,
+    get_all_users, get_collection, get_student_technique, get_student_techniques,
+    get_students_by_recent_updates, get_students_with_collection, get_tags_for_technique,
+    get_unassigned_techniques, get_user, invalidate_session, list_attempts,
+    list_recent_attempts_for_student, mark_all_read, mark_one_read, mark_one_unread,
+    mark_student_technique_seen, recently_active_students, remove_tag_from_technique,
+    remove_technique_from_collection, request_password_reset, reset_user_claim, set_user_archived,
+    set_user_graduated, unread_count, update_attempt_note, update_attempt_timestamp,
+    update_collection, update_student_notes, update_student_technique, update_technique,
+    update_user_display_name, update_user_password, update_user_role, update_username,
 };
 use crate::error::AppError;
 use crate::models::Tag;
@@ -138,6 +139,8 @@ pub struct UserData {
     pub last_student_initiative_at: Option<String>,
     pub last_watch_at: Option<String>,
     pub last_watch_video_title: Option<String>,
+    pub last_student_activity_at: Option<String>,
+    pub last_coach_activity_at: Option<String>,
 }
 
 impl From<User> for UserData {
@@ -165,6 +168,8 @@ impl From<User> for UserData {
             last_student_initiative_at: user.last_student_initiative_at.clone(),
             last_watch_at: user.last_watch_at.clone(),
             last_watch_video_title: user.last_watch_video_title.clone(),
+            last_student_activity_at: user.last_student_activity_at.clone(),
+            last_coach_activity_at: user.last_coach_activity_at.clone(),
         }
     }
 }
@@ -1990,6 +1995,36 @@ pub async fn api_activity_mark_one_unread(
 ) -> ApiResult<Status> {
     mark_one_unread(db, user.id, activity_id).await?;
     Ok(Status::NoContent)
+}
+
+// ---- Coach dashboard routes ------------------------------------------------
+
+/// `GET /api/dashboard/activity_digest`
+///
+/// Returns a rolling 7-day activity digest (counts + sparklines). Coach/admin
+/// only: calls `require_permission(Permission::ViewAllStudents)`.
+#[get("/dashboard/activity_digest")]
+pub async fn api_activity_digest(
+    user: User,
+    db: &State<Pool<Sqlite>>,
+) -> ApiResult<Json<ActivityDigest>> {
+    user.require_permission(Permission::ViewAllStudents)?;
+    Ok(Json(activity_digest(db).await?))
+}
+
+/// `GET /api/dashboard/activity_feed?limit=<i64>`
+///
+/// Returns the gym-wide recent activity feed for the coach dashboard. Does NOT
+/// advance any activity cursor. Coach/admin only.
+#[get("/dashboard/activity_feed?<limit>")]
+pub async fn api_dashboard_activity_feed(
+    user: User,
+    db: &State<Pool<Sqlite>>,
+    limit: Option<i64>,
+) -> ApiResult<Json<Vec<ActivityRow>>> {
+    user.require_permission(Permission::ViewAllStudents)?;
+    let limit = limit.unwrap_or(30).clamp(1, 100);
+    Ok(Json(dashboard_activity_feed(db, limit).await?))
 }
 
 // ---- Student-scoped activity feed (coach viewing a student profile) --------

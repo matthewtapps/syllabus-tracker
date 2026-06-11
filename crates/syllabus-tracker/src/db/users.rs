@@ -150,6 +150,8 @@ pub async fn authenticate_user(
                     last_student_initiative_at: None,
                     last_watch_at: None,
                     last_watch_video_title: None,
+                    last_student_activity_at: None,
+                    last_coach_activity_at: None,
                 }))
             } else {
                 Ok(None)

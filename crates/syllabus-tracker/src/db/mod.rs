@@ -6,6 +6,7 @@
 
 mod activity;
 mod activity_read;
+pub mod dashboard;
 mod attempts;
 mod collections;
 mod invites;
@@ -25,6 +26,7 @@ mod watch;
 
 pub use activity::*;
 pub use activity_read::*;
+pub use dashboard::{activity_digest, ActivityDigest, DigestMetric};
 pub use attempts::*;
 pub use collections::*;
 pub use invites::*;

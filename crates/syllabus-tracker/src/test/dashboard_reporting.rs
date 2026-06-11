@@ -31,6 +31,8 @@ mod tests {
             last_student_initiative_at: None,
             last_watch_at: None,
             last_watch_video_title: None,
+            last_student_activity_at: None,
+            last_coach_activity_at: None,
         }
     }
     fn student_actor(id: i64) -> User {
@@ -216,6 +218,55 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(bob_recent.len(), 1, "bob should see exactly 1 attempt");
+    }
+
+    #[rocket::async_test]
+    async fn students_query_exposes_activity_log_timestamps() {
+        use crate::db::{NewActivity, Verb, emit};
+        let db = TestDbBuilder::new()
+            .coach("coach", None)
+            .student("alice", None)
+            .technique("Armbar", "", Some("coach"))
+            .build()
+            .await
+            .unwrap();
+        let coach = db.user_id("coach").unwrap();
+        let alice = db.user_id("alice").unwrap();
+        let armbar = db.technique_id("Armbar").unwrap();
+
+        let mut tx = db.pool.begin().await.unwrap();
+        emit(&mut tx, NewActivity::new(Verb::AttemptLogged, alice).target_student(alice).technique(armbar)).await.unwrap();
+        emit(&mut tx, NewActivity::new(Verb::SstCoachNotesEdited, coach).target_student(alice).technique(armbar)).await.unwrap();
+        tx.commit().await.unwrap();
+
+        let students = get_students_by_recent_updates(&db.pool, true, coach).await.unwrap();
+        let alice_row = students.iter().find(|u| u.id == alice).unwrap();
+        assert!(alice_row.last_student_activity_at.is_some(), "student-actor activity present");
+        assert!(alice_row.last_coach_activity_at.is_some(), "coach-actor activity present");
+    }
+
+    #[rocket::async_test]
+    async fn coach_activity_timestamp_is_none_when_only_student_acted() {
+        use crate::db::{NewActivity, Verb, emit};
+        let db = TestDbBuilder::new()
+            .coach("coach2", None)
+            .student("bob", None)
+            .technique("Triangle", "", Some("coach2"))
+            .build()
+            .await
+            .unwrap();
+        let coach2 = db.user_id("coach2").unwrap();
+        let bob = db.user_id("bob").unwrap();
+        let triangle = db.technique_id("Triangle").unwrap();
+
+        let mut tx = db.pool.begin().await.unwrap();
+        emit(&mut tx, NewActivity::new(Verb::AttemptLogged, bob).target_student(bob).technique(triangle)).await.unwrap();
+        tx.commit().await.unwrap();
+
+        let students = get_students_by_recent_updates(&db.pool, true, coach2).await.unwrap();
+        let bob_row = students.iter().find(|u| u.id == bob).unwrap();
+        assert!(bob_row.last_student_activity_at.is_some());
+        assert!(bob_row.last_coach_activity_at.is_none(), "coach field must be None when only student acted");
     }
 
     #[rocket::async_test]

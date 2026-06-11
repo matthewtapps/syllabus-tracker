@@ -1334,3 +1334,69 @@ async fn test_tag_apis() {
     let tags_response: TagsResponse = serde_json::from_str(&tags_json).unwrap();
     assert!(!tags_response.tags.iter().any(|t| t.name == "Test Tag"));
 }
+
+#[rocket::async_test]
+async fn dashboard_digest_route_returns_metrics_for_coach() {
+    use crate::test::test_utils::{create_standard_test_db, login_test_user, setup_test_client};
+    let db = create_standard_test_db().await;
+    let (client, _db) = setup_test_client(db).await;
+    let cookies = login_test_user(&client, "coach_user", "password123").await;
+
+    let resp = client
+        .get("/api/dashboard/activity_digest")
+        .cookies(cookies)
+        .dispatch()
+        .await;
+    assert_eq!(resp.status(), rocket::http::Status::Ok);
+    let body = resp.into_string().await.unwrap();
+    assert!(body.contains("attempts_logged"), "body missing attempts_logged: {}", body);
+    assert!(body.contains("active_students"), "body missing active_students: {}", body);
+}
+
+#[rocket::async_test]
+async fn dashboard_digest_route_returns_forbidden_for_student() {
+    use crate::test::test_utils::{create_standard_test_db, login_test_user, setup_test_client};
+    let db = create_standard_test_db().await;
+    let (client, _db) = setup_test_client(db).await;
+    let cookies = login_test_user(&client, "student_user", "password123").await;
+
+    let resp = client
+        .get("/api/dashboard/activity_digest")
+        .cookies(cookies)
+        .dispatch()
+        .await;
+    assert_eq!(resp.status(), rocket::http::Status::Forbidden);
+}
+
+#[rocket::async_test]
+async fn dashboard_feed_route_returns_array_for_coach() {
+    use crate::test::test_utils::{create_standard_test_db, login_test_user, setup_test_client};
+    let db = create_standard_test_db().await;
+    let (client, _db) = setup_test_client(db).await;
+    let cookies = login_test_user(&client, "coach_user", "password123").await;
+
+    let resp = client
+        .get("/api/dashboard/activity_feed?limit=10")
+        .cookies(cookies)
+        .dispatch()
+        .await;
+    assert_eq!(resp.status(), rocket::http::Status::Ok);
+    let body = resp.into_string().await.unwrap();
+    // Should be a JSON array (possibly empty in a fresh test DB).
+    assert!(body.starts_with('['), "expected JSON array, got: {}", body);
+}
+
+#[rocket::async_test]
+async fn dashboard_feed_route_returns_forbidden_for_student() {
+    use crate::test::test_utils::{create_standard_test_db, login_test_user, setup_test_client};
+    let db = create_standard_test_db().await;
+    let (client, _db) = setup_test_client(db).await;
+    let cookies = login_test_user(&client, "student_user", "password123").await;
+
+    let resp = client
+        .get("/api/dashboard/activity_feed")
+        .cookies(cookies)
+        .dispatch()
+        .await;
+    assert_eq!(resp.status(), rocket::http::Status::Forbidden);
+}

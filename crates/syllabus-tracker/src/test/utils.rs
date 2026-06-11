@@ -265,6 +265,8 @@ pub mod test_utils {
                             last_student_initiative_at: None,
                             last_watch_at: None,
                             last_watch_video_title: None,
+                            last_student_activity_at: None,
+                            last_coach_activity_at: None,
                         };
                         update_student_technique(
                             &pool,
