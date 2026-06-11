@@ -170,9 +170,7 @@ function AuthedAppShell({
     <AuthErrorBoundary>
       <CurrentUserProvider user={user}>
         <Layout user={user} onLogout={onLogout}>
-          <div className="container mx-auto px-4 pt-4 sm:px-6">
-            <AppBreadcrumbs />
-          </div>
+          <AppBreadcrumbs />
           <Suspense fallback={<RouteLoading />}>
             <AuthedRoutes />
           </Suspense>

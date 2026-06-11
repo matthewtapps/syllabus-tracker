@@ -31,7 +31,8 @@ export interface Crumb {
 // ---------- Config ----------
 
 export const CRUMB_DEFS: CrumbDef[] = [
-  { pattern: "/students", label: "Students", parent: null },
+  { pattern: "/dashboard", label: "Dashboard", parent: null },
+  { pattern: "/students", label: "Students", parent: "/dashboard" },
   { pattern: "/student/:id", label: { dynamic: "studentName" }, parent: "/students" },
   { pattern: "/student/:id/syllabi", label: "Syllabi", parent: "/student/:id" },
   {
@@ -41,11 +42,12 @@ export const CRUMB_DEFS: CrumbDef[] = [
   },
   { pattern: "/student/:id/pinned", label: "Pinned", parent: "/student/:id" },
   { pattern: "/student/:id/activity", label: "Timeline", parent: "/student/:id" },
-  { pattern: "/library", label: "Library", parent: null },
-  { pattern: "/syllabi", label: "Syllabus library", parent: null },
+  { pattern: "/library", label: "Library", parent: "/dashboard" },
+  { pattern: "/syllabi", label: "Syllabus library", parent: "/dashboard" },
   { pattern: "/syllabi/:id", label: { dynamic: "globalSyllabusName" }, parent: "/syllabi" },
-  { pattern: "/profile", label: "Profile", parent: null },
-  { pattern: "/admin", label: "Admin", parent: null },
+  { pattern: "/profile", label: "Profile", parent: "/dashboard" },
+  { pattern: "/admin", label: "Admin", parent: "/dashboard" },
+  { pattern: "/register-user", label: "Register student", parent: "/dashboard" },
 ];
 
 // ---------- Pure builder ----------
