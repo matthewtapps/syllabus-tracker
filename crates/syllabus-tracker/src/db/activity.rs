@@ -579,12 +579,14 @@ pub async fn run_backfill(pool: &Pool<Sqlite>) -> Result<BackfillCounts, AppErro
 
     // Attempts: actor = recorded_by_id, target = student via SST + assignment join,
     // denormalise sst_id / technique_id / syllabus_id, payload = attempt_pointer.
+    // Use attempted_at (the real event time set by the seed) not created_at (row insertion time)
+    // so that activity recency reflects when practice actually happened.
     let attempts = sqlx::query!(
         r#"INSERT INTO activity
                (occurred_at, verb, actor_user_id, target_student_id,
                 technique_id, syllabus_id, sst_id, payload_json)
            SELECT
-               sa.created_at,
+               sa.attempted_at,
                'attempt_logged',
                sa.recorded_by_id,
                asn.student_id,
