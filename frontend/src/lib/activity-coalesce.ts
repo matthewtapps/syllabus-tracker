@@ -30,10 +30,3 @@ export function coalesceActivity(rows: ActivityRow[]): CoalescedActivity[] {
   }
   return out;
 }
-
-/** Suffix for a coalesced group, e.g. " and 2 more". Empty when count === 1. */
-export function coalescedSuffix(item: CoalescedActivity): string {
-  if (item.count <= 1) return "";
-  const others = item.count - 1;
-  return ` and ${others} more`;
-}
