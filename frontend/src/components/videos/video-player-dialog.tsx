@@ -11,14 +11,15 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { VideoPlayerPanel } from "./video-player-panel";
-import { useWatchTracker } from "./useWatchTracker";
+import { useWatchTracker, type WatchContext } from "./useWatchTracker";
 
 interface VideoPlayerDialogProps {
   video: Video | null;
   onClose: () => void;
+  watchContext?: WatchContext;
 }
 
-export function VideoPlayerDialog({ video, onClose }: VideoPlayerDialogProps) {
+export function VideoPlayerDialog({ video, onClose, watchContext }: VideoPlayerDialogProps) {
   return (
     <Dialog open={!!video} onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="max-h-[90vh] w-[calc(100vw-1rem)] max-w-2xl overflow-y-auto p-4 sm:p-6 [&>*]:min-w-0">
@@ -29,14 +30,14 @@ export function VideoPlayerDialog({ video, onClose }: VideoPlayerDialogProps) {
             {video?.title ?? "Video"}
           </DialogTitle>
         </DialogHeader>
-        {video && <PlayerContent video={video} />}
+        {video && <PlayerContent video={video} watchContext={watchContext} />}
       </DialogContent>
     </Dialog>
   );
 }
 
-function PlayerContent({ video }: { video: Video }) {
-  const events = useWatchTracker(video.id);
+function PlayerContent({ video, watchContext }: { video: Video; watchContext?: WatchContext }) {
+  const events = useWatchTracker(video.id, watchContext);
   const isNative = video.kind === "native";
   const canDownload = isNative && video.processing_status === "ready";
   const [downloading, setDownloading] = useState(false);

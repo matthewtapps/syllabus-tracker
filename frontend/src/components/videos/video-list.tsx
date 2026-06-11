@@ -27,6 +27,7 @@ import { cn } from "@/lib/utils";
 import { PrivacyAckBanner } from "./privacy-ack-banner";
 import { VideoPlayerDialog } from "./video-player-dialog";
 import { VideoRow } from "./video-row";
+import type { WatchContext } from "./useWatchTracker";
 
 interface VideoListProps {
   techniqueId: number;
@@ -49,6 +50,8 @@ interface VideoListProps {
    * video the user tapped. */
   scrollToVideoId?: number | null;
   onVideoScrolled?: () => void;
+  /** Where this video is being watched from, for activity context tracking. */
+  watchContext?: WatchContext;
 }
 
 export function VideoList({
@@ -60,6 +63,7 @@ export function VideoList({
   syllabus,
   scrollToVideoId,
   onVideoScrolled,
+  watchContext,
 }: VideoListProps) {
   const qc = useQueryClient();
   const videosQuery = useTechniqueVideos(techniqueId, forStudent, syllabus);
@@ -238,7 +242,7 @@ export function VideoList({
         </ul>
       )}
 
-      <VideoPlayerDialog video={playing} onClose={() => setPlaying(null)} />
+      <VideoPlayerDialog video={playing} onClose={() => setPlaying(null)} watchContext={watchContext} />
     </div>
   );
 }

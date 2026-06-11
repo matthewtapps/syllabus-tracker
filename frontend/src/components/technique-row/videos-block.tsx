@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { AddVideoButton } from "@/components/videos/add-video-button";
 import { VideoList } from "@/components/videos/video-list";
+import type { WatchContext } from "@/components/videos/useWatchTracker";
 import { useTechniqueRow } from "./technique-row-context";
 
 interface VideosBlockProps {
@@ -25,6 +26,17 @@ export function VideosBlock({
     context.kind === "student-syllabus"
       ? { studentId: context.studentId, syllabusId: context.syllabusId }
       : undefined;
+
+  const watchContext = useMemo<WatchContext>(() => {
+    if (context.kind === "student-syllabus") {
+      return {
+        technique_id: technique.id,
+        syllabus_id: context.syllabusId,
+        sst_id: context.sst.id,
+      };
+    }
+    return { technique_id: technique.id };
+  }, [context, technique.id]);
 
   return (
     <section className="space-y-2">
@@ -53,6 +65,7 @@ export function VideosBlock({
         syllabus={syllabus}
         scrollToVideoId={scrollToVideoId}
         onVideoScrolled={onVideoScrolled}
+        watchContext={watchContext}
       />
     </section>
   );
