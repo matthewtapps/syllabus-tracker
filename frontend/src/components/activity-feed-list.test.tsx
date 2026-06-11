@@ -141,19 +141,19 @@ describe("ActivityFeedList", () => {
     expect(screen.getByText("Jordan Blake")).toBeTruthy();
   });
 
-  // --- Feature A: verb icon shown when showAvatar={false} ---
-  test("renders verb-icon container when showAvatar is false", () => {
+  // --- Feature A: inline verb icon present when coalesce=false, absent when coalesce=true ---
+  test("renders inline verb-icon when coalesce is false (default)", () => {
     renderWithProviders(
-      <ActivityFeedList rows={[row({})]} isLoading={false} showAvatar={false} />,
+      <ActivityFeedList rows={[row({})]} isLoading={false} />,
     );
-    expect(screen.getByTestId("verb-icon-container")).toBeTruthy();
+    expect(screen.getByTestId("verb-icon")).toBeTruthy();
   });
 
-  test("does not render verb-icon container when showAvatar is true", () => {
+  test("does not render inline verb-icon when coalesce is true", () => {
     renderWithProviders(
-      <ActivityFeedList rows={[row({})]} isLoading={false} showAvatar />,
+      <ActivityFeedList rows={[row({})]} isLoading={false} coalesce />,
     );
-    expect(screen.queryByTestId("verb-icon-container")).toBeNull();
+    expect(screen.queryByTestId("verb-icon")).toBeNull();
   });
 
   // --- context surface chip (plan Task 12, preserved in Task 14) ---

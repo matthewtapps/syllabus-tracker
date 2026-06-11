@@ -23,42 +23,42 @@ import { activitySurface } from "@/lib/view-context";
 import { formatAbsolute, formatRelativeShort } from "@/lib/dates";
 import { cn } from "@/lib/utils";
 
-function verbIcon(verb: string): LucideIcon {
+function verbIconMeta(verb: string): { Icon: LucideIcon; colorClass: string } {
   switch (verb) {
     case "attempt_logged":
     case "attempt_edited":
     case "attempt_deleted":
-      return Dumbbell;
+      return { Icon: Dumbbell, colorClass: "text-amber-500" };
     case "video_watched":
-      return PlayCircle;
+      return { Icon: PlayCircle, colorClass: "text-sky-500" };
     case "video_added":
-      return Video;
     case "video_visibility_set":
-    case "sst_unhidden":
-      return Eye;
+      return { Icon: Video, colorClass: "text-sky-500" };
     case "sst_status_changed":
-      return CircleDot;
+      return { Icon: CircleDot, colorClass: "text-emerald-500" };
     case "sst_student_notes_edited":
     case "sst_coach_notes_edited":
-      return NotebookPen;
+      return { Icon: NotebookPen, colorClass: "text-violet-500" };
     case "technique_pinned":
     case "technique_unpinned":
-      return Pin;
+      return { Icon: Pin, colorClass: "text-rose-500" };
     case "syllabus_assigned":
     case "syllabus_unassigned":
-      return ClipboardList;
+      return { Icon: ClipboardList, colorClass: "text-indigo-500" };
     case "syllabus_graduated":
-      return GraduationCap;
+      return { Icon: GraduationCap, colorClass: "text-emerald-600" };
     case "syllabus_technique_added":
     case "sst_added":
-      return Plus;
+      return { Icon: Plus, colorClass: "text-indigo-500" };
     case "syllabus_technique_removed":
     case "sst_hidden":
-      return Minus;
+      return { Icon: Minus, colorClass: "text-indigo-500" };
+    case "sst_unhidden":
+      return { Icon: Eye, colorClass: "text-indigo-500" };
     case "technique_edited":
-      return Pencil;
+      return { Icon: Pencil, colorClass: "text-muted-foreground" };
     default:
-      return Activity;
+      return { Icon: Activity, colorClass: "text-muted-foreground" };
   }
 }
 
@@ -124,7 +124,7 @@ export function ActivityFeedList({
 
         const hideDup = line.href ? true : undefined;
         const key = `${item.row.actor_user_id}-${item.row.id}-${item.row.occurred_at}`;
-        const VerbIcon = verbIcon(item.row.verb);
+        const { Icon: VerbIcon, colorClass } = verbIconMeta(item.row.verb);
         return (
           <li key={key} className="relative">
             {line.href && (
@@ -135,17 +135,9 @@ export function ActivityFeedList({
               />
             )}
             <div className={cn(rowClasses, "relative z-10", line.href && "pointer-events-none")}>
-              {showAvatar ? (
+              {showAvatar && (
                 <span aria-hidden={hideDup}>
                   <StudentAvatar id={item.row.actor_user_id} name={item.row.actor_name ?? "?"} />
-                </span>
-              ) : (
-                <span
-                  data-testid="verb-icon-container"
-                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground"
-                  aria-hidden
-                >
-                  <VerbIcon className="h-4 w-4" />
                 </span>
               )}
               <div className="min-w-0 flex-1">
@@ -160,6 +152,9 @@ export function ActivityFeedList({
                   </span>
                 </div>
                 <p className="mt-0.5 text-sm text-muted-foreground">
+                  {!coalesce && (
+                    <VerbIcon className={cn("mr-1 inline-block h-4 w-4 align-text-bottom", colorClass)} aria-hidden data-testid="verb-icon" />
+                  )}
                   <span aria-hidden={hideDup}>
                     {line.verb}
                     {line.subject ? ` ${line.subject}` : ""}
