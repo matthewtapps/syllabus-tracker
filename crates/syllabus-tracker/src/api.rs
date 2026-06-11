@@ -139,6 +139,8 @@ pub struct UserData {
     pub last_student_initiative_at: Option<String>,
     pub last_watch_at: Option<String>,
     pub last_watch_video_title: Option<String>,
+    pub last_student_activity_at: Option<String>,
+    pub last_coach_activity_at: Option<String>,
 }
 
 impl From<User> for UserData {
@@ -166,6 +168,8 @@ impl From<User> for UserData {
             last_student_initiative_at: user.last_student_initiative_at.clone(),
             last_watch_at: user.last_watch_at.clone(),
             last_watch_video_title: user.last_watch_video_title.clone(),
+            last_student_activity_at: user.last_student_activity_at.clone(),
+            last_coach_activity_at: user.last_coach_activity_at.clone(),
         }
     }
 }
