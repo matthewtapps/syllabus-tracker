@@ -603,12 +603,21 @@ pub async fn api_video_download_url(
 pub struct WatchEventBatch {
     pub play_id: String,
     pub events: Vec<WatchEventItem>,
+    #[serde(default)]
+    pub context: Option<WatchContextBody>,
 }
 
 #[derive(Deserialize)]
 pub struct WatchEventItem {
     pub event: String,
     pub seconds_watched: Option<i64>,
+}
+
+#[derive(Deserialize, Default)]
+pub struct WatchContextBody {
+    pub technique_id: Option<i64>,
+    pub syllabus_id: Option<i64>,
+    pub sst_id: Option<i64>,
 }
 
 const ALLOWED_WATCH_EVENTS: &[&str] = &[
@@ -647,7 +656,13 @@ pub async fn api_video_watch_events(
             seconds_watched: seconds,
         });
     }
-    db::ingest_watch_events(pool.inner(), vid, user.id, play_id, &inputs)
+    let context = req.context.unwrap_or_default();
+    let watch_context = db::WatchContext {
+        technique_id: context.technique_id,
+        syllabus_id: context.syllabus_id,
+        sst_id: context.sst_id,
+    };
+    db::ingest_watch_events(pool.inner(), vid, user.id, play_id, &inputs, &watch_context)
         .await
         .map_err(Status::from)?;
     let metrics = video_metrics();

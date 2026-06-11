@@ -14,6 +14,16 @@ pub struct WatchEventInput {
     pub seconds_watched: Option<i64>,
 }
 
+/// Where the student was when they watched, captured by the client so the feed
+/// can deep-link back. `technique_id` is the video's technique (always known on
+/// the client). `syllabus_id` + `sst_id` are set only on the syllabus surface.
+#[derive(Debug, Clone, Default)]
+pub struct WatchContext {
+    pub technique_id: Option<i64>,
+    pub syllabus_id: Option<i64>,
+    pub sst_id: Option<i64>,
+}
+
 #[instrument(skip(pool, events))]
 pub async fn ingest_watch_events(
     pool: &Pool<Sqlite>,
@@ -21,6 +31,7 @@ pub async fn ingest_watch_events(
     user_id: i64,
     play_id: &str,
     events: &[WatchEventInput],
+    context: &WatchContext,
 ) -> Result<(), AppError> {
     if events.is_empty() {
         return Ok(());
@@ -130,14 +141,19 @@ pub async fn ingest_watch_events(
     .await?;
 
     if crossed_now {
-        emit(
-            &mut tx,
-            NewActivity::new(Verb::VideoWatched, user_id)
-                .target_student(user_id)
-                .video(video_id)
-                .payload(payload::video_watched(new_cumulative, duration_seconds)),
-        )
-        .await?;
+        let mut ev = NewActivity::new(Verb::VideoWatched, user_id)
+            .target_student(user_id)
+            .video(video_id)
+            .payload(payload::video_watched(new_cumulative, duration_seconds));
+        if let Some(tech) = context.technique_id {
+            ev = ev.technique(tech);
+        }
+        if let (Some(syllabus), Some(sst)) = (context.syllabus_id, context.sst_id) {
+            ev = ev.syllabus(syllabus).sst(sst).context_kind("syllabus");
+        } else if context.technique_id.is_some() {
+            ev = ev.context_kind("library");
+        }
+        emit(&mut tx, ev).await?;
     }
 
     tx.commit().await?;
