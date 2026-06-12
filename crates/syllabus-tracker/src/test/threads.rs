@@ -218,6 +218,49 @@ mod tests {
     }
 
     #[rocket::async_test]
+    async fn list_filters_private_threads_for_non_scope_viewer() {
+        use crate::db::threads::list_threads_for_anchor;
+        let db = db_three_users().await;
+        let coach_id = db.user_id("coach_user").unwrap();
+        let student_id = db.user_id("student_user").unwrap();
+        let other = db.user_id("student2").unwrap();
+
+        create_thread(&db.pool, NewThread {
+            author_id: coach_id,
+            anchor: Anchor { kind: AnchorKind::StudentProfile, id: student_id, video_ts_seconds: None, pinned_student_id: None },
+            visibility: ThreadVisibility::Private,
+            scope_student_id: Some(student_id),
+            body: "hi".to_string(),
+        }).await.unwrap();
+
+        let anchor = Anchor { kind: AnchorKind::StudentProfile, id: student_id, video_ts_seconds: None, pinned_student_id: None };
+        let as_owner = list_threads_for_anchor(&db.pool, anchor, Viewer { user_id: student_id, is_coach: false }).await.unwrap();
+        assert_eq!(as_owner.len(), 1);
+        let as_other = list_threads_for_anchor(&db.pool, anchor, Viewer { user_id: other, is_coach: false }).await.unwrap();
+        assert_eq!(as_other.len(), 0, "another student must not see the private profile thread");
+    }
+
+    #[rocket::async_test]
+    async fn soft_delete_thread_tombstones_body() {
+        use crate::db::threads::soft_delete_thread;
+        let db = db_three_users().await;
+        let coach_id = db.user_id("coach_user").unwrap();
+        let student_id = db.user_id("student_user").unwrap();
+        let t = create_thread(&db.pool, NewThread {
+            author_id: student_id,
+            anchor: Anchor { kind: AnchorKind::StudentProfile, id: student_id, video_ts_seconds: None, pinned_student_id: None },
+            visibility: ThreadVisibility::Private,
+            scope_student_id: Some(student_id),
+            body: "q".to_string(),
+        }).await.unwrap();
+
+        soft_delete_thread(&db.pool, t, coach_id).await.unwrap();
+        let view = get_thread(&db.pool, t, Viewer { user_id: coach_id, is_coach: true }).await.unwrap().unwrap();
+        assert!(view.deleted_at.is_some());
+        assert!(view.body.is_none(), "deleted thread body must be tombstoned");
+    }
+
+    #[rocket::async_test]
     async fn broadcast_on_profile_anchor_is_rejected() {
         let db = db_with_coach_and_student().await;
         let coach_id = db.user_id("coach_user").unwrap();

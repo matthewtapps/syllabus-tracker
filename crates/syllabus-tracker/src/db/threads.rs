@@ -118,7 +118,7 @@ fn anchor_columns(
 async fn validate_anchor(pool: &Pool<Sqlite>, anchor: &Anchor) -> Result<(), AppError> {
     let exists = match anchor.kind {
         AnchorKind::StudentProfile => sqlx::query_scalar!(
-            r#"SELECT EXISTS(SELECT 1 FROM users WHERE id = ?) AS "e!: i64""#,
+            r#"SELECT EXISTS(SELECT 1 FROM users WHERE id = ? AND role = 'student') AS "e!: i64""#,
             anchor.id
         )
         .fetch_one(pool)
@@ -232,27 +232,42 @@ pub async fn create_comment(
     author_id: i64,
     body: &str,
 ) -> Result<i64, AppError> {
+    // Thread must exist and not be soft-deleted.
+    let thread_alive = sqlx::query_scalar!(
+        r#"SELECT (deleted_at IS NULL) AS "alive!: i64" FROM threads WHERE id = ?"#,
+        thread_id
+    )
+    .fetch_optional(pool)
+    .await?;
+    match thread_alive {
+        None => return Err(AppError::NotFound(format!("thread #{thread_id} not found"))),
+        Some(0) => return Err(AppError::Validation("thread is deleted".to_string())),
+        _ => {}
+    }
+
+    // One level of nesting: the parent (if any) must belong to THIS thread and
+    // must itself be a top-level comment.
     if let Some(parent_id) = parent_comment_id {
-        let parent_parent = sqlx::query_scalar!(
-            r#"SELECT parent_comment_id AS "parent_comment_id?: i64"
-               FROM thread_comments WHERE id = ?"#,
-            parent_id
+        let parent = sqlx::query_scalar!(
+            r#"SELECT (parent_comment_id IS NOT NULL) AS "is_reply!: i64"
+               FROM thread_comments WHERE id = ? AND thread_id = ?"#,
+            parent_id,
+            thread_id,
         )
         .fetch_optional(pool)
         .await?;
-
-        match parent_parent {
+        match parent {
             None => return Err(AppError::Validation("parent comment not found".to_string())),
-            Some(Some(_)) => {
+            Some(1) => {
                 return Err(AppError::Validation(
                     "cannot reply to a reply (one level of nesting)".to_string(),
-                ))
+                ));
             }
-            Some(None) => {} // top-level parent, ok
+            _ => {}
         }
     }
 
-    let comment_id = sqlx::query_scalar!(
+    let id = sqlx::query_scalar!(
         r#"INSERT INTO thread_comments (thread_id, parent_comment_id, author_id, body)
            VALUES (?, ?, ?, ?)
            RETURNING id AS "id!: i64""#,
@@ -270,9 +285,7 @@ pub async fn create_comment(
     )
     .execute(pool)
     .await?;
-
-    info!(thread_id, comment_id, "created comment");
-    Ok(comment_id)
+    Ok(id)
 }
 
 fn viewer_can_see(viewer: &Viewer, visibility: &str, scope_student_id: Option<i64>) -> bool {
@@ -398,36 +411,40 @@ pub async fn list_threads_for_anchor(
 }
 
 #[instrument(skip(pool))]
-pub async fn soft_delete_comment(
-    pool: &Pool<Sqlite>,
-    comment_id: i64,
-    actor_id: i64,
-) -> Result<(), AppError> {
-    sqlx::query!(
+pub async fn soft_delete_comment(pool: &Pool<Sqlite>, comment_id: i64, actor_id: i64) -> Result<(), AppError> {
+    let affected = sqlx::query!(
         "UPDATE thread_comments SET deleted_at = CURRENT_TIMESTAMP, deleted_by_id = ?
          WHERE id = ? AND deleted_at IS NULL",
         actor_id,
         comment_id,
     )
     .execute(pool)
-    .await?;
+    .await?
+    .rows_affected();
+    if affected == 0 {
+        return Err(AppError::NotFound(format!(
+            "comment #{comment_id} not found or already deleted"
+        )));
+    }
     Ok(())
 }
 
 #[instrument(skip(pool))]
-pub async fn soft_delete_thread(
-    pool: &Pool<Sqlite>,
-    thread_id: i64,
-    actor_id: i64,
-) -> Result<(), AppError> {
-    sqlx::query!(
+pub async fn soft_delete_thread(pool: &Pool<Sqlite>, thread_id: i64, actor_id: i64) -> Result<(), AppError> {
+    let affected = sqlx::query!(
         "UPDATE threads SET deleted_at = CURRENT_TIMESTAMP, deleted_by_id = ?
          WHERE id = ? AND deleted_at IS NULL",
         actor_id,
         thread_id,
     )
     .execute(pool)
-    .await?;
+    .await?
+    .rows_affected();
+    if affected == 0 {
+        return Err(AppError::NotFound(format!(
+            "thread #{thread_id} not found or already deleted"
+        )));
+    }
     Ok(())
 }
 
