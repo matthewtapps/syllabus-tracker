@@ -48,6 +48,12 @@ export function DiscussionBlock() {
 
   const threads = threadsQuery.data ?? [];
 
+  // Students ask; coaches comment. The composer copy follows the viewer.
+  const composerPlaceholder =
+    user.role === "student"
+      ? "Ask about this technique…"
+      : "Comment on this technique…";
+
   return (
     <div className="space-y-3">
       <h4 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Discussion</h4>
@@ -56,15 +62,17 @@ export function DiscussionBlock() {
       ) : threads.length === 0 ? (
         <p className="text-sm text-muted-foreground">No discussion yet.{scopeStudentId !== undefined ? " Start one." : ""}</p>
       ) : (
-        <div className="space-y-4">
+        <div className="divide-y divide-border">
           {threads.map((t) => (
-            <ThreadView key={t.id} thread={t} anchorKind={anchor.kind} anchorId={anchor.id} />
+            <div key={t.id} className="py-4 first:pt-0 last:pb-0">
+              <ThreadView thread={t} anchorKind={anchor.kind} anchorId={anchor.id} />
+            </div>
           ))}
         </div>
       )}
       {scopeStudentId !== undefined && (
         <ThreadComposer
-          placeholder="Ask about this technique…"
+          placeholder={composerPlaceholder}
           submitLabel="Post"
           pending={createThread.isPending}
           onSubmit={start}
