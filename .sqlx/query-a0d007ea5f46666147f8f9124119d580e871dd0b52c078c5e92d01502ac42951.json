@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT COUNT(*) AS \"c!: i64\" FROM activity\n               WHERE verb = 'thread_comment_posted'\n                 AND thread_id = ?\n                 AND actor_user_id = ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "c!: i64",
+        "ordinal": 0,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "a0d007ea5f46666147f8f9124119d580e871dd0b52c078c5e92d01502ac42951"
+}

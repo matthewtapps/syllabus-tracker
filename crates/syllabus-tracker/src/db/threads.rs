@@ -1,12 +1,13 @@
 //! Threads and comments: anchor-agnostic conversation primitive. Owns the
 //! anchor/visibility vocabulary, the (kind, visibility) allow-matrix, and the
-//! CRUD SQL. No activity-feed emission here yet (PR5 wires that).
+//! CRUD SQL. Activity-feed emission is handled here (PR5).
 
 use chrono::NaiveDateTime;
 use serde::Serialize;
 use sqlx::{Pool, Sqlite};
 use tracing::{info, instrument};
 
+use crate::db::activity::{emit, NewActivity, Verb};
 use crate::error::AppError;
 
 /// The kinds of thing a thread can anchor to. Mirrors the `anchor_kind` CHECK
@@ -194,7 +195,10 @@ pub async fn create_thread(pool: &Pool<Sqlite>, new: NewThread) -> Result<i64, A
     let visibility = new.visibility.as_str();
 
     info!(anchor_kind = kind, "creating thread");
-    let id = sqlx::query_scalar!(
+
+    let mut tx = pool.begin().await?;
+
+    let thread_id = sqlx::query_scalar!(
         r#"INSERT INTO threads
               (created_by_id, body, anchor_kind, student_id, technique_id, video_id,
                video_ts_seconds, sst_id, visibility, scope_student_id)
@@ -211,9 +215,32 @@ pub async fn create_thread(pool: &Pool<Sqlite>, new: NewThread) -> Result<i64, A
         visibility,
         new.scope_student_id,
     )
-    .fetch_one(pool)
+    .fetch_one(&mut *tx)
     .await?;
-    Ok(id)
+
+    // Emit activity row. Private threads target the scope student's feed;
+    // broadcast threads are coach-only (target_student_id = NULL, per spec D8).
+    let target = match new.visibility {
+        ThreadVisibility::Private => new.scope_student_id,
+        ThreadVisibility::Broadcast => None,
+    };
+    let mut ev = NewActivity::new(Verb::ThreadCommentPosted, new.author_id).thread(thread_id);
+    if let Some(t) = target {
+        ev = ev.target_student(t);
+    }
+    // Denormalise the anchor's typed column so the feed can deep-link like
+    // other rows do.
+    ev = match new.anchor.kind {
+        AnchorKind::Technique | AnchorKind::PinnedTechnique => ev.technique(new.anchor.id),
+        AnchorKind::Video | AnchorKind::VideoTimestamp => ev.video(new.anchor.id),
+        AnchorKind::Sst => ev.sst(new.anchor.id),
+        // target_student already identifies the subject for profile threads.
+        AnchorKind::StudentProfile => ev,
+    };
+    emit(&mut tx, ev).await?;
+
+    tx.commit().await?;
+    Ok(thread_id)
 }
 
 /// Who is asking. `is_coach` is true for Coach or Admin (gym-global role).
@@ -256,18 +283,28 @@ pub async fn create_comment(
     author_id: i64,
     body: &str,
 ) -> Result<i64, AppError> {
-    // Thread must exist and not be soft-deleted.
-    let thread_alive = sqlx::query_scalar!(
-        r#"SELECT (deleted_at IS NULL) AS "alive!: i64" FROM threads WHERE id = ?"#,
+    // Fetch the thread's liveness, visibility, scope student, and anchor
+    // details in one query so we can emit the activity row with the right
+    // target_student_id and denormalised anchor column.
+    let thread_row = sqlx::query!(
+        r#"SELECT (deleted_at IS NULL)  AS "alive!: i64",
+                  visibility,
+                  scope_student_id      AS "scope_student_id?: i64",
+                  anchor_kind,
+                  technique_id          AS "technique_id?: i64",
+                  video_id              AS "video_id?: i64",
+                  sst_id                AS "sst_id?: i64"
+           FROM threads WHERE id = ?"#,
         thread_id
     )
     .fetch_optional(pool)
     .await?;
-    match thread_alive {
+
+    let thread_row = match thread_row {
         None => return Err(AppError::NotFound(format!("thread #{thread_id} not found"))),
-        Some(0) => return Err(AppError::Validation("thread is deleted".to_string())),
-        _ => {}
-    }
+        Some(r) if r.alive == 0 => return Err(AppError::Validation("thread is deleted".to_string())),
+        Some(r) => r,
+    };
 
     // One level of nesting: the parent (if any) must belong to THIS thread and
     // must itself be a top-level comment.
@@ -291,7 +328,9 @@ pub async fn create_comment(
         }
     }
 
-    let id = sqlx::query_scalar!(
+    let mut tx = pool.begin().await?;
+
+    let comment_id = sqlx::query_scalar!(
         r#"INSERT INTO thread_comments (thread_id, parent_comment_id, author_id, body)
            VALUES (?, ?, ?, ?)
            RETURNING id AS "id!: i64""#,
@@ -300,16 +339,56 @@ pub async fn create_comment(
         author_id,
         body,
     )
-    .fetch_one(pool)
+    .fetch_one(&mut *tx)
     .await?;
 
     sqlx::query!(
         "UPDATE threads SET last_activity_at = CURRENT_TIMESTAMP WHERE id = ?",
         thread_id
     )
-    .execute(pool)
+    .execute(&mut *tx)
     .await?;
-    Ok(id)
+
+    // Emit activity: private threads target the scope student; broadcast = None.
+    let target = if thread_row.visibility == "private" {
+        thread_row.scope_student_id
+    } else {
+        None
+    };
+    let mut ev = NewActivity::new(Verb::ThreadCommentPosted, author_id).thread(thread_id);
+    if let Some(t) = target {
+        ev = ev.target_student(t);
+    }
+    // Denormalise the anchor column matching this thread's anchor_kind.
+    ev = match thread_row.anchor_kind.as_str() {
+        "technique" | "pinned_technique" => {
+            if let Some(id) = thread_row.technique_id {
+                ev.technique(id)
+            } else {
+                ev
+            }
+        }
+        "video" | "video_timestamp" => {
+            if let Some(id) = thread_row.video_id {
+                ev.video(id)
+            } else {
+                ev
+            }
+        }
+        "sst" => {
+            if let Some(id) = thread_row.sst_id {
+                ev.sst(id)
+            } else {
+                ev
+            }
+        }
+        // "student_profile" — target_student already identifies the subject.
+        _ => ev,
+    };
+    emit(&mut tx, ev).await?;
+
+    tx.commit().await?;
+    Ok(comment_id)
 }
 
 fn viewer_can_see(viewer: &Viewer, visibility: &str, scope_student_id: Option<i64>) -> bool {

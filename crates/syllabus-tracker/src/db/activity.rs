@@ -19,6 +19,7 @@ pub enum EntityKind {
     Syllabus,
     Sst,
     Video,
+    Thread,
 }
 
 /// The activity verbs. Named `<target>_<past_tense>`. Each carries static
@@ -46,10 +47,11 @@ pub enum Verb {
     VideoAdded,
     VideoVisibilitySet,
     TechniqueEdited,
+    ThreadCommentPosted,
 }
 
 impl Verb {
-    pub const ALL: [Verb; 20] = [
+    pub const ALL: [Verb; 21] = [
         Verb::VideoWatched,
         Verb::AttemptLogged,
         Verb::AttemptEdited,
@@ -70,6 +72,7 @@ impl Verb {
         Verb::VideoAdded,
         Verb::VideoVisibilitySet,
         Verb::TechniqueEdited,
+        Verb::ThreadCommentPosted,
     ];
 
     pub fn as_str(self) -> &'static str {
@@ -94,6 +97,7 @@ impl Verb {
             Verb::VideoAdded => "video_added",
             Verb::VideoVisibilitySet => "video_visibility_set",
             Verb::TechniqueEdited => "technique_edited",
+            Verb::ThreadCommentPosted => "thread_comment_posted",
         }
     }
 
@@ -115,6 +119,13 @@ impl Verb {
                 | Verb::SyllabusTechniqueRemoved
                 | Verb::VideoVisibilitySet
         )
+    }
+
+    /// Whether rows of this verb participate in the 30-second coalescing
+    /// window. `ThreadCommentPosted` is non-coalescing: every comment is a
+    /// discrete event and collapsing two comments into one would lose a message.
+    pub fn coalesces(self) -> bool {
+        !matches!(self, Verb::ThreadCommentPosted)
     }
 
     /// The column the coalesce key uses to identify "the same thing happening
@@ -140,6 +151,7 @@ impl Verb {
             | Verb::SyllabusGraduated
             | Verb::SyllabusTechniqueAdded
             | Verb::SyllabusTechniqueRemoved => EntityKind::Syllabus,
+            Verb::ThreadCommentPosted => EntityKind::Thread,
         }
     }
 }
@@ -155,6 +167,7 @@ pub struct NewActivity {
     pub syllabus_id: Option<i64>,
     pub sst_id: Option<i64>,
     pub video_id: Option<i64>,
+    pub thread_id: Option<i64>,
     pub payload_json: Option<String>,
     pub context_kind: Option<&'static str>,
 }
@@ -169,6 +182,7 @@ impl NewActivity {
             syllabus_id: None,
             sst_id: None,
             video_id: None,
+            thread_id: None,
             payload_json: None,
             context_kind: None,
         }
@@ -194,6 +208,10 @@ impl NewActivity {
         self.video_id = Some(id);
         self
     }
+    pub fn thread(mut self, id: i64) -> Self {
+        self.thread_id = Some(id);
+        self
+    }
     pub fn payload(mut self, json: String) -> Self {
         self.payload_json = Some(json);
         self
@@ -213,6 +231,7 @@ impl NewActivity {
             EntityKind::Syllabus => self.syllabus_id,
             EntityKind::Sst => self.sst_id,
             EntityKind::Video => self.video_id,
+            EntityKind::Thread => self.thread_id,
         }
     }
 }
@@ -274,34 +293,39 @@ const COALESCE_WINDOW_SECS: i64 = 30;
 /// transaction. Atomic with the event being recorded.
 pub async fn emit(tx: &mut Transaction<'_, Sqlite>, ev: NewActivity) -> Result<(), AppError> {
     let now = Utc::now().naive_utc();
-    let window_start = now - chrono::Duration::seconds(COALESCE_WINDOW_SECS);
     let verb = ev.verb.as_str();
 
-    // Find the most recent same-key row within the window. The key is
-    // (actor, verb, primary entity col, target_student_id). The primary entity
-    // column varies by verb, so branch on its kind.
-    let existing_id = find_coalesce_target(tx, &ev, verb, window_start).await?;
+    // Non-coalescing verbs (e.g. ThreadCommentPosted) always produce a new row.
+    // Coalescing verbs look for a recent same-key row within the window first.
+    if ev.verb.coalesces() {
+        let window_start = now - chrono::Duration::seconds(COALESCE_WINDOW_SECS);
 
-    if let Some(id) = existing_id {
-        // Merge: bump occurred_at, and for sst_status_changed keep the original
-        // `from` while taking the new `to`.
-        let merged_payload = merge_payload(tx, id, &ev).await?;
-        sqlx::query!(
-            "UPDATE activity SET occurred_at = ?, payload_json = ? WHERE id = ?",
-            now,
-            merged_payload,
-            id,
-        )
-        .execute(&mut **tx)
-        .await?;
-        return Ok(());
+        // Find the most recent same-key row within the window. The key is
+        // (actor, verb, primary entity col, target_student_id). The primary entity
+        // column varies by verb, so branch on its kind.
+        let existing_id = find_coalesce_target(tx, &ev, verb, window_start).await?;
+
+        if let Some(id) = existing_id {
+            // Merge: bump occurred_at, and for sst_status_changed keep the original
+            // `from` while taking the new `to`.
+            let merged_payload = merge_payload(tx, id, &ev).await?;
+            sqlx::query!(
+                "UPDATE activity SET occurred_at = ?, payload_json = ? WHERE id = ?",
+                now,
+                merged_payload,
+                id,
+            )
+            .execute(&mut **tx)
+            .await?;
+            return Ok(());
+        }
     }
 
     sqlx::query!(
         "INSERT INTO activity
             (occurred_at, verb, actor_user_id, target_student_id,
-             technique_id, syllabus_id, sst_id, video_id, payload_json, context_kind)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+             technique_id, syllabus_id, sst_id, video_id, thread_id, payload_json, context_kind)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         now,
         verb,
         ev.actor_user_id,
@@ -310,6 +334,7 @@ pub async fn emit(tx: &mut Transaction<'_, Sqlite>, ev: NewActivity) -> Result<(
         ev.syllabus_id,
         ev.sst_id,
         ev.video_id,
+        ev.thread_id,
         ev.payload_json,
         ev.context_kind,
     )
@@ -400,6 +425,9 @@ async fn find_coalesce_target(
             .fetch_optional(&mut **tx)
             .await?
         }
+        // Thread verbs are non-coalescing; this branch is unreachable in
+        // practice because emit() skips find_coalesce_target for them.
+        EntityKind::Thread => None,
     };
     Ok(id)
 }

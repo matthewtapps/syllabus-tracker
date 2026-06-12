@@ -1,0 +1,26 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT target_student_id AS \"target_student_id?: i64\",\n                      technique_id      AS \"technique_id?: i64\"\n               FROM activity\n               WHERE verb = 'thread_comment_posted' AND thread_id = ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "target_student_id?: i64",
+        "ordinal": 0,
+        "type_info": "Integer"
+      },
+      {
+        "name": "technique_id?: i64",
+        "ordinal": 1,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      true,
+      true
+    ]
+  },
+  "hash": "212566066affe8e2a3fc9100ae8796624cb0a9cc37415917cb0fe86c5ff37c31"
+}

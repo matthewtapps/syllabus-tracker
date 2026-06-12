@@ -648,4 +648,153 @@ mod tests {
             .dispatch().await;
         assert_eq!(res.status(), HttpStatus::Forbidden);
     }
+
+    // ---- Activity-feed emission tests ----
+
+    /// Creating a private profile thread must insert exactly one activity row
+    /// with verb='thread_comment_posted', thread_id = the new thread id, and
+    /// target_student_id = the scope student.
+    #[rocket::async_test]
+    async fn private_profile_thread_emits_one_activity_row() {
+        let db = db_with_coach_and_student().await;
+        let coach_id = db.user_id("coach_user").unwrap();
+        let student_id = db.user_id("student_user").unwrap();
+
+        let thread_id = create_thread(
+            &db.pool,
+            NewThread {
+                author_id: coach_id,
+                anchor: Anchor {
+                    kind: AnchorKind::StudentProfile,
+                    id: student_id,
+                    video_ts_seconds: None,
+                    pinned_student_id: None,
+                },
+                visibility: ThreadVisibility::Private,
+                scope_student_id: Some(student_id),
+                body: "Let's plan your next cycle.".to_string(),
+            },
+        )
+        .await
+        .unwrap();
+
+        let row = sqlx::query!(
+            r#"SELECT verb, thread_id AS "thread_id?: i64",
+                      target_student_id AS "target_student_id?: i64"
+               FROM activity
+               WHERE verb = 'thread_comment_posted'"#
+        )
+        .fetch_all(&db.pool)
+        .await
+        .unwrap();
+
+        assert_eq!(row.len(), 1, "expected exactly one activity row");
+        assert_eq!(row[0].thread_id, Some(thread_id));
+        assert_eq!(row[0].target_student_id, Some(student_id));
+    }
+
+    /// Two comments on the same thread by the same author within the same
+    /// second must produce TWO separate activity rows (non-coalescing).
+    #[rocket::async_test]
+    async fn two_comments_produce_two_activity_rows() {
+        let db = db_with_coach_and_student().await;
+        let coach_id = db.user_id("coach_user").unwrap();
+        let student_id = db.user_id("student_user").unwrap();
+
+        let thread_id = create_thread(
+            &db.pool,
+            NewThread {
+                author_id: coach_id,
+                anchor: Anchor {
+                    kind: AnchorKind::StudentProfile,
+                    id: student_id,
+                    video_ts_seconds: None,
+                    pinned_student_id: None,
+                },
+                visibility: ThreadVisibility::Private,
+                scope_student_id: Some(student_id),
+                body: "Thread body".to_string(),
+            },
+        )
+        .await
+        .unwrap();
+
+        create_comment(&db.pool, thread_id, None, coach_id, "first comment")
+            .await
+            .unwrap();
+        create_comment(&db.pool, thread_id, None, coach_id, "second comment")
+            .await
+            .unwrap();
+
+        // The thread create itself emits one row, plus two comment rows = 3 total.
+        // We specifically check there are at least 2 rows for this thread from the
+        // same author to prove non-coalescing (same actor, verb, thread within window).
+        let count: i64 = sqlx::query_scalar!(
+            r#"SELECT COUNT(*) AS "c!: i64" FROM activity
+               WHERE verb = 'thread_comment_posted'
+                 AND thread_id = ?
+                 AND actor_user_id = ?"#,
+            thread_id,
+            coach_id,
+        )
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+
+        assert_eq!(count, 3, "thread create + 2 comments must produce 3 non-coalesced rows");
+    }
+
+    /// A broadcast technique thread emits an activity row with
+    /// target_student_id IS NULL.
+    #[rocket::async_test]
+    async fn broadcast_technique_thread_emits_null_target() {
+        let db = TestDbBuilder::new()
+            .coach("coach_user", Some("Coach"))
+            .student("student_user", Some("Sam"))
+            .technique("Armbar", "an armbar", Some("coach_user"))
+            .build()
+            .await
+            .unwrap();
+        let coach_id = db.user_id("coach_user").unwrap();
+        let technique_id = db.technique_id("Armbar").unwrap();
+
+        let thread_id = create_thread(
+            &db.pool,
+            NewThread {
+                author_id: coach_id,
+                anchor: Anchor {
+                    kind: AnchorKind::Technique,
+                    id: technique_id,
+                    video_ts_seconds: None,
+                    pinned_student_id: None,
+                },
+                visibility: ThreadVisibility::Broadcast,
+                scope_student_id: None,
+                body: "Coach broadcast on technique.".to_string(),
+            },
+        )
+        .await
+        .unwrap();
+
+        let row = sqlx::query!(
+            r#"SELECT target_student_id AS "target_student_id?: i64",
+                      technique_id      AS "technique_id?: i64"
+               FROM activity
+               WHERE verb = 'thread_comment_posted' AND thread_id = ?"#,
+            thread_id,
+        )
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+
+        assert!(
+            row.target_student_id.is_none(),
+            "broadcast thread must emit NULL target_student_id"
+        );
+        assert_eq!(
+            row.technique_id,
+            Some(technique_id),
+            "technique_id must be denormalised onto the activity row"
+        );
+    }
 }
