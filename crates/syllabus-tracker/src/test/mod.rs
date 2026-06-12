@@ -10,6 +10,7 @@ pub mod pinned;
 pub mod sessions;
 pub mod syllabi;
 pub mod tags;
+pub mod threads;
 pub mod utils;
 pub mod videos;
 
