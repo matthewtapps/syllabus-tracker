@@ -1,8 +1,8 @@
 /**
  * Students-list page activity triage tests (browser project).
  *
- * Stubs window.fetch to return one Active student and one Coach-led student,
- * then asserts the default Active tab shows the active student only.
+ * Stubs window.fetch to return one Active student and one Coach-led student.
+ * The Active tab now gathers both; the Student-led pill narrows to own-activity.
  */
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { screen } from "@testing-library/react";
@@ -36,11 +36,7 @@ const coach = buildUser({ id: 1, username: "coach", display_name: "Coach", role:
 describe("StudentsListPage / activity triage", () => {
   let fetchSpy: ReturnType<typeof vi.spyOn> | null = null;
 
-  afterEach(() => {
-    fetchSpy?.mockRestore();
-  });
-
-  test("default Active tab shows active student and hides coach-led student", async () => {
+  function stubStudents() {
     const mockFn = vi.fn().mockImplementation((url: string) => {
       if (url.includes("/api/students")) {
         return Promise.resolve(
@@ -53,13 +49,33 @@ describe("StudentsListPage / activity triage", () => {
       return Promise.resolve(new Response(JSON.stringify({}), { status: 200 }));
     });
     fetchSpy = vi.spyOn(window, "fetch").mockImplementation(mockFn);
+  }
+
+  afterEach(() => {
+    fetchSpy?.mockRestore();
+  });
+
+  test("default Active tab (Everyone) shows both active and coach-led students", async () => {
+    stubStudents();
 
     renderWithProviders(<StudentsListPage />, { user: coach });
 
-    // Active student should appear.
+    expect(await screen.findByText("Alice Active")).toBeInTheDocument();
+    expect(screen.getByText("Bob CoachLed")).toBeInTheDocument();
+  });
+
+  test("Student-led pill narrows Active to own-activity students", async () => {
+    stubStudents();
+
+    renderWithProviders(<StudentsListPage />, {
+      user: coach,
+      initialEntries: ["/?view=student_led"],
+    });
+
+    // Student-led student stays.
     expect(await screen.findByText("Alice Active")).toBeInTheDocument();
 
-    // Coach-led student should NOT appear on the Active tab.
+    // Coach-led student is filtered out.
     expect(screen.queryByText("Bob CoachLed")).toBeNull();
   });
 });
