@@ -2,8 +2,8 @@
 extern crate rocket;
 
 pub use syllabus_tracker::{
-    api, auth, capabilities, catchers, db, env, error, models, syllabi, telemetry, validation,
-    videos,
+    api, auth, capabilities, catchers, db, env, error, models, syllabi, telemetry, threads,
+    validation, videos,
 };
 
 #[cfg(test)]
@@ -51,6 +51,9 @@ use syllabi::{
     api_list_syllabus_technique_videos, api_remove_technique_from_syllabus,
     api_set_assignment_graduated, api_set_sst_hidden, api_set_video_syllabus_visibility,
     api_unassign_syllabus, api_update_sst, api_update_syllabus, api_update_syllabus_attempt,
+};
+use threads::{
+    api_create_thread, api_list_threads, api_create_comment, api_delete_thread, api_delete_comment,
 };
 use telemetry::TelemetryFairing;
 use telemetry::init_tracing;
@@ -345,6 +348,11 @@ pub async fn init_rocket(
                 api_student_syllabus_techniques_flat,
                 api_student_recent_syllabus_attempts,
                 api_student_syllabus_attempt_heatmap,
+                api_create_thread,
+                api_list_threads,
+                api_create_comment,
+                api_delete_thread,
+                api_delete_comment,
             ],
         )
         .register(

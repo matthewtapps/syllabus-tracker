@@ -284,4 +284,58 @@ mod tests {
         .await;
         assert!(result.is_err(), "broadcast on a profile anchor must be rejected");
     }
+
+    // --- HTTP endpoint tests ---
+
+    use crate::test::test_utils::{login_test_user, setup_test_client, TestDbBuilder as TB};
+    use rocket::http::{ContentType, Status as HttpStatus};
+    use serde_json::{json, Value};
+
+    async fn client_with_users() -> (rocket::local::asynchronous::Client, crate::test::test_utils::TestDb) {
+        let db = TB::new()
+            .coach("coach_user", Some("Coach"))
+            .student("student_user", Some("Sam"))
+            .student("student2", Some("Mia"))
+            .build().await.unwrap();
+        setup_test_client(db).await
+    }
+
+    #[rocket::async_test]
+    async fn coach_creates_profile_thread_student_replies() {
+        let (client, db) = client_with_users().await;
+        let student_id = db.user_id("student_user").unwrap();
+
+        login_test_user(&client, "coach_user", "password123").await;
+        let create = client.post("/api/threads").header(ContentType::JSON)
+            .body(json!({"anchor_kind":"student_profile","anchor_id":student_id,"visibility":"private","scope_student_id":student_id,"body":"Plan your six weeks."}).to_string())
+            .dispatch().await;
+        assert_eq!(create.status(), HttpStatus::Ok);
+        let thread_id = create.into_json::<Value>().await.unwrap()["id"].as_i64().unwrap();
+
+        login_test_user(&client, "student_user", "password123").await;
+        let reply = client.post(format!("/api/threads/{thread_id}/comments")).header(ContentType::JSON)
+            .body(json!({"body":"Sounds good."}).to_string()).dispatch().await;
+        assert_eq!(reply.status(), HttpStatus::Ok);
+    }
+
+    #[rocket::async_test]
+    async fn student_cannot_post_on_another_students_profile() {
+        let (client, db) = client_with_users().await;
+        let victim_id = db.user_id("student2").unwrap();
+        login_test_user(&client, "student_user", "password123").await;
+        let res = client.post("/api/threads").header(ContentType::JSON)
+            .body(json!({"anchor_kind":"student_profile","anchor_id":victim_id,"visibility":"private","scope_student_id":victim_id,"body":"intrusion"}).to_string())
+            .dispatch().await;
+        assert_eq!(res.status(), HttpStatus::Forbidden);
+    }
+
+    #[rocket::async_test]
+    async fn student_cannot_broadcast() {
+        let (client, _db) = client_with_users().await;
+        login_test_user(&client, "student_user", "password123").await;
+        let res = client.post("/api/threads").header(ContentType::JSON)
+            .body(json!({"anchor_kind":"technique","anchor_id":1,"visibility":"broadcast","body":"everyone look"}).to_string())
+            .dispatch().await;
+        assert_eq!(res.status(), HttpStatus::Forbidden);
+    }
 }
