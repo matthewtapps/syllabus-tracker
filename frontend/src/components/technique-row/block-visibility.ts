@@ -16,7 +16,8 @@ export type BlockId =
   | "attempts"
   | "remove-from-syllabus"
   | "hidden-toggle"
-  | "video-visibility-override";
+  | "video-visibility-override"
+  | "discussion";
 
 export type RowKind = RowContext["kind"];
 
@@ -27,14 +28,14 @@ export type RowKind = RowContext["kind"];
 // student-syllabus blocks that are currently listed but rendered as stubs.
 export const BLOCK_VISIBILITY = {
   "global-library": {
-    student: ["description", "tags", "videos"],
-    coach: ["description", "tags", "videos", "edit-definition"],
-    admin: ["description", "tags", "videos", "edit-definition"],
+    student: ["description", "tags", "videos", "discussion"],
+    coach: ["description", "tags", "videos", "edit-definition", "discussion"],
+    admin: ["description", "tags", "videos", "edit-definition", "discussion"],
   },
   "student-pinned": {
-    student: ["description", "tags", "videos"],
-    coach: ["description", "tags", "videos"],
-    admin: ["description", "tags", "videos"],
+    student: ["description", "tags", "videos", "discussion"],
+    coach: ["description", "tags", "videos", "discussion"],
+    admin: ["description", "tags", "videos", "discussion"],
   },
   "syllabus-management": {
     student: ["description", "tags", "videos"],
