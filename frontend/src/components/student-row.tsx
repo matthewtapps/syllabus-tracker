@@ -1,6 +1,6 @@
 import { type ReactNode } from "react";
 import { Link } from "react-router-dom";
-import { Archive, ChevronRight, Clock, GraduationCap, PlayCircle } from "lucide-react";
+import { Archive, ChevronRight, Clock, PlayCircle } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import type { User } from "@/lib/api";
@@ -57,29 +57,20 @@ export function StudentRow({
         <div className="min-w-0 flex-1 space-y-1.5">
           <div className="flex items-center gap-2">
             <span className="truncate font-medium">{displayName}</span>
-            {student.graduated_at && (
-              <Badge
-                variant="outline"
-                className="shrink-0 gap-1 border-status-green/40 text-status-green"
-              >
-                <GraduationCap className="h-3 w-3" aria-hidden />
-                Graduated
-              </Badge>
-            )}
             {student.archived && (
               <Badge variant="outline" className="shrink-0 gap-1 text-muted-foreground">
                 <Archive className="h-3 w-3" aria-hidden />
                 Archived
               </Badge>
             )}
-            {student.has_unseen_activity && !student.graduated_at && (
+            {student.has_unseen_activity && (
               <span
                 className="inline-flex h-2 w-2 shrink-0 rounded-full bg-primary"
                 aria-label="New student activity"
                 title="New student activity since you last looked"
               />
             )}
-            {watchedRecently && !student.graduated_at && !showWatchTitle && (
+            {watchedRecently && !showWatchTitle && (
               <Badge
                 variant="outline"
                 className="shrink-0 gap-1 border-primary/40 px-1.5 py-0 text-[10px] font-medium text-primary"

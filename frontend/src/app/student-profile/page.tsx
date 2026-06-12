@@ -3,14 +3,12 @@ import { Link, Navigate, useParams } from 'react-router-dom';
 import {
   BookOpen,
   ChevronRight,
-  GraduationCap,
   History,
   NotebookPen,
   Pin,
   UserRound,
 } from 'lucide-react';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
-import { Badge } from '@/components/ui/badge';
 import {
   useStudentActivityFeed,
   useAllUsers,
@@ -94,15 +92,6 @@ function ProfileHub({
         <div className="min-w-0 flex-1">
           <h1 className="flex items-center gap-2 truncate text-base font-semibold">
             {displayName}
-            {student.graduated_at && (
-              <Badge
-                variant="outline"
-                className="gap-1 border-status-green/40 text-status-green"
-              >
-                <GraduationCap className="h-3 w-3" aria-hidden />
-                Graduated
-              </Badge>
-            )}
           </h1>
           {student.display_name &&
             student.display_name !== student.username && (

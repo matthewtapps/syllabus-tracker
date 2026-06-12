@@ -5,7 +5,6 @@ import {
   ArrowLeft,
   BookOpen,
   Copy,
-  GraduationCap,
   KeyRound,
   MoreVertical,
   Plus,
@@ -28,7 +27,6 @@ import {
 import {
   useRemoveTagFromTechnique,
   useResetUserClaim,
-  useSetStudentGraduated,
   useUpdateTechnique,
 } from '@/lib/mutations';
 import { qk } from '@/lib/query-keys';
@@ -62,7 +60,6 @@ import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { EmptyState } from '@/components/empty-state';
 import { SkeletonListRow } from '@/components/skeleton-row';
-import { GraduateConfirmDialog } from '@/components/graduate-confirm-dialog';
 import TechniqueEditForm from '@/components/technique-edit-form';
 import AssignTechniques from '@/components/assign-techniques';
 import { TechniqueRow } from './components/technique-row';
@@ -96,7 +93,6 @@ export default function StudentTechniques() {
   const updateTechniqueMutation = useUpdateTechnique();
   const removeTagMutation = useRemoveTagFromTechnique();
   const resetClaimMutation = useResetUserClaim();
-  const graduateMutation = useSetStudentGraduated();
   const [searchParams, setSearchParams] = useSearchParams();
   const focusId = (() => {
     const raw = searchParams.get('focus');
@@ -224,7 +220,6 @@ export default function StudentTechniques() {
     technique: Technique;
     tag: Tag;
   } | null>(null);
-  const [graduateConfirmOpen, setGraduateConfirmOpen] = useState(false);
   const [issuedClaimUrl, setIssuedClaimUrl] = useState<string | null>(null);
   const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
 
@@ -441,27 +436,6 @@ export default function StudentTechniques() {
     }
   }
 
-  function handleToggleGraduated() {
-    if (!data) return;
-    const wasGraduated = !!data.student.graduated_at;
-    graduateMutation.mutate(
-      { id: data.student.id, graduated: !wasGraduated },
-      {
-        onSuccess: () => {
-          patchData((prev) => ({
-            ...prev,
-            student: {
-              ...prev.student,
-              graduated_at: wasGraduated ? undefined : new Date().toISOString(),
-            },
-          }));
-          toast.success(wasGraduated ? 'Un-graduated' : 'Graduated 🎓');
-        },
-        onError: () => toast.error('Failed to update student'),
-      },
-    );
-  }
-
   function reloadAfterAssignment() {
     // The useAssignTechniquesToStudent mutation has already invalidated the
     // student's technique list - this just closes the dialog.
@@ -470,8 +444,6 @@ export default function StudentTechniques() {
 
   const studentName = data?.student.display_name || data?.student.username || '';
   const isOwnView = !!data && user.id === data.student.id;
-  const studentGraduatedAt = data?.student.graduated_at ?? null;
-  const isGraduate = !!studentGraduatedAt;
 
   return (
     <div className="container mx-auto py-6 px-4 sm:px-6 md:py-8">
@@ -493,29 +465,6 @@ export default function StudentTechniques() {
           </div>
         );
       })()}
-
-      {isGraduate && (
-        <div className="mb-4 flex items-start gap-3 rounded-lg border border-status-green/30 bg-status-green-bg px-4 py-3 text-sm">
-          <GraduationCap className="mt-0.5 h-4 w-4 shrink-0 text-status-green" aria-hidden />
-          <div className="space-y-0.5">
-            {isOwnView ? (
-              <>
-                <p className="font-medium text-status-green">Congrats on graduating 🎓</p>
-                <p className="text-muted-foreground">
-                  Keep taking notes on your techniques.
-                </p>
-              </>
-            ) : (
-              <>
-                <p className="font-medium text-status-green">Graduated student</p>
-                <p className="text-muted-foreground">
-                  This student has been marked as graduated.
-                </p>
-              </>
-            )}
-          </div>
-        </div>
-      )}
 
       {data && (
         <div className="mb-4 space-y-3">
@@ -566,14 +515,6 @@ export default function StudentTechniques() {
                         Copy invite link
                       </DropdownMenuItem>
                     )}
-                    <DropdownMenuItem
-                      onSelect={() => {
-                        setTimeout(() => setGraduateConfirmOpen(true), 0);
-                      }}
-                    >
-                      <GraduationCap className="mr-2 h-4 w-4" aria-hidden />
-                      {isGraduate ? 'Un-graduate' : 'Graduate'}
-                    </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
               )}
@@ -788,19 +729,6 @@ export default function StudentTechniques() {
         tagName={tagToRemove?.tag.name ?? null}
         onConfirm={executeTagRemoval}
       />
-
-      {data && (
-        <GraduateConfirmDialog
-          open={graduateConfirmOpen}
-          onOpenChange={setGraduateConfirmOpen}
-          mode={isGraduate ? 'ungraduate' : 'graduate'}
-          studentName={studentName}
-          onConfirm={() => {
-            setGraduateConfirmOpen(false);
-            handleToggleGraduated();
-          }}
-        />
-      )}
 
       <AlertDialog open={resetConfirmOpen} onOpenChange={setResetConfirmOpen}>
         <AlertDialogContent className="w-[calc(100vw-1rem)] max-w-sm p-4 sm:p-6">
