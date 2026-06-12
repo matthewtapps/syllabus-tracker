@@ -169,16 +169,14 @@ pub async fn create_thread(pool: &Pool<Sqlite>, new: NewThread) -> Result<i64, A
     let visibility = new.visibility.as_str();
 
     info!(anchor_kind = kind, "creating thread");
-
-    let mut tx = pool.begin().await?;
-
-    let thread_id = sqlx::query_scalar!(
+    let id = sqlx::query_scalar!(
         r#"INSERT INTO threads
-              (created_by_id, anchor_kind, student_id, technique_id, video_id,
+              (created_by_id, body, anchor_kind, student_id, technique_id, video_id,
                video_ts_seconds, sst_id, visibility, scope_student_id)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
            RETURNING id AS "id!: i64""#,
         new.author_id,
+        new.body,
         kind,
         student_id,
         technique_id,
@@ -188,21 +186,9 @@ pub async fn create_thread(pool: &Pool<Sqlite>, new: NewThread) -> Result<i64, A
         visibility,
         new.scope_student_id,
     )
-    .fetch_one(&mut *tx)
+    .fetch_one(pool)
     .await?;
-
-    sqlx::query!(
-        r#"INSERT INTO thread_comments (thread_id, author_id, body)
-           VALUES (?, ?, ?)"#,
-        thread_id,
-        new.author_id,
-        new.body,
-    )
-    .execute(&mut *tx)
-    .await?;
-
-    tx.commit().await?;
-    Ok(thread_id)
+    Ok(id)
 }
 
 #[cfg(test)]

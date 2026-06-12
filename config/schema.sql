@@ -380,6 +380,7 @@ CREATE TABLE IF NOT EXISTS threads (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     created_at      TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     created_by_id   INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    body            TEXT NOT NULL,
 
     anchor_kind     TEXT NOT NULL CHECK (anchor_kind IN (
                         'student_profile','technique','video',

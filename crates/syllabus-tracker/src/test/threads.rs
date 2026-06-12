@@ -51,12 +51,9 @@ mod tests {
         .unwrap();
 
         let row = sqlx::query!(
-            r#"SELECT t.anchor_kind, t.student_id AS "student_id?: i64",
-                      t.visibility, t.scope_student_id AS "scope?: i64",
-                      c.body
-               FROM threads t
-               JOIN thread_comments c ON c.thread_id = t.id
-               WHERE t.id = ?"#,
+            r#"SELECT anchor_kind, student_id AS "student_id?: i64",
+                      visibility, scope_student_id AS "scope?: i64", body
+               FROM threads WHERE id = ?"#,
             id
         )
         .fetch_one(&db.pool)

@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT t.anchor_kind, t.student_id AS \"student_id?: i64\",\n                      t.visibility, t.scope_student_id AS \"scope?: i64\",\n                      c.body\n               FROM threads t\n               JOIN thread_comments c ON c.thread_id = t.id\n               WHERE t.id = ?",
+  "query": "SELECT anchor_kind, student_id AS \"student_id?: i64\",\n                      visibility, scope_student_id AS \"scope?: i64\", body\n               FROM threads WHERE id = ?",
   "describe": {
     "columns": [
       {
@@ -40,5 +40,5 @@
       false
     ]
   },
-  "hash": "78372a8bcb66d4788dfd57bd390d068a790be35dd83595808de6b64b033a2a21"
+  "hash": "0c7b126da2b1c1f81f347fb72be686e387c26edc3431cdcc1eb7130cb1528128"
 }
