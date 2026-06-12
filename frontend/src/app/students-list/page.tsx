@@ -307,10 +307,11 @@ export default function StudentsList() {
             </Tabs>
           )}
 
-          {/* Reserve a static height so the row count doesn't shift when the
-            * flavour text wraps to a second line on narrow screens. */}
-          <div className="mb-2 min-h-[2.5rem]">
-            <p className="text-xs text-muted-foreground">
+          {/* Reserve two lines only on narrow screens where the flavour text
+            * can wrap; at sm+ every string fits one line, so reserve one line
+            * and avoid an empty band under the copy. */}
+          <div className="mb-2 min-h-[2.5rem] sm:min-h-[1.25rem]">
+            <p className="text-xs leading-tight text-muted-foreground">
               {flavour(activityTab, activeView)}
             </p>
           </div>
