@@ -86,6 +86,10 @@ export const qk = {
   activityUnreadCount: () => ["activity", "unreadCount"] as const,
   adminStorage: () => ["admin", "storage"] as const,
 
+  threads: (anchorKind: string, anchorId: number) =>
+    ["threads", anchorKind, anchorId] as const,
+  thread: (id: number) => ["thread", id] as const,
+
   studentSyllabusTechniquesFlat: (studentId: number) =>
     ["student", studentId, "syllabusTechniquesFlat"] as const,
   studentRecentSyllabusAttempts: (studentId: number, limit: number) =>
