@@ -297,6 +297,8 @@ mod tests {
             last_watch_video_title: None,
             last_student_activity_at: None,
             last_coach_activity_at: None,
+            pinned_count: None,
+            recent_activity_count: None,
         };
         let attempt_id = crate::db::create_syllabus_attempt(
             &db.pool,
@@ -494,6 +496,8 @@ mod tests {
             last_watch_video_title: None,
             last_student_activity_at: None,
             last_coach_activity_at: None,
+            pinned_count: None,
+            recent_activity_count: None,
         };
 
         crate::db::update_sst(
@@ -974,6 +978,8 @@ mod tests {
             last_watch_video_title: None,
             last_student_activity_at: None,
             last_coach_activity_at: None,
+            pinned_count: None,
+            recent_activity_count: None,
         };
         crate::db::create_syllabus_attempt(
             &db.pool,
@@ -1081,6 +1087,8 @@ mod tests {
             last_watch_video_title: None,
             last_student_activity_at: None,
             last_coach_activity_at: None,
+            pinned_count: None,
+            recent_activity_count: None,
         };
 
         crate::db::update_sst(

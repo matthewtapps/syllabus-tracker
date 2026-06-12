@@ -36,6 +36,11 @@ pub struct User {
     pub last_student_activity_at: Option<String>,
     /// Activity-log timestamp of the most recent coach/admin action on this student.
     pub last_coach_activity_at: Option<String>,
+    /// Count of techniques the student has personally pinned.
+    pub pinned_count: Option<i64>,
+    /// Count of the student's own activity-log events in the last 7 days,
+    /// matching the coach dashboard's student-actor recent-activity window.
+    pub recent_activity_count: Option<i64>,
 }
 
 #[derive(sqlx::FromRow, Clone)]
@@ -85,6 +90,8 @@ impl From<DbUser> for User {
             last_watch_video_title: None,
             last_student_activity_at: None,
             last_coach_activity_at: None,
+            pinned_count: None,
+            recent_activity_count: None,
         }
     }
 }

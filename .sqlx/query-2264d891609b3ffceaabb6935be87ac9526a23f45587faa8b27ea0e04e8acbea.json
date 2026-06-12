@@ -1,0 +1,170 @@
+{
+  "db_name": "SQLite",
+  "query": "\n        SELECT\n            u.id, u.username, u.display_name, u.role, u.archived,\n            u.graduated_at as \"graduated_at?: NaiveDateTime\",\n            u.email,\n            u.claimed_at as \"claimed_at?: NaiveDateTime\",\n            u.approved_at as \"approved_at?: NaiveDateTime\",\n            u.first_name, u.last_name,\n            u.reset_requested_at as \"reset_requested_at?: NaiveDateTime\",\n            MAX(sst.updated_at) as \"last_update?: NaiveDateTime\",\n            MAX(sst.last_coach_update_at) as \"last_coach_update_at?: NaiveDateTime\",\n            COUNT(sst.id) as \"total_techniques?: i64\",\n            COALESCE(SUM(CASE WHEN sst.status = 'red'   THEN 1 ELSE 0 END), 0) as \"red_count?: i64\",\n            COALESCE(SUM(CASE WHEN sst.status = 'amber' THEN 1 ELSE 0 END), 0) as \"amber_count?: i64\",\n            COALESCE(SUM(CASE WHEN sst.status = 'green' THEN 1 ELSE 0 END), 0) as \"green_count?: i64\",\n            -- Simple unseen heuristic, no per-coach memory: the student has\n            -- student-side activity strictly newer than any coach-side activity.\n            -- datetime(...) wrapping normalises mixed timestamp text formats.\n            CASE\n                WHEN MAX(sst.last_student_update_at) IS NULL THEN 0\n                WHEN MAX(sst.last_coach_update_at) IS NULL THEN 1\n                WHEN datetime(MAX(sst.last_student_update_at)) > datetime(MAX(sst.last_coach_update_at)) THEN 1\n                ELSE 0\n            END as \"has_unseen_activity?: i64\",\n            MAX(sst.last_student_update_at) as \"latest_student_note_at?: NaiveDateTime\",\n            (SELECT MAX(last_watched_at)\n               FROM video_watch_aggregates\n              WHERE user_id = u.id) as \"latest_watch_at?: NaiveDateTime\",\n            (SELECT v.title\n               FROM video_watch_aggregates a\n               JOIN videos v ON v.id = a.video_id\n              WHERE a.user_id = u.id AND v.deleted_at IS NULL\n              ORDER BY a.last_watched_at DESC\n              LIMIT 1) as \"latest_watch_video_title?: String\",\n            (SELECT MAX(a.occurred_at)\n               FROM activity a\n              WHERE a.target_student_id = u.id\n                AND a.actor_user_id = u.id) as \"last_student_activity_at?: NaiveDateTime\",\n            (SELECT MAX(a.occurred_at)\n               FROM activity a\n               JOIN users au ON au.id = a.actor_user_id\n              WHERE a.target_student_id = u.id\n                AND a.actor_user_id <> u.id\n                AND au.role IN ('coach', 'admin')) as \"last_coach_activity_at?: NaiveDateTime\",\n            (SELECT COUNT(*)\n               FROM student_pinned_techniques spt\n              WHERE spt.student_id = u.id) as \"pinned_count?: i64\",\n            -- Student's own activity in the last 7 days. Mirrors the coach\n            -- dashboard's student-actor window (datetime('now','-6 days',...)).\n            (SELECT COUNT(*)\n               FROM activity a\n              WHERE a.target_student_id = u.id\n                AND a.actor_user_id = u.id\n                AND a.occurred_at >= datetime('now', '-6 days', 'start of day')) as \"recent_activity_count?: i64\"\n        FROM users u\n        LEFT JOIN syllabus_assignments sa\n               ON sa.student_id = u.id AND sa.unassigned_at IS NULL\n        LEFT JOIN student_syllabus_techniques sst\n               ON sst.assignment_id = sa.id AND sst.hidden_at IS NULL\n        WHERE u.role = 'student'\n        GROUP BY u.id\n        ORDER BY MAX(sst.updated_at) DESC NULLS LAST\n        ",
+  "describe": {
+    "columns": [
+      {
+        "name": "id",
+        "ordinal": 0,
+        "type_info": "Integer"
+      },
+      {
+        "name": "username",
+        "ordinal": 1,
+        "type_info": "Text"
+      },
+      {
+        "name": "display_name",
+        "ordinal": 2,
+        "type_info": "Text"
+      },
+      {
+        "name": "role",
+        "ordinal": 3,
+        "type_info": "Text"
+      },
+      {
+        "name": "archived",
+        "ordinal": 4,
+        "type_info": "Bool"
+      },
+      {
+        "name": "graduated_at?: NaiveDateTime",
+        "ordinal": 5,
+        "type_info": "Datetime"
+      },
+      {
+        "name": "email",
+        "ordinal": 6,
+        "type_info": "Text"
+      },
+      {
+        "name": "claimed_at?: NaiveDateTime",
+        "ordinal": 7,
+        "type_info": "Datetime"
+      },
+      {
+        "name": "approved_at?: NaiveDateTime",
+        "ordinal": 8,
+        "type_info": "Datetime"
+      },
+      {
+        "name": "first_name",
+        "ordinal": 9,
+        "type_info": "Text"
+      },
+      {
+        "name": "last_name",
+        "ordinal": 10,
+        "type_info": "Text"
+      },
+      {
+        "name": "reset_requested_at?: NaiveDateTime",
+        "ordinal": 11,
+        "type_info": "Datetime"
+      },
+      {
+        "name": "last_update?: NaiveDateTime",
+        "ordinal": 12,
+        "type_info": "Text"
+      },
+      {
+        "name": "last_coach_update_at?: NaiveDateTime",
+        "ordinal": 13,
+        "type_info": "Text"
+      },
+      {
+        "name": "total_techniques?: i64",
+        "ordinal": 14,
+        "type_info": "Integer"
+      },
+      {
+        "name": "red_count?: i64",
+        "ordinal": 15,
+        "type_info": "Integer"
+      },
+      {
+        "name": "amber_count?: i64",
+        "ordinal": 16,
+        "type_info": "Integer"
+      },
+      {
+        "name": "green_count?: i64",
+        "ordinal": 17,
+        "type_info": "Integer"
+      },
+      {
+        "name": "has_unseen_activity?: i64",
+        "ordinal": 18,
+        "type_info": "Integer"
+      },
+      {
+        "name": "latest_student_note_at?: NaiveDateTime",
+        "ordinal": 19,
+        "type_info": "Text"
+      },
+      {
+        "name": "latest_watch_at?: NaiveDateTime",
+        "ordinal": 20,
+        "type_info": "Text"
+      },
+      {
+        "name": "latest_watch_video_title?: String",
+        "ordinal": 21,
+        "type_info": "Text"
+      },
+      {
+        "name": "last_student_activity_at?: NaiveDateTime",
+        "ordinal": 22,
+        "type_info": "Text"
+      },
+      {
+        "name": "last_coach_activity_at?: NaiveDateTime",
+        "ordinal": 23,
+        "type_info": "Text"
+      },
+      {
+        "name": "pinned_count?: i64",
+        "ordinal": 24,
+        "type_info": "Integer"
+      },
+      {
+        "name": "recent_activity_count?: i64",
+        "ordinal": 25,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      true,
+      true,
+      true,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      false,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "2264d891609b3ffceaabb6935be87ac9526a23f45587faa8b27ea0e04e8acbea"
+}

@@ -48,6 +48,8 @@ struct UserWithActivityDto {
     pub latest_watch_video_title: Option<String>,
     pub last_student_activity_at: Option<NaiveDateTime>,
     pub last_coach_activity_at: Option<NaiveDateTime>,
+    pub pinned_count: Option<i64>,
+    pub recent_activity_count: Option<i64>,
 }
 
 #[instrument(skip(pool))]
@@ -102,7 +104,17 @@ pub async fn get_students_by_recent_updates(
                JOIN users au ON au.id = a.actor_user_id
               WHERE a.target_student_id = u.id
                 AND a.actor_user_id <> u.id
-                AND au.role IN ('coach', 'admin')) as "last_coach_activity_at?: NaiveDateTime"
+                AND au.role IN ('coach', 'admin')) as "last_coach_activity_at?: NaiveDateTime",
+            (SELECT COUNT(*)
+               FROM student_pinned_techniques spt
+              WHERE spt.student_id = u.id) as "pinned_count?: i64",
+            -- Student's own activity in the last 7 days. Mirrors the coach
+            -- dashboard's student-actor window (datetime('now','-6 days',...)).
+            (SELECT COUNT(*)
+               FROM activity a
+              WHERE a.target_student_id = u.id
+                AND a.actor_user_id = u.id
+                AND a.occurred_at >= datetime('now', '-6 days', 'start of day')) as "recent_activity_count?: i64"
         FROM users u
         LEFT JOIN syllabus_assignments sa
                ON sa.student_id = u.id AND sa.unassigned_at IS NULL
@@ -162,6 +174,8 @@ pub async fn get_students_by_recent_updates(
                 last_coach_activity_at: dto
                     .last_coach_activity_at
                     .map(|dt| naive_to_utc(dt).to_rfc3339()),
+                pinned_count: dto.pinned_count,
+                recent_activity_count: dto.recent_activity_count,
             }
         })
         .collect();
