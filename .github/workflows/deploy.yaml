@@ -119,12 +119,13 @@ jobs:
   # queries in code or to config/schema.sql. Catches migration-heavy
   # PRs that forget to run `just sqlx-prepare`. Mirrors `just sqlx-check`.
   #
-  # SQLite type inference depends on row presence for some columns
-  # (e.g. a column that's always NULL infers `Null` instead of `Text`).
-  # The .sqlx/ cache was generated against a seeded local DB, so the
-  # check must run against an equivalent state. We bootstrap an empty
-  # DB from schema.sql then run the seed binary (the canonical source
-  # of the seed state) before invoking sqlx prepare --check.
+  # SQLite type inference depends on row presence for some columns: with
+  # data present, an expression column (MAX/COALESCE/CASE) infers the
+  # storage class of the observed row, so an all-NULL aggregate becomes
+  # `Null` instead of the schema's `Text`. An EMPTY (schema-only) DB is
+  # the deterministic state: no rows means inference falls back to the
+  # declared column affinity. The cache is generated the same way, so we
+  # bootstrap schema.sql and DO NOT seed before the check.
   sqlx-check:
     runs-on: ubuntu-latest
     steps:
@@ -140,15 +141,6 @@ jobs:
           mkdir -p data
           : > data/sqlite.db
           sqlite3 data/sqlite.db < config/schema.sql
-      - name: Seed the DB so SQLite type inference matches the cache
-        # Mirrors `just seed` (minus the migrate step; we already
-        # applied schema.sql by hand). SQLX_OFFLINE so the macros use
-        # the cache for compilation; DATABASE_URL for runtime.
-        run: cargo run -p syllabus-tracker --bin seed
-        env:
-          SQLX_OFFLINE: "true"
-          DATABASE_URL: sqlite://data/sqlite.db
-          SCHEMA_PATH: ./config/schema.sql
       - name: Check .sqlx/ cache against current queries
         run: cargo sqlx prepare --check --workspace -- -p syllabus-tracker --tests --all-features
         env:
