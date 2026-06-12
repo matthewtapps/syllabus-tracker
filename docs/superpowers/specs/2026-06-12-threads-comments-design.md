@@ -72,6 +72,7 @@ CREATE TABLE IF NOT EXISTS threads (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     created_at      TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     created_by_id   INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    body            TEXT NOT NULL,      -- the root post; thread_comments are replies only
 
     -- Closed anchor taxonomy. Extends to 'camp','match','match_video' later by
     -- adding a value + an FK column + a shape-CHECK arm, in lockstep with the
