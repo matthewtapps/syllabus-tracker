@@ -21,6 +21,7 @@ mod syllabus_attempts;
 mod tags;
 mod techniques;
 mod users;
+pub mod threads;
 mod videos;
 mod watch;
 
