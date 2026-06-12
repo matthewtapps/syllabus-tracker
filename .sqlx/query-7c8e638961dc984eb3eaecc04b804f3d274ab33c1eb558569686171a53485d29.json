@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE thread_comments SET deleted_at = CURRENT_TIMESTAMP, deleted_by_id = ?\n         WHERE id = ? AND deleted_at IS NULL",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "7c8e638961dc984eb3eaecc04b804f3d274ab33c1eb558569686171a53485d29"
+}

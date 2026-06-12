@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT parent_comment_id AS \"parent_comment_id?: i64\"\n               FROM thread_comments WHERE id = ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "parent_comment_id?: i64",
+        "ordinal": 0,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "50882c8d7cf5cb41949bf79f3edb6ba40c7c2987c217ea7e7d2da30f65f3f504"
+}

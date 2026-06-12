@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT id AS \"id!: i64\" FROM threads\n                   WHERE anchor_kind = 'technique' AND technique_id = ? AND deleted_at IS NULL\n                   ORDER BY last_activity_at DESC",
+  "describe": {
+    "columns": [
+      {
+        "name": "id!: i64",
+        "ordinal": 0,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "e98fadd81c4fbb90689fb3d849919b19df5791eed9ed83e94edea915a55ebd47"
+}
