@@ -30,6 +30,9 @@ pub enum Permission {
     ManageVideoVisibility,
     ViewWatchStats,
     ViewStorageStats,
+
+    ManageThreads,
+    BroadcastLibraryComment,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -68,6 +71,9 @@ static COACH_PERMISSIONS: Lazy<HashSet<Permission>> = Lazy::new(|| {
     permissions.insert(Permission::DeleteVideos);
     permissions.insert(Permission::ManageVideoVisibility);
     permissions.insert(Permission::ViewWatchStats);
+
+    permissions.insert(Permission::ManageThreads);
+    permissions.insert(Permission::BroadcastLibraryComment);
 
     permissions
 });
@@ -128,5 +134,20 @@ impl fmt::Display for Role {
             Role::Coach => write!(f, "coach"),
             Role::Admin => write!(f, "admin"),
         }
+    }
+}
+
+#[cfg(test)]
+mod thread_permission_tests {
+    use super::{Permission, Role};
+
+    #[test]
+    fn coach_and_admin_have_thread_permissions_student_does_not() {
+        assert!(Role::Coach.has_permission(Permission::ManageThreads));
+        assert!(Role::Coach.has_permission(Permission::BroadcastLibraryComment));
+        assert!(Role::Admin.has_permission(Permission::ManageThreads));
+        assert!(Role::Admin.has_permission(Permission::BroadcastLibraryComment));
+        assert!(!Role::Student.has_permission(Permission::ManageThreads));
+        assert!(!Role::Student.has_permission(Permission::BroadcastLibraryComment));
     }
 }
