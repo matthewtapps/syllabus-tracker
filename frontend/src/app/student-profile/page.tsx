@@ -4,19 +4,25 @@ import {
   BookOpen,
   ChevronRight,
   History,
+  MessageSquare,
   NotebookPen,
   Pin,
   UserRound,
 } from 'lucide-react';
+import { toast } from 'sonner';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import {
   useStudentActivityFeed,
   useAllUsers,
+  useThreadsForAnchor,
 } from '@/lib/queries';
+import { useCreateThread } from '@/lib/mutations';
 import { useUser } from '@/lib/current-user-context';
 import { isCoachOrAdmin } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { ActivityFeedList } from '@/components/activity-feed-list';
+import { ThreadView } from '@/components/threads/thread-view';
+import { ThreadComposer } from '@/components/threads/thread-composer';
 import type { User } from '@/lib/api';
 
 function initials(u: Pick<User, 'display_name' | 'username'>): string {
@@ -64,6 +70,21 @@ function ProfileHub({
   // Use the student-scoped feed so a coach sees only THIS student's activity
   // rather than the gym-wide coach feed.
   const feedQuery = useStudentActivityFeed(studentId);
+  const profileThreadsQuery = useThreadsForAnchor("student_profile", studentId);
+  const createProfileThread = useCreateThread();
+  async function startProfileThread(body: string) {
+    try {
+      await createProfileThread.mutateAsync({
+        anchor_kind: "student_profile",
+        anchor_id: studentId,
+        visibility: "private",
+        scope_student_id: studentId,
+        body,
+      });
+    } catch {
+      toast.error("Couldn't post your thread.");
+    }
+  }
 
   const loading = !isOwnView && usersQuery.isLoading;
 
@@ -126,6 +147,31 @@ function ProfileHub({
             icon={Pin}
             title={isOwnView ? 'Pinned' : 'Pinned techniques'}
             last
+          />
+        </div>
+      </section>
+
+      {/* Discussion */}
+      <section className="space-y-2">
+        <h2 className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          <MessageSquare className="h-3.5 w-3.5" aria-hidden />
+          Discussion
+        </h2>
+        <div className="space-y-4 rounded-lg border border-border bg-card p-4">
+          {profileThreadsQuery.isLoading ? (
+            <div className="h-4 w-1/3 animate-pulse rounded bg-muted" />
+          ) : (profileThreadsQuery.data ?? []).length === 0 ? (
+            <p className="text-sm text-muted-foreground">No discussion yet. Start one below.</p>
+          ) : (
+            (profileThreadsQuery.data ?? []).map((t) => (
+              <ThreadView key={t.id} thread={t} anchorKind="student_profile" anchorId={studentId} />
+            ))
+          )}
+          <ThreadComposer
+            placeholder={`Start a thread with ${student.display_name ?? "this student"}…`}
+            submitLabel="Post"
+            pending={createProfileThread.isPending}
+            onSubmit={startProfileThread}
           />
         </div>
       </section>

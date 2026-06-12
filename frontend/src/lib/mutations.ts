@@ -1040,11 +1040,16 @@ import {
   setAssignmentGraduatedApi,
   setSstHiddenApi,
   setVideoSyllabusVisibilityApi,
+  createThread,
+  createComment,
+  deleteThread,
+  deleteComment,
   type GhostActionEntry,
   type MissingActionEntry,
   type SyllabusAssignmentDiff,
   type SstRow,
   type StudentSyllabusDetailResponse,
+  type CreateThreadInput,
 } from "./api";
 
 export function useSetAssignmentGraduated() {
@@ -1177,6 +1182,56 @@ export function useSetVideoSyllabusVisibility() {
           vars.techniqueId,
         ),
       }),
+  });
+}
+
+// ============================================================
+// Threads (PR 2, Task 1)
+// ============================================================
+
+export function useCreateThread() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: CreateThreadInput) =>
+      unwrap(await createThread(input)),
+    onSuccess: (_d, input) => {
+      qc.invalidateQueries({
+        queryKey: qk.threads(input.anchor_kind, input.anchor_id),
+      });
+    },
+  });
+}
+
+export function useCreateComment(anchorKind: string, anchorId: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (v: {
+      threadId: number;
+      body: string;
+      parentCommentId?: number | null;
+    }) => unwrap(await createComment(v.threadId, v.body, v.parentCommentId)),
+    onSuccess: () =>
+      qc.invalidateQueries({ queryKey: qk.threads(anchorKind, anchorId) }),
+  });
+}
+
+export function useDeleteThread(anchorKind: string, anchorId: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (threadId: number) =>
+      unwrap(await deleteThread(threadId)),
+    onSuccess: () =>
+      qc.invalidateQueries({ queryKey: qk.threads(anchorKind, anchorId) }),
+  });
+}
+
+export function useDeleteComment(anchorKind: string, anchorId: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (commentId: number) =>
+      unwrap(await deleteComment(commentId)),
+    onSuccess: () =>
+      qc.invalidateQueries({ queryKey: qk.threads(anchorKind, anchorId) }),
   });
 }
 

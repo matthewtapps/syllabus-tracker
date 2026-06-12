@@ -40,7 +40,9 @@ import {
   getVideoStatus,
   listAttempts,
   listVideos,
+  listThreads,
 } from "./api";
+import type { AnchorKind } from "./api";
 import { qk } from "./query-keys";
 
 // ---- Auth / session ----
@@ -477,5 +479,17 @@ export function useSyllabusAttemptHeatmap(studentId: number | undefined) {
   return useQuery({
     queryKey: qk.studentSyllabusAttemptHeatmap(studentId ?? 0),
     queryFn: whenId(studentId, getSyllabusAttemptHeatmap),
+  });
+}
+
+// ---- Threads ----
+
+export function useThreadsForAnchor(
+  anchorKind: AnchorKind,
+  anchorId: number | undefined,
+) {
+  return useQuery({
+    queryKey: qk.threads(anchorKind, anchorId ?? 0),
+    queryFn: whenId(anchorId, (id) => listThreads(anchorKind, id)),
   });
 }

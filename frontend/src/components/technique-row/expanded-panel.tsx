@@ -12,6 +12,7 @@ import {
   RemoveFromSyllabusBlock,
   VideoVisibilityOverrideBlock,
 } from "./stub-blocks";
+import { DiscussionBlock } from "./discussion-block";
 
 interface ExpandedPanelProps {
   scrollToVideoId?: number | null;
@@ -85,5 +86,7 @@ function BlockRenderer({
       return <HiddenToggleBlock />;
     case "video-visibility-override":
       return <VideoVisibilityOverrideBlock />;
+    case "discussion":
+      return <DiscussionBlock />;
   }
 }

@@ -1887,3 +1887,97 @@ export async function getDashboardActivityFeed(limit = 30): Promise<ActivityRow[
   if (!response.ok) throw response;
   return (await response.json()) as ActivityRow[];
 }
+
+// ============================================================
+// Threads (PR 2, Task 1)
+// ============================================================
+
+export type AnchorKind =
+  | "student_profile"
+  | "technique"
+  | "video"
+  | "video_timestamp"
+  | "sst"
+  | "pinned_technique";
+export type ThreadVisibility = "private" | "broadcast";
+
+export interface CommentView {
+  id: number;
+  thread_id: number;
+  parent_comment_id: number | null;
+  author_id: number;
+  body: string | null;
+  created_at: string;
+  deleted_at: string | null;
+}
+
+export interface ThreadView {
+  id: number;
+  anchor_kind: string;
+  author_id: number;
+  visibility: string;
+  scope_student_id: number | null;
+  body: string | null;
+  created_at: string;
+  deleted_at: string | null;
+  comments: CommentView[];
+}
+
+export interface CreateThreadInput {
+  anchor_kind: AnchorKind;
+  anchor_id: number;
+  video_ts_seconds?: number | null;
+  pinned_student_id?: number | null;
+  visibility: ThreadVisibility;
+  scope_student_id?: number | null;
+  body: string;
+}
+
+export async function listThreads(
+  anchorKind: AnchorKind,
+  anchorId: number,
+): Promise<ThreadView[]> {
+  const res = await fetch(
+    `/api/threads?anchor_kind=${anchorKind}&anchor_id=${anchorId}`,
+    { credentials: "include" },
+  );
+  if (!res.ok) throw new Error(`Failed to load threads: ${res.statusText}`);
+  const data = (await res.json()) as { threads: ThreadView[] };
+  return data.threads;
+}
+
+export async function createThread(input: CreateThreadInput): Promise<Response> {
+  return fetch(`/api/threads`, {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+}
+
+export async function createComment(
+  threadId: number,
+  body: string,
+  parentCommentId?: number | null,
+): Promise<Response> {
+  return fetch(`/api/threads/${threadId}/comments`, {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ body, parent_comment_id: parentCommentId ?? null }),
+  });
+}
+
+export async function deleteThread(threadId: number): Promise<Response> {
+  return fetch(`/api/threads/${threadId}`, {
+    method: "DELETE",
+    credentials: "include",
+  });
+}
+
+export async function deleteComment(commentId: number): Promise<Response> {
+  return fetch(`/api/comments/${commentId}`, {
+    method: "DELETE",
+    credentials: "include",
+  });
+}
