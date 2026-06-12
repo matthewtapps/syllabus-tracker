@@ -16,7 +16,6 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { useUser } from "@/lib/current-user-context";
-import { useAllUsers } from "@/lib/queries";
 import { useCreateComment, useDeleteThread } from "@/lib/mutations";
 import { CommentItem } from "./comment-item";
 import { ThreadComposer } from "./thread-composer";
@@ -30,15 +29,11 @@ interface ThreadViewProps {
 
 export function ThreadView({ thread, anchorKind, anchorId }: ThreadViewProps) {
   const user = useUser();
-  const usersQuery = useAllUsers();
   const createComment = useCreateComment(anchorKind, anchorId);
   const deleteThread = useDeleteThread(anchorKind, anchorId);
   const [deleteOpen, setDeleteOpen] = useState(false);
 
-  const nameOf = (id: number) =>
-    usersQuery.data?.find((u) => u.id === id)?.display_name ?? "?";
-
-  const authorName = nameOf(thread.author_id);
+  const authorName = thread.author_name;
   const canDelete =
     thread.author_id === user.id || user.role !== "student";
 
@@ -121,7 +116,7 @@ export function ThreadView({ thread, anchorKind, anchorId }: ThreadViewProps) {
             <CommentItem
               key={comment.id}
               comment={comment}
-              authorName={nameOf(comment.author_id)}
+              authorName={comment.author_name}
             />
           ))}
         </div>

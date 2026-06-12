@@ -256,6 +256,7 @@ pub struct CommentView {
     pub thread_id: i64,
     pub parent_comment_id: Option<i64>,
     pub author_id: i64,
+    pub author_name: String,
     /// `None` when the comment is soft-deleted (tombstoned in the read layer).
     pub body: Option<String>,
     pub created_at: NaiveDateTime,
@@ -267,6 +268,7 @@ pub struct ThreadView {
     pub id: i64,
     pub anchor_kind: String,
     pub author_id: i64,
+    pub author_name: String,
     pub visibility: String,
     pub scope_student_id: Option<i64>,
     pub body: Option<String>,
@@ -402,15 +404,18 @@ pub async fn get_thread(
     viewer: Viewer,
 ) -> Result<Option<ThreadView>, AppError> {
     let row = sqlx::query!(
-        r#"SELECT id AS "id!: i64",
-                  anchor_kind,
-                  created_by_id AS "author_id!: i64",
-                  visibility,
-                  scope_student_id AS "scope_student_id?: i64",
-                  body,
-                  created_at AS "created_at!: NaiveDateTime",
-                  deleted_at AS "deleted_at?: NaiveDateTime"
-           FROM threads WHERE id = ?"#,
+        r#"SELECT t.id AS "id!: i64",
+                  t.anchor_kind,
+                  t.created_by_id AS "author_id!: i64",
+                  COALESCE(u.display_name, u.username, '?') AS "author_name!: String",
+                  t.visibility,
+                  t.scope_student_id AS "scope_student_id?: i64",
+                  t.body,
+                  t.created_at AS "created_at!: NaiveDateTime",
+                  t.deleted_at AS "deleted_at?: NaiveDateTime"
+           FROM threads t
+           JOIN users u ON u.id = t.created_by_id
+           WHERE t.id = ?"#,
         thread_id
     )
     .fetch_optional(pool)
@@ -426,16 +431,18 @@ pub async fn get_thread(
     }
 
     let comments = sqlx::query!(
-        r#"SELECT id AS "id!: i64",
-                  thread_id AS "thread_id!: i64",
-                  parent_comment_id AS "parent_comment_id?: i64",
-                  author_id AS "author_id!: i64",
-                  body,
-                  created_at AS "created_at!: NaiveDateTime",
-                  deleted_at AS "deleted_at?: NaiveDateTime"
-           FROM thread_comments
-           WHERE thread_id = ?
-           ORDER BY created_at, id"#,
+        r#"SELECT c.id AS "id!: i64",
+                  c.thread_id AS "thread_id!: i64",
+                  c.parent_comment_id AS "parent_comment_id?: i64",
+                  c.author_id AS "author_id!: i64",
+                  COALESCE(u.display_name, u.username, '?') AS "author_name!: String",
+                  c.body,
+                  c.created_at AS "created_at!: NaiveDateTime",
+                  c.deleted_at AS "deleted_at?: NaiveDateTime"
+           FROM thread_comments c
+           JOIN users u ON u.id = c.author_id
+           WHERE c.thread_id = ?
+           ORDER BY c.created_at, c.id"#,
         thread_id
     )
     .fetch_all(pool)
@@ -446,6 +453,7 @@ pub async fn get_thread(
         thread_id: c.thread_id,
         parent_comment_id: c.parent_comment_id,
         author_id: c.author_id,
+        author_name: c.author_name,
         body: if c.deleted_at.is_some() { None } else { Some(c.body) },
         created_at: c.created_at,
         deleted_at: c.deleted_at,
@@ -458,6 +466,7 @@ pub async fn get_thread(
         id: row.id,
         anchor_kind: row.anchor_kind,
         author_id: row.author_id,
+        author_name: row.author_name,
         visibility: row.visibility,
         scope_student_id: row.scope_student_id,
         body: thread_body,

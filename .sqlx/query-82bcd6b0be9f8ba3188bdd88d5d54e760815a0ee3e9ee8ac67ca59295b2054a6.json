@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT id AS \"id!: i64\",\n                  anchor_kind,\n                  created_by_id AS \"author_id!: i64\",\n                  visibility,\n                  scope_student_id AS \"scope_student_id?: i64\",\n                  body,\n                  created_at AS \"created_at!: NaiveDateTime\",\n                  deleted_at AS \"deleted_at?: NaiveDateTime\"\n           FROM threads WHERE id = ?",
+  "query": "SELECT t.id AS \"id!: i64\",\n                  t.anchor_kind,\n                  t.created_by_id AS \"author_id!: i64\",\n                  COALESCE(u.display_name, u.username, '?') AS \"author_name!: String\",\n                  t.visibility,\n                  t.scope_student_id AS \"scope_student_id?: i64\",\n                  t.body,\n                  t.created_at AS \"created_at!: NaiveDateTime\",\n                  t.deleted_at AS \"deleted_at?: NaiveDateTime\"\n           FROM threads t\n           JOIN users u ON u.id = t.created_by_id\n           WHERE t.id = ?",
   "describe": {
     "columns": [
       {
@@ -19,28 +19,33 @@
         "type_info": "Integer"
       },
       {
-        "name": "visibility",
+        "name": "author_name!: String",
         "ordinal": 3,
         "type_info": "Text"
       },
       {
-        "name": "scope_student_id?: i64",
+        "name": "visibility",
         "ordinal": 4,
+        "type_info": "Text"
+      },
+      {
+        "name": "scope_student_id?: i64",
+        "ordinal": 5,
         "type_info": "Integer"
       },
       {
         "name": "body",
-        "ordinal": 5,
+        "ordinal": 6,
         "type_info": "Text"
       },
       {
         "name": "created_at!: NaiveDateTime",
-        "ordinal": 6,
+        "ordinal": 7,
         "type_info": "Datetime"
       },
       {
         "name": "deleted_at?: NaiveDateTime",
-        "ordinal": 7,
+        "ordinal": 8,
         "type_info": "Datetime"
       }
     ],
@@ -52,11 +57,12 @@
       false,
       false,
       false,
+      false,
       true,
       false,
       false,
       true
     ]
   },
-  "hash": "b58631f566f70d32cbf080636acbf7df52b939afe53aefce3dbb7bc8ce9589e6"
+  "hash": "82bcd6b0be9f8ba3188bdd88d5d54e760815a0ee3e9ee8ac67ca59295b2054a6"
 }

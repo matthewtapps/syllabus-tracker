@@ -1906,6 +1906,7 @@ export interface CommentView {
   thread_id: number;
   parent_comment_id: number | null;
   author_id: number;
+  author_name: string;
   body: string | null;
   created_at: string;
   deleted_at: string | null;
@@ -1915,6 +1916,7 @@ export interface ThreadView {
   id: number;
   anchor_kind: string;
   author_id: number;
+  author_name: string;
   visibility: string;
   scope_student_id: number | null;
   body: string | null;

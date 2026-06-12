@@ -10,6 +10,7 @@ function buildComment(overrides: Partial<CommentView> = {}): CommentView {
     thread_id: 10,
     parent_comment_id: null,
     author_id: 2,
+    author_name: "Bob B",
     body: "Great technique!",
     created_at: new Date().toISOString(),
     deleted_at: null,
@@ -22,6 +23,7 @@ function buildThread(overrides: Partial<ThreadViewModel> = {}): ThreadViewModel 
     id: 10,
     anchor_kind: "technique",
     author_id: 1,
+    author_name: "Alice A",
     visibility: "broadcast",
     scope_student_id: null,
     body: "Root thread body",
@@ -78,6 +80,9 @@ describe("ThreadView", () => {
     expect(screen.getByText("Root thread body")).toBeInTheDocument();
     // Reply body
     expect(screen.getByText("Great technique!")).toBeInTheDocument();
+    // Author names come from the payload, not a client-side user lookup
+    expect(screen.getByText("Alice A")).toBeInTheDocument();
+    expect(screen.getByText("Bob B")).toBeInTheDocument();
   });
 
   test("renders tombstone text when thread body is null", async () => {
