@@ -168,7 +168,11 @@ function ProfileHub({
             ))
           )}
           <ThreadComposer
-            placeholder={`Start a thread with ${student.display_name ?? "this student"}…`}
+            placeholder={
+              isOwnView
+                ? "Start a thread with your coach…"
+                : `Start a thread with ${student.display_name ?? "this student"}…`
+            }
             submitLabel="Post"
             pending={createProfileThread.isPending}
             onSubmit={startProfileThread}
