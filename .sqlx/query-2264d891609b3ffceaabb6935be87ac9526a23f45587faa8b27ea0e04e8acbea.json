@@ -101,7 +101,7 @@
       {
         "name": "latest_student_note_at?: NaiveDateTime",
         "ordinal": 19,
-        "type_info": "Null"
+        "type_info": "Text"
       },
       {
         "name": "latest_watch_at?: NaiveDateTime",

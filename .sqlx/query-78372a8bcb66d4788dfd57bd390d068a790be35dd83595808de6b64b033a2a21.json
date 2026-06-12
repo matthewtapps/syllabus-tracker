@@ -1,0 +1,44 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT t.anchor_kind, t.student_id AS \"student_id?: i64\",\n                      t.visibility, t.scope_student_id AS \"scope?: i64\",\n                      c.body\n               FROM threads t\n               JOIN thread_comments c ON c.thread_id = t.id\n               WHERE t.id = ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "anchor_kind",
+        "ordinal": 0,
+        "type_info": "Text"
+      },
+      {
+        "name": "student_id?: i64",
+        "ordinal": 1,
+        "type_info": "Integer"
+      },
+      {
+        "name": "visibility",
+        "ordinal": 2,
+        "type_info": "Text"
+      },
+      {
+        "name": "scope?: i64",
+        "ordinal": 3,
+        "type_info": "Integer"
+      },
+      {
+        "name": "body",
+        "ordinal": 4,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      true,
+      false,
+      true,
+      false
+    ]
+  },
+  "hash": "78372a8bcb66d4788dfd57bd390d068a790be35dd83595808de6b64b033a2a21"
+}

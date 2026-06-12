@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO thread_comments (thread_id, author_id, body)\n           VALUES (?, ?, ?)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": []
+  },
+  "hash": "a8a671f5ad452edd0a27b0b97a72a5f93735dc236adc2b1e04627923aa7a8d41"
+}
