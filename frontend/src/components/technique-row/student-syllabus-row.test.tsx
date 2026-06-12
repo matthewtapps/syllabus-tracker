@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { screen } from "@testing-library/react";
+import { screen, waitFor } from "@testing-library/react";
 import { Accordion } from "@/components/ui/accordion";
 import { TechniqueRow } from "./technique-row";
 import { buildSst, buildTechnique } from "@/test/fixtures";
@@ -126,5 +126,37 @@ describe("TechniqueRow / student-syllabus context", () => {
     // headings: expanded panel should not be mounted.
     expect(screen.queryByRole("heading", { name: /attempts/i })).toBeNull();
     expect(screen.queryByRole("group", { name: /technique status/i })).toBeNull();
+  });
+
+  test("expanded syllabus row fetches threads on the sst anchor, not the technique anchor", async () => {
+    const sst = buildSst({ id: 901 });
+    const technique = buildTechnique({ id: 101 });
+    const value = String(technique.id);
+    renderWithProviders(
+      <Accordion type="single" collapsible value={value}>
+        <TechniqueRow
+          technique={technique}
+          context={{
+            kind: "student-syllabus",
+            studentId: 42,
+            syllabusId: 7,
+            assignmentId: 13,
+            sst,
+            graduatedAt: null,
+          }}
+          value={value}
+          isOpen
+        />
+      </Accordion>,
+      { user: buildUser({ id: 42, role: "student" }) },
+    );
+
+    await waitFor(() => {
+      const calls = fetchSpy!.mock.calls.map(([url]: [unknown, ...unknown[]]) => String(url));
+      expect(
+        calls.some((url: string) => url.includes("anchor_kind=sst") && url.includes("anchor_id=901")),
+      ).toBe(true);
+      expect(calls.every((url: string) => !url.includes("anchor_kind=technique"))).toBe(true);
+    });
   });
 });
