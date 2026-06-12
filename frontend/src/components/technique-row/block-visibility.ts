@@ -51,6 +51,7 @@ export const BLOCK_VISIBILITY = {
       "notes-student",
       "notes-coach",
       "videos",
+      "discussion",
     ],
     coach: [
       "status",
@@ -64,6 +65,7 @@ export const BLOCK_VISIBILITY = {
       "remove-from-syllabus",
       "hidden-toggle",
       "video-visibility-override",
+      "discussion",
     ],
     admin: [
       "status",
@@ -77,6 +79,7 @@ export const BLOCK_VISIBILITY = {
       "remove-from-syllabus",
       "hidden-toggle",
       "video-visibility-override",
+      "discussion",
     ],
   },
 } as const satisfies Record<RowKind, Record<Role, readonly BlockId[]>>;
