@@ -129,11 +129,35 @@ async fn validate_anchor(pool: &Pool<Sqlite>, anchor: &Anchor) -> Result<(), App
         )
         .fetch_one(pool)
         .await?,
-        _ => {
-            return Err(AppError::Validation(format!(
-                "anchor kind {} is not supported yet",
-                anchor.kind.as_str()
-            )));
+        AnchorKind::Video | AnchorKind::VideoTimestamp => sqlx::query_scalar!(
+            r#"SELECT EXISTS(
+                  SELECT 1 FROM videos
+                  WHERE id = ? AND deleted_at IS NULL AND hidden_at IS NULL
+               ) AS "e!: i64""#,
+            anchor.id
+        )
+        .fetch_one(pool)
+        .await?,
+        AnchorKind::Sst => sqlx::query_scalar!(
+            r#"SELECT EXISTS(SELECT 1 FROM student_syllabus_techniques WHERE id = ?) AS "e!: i64""#,
+            anchor.id
+        )
+        .fetch_one(pool)
+        .await?,
+        AnchorKind::PinnedTechnique => {
+            let student_id = anchor.pinned_student_id.ok_or_else(|| {
+                AppError::Validation("pinned anchor requires a student".to_string())
+            })?;
+            sqlx::query_scalar!(
+                r#"SELECT EXISTS(
+                      SELECT 1 FROM student_pinned_techniques
+                      WHERE student_id = ? AND technique_id = ?
+                   ) AS "e!: i64""#,
+                student_id,
+                anchor.id
+            )
+            .fetch_one(pool)
+            .await?
         }
     };
     if exists == 0 {
@@ -370,7 +394,7 @@ pub async fn list_threads_for_anchor(
     anchor: Anchor,
     viewer: Viewer,
 ) -> Result<Vec<ThreadView>, AppError> {
-    let (student_id, technique_id, _video_id, _video_ts, _sst_id) = anchor_columns(&anchor);
+    let (student_id, technique_id, video_id, _video_ts, sst_id) = anchor_columns(&anchor);
 
     let thread_ids: Vec<i64> = match anchor.kind {
         AnchorKind::StudentProfile => {
@@ -393,11 +417,40 @@ pub async fn list_threads_for_anchor(
             .fetch_all(pool)
             .await?
         }
-        other => {
-            return Err(AppError::Validation(format!(
-                "anchor kind {} is not supported yet",
-                other.as_str()
-            )));
+        AnchorKind::Video | AnchorKind::VideoTimestamp => {
+            sqlx::query_scalar!(
+                r#"SELECT id AS "id!: i64" FROM threads
+                   WHERE video_id = ?
+                     AND anchor_kind IN ('video', 'video_timestamp')
+                     AND deleted_at IS NULL
+                   ORDER BY COALESCE(video_ts_seconds, 0), last_activity_at DESC"#,
+                video_id
+            )
+            .fetch_all(pool)
+            .await?
+        }
+        AnchorKind::Sst => {
+            sqlx::query_scalar!(
+                r#"SELECT id AS "id!: i64" FROM threads
+                   WHERE anchor_kind = 'sst' AND sst_id = ? AND deleted_at IS NULL
+                   ORDER BY last_activity_at DESC"#,
+                sst_id
+            )
+            .fetch_all(pool)
+            .await?
+        }
+        AnchorKind::PinnedTechnique => {
+            sqlx::query_scalar!(
+                r#"SELECT id AS "id!: i64" FROM threads
+                   WHERE anchor_kind = 'pinned_technique'
+                     AND student_id = ? AND technique_id = ?
+                     AND deleted_at IS NULL
+                   ORDER BY last_activity_at DESC"#,
+                student_id,
+                technique_id
+            )
+            .fetch_all(pool)
+            .await?
         }
     };
 
