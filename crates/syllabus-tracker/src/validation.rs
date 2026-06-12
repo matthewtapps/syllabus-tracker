@@ -45,6 +45,7 @@ impl ToValidationResponse for AppError {
             AppError::Authorization(msg) => {
                 ("authorization", format!("Permission denied: {}", msg))
             }
+            AppError::Validation(msg) => ("validation", format!("Validation error: {}", msg)),
             AppError::NotFound(msg) => ("resource", format!("Not found: {}", msg)),
             AppError::ExternalService(msg) => ("service", format!("Service error: {}", msg)),
             AppError::Internal(_) => ("server", "Internal server error".to_string()),

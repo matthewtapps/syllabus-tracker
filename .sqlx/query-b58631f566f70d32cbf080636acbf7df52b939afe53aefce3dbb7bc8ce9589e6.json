@@ -1,0 +1,62 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT id AS \"id!: i64\",\n                  anchor_kind,\n                  created_by_id AS \"author_id!: i64\",\n                  visibility,\n                  scope_student_id AS \"scope_student_id?: i64\",\n                  body,\n                  created_at AS \"created_at!: NaiveDateTime\",\n                  deleted_at AS \"deleted_at?: NaiveDateTime\"\n           FROM threads WHERE id = ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "id!: i64",
+        "ordinal": 0,
+        "type_info": "Integer"
+      },
+      {
+        "name": "anchor_kind",
+        "ordinal": 1,
+        "type_info": "Text"
+      },
+      {
+        "name": "author_id!: i64",
+        "ordinal": 2,
+        "type_info": "Integer"
+      },
+      {
+        "name": "visibility",
+        "ordinal": 3,
+        "type_info": "Text"
+      },
+      {
+        "name": "scope_student_id?: i64",
+        "ordinal": 4,
+        "type_info": "Integer"
+      },
+      {
+        "name": "body",
+        "ordinal": 5,
+        "type_info": "Text"
+      },
+      {
+        "name": "created_at!: NaiveDateTime",
+        "ordinal": 6,
+        "type_info": "Datetime"
+      },
+      {
+        "name": "deleted_at?: NaiveDateTime",
+        "ordinal": 7,
+        "type_info": "Datetime"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "b58631f566f70d32cbf080636acbf7df52b939afe53aefce3dbb7bc8ce9589e6"
+}

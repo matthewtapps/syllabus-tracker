@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT EXISTS(SELECT 1 FROM techniques WHERE id = ?) AS \"e!: i64\"",
+  "describe": {
+    "columns": [
+      {
+        "name": "e!: i64",
+        "ordinal": 0,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "9e6e997e96687724e86a24a010852484dbe590de33edac28cc56e95409c594aa"
+}

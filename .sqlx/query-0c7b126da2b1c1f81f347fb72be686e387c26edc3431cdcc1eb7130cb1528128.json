@@ -1,0 +1,44 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT anchor_kind, student_id AS \"student_id?: i64\",\n                      visibility, scope_student_id AS \"scope?: i64\", body\n               FROM threads WHERE id = ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "anchor_kind",
+        "ordinal": 0,
+        "type_info": "Text"
+      },
+      {
+        "name": "student_id?: i64",
+        "ordinal": 1,
+        "type_info": "Integer"
+      },
+      {
+        "name": "visibility",
+        "ordinal": 2,
+        "type_info": "Text"
+      },
+      {
+        "name": "scope?: i64",
+        "ordinal": 3,
+        "type_info": "Integer"
+      },
+      {
+        "name": "body",
+        "ordinal": 4,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      true,
+      false,
+      true,
+      false
+    ]
+  },
+  "hash": "0c7b126da2b1c1f81f347fb72be686e387c26edc3431cdcc1eb7130cb1528128"
+}

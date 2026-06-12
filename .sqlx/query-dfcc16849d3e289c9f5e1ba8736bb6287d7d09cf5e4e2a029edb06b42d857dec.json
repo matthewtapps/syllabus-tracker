@@ -1,0 +1,56 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT id AS \"id!: i64\",\n                  thread_id AS \"thread_id!: i64\",\n                  parent_comment_id AS \"parent_comment_id?: i64\",\n                  author_id AS \"author_id!: i64\",\n                  body,\n                  created_at AS \"created_at!: NaiveDateTime\",\n                  deleted_at AS \"deleted_at?: NaiveDateTime\"\n           FROM thread_comments\n           WHERE thread_id = ?\n           ORDER BY created_at, id",
+  "describe": {
+    "columns": [
+      {
+        "name": "id!: i64",
+        "ordinal": 0,
+        "type_info": "Integer"
+      },
+      {
+        "name": "thread_id!: i64",
+        "ordinal": 1,
+        "type_info": "Integer"
+      },
+      {
+        "name": "parent_comment_id?: i64",
+        "ordinal": 2,
+        "type_info": "Integer"
+      },
+      {
+        "name": "author_id!: i64",
+        "ordinal": 3,
+        "type_info": "Integer"
+      },
+      {
+        "name": "body",
+        "ordinal": 4,
+        "type_info": "Text"
+      },
+      {
+        "name": "created_at!: NaiveDateTime",
+        "ordinal": 5,
+        "type_info": "Datetime"
+      },
+      {
+        "name": "deleted_at?: NaiveDateTime",
+        "ordinal": 6,
+        "type_info": "Datetime"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      true,
+      false,
+      true,
+      false,
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "dfcc16849d3e289c9f5e1ba8736bb6287d7d09cf5e4e2a029edb06b42d857dec"
+}

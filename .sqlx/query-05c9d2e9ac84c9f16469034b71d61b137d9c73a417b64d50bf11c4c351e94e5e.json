@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT (parent_comment_id IS NOT NULL) AS \"is_reply!: i64\"\n               FROM thread_comments WHERE id = ? AND thread_id = ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "is_reply!: i64",
+        "ordinal": 0,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "05c9d2e9ac84c9f16469034b71d61b137d9c73a417b64d50bf11c4c351e94e5e"
+}

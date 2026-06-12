@@ -376,6 +376,67 @@ CREATE TABLE IF NOT EXISTS activity_seen_overrides (
 );
 CREATE INDEX IF NOT EXISTS idx_aso_viewer ON activity_seen_overrides (viewer_user_id);
 
+CREATE TABLE IF NOT EXISTS threads (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    created_at      TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    created_by_id   INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    body            TEXT NOT NULL,
+
+    anchor_kind     TEXT NOT NULL CHECK (anchor_kind IN (
+                        'student_profile','technique','video',
+                        'video_timestamp','sst','pinned_technique')),
+
+    student_id      INTEGER REFERENCES users(id)                       ON DELETE CASCADE,
+    technique_id    INTEGER REFERENCES techniques(id)                  ON DELETE CASCADE,
+    video_id        INTEGER REFERENCES videos(id)                      ON DELETE CASCADE,
+    video_ts_seconds INTEGER,
+    sst_id          INTEGER REFERENCES student_syllabus_techniques(id) ON DELETE CASCADE,
+
+    visibility      TEXT NOT NULL DEFAULT 'broadcast'
+                        CHECK (visibility IN ('broadcast','private')),
+    scope_student_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+
+    last_activity_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    deleted_at      TIMESTAMP,
+    deleted_by_id   INTEGER REFERENCES users(id),
+
+    CHECK (
+      (anchor_kind='student_profile'  AND student_id IS NOT NULL AND technique_id IS NULL AND video_id IS NULL AND video_ts_seconds IS NULL AND sst_id IS NULL) OR
+      (anchor_kind='technique'        AND technique_id IS NOT NULL AND student_id IS NULL AND video_id IS NULL AND video_ts_seconds IS NULL AND sst_id IS NULL) OR
+      (anchor_kind='video'            AND video_id IS NOT NULL AND video_ts_seconds IS NULL AND student_id IS NULL AND technique_id IS NULL AND sst_id IS NULL) OR
+      (anchor_kind='video_timestamp'  AND video_id IS NOT NULL AND video_ts_seconds IS NOT NULL AND student_id IS NULL AND technique_id IS NULL AND sst_id IS NULL) OR
+      (anchor_kind='sst'              AND sst_id IS NOT NULL AND student_id IS NULL AND technique_id IS NULL AND video_id IS NULL AND video_ts_seconds IS NULL) OR
+      (anchor_kind='pinned_technique' AND student_id IS NOT NULL AND technique_id IS NOT NULL AND video_id IS NULL AND video_ts_seconds IS NULL AND sst_id IS NULL)
+    ),
+    CHECK (
+      (visibility='private'   AND scope_student_id IS NOT NULL) OR
+      (visibility='broadcast' AND scope_student_id IS NULL)
+    ),
+    CHECK (
+      visibility='private'
+      OR anchor_kind IN ('technique','video','video_timestamp')
+    )
+);
+
+CREATE INDEX IF NOT EXISTS idx_threads_student   ON threads(student_id)   WHERE deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_threads_technique ON threads(technique_id) WHERE deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_threads_video     ON threads(video_id)     WHERE deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_threads_sst       ON threads(sst_id)       WHERE deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_threads_scope     ON threads(scope_student_id) WHERE scope_student_id IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS thread_comments (
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    thread_id         INTEGER NOT NULL REFERENCES threads(id) ON DELETE CASCADE,
+    parent_comment_id INTEGER REFERENCES thread_comments(id) ON DELETE CASCADE,
+    author_id         INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    body              TEXT NOT NULL,
+    created_at        TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    edited_at         TIMESTAMP,
+    deleted_at        TIMESTAMP,
+    deleted_by_id     INTEGER REFERENCES users(id)
+);
+CREATE INDEX IF NOT EXISTS idx_thread_comments_thread ON thread_comments(thread_id, created_at);
+
 -- Litestream-owned bookkeeping tables. Declared here only so the migration
 -- engine recognises them as expected and doesn't try to drop them. Litestream
 -- creates and maintains the rows; the app never reads or writes them.

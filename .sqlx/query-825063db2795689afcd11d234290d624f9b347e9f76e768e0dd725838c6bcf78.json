@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE threads SET deleted_at = CURRENT_TIMESTAMP, deleted_by_id = ?\n         WHERE id = ? AND deleted_at IS NULL",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "825063db2795689afcd11d234290d624f9b347e9f76e768e0dd725838c6bcf78"
+}
