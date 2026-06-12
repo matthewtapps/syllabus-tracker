@@ -342,3 +342,70 @@ important permission denial. Specifically:
 
 Regenerate the `.sqlx` cache against a seeded DB after the schema lands (the cache
 type_info is data-dependent; CI seeds before `prepare --check`).
+
+## 14. UI design (shared-primitives pass)
+
+Visual reference mockups: `2026-06-12-threads-comments-mocks.html` (open in a
+browser). Surface-specific layout polish and the Phase-C social-tile feed are
+designed just-in-time when their slices are built; this section fixes the shared
+component and where it sits.
+
+### Shared component
+
+One thread component is reused on every surface: a **root post** (`StudentAvatar` ·
+name · role `Badge` · `formatRelativeShort` time · body) with **replies indented
+under a `border-l-2 border-border` connector**, and a **composer** (`Textarea` +
+`Button`). It is visibly the same component everywhere; only the surrounding chrome,
+the composer microcopy, and the visibility control change. This holds the unified
+single-component principle the codebase already follows for `TechniqueRow` and
+`ActivityFeedList`.
+
+Built from existing primitives only (nothing invented):
+
+- `StudentAvatar` (deterministic color-by-id) for every avatar; `size="sm"` in
+  dense rows.
+- Role `Badge`; relative time via `formatRelativeShort`, absolute via
+  `formatAbsolute` in detailed views.
+- Reply indentation and **expand-in-place** reuse the `ActivityFeedList` pattern:
+  the `grid grid-rows-[0fr]→[1fr]` transition with members under
+  `ml-4 border-l-2 border-border`.
+- The **ancestry breadcrumb** (D9) is the existing muted context chip
+  (`inline-flex items-center gap-1 text-xs text-muted-foreground` + icon) extended
+  to multiple hops, composed with `ui/breadcrumb`.
+- Composer: `Textarea` + `Button`. The coach broadcast control is a
+  split-button (`Button` + `DropdownMenu`: "Reply privately" / "Broadcast"); the
+  Broadcast item renders only when `hasPermission(user, 'BroadcastLibraryComment')`.
+- Soft-delete renders a tombstone ("comment removed") in place of the body, keeping
+  reply chains intact; delete is confirmed via `alert-dialog`.
+- Four states handled per the design skill: loading (skeleton, reuse the
+  `ActivityFeedList` pulse), empty ("No discussion yet. Start one."), error
+  (`sonner` toast), success; the composer button disables while pending.
+
+New component files under `frontend/src/components/threads/`:
+`thread-view.tsx` (root + replies), `comment-item.tsx`, `thread-composer.tsx`, and
+a thin per-surface wrapper where needed.
+
+### Per-surface placement
+
+1. **Technique** (`anchor_kind='technique'`/`pinned_technique`/`sst`): a new
+   `discussion` `BlockId` in `TechniqueRow`'s `ExpandedPanel`, rendered after the
+   notes blocks and gated by `block-visibility` per `(context.kind, role)`.
+   Composer copy: "Ask about this technique." The `sst` (syllabus-context) thread
+   surfaces here under the SD-008/SD-009 syllabus-context toggle.
+2. **Profile** (`anchor_kind='student_profile'`): on the Activity tab, a "Start a
+   thread with <student>" composer, with threads rendered as `ActivityFeedList`
+   rows that expand in place to their replies. Content-anchored comments also bubble
+   up as feed rows carrying their context chip (e.g. `🌐 Library`).
+3. **Video** (`anchor_kind='video'`/`video_timestamp`): a comments rail in the
+   video player panel; timestamp chips seek the player via the existing
+   `player-events`. Coach composer uses the private/broadcast split-button.
+4. **Camp (future)**: a camp-level discussion section plus match-video threads
+   whose tile shows the resolved `parent_of` breadcrumb (`Camp › Match › video ·
+   ts`). No new component, only new anchor kinds.
+
+### Microcopy
+
+Composer verbs are surface-specific and domain-worded ("Ask about this technique",
+"Comment at 0:42", "Start a thread with Sam", "Reply"). Empty states name what is
+missing and the CTA. Destructive actions are explicit ("Delete comment") and
+confirmed.
