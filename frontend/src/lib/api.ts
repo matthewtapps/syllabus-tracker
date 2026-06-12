@@ -97,6 +97,8 @@ export interface User {
   last_watch_video_title?: string | null;
   last_student_activity_at?: string | null;
   last_coach_activity_at?: string | null;
+  pinned_count?: number | null;
+  recent_activity_count?: number | null;
 }
 
 export async function getCurrentUser(): Promise<User | null> {
