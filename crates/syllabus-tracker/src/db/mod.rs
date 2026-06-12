@@ -41,6 +41,11 @@ pub use syllabus_assignments::*;
 pub use syllabus_attempts::*;
 pub use tags::*;
 pub use techniques::*;
+pub use threads::{
+    create_comment, create_thread, get_thread, list_threads_for_anchor, soft_delete_comment,
+    soft_delete_thread, Anchor, AnchorKind, CommentView, NewThread, ThreadView, ThreadVisibility,
+    Viewer,
+};
 pub use users::*;
 pub use videos::*;
 pub use watch::*;
