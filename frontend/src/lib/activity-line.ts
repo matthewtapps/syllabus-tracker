@@ -33,6 +33,7 @@ export interface ActivityRow {
   payload_json: string | null;
   unread: boolean;
   context_kind: string | null;
+  thread_id: number | null;
 }
 
 export interface ActivityLine {
@@ -201,6 +202,16 @@ export function activityLine(row: ActivityRow): ActivityLine {
     // --- technique edited fanout ---
     case "technique_edited":
       return tech ? { verb: "edited", subject: tech } : { verb: "edited a technique" };
+
+    // --- thread verbs ---
+    case "thread_comment_posted": {
+      const ctx = rowToViewContext(row);
+      return {
+        verb: "commented on",
+        subject: row.technique_name ?? row.video_title ?? undefined,
+        href: ctx ? viewContextHref(ctx) : undefined,
+      };
+    }
 
     default:
       return { verb: "performed an action" };

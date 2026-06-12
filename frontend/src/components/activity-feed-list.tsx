@@ -8,6 +8,7 @@ import {
   Eye,
   Globe,
   GraduationCap,
+  MessageSquare,
   Minus,
   NotebookPen,
   Pencil,
@@ -58,6 +59,8 @@ function verbIconMeta(verb: string): { Icon: LucideIcon; colorClass: string } {
       return { Icon: Eye, colorClass: "text-indigo-500" };
     case "technique_edited":
       return { Icon: Pencil, colorClass: "text-muted-foreground" };
+    case "thread_comment_posted":
+      return { Icon: MessageSquare, colorClass: "text-violet-500" };
     default:
       return { Icon: Activity, colorClass: "text-muted-foreground" };
   }
