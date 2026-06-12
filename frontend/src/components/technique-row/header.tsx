@@ -28,11 +28,6 @@ export function Header() {
   const attemptCount =
     context.kind === "student-syllabus" ? context.sst.attempt_count : null;
 
-  // Meta strip: video count is always shown; attempt count only in the
-  // student-syllabus context (visible to both the owning student and any
-  // coach viewing them).
-  const showMeta = technique.video_count > 0 || attemptCount !== null;
-
   return (
     <div className="flex min-w-0 flex-1 items-start gap-2.5">
       {status && (
@@ -50,19 +45,17 @@ export function Header() {
         <p className="truncate text-sm font-semibold leading-tight group-data-[state=open]:overflow-visible group-data-[state=open]:whitespace-normal group-data-[state=open]:break-words">
           {technique.name}
         </p>
-        {showMeta && (
-          <span className="flex min-w-0 items-center gap-1.5 truncate whitespace-nowrap text-xs text-muted-foreground">
-            <PlayIcon className="h-3 w-3 shrink-0" aria-hidden />
-            <span>{technique.video_count}</span>
-            {attemptCount !== null && (
-              <>
-                <span aria-hidden>·</span>
-                <Target className="h-3 w-3 shrink-0" aria-hidden />
-                <span>{attemptCount}</span>
-              </>
-            )}
-          </span>
-        )}
+        <span className="flex min-w-0 items-center gap-1.5 truncate whitespace-nowrap text-xs text-muted-foreground">
+          <PlayIcon className="h-3 w-3 shrink-0" aria-hidden />
+          <span>{technique.video_count}</span>
+          {attemptCount !== null && (
+            <>
+              <span aria-hidden>·</span>
+              <Target className="h-3 w-3 shrink-0" aria-hidden />
+              <span>{attemptCount}</span>
+            </>
+          )}
+        </span>
       </div>
     </div>
   );

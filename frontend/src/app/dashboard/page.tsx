@@ -7,7 +7,6 @@ import {
   CheckCircle2,
   ChevronRight,
   Dumbbell,
-  GraduationCap,
   type LucideIcon,
   PlayCircle,
   Sparkles,
@@ -80,7 +79,7 @@ function CoachDashboard() {
   const approveMutation = useApproveUser();
 
   const activeStudents = useMemo(
-    () => (students ?? []).filter((s) => !s.archived && !s.graduated_at),
+    () => (students ?? []).filter((s) => !s.archived),
     [students],
   );
 
@@ -96,16 +95,6 @@ function CoachDashboard() {
 
   const pendingApprovals = useMemo(
     () => activeStudents.filter((s) => s.claimed_at && !s.approved_at),
-    [activeStudents],
-  );
-
-  const needsSyllabus = useMemo(
-    () =>
-      activeStudents.filter((s) => {
-        if ((s.total_techniques ?? 0) !== 0) return false;
-        if (s.claimed_at && !s.approved_at) return false;
-        return true;
-      }),
     [activeStudents],
   );
 
@@ -223,7 +212,6 @@ function CoachDashboard() {
         <QueuePanel
           resetRequests={resetRequests}
           pendingApprovals={pendingApprovals}
-          needsSyllabus={needsSyllabus}
           onSendResetLink={handleSendResetLink}
           onApprove={handleApprove}
         />
@@ -309,7 +297,6 @@ function StudentDashboard() {
 
   const total = counts.red + counts.amber + counts.green;
   const pctDone = total > 0 ? Math.round((counts.green / total) * 100) : 0;
-  const isGraduate = !!user.graduated_at;
 
   // Techniques the student is actively working on: amber status, most recently
   // updated first. Mapped to the Technique shape expected by TechniqueSection.
@@ -363,18 +350,6 @@ function StudentDashboard() {
       <h1 className="mb-4 text-2xl font-semibold tracking-tight">
         Hi, {greetingName}
       </h1>
-
-      {isGraduate && (
-        <div className="mb-6 flex items-start gap-3 rounded-lg border border-status-green/30 bg-status-green-bg px-4 py-3 text-sm">
-          <GraduationCap className="mt-0.5 h-4 w-4 shrink-0 text-status-green" aria-hidden />
-          <div className="space-y-0.5">
-            <p className="font-medium text-status-green">Congrats on graduating 🎓</p>
-            <p className="text-muted-foreground">
-              Keep taking notes on your techniques.
-            </p>
-          </div>
-        </div>
-      )}
 
       {loading ? (
         <div className="grid grid-cols-3 gap-3 sm:gap-4">

@@ -1,0 +1,32 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT context_kind AS \"context_kind?: String\",\n                      syllabus_id  AS \"syllabus_id?: i64\",\n                      sst_id       AS \"sst_id?: i64\"\n               FROM activity WHERE verb = 'video_watched'",
+  "describe": {
+    "columns": [
+      {
+        "name": "context_kind?: String",
+        "ordinal": 0,
+        "type_info": "Text"
+      },
+      {
+        "name": "syllabus_id?: i64",
+        "ordinal": 1,
+        "type_info": "Integer"
+      },
+      {
+        "name": "sst_id?: i64",
+        "ordinal": 2,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "9aeb42c2d132aeb0ed2efdcc191d7e06f5035c10545b23dcde7c6e1b197851f1"
+}

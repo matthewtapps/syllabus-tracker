@@ -56,7 +56,6 @@ import {
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { EmptyState } from '@/components/empty-state';
 import { SkeletonTableRow } from '@/components/skeleton-row';
-import { GraduateConfirmDialog } from '@/components/graduate-confirm-dialog';
 import { ClaimLinkPanel } from '@/components/claim-link-panel';
 import { TracedForm } from '@/components/traced-form';
 import { handleApiFormError, useFormWithValidation } from '@/components/hooks/useFormErrors';
@@ -64,7 +63,6 @@ import { type InviteResponse, type User } from '@/lib/api';
 import { useAllUsers } from '@/lib/queries';
 import {
   useResetUserClaim,
-  useSetStudentGraduated,
   useToggleUserArchived,
   useUpdateUser,
 } from '@/lib/mutations';
@@ -72,7 +70,6 @@ import {
   Archive,
   Copy,
   EditIcon,
-  GraduationCap,
   KeyIcon,
   KeyRound,
   MoreHorizontalIcon,
@@ -102,21 +99,15 @@ const passwordSchema = z
 type EditValues = z.infer<typeof editSchema>;
 type PasswordValues = z.infer<typeof passwordSchema>;
 
-type StatusTab = 'active' | 'graduated' | 'archived' | 'all';
+type StatusTab = 'active' | 'archived' | 'all';
 
 const STATUS_TABS: { value: StatusTab; label: string }[] = [
   { value: 'active', label: 'Active' },
-  { value: 'graduated', label: 'Graduated' },
   { value: 'archived', label: 'Archived' },
   { value: 'all', label: 'All' },
 ];
 
-const STATUS_TAB_VALUES = new Set<StatusTab>([
-  'active',
-  'graduated',
-  'archived',
-  'all',
-]);
+const STATUS_TAB_VALUES = new Set<StatusTab>(['active', 'archived', 'all']);
 
 function isStatusTab(value: string | null): value is StatusTab {
   return value !== null && STATUS_TAB_VALUES.has(value as StatusTab);
@@ -135,15 +126,6 @@ function initials(user: Pick<User, 'display_name' | 'username'>): string {
 function UserStatusBadges({ user }: { user: User }) {
   return (
     <>
-      {user.graduated_at && (
-        <Badge
-          variant="outline"
-          className="shrink-0 gap-1 border-status-green/40 text-status-green"
-        >
-          <GraduationCap className="h-3 w-3" aria-hidden />
-          Graduated
-        </Badge>
-      )}
       {user.archived && (
         <Badge variant="outline" className="shrink-0 gap-1 text-muted-foreground">
           <Archive className="h-3 w-3" aria-hidden />
@@ -162,7 +144,6 @@ export default function AdminPage() {
   const updateUserMutation = useUpdateUser();
   const toggleArchive = useToggleUserArchived();
   const resetClaimMutation = useResetUserClaim();
-  const graduateMutation = useSetStudentGraduated();
   const [searchParams, setSearchParams] = useSearchParams();
   const filter = searchParams.get('q') ?? '';
   function setFilter(next: string) {
@@ -197,7 +178,6 @@ export default function AdminPage() {
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [isPasswordDialogOpen, setIsPasswordDialogOpen] = useState(false);
-  const [graduateTarget, setGraduateTarget] = useState<User | null>(null);
   const [resetTarget, setResetTarget] = useState<User | null>(null);
   const [issuedClaimUrl, setIssuedClaimUrl] = useState<string | null>(null);
 
@@ -220,9 +200,7 @@ export default function AdminPage() {
       u.role.includes(needle);
     let matchesStatus = true;
     if (statusTab === 'active') {
-      matchesStatus = !u.archived && !u.graduated_at;
-    } else if (statusTab === 'graduated') {
-      matchesStatus = !!u.graduated_at;
+      matchesStatus = !u.archived;
     } else if (statusTab === 'archived') {
       matchesStatus = !!u.archived;
     }
@@ -268,18 +246,6 @@ export default function AdminPage() {
       console.error(err);
       toast.error('Failed to create link');
     }
-  }
-
-  function handleToggleGraduated(u: User) {
-    const wasGraduated = !!u.graduated_at;
-    graduateMutation.mutate(
-      { id: u.id, graduated: !wasGraduated },
-      {
-        onSuccess: () =>
-          toast.success(wasGraduated ? 'Un-graduated' : 'Graduated 🎓'),
-        onError: () => toast.error('Failed to update user'),
-      },
-    );
   }
 
   async function handleEditUser(data: EditValues) {
@@ -438,7 +404,6 @@ export default function AdminPage() {
                     onEdit={() => openEditDialog(u)}
                     onPassword={() => openPasswordDialog(u)}
                     onToggleArchive={() => handleToggleArchive(u)}
-                    onToggleGraduated={() => setGraduateTarget(u)}
                     onIssueClaim={() => handleIssueClaim(u)}
                     onResetPassword={() => setResetTarget(u)}
                   />
@@ -489,7 +454,6 @@ export default function AdminPage() {
                           onEdit={() => openEditDialog(u)}
                           onPassword={() => openPasswordDialog(u)}
                           onToggleArchive={() => handleToggleArchive(u)}
-                          onToggleGraduated={() => setGraduateTarget(u)}
                           onIssueClaim={() => handleIssueClaim(u)}
                           onResetPassword={() => setResetTarget(u)}
                         />
@@ -655,22 +619,6 @@ export default function AdminPage() {
         </DialogContent>
       </Dialog>
 
-      <GraduateConfirmDialog
-        open={!!graduateTarget}
-        onOpenChange={(open) => !open && setGraduateTarget(null)}
-        mode={graduateTarget?.graduated_at ? 'ungraduate' : 'graduate'}
-        studentName={
-          graduateTarget?.display_name || graduateTarget?.username || ''
-        }
-        onConfirm={() => {
-          if (graduateTarget) {
-            const u = graduateTarget;
-            setGraduateTarget(null);
-            handleToggleGraduated(u);
-          }
-        }}
-      />
-
       <AlertDialog
         open={!!resetTarget}
         onOpenChange={(open) => !open && setResetTarget(null)}
@@ -737,7 +685,6 @@ interface UserActionsMenuProps {
   onEdit: () => void;
   onPassword: () => void;
   onToggleArchive: () => void;
-  onToggleGraduated: () => void;
   onIssueClaim: () => void;
   onResetPassword: () => void;
 }
@@ -747,12 +694,9 @@ function UserActionsMenu({
   onEdit,
   onPassword,
   onToggleArchive,
-  onToggleGraduated,
   onIssueClaim,
   onResetPassword,
 }: UserActionsMenuProps) {
-  const isStudent = user.role === 'student';
-  const isGraduated = !!user.graduated_at;
   const isClaimed = !!user.claimed_at;
   return (
     <DropdownMenu>
@@ -782,12 +726,6 @@ function UserActionsMenu({
           <DropdownMenuItem onSelect={() => setTimeout(onIssueClaim, 0)}>
             <Copy className="mr-2 h-4 w-4" aria-hidden />
             Copy invite link
-          </DropdownMenuItem>
-        )}
-        {isStudent && (
-          <DropdownMenuItem onSelect={() => setTimeout(onToggleGraduated, 0)}>
-            <GraduationCap className="mr-2 h-4 w-4" aria-hidden />
-            {isGraduated ? 'Un-graduate' : 'Graduate'}
           </DropdownMenuItem>
         )}
         <DropdownMenuSeparator />

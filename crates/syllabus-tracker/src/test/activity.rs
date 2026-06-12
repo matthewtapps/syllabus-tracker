@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod tests {
-    use crate::db::{NewActivity, Verb, WatchEventInput, emit, ingest_watch_events, run_backfill};
+    use crate::db::{NewActivity, Verb, WatchContext, WatchEventInput, emit, ingest_watch_events, run_backfill};
     use crate::test::test_utils::TestDbBuilder;
 
     #[rocket::async_test]
@@ -297,6 +297,8 @@ mod tests {
             last_watch_video_title: None,
             last_student_activity_at: None,
             last_coach_activity_at: None,
+            pinned_count: None,
+            recent_activity_count: None,
         };
         let attempt_id = crate::db::create_syllabus_attempt(
             &db.pool,
@@ -494,6 +496,8 @@ mod tests {
             last_watch_video_title: None,
             last_student_activity_at: None,
             last_coach_activity_at: None,
+            pinned_count: None,
+            recent_activity_count: None,
         };
 
         crate::db::update_sst(
@@ -764,6 +768,56 @@ mod tests {
     }
 
     #[rocket::async_test]
+    async fn emit_persists_context_kind() {
+        let db = TestDbBuilder::new()
+            .coach("coach", None)
+            .student("alice", None)
+            .technique("Armbar", "", Some("coach"))
+            .build()
+            .await
+            .unwrap();
+        let coach = db.user_id("coach").unwrap();
+        let alice = db.user_id("alice").unwrap();
+        let armbar = db.technique_id("Armbar").unwrap();
+
+        // Insert a video directly so we have a video FK target.
+        let video_id: i64 = sqlx::query_scalar!(
+            r#"INSERT INTO videos (technique_id, title, position, kind, processing_status,
+                                   uploaded_by_id, duration_seconds)
+               VALUES (?, 'Test', 0, 'external', 'ready', ?, 60)
+               RETURNING id AS "id!: i64""#,
+            armbar,
+            coach,
+        )
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+
+        let mut tx = db.pool.begin().await.unwrap();
+        emit(
+            &mut tx,
+            NewActivity::new(Verb::VideoWatched, alice)
+                .target_student(alice)
+                .video(video_id)
+                .technique(armbar)
+                .context_kind("library"),
+        )
+        .await
+        .unwrap();
+        tx.commit().await.unwrap();
+
+        let kind = sqlx::query!(
+            r#"SELECT context_kind AS "context_kind?: String"
+               FROM activity WHERE verb = 'video_watched'"#
+        )
+        .fetch_one(&db.pool)
+        .await
+        .unwrap()
+        .context_kind;
+        assert_eq!(kind.as_deref(), Some("library"));
+    }
+
+    #[rocket::async_test]
     async fn crossing_watch_threshold_emits_video_watched_once() {
         let db = TestDbBuilder::new()
             .coach("coach", None)
@@ -805,6 +859,7 @@ mod tests {
                     seconds_watched: Some(5),
                 },
             ],
+            &WatchContext::default(),
         )
         .await
         .unwrap();
@@ -827,6 +882,7 @@ mod tests {
                 event: "progress".into(),
                 seconds_watched: Some(12),
             }],
+            &WatchContext::default(),
         )
         .await
         .unwrap();
@@ -852,6 +908,7 @@ mod tests {
                 event: "progress".into(),
                 seconds_watched: Some(20),
             }],
+            &WatchContext::default(),
         )
         .await
         .unwrap();
@@ -921,6 +978,8 @@ mod tests {
             last_watch_video_title: None,
             last_student_activity_at: None,
             last_coach_activity_at: None,
+            pinned_count: None,
+            recent_activity_count: None,
         };
         crate::db::create_syllabus_attempt(
             &db.pool,
@@ -1028,6 +1087,8 @@ mod tests {
             last_watch_video_title: None,
             last_student_activity_at: None,
             last_coach_activity_at: None,
+            pinned_count: None,
+            recent_activity_count: None,
         };
 
         crate::db::update_sst(
@@ -1054,5 +1115,152 @@ mod tests {
             "exactly two rows: one per present field"
         );
         let _ = sst_id;
+    }
+
+    #[rocket::async_test]
+    async fn watch_in_syllabus_sets_syllabus_context() {
+        let db = TestDbBuilder::new()
+            .coach("coach", None)
+            .student("alice", None)
+            .technique("Armbar", "", Some("coach"))
+            .build()
+            .await
+            .unwrap();
+        let coach = db.user_id("coach").unwrap();
+        let alice = db.user_id("alice").unwrap();
+        let armbar = db.technique_id("Armbar").unwrap();
+
+        // Insert a video with a known duration (50s, threshold = min(10, ceil(50*0.2)) = 10).
+        let video_id: i64 = sqlx::query_scalar!(
+            r#"INSERT INTO videos (technique_id, title, position, kind, processing_status,
+                                   uploaded_by_id, duration_seconds)
+               VALUES (?, 'Test', 0, 'external', 'ready', ?, 50)
+               RETURNING id AS "id!: i64""#,
+            armbar,
+            coach,
+        )
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+
+        // Seed a syllabus assignment so we have a valid syllabus_id and sst_id.
+        let syllabus_id = crate::db::create_syllabus(&db.pool, "Blue Belt", None, coach)
+            .await
+            .unwrap();
+        let assignment_id = crate::db::assign(&db.pool, coach, alice, syllabus_id)
+            .await
+            .unwrap();
+        let sst_id = crate::db::add_technique_to_assignment(&db.pool, assignment_id, armbar, coach)
+            .await
+            .unwrap();
+
+        // Clear setup activity rows so we can assert cleanly.
+        sqlx::query!("DELETE FROM activity")
+            .execute(&db.pool)
+            .await
+            .unwrap();
+
+        let ctx = WatchContext {
+            technique_id: Some(armbar),
+            syllabus_id: Some(syllabus_id),
+            sst_id: Some(sst_id),
+        };
+
+        // Cross the threshold with a syllabus context.
+        ingest_watch_events(
+            &db.pool,
+            video_id,
+            alice,
+            "play-syllabus",
+            &[
+                WatchEventInput {
+                    event: "started".into(),
+                    seconds_watched: None,
+                },
+                WatchEventInput {
+                    event: "progress".into(),
+                    seconds_watched: Some(12),
+                },
+            ],
+            &ctx,
+        )
+        .await
+        .unwrap();
+
+        let row = sqlx::query!(
+            r#"SELECT context_kind AS "context_kind?: String",
+                      syllabus_id  AS "syllabus_id?: i64",
+                      sst_id       AS "sst_id?: i64"
+               FROM activity WHERE verb = 'video_watched'"#
+        )
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+        assert_eq!(row.context_kind.as_deref(), Some("syllabus"));
+        assert!(row.syllabus_id.is_some());
+        assert!(row.sst_id.is_some());
+    }
+
+    #[rocket::async_test]
+    async fn watch_in_library_sets_library_context() {
+        let db = TestDbBuilder::new()
+            .coach("coach", None)
+            .student("alice", None)
+            .technique("Armbar", "", Some("coach"))
+            .build()
+            .await
+            .unwrap();
+        let coach = db.user_id("coach").unwrap();
+        let alice = db.user_id("alice").unwrap();
+        let armbar = db.technique_id("Armbar").unwrap();
+
+        // Insert a video with a known duration (50s, threshold = min(10, ceil(50*0.2)) = 10).
+        let video_id: i64 = sqlx::query_scalar!(
+            r#"INSERT INTO videos (technique_id, title, position, kind, processing_status,
+                                   uploaded_by_id, duration_seconds)
+               VALUES (?, 'Test', 0, 'external', 'ready', ?, 50)
+               RETURNING id AS "id!: i64""#,
+            armbar,
+            coach,
+        )
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+
+        let ctx = WatchContext {
+            technique_id: Some(armbar),
+            syllabus_id: None,
+            sst_id: None,
+        };
+
+        // Cross the threshold with a library context (technique only, no syllabus).
+        ingest_watch_events(
+            &db.pool,
+            video_id,
+            alice,
+            "play-library",
+            &[
+                WatchEventInput {
+                    event: "started".into(),
+                    seconds_watched: None,
+                },
+                WatchEventInput {
+                    event: "progress".into(),
+                    seconds_watched: Some(12),
+                },
+            ],
+            &ctx,
+        )
+        .await
+        .unwrap();
+
+        let row = sqlx::query!(
+            r#"SELECT context_kind AS "context_kind?: String"
+               FROM activity WHERE verb = 'video_watched'"#
+        )
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+        assert_eq!(row.context_kind.as_deref(), Some("library"));
     }
 }

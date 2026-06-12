@@ -73,7 +73,7 @@ describe("TechniqueRow / global-library", () => {
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
-  test("expanded row for a coach renders the edit affordance and stats heading", async () => {
+  test("expanded row for a coach renders the edit affordance and videos heading", async () => {
     const technique = buildTechnique();
     renderRow({
       technique,
@@ -86,12 +86,13 @@ describe("TechniqueRow / global-library", () => {
     expect(
       screen.getByRole("button", { name: /edit name and description/i }),
     ).toBeInTheDocument();
+    // The coach library stats block (Usage) was removed; videos remain.
     await waitFor(() => {
       expect(
-        screen.getByRole("heading", { name: /usage/i }),
+        screen.getByRole("heading", { name: /videos/i }),
       ).toBeInTheDocument();
     });
-    expect(screen.getByRole("heading", { name: /videos/i })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: /usage/i })).toBeNull();
   });
 
   test("expanded row for a student hides the edit affordance and shows the pin button", () => {

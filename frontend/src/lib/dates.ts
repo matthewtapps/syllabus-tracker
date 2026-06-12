@@ -41,3 +41,23 @@ export function formatAbsolute(input: string | Date | null | undefined): string 
   if (!date) return "—";
   return ABSOLUTE.format(date);
 }
+
+const SHORT_DATE = new Intl.DateTimeFormat("en-US", {
+  month: "short",
+  day: "numeric",
+});
+
+/**
+ * Compact relative time for dense lists: "now", "5m", "3h", "2d", then a short
+ * date ("Jun 1"). Distinct from formatRelative, which is wordier.
+ */
+export function formatRelativeShort(input: string | Date | null | undefined): string {
+  const date = parse(input);
+  if (!date) return "";
+  const diffSec = Math.round((Date.now() - date.getTime()) / 1000);
+  if (diffSec < 60) return "now";
+  if (diffSec < 3600) return `${Math.floor(diffSec / 60)}m`;
+  if (diffSec < 86400) return `${Math.floor(diffSec / 3600)}h`;
+  if (diffSec < 7 * 86400) return `${Math.floor(diffSec / 86400)}d`;
+  return SHORT_DATE.format(date);
+}

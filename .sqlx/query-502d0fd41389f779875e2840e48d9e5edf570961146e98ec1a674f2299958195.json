@@ -1,0 +1,110 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT act.id               AS \"id!: i64\",\n                          act.occurred_at      AS \"occurred_at!: String\",\n                          act.verb             AS \"verb!: String\",\n                          act.actor_user_id    AS \"actor_user_id!: i64\",\n                          u.display_name       AS \"actor_name?: String\",\n                          act.target_student_id AS \"target_student_id?: i64\",\n                          act.technique_id     AS \"technique_id?: i64\",\n                          t.name               AS \"technique_name?: String\",\n                          act.syllabus_id      AS \"syllabus_id?: i64\",\n                          s.name               AS \"syllabus_name?: String\",\n                          act.sst_id           AS \"sst_id?: i64\",\n                          act.video_id         AS \"video_id?: i64\",\n                          v.title              AS \"video_title?: String\",\n                          act.payload_json     AS \"payload_json?: String\",\n                          act.context_kind     AS \"context_kind?: String\",\n                          CASE\n                            WHEN ov.seen = 1 THEN 0\n                            WHEN ov.seen = 0 THEN 1\n                            WHEN act.id <= COALESCE(c.max_seen_id, 0) THEN 0\n                            ELSE 1\n                          END AS \"is_after_cursor!: i64\"\n                   FROM activity act\n                   LEFT JOIN users u      ON u.id = act.actor_user_id\n                   LEFT JOIN techniques t ON t.id = act.technique_id\n                   LEFT JOIN syllabi s    ON s.id = act.syllabus_id\n                   LEFT JOIN videos v     ON v.id = act.video_id\n                   LEFT JOIN activity_cursors c\n                          ON c.viewer_user_id = ?\n                   LEFT JOIN activity_seen_overrides ov\n                          ON ov.viewer_user_id = ? AND ov.activity_id = act.id\n                   WHERE act.target_student_id = ?\n                     AND (? IS NULL OR (act.occurred_at, act.id) < (?, ?))\n                   ORDER BY act.occurred_at DESC, act.id DESC\n                   LIMIT ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "id!: i64",
+        "ordinal": 0,
+        "type_info": "Integer"
+      },
+      {
+        "name": "occurred_at!: String",
+        "ordinal": 1,
+        "type_info": "Datetime"
+      },
+      {
+        "name": "verb!: String",
+        "ordinal": 2,
+        "type_info": "Text"
+      },
+      {
+        "name": "actor_user_id!: i64",
+        "ordinal": 3,
+        "type_info": "Integer"
+      },
+      {
+        "name": "actor_name?: String",
+        "ordinal": 4,
+        "type_info": "Text"
+      },
+      {
+        "name": "target_student_id?: i64",
+        "ordinal": 5,
+        "type_info": "Integer"
+      },
+      {
+        "name": "technique_id?: i64",
+        "ordinal": 6,
+        "type_info": "Integer"
+      },
+      {
+        "name": "technique_name?: String",
+        "ordinal": 7,
+        "type_info": "Text"
+      },
+      {
+        "name": "syllabus_id?: i64",
+        "ordinal": 8,
+        "type_info": "Integer"
+      },
+      {
+        "name": "syllabus_name?: String",
+        "ordinal": 9,
+        "type_info": "Text"
+      },
+      {
+        "name": "sst_id?: i64",
+        "ordinal": 10,
+        "type_info": "Integer"
+      },
+      {
+        "name": "video_id?: i64",
+        "ordinal": 11,
+        "type_info": "Integer"
+      },
+      {
+        "name": "video_title?: String",
+        "ordinal": 12,
+        "type_info": "Text"
+      },
+      {
+        "name": "payload_json?: String",
+        "ordinal": 13,
+        "type_info": "Text"
+      },
+      {
+        "name": "context_kind?: String",
+        "ordinal": 14,
+        "type_info": "Text"
+      },
+      {
+        "name": "is_after_cursor!: i64",
+        "ordinal": 15,
+        "type_info": "Null"
+      }
+    ],
+    "parameters": {
+      "Right": 7
+    },
+    "nullable": [
+      true,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      false,
+      true,
+      false,
+      true,
+      true,
+      false,
+      true,
+      true,
+      null
+    ]
+  },
+  "hash": "502d0fd41389f779875e2840e48d9e5edf570961146e98ec1a674f2299958195"
+}

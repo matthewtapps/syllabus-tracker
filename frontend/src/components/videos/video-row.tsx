@@ -17,6 +17,7 @@ import {
   setVideoStudentVisibility,
   updateVideo,
 } from "@/lib/api";
+import { useVideoStats } from "@/lib/queries";
 import { qk } from "@/lib/query-keys";
 import {
   AlertDialog,
@@ -64,6 +65,8 @@ interface VideoRowProps {
   video: Video;
   techniqueId: number;
   canManage: boolean;
+  /** When true, show a muted per-video play count inline in the row. */
+  isCoach?: boolean;
   onPlay: () => void;
   onDeleted: (videoId: number) => void;
   /** When set, the visibility eye-icon opens a popover that lets the coach
@@ -83,6 +86,7 @@ export function VideoRow({
   video,
   techniqueId,
   canManage,
+  isCoach = false,
   onPlay,
   onDeleted,
   forStudent,
@@ -93,6 +97,8 @@ export function VideoRow({
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [renameOpen, setRenameOpen] = useState(false);
+  const statsQuery = useVideoStats(isCoach ? video.id : undefined);
+  const totalPlays = statsQuery.data?.total_plays;
 
   const isProcessing = video.processing_status === "processing";
   const isFailed = video.processing_status === "failed";
@@ -165,6 +171,13 @@ export function VideoRow({
                 : formatDuration(video.duration_seconds)}
           </span>
         </button>
+
+        {isCoach && typeof totalPlays === "number" && (
+          <span className="ml-auto inline-flex shrink-0 items-center gap-0.5 text-xs text-muted-foreground">
+            <PlayIcon className="h-3 w-3" aria-hidden />
+            <span className="min-w-[1.5ch] tabular-nums">{totalPlays}</span>
+          </span>
+        )}
 
         {canManage && syllabus ? (
           <SyllabusVisibilityControl

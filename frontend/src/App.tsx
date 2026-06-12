@@ -8,12 +8,14 @@ import {
 } from '@tanstack/react-query';
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 import { Layout } from './components/layout';
+import { AppBreadcrumbs } from './components/breadcrumbs/app-breadcrumbs';
 import { SwUpdateToast } from './components/sw-update-toast';
 import { AuthErrorBoundary } from './components/auth-error-boundary';
 import { RequireAdmin, RequireAuth, RequireCoach } from './components/route-guards';
 import { TelemetryProvider } from './context/telemetry';
 import { CapabilitiesProvider } from './context/capabilities';
 import { CurrentUserProvider } from './lib/current-user';
+import { ConfirmProvider } from './components/confirm-dialog';
 import { useCapabilities, useCurrentUser } from './lib/queries';
 import { qk } from './lib/query-keys';
 import type { User } from './lib/api';
@@ -46,6 +48,7 @@ const StudentSyllabiPage = lazy(() => import('./app/student-syllabi/page'));
 const StudentSyllabusDetailPage = lazy(
   () => import('./app/student-syllabi/[syllabusId]/page'),
 );
+const StudentActivityPage = lazy(() => import('./app/student-activity/page'));
 const InvitePage = lazy(() => import('./app/invite/page'));
 const RegisterPage = lazy(() => import('./app/register/page'));
 const PendingApprovalPage = lazy(() => import('./app/pending/page'));
@@ -167,11 +170,14 @@ function AuthedAppShell({
   return (
     <AuthErrorBoundary>
       <CurrentUserProvider user={user}>
-        <Layout user={user} onLogout={onLogout}>
-          <Suspense fallback={<RouteLoading />}>
-            <AuthedRoutes />
-          </Suspense>
-        </Layout>
+        <ConfirmProvider>
+          <Layout user={user} onLogout={onLogout}>
+            <AppBreadcrumbs />
+            <Suspense fallback={<RouteLoading />}>
+              <AuthedRoutes />
+            </Suspense>
+          </Layout>
+        </ConfirmProvider>
       </CurrentUserProvider>
     </AuthErrorBoundary>
   );
@@ -324,6 +330,14 @@ function AuthedRoutes() {
         element={
           <RequireAuth>
             <StudentSyllabusDetailPage />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/student/:id/activity"
+        element={
+          <RequireAuth>
+            <StudentActivityPage />
           </RequireAuth>
         }
       />

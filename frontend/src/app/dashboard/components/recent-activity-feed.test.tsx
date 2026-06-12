@@ -27,6 +27,7 @@ const mockRow: ActivityRow = {
   video_title: null,
   payload_json: null,
   unread: false,
+  context_kind: null,
 };
 
 function makeStubFetch(rows: ActivityRow[]) {

@@ -3,7 +3,6 @@ import { blocksFor, type BlockId } from "./block-visibility";
 import { AttemptsBlock } from "./attempts-block";
 import { DescriptionBlock } from "./description-block";
 import { TagsBlock } from "./tags-block";
-import { LibraryStatsBlock } from "./library-stats-block";
 import { VideosBlock } from "./videos-block";
 import { NotesCoachBlock, NotesStudentBlock } from "./notes-student-block";
 import { StatusBlock } from "./status-block";
@@ -62,8 +61,6 @@ function BlockRenderer({
       return <DescriptionBlock editable={isCoach} />;
     case "tags":
       return <TagsBlock editable={isCoach} />;
-    case "library-stats":
-      return <LibraryStatsBlock />;
     case "videos":
       return (
         <VideosBlock

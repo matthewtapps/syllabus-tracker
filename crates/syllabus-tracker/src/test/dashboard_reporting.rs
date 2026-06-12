@@ -33,6 +33,8 @@ mod tests {
             last_watch_video_title: None,
             last_student_activity_at: None,
             last_coach_activity_at: None,
+            pinned_count: None,
+            recent_activity_count: None,
         }
     }
     fn student_actor(id: i64) -> User {
@@ -243,6 +245,39 @@ mod tests {
         let alice_row = students.iter().find(|u| u.id == alice).unwrap();
         assert!(alice_row.last_student_activity_at.is_some(), "student-actor activity present");
         assert!(alice_row.last_coach_activity_at.is_some(), "coach-actor activity present");
+    }
+
+    #[rocket::async_test]
+    async fn students_query_exposes_pinned_and_recent_activity_counts() {
+        use crate::db::{NewActivity, Verb, emit, pin_technique};
+        let db = TestDbBuilder::new()
+            .coach("coach", None)
+            .student("alice", None)
+            .technique("Armbar", "", Some("coach"))
+            .build()
+            .await
+            .unwrap();
+        let coach = db.user_id("coach").unwrap();
+        let alice = db.user_id("alice").unwrap();
+        let armbar = db.technique_id("Armbar").unwrap();
+
+        // Student pins a technique (emits a student-actor row) and logs an
+        // attempt. A coach note on the same student must NOT inflate the count.
+        pin_technique(&db.pool, alice, armbar).await.unwrap();
+        let mut tx = db.pool.begin().await.unwrap();
+        emit(&mut tx, NewActivity::new(Verb::AttemptLogged, alice).target_student(alice).technique(armbar)).await.unwrap();
+        emit(&mut tx, NewActivity::new(Verb::SstCoachNotesEdited, coach).target_student(alice).technique(armbar)).await.unwrap();
+        tx.commit().await.unwrap();
+
+        let students = get_students_by_recent_updates(&db.pool, true, coach).await.unwrap();
+        let alice_row = students.iter().find(|u| u.id == alice).unwrap();
+        assert_eq!(alice_row.pinned_count, Some(1), "one technique pinned");
+        // Student-actor events in window: the pin + the attempt. Coach note excluded.
+        assert_eq!(
+            alice_row.recent_activity_count,
+            Some(2),
+            "student-actor activity counted, coach action excluded",
+        );
     }
 
     #[rocket::async_test]

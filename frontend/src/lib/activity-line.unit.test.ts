@@ -1,6 +1,10 @@
 import { describe, expect, test } from "vitest";
 import { activityLine } from "./activity-line";
-import type { ActivityRow } from "./activity-line";
+import type { ActivityLine, ActivityRow } from "./activity-line";
+
+function lineText(line: ActivityLine): string {
+  return line.subject ? `${line.verb} ${line.subject}` : line.verb;
+}
 
 function row(overrides: Partial<ActivityRow>): ActivityRow {
   return {
@@ -19,6 +23,7 @@ function row(overrides: Partial<ActivityRow>): ActivityRow {
     video_title: null,
     payload_json: null,
     unread: false,
+    context_kind: null,
     ...overrides,
   };
 }
@@ -29,24 +34,38 @@ describe("activityLine", () => {
     const result = activityLine(
       row({ verb: "attempt_logged", technique_id: 5, technique_name: "Armbar" }),
     );
-    expect(result.text).toBe("logged an attempt on Armbar");
-    expect(result.href).toMatch(/armbar|library|5/i);
+    expect(lineText(result)).toBe("logged an attempt on Armbar");
+    // No full routing context (no syllabus_id/sst_id) so href is undefined here;
+    // routing tests below cover the deep-link path.
+    expect(result.href).toBeUndefined();
   });
 
   test("attempt_edited renders technique name", () => {
     const result = activityLine(
       row({ verb: "attempt_edited", technique_id: 5, technique_name: "Armbar" }),
     );
-    expect(result.text).toBe("edited an attempt on Armbar");
+    expect(lineText(result)).toBe("edited an attempt on Armbar");
   });
 
   test("attempt_deleted renders technique name without href", () => {
     const result = activityLine(
       row({ verb: "attempt_deleted", technique_id: 5, technique_name: "Armbar" }),
     );
-    expect(result.text).toBe("deleted an attempt on Armbar");
-    // attempt_deleted is non-notifiable: we still return href when id present
-    // (the spec says "no href" only when the entity id/name is null, i.e. SET NULL after delete)
+    expect(lineText(result)).toBe("deleted an attempt on Armbar");
+  });
+
+  test("attempt_deleted routes to the syllabus when context present", () => {
+    const result = activityLine(
+      row({
+        verb: "attempt_deleted",
+        technique_id: 5,
+        technique_name: "Armbar",
+        target_student_id: 4,
+        syllabus_id: 2,
+        sst_id: 42,
+      }),
+    );
+    expect(result.href).toBe("/student/4/syllabi/2?focus=sst:42");
   });
 
   // --- video verbs ---
@@ -54,15 +73,17 @@ describe("activityLine", () => {
     const result = activityLine(
       row({ verb: "video_watched", video_id: 7, video_title: "Triangle setup" }),
     );
-    expect(result.text).toBe("watched Triangle setup");
-    expect(result.href).toBeDefined();
+    expect(lineText(result)).toBe("watched Triangle setup");
+    // No technique_id and no context_kind means no resolvable context; routing
+    // tests below cover the cases that produce a real href.
+    expect(result.href).toBeUndefined();
   });
 
   test("video_watched with null video_title falls back to plain text, no href", () => {
     const result = activityLine(
       row({ verb: "video_watched", video_id: null, video_title: null }),
     );
-    expect(result.text).toBe("watched a video");
+    expect(lineText(result)).toBe("watched a video");
     expect(result.href).toBeUndefined();
   });
 
@@ -77,7 +98,7 @@ describe("activityLine", () => {
         payload_json: JSON.stringify({ from: "amber", to: "green" }),
       }),
     );
-    expect(result.text).toBe("went green on Kimura");
+    expect(lineText(result)).toBe("went green on Kimura");
   });
 
   test("sst_status_changed to amber renders 'went amber on {technique}'", () => {
@@ -90,7 +111,7 @@ describe("activityLine", () => {
         payload_json: JSON.stringify({ from: "red", to: "amber" }),
       }),
     );
-    expect(result.text).toBe("went amber on Triangle");
+    expect(lineText(result)).toBe("went amber on Triangle");
   });
 
   test("sst_status_changed with malformed payload falls back gracefully", () => {
@@ -103,7 +124,7 @@ describe("activityLine", () => {
         payload_json: "not-json{",
       }),
     );
-    expect(result.text).toBe("updated status on Kimura");
+    expect(lineText(result)).toBe("updated status on Kimura");
     expect(() => activityLine(row({ verb: "sst_status_changed", payload_json: "bad" }))).not.toThrow();
   });
 
@@ -117,7 +138,7 @@ describe("activityLine", () => {
         payload_json: JSON.stringify({ fields: { name: true } }),
       }),
     );
-    expect(result.text).toBe("edited Armbar");
+    expect(lineText(result)).toBe("edited Armbar");
   });
 
   test("technique_edited with description field renders 'edited {technique_name}'", () => {
@@ -129,7 +150,7 @@ describe("activityLine", () => {
         payload_json: JSON.stringify({ fields: { description: true } }),
       }),
     );
-    expect(result.text).toBe("edited Armbar");
+    expect(lineText(result)).toBe("edited Armbar");
   });
 
   // --- null entity: no href, plain fallback text ---
@@ -137,7 +158,7 @@ describe("activityLine", () => {
     const result = activityLine(
       row({ verb: "attempt_logged", technique_id: null, technique_name: null }),
     );
-    expect(result.text).toBe("logged an attempt");
+    expect(lineText(result)).toBe("logged an attempt");
     expect(result.href).toBeUndefined();
   });
 
@@ -153,7 +174,7 @@ describe("activityLine", () => {
     const result = activityLine(
       row({ verb: "syllabus_assigned", syllabus_id: 2, syllabus_name: "Blue Belt" }),
     );
-    expect(result.text).toBe("assigned to Blue Belt");
+    expect(lineText(result)).toBe("assigned to Blue Belt");
     expect(result.href).toBeDefined();
   });
 
@@ -161,7 +182,7 @@ describe("activityLine", () => {
     const result = activityLine(
       row({ verb: "syllabus_graduated", syllabus_id: 2, syllabus_name: "Blue Belt" }),
     );
-    expect(result.text).toBe("graduated Blue Belt");
+    expect(lineText(result)).toBe("graduated Blue Belt");
   });
 
   // --- sst notes verbs ---
@@ -169,14 +190,14 @@ describe("activityLine", () => {
     const result = activityLine(
       row({ verb: "sst_student_notes_edited", technique_id: 5, technique_name: "Armbar", sst_id: 10 }),
     );
-    expect(result.text).toBe("updated student notes on Armbar");
+    expect(lineText(result)).toBe("updated student notes on Armbar");
   });
 
   test("sst_coach_notes_edited renders technique name", () => {
     const result = activityLine(
       row({ verb: "sst_coach_notes_edited", technique_id: 5, technique_name: "Armbar", sst_id: 10 }),
     );
-    expect(result.text).toBe("updated coach notes on Armbar");
+    expect(lineText(result)).toBe("updated coach notes on Armbar");
   });
 
   // --- pin verbs ---
@@ -184,36 +205,37 @@ describe("activityLine", () => {
     const result = activityLine(
       row({ verb: "technique_pinned", technique_id: 5, technique_name: "Armbar" }),
     );
-    expect(result.text).toBe("pinned Armbar");
+    expect(lineText(result)).toBe("pinned Armbar");
   });
 
   test("technique_unpinned renders technique name", () => {
     const result = activityLine(
       row({ verb: "technique_unpinned", technique_id: 5, technique_name: "Armbar" }),
     );
-    expect(result.text).toBe("unpinned Armbar");
+    expect(lineText(result)).toBe("unpinned Armbar");
   });
 
   // --- sst curation verbs ---
   test("sst_added renders technique name", () => {
     const result = activityLine(
-      row({ verb: "sst_added", technique_id: 5, technique_name: "Armbar", sst_id: 10 }),
+      row({ verb: "sst_added", technique_id: 5, technique_name: "Armbar", sst_id: 10, syllabus_id: 2 }),
     );
-    expect(result.text).toBe("added Armbar to syllabus");
+    expect(lineText(result)).toBe("added Armbar to syllabus");
+    expect(result.href).toBe("/syllabi/2");
   });
 
   test("sst_hidden renders technique name", () => {
     const result = activityLine(
       row({ verb: "sst_hidden", technique_id: 5, technique_name: "Armbar", sst_id: 10 }),
     );
-    expect(result.text).toBe("hid Armbar");
+    expect(lineText(result)).toBe("hid Armbar");
   });
 
   test("sst_unhidden renders technique name", () => {
     const result = activityLine(
       row({ verb: "sst_unhidden", technique_id: 5, technique_name: "Armbar", sst_id: 10 }),
     );
-    expect(result.text).toBe("unhid Armbar");
+    expect(lineText(result)).toBe("unhid Armbar");
   });
 
   // --- syllabus technique verbs ---
@@ -227,7 +249,7 @@ describe("activityLine", () => {
         syllabus_name: "Blue Belt",
       }),
     );
-    expect(result.text).toBe("added Armbar to Blue Belt");
+    expect(lineText(result)).toBe("added Armbar to Blue Belt");
   });
 
   test("syllabus_technique_removed renders technique + syllabus", () => {
@@ -240,7 +262,7 @@ describe("activityLine", () => {
         syllabus_name: "Blue Belt",
       }),
     );
-    expect(result.text).toBe("removed Armbar from Blue Belt");
+    expect(lineText(result)).toBe("removed Armbar from Blue Belt");
   });
 
   // --- video_added ---
@@ -248,7 +270,7 @@ describe("activityLine", () => {
     const result = activityLine(
       row({ verb: "video_added", video_id: 7, video_title: "Triangle setup" }),
     );
-    expect(result.text).toBe("added video Triangle setup");
+    expect(lineText(result)).toBe("added video Triangle setup");
   });
 
   // --- video_visibility_set ---
@@ -261,7 +283,7 @@ describe("activityLine", () => {
         payload_json: JSON.stringify({ scope: "student", visible: true }),
       }),
     );
-    expect(result.text).toBe("changed visibility of Triangle setup");
+    expect(lineText(result)).toBe("changed visibility of Triangle setup");
   });
 
   // --- syllabus_unassigned ---
@@ -269,13 +291,92 @@ describe("activityLine", () => {
     const result = activityLine(
       row({ verb: "syllabus_unassigned", syllabus_id: 2, syllabus_name: "Blue Belt" }),
     );
-    expect(result.text).toBe("unassigned from Blue Belt");
+    expect(lineText(result)).toBe("unassigned from Blue Belt");
   });
 
   // --- unknown verb fallback ---
   test("unknown verb renders plain fallback", () => {
     const result = activityLine(row({ verb: "future_verb_unknown" }));
-    expect(result.text).toBe("performed an action");
+    expect(lineText(result)).toBe("performed an action");
     expect(result.href).toBeUndefined();
+  });
+
+  // --- deep-link routing ---
+  test("attempt_logged routes to the student's syllabus with sst focus", () => {
+    const result = activityLine(
+      row({
+        verb: "attempt_logged",
+        technique_id: 5,
+        technique_name: "Armbar",
+        target_student_id: 4,
+        syllabus_id: 2,
+        sst_id: 42,
+      }),
+    );
+    expect(result.verb).toBe("logged an attempt on");
+    expect(result.subject).toBe("Armbar");
+    expect(result.href).toBe("/student/4/syllabi/2?focus=sst:42");
+  });
+
+  test("sst_student_notes_edited routes to the syllabus", () => {
+    const result = activityLine(
+      row({
+        verb: "sst_student_notes_edited",
+        technique_id: 5,
+        technique_name: "Armbar",
+        target_student_id: 4,
+        syllabus_id: 2,
+        sst_id: 42,
+      }),
+    );
+    expect(result.href).toBe("/student/4/syllabi/2?focus=sst:42");
+  });
+
+  test("video_watched in a syllabus routes to the syllabus with video", () => {
+    const result = activityLine(
+      row({
+        verb: "video_watched",
+        video_id: 7,
+        video_title: "Triangle setup",
+        context_kind: "syllabus",
+        target_student_id: 4,
+        syllabus_id: 2,
+        sst_id: 42,
+        technique_id: 5,
+      }),
+    );
+    expect(result.href).toBe("/student/4/syllabi/2?focus=sst:42&video=7");
+  });
+
+  test("video_watched in the library routes to the library with video", () => {
+    const result = activityLine(
+      row({
+        verb: "video_watched",
+        video_id: 7,
+        video_title: "Triangle setup",
+        context_kind: "library",
+        technique_id: 5,
+      }),
+    );
+    expect(result.href).toBe("/library?focus=technique:5&video=7");
+  });
+
+  test("technique_pinned routes to the student's pinned page", () => {
+    const result = activityLine(
+      row({
+        verb: "technique_pinned",
+        technique_id: 5,
+        technique_name: "Armbar",
+        target_student_id: 4,
+      }),
+    );
+    expect(result.href).toBe("/student/4/pinned");
+  });
+
+  test("syllabus_assigned still routes to the coach syllabus view", () => {
+    const result = activityLine(
+      row({ verb: "syllabus_assigned", syllabus_id: 2, syllabus_name: "Blue Belt" }),
+    );
+    expect(result.href).toBe("/syllabi/2");
   });
 });

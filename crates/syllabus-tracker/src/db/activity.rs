@@ -156,6 +156,7 @@ pub struct NewActivity {
     pub sst_id: Option<i64>,
     pub video_id: Option<i64>,
     pub payload_json: Option<String>,
+    pub context_kind: Option<&'static str>,
 }
 
 impl NewActivity {
@@ -169,6 +170,7 @@ impl NewActivity {
             sst_id: None,
             video_id: None,
             payload_json: None,
+            context_kind: None,
         }
     }
 
@@ -194,6 +196,13 @@ impl NewActivity {
     }
     pub fn payload(mut self, json: String) -> Self {
         self.payload_json = Some(json);
+        self
+    }
+
+    /// The surface the actor was on (for deep-linking). Only set where it is
+    /// not implied by the verb (currently video_watched).
+    pub fn context_kind(mut self, kind: &'static str) -> Self {
+        self.context_kind = Some(kind);
         self
     }
 
@@ -291,8 +300,8 @@ pub async fn emit(tx: &mut Transaction<'_, Sqlite>, ev: NewActivity) -> Result<(
     sqlx::query!(
         "INSERT INTO activity
             (occurred_at, verb, actor_user_id, target_student_id,
-             technique_id, syllabus_id, sst_id, video_id, payload_json)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+             technique_id, syllabus_id, sst_id, video_id, payload_json, context_kind)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         now,
         verb,
         ev.actor_user_id,
@@ -302,6 +311,7 @@ pub async fn emit(tx: &mut Transaction<'_, Sqlite>, ev: NewActivity) -> Result<(
         ev.sst_id,
         ev.video_id,
         ev.payload_json,
+        ev.context_kind,
     )
     .execute(&mut **tx)
     .await?;
@@ -648,18 +658,52 @@ pub async fn run_backfill(pool: &Pool<Sqlite>) -> Result<BackfillCounts, AppErro
     .await?
     .rows_affected() as i64;
 
-    // Video watches: actor = target = user_id, occurred_at = first_watched_at.
+    // Video watches: one activity row per (student, video). occurred_at uses
+    // last_watched_at so recently-watched videos surface in the feed and digest.
+    // technique_id comes from the video row. Context is syllabus when the watcher
+    // has an active (not graduated, not unassigned) SST for the technique; library
+    // otherwise (e.g. the student graduated that syllabus or has no active assignment).
+    // When multiple active SSTs match (student in several syllabi with the same
+    // technique), pick the one with the smallest sst.id for determinism.
     let watches = sqlx::query!(
         r#"INSERT INTO activity
-               (occurred_at, verb, actor_user_id, target_student_id, video_id)
+               (occurred_at, verb, actor_user_id, target_student_id,
+                video_id, technique_id, syllabus_id, sst_id, context_kind, payload_json)
            SELECT
-               vwa.first_watched_at,
+               vwa.last_watched_at,
                'video_watched',
                vwa.user_id,
                vwa.user_id,
-               vwa.video_id
+               vwa.video_id,
+               v.technique_id,
+               ctx.syllabus_id,
+               ctx.sst_id,
+               CASE WHEN ctx.sst_id IS NOT NULL THEN 'syllabus' ELSE 'library' END,
+               json_object(
+                   'cumulative_seconds', vwa.total_seconds_watched,
+                   'duration_seconds',
+                   CAST(vwa.total_seconds_watched / MAX(vwa.play_count, 1) AS INTEGER)
+               )
            FROM video_watch_aggregates vwa
-           WHERE vwa.first_watched_at IS NOT NULL"#
+           JOIN videos v ON v.id = vwa.video_id
+           LEFT JOIN (
+               SELECT a.student_id, a.syllabus_id, sst.id AS sst_id, sst.technique_id
+               FROM student_syllabus_techniques sst
+               JOIN syllabus_assignments a ON a.id = sst.assignment_id
+               WHERE a.unassigned_at IS NULL
+                 AND a.graduated_at IS NULL
+                 AND NOT EXISTS (
+                     SELECT 1
+                     FROM student_syllabus_techniques sst2
+                     JOIN syllabus_assignments a2 ON a2.id = sst2.assignment_id
+                     WHERE a2.student_id = a.student_id
+                       AND sst2.technique_id = sst.technique_id
+                       AND a2.unassigned_at IS NULL
+                       AND a2.graduated_at IS NULL
+                       AND sst2.id < sst.id
+                 )
+           ) ctx ON ctx.student_id = vwa.user_id AND ctx.technique_id = v.technique_id
+           WHERE vwa.last_watched_at IS NOT NULL"#
     )
     .execute(&mut *tx)
     .await?

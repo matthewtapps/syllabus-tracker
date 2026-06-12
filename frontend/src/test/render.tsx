@@ -3,6 +3,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router-dom";
 import { render, type RenderOptions } from "@testing-library/react";
 import { CurrentUserProvider } from "@/lib/current-user";
+import { ConfirmProvider } from "@/components/confirm-dialog";
 import type { User } from "@/lib/api";
 
 export function buildUser(overrides: Partial<User> = {}): User {
@@ -37,11 +38,13 @@ export function renderWithProviders(
   const Wrapper = ({ children }: { children: React.ReactNode }) => (
     <QueryClientProvider client={client}>
       <MemoryRouter initialEntries={initialEntries}>
-        {user ? (
-          <CurrentUserProvider user={user}>{children}</CurrentUserProvider>
-        ) : (
-          children
-        )}
+        <ConfirmProvider>
+          {user ? (
+            <CurrentUserProvider user={user}>{children}</CurrentUserProvider>
+          ) : (
+            children
+          )}
+        </ConfirmProvider>
       </MemoryRouter>
     </QueryClientProvider>
   );

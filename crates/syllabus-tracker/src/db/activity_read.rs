@@ -39,6 +39,7 @@ pub struct ActivityRow {
     pub video_title: Option<String>,
     pub payload_json: Option<String>,
     pub unread: bool,
+    pub context_kind: Option<String>,
 }
 
 /// Return the current `max_seen_id` for `viewer`, or 0 if no cursor row exists.
@@ -222,6 +223,7 @@ pub async fn feed(
                           act.video_id         AS "video_id?: i64",
                           v.title              AS "video_title?: String",
                           act.payload_json     AS "payload_json?: String",
+                          act.context_kind     AS "context_kind?: String",
                           CASE
                             WHEN ov.seen = 1 THEN 0
                             WHEN ov.seen = 0 THEN 1
@@ -273,6 +275,7 @@ pub async fn feed(
                         video_title: r.video_title,
                         payload_json: r.payload_json,
                         unread,
+                        context_kind: r.context_kind,
                     }
                 })
                 .collect())
@@ -293,6 +296,7 @@ pub async fn feed(
                           act.video_id         AS "video_id?: i64",
                           v.title              AS "video_title?: String",
                           act.payload_json     AS "payload_json?: String",
+                          act.context_kind     AS "context_kind?: String",
                           CASE
                             WHEN ov.seen = 1 THEN 0
                             WHEN ov.seen = 0 THEN 1
@@ -344,6 +348,7 @@ pub async fn feed(
                         video_title: r.video_title,
                         payload_json: r.payload_json,
                         unread,
+                        context_kind: r.context_kind,
                     }
                 })
                 .collect())
@@ -394,7 +399,8 @@ pub async fn dashboard_activity_feed(
                   act.sst_id            AS "sst_id?: i64",
                   act.video_id          AS "video_id?: i64",
                   v.title               AS "video_title?: String",
-                  act.payload_json      AS "payload_json?: String"
+                  act.payload_json      AS "payload_json?: String",
+                  act.context_kind      AS "context_kind?: String"
            FROM activity act
            JOIN users u           ON u.id = act.actor_user_id
            LEFT JOIN techniques t ON t.id = act.technique_id
@@ -438,6 +444,7 @@ pub async fn dashboard_activity_feed(
             video_title: r.video_title,
             payload_json: r.payload_json,
             unread: false,
+            context_kind: r.context_kind,
         })
         .collect())
 }
