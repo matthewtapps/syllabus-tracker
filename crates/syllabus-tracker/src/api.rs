@@ -141,6 +141,8 @@ pub struct UserData {
     pub last_watch_video_title: Option<String>,
     pub last_student_activity_at: Option<String>,
     pub last_coach_activity_at: Option<String>,
+    pub pinned_count: Option<i64>,
+    pub recent_activity_count: Option<i64>,
 }
 
 impl From<User> for UserData {
@@ -170,6 +172,8 @@ impl From<User> for UserData {
             last_watch_video_title: user.last_watch_video_title.clone(),
             last_student_activity_at: user.last_student_activity_at.clone(),
             last_coach_activity_at: user.last_coach_activity_at.clone(),
+            pinned_count: user.pinned_count,
+            recent_activity_count: user.recent_activity_count,
         }
     }
 }
