@@ -127,22 +127,22 @@ function ReviewInner({ video, surface, watchEvents }: VideoReviewPanelProps) {
       <div className={sheetOpen ? "flex gap-2" : "relative"}>
         <div className={sheetOpen ? "relative min-w-0 flex-1" : "relative"}>
           <VideoPlayerPanel video={video} events={events} />
+          {controller.canReadTime && !sheetOpen && (
+            <MomentOverlay
+              threads={threads}
+              currentTime={controller.currentTime}
+              pinnedThread={pinnedThread}
+              onOpen={focusPin}
+            />
+          )}
           {controller.canReadTime && (
-            <>
-              <MomentOverlay
-                threads={threads}
-                currentTime={controller.currentTime}
-                pinnedThread={pinnedThread}
-                onOpen={focusPin}
-              />
-              <ScrubberPins
-                threads={threads}
-                duration={controller.duration}
-                activeThreadId={pinnedThread?.id ?? null}
-                onPinClick={focusPin}
-                onClusterClick={(ts) => scrollToThread(ts[0].id)}
-              />
-            </>
+            <ScrubberPins
+              threads={threads}
+              duration={controller.duration}
+              activeThreadId={pinnedThread?.id ?? null}
+              onPinClick={focusPin}
+              onClusterClick={(ts) => focusPin(ts[0])}
+            />
           )}
         </div>
 
