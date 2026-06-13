@@ -1,0 +1,26 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT context_kind, syllabus_id AS \"syllabus_id?: i64\"\n               FROM activity\n               WHERE verb = 'thread_comment_posted' AND thread_id = ?\n               ORDER BY id DESC LIMIT 1",
+  "describe": {
+    "columns": [
+      {
+        "name": "context_kind",
+        "ordinal": 0,
+        "type_info": "Text"
+      },
+      {
+        "name": "syllabus_id?: i64",
+        "ordinal": 1,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      true,
+      true
+    ]
+  },
+  "hash": "81200ff67a3ef00bd2356927aba7c7820a5aee2f295cc84e8ae78b0e6e2ecbcf"
+}
