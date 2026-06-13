@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import type { Video, ThreadView } from "@/lib/api";
 import { useUser } from "@/lib/current-user-context";
@@ -60,12 +60,40 @@ function ReviewInner({ video, surface, watchEvents }: VideoReviewPanelProps) {
   const [pinnedThread, setPinnedThread] = useState<ThreadView | null>(null);
   const [highlightThreadId, setHighlightThreadId] = useState<number | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
+  const pinTimerRef = useRef<number | null>(null);
+  const highlightTimerRef = useRef<number | null>(null);
+
+  // Clear both timers on unmount to prevent setState-after-unmount warnings.
+  useEffect(() => {
+    return () => {
+      if (pinTimerRef.current) window.clearTimeout(pinTimerRef.current);
+      if (highlightTimerRef.current) window.clearTimeout(highlightTimerRef.current);
+    };
+  }, []);
 
   function scrollToThread(threadId: number) {
     setHighlightThreadId(threadId);
     const el = listRef.current?.querySelector<HTMLElement>(`[data-thread-id="${threadId}"]`);
     el?.scrollIntoView({ behavior: "smooth", block: "center" });
-    window.setTimeout(() => setHighlightThreadId(null), 2200);
+    if (highlightTimerRef.current) window.clearTimeout(highlightTimerRef.current);
+    highlightTimerRef.current = window.setTimeout(() => setHighlightThreadId(null), 2200);
+  }
+
+  // Toggle pin on re-click; otherwise set it and auto-clear after 6 s.
+  function focusPin(t: ThreadView) {
+    if (pinnedThread?.id === t.id) {
+      setPinnedThread(null);
+      if (pinTimerRef.current) {
+        window.clearTimeout(pinTimerRef.current);
+        pinTimerRef.current = null;
+      }
+      return;
+    }
+    setPinnedThread(t);
+    if (t.video_ts_seconds != null) controller.seekTo(t.video_ts_seconds);
+    scrollToThread(t.id);
+    if (pinTimerRef.current) window.clearTimeout(pinTimerRef.current);
+    pinTimerRef.current = window.setTimeout(() => setPinnedThread(null), 6000);
   }
 
   async function submit(draft: MomentDraft) {
@@ -100,11 +128,7 @@ function ReviewInner({ video, surface, watchEvents }: VideoReviewPanelProps) {
               threads={threads}
               duration={controller.duration}
               activeThreadId={pinnedThread?.id ?? null}
-              onPinClick={(t) => {
-                setPinnedThread(t);
-                if (t.video_ts_seconds != null) controller.seekTo(t.video_ts_seconds);
-                scrollToThread(t.id);
-              }}
+              onPinClick={focusPin}
               onClusterClick={(ts) => scrollToThread(ts[0].id)}
             />
           </>

@@ -1198,6 +1198,16 @@ export function useCreateThread() {
       qc.invalidateQueries({
         queryKey: qk.threads(input.anchor_kind, input.anchor_id),
       });
+      // video_timestamp threads are read back through the "video" anchor query;
+      // invalidate that key too so the feed refreshes without a dialog reopen.
+      if (
+        input.anchor_kind === "video_timestamp" ||
+        input.anchor_kind === "video"
+      ) {
+        qc.invalidateQueries({
+          queryKey: qk.threads("video", input.anchor_id),
+        });
+      }
     },
   });
 }
