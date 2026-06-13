@@ -343,6 +343,7 @@ CREATE TABLE IF NOT EXISTS activity (
     syllabus_id       INTEGER REFERENCES syllabi(id)    ON DELETE SET NULL,
     sst_id            INTEGER REFERENCES student_syllabus_techniques(id) ON DELETE SET NULL,
     video_id          INTEGER REFERENCES videos(id)     ON DELETE SET NULL,
+    thread_id         INTEGER REFERENCES threads(id)    ON DELETE SET NULL,
     payload_json      TEXT,
     -- Names the surface a student was on when the activity happened, so the
     -- feed can deep-link back to it without inferring from which reference

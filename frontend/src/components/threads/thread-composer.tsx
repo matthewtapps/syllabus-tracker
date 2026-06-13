@@ -30,6 +30,7 @@ export function ThreadComposer({
         value={body}
         onChange={(e) => setBody(e.target.value)}
         placeholder={placeholder}
+        rows={1}
         className="max-h-40 min-h-[38px] flex-1"
         disabled={pending}
       />

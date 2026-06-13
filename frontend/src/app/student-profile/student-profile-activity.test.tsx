@@ -32,6 +32,7 @@ function buildActivityRow(overrides: Partial<ActivityRow> = {}): ActivityRow {
     payload_json: null,
     unread: false,
     context_kind: null,
+    thread_id: null,
     ...overrides,
   };
 }

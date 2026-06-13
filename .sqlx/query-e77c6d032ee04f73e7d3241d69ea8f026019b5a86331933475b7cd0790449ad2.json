@@ -1,0 +1,38 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT context_kind,\n                      sst_id            AS \"sst_id?: i64\",\n                      syllabus_id       AS \"syllabus_id?: i64\",\n                      target_student_id AS \"target_student_id?: i64\"\n               FROM activity\n               WHERE verb = 'thread_comment_posted' AND thread_id = ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "context_kind",
+        "ordinal": 0,
+        "type_info": "Text"
+      },
+      {
+        "name": "sst_id?: i64",
+        "ordinal": 1,
+        "type_info": "Integer"
+      },
+      {
+        "name": "syllabus_id?: i64",
+        "ordinal": 2,
+        "type_info": "Integer"
+      },
+      {
+        "name": "target_student_id?: i64",
+        "ordinal": 3,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "e77c6d032ee04f73e7d3241d69ea8f026019b5a86331933475b7cd0790449ad2"
+}

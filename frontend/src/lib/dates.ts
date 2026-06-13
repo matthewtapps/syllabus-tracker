@@ -9,9 +9,19 @@ const TIME_ONLY = new Intl.DateTimeFormat([], {
   minute: "2-digit",
 });
 
+// Naive datetime with no timezone designator, e.g. "2026-06-13 04:00:00" or
+// "2026-06-13T04:00:00". The server stores and serialises these in UTC.
+const NAIVE_DATETIME = /^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(\.\d+)?$/;
+
 function parse(input: string | Date | null | undefined): Date | null {
   if (!input) return null;
-  const date = input instanceof Date ? input : new Date(input);
+  let value = input;
+  // Without a timezone, new Date() reads the string as local time, which skews
+  // every timestamp by the viewer's UTC offset. Treat naive values as UTC.
+  if (typeof value === "string" && NAIVE_DATETIME.test(value.trim())) {
+    value = value.trim().replace(" ", "T") + "Z";
+  }
+  const date = value instanceof Date ? value : new Date(value);
   return isNaN(date.getTime()) ? null : date;
 }
 

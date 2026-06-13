@@ -1,0 +1,26 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT context_kind, technique_id AS \"technique_id?: i64\"\n               FROM activity\n               WHERE verb = 'thread_comment_posted' AND thread_id = ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "context_kind",
+        "ordinal": 0,
+        "type_info": "Text"
+      },
+      {
+        "name": "technique_id?: i64",
+        "ordinal": 1,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      true,
+      true
+    ]
+  },
+  "hash": "bb407700803e6fc6f1e4b47f43b1365679849e26f7fc9f8014b788b8b8d76ab9"
+}

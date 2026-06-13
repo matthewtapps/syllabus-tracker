@@ -97,78 +97,47 @@ jobs:
           fi
           echo "VM_IP=$VM_IP, host_age_ready=$([ -n \"$HOST_AGE\" ] && echo true || echo false)"
 
-  # Lint + test + sqlx-check run unconditionally on every push. They
-  # don't need the platform state (no host or DNS interaction); they
-  # gate build_backend and build_frontend so a broken-build SHA never
-  # gets pushed to GHCR.
-  lint:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
-        with:
-          toolchain: 1.86
-          components: rustfmt, clippy
-      - uses: swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
-      - name: Run clippy
-        run: cargo clippy --all-targets --all-features -- -D warnings
-        env:
-          SQLX_OFFLINE: "true"
-
-  # Fails if the .sqlx/ offline cache is stale relative to the SQL
-  # queries in code or to config/schema.sql. Catches migration-heavy
-  # PRs that forget to run `just sqlx-prepare`. Mirrors `just sqlx-check`.
+  # Backend correctness gate: clippy + nextest. Runs unconditionally on every
+  # push and PR; gates build_backend and build_frontend so a broken-build SHA
+  # never gets pushed to GHCR. Runs through the project's Nix dev shell
+  # (`nix develop .#ci`) so the toolchain (rustc, cargo-nextest, just) is
+  # byte-identical to local dev.
   #
-  # SQLite type inference depends on row presence for some columns
-  # (e.g. a column that's always NULL infers `Null` instead of `Text`).
-  # The .sqlx/ cache was generated against a seeded local DB, so the
-  # check must run against an equivalent state. We bootstrap an empty
-  # DB from schema.sql then run the seed binary (the canonical source
-  # of the seed state) before invoking sqlx prepare --check.
-  sqlx-check:
+  # NOTE: we deliberately do NOT run `sqlx prepare --check` here. SQLite's
+  # type inference for expression columns (MAX/COUNT/SUM/COALESCE/CASE over an
+  # empty table) is not reproducible across the SQLite that different hosts
+  # compile into sqlx's proc-macro, so `--check` false-fails on a cache that is
+  # otherwise correct (see launchbadge/sqlx#1737). The offline build is the
+  # real gate instead: `test` compiles with `SQLX_OFFLINE=true`, so a missing
+  # or query-text-changed cache entry fails to compile, and the tests run real
+  # queries against a live migrated DB, catching schema/cache type drift at
+  # runtime. Regenerate the cache locally with `just sqlx-prepare` when you
+  # change a query.
+  checks:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+      - uses: cachix/install-nix-action@v27
         with:
-          toolchain: 1.86
-      - uses: swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
-      - name: Install sqlx-cli
-        run: cargo install sqlx-cli --version 0.8.5 --no-default-features --features sqlite,native-tls --locked
-      - name: Bootstrap empty sqlite DB from schema.sql
-        run: |
-          mkdir -p data
-          : > data/sqlite.db
-          sqlite3 data/sqlite.db < config/schema.sql
-      - name: Seed the DB so SQLite type inference matches the cache
-        # Mirrors `just seed` (minus the migrate step; we already
-        # applied schema.sql by hand). SQLX_OFFLINE so the macros use
-        # the cache for compilation; DATABASE_URL for runtime.
-        run: cargo run -p syllabus-tracker --bin seed
-        env:
-          SQLX_OFFLINE: "true"
-          DATABASE_URL: sqlite://data/sqlite.db
-          SCHEMA_PATH: ./config/schema.sql
-      - name: Check .sqlx/ cache against current queries
-        run: cargo sqlx prepare --check --workspace -- -p syllabus-tracker --tests --all-features
-        env:
-          DATABASE_URL: sqlite://data/sqlite.db
-
-  test:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+      # Caches the Nix store (the .#ci toolchain closure) plus cargo build
+      # artifacts. Key tracks flake.lock (toolchain) + Cargo.lock (deps); a
+      # prefix restore gives a warm partial cache when only code changed.
+      - uses: nix-community/cache-nix-action@v7
         with:
-          toolchain: 1.86
-      - uses: swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
-      - uses: taiki-e/install-action@50b4a718b59c718df4ef27a3b445f86cd57b9f00 # v2.80.0
-        with:
-          tool: cargo-nextest
-      - name: Run cargo nextest
-        run: cargo nextest run --all-features
-        env:
-          SQLX_OFFLINE: "true"
+          primary-key: nix-${{ runner.os }}-checks-${{ hashFiles('flake.lock', '**/Cargo.lock') }}
+          restore-prefixes-first-match: nix-${{ runner.os }}-checks-
+          gc-max-store-size-linux: 5G
+          paths: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+      - name: Clippy (backend lint)
+        run: nix develop .#ci --command just lint-backend
+      - name: Backend tests (nextest)
+        run: nix develop .#ci --command just test-backend
 
   # Frontend component tests via Vitest Browser Mode (Playwright /
   # Chromium). Runs on every push and PR. Kept separate from the build
@@ -225,7 +194,7 @@ jobs:
   # pushed to GHCR for the deploy chain; on pull_request the build
   # runs as a deployability check with push: false and no GHCR login.
   build_backend:
-    needs: [lint, test, sqlx-check, frontend_test]
+    needs: [checks, frontend_test]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -252,7 +221,7 @@ jobs:
   # honeycomb key is left blank: the build is a deployability check, not
   # a deployable artifact.
   build_frontend:
-    needs: [lint, test, sqlx-check, frontend_test]
+    needs: [checks, frontend_test]
     runs-on: ubuntu-latest
     environment: production   # needs PLATFORM_STATE_R2_* secrets for tofu state read on push events
     steps:

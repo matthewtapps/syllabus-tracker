@@ -1,8 +1,11 @@
 # ---- verification ---------------------------------------------------------
 
-# Lint + test + sqlx-check + unused-deps. Post-change gate.
+# Lint + test + unused-deps. Post-change gate. Does NOT run sqlx-check: SQLite
+# expression-column type inference isn't reproducible across hosts, so the
+# offline build (test, with SQLX_OFFLINE) is the real cache gate. Regenerate
+# the cache with `just sqlx-prepare` when you change a query.
 [group('verify')]
-verify: lint test sqlx-check unused-deps
+verify: lint test unused-deps
 
 # Lint + test only. No live DB required.
 [group('verify')]
@@ -52,17 +55,35 @@ fmt:
 unused-deps:
     cargo machete
 
+# Build an ephemeral, schema-only DB and run `sqlx prepare {{mode}}` against it.
+# An EMPTY (migrated, unseeded) DB is the deterministic prepare state: with no
+# rows, SQLite type inference falls back to each column's declared affinity
+# instead of the storage class of whatever row happened to be present. A seeded
+# DB makes expression columns (MAX/COALESCE/CASE) data-dependent, e.g. an
+# all-NULL aggregate infers `Null` instead of the schema's `Text`. The temp DB
+# is created under mktemp and deleted on exit, so the dev DB is never touched.
+_sqlx mode:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    tmp="$(mktemp -d)"
+    trap 'rm -rf "$tmp"' EXIT
+    db="$tmp/prepare.db"
+    SQLX_OFFLINE=true DATABASE_URL="sqlite://$db" SCHEMA_PATH=./config/schema.sql \
+        cargo run -q -p migration-engine --bin migrate
+    DATABASE_URL="sqlite://$db" \
+        cargo sqlx prepare {{mode}} --workspace -- -p syllabus-tracker --tests --all-features
+
 # Regenerate .sqlx/ offline query metadata, including queries in test code.
 # `--workspace` puts the cache at the workspace root and limits cargo-check
 # to the macro-bearing crate via `-p syllabus-tracker`.
 [group('verify')]
-sqlx-prepare:
-    DATABASE_URL=sqlite://data/sqlite.db cargo sqlx prepare --workspace -- -p syllabus-tracker --tests --all-features
+sqlx-prepare: (_sqlx "")
 
-# Fail if the .sqlx/ cache is stale. Used by `just verify`.
+# Advisory: check whether the .sqlx/ cache matches a fresh prepare. NOT part of
+# `just verify` or CI, because SQLite expression-column inference varies by host
+# (see launchbadge/sqlx#1737) and false-fails. Useful as a local sanity check.
 [group('verify')]
-sqlx-check:
-    DATABASE_URL=sqlite://data/sqlite.db cargo sqlx prepare --check --workspace -- -p syllabus-tracker --tests --all-features
+sqlx-check: (_sqlx "--check")
 
 # ---- app / docker ---------------------------------------------------------
 

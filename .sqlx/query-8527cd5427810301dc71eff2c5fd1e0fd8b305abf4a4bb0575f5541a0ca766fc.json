@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT id AS \"id!: i64\",\n                  thread_id AS \"thread_id!: i64\",\n                  parent_comment_id AS \"parent_comment_id?: i64\",\n                  author_id AS \"author_id!: i64\",\n                  body,\n                  created_at AS \"created_at!: NaiveDateTime\",\n                  deleted_at AS \"deleted_at?: NaiveDateTime\"\n           FROM thread_comments\n           WHERE thread_id = ?\n           ORDER BY created_at, id",
+  "query": "SELECT c.id AS \"id!: i64\",\n                  c.thread_id AS \"thread_id!: i64\",\n                  c.parent_comment_id AS \"parent_comment_id?: i64\",\n                  c.author_id AS \"author_id!: i64\",\n                  COALESCE(u.display_name, u.username, '?') AS \"author_name!: String\",\n                  c.body,\n                  c.created_at AS \"created_at!: NaiveDateTime\",\n                  c.deleted_at AS \"deleted_at?: NaiveDateTime\"\n           FROM thread_comments c\n           JOIN users u ON u.id = c.author_id\n           WHERE c.thread_id = ?\n           ORDER BY c.created_at, c.id",
   "describe": {
     "columns": [
       {
@@ -24,18 +24,23 @@
         "type_info": "Integer"
       },
       {
-        "name": "body",
+        "name": "author_name!: String",
         "ordinal": 4,
+        "type_info": "Null"
+      },
+      {
+        "name": "body",
+        "ordinal": 5,
         "type_info": "Text"
       },
       {
         "name": "created_at!: NaiveDateTime",
-        "ordinal": 5,
+        "ordinal": 6,
         "type_info": "Datetime"
       },
       {
         "name": "deleted_at?: NaiveDateTime",
-        "ordinal": 6,
+        "ordinal": 7,
         "type_info": "Datetime"
       }
     ],
@@ -47,10 +52,11 @@
       false,
       true,
       false,
+      null,
       false,
       false,
       true
     ]
   },
-  "hash": "dfcc16849d3e289c9f5e1ba8736bb6287d7d09cf5e4e2a029edb06b42d857dec"
+  "hash": "8527cd5427810301dc71eff2c5fd1e0fd8b305abf4a4bb0575f5541a0ca766fc"
 }

@@ -24,6 +24,7 @@ function row(overrides: Partial<ActivityRow>): ActivityRow {
     payload_json: null,
     unread: false,
     context_kind: null,
+    thread_id: null,
     ...overrides,
   };
 }
@@ -292,6 +293,62 @@ describe("activityLine", () => {
       row({ verb: "syllabus_unassigned", syllabus_id: 2, syllabus_name: "Blue Belt" }),
     );
     expect(lineText(result)).toBe("unassigned from Blue Belt");
+  });
+
+  // --- thread verbs ---
+  test("thread_comment_posted with technique name renders 'commented on {technique}'", () => {
+    const result = activityLine(
+      row({ verb: "thread_comment_posted", technique_id: 5, technique_name: "X-guard", thread_id: 7 }),
+    );
+    expect(result.verb).toBe("commented on");
+    expect(result.subject).toBe("X-guard");
+    expect(lineText(result)).toBe("commented on X-guard");
+  });
+
+  test("thread_comment_posted with video title renders 'commented on {video}'", () => {
+    const result = activityLine(
+      row({ verb: "thread_comment_posted", video_id: 3, video_title: "Triangle setup", thread_id: 8 }),
+    );
+    expect(result.verb).toBe("commented on");
+    expect(result.subject).toBe("Triangle setup");
+  });
+
+  test("thread_comment_posted with no entity renders 'commented on' with no subject", () => {
+    const result = activityLine(
+      row({ verb: "thread_comment_posted", thread_id: 9 }),
+    );
+    expect(result.verb).toBe("commented on");
+    expect(result.subject).toBeUndefined();
+    expect(result.href).toBeUndefined();
+  });
+
+  test("thread_comment_posted on a syllabus sst deep-links to the sst with the thread", () => {
+    const result = activityLine(
+      row({
+        verb: "thread_comment_posted",
+        context_kind: "syllabus",
+        target_student_id: 4,
+        syllabus_id: 2,
+        sst_id: 42,
+        technique_id: 9,
+        technique_name: "Armbar",
+        thread_id: 7,
+      }),
+    );
+    expect(result.href).toBe("/student/4/syllabi/2?focus=sst:42&thread=7");
+  });
+
+  test("thread_comment_posted in the library deep-links to the technique with the thread", () => {
+    const result = activityLine(
+      row({
+        verb: "thread_comment_posted",
+        context_kind: "library",
+        technique_id: 9,
+        technique_name: "Armbar",
+        thread_id: 8,
+      }),
+    );
+    expect(result.href).toBe("/library?focus=technique:9&thread=8");
   });
 
   // --- unknown verb fallback ---
