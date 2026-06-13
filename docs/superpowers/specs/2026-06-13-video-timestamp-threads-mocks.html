@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lean composer + fullscreen</title>
+<style>
+  :root{
+    --bg:#09090b;--card:#18181b;--card2:#1f1f23;--border:#27272a;
+    --fg:#fafafa;--muted:#a1a1aa;--muted2:#71717a;
+    --primary:#6366f1;--accent:#8b5cf6;--chip:#27272a;--ring:#6366f1;
+    --avatar1:#0ea5e9;--avatar2:#f43f5e;--avatar3:#10b981;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);
+    font:14px/1.5 ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;}
+  .wrap{max-width:1080px;margin:0 auto;padding:24px 20px 80px;}
+  h1{font-size:20px;margin:0 0 4px;}
+  .sub{color:var(--muted);margin:0 0 22px;font-size:13.5px;}
+  .stage{display:flex;gap:26px;flex-wrap:wrap;justify-content:center;align-items:flex-start;}
+  .frame{flex:0 0 auto;}
+  .cap{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted2);text-align:center;margin:0 0 10px;}
+  .phone{width:300px;background:#000;border-radius:32px;padding:9px;border:1px solid #2a2a2e;box-shadow:0 16px 44px rgba(0,0,0,.6);}
+  .screen{background:var(--bg);border-radius:24px;overflow:hidden;height:560px;position:relative;display:flex;flex-direction:column;}
+  .notch{position:absolute;top:7px;left:50%;transform:translateX(-50%);width:78px;height:16px;background:#000;border-radius:10px;z-index:30;}
+  .hdr{padding:26px 13px 7px;font-size:12.5px;font-weight:600;border-bottom:1px solid var(--border);flex:0 0 auto;}
+  .hdr .x{color:var(--muted);margin-right:8px;}
+  .player{background:#000;aspect-ratio:16/9;width:100%;position:relative;display:flex;align-items:center;justify-content:center;flex:0 0 auto;}
+  .play{width:42px;height:42px;border-radius:50%;background:rgba(255,255,255,.16);display:flex;align-items:center;justify-content:center;color:#fff;font-size:15px;}
+  .overlay{position:absolute;left:0;right:0;bottom:0;padding:24px 11px 15px;
+    background:linear-gradient(to top,rgba(0,0,0,.74),rgba(0,0,0,.3) 55%,transparent);display:flex;align-items:flex-end;gap:7px;}
+  .overlay .av{width:22px;height:22px;flex:0 0 22px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;color:#fff;border:1.5px solid rgba(255,255,255,.5);}
+  .overlay .oname{font-size:10.5px;font-weight:700;color:#fff;}
+  .overlay .oname .ots{color:#c4b5fd;margin-left:4px;font-variant-numeric:tabular-nums;}
+  .overlay .obody{font-size:11.5px;color:#f4f4f5;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;text-shadow:0 1px 3px rgba(0,0,0,.85);}
+  .scrub{position:absolute;left:9px;right:9px;bottom:8px;height:4px;border-radius:3px;background:rgba(255,255,255,.28);}
+  .scrub .fill{position:absolute;left:0;top:0;bottom:0;width:30%;background:#fff;border-radius:3px;}
+  .pinhit{position:absolute;bottom:-13px;width:28px;height:28px;transform:translateX(-50%);display:flex;align-items:center;justify-content:center;}
+  .pin{width:11px;height:11px;border-radius:50%;background:var(--accent);border:2px solid #000;}
+  .pin.active{background:#fff;box-shadow:0 0 0 3px var(--accent);}
+  /* LEAN composer, collapsed = single line */
+  .ccollapsed{flex:0 0 auto;padding:9px 12px;border-top:1px solid var(--border);border-bottom:1px solid var(--border);}
+  .pillinput{display:flex;align-items:center;gap:8px;background:var(--card2);border:1px solid var(--border);border-radius:10px;padding:9px 12px;color:var(--muted2);font-size:12.5px;}
+  .pillinput .ts{color:var(--accent);font-weight:700;font-variant-numeric:tabular-nums;}
+  /* expanded */
+  .cexp{flex:0 0 auto;padding:10px 12px;border-top:1px solid var(--border);border-bottom:1px solid var(--border);background:var(--card);}
+  .cexprow{display:flex;align-items:center;gap:7px;margin-bottom:8px;}
+  .stamp{display:inline-flex;align-items:center;gap:5px;background:var(--chip);border:1px solid var(--border);color:var(--accent);font-weight:700;font-size:11.5px;padding:4px 8px;border-radius:7px;font-variant-numeric:tabular-nums;}
+  .nudge{display:flex;gap:3px;}.nudge span{width:22px;height:22px;border-radius:6px;background:var(--card2);border:1px solid var(--border);color:var(--muted);font-size:12px;display:flex;align-items:center;justify-content:center;}
+  .clr{margin-left:auto;font-size:11px;color:var(--muted);text-decoration:underline;text-underline-offset:2px;}
+  .ta{width:100%;background:var(--card2);border:1px solid var(--border);border-radius:9px;padding:8px 10px;color:var(--fg);font-size:12.5px;min-height:46px;}
+  .ta .ph{color:var(--muted2);}
+  .cact{display:flex;justify-content:flex-end;gap:7px;margin-top:8px;}
+  .ghostbtn{background:transparent;border:1px solid var(--border);color:var(--muted);font-size:11.5px;padding:6px 11px;border-radius:8px;}
+  .btn{background:var(--primary);color:#fff;border:none;border-radius:8px;padding:6px 13px;font-size:11.5px;font-weight:600;}
+  /* feed decluttered */
+  .feed{flex:1;overflow-y:auto;}
+  .feedttl{font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted2);padding:10px 12px 4px;}
+  .thread{display:flex;gap:9px;padding:10px 12px;border-top:1px solid var(--border);}
+  .thread:first-of-type{border-top:none;}
+  .thread.hi{background:rgba(99,102,241,.10);box-shadow:inset 2px 0 0 var(--ring);}
+  .av{width:25px;height:25px;border-radius:50%;flex:0 0 25px;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:#fff;}
+  .a1{background:var(--avatar1)}.a2{background:var(--avatar2)}.a3{background:var(--avatar3)}
+  .col{min-width:0;flex:1;}.row{display:flex;align-items:center;gap:6px;}
+  .ts2{display:inline-flex;gap:3px;background:var(--chip);border:1px solid var(--border);color:var(--accent);font-weight:600;font-size:10.5px;padding:1px 6px;border-radius:6px;font-variant-numeric:tabular-nums;}
+  .name{font-weight:600;font-size:12px;}.when{color:var(--muted2);font-size:10px;margin-left:auto;}
+  .body{color:#e4e4e7;font-size:12px;margin-top:2px;}.reply{color:var(--muted);font-size:10.5px;margin-top:4px;}
+  .whole{font-size:10px;color:var(--muted2);}
+  /* fullscreen landscape */
+  .phoneL{background:#000;border-radius:28px;padding:8px;border:1px solid #2a2a2e;box-shadow:0 16px 44px rgba(0,0,0,.6);}
+  .screenL{background:#000;border-radius:20px;overflow:hidden;width:560px;height:300px;position:relative;display:flex;}
+  .stageL{flex:1;display:flex;align-items:center;justify-content:center;position:relative;padding:0 8px;}
+  .vidL{width:100%;max-width:330px;aspect-ratio:16/9;background:#0c0c0e;border-radius:7px;position:relative;display:flex;align-items:center;justify-content:center;box-shadow:0 0 0 1px #1c1c20;}
+  .fab{position:absolute;right:10px;bottom:10px;background:var(--primary);color:#fff;border-radius:9px;font-size:11px;font-weight:700;padding:6px 10px;display:flex;gap:5px;align-items:center;font-variant-numeric:tabular-nums;box-shadow:0 4px 14px rgba(0,0,0,.5);}
+  .sheetL{width:215px;flex:0 0 215px;background:var(--bg);border-left:1px solid var(--border);display:flex;flex-direction:column;}
+  .shhdr{display:flex;justify-content:space-between;align-items:center;padding:9px 11px;border-bottom:1px solid var(--border);font-size:11px;font-weight:600;}
+  .shhdr .c{color:var(--muted);font-size:14px;}
+  .shbody{flex:1;overflow:auto;}
+  .shcomp{padding:8px 10px;border-top:1px solid var(--border);}
+  .shpill{display:flex;align-items:center;gap:6px;background:var(--card2);border:1px solid var(--border);border-radius:8px;padding:7px 9px;color:var(--muted2);font-size:11px;}
+  .shpill .ts{color:var(--accent);font-weight:700;}
+  .notes{flex:1;min-width:230px;max-width:300px;}
+  .notes h3{font-size:14px;margin:4px 0 12px;}
+  .note{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin-bottom:10px;}
+  .note .nh{font-weight:600;font-size:12.5px;margin-bottom:3px;}
+  .note .nb{color:var(--muted);font-size:12px;}
+  .badge{display:inline-block;background:var(--chip);border:1px solid var(--border);color:var(--accent);font-size:10px;font-weight:600;padding:1px 6px;border-radius:5px;margin-right:5px;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Leaner: collapsed composer, decluttered feed, fullscreen</h1>
+  <p class="sub">Default composer is a single line. It only expands when tapped. Feed lost the role chips and inline clutter. Fullscreen gets a matching minimal compose path.</p>
+
+  <div class="stage">
+    <!-- collapsed -->
+    <div class="frame">
+      <p class="cap">Default (collapsed)</p>
+      <div class="phone"><div class="notch"></div>
+        <div class="screen">
+          <div class="hdr"><span class="x">‹</span> Armbar from guard</div>
+          <div class="player"><div class="play">▶</div>
+            <div class="overlay"><div class="av a2">SR</div>
+              <div><div class="oname">Sam R. <span class="ots">0:42</span></div>
+                <div class="obody">Right hand position too low here.</div></div></div>
+            <div class="scrub"><div class="fill"></div>
+              <div class="pinhit" style="left:30%"><div class="pin active"></div></div>
+              <div class="pinhit" style="left:62%"><div class="pin"></div></div>
+              <div class="pinhit" style="left:84%"><div class="pin"></div></div></div>
+          </div>
+          <div class="ccollapsed">
+            <div class="pillinput">＋ Comment at <span class="ts">0:42</span></div>
+          </div>
+          <div class="feed">
+            <div class="feedttl">Discussion &middot; 4</div>
+            <div class="thread hi"><div class="av a2">SR</div><div class="col">
+              <div class="row"><span class="ts2">▶ 0:42</span><span class="name">Sam R.</span><span class="when">2h</span></div>
+              <div class="body">Right hand too low, he postures up.</div>
+              <div class="reply">2 replies</div></div></div>
+            <div class="thread"><div class="av a1">CT</div><div class="col">
+              <div class="row"><span class="ts2">▶ 1:58</span><span class="name">Coach T.</span><span class="when">1h</span></div>
+              <div class="body">Reset base before you bridge.</div></div></div>
+            <div class="thread"><div class="av a3">MJ</div><div class="col">
+              <div class="row"><span class="ts2">▶ 2:30</span><span class="name">Mia J.</span><span class="when">40m</span></div>
+              <div class="body">Clean finish from here.</div></div></div>
+            <div class="thread"><div class="av a1">CT</div><div class="col">
+              <div class="row"><span class="whole">whole video</span><span class="name">Coach T.</span><span class="when">30m</span></div>
+              <div class="body">Good rep overall.</div></div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- expanded -->
+    <div class="frame">
+      <p class="cap">Tapped (expanded)</p>
+      <div class="phone"><div class="notch"></div>
+        <div class="screen">
+          <div class="hdr"><span class="x">‹</span> Armbar from guard</div>
+          <div class="player"><div class="play">▶</div>
+            <div class="scrub"><div class="fill" style="width:42%"></div>
+              <div class="pinhit" style="left:42%"><div class="pin active"></div></div></div>
+          </div>
+          <div class="cexp">
+            <div class="cexprow">
+              <span class="stamp">▶ 0:42</span>
+              <span class="nudge"><span>−</span><span>+</span></span>
+              <span class="clr">× whole video</span>
+            </div>
+            <div class="ta"><span class="ph">What did you notice at 0:42?</span></div>
+            <div class="cact"><button class="ghostbtn">Cancel</button><button class="btn">Post</button></div>
+          </div>
+          <div class="feed">
+            <div class="feedttl">Discussion &middot; 4</div>
+            <div class="thread"><div class="av a2">SR</div><div class="col">
+              <div class="row"><span class="ts2">▶ 0:42</span><span class="name">Sam R.</span><span class="when">2h</span></div>
+              <div class="body">Right hand too low, he postures up.</div></div></div>
+            <div class="thread"><div class="av a1">CT</div><div class="col">
+              <div class="row"><span class="ts2">▶ 1:58</span><span class="name">Coach T.</span><span class="when">1h</span></div>
+              <div class="body">Reset base before you bridge.</div></div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- fullscreen -->
+    <div class="frame">
+      <p class="cap">Fullscreen (landscape)</p>
+      <div class="phoneL">
+        <div class="screenL">
+          <div class="stageL">
+            <div class="vidL"><div class="play">▶</div>
+              <div class="scrub"><div class="fill"></div>
+                <div class="pinhit" style="left:30%"><div class="pin active"></div></div>
+                <div class="pinhit" style="left:64%"><div class="pin"></div></div></div>
+            </div>
+            <div class="fab">＋ 0:42</div>
+          </div>
+          <div class="sheetL">
+            <div class="shhdr"><span>Moment &middot; 0:42</span><span class="c">×</span></div>
+            <div class="shbody">
+              <div class="thread hi" style="padding:9px 10px"><div class="av a2">SR</div><div class="col">
+                <div class="row"><span class="name">Sam R.</span></div>
+                <div class="body">Right hand too low.</div></div></div>
+              <div class="thread" style="padding:9px 10px 9px 28px"><div class="av a1">CT</div><div class="col">
+                <div class="row"><span class="name">Coach T.</span></div>
+                <div class="body">Pin the wrist first.</div></div></div>
+            </div>
+            <div class="shcomp"><div class="shpill">＋ Comment at <span class="ts">0:42</span></div></div>
+          </div>
+        </div>
+      </div>
+      <p style="text-align:center;color:var(--muted2);font-size:11px;margin-top:8px;max-width:560px">FAB <b>＋ 0:42</b> over the video opens the side sheet in compose mode; same collapsed pill lives at the sheet foot.</p>
+    </div>
+
+    <div class="notes">
+      <h3>Decluttered</h3>
+      <div class="note"><div class="nh"><span class="badge">collapsed</span>One-line default</div>
+        <div class="nb">Default composer is just <b>＋ Comment at 0:42</b>. No nudge, no clear, no hint until you tap in.</div></div>
+      <div class="note"><div class="nh"><span class="badge">expand</span>Controls on demand</div>
+        <div class="nb">Tapping pauses + expands: stamp, −/+ nudge, <b>× whole video</b>, textarea, Post. Collapses again after posting/cancel.</div></div>
+      <div class="note"><div class="nh"><span class="badge">feed</span>Lighter rows</div>
+        <div class="nb">Dropped the coach/student chips. Just avatar, ts chip (or <i>whole video</i>), name, time, body. Time moved to the right edge.</div></div>
+      <div class="note"><div class="nh"><span class="badge">FS</span>Fullscreen compose</div>
+        <div class="nb">A small <b>＋ 0:42</b> button floats over the video; tapping opens the side sheet's composer. No bottom bar crowding the frame.</div></div>
+    </div>
+  </div>
+</div>
+</body>
+</html>
