@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { AddVideoButton } from "@/components/videos/add-video-button";
 import { VideoList } from "@/components/videos/video-list";
 import type { WatchContext } from "@/components/videos/useWatchTracker";
+import type { VideoThreadSurface } from "@/lib/thread-visibility";
 import { useTechniqueRow } from "./technique-row-context";
 
 interface VideosBlockProps {
@@ -27,6 +28,11 @@ export function VideosBlock({
     context.kind === "student-syllabus"
       ? { studentId: context.studentId, syllabusId: context.syllabusId }
       : undefined;
+
+  const surface: VideoThreadSurface =
+    context.kind === "student-pinned" || context.kind === "student-syllabus"
+      ? { kind: "student", studentId: context.studentId }
+      : { kind: "library" };
 
   const watchContext = useMemo<WatchContext>(() => {
     if (context.kind === "student-syllabus") {
@@ -62,6 +68,7 @@ export function VideosBlock({
       <VideoList
         techniqueId={technique.id}
         canManage={canManage}
+        surface={surface}
         isCoach={isCoach}
         reloadKey={reloadKey}
         syllabus={syllabus}

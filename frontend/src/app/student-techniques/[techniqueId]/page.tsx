@@ -53,6 +53,7 @@ import { StatusToggle } from "@/components/status-toggle";
 import TechniqueEditForm from "@/components/technique-edit-form";
 import { AddVideoButton } from "@/components/videos/add-video-button";
 import { VideoList } from "@/components/videos/video-list";
+import type { VideoThreadSurface } from "@/lib/thread-visibility";
 import { useCapabilities } from "@/context/capabilities-context";
 import { WeeklyAttemptBars } from "@/components/weekly-attempt-bars";
 import { formatRelative } from "@/lib/dates";
@@ -358,6 +359,7 @@ export default function StudentTechniqueDetail() {
             <VideoList
               techniqueId={technique.technique_id}
               canManage={canEditAll}
+              surface={{ kind: "student", studentId } satisfies VideoThreadSurface}
               reloadKey={videoReloadKey}
             />
           </section>

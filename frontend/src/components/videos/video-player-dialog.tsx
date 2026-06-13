@@ -10,16 +10,18 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { VideoPlayerPanel } from "./video-player-panel";
+import { VideoReviewPanel } from "./review/video-review-panel";
 import { useWatchTracker, type WatchContext } from "./useWatchTracker";
+import type { VideoThreadSurface } from "@/lib/thread-visibility";
 
 interface VideoPlayerDialogProps {
   video: Video | null;
   onClose: () => void;
+  surface: VideoThreadSurface;
   watchContext?: WatchContext;
 }
 
-export function VideoPlayerDialog({ video, onClose, watchContext }: VideoPlayerDialogProps) {
+export function VideoPlayerDialog({ video, onClose, surface, watchContext }: VideoPlayerDialogProps) {
   return (
     <Dialog open={!!video} onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="max-h-[90vh] w-[calc(100vw-1rem)] max-w-2xl overflow-y-auto p-4 sm:p-6 [&>*]:min-w-0">
@@ -30,13 +32,21 @@ export function VideoPlayerDialog({ video, onClose, watchContext }: VideoPlayerD
             {video?.title ?? "Video"}
           </DialogTitle>
         </DialogHeader>
-        {video && <PlayerContent video={video} watchContext={watchContext} />}
+        {video && <PlayerContent video={video} surface={surface} watchContext={watchContext} />}
       </DialogContent>
     </Dialog>
   );
 }
 
-function PlayerContent({ video, watchContext }: { video: Video; watchContext?: WatchContext }) {
+function PlayerContent({
+  video,
+  surface,
+  watchContext,
+}: {
+  video: Video;
+  surface: VideoThreadSurface;
+  watchContext?: WatchContext;
+}) {
   const events = useWatchTracker(video.id, watchContext);
   const isNative = video.kind === "native";
   const canDownload = isNative && video.processing_status === "ready";
@@ -57,7 +67,7 @@ function PlayerContent({ video, watchContext }: { video: Video; watchContext?: W
 
   return (
     <div className="space-y-3">
-      <VideoPlayerPanel video={video} events={events} />
+      <VideoReviewPanel video={video} surface={surface} watchEvents={events} />
       {canDownload && (
         <div className="flex justify-end">
           <Button
