@@ -1919,6 +1919,8 @@ export interface ThreadView {
   author_name: string;
   visibility: string;
   scope_student_id: number | null;
+  /** Anchor seconds for video_timestamp threads; null otherwise. */
+  video_ts_seconds: number | null;
   body: string | null;
   created_at: string;
   deleted_at: string | null;

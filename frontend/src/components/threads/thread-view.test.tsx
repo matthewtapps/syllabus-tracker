@@ -26,6 +26,7 @@ function buildThread(overrides: Partial<ThreadViewModel> = {}): ThreadViewModel 
     author_name: "Alice A",
     visibility: "broadcast",
     scope_student_id: null,
+    video_ts_seconds: null,
     body: "Root thread body",
     created_at: new Date().toISOString(),
     deleted_at: null,
