@@ -120,6 +120,53 @@ describe("rowToViewContext", () => {
       }),
     ).toBeNull();
   });
+  test("thread_comment_posted with syllabus context maps to the sst", () => {
+    expect(
+      rowToViewContext({
+        verb: "thread_comment_posted",
+        context_kind: "syllabus",
+        target_student_id: 4,
+        syllabus_id: 2,
+        sst_id: 42,
+        technique_id: 9,
+        video_id: null,
+      }),
+    ).toEqual({
+      kind: "syllabus",
+      student: { type: "student", id: 4 },
+      syllabus: { type: "syllabus", id: 2 },
+      sst: { type: "sst", id: 42 },
+    });
+  });
+  test("thread_comment_posted with library context maps to the technique", () => {
+    expect(
+      rowToViewContext({
+        verb: "thread_comment_posted",
+        context_kind: "library",
+        target_student_id: null,
+        syllabus_id: null,
+        sst_id: null,
+        technique_id: 9,
+        video_id: null,
+      }),
+    ).toEqual({
+      kind: "library",
+      technique: { type: "technique", id: 9 },
+    });
+  });
+  test("thread_comment_posted broadcast sst (no student) returns null", () => {
+    expect(
+      rowToViewContext({
+        verb: "thread_comment_posted",
+        context_kind: "syllabus",
+        target_student_id: null,
+        syllabus_id: 2,
+        sst_id: 42,
+        technique_id: 9,
+        video_id: null,
+      }),
+    ).toBeNull();
+  });
   test("unrelated verb returns null", () => {
     expect(
       rowToViewContext({

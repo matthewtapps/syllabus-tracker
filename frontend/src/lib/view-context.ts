@@ -89,6 +89,25 @@ export function rowToViewContext(row: ViewContextRow): ViewContext | null {
       video: row.video_id != null ? { type: "video", id: row.video_id } : undefined,
     };
   }
+  // A thread comment routes to the surface its anchor lives on, tagged by the
+  // backend via context_kind: "syllabus" -> the student's syllabus sst row,
+  // "library" -> the library technique row. A broadcast sst thread carries no
+  // student on the row, so syllabusContext returns null and the caller falls
+  // back to no deep link.
+  if (row.verb === "thread_comment_posted") {
+    if (row.context_kind === "syllabus") {
+      return syllabusContext(row);
+    }
+    if (row.context_kind === "library") {
+      if (row.technique_id == null) return null;
+      return {
+        kind: "library",
+        technique: { type: "technique", id: row.technique_id },
+        video: row.video_id != null ? { type: "video", id: row.video_id } : undefined,
+      };
+    }
+    return null;
+  }
   if (SYLLABUS_SCOPED_VERBS.has(row.verb)) {
     return syllabusContext(row);
   }

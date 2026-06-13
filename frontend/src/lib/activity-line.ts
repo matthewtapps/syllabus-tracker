@@ -206,10 +206,17 @@ export function activityLine(row: ActivityRow): ActivityLine {
     // --- thread verbs ---
     case "thread_comment_posted": {
       const ctx = rowToViewContext(row);
+      // Land on the anchor surface, then target the specific thread. The
+      // surface href always carries a `?focus=`, so `&thread=` is safe to
+      // append. The receiving surface scrolls to and highlights the thread.
+      let href = ctx ? viewContextHref(ctx) : undefined;
+      if (href && row.thread_id != null) {
+        href += `&thread=${row.thread_id}`;
+      }
       return {
         verb: "commented on",
         subject: row.technique_name ?? row.video_title ?? undefined,
-        href: ctx ? viewContextHref(ctx) : undefined,
+        href,
       };
     }
 

@@ -322,6 +322,35 @@ describe("activityLine", () => {
     expect(result.href).toBeUndefined();
   });
 
+  test("thread_comment_posted on a syllabus sst deep-links to the sst with the thread", () => {
+    const result = activityLine(
+      row({
+        verb: "thread_comment_posted",
+        context_kind: "syllabus",
+        target_student_id: 4,
+        syllabus_id: 2,
+        sst_id: 42,
+        technique_id: 9,
+        technique_name: "Armbar",
+        thread_id: 7,
+      }),
+    );
+    expect(result.href).toBe("/student/4/syllabi/2?focus=sst:42&thread=7");
+  });
+
+  test("thread_comment_posted in the library deep-links to the technique with the thread", () => {
+    const result = activityLine(
+      row({
+        verb: "thread_comment_posted",
+        context_kind: "library",
+        technique_id: 9,
+        technique_name: "Armbar",
+        thread_id: 8,
+      }),
+    );
+    expect(result.href).toBe("/library?focus=technique:9&thread=8");
+  });
+
   // --- unknown verb fallback ---
   test("unknown verb renders plain fallback", () => {
     const result = activityLine(row({ verb: "future_verb_unknown" }));
