@@ -797,4 +797,170 @@ mod tests {
             "technique_id must be denormalised onto the activity row"
         );
     }
+
+    /// A technique-anchored thread tags the activity row with the library
+    /// context so the feed can deep-link to the library surface.
+    #[rocket::async_test]
+    async fn technique_thread_emits_library_context() {
+        let db = TestDbBuilder::new()
+            .coach("coach_user", Some("Coach"))
+            .student("student_user", Some("Sam"))
+            .technique("Armbar", "an armbar", Some("coach_user"))
+            .build()
+            .await
+            .unwrap();
+        let coach_id = db.user_id("coach_user").unwrap();
+        let technique_id = db.technique_id("Armbar").unwrap();
+
+        let thread_id = create_thread(
+            &db.pool,
+            NewThread {
+                author_id: coach_id,
+                anchor: Anchor {
+                    kind: AnchorKind::Technique,
+                    id: technique_id,
+                    video_ts_seconds: None,
+                    pinned_student_id: None,
+                },
+                visibility: ThreadVisibility::Broadcast,
+                scope_student_id: None,
+                body: "Look at this entry.".to_string(),
+            },
+        )
+        .await
+        .unwrap();
+
+        let row = sqlx::query!(
+            r#"SELECT context_kind, technique_id AS "technique_id?: i64"
+               FROM activity
+               WHERE verb = 'thread_comment_posted' AND thread_id = ?"#,
+            thread_id,
+        )
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+
+        assert_eq!(row.context_kind.as_deref(), Some("library"));
+        assert_eq!(row.technique_id, Some(technique_id));
+    }
+
+    /// An SST-anchored thread resolves and denormalises the syllabus id and the
+    /// syllabus context_kind, so the feed can deep-link to the student's
+    /// syllabus surface. A private thread keeps target_student_id = scope.
+    #[rocket::async_test]
+    async fn sst_thread_emits_syllabus_context() {
+        let db = TestDbBuilder::new()
+            .coach("coach_user", Some("Coach"))
+            .student("student_user", Some("Sam"))
+            .technique("Armbar", "an armbar", Some("coach_user"))
+            .build()
+            .await
+            .unwrap();
+        let coach_id = db.user_id("coach_user").unwrap();
+        let student_id = db.user_id("student_user").unwrap();
+        let technique_id = db.technique_id("Armbar").unwrap();
+        let sst_id = insert_sst(&db.pool, coach_id, student_id, technique_id).await;
+
+        // The syllabus the SST belongs to, for comparison.
+        let expected_syllabus_id = sqlx::query_scalar!(
+            r#"SELECT a.syllabus_id AS "sid!: i64"
+               FROM student_syllabus_techniques sst
+               JOIN syllabus_assignments a ON a.id = sst.assignment_id
+               WHERE sst.id = ?"#,
+            sst_id,
+        )
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+
+        let thread_id = create_thread(
+            &db.pool,
+            NewThread {
+                author_id: coach_id,
+                anchor: Anchor {
+                    kind: AnchorKind::Sst,
+                    id: sst_id,
+                    video_ts_seconds: None,
+                    pinned_student_id: None,
+                },
+                visibility: ThreadVisibility::Private,
+                scope_student_id: Some(student_id),
+                body: "On your syllabus technique.".to_string(),
+            },
+        )
+        .await
+        .unwrap();
+
+        let row = sqlx::query!(
+            r#"SELECT context_kind,
+                      sst_id            AS "sst_id?: i64",
+                      syllabus_id       AS "syllabus_id?: i64",
+                      target_student_id AS "target_student_id?: i64"
+               FROM activity
+               WHERE verb = 'thread_comment_posted' AND thread_id = ?"#,
+            thread_id,
+        )
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+
+        assert_eq!(row.context_kind.as_deref(), Some("syllabus"));
+        assert_eq!(row.sst_id, Some(sst_id));
+        assert_eq!(row.syllabus_id, Some(expected_syllabus_id));
+        assert_eq!(row.target_student_id, Some(student_id));
+    }
+
+    /// A comment (not just the thread-create) on an SST-anchored thread also
+    /// carries the syllabus context, since deep-linking applies to every row.
+    #[rocket::async_test]
+    async fn sst_comment_emits_syllabus_context() {
+        let db = TestDbBuilder::new()
+            .coach("coach_user", Some("Coach"))
+            .student("student_user", Some("Sam"))
+            .technique("Armbar", "an armbar", Some("coach_user"))
+            .build()
+            .await
+            .unwrap();
+        let coach_id = db.user_id("coach_user").unwrap();
+        let student_id = db.user_id("student_user").unwrap();
+        let technique_id = db.technique_id("Armbar").unwrap();
+        let sst_id = insert_sst(&db.pool, coach_id, student_id, technique_id).await;
+
+        let thread_id = create_thread(
+            &db.pool,
+            NewThread {
+                author_id: coach_id,
+                anchor: Anchor {
+                    kind: AnchorKind::Sst,
+                    id: sst_id,
+                    video_ts_seconds: None,
+                    pinned_student_id: None,
+                },
+                visibility: ThreadVisibility::Private,
+                scope_student_id: Some(student_id),
+                body: "Thread body.".to_string(),
+            },
+        )
+        .await
+        .unwrap();
+
+        create_comment(&db.pool, thread_id, None, coach_id, "a reply")
+            .await
+            .unwrap();
+
+        // The most recent row is the comment; assert it carries the context.
+        let row = sqlx::query!(
+            r#"SELECT context_kind, syllabus_id AS "syllabus_id?: i64"
+               FROM activity
+               WHERE verb = 'thread_comment_posted' AND thread_id = ?
+               ORDER BY id DESC LIMIT 1"#,
+            thread_id,
+        )
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+
+        assert_eq!(row.context_kind.as_deref(), Some("syllabus"));
+        assert!(row.syllabus_id.is_some(), "comment row must carry syllabus_id");
+    }
 }

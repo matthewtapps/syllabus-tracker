@@ -228,19 +228,58 @@ pub async fn create_thread(pool: &Pool<Sqlite>, new: NewThread) -> Result<i64, A
     if let Some(t) = target {
         ev = ev.target_student(t);
     }
-    // Denormalise the anchor's typed column so the feed can deep-link like
-    // other rows do.
-    ev = match new.anchor.kind {
-        AnchorKind::Technique | AnchorKind::PinnedTechnique => ev.technique(new.anchor.id),
-        AnchorKind::Video | AnchorKind::VideoTimestamp => ev.video(new.anchor.id),
-        AnchorKind::Sst => ev.sst(new.anchor.id),
+    // Map the anchor to its typed id, then denormalise the deep-link context.
+    let (technique_id, video_id, sst_id) = match new.anchor.kind {
+        AnchorKind::Technique | AnchorKind::PinnedTechnique => (Some(new.anchor.id), None, None),
+        AnchorKind::Video | AnchorKind::VideoTimestamp => (None, Some(new.anchor.id), None),
+        AnchorKind::Sst => (None, None, Some(new.anchor.id)),
         // target_student already identifies the subject for profile threads.
-        AnchorKind::StudentProfile => ev,
+        AnchorKind::StudentProfile => (None, None, None),
     };
+    let ev = apply_thread_anchor_context(&mut tx, ev, technique_id, video_id, sst_id).await?;
     emit(&mut tx, ev).await?;
 
     tx.commit().await?;
     Ok(thread_id)
+}
+
+/// Denormalise a thread's deep-link context onto its activity row so the feed
+/// can route to the surface the comment was made on, the same way the typed
+/// id columns drive deep links for other verbs. Exactly one of the ids is set
+/// per anchor. For an SST anchor we also resolve the owning syllabus (the SST
+/// id alone cannot build the `/student/:id/syllabi/:id` URL). `target_student_id`
+/// is deliberately left to the caller: it drives feed routing (broadcast
+/// threads must stay coach-only), so a broadcast SST thread simply has no
+/// student in its path and the frontend falls back to no deep link.
+async fn apply_thread_anchor_context(
+    tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
+    ev: NewActivity,
+    technique_id: Option<i64>,
+    video_id: Option<i64>,
+    sst_id: Option<i64>,
+) -> Result<NewActivity, AppError> {
+    if let Some(id) = sst_id {
+        let syllabus_id = sqlx::query_scalar!(
+            r#"SELECT a.syllabus_id AS "sid!: i64"
+               FROM student_syllabus_techniques sst
+               JOIN syllabus_assignments a ON a.id = sst.assignment_id
+               WHERE sst.id = ?"#,
+            id,
+        )
+        .fetch_optional(&mut **tx)
+        .await?;
+        let mut ev = ev.sst(id).context_kind("syllabus");
+        if let Some(sid) = syllabus_id {
+            ev = ev.syllabus(sid);
+        }
+        Ok(ev)
+    } else if let Some(id) = technique_id {
+        Ok(ev.technique(id).context_kind("library"))
+    } else if let Some(id) = video_id {
+        Ok(ev.video(id).context_kind("library"))
+    } else {
+        Ok(ev)
+    }
 }
 
 /// Who is asking. `is_coach` is true for Coach or Admin (gym-global role).
@@ -361,32 +400,15 @@ pub async fn create_comment(
     if let Some(t) = target {
         ev = ev.target_student(t);
     }
-    // Denormalise the anchor column matching this thread's anchor_kind.
-    ev = match thread_row.anchor_kind.as_str() {
-        "technique" | "pinned_technique" => {
-            if let Some(id) = thread_row.technique_id {
-                ev.technique(id)
-            } else {
-                ev
-            }
-        }
-        "video" | "video_timestamp" => {
-            if let Some(id) = thread_row.video_id {
-                ev.video(id)
-            } else {
-                ev
-            }
-        }
-        "sst" => {
-            if let Some(id) = thread_row.sst_id {
-                ev.sst(id)
-            } else {
-                ev
-            }
-        }
-        // "student_profile" — target_student already identifies the subject.
-        _ => ev,
-    };
+    // Denormalise the deep-link context from this thread's anchor columns.
+    let ev = apply_thread_anchor_context(
+        &mut tx,
+        ev,
+        thread_row.technique_id,
+        thread_row.video_id,
+        thread_row.sst_id,
+    )
+    .await?;
     emit(&mut tx, ev).await?;
 
     tx.commit().await?;
