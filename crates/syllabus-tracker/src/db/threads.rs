@@ -310,6 +310,9 @@ pub struct ThreadView {
     pub author_name: String,
     pub visibility: String,
     pub scope_student_id: Option<i64>,
+    /// Anchor seconds for `video_timestamp` threads; `None` for every other
+    /// anchor kind (including whole-video `video` threads).
+    pub video_ts_seconds: Option<i64>,
     pub body: Option<String>,
     pub created_at: NaiveDateTime,
     pub deleted_at: Option<NaiveDateTime>,
@@ -432,6 +435,7 @@ pub async fn get_thread(
                   COALESCE(u.display_name, u.username, '?') AS "author_name!: String",
                   t.visibility,
                   t.scope_student_id AS "scope_student_id?: i64",
+                  t.video_ts_seconds AS "video_ts_seconds?: i64",
                   t.body,
                   t.created_at AS "created_at!: NaiveDateTime",
                   t.deleted_at AS "deleted_at?: NaiveDateTime"
@@ -491,6 +495,7 @@ pub async fn get_thread(
         author_name: row.author_name,
         visibility: row.visibility,
         scope_student_id: row.scope_student_id,
+        video_ts_seconds: row.video_ts_seconds,
         body: thread_body,
         created_at: row.created_at,
         deleted_at: row.deleted_at,

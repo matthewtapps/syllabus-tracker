@@ -374,6 +374,79 @@ mod tests {
     }
 
     #[rocket::async_test]
+    async fn video_ts_seconds_exposed_on_thread_view() {
+        use crate::db::threads::list_threads_for_anchor;
+        let db = TestDbBuilder::new()
+            .coach("coach_user", Some("Coach"))
+            .student("student_user", Some("Sam"))
+            .technique("Armbar", "an armbar", Some("coach_user"))
+            .build()
+            .await
+            .unwrap();
+        let coach_id = db.user_id("coach_user").unwrap();
+        let student_id = db.user_id("student_user").unwrap();
+        let technique_id = db.technique_id("Armbar").unwrap();
+        let video_id = insert_live_video(&db.pool, technique_id, coach_id).await;
+
+        // Whole-video thread: video_ts_seconds must be None
+        create_thread(
+            &db.pool,
+            NewThread {
+                author_id: coach_id,
+                anchor: Anchor {
+                    kind: AnchorKind::Video,
+                    id: video_id,
+                    video_ts_seconds: None,
+                    pinned_student_id: None,
+                },
+                visibility: ThreadVisibility::Private,
+                scope_student_id: Some(student_id),
+                body: "Overall comment".to_string(),
+            },
+        )
+        .await
+        .unwrap();
+
+        // Timestamped thread: video_ts_seconds must be Some(42)
+        create_thread(
+            &db.pool,
+            NewThread {
+                author_id: coach_id,
+                anchor: Anchor {
+                    kind: AnchorKind::VideoTimestamp,
+                    id: video_id,
+                    video_ts_seconds: Some(42),
+                    pinned_student_id: None,
+                },
+                visibility: ThreadVisibility::Private,
+                scope_student_id: Some(student_id),
+                body: "At 42 seconds".to_string(),
+            },
+        )
+        .await
+        .unwrap();
+
+        // Listing by Video anchor returns both; ordered by COALESCE(video_ts_seconds, 0)
+        let anchor = Anchor {
+            kind: AnchorKind::Video,
+            id: video_id,
+            video_ts_seconds: None,
+            pinned_student_id: None,
+        };
+        let threads = list_threads_for_anchor(
+            &db.pool,
+            anchor,
+            Viewer { user_id: student_id, is_coach: false },
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(threads.len(), 2);
+        assert_eq!(threads[0].video_ts_seconds, None, "whole-video thread must have None");
+        assert_eq!(threads[1].video_ts_seconds, Some(42), "timestamped thread must carry 42");
+    }
+
+    #[rocket::async_test]
     async fn validate_anchor_rejects_missing_video() {
         let db = TestDbBuilder::new()
             .coach("coach_user", Some("Coach"))
