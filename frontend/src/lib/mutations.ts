@@ -1220,8 +1220,12 @@ export function useCreateComment(anchorKind: string, anchorId: number) {
       body: string;
       parentCommentId?: number | null;
     }) => unwrap(await createComment(v.threadId, v.body, v.parentCommentId)),
-    onSuccess: () =>
-      qc.invalidateQueries({ queryKey: qk.threads(anchorKind, anchorId) }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: qk.threads(anchorKind, anchorId) });
+      if (anchorKind === "video_timestamp" || anchorKind === "video") {
+        qc.invalidateQueries({ queryKey: qk.threads("video", anchorId) });
+      }
+    },
   });
 }
 
@@ -1230,8 +1234,12 @@ export function useDeleteThread(anchorKind: string, anchorId: number) {
   return useMutation({
     mutationFn: async (threadId: number) =>
       unwrap(await deleteThread(threadId)),
-    onSuccess: () =>
-      qc.invalidateQueries({ queryKey: qk.threads(anchorKind, anchorId) }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: qk.threads(anchorKind, anchorId) });
+      if (anchorKind === "video_timestamp" || anchorKind === "video") {
+        qc.invalidateQueries({ queryKey: qk.threads("video", anchorId) });
+      }
+    },
   });
 }
 
@@ -1240,8 +1248,12 @@ export function useDeleteComment(anchorKind: string, anchorId: number) {
   return useMutation({
     mutationFn: async (commentId: number) =>
       unwrap(await deleteComment(commentId)),
-    onSuccess: () =>
-      qc.invalidateQueries({ queryKey: qk.threads(anchorKind, anchorId) }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: qk.threads(anchorKind, anchorId) });
+      if (anchorKind === "video_timestamp" || anchorKind === "video") {
+        qc.invalidateQueries({ queryKey: qk.threads("video", anchorId) });
+      }
+    },
   });
 }
 

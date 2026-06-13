@@ -116,8 +116,9 @@ function ReviewInner({ video, surface, watchEvents }: VideoReviewPanelProps) {
         scope_student_id: vis.scope_student_id,
         body: draft.body,
       });
-    } catch {
+    } catch (e) {
       toast.error("Failed to post comment. Please try again.");
+      throw e;
     }
   }
 

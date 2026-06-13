@@ -46,8 +46,12 @@ export function MomentComposer({
   async function post() {
     const trimmed = body.trim();
     if (!trimmed) return;
-    await onSubmit({ video_ts_seconds: stamp, body: trimmed });
-    collapse();
+    try {
+      await onSubmit({ video_ts_seconds: stamp, body: trimmed });
+      collapse();
+    } catch {
+      // Keep the composer open so the draft survives; submit() already toasted.
+    }
   }
 
   if (!open) {
