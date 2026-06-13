@@ -1,9 +1,12 @@
+import { useEffect, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useTechniqueRow } from "./technique-row-context";
 import { useThreadsForAnchor } from "@/lib/queries";
 import { useCreateThread } from "@/lib/mutations";
 import { useUser } from "@/lib/current-user-context";
 import { ThreadView } from "@/components/threads/thread-view";
 import { ThreadComposer } from "@/components/threads/thread-composer";
+import { cn } from "@/lib/utils";
 
 export function DiscussionBlock() {
   const { technique, context } = useTechniqueRow();
@@ -48,6 +51,45 @@ export function DiscussionBlock() {
 
   const threads = threadsQuery.data ?? [];
 
+  // Deep link from the activity feed: `?thread=<id>` scrolls to and briefly
+  // highlights that thread once its discussion has mounted (the feed link also
+  // carries `?focus=` which expands this row). Only the block whose anchor owns
+  // the thread consumes the param; others leave it for the right block.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const listRef = useRef<HTMLDivElement>(null);
+  const [highlightThreadId, setHighlightThreadId] = useState<number | null>(null);
+  const consumedTargetRef = useRef(false);
+  const targetThreadId = (() => {
+    const raw = searchParams.get("thread");
+    if (!raw) return null;
+    const parsed = Number.parseInt(raw, 10);
+    return Number.isFinite(parsed) ? parsed : null;
+  })();
+
+  useEffect(() => {
+    if (consumedTargetRef.current || targetThreadId == null || threadsQuery.isLoading) {
+      return;
+    }
+    if (!threads.some((t) => t.id === targetThreadId)) return;
+    const el = listRef.current?.querySelector<HTMLElement>(
+      `[data-thread-id="${targetThreadId}"]`,
+    );
+    if (!el) return;
+    consumedTargetRef.current = true;
+    el.scrollIntoView({ behavior: "smooth", block: "center" });
+    setHighlightThreadId(targetThreadId);
+    const timer = setTimeout(() => setHighlightThreadId(null), 2200);
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        next.delete("thread");
+        return next;
+      },
+      { replace: true },
+    );
+    return () => clearTimeout(timer);
+  }, [targetThreadId, threadsQuery.isLoading, threads, setSearchParams]);
+
   // Students ask; coaches comment. The composer copy follows the viewer.
   const composerPlaceholder =
     user.role === "student"
@@ -62,9 +104,16 @@ export function DiscussionBlock() {
       ) : threads.length === 0 ? (
         <p className="text-sm text-muted-foreground">No discussion yet.{scopeStudentId !== undefined ? " Start one." : ""}</p>
       ) : (
-        <div className="divide-y divide-border">
+        <div ref={listRef} className="divide-y divide-border">
           {threads.map((t) => (
-            <div key={t.id} className="py-4 first:pt-0 last:pb-0">
+            <div
+              key={t.id}
+              data-thread-id={t.id}
+              className={cn(
+                "rounded-md py-4 transition-colors first:pt-0 last:pb-0",
+                highlightThreadId === t.id && "bg-muted/60 ring-2 ring-ring/50",
+              )}
+            >
               <ThreadView thread={t} anchorKind={anchor.kind} anchorId={anchor.id} />
             </div>
           ))}
