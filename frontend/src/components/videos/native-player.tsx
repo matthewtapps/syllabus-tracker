@@ -17,6 +17,13 @@ export function NativePlayer({ video, events }: NativePlayerProps) {
     startedRef.current = false;
   }, [video.id]);
 
+  useEffect(() => {
+    events?.registerSeek?.((seconds) => {
+      const el = videoRef.current;
+      if (el) el.currentTime = Math.max(0, seconds);
+    });
+  }, [events]);
+
   if (error) {
     return (
       <div className="rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive">
@@ -51,7 +58,9 @@ export function NativePlayer({ video, events }: NativePlayerProps) {
           startedRef.current = true;
           events?.onPlay?.();
         }
+        events?.onPaused?.(false);
       }}
+      onPause={() => events?.onPaused?.(true)}
       onTimeUpdate={(event) => {
         const el = event.currentTarget;
         if (Number.isFinite(el.duration)) {
