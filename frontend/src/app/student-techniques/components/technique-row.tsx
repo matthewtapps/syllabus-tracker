@@ -26,6 +26,7 @@ import { AttemptsPanel } from "./attempts-panel";
 import { VideoList } from "@/components/videos/video-list";
 import { AddVideoButton } from "@/components/videos/add-video-button";
 import { useCapabilities } from "@/context/capabilities-context";
+import type { VideoThreadSurface } from "@/lib/thread-visibility";
 
 interface TechniqueRowProps {
   technique: Technique;
@@ -340,6 +341,7 @@ export function TechniqueRow({
               canManage={canEditAll}
               forStudent={studentId}
               studentDisplayName={studentDisplayName}
+              surface={{ kind: "student", studentId }}
             />
           )}
 
@@ -483,6 +485,7 @@ interface VideoSectionProps {
   canManage: boolean;
   forStudent?: number;
   studentDisplayName?: string;
+  surface: VideoThreadSurface;
 }
 
 function VideoSection({
@@ -490,6 +493,7 @@ function VideoSection({
   canManage,
   forStudent,
   studentDisplayName,
+  surface,
 }: VideoSectionProps) {
   const [reloadKey, setReloadKey] = useState(0);
   return (
@@ -515,6 +519,7 @@ function VideoSection({
       <VideoList
         techniqueId={techniqueId}
         canManage={canManage}
+        surface={surface}
         reloadKey={reloadKey}
         forStudent={forStudent}
         studentDisplayName={studentDisplayName}

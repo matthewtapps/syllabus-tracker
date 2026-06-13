@@ -1198,6 +1198,16 @@ export function useCreateThread() {
       qc.invalidateQueries({
         queryKey: qk.threads(input.anchor_kind, input.anchor_id),
       });
+      // video_timestamp threads are read back through the "video" anchor query;
+      // invalidate that key too so the feed refreshes without a dialog reopen.
+      if (
+        input.anchor_kind === "video_timestamp" ||
+        input.anchor_kind === "video"
+      ) {
+        qc.invalidateQueries({
+          queryKey: qk.threads("video", input.anchor_id),
+        });
+      }
     },
   });
 }
@@ -1210,8 +1220,12 @@ export function useCreateComment(anchorKind: string, anchorId: number) {
       body: string;
       parentCommentId?: number | null;
     }) => unwrap(await createComment(v.threadId, v.body, v.parentCommentId)),
-    onSuccess: () =>
-      qc.invalidateQueries({ queryKey: qk.threads(anchorKind, anchorId) }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: qk.threads(anchorKind, anchorId) });
+      if (anchorKind === "video_timestamp" || anchorKind === "video") {
+        qc.invalidateQueries({ queryKey: qk.threads("video", anchorId) });
+      }
+    },
   });
 }
 
@@ -1220,8 +1234,12 @@ export function useDeleteThread(anchorKind: string, anchorId: number) {
   return useMutation({
     mutationFn: async (threadId: number) =>
       unwrap(await deleteThread(threadId)),
-    onSuccess: () =>
-      qc.invalidateQueries({ queryKey: qk.threads(anchorKind, anchorId) }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: qk.threads(anchorKind, anchorId) });
+      if (anchorKind === "video_timestamp" || anchorKind === "video") {
+        qc.invalidateQueries({ queryKey: qk.threads("video", anchorId) });
+      }
+    },
   });
 }
 
@@ -1230,8 +1248,12 @@ export function useDeleteComment(anchorKind: string, anchorId: number) {
   return useMutation({
     mutationFn: async (commentId: number) =>
       unwrap(await deleteComment(commentId)),
-    onSuccess: () =>
-      qc.invalidateQueries({ queryKey: qk.threads(anchorKind, anchorId) }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: qk.threads(anchorKind, anchorId) });
+      if (anchorKind === "video_timestamp" || anchorKind === "video") {
+        qc.invalidateQueries({ queryKey: qk.threads("video", anchorId) });
+      }
+    },
   });
 }
 

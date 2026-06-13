@@ -28,10 +28,13 @@ import { PrivacyAckBanner } from "./privacy-ack-banner";
 import { VideoPlayerDialog } from "./video-player-dialog";
 import { VideoRow } from "./video-row";
 import type { WatchContext } from "./useWatchTracker";
+import type { VideoThreadSurface } from "@/lib/thread-visibility";
 
 interface VideoListProps {
   techniqueId: number;
   canManage: boolean;
+  /** Where this video list lives, for thread-visibility derivation. */
+  surface: VideoThreadSurface;
   /** When true, each video row shows a muted per-video play count. Should
    * only be passed as true when the current viewer is a coach or admin. */
   isCoach?: boolean;
@@ -60,6 +63,7 @@ interface VideoListProps {
 export function VideoList({
   techniqueId,
   canManage,
+  surface,
   isCoach = false,
   reloadKey = 0,
   forStudent,
@@ -248,7 +252,7 @@ export function VideoList({
         </ul>
       )}
 
-      <VideoPlayerDialog video={playing} onClose={() => setPlaying(null)} watchContext={watchContext} />
+      <VideoPlayerDialog video={playing} onClose={() => setPlaying(null)} surface={surface} watchContext={watchContext} />
     </div>
   );
 }

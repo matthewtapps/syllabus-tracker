@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT t.id AS \"id!: i64\",\n                  t.anchor_kind,\n                  t.created_by_id AS \"author_id!: i64\",\n                  COALESCE(u.display_name, u.username, '?') AS \"author_name!: String\",\n                  t.visibility,\n                  t.scope_student_id AS \"scope_student_id?: i64\",\n                  t.body,\n                  t.created_at AS \"created_at!: NaiveDateTime\",\n                  t.deleted_at AS \"deleted_at?: NaiveDateTime\"\n           FROM threads t\n           JOIN users u ON u.id = t.created_by_id\n           WHERE t.id = ?",
+  "query": "SELECT t.id AS \"id!: i64\",\n                  t.anchor_kind,\n                  t.created_by_id AS \"author_id!: i64\",\n                  COALESCE(u.display_name, u.username, '?') AS \"author_name!: String\",\n                  t.visibility,\n                  t.scope_student_id AS \"scope_student_id?: i64\",\n                  t.video_ts_seconds AS \"video_ts_seconds?: i64\",\n                  t.body,\n                  t.created_at AS \"created_at!: NaiveDateTime\",\n                  t.deleted_at AS \"deleted_at?: NaiveDateTime\"\n           FROM threads t\n           JOIN users u ON u.id = t.created_by_id\n           WHERE t.id = ?",
   "describe": {
     "columns": [
       {
@@ -34,18 +34,23 @@
         "type_info": "Integer"
       },
       {
-        "name": "body",
+        "name": "video_ts_seconds?: i64",
         "ordinal": 6,
+        "type_info": "Integer"
+      },
+      {
+        "name": "body",
+        "ordinal": 7,
         "type_info": "Text"
       },
       {
         "name": "created_at!: NaiveDateTime",
-        "ordinal": 7,
+        "ordinal": 8,
         "type_info": "Datetime"
       },
       {
         "name": "deleted_at?: NaiveDateTime",
-        "ordinal": 8,
+        "ordinal": 9,
         "type_info": "Datetime"
       }
     ],
@@ -59,10 +64,11 @@
       false,
       false,
       true,
+      true,
       false,
       false,
       true
     ]
   },
-  "hash": "82bcd6b0be9f8ba3188bdd88d5d54e760815a0ee3e9ee8ac67ca59295b2054a6"
+  "hash": "771ddc74ef4d884eead964ff3dc78319249f17d25d74fc6e09c92746cb04e1d5"
 }

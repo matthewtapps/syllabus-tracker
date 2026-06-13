@@ -58,6 +58,23 @@ const SHORT_DATE = new Intl.DateTimeFormat("en-US", {
 });
 
 /**
+ * Format a video offset in seconds as a compact timestamp: "0:42", "1:05",
+ * or "1:05:03" once past an hour. Floors fractional seconds, clamps negatives.
+ */
+export function formatTimestamp(seconds: number): string {
+  const total = Math.max(0, Math.floor(seconds));
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = total % 60;
+  const ss = String(s).padStart(2, "0");
+  if (h > 0) {
+    const mm = String(m).padStart(2, "0");
+    return `${h}:${mm}:${ss}`;
+  }
+  return `${m}:${ss}`;
+}
+
+/**
  * Compact relative time for dense lists: "now", "5m", "3h", "2d", then a short
  * date ("Jun 1"). Distinct from formatRelative, which is wordier.
  */

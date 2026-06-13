@@ -134,6 +134,16 @@ jobs:
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
             target/
+      # cache-nix-action restores under a root context, so ~/.cargo and the
+      # cached target/ come back root-owned. cargo then cannot create the
+      # git-dependency checkout dir (e.g. rocket) and clippy fails with
+      # "Permission denied (os error 13)". Reclaim ownership for the runner
+      # user (passwordless sudo on GitHub-hosted runners). The nix store
+      # (legitimately root-owned and read-only) is left untouched.
+      - name: Reclaim ownership of the restored cargo cache
+        run: |
+          sudo chown -R "$(id -u):$(id -g)" ~/.cargo target 2>/dev/null || true
+          mkdir -p ~/.cargo/git/checkouts
       - name: Clippy (backend lint)
         run: nix develop .#ci --command just lint-backend
       - name: Backend tests (nextest)

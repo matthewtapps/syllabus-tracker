@@ -1,11 +1,29 @@
-import { describe, expect, test, vi, afterEach } from "vitest";
-import { formatRelativeShort } from "./dates";
+import { describe, expect, it, test, vi, afterEach } from "vitest";
+import { formatRelativeShort, formatTimestamp } from "./dates";
 
 const NOW = new Date("2026-06-11T12:00:00Z").getTime();
 
 function at(offsetMs: number): string {
   return new Date(NOW + offsetMs).toISOString();
 }
+
+describe("formatTimestamp", () => {
+  it("formats seconds under a minute", () => {
+    expect(formatTimestamp(0)).toBe("0:00");
+    expect(formatTimestamp(42)).toBe("0:42");
+  });
+  it("formats minutes:seconds", () => {
+    expect(formatTimestamp(65)).toBe("1:05");
+    expect(formatTimestamp(605)).toBe("10:05");
+  });
+  it("formats hours:minutes:seconds past an hour", () => {
+    expect(formatTimestamp(3903)).toBe("1:05:03");
+  });
+  it("floors fractional seconds and clamps negatives to zero", () => {
+    expect(formatTimestamp(42.9)).toBe("0:42");
+    expect(formatTimestamp(-5)).toBe("0:00");
+  });
+});
 
 describe("formatRelativeShort", () => {
   afterEach(() => vi.useRealTimers());
