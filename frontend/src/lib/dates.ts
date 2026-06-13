@@ -58,10 +58,6 @@ const SHORT_DATE = new Intl.DateTimeFormat("en-US", {
 });
 
 /**
- * Compact relative time for dense lists: "now", "5m", "3h", "2d", then a short
- * date ("Jun 1"). Distinct from formatRelative, which is wordier.
- */
-/**
  * Format a video offset in seconds as a compact timestamp: "0:42", "1:05",
  * or "1:05:03" once past an hour. Floors fractional seconds, clamps negatives.
  */
@@ -78,6 +74,10 @@ export function formatTimestamp(seconds: number): string {
   return `${m}:${ss}`;
 }
 
+/**
+ * Compact relative time for dense lists: "now", "5m", "3h", "2d", then a short
+ * date ("Jun 1"). Distinct from formatRelative, which is wordier.
+ */
 export function formatRelativeShort(input: string | Date | null | undefined): string {
   const date = parse(input);
   if (!date) return "";
