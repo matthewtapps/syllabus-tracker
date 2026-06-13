@@ -84,7 +84,7 @@ export function MomentComposer({
       {stamp !== null && (
         <div className="flex items-center gap-2">
           <span className="inline-flex items-center gap-1 rounded-md border border-border bg-muted px-2 py-1 text-xs font-semibold tabular-nums text-violet-500">
-            &#9654; {formatTimestamp(stamp)}
+            <span aria-hidden="true">&#9654;</span> {formatTimestamp(stamp)}
           </span>
           <div className="flex gap-1">
             <Button
@@ -113,7 +113,7 @@ export function MomentComposer({
             className="ml-auto text-xs text-muted-foreground underline underline-offset-2"
             onClick={() => setStamp(null)}
           >
-            x whole video
+            &#215; whole video
           </button>
         </div>
       )}
