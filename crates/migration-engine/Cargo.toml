@@ -4,8 +4,15 @@ edition.workspace = true
 version.workspace = true
 rust-version.workspace = true
 
+[package.metadata.cargo-machete]
+# Present only to enable libsqlite3-sys's `bundled` feature (vendored SQLite);
+# never referenced in code. See the workspace dependency comment.
+ignored = ["libsqlite3-sys"]
+
 [dependencies]
 sqlx = { workspace = true }
+# Pins a vendored SQLite into the binary; see the workspace Cargo.toml comment.
+libsqlite3-sys = { workspace = true }
 tokio = { workspace = true }
 anyhow = { workspace = true }
 tracing = { workspace = true }

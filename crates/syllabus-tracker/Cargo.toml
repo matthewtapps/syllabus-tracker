@@ -11,11 +11,18 @@ default-run = "syllabus-tracker"
 # pass `--all-features`, which turns this on automatically.
 test-support = []
 
+[package.metadata.cargo-machete]
+# Present only to enable libsqlite3-sys's `bundled` feature (vendored SQLite);
+# never referenced in code. See the workspace dependency comment.
+ignored = ["libsqlite3-sys"]
+
 [dependencies]
 migration-engine = { path = "../migration-engine" }
 
 # db
 sqlx = { workspace = true }
+# Pins a vendored SQLite into the binary; see the workspace Cargo.toml comment.
+libsqlite3-sys = { workspace = true }
 
 # web framework
 rocket = { git = "https://github.com/rwf2/Rocket", branch = "master", features = ["trace", "json", "secrets", "tls"] }

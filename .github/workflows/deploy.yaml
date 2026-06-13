@@ -139,13 +139,7 @@ jobs:
       - name: Backend tests (nextest)
         run: nix develop .#ci --command just test-backend
       - name: sqlx offline-cache check
-        run: |
-          # TEMP DIAGNOSTIC: show exactly what CI's prepare produces vs committed.
-          nix develop .#ci --command just sqlx-prepare
-          echo "=== git diff --stat .sqlx ==="; git --no-pager diff --stat -- .sqlx || true
-          echo "=== full diff ==="; git --no-pager diff -- .sqlx | head -120 || true
-          git checkout -- .sqlx
-          nix develop .#ci --command just sqlx-check
+        run: nix develop .#ci --command just sqlx-check
 
   apply_tofu:
     needs: read_platform

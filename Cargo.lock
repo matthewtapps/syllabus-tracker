@@ -2490,6 +2490,7 @@ version = "1.0.0"
 dependencies = [
  "anyhow",
  "indicatif",
+ "libsqlite3-sys",
  "regex",
  "sqlx",
  "tokio",
@@ -4211,6 +4212,7 @@ dependencies = [
  "either",
  "env_logger",
  "indicatif",
+ "libsqlite3-sys",
  "migration-engine",
  "once_cell",
  "opentelemetry",
