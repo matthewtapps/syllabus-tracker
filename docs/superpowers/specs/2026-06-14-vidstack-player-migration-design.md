@@ -72,6 +72,8 @@ slot:
 interface VidstackPlayerProps {
   video: Video;
   events?: PlayerEvents;
+  /** Rendered over the video, above the control bar (e.g. the comment overlay). */
+  overlay?: ReactNode;
   /** Rendered inside <TimeSlider>, positioned in the slider's 0..1 track space. */
   sliderMarkers?: ReactNode;
 }
@@ -83,9 +85,11 @@ it drops `absolute inset-x-2 bottom-2` (which assumed it was a panel overlay)
 and instead fills the slider track (`absolute inset-0`), keeping its existing
 `left: position*100%` per-pin math and `clusterPins` logic verbatim.
 
-`MomentOverlay` (the Instagram-live chip over the video frame) stays a
-panel-level overlay over the video area; it does not touch the scrubber and is
-unchanged.
+`MomentOverlay` (the Instagram-live chip over the video frame) moves into the
+player's `overlay` slot so the player can bound it above the always-visible
+custom control bar (the bar must stay visible because it hosts the pins, so the
+overlay needs a known region to sit in). The `MomentOverlay` component itself is
+unchanged; only where it is mounted moves from a panel sibling to the slot.
 
 ### Event bridge
 
@@ -113,8 +117,9 @@ shadcn/violet aesthetic:
 - A control row: play/pause toggle, mute toggle, `TimeSlider` (hosting
   `sliderMarkers`), `currentTime / duration` readout using `formatTimestamp`,
   and a `FullscreenButton`.
-- Buttons styled with the shadcn `Button` component; violet accent on the
-  slider fill and pins.
+- Vidstack's own `PlayButton`/`MuteButton`/`FullscreenButton` (each already a
+  button element) styled via className to match the shadcn aesthetic, with
+  lucide-react icons as children; violet accent on the slider fill and pins.
 - Loading and error states reuse the existing `useSignedPlaybackUrl` skeleton
   and retry UI from `native-player.tsx`.
 
