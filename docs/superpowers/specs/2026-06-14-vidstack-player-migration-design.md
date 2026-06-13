@@ -145,9 +145,26 @@ It is pure CSS layout, so it works identically on iPhone.
 | `frontend/src/components/videos/vidstack-player.tsx` | **New.** Vidstack-backed player implementing `PlayerEvents`, custom control bar, `sliderMarkers` slot. |
 | `frontend/src/components/videos/native-player.tsx` | **Removed** (replaced by `vidstack-player.tsx`). |
 | `frontend/src/components/videos/video-player-panel.tsx` | `kind: "native"` branch renders `<VidstackPlayer>`; forwards a new optional `sliderMarkers` prop. |
-| `frontend/src/components/videos/review/scrubber-pins.tsx` | Positioning changes from panel overlay to slider-track fill (`absolute inset-0`); pin math unchanged. |
+| `frontend/src/components/videos/review/scrubber-pins.tsx` | Positioning changes from panel overlay to slider-track fill (`absolute inset-0`); pin math unchanged. Rename user-facing aria-labels off "moment" (see Terminology). |
+| `frontend/src/components/videos/review/moment-side-sheet.tsx` | Heading copy `Moment 0:42` -> `Comment at 0:42` (file/component name unchanged). |
+| `frontend/src/components/videos/review/scrubber-pins.test.tsx` | Update the aria-label assertion to the new copy. |
 | `frontend/src/components/videos/review/video-review-panel.tsx` | Pass `ScrubberPins` into the player's `sliderMarkers` slot instead of overlaying it; remove the sibling overlay render. |
 | `frontend/package.json` | Add `@vidstack/react` (latest, React 19 compatible). |
+
+## Terminology
+
+"Moment" is not a user-facing name. Timestamped video comments are surfaced as
+**comments** that form **threads on a video**, matching the composer's existing
+"Comment at 0:29" copy. Fix user-facing strings only:
+
+- `scrubber-pins.tsx` aria-labels: `"moment at 0:30"` -> `"comment at 0:30"`,
+  `"3 moments"` -> `"3 comments"`.
+- `moment-side-sheet.tsx` heading: `"Moment 0:42"` -> `"Comment at 0:42"`.
+- `scrubber-pins.test.tsx`: update the matching aria-label assertion.
+
+Internal code names (`MomentComposer`, `activeMoment`, `moment-*.tsx`, the local
+`moment` variable) are intentionally left unchanged; this pass touches copy
+only.
 
 ## Testing
 
