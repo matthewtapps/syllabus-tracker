@@ -5,6 +5,7 @@ import { useUser } from "@/lib/current-user-context";
 import { useThreadsForAnchor } from "@/lib/queries";
 import { useCreateThread } from "@/lib/mutations";
 import { deriveThreadVisibility, type VideoThreadSurface } from "@/lib/thread-visibility";
+import { useMediaQuery } from "@/lib/use-media-query";
 import type { PlayerEvents } from "../player-events";
 import { VideoPlayerPanel } from "../video-player-panel";
 import {
@@ -15,6 +16,7 @@ import {
 import { MomentComposer, type MomentDraft } from "./moment-composer";
 import { MomentFeed } from "./moment-feed";
 import { MomentOverlay } from "./moment-overlay";
+import { MomentSideSheet } from "./moment-side-sheet";
 import { ScrubberPins } from "./scrubber-pins";
 
 interface VideoReviewPanelProps {
@@ -36,6 +38,7 @@ function ReviewInner({ video, surface, watchEvents }: VideoReviewPanelProps) {
   const user = useUser();
   const controller = usePlayerController();
   const registration = usePlayerRegistration();
+  const isLandscape = useMediaQuery("(orientation: landscape) and (max-height: 500px)");
 
   // Bridge player events -> controller registration, merged with watch events.
   const events = useMemo<PlayerEvents>(
@@ -58,6 +61,7 @@ function ReviewInner({ video, surface, watchEvents }: VideoReviewPanelProps) {
   const createThread = useCreateThread();
 
   const [pinnedThread, setPinnedThread] = useState<ThreadView | null>(null);
+  const sheetOpen = isLandscape && pinnedThread != null;
   const [highlightThreadId, setHighlightThreadId] = useState<number | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const pinTimerRef = useRef<number | null>(null);
@@ -72,6 +76,8 @@ function ReviewInner({ video, surface, watchEvents }: VideoReviewPanelProps) {
   }, []);
 
   function scrollToThread(threadId: number) {
+    // When the side sheet is open the feed is not rendered; skip the DOM scroll.
+    if (sheetOpen) return;
     setHighlightThreadId(threadId);
     const el = listRef.current?.querySelector<HTMLElement>(`[data-thread-id="${threadId}"]`);
     el?.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -79,7 +85,8 @@ function ReviewInner({ video, surface, watchEvents }: VideoReviewPanelProps) {
     highlightTimerRef.current = window.setTimeout(() => setHighlightThreadId(null), 2200);
   }
 
-  // Toggle pin on re-click; otherwise set it and auto-clear after 6 s.
+  // Toggle pin on re-click; otherwise set it.
+  // Portrait: auto-clear after 6 s (transient overlay). Landscape: stay open until user taps X.
   function focusPin(t: ThreadView) {
     if (pinnedThread?.id === t.id) {
       setPinnedThread(null);
@@ -93,7 +100,9 @@ function ReviewInner({ video, surface, watchEvents }: VideoReviewPanelProps) {
     if (t.video_ts_seconds != null) controller.seekTo(t.video_ts_seconds);
     scrollToThread(t.id);
     if (pinTimerRef.current) window.clearTimeout(pinTimerRef.current);
-    pinTimerRef.current = window.setTimeout(() => setPinnedThread(null), 6000);
+    if (!isLandscape) {
+      pinTimerRef.current = window.setTimeout(() => setPinnedThread(null), 6000);
+    }
   }
 
   async function submit(draft: MomentDraft) {
@@ -114,43 +123,61 @@ function ReviewInner({ video, surface, watchEvents }: VideoReviewPanelProps) {
 
   return (
     <div className="space-y-3">
-      <div className="relative">
-        <VideoPlayerPanel video={video} events={events} />
-        {controller.canReadTime && (
-          <>
-            <MomentOverlay
-              threads={threads}
-              currentTime={controller.currentTime}
-              pinnedThread={pinnedThread}
-              onOpen={(t) => scrollToThread(t.id)}
-            />
-            <ScrubberPins
-              threads={threads}
-              duration={controller.duration}
-              activeThreadId={pinnedThread?.id ?? null}
-              onPinClick={focusPin}
-              onClusterClick={(ts) => scrollToThread(ts[0].id)}
-            />
-          </>
+      {/* Player region: flex row in landscape sheet mode, stacked otherwise. */}
+      <div className={sheetOpen ? "flex gap-2" : "relative"}>
+        <div className={sheetOpen ? "relative min-w-0 flex-1" : "relative"}>
+          <VideoPlayerPanel video={video} events={events} />
+          {controller.canReadTime && (
+            <>
+              <MomentOverlay
+                threads={threads}
+                currentTime={controller.currentTime}
+                pinnedThread={pinnedThread}
+                onOpen={focusPin}
+              />
+              <ScrubberPins
+                threads={threads}
+                duration={controller.duration}
+                activeThreadId={pinnedThread?.id ?? null}
+                onPinClick={focusPin}
+                onClusterClick={(ts) => scrollToThread(ts[0].id)}
+              />
+            </>
+          )}
+        </div>
+
+        {sheetOpen && pinnedThread && (
+          <MomentSideSheet
+            thread={pinnedThread}
+            videoId={video.id}
+            onClose={() => {
+              setPinnedThread(null);
+              if (pinTimerRef.current) window.clearTimeout(pinTimerRef.current);
+            }}
+          />
         )}
       </div>
 
-      <MomentComposer
-        currentTime={controller.currentTime}
-        canStamp={controller.canReadTime}
-        onCaptureStart={() => controller.canSeek && controller.seekTo(controller.currentTime)}
-        onSubmit={submit}
-        pending={createThread.isPending}
-      />
+      {!sheetOpen && (
+        <>
+          <MomentComposer
+            currentTime={controller.currentTime}
+            canStamp={controller.canReadTime}
+            onCaptureStart={() => controller.canSeek && controller.seekTo(controller.currentTime)}
+            onSubmit={submit}
+            pending={createThread.isPending}
+          />
 
-      <div ref={listRef}>
-        <MomentFeed
-          videoId={video.id}
-          threads={threads}
-          onSeek={(s) => controller.seekTo(s)}
-          highlightThreadId={highlightThreadId}
-        />
-      </div>
+          <div ref={listRef}>
+            <MomentFeed
+              videoId={video.id}
+              threads={threads}
+              onSeek={(s) => controller.seekTo(s)}
+              highlightThreadId={highlightThreadId}
+            />
+          </div>
+        </>
+      )}
     </div>
   );
 }
