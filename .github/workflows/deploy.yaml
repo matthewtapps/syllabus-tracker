@@ -97,22 +97,22 @@ jobs:
           fi
           echo "VM_IP=$VM_IP, host_age_ready=$([ -n \"$HOST_AGE\" ] && echo true || echo false)"
 
-  # Backend correctness gate: clippy + nextest + sqlx offline-cache check.
-  # Runs unconditionally on every push and PR; gates build_backend and
-  # build_frontend so a broken-build SHA never gets pushed to GHCR.
+  # Backend correctness gate: clippy + nextest. Runs unconditionally on every
+  # push and PR; gates build_backend and build_frontend so a broken-build SHA
+  # never gets pushed to GHCR. Runs through the project's Nix dev shell
+  # (`nix develop .#ci`) so the toolchain (rustc, cargo-nextest, just) is
+  # byte-identical to local dev.
   #
-  # Everything runs through the project's Nix dev shell (`nix develop .#ci`)
-  # so the toolchain (rustc, sqlx-cli, cargo-nextest, just) is byte-identical
-  # to local dev. This is what keeps the .sqlx offline cache reproducible:
-  # sqlx-cli statically bundles its own SQLite, and a version skew between a
-  # dev box and CI is what made `sqlx prepare --check` nondeterministic. The
-  # flake pins sqlx-cli to the 0.8 series and rustc to the workspace MSRV.
-  #
-  # `just sqlx-check` builds an ephemeral, schema-only (empty) DB and runs
-  # `sqlx prepare --check` against it. An EMPTY DB is the deterministic
-  # prepare state: with no rows, SQLite type inference falls back to each
-  # column's declared affinity instead of the storage class of whatever row
-  # was present, so expression columns (MAX/COALESCE/CASE) don't flip type.
+  # NOTE: we deliberately do NOT run `sqlx prepare --check` here. SQLite's
+  # type inference for expression columns (MAX/COUNT/SUM/COALESCE/CASE over an
+  # empty table) is not reproducible across the SQLite that different hosts
+  # compile into sqlx's proc-macro, so `--check` false-fails on a cache that is
+  # otherwise correct (see launchbadge/sqlx#1737). The offline build is the
+  # real gate instead: `test` compiles with `SQLX_OFFLINE=true`, so a missing
+  # or query-text-changed cache entry fails to compile, and the tests run real
+  # queries against a live migrated DB, catching schema/cache type drift at
+  # runtime. Regenerate the cache locally with `just sqlx-prepare` when you
+  # change a query.
   checks:
     runs-on: ubuntu-latest
     steps:
@@ -138,8 +138,6 @@ jobs:
         run: nix develop .#ci --command just lint-backend
       - name: Backend tests (nextest)
         run: nix develop .#ci --command just test-backend
-      - name: sqlx offline-cache check
-        run: nix develop .#ci --command just sqlx-check
 
   apply_tofu:
     needs: read_platform

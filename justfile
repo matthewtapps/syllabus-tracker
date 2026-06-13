@@ -1,8 +1,11 @@
 # ---- verification ---------------------------------------------------------
 
-# Lint + test + sqlx-check + unused-deps. Post-change gate.
+# Lint + test + unused-deps. Post-change gate. Does NOT run sqlx-check: SQLite
+# expression-column type inference isn't reproducible across hosts, so the
+# offline build (test, with SQLX_OFFLINE) is the real cache gate. Regenerate
+# the cache with `just sqlx-prepare` when you change a query.
 [group('verify')]
-verify: lint test sqlx-check unused-deps
+verify: lint test unused-deps
 
 # Lint + test only. No live DB required.
 [group('verify')]
@@ -76,7 +79,9 @@ _sqlx mode:
 [group('verify')]
 sqlx-prepare: (_sqlx "")
 
-# Fail if the .sqlx/ cache is stale. Used by `just verify`.
+# Advisory: check whether the .sqlx/ cache matches a fresh prepare. NOT part of
+# `just verify` or CI, because SQLite expression-column inference varies by host
+# (see launchbadge/sqlx#1737) and false-fails. Useful as a local sanity check.
 [group('verify')]
 sqlx-check: (_sqlx "--check")
 

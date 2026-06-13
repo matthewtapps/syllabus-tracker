@@ -10,15 +10,6 @@ rust-version = "1.86"
 
 [workspace.dependencies]
 sqlx = { version = "0.8.5", features = ["runtime-async-std", "sqlite", "chrono"] }
-# Force the vendored (bundled) SQLite amalgamation so dev and CI compile the
-# SAME SQLite into every binary. Without this, libsqlite3-sys links whatever
-# SQLite the host build environment resolves, and the two disagree on
-# empty-table aggregate type inference (COUNT/SUM/MAX infer the column affinity
-# on one and `Null` on the other), which made the .sqlx offline cache
-# non-reproducible between this box and CI. Pinned to the version sqlx 0.8.5
-# already locks. Pulled in (unused in code) purely to enable the feature; a
-# per-crate cargo-machete ignore keeps `just unused-deps` quiet.
-libsqlite3-sys = { version = "0.30.1", features = ["bundled"] }
 tokio = { version = "1.45.0", features = ["process", "fs", "io-util", "macros", "rt", "rt-multi-thread", "time", "sync"] }
 anyhow = "1.0"
 dotenvy = "0.15.7"
