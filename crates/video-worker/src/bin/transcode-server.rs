@@ -2,22 +2,28 @@
 //!
 //! Used in two modes controlled by `TRANSCODE_SERVER_ASYNC`:
 //!
-//! **Sync mode (default — used by the Cloudflare Container):**
+//! **Sync mode (default):**
 //! `POST /jobs` parses `ProcessJob`, runs `video-worker` and awaits the child,
 //! then responds 200 (exit 0) or 500 with captured stderr (nonzero exit).
-//! The Cloudflare queue consumer awaits this response; a non-2xx causes the
-//! message to be retried up to the queue's `max_retries` limit.
+//! Used by the Cloud Run service; the caller awaits the response and a non-2xx
+//! is treated as a failure by the upstream processor.
 //!
 //! **Async mode (`TRANSCODE_SERVER_ASYNC=1` — used by the local dev mock):**
 //! `POST /jobs` returns 202 immediately and spawns the child detached. This
 //! replicates the original mock-transcoder behaviour so the app upload path
-//! returns fast in development without a real Cloudflare account.
+//! returns fast in development without a real Cloud Run / Cloudflare account.
 //!
-//! Port is controlled by `PORT` (default 8080, matching the CF container
-//! `defaultPort`). Dev compose sets `PORT=8765` to preserve the existing
-//! dev URL (`http://mock-transcoder:8765/jobs`).
+//! Port is controlled by `PORT` (default 8080). Dev compose sets `PORT=8765`
+//! to preserve the existing dev URL (`http://mock-transcoder:8765/jobs`).
 //!
-//! NEVER use async mode in production.
+//! **Auth:**
+//! If `ENQUEUE_TOKEN` is set and non-empty, every `POST /jobs` must carry
+//! `Authorization: Bearer <ENQUEUE_TOKEN>` (constant-time comparison via
+//! the `subtle` crate). If the token is absent or wrong the request is
+//! rejected with 401. If `ENQUEUE_TOKEN` is unset or empty, auth is skipped
+//! with a one-time startup warning (dev/test convenience).
+//!
+//! NEVER use async mode or skip the token in production.
 
 use std::process::Stdio;
 
@@ -25,10 +31,11 @@ use axum::{
     Router,
     body::Bytes,
     extract::State,
-    http::StatusCode,
+    http::{HeaderMap, StatusCode},
     response::IntoResponse,
     routing::post,
 };
+use subtle::ConstantTimeEq;
 use tracing::{error, info, warn};
 use video_job::ProcessJob;
 
@@ -41,6 +48,31 @@ struct ServerState {
     /// If true, spawn the child detached (async dev mode).
     /// If false (default), await the child and return real status.
     async_mode: bool,
+    /// If non-empty, every POST /jobs must present `Authorization: Bearer <token>`.
+    /// Empty means auth is disabled (dev convenience; logged at startup).
+    enqueue_token: String,
+}
+
+// ---------------------------------------------------------------------------
+// Bearer token helper
+// ---------------------------------------------------------------------------
+
+/// Returns `true` iff `header` is exactly `"Bearer <token>"`, using a
+/// constant-time byte comparison to avoid timing side-channels.
+///
+/// `header` is the raw value of the `Authorization` header (or `None`).
+/// `token` must be non-empty (callers should skip the check when empty).
+pub fn check_bearer(header: Option<&str>, token: &str) -> bool {
+    let expected = format!("Bearer {}", token);
+    match header {
+        None => false,
+        Some(h) => {
+            // Constant-time compare; lengths are compared first (fast path).
+            // If lengths differ it still returns false in constant time for
+            // the length check itself (no secret data exposed).
+            h.as_bytes().ct_eq(expected.as_bytes()).into()
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -50,8 +82,19 @@ struct ServerState {
 
 async fn handle_job(
     State(state): State<ServerState>,
+    headers: HeaderMap,
     body: Bytes,
 ) -> impl IntoResponse {
+    // Auth check: verify bearer token if one is configured.
+    if !state.enqueue_token.is_empty() {
+        let auth_header = headers
+            .get("authorization")
+            .and_then(|v| v.to_str().ok());
+        if !check_bearer(auth_header, &state.enqueue_token) {
+            return StatusCode::UNAUTHORIZED.into_response();
+        }
+    }
+
     // Parse the job from the raw body bytes so we can return 400 on bad JSON.
     let job: ProcessJob = match serde_json::from_slice(&body) {
         Ok(j) => j,
@@ -266,9 +309,14 @@ async fn main() {
         .and_then(|v| v.parse().ok())
         .unwrap_or(8080);
 
-    let state = ServerState { async_mode };
+    let enqueue_token = std::env::var("ENQUEUE_TOKEN").unwrap_or_default();
+    if enqueue_token.is_empty() {
+        warn!("transcode-server: ENQUEUE_TOKEN is not set; bearer auth is DISABLED (dev only)");
+    }
 
-    let mode_label = if async_mode { "async (dev)" } else { "sync (CF container)" };
+    let state = ServerState { async_mode, enqueue_token };
+
+    let mode_label = if async_mode { "async (dev)" } else { "sync (Cloud Run)" };
     info!(port, mode = mode_label, "transcode-server starting");
 
     let app = Router::new()
@@ -286,5 +334,51 @@ async fn main() {
 
     if let Err(e) = axum::serve(listener, app).await {
         warn!(error = %e, "transcode-server: server exited");
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::check_bearer;
+
+    #[test]
+    fn check_bearer_accepts_correct_token() {
+        assert!(check_bearer(Some("Bearer secret123"), "secret123"));
+    }
+
+    #[test]
+    fn check_bearer_rejects_wrong_token() {
+        assert!(!check_bearer(Some("Bearer wrongtoken"), "secret123"));
+    }
+
+    #[test]
+    fn check_bearer_rejects_missing_header() {
+        assert!(!check_bearer(None, "secret123"));
+    }
+
+    #[test]
+    fn check_bearer_rejects_empty_header() {
+        assert!(!check_bearer(Some(""), "secret123"));
+    }
+
+    #[test]
+    fn check_bearer_rejects_bare_token_without_bearer_prefix() {
+        assert!(!check_bearer(Some("secret123"), "secret123"));
+    }
+
+    #[test]
+    fn check_bearer_rejects_wrong_scheme() {
+        assert!(!check_bearer(Some("Basic secret123"), "secret123"));
+    }
+
+    #[test]
+    fn check_bearer_rejects_extra_whitespace() {
+        // Must match exactly — no leniency.
+        assert!(!check_bearer(Some("Bearer  secret123"), "secret123"));
+        assert!(!check_bearer(Some("Bearer secret123 "), "secret123"));
     }
 }
