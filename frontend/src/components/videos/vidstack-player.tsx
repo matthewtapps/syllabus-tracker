@@ -2,6 +2,7 @@ import { useEffect, useRef, type ReactNode } from "react";
 import {
   MediaPlayer,
   MediaProvider,
+  Gesture,
   PlayButton,
   MuteButton,
   FullscreenButton,
@@ -83,6 +84,13 @@ export function VidstackPlayer({ video, events, overlay, sliderMarkers }: Vidsta
     >
       <MediaProvider />
 
+      {/* Tap anywhere on the frame to play/pause. Sits below the controls and
+          the comment chip in the DOM, so taps on those still hit them. */}
+      <Gesture className="absolute inset-0 block" event="pointerup" action="toggle:paused" />
+
+      {/* Discoverability affordance: a play badge while paused. */}
+      <CenterPlayBadge />
+
       {/* Overlay layer: the comment scrim spans the full frame so it blends into
           the control-bar gradient; only the chip inside it is interactive. */}
       {overlay && <div className="pointer-events-none absolute inset-0">{overlay}</div>}
@@ -121,6 +129,18 @@ export function VidstackPlayer({ video, events, overlay, sliderMarkers }: Vidsta
 function PlayPauseIcon() {
   const paused = useMediaState("paused");
   return paused ? <Play className="h-5 w-5" /> : <Pause className="h-5 w-5" />;
+}
+
+function CenterPlayBadge() {
+  const paused = useMediaState("paused");
+  if (!paused) return null;
+  return (
+    <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+      <span className="rounded-full bg-black/45 p-3 text-white">
+        <Play className="h-7 w-7" fill="currentColor" />
+      </span>
+    </div>
+  );
 }
 
 function MuteIcon() {

@@ -46,13 +46,15 @@ export function MomentOverlay({ threads, currentTime, pinnedThread, onOpen }: Mo
   // Keep the last comment mounted through the fade-out so it animates away
   // instead of vanishing.
   const [shown, setShown] = useState<ThreadView | null>(active);
-  const [visible, setVisible] = useState(active != null);
+  const [visible, setVisible] = useState(false);
 
   useEffect(() => {
     if (active) {
       setShown(active);
-      setVisible(true);
-      return;
+      // Reveal on the next frame so the element paints at opacity-0 first and
+      // the transition actually runs (otherwise it mounts already visible).
+      const raf = requestAnimationFrame(() => setVisible(true));
+      return () => cancelAnimationFrame(raf);
     }
     setVisible(false);
     const id = setTimeout(() => setShown(null), FADE_MS);
