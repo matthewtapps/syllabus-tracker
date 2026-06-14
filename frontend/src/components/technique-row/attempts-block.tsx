@@ -1,9 +1,10 @@
 import { useMemo, useState } from "react";
-import { Plus, Trash2 } from "lucide-react";
+import { ChevronRight, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { cn } from "@/lib/utils";
 import { useSyllabusAttempts } from "@/lib/queries";
 import {
   useCreateSyllabusAttempt,
@@ -27,15 +28,27 @@ export function AttemptsBlock() {
     [attemptsQuery.data],
   );
   const [adding, setAdding] = useState(false);
+  const [expanded, setExpanded] = useState(false);
   if (context.kind !== "student-syllabus") return null;
   const sst = context.sst;
+  const count = sst.attempt_count;
 
   return (
     <section className="space-y-2">
       <div className="flex items-center justify-between gap-2">
-        <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-          Attempts
-        </h3>
+        <button
+          type="button"
+          onClick={() => setExpanded((e) => !e)}
+          aria-expanded={expanded}
+          className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground hover:text-foreground"
+        >
+          <ChevronRight
+            className={cn("h-3.5 w-3.5 transition-transform", expanded && "rotate-90")}
+            aria-hidden
+          />
+          <span>Attempts</span>
+          <span className="normal-case tracking-normal">({count})</span>
+        </button>
         {!adding && (
           <Button
             size="sm"
@@ -55,19 +68,20 @@ export function AttemptsBlock() {
           onDone={() => setAdding(false)}
         />
       )}
-      {attemptsQuery.isLoading ? (
-        <p className="text-xs text-muted-foreground">Loading...</p>
-      ) : attempts.length === 0 ? (
-        <p className="text-xs italic text-muted-foreground">
-          No attempts logged yet.
-        </p>
-      ) : (
-        <ul className="divide-y divide-border rounded-md border border-border">
-          {attempts.map((a) => (
-            <AttemptRow key={a.id} attempt={a} />
-          ))}
-        </ul>
-      )}
+      {expanded &&
+        (attemptsQuery.isLoading ? (
+          <p className="text-xs text-muted-foreground">Loading...</p>
+        ) : attempts.length === 0 ? (
+          <p className="text-xs italic text-muted-foreground">
+            No attempts logged yet.
+          </p>
+        ) : (
+          <ul className="divide-y divide-border rounded-md border border-border">
+            {attempts.map((a) => (
+              <AttemptRow key={a.id} attempt={a} />
+            ))}
+          </ul>
+        ))}
     </section>
   );
 }
@@ -135,7 +149,9 @@ function AddAttemptForm({
         <Textarea
           value={note}
           onChange={(e) => setNote(e.target.value)}
-          rows={3}
+          rows={1}
+          placeholder="Attempt details (optional)…"
+          className="max-h-40 min-h-[38px]"
         />
       </label>
       <div className="grid grid-cols-2 gap-2 pt-1">
