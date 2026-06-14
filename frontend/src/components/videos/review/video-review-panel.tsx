@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 import type { Video, ThreadView } from "@/lib/api";
 import { useUser } from "@/lib/current-user-context";
@@ -24,6 +24,8 @@ interface VideoReviewPanelProps {
   surface: VideoThreadSurface;
   /** Watch-tracking events from the dialog; merged with controller bridging. */
   watchEvents?: PlayerEvents;
+  /** Trailing action shown inline in the composer row (e.g. download). */
+  composerAction?: ReactNode;
 }
 
 export function VideoReviewPanel(props: VideoReviewPanelProps) {
@@ -34,7 +36,7 @@ export function VideoReviewPanel(props: VideoReviewPanelProps) {
   );
 }
 
-function ReviewInner({ video, surface, watchEvents }: VideoReviewPanelProps) {
+function ReviewInner({ video, surface, watchEvents, composerAction }: VideoReviewPanelProps) {
   const user = useUser();
   const controller = usePlayerController();
   const registration = usePlayerRegistration();
@@ -170,10 +172,12 @@ function ReviewInner({ video, surface, watchEvents }: VideoReviewPanelProps) {
         <>
           <MomentComposer
             currentTime={controller.currentTime}
+            duration={controller.duration}
             canStamp={controller.canReadTime}
             onCaptureStart={() => controller.canSeek && controller.seekTo(controller.currentTime)}
             onSubmit={submit}
             pending={createThread.isPending}
+            actionSlot={composerAction}
           />
 
           <div ref={listRef}>

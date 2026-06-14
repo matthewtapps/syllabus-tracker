@@ -66,22 +66,25 @@ function PlayerContent({
   }
 
   return (
-    <div className="space-y-3">
-      <VideoReviewPanel video={video} surface={surface} watchEvents={events} />
-      {canDownload && (
-        <div className="flex justify-end">
+    <VideoReviewPanel
+      video={video}
+      surface={surface}
+      watchEvents={events}
+      composerAction={
+        canDownload ? (
           <Button
             type="button"
             variant="outline"
-            size="sm"
+            size="icon"
             onClick={handleDownload}
             disabled={downloading}
+            aria-label="Download video"
+            title="Download video"
           >
-            <DownloadIcon className="mr-2 h-4 w-4" aria-hidden />
-            Download
+            <DownloadIcon className="h-4 w-4" aria-hidden />
           </Button>
-        </div>
-      )}
-    </div>
+        ) : undefined
+      }
+    />
   );
 }
