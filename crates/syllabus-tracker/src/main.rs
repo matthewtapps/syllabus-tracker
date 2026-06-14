@@ -59,7 +59,7 @@ use telemetry::TelemetryFairing;
 use telemetry::init_tracing;
 use thiserror::Error;
 use videos::{
-    DynVideoProcessor, HostFfmpegProcessor,
+    CloudflareProcessor, DynVideoProcessor, HostFfmpegProcessor,
     api_admin_storage, api_dashboard_video_overview, api_delete_video, api_list_technique_videos,
     api_my_watch_state, api_reorder_videos, api_replace_video, api_set_video_global_hidden,
     api_set_video_student_visibility, api_student_watch_activity, api_update_video,
@@ -387,10 +387,12 @@ pub async fn init_rocket(
 
         let processor: DynVideoProcessor =
             match std::env::var("VIDEO_PROCESSOR").as_deref() {
-                Ok("cloudflare") => panic!(
-                    "VIDEO_PROCESSOR=cloudflare is not yet implemented; \
-                     set VIDEO_PROCESSOR=host or unset it to use the default."
-                ),
+                Ok("cloudflare") => {
+                    std::sync::Arc::new(
+                        CloudflareProcessor::from_env(pool.clone())
+                            .expect("VIDEO_PROCESSOR=cloudflare but Cloudflare config is invalid"),
+                    )
+                }
                 _ => {
                     // Host path: any row still in `processing` from a previous
                     // run is a zombie (the in-process task was killed).  Flip
