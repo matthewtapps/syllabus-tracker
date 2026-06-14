@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { Minus, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -12,27 +12,39 @@ export interface MomentDraft {
 interface MomentComposerProps {
   /** Live playhead seconds (from PlayerController). */
   currentTime: number;
+  /** Total duration in seconds (from PlayerController); 0 when unknown. */
+  duration: number;
   /** False for embeds that cannot report a playhead. */
   canStamp: boolean;
   /** Called when the composer expands, so the surface can pause playback. */
   onCaptureStart?: () => void;
   onSubmit: (draft: MomentDraft) => Promise<void>;
   pending?: boolean;
+  /** Trailing action rendered inline in the collapsed row (e.g. download). */
+  actionSlot?: ReactNode;
 }
 
 export function MomentComposer({
   currentTime,
+  duration,
   canStamp,
   onCaptureStart,
   onSubmit,
   pending = false,
+  actionSlot,
 }: MomentComposerProps) {
   const [open, setOpen] = useState(false);
   const [stamp, setStamp] = useState<number | null>(null);
   const [body, setBody] = useState("");
 
+  // At the very start or end, a timestamp is not meaningful, so default to a
+  // whole-video comment instead of stamping 0:00 or the final second.
+  const seconds = Math.floor(currentTime);
+  const atEdge = seconds <= 0 || (duration > 0 && seconds >= Math.floor(duration));
+  const defaultStamp = canStamp && !atEdge ? seconds : null;
+
   function expand() {
-    setStamp(canStamp ? Math.floor(currentTime) : null);
+    setStamp(defaultStamp);
     setBody("");
     setOpen(true);
     onCaptureStart?.();
@@ -56,29 +68,30 @@ export function MomentComposer({
 
   if (!open) {
     return (
-      <div className="border-y border-border p-3">
+      <div className="flex items-center gap-2 border-y border-border p-3">
         <button
           type="button"
           onClick={expand}
-          className="flex w-full items-center gap-2 rounded-lg border border-border bg-muted/40 px-3 py-2.5 text-left text-sm text-muted-foreground hover:bg-muted/60"
+          className="flex flex-1 items-center gap-2 rounded-lg border border-border bg-muted/40 px-3 py-2.5 text-left text-sm text-muted-foreground hover:bg-muted/60"
         >
-          {canStamp ? (
+          {defaultStamp !== null ? (
             <>
-              <Plus className="h-4 w-4 text-violet-500" />
+              <Plus className="h-4 w-4 text-primary" />
               <span>
                 Comment at{" "}
-                <span className="font-semibold tabular-nums text-violet-500">
-                  {formatTimestamp(currentTime)}
+                <span className="font-semibold tabular-nums text-primary">
+                  {formatTimestamp(defaultStamp)}
                 </span>
               </span>
             </>
           ) : (
             <>
               <Plus className="h-4 w-4" />
-              <span>Add a comment</span>
+              <span>Comment on video</span>
             </>
           )}
         </button>
+        {actionSlot}
       </div>
     );
   }
@@ -87,7 +100,7 @@ export function MomentComposer({
     <div className="space-y-2 border-y border-border bg-card p-3">
       {stamp !== null && (
         <div className="flex items-center gap-2">
-          <span className="inline-flex items-center gap-1 rounded-md border border-border bg-muted px-2 py-1 text-xs font-semibold tabular-nums text-violet-500">
+          <span className="inline-flex items-center gap-1 rounded-md border border-border bg-muted px-2 py-1 text-xs font-semibold tabular-nums text-primary">
             <span aria-hidden="true">&#9654;</span> {formatTimestamp(stamp)}
           </span>
           <div className="flex gap-1">

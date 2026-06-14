@@ -13,6 +13,7 @@
  */
 
 import { rowToViewContext, viewContextHref } from "./view-context";
+import { refToken } from "./entity-ref";
 
 /** Canonical ActivityRow type. Exported so api.ts and callers can import it
  *  rather than re-declaring an identical shape. */
@@ -67,9 +68,13 @@ function contextHref(row: ActivityRow): string | undefined {
 }
 
 function pinnedHref(row: ActivityRow): string | undefined {
-  return row.target_student_id != null
-    ? `/student/${row.target_student_id}/pinned`
-    : undefined;
+  if (row.target_student_id == null) return undefined;
+  const base = `/student/${row.target_student_id}/pinned`;
+  // Deep-link to the specific technique row so the pinned page expands and
+  // scrolls to it (matches the syllabus/library deep links).
+  return row.technique_id != null
+    ? `${base}?focus=${refToken({ type: "technique", id: row.technique_id })}`
+    : base;
 }
 
 function syllabusHref(row: ActivityRow): string | undefined {

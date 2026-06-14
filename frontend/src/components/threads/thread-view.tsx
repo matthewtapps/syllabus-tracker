@@ -92,7 +92,7 @@ export function ThreadView({ thread, anchorKind, anchorId }: ThreadViewProps) {
                       variant="destructive"
                       onClick={handleDeleteThread}
                     >
-                      Delete permanently
+                      Delete
                     </AlertDialogAction>
                   </AlertDialogFooter>
                 </AlertDialogContent>
@@ -125,7 +125,7 @@ export function ThreadView({ thread, anchorKind, anchorId }: ThreadViewProps) {
       {/* Reply composer */}
       <div className="ml-4 pl-3">
         <ThreadComposer
-          placeholder="Write a reply…"
+          placeholder="Reply…"
           submitLabel="Reply"
           pending={createComment.isPending}
           onSubmit={handleReply}

@@ -1,9 +1,10 @@
-import { useMemo, useState } from "react";
-import { Plus, Trash2 } from "lucide-react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { ChevronRight, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { cn } from "@/lib/utils";
 import { useSyllabusAttempts } from "@/lib/queries";
 import {
   useCreateSyllabusAttempt,
@@ -12,6 +13,21 @@ import {
 import { useGraduatedConfirm } from "./graduated-guard";
 import { useTechniqueRow } from "./technique-row-context";
 import type { SyllabusAttempt } from "@/lib/api";
+
+// Height+fade collapse, matching the row-expand animation used elsewhere
+// (grid-rows 0fr->1fr so the content's natural height animates).
+function Collapse({ open, children }: { open: boolean; children: ReactNode }) {
+  return (
+    <div
+      className={cn(
+        "grid transition-all duration-200 ease-out",
+        open ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0",
+      )}
+    >
+      <div className="min-h-0 overflow-hidden">{children}</div>
+    </div>
+  );
+}
 
 // Attempts logged against an SST. Coaches see notes from both sides;
 // students see their own student_note plus any coach_note.
@@ -27,14 +43,28 @@ export function AttemptsBlock() {
     [attemptsQuery.data],
   );
   const [adding, setAdding] = useState(false);
+  const [expanded, setExpanded] = useState(false);
   if (context.kind !== "student-syllabus") return null;
   const sst = context.sst;
+  const count = sst.attempt_count;
 
   return (
     <section className="space-y-2">
       <div className="flex items-center justify-between gap-2">
         <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-          Attempts
+          <button
+            type="button"
+            onClick={() => setExpanded((e) => !e)}
+            aria-expanded={expanded}
+            className="flex items-center gap-1.5 hover:text-foreground"
+          >
+            <ChevronRight
+              className={cn("h-3.5 w-3.5 transition-transform", expanded && "rotate-90")}
+              aria-hidden
+            />
+            <span>Attempts</span>
+            <span className="normal-case tracking-normal">({count})</span>
+          </button>
         </h3>
         {!adding && (
           <Button
@@ -48,35 +78,40 @@ export function AttemptsBlock() {
           </Button>
         )}
       </div>
-      {adding && (
+      <Collapse open={adding}>
         <AddAttemptForm
+          open={adding}
           sstId={sst.id}
           isCoach={isCoach}
           onDone={() => setAdding(false)}
         />
-      )}
-      {attemptsQuery.isLoading ? (
-        <p className="text-xs text-muted-foreground">Loading...</p>
-      ) : attempts.length === 0 ? (
-        <p className="text-xs italic text-muted-foreground">
-          No attempts logged yet.
-        </p>
-      ) : (
-        <ul className="divide-y divide-border rounded-md border border-border">
-          {attempts.map((a) => (
-            <AttemptRow key={a.id} attempt={a} />
-          ))}
-        </ul>
-      )}
+      </Collapse>
+      <Collapse open={expanded}>
+        {attemptsQuery.isLoading ? (
+          <p className="text-xs text-muted-foreground">Loading...</p>
+        ) : attempts.length === 0 ? (
+          <p className="text-xs italic text-muted-foreground">
+            No attempts logged yet.
+          </p>
+        ) : (
+          <ul className="divide-y divide-border rounded-md border border-border">
+            {attempts.map((a) => (
+              <AttemptRow key={a.id} attempt={a} />
+            ))}
+          </ul>
+        )}
+      </Collapse>
     </section>
   );
 }
 
 function AddAttemptForm({
+  open,
   sstId,
   isCoach,
   onDone,
 }: {
+  open: boolean;
   sstId: number;
   isCoach: boolean;
   onDone: () => void;
@@ -86,6 +121,15 @@ function AddAttemptForm({
   const [note, setNote] = useState("");
   const mutation = useCreateSyllabusAttempt();
   const confirmGraduated = useGraduatedConfirm();
+
+  // The form stays mounted (so it can animate closed); reset its fields when
+  // it is hidden so reopening starts fresh.
+  useEffect(() => {
+    if (!open) {
+      setDate(today);
+      setNote("");
+    }
+  }, [open, today]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -135,7 +179,9 @@ function AddAttemptForm({
         <Textarea
           value={note}
           onChange={(e) => setNote(e.target.value)}
-          rows={3}
+          rows={1}
+          placeholder="Attempt details (optional)…"
+          className="max-h-40 min-h-[38px]"
         />
       </label>
       <div className="grid grid-cols-2 gap-2 pt-1">
@@ -181,8 +227,15 @@ function AttemptRow({ attempt }: { attempt: SyllabusAttempt }) {
     }
   }
 
+  const hasNote = Boolean(attempt.coach_note || attempt.student_note);
+
   return (
-    <li className="flex items-start justify-between gap-2 px-3 py-2 text-sm">
+    <li
+      className={cn(
+        "flex justify-between gap-2 px-3 py-2 text-sm",
+        hasNote ? "items-start" : "items-center",
+      )}
+    >
       <div className="min-w-0 flex-1 space-y-1">
         <p className="text-xs font-medium text-muted-foreground">{dateLabel}</p>
         {attempt.coach_note && (

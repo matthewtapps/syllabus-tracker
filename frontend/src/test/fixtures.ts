@@ -38,6 +38,7 @@ export function buildSst(overrides: Partial<SstRow> = {}): SstRow {
     tags: [],
     attempt_count: 0,
     last_attempt_at: null,
+    video_count: 0,
     ...overrides,
   };
 }

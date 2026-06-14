@@ -379,6 +379,9 @@ pub async fn init_rocket(
             transcode: stack.transcode,
             jobs: jobs.clone(),
             max_duration_seconds: videos::pipeline::max_video_duration_seconds(),
+            transcode_permits: std::sync::Arc::new(tokio::sync::Semaphore::new(
+                videos::pipeline::max_transcode_concurrency(),
+            )),
         });
 
         let sampler_pool = pool.clone();

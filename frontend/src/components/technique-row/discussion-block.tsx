@@ -90,20 +90,12 @@ export function DiscussionBlock() {
     return () => clearTimeout(timer);
   }, [targetThreadId, threadsQuery.isLoading, threads, setSearchParams]);
 
-  // Students ask; coaches comment. The composer copy follows the viewer.
-  const composerPlaceholder =
-    user.role === "student"
-      ? "Ask about this technique…"
-      : "Comment on this technique…";
-
   return (
     <div className="space-y-3">
       <h4 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Discussion</h4>
       {threadsQuery.isLoading ? (
         <div className="h-4 w-1/3 animate-pulse rounded bg-muted" />
-      ) : threads.length === 0 ? (
-        <p className="text-sm text-muted-foreground">No discussion yet.{scopeStudentId !== undefined ? " Start one." : ""}</p>
-      ) : (
+      ) : threads.length === 0 ? null : (
         <div ref={listRef} className="divide-y divide-border">
           {threads.map((t) => (
             <div
@@ -121,7 +113,7 @@ export function DiscussionBlock() {
       )}
       {scopeStudentId !== undefined && (
         <ThreadComposer
-          placeholder={composerPlaceholder}
+          placeholder="Discuss…"
           submitLabel="Post"
           pending={createThread.isPending}
           onSubmit={start}

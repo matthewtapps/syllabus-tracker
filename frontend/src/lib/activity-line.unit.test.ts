@@ -427,7 +427,7 @@ describe("activityLine", () => {
         target_student_id: 4,
       }),
     );
-    expect(result.href).toBe("/student/4/pinned");
+    expect(result.href).toBe("/student/4/pinned?focus=technique:5");
   });
 
   test("syllabus_assigned still routes to the coach syllabus view", () => {

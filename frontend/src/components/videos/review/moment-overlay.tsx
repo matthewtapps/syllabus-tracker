@@ -1,6 +1,10 @@
+import { useEffect, useState } from "react";
 import { StudentAvatar } from "@/components/student-avatar";
 import { formatTimestamp } from "@/lib/dates";
+import { cn } from "@/lib/utils";
 import type { ThreadView } from "@/lib/api";
+
+const FADE_MS = 300;
 
 const LEAD_IN = 3;
 const LEAD_OUT = 3;
@@ -36,24 +40,52 @@ interface MomentOverlayProps {
 }
 
 export function MomentOverlay({ threads, currentTime, pinnedThread, onOpen }: MomentOverlayProps) {
-  const moment = pinnedThread ?? activeMoment(threads, currentTime);
-  if (!moment || moment.body == null) return null;
+  const candidate = pinnedThread ?? activeMoment(threads, currentTime);
+  const active = candidate && candidate.body != null ? candidate : null;
+
+  // Keep the last comment mounted through the fade-out so it animates away
+  // instead of vanishing.
+  const [shown, setShown] = useState<ThreadView | null>(active);
+  const [visible, setVisible] = useState(false);
+
+  useEffect(() => {
+    if (active) {
+      setShown(active);
+      // Reveal on the next frame so the element paints at opacity-0 first and
+      // the transition actually runs (otherwise it mounts already visible).
+      const raf = requestAnimationFrame(() => setVisible(true));
+      return () => cancelAnimationFrame(raf);
+    }
+    setVisible(false);
+    const id = setTimeout(() => setShown(null), FADE_MS);
+    return () => clearTimeout(id);
+  }, [active]);
+
+  if (!shown) return null;
+  const moment = shown;
   return (
-    <button
-      type="button"
-      onClick={() => onOpen(moment)}
-      className="absolute inset-x-0 bottom-0 flex items-end gap-2 bg-gradient-to-t from-black/75 via-black/30 to-transparent px-3 pb-5 pt-8 text-left"
+    <div
+      className={cn(
+        "absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 via-black/35 to-transparent px-3 pb-14 pt-6 transition-opacity duration-300",
+        visible ? "opacity-100" : "opacity-0",
+      )}
     >
-      <StudentAvatar id={moment.author_id} name={moment.author_name} size="sm" />
-      <div className="min-w-0 flex-1 [text-shadow:0_1px_3px_rgba(0,0,0,0.85)]">
-        <div className="text-xs font-bold text-white">
-          {moment.author_name}
-          <span className="ml-1.5 font-semibold tabular-nums text-violet-300">
-            {formatTimestamp(moment.video_ts_seconds as number)}
-          </span>
+      <button
+        type="button"
+        onClick={() => onOpen(moment)}
+        className="pointer-events-auto flex max-w-[80%] items-start gap-2 text-left"
+      >
+        <StudentAvatar id={moment.author_id} name={moment.author_name} size="sm" />
+        <div className="min-w-0 [text-shadow:0_1px_3px_rgba(0,0,0,0.85)]">
+          <div className="text-xs font-bold text-white">
+            {moment.author_name}
+            <span className="ml-1.5 font-semibold tabular-nums text-primary">
+              {formatTimestamp(moment.video_ts_seconds as number)}
+            </span>
+          </div>
+          <div className="line-clamp-2 text-[13px] text-zinc-100">{moment.body}</div>
         </div>
-        <div className="line-clamp-2 text-[13px] text-zinc-100">{moment.body}</div>
-      </div>
-    </button>
+      </button>
+    </div>
   );
 }

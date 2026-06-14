@@ -157,7 +157,7 @@ describe("ThreadView", () => {
     );
 
     expect(
-      screen.getByPlaceholderText("Write a reply…"),
+      screen.getByPlaceholderText("Reply…"),
     ).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: /reply/i }),

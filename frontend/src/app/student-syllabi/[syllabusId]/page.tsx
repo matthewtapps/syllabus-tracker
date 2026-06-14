@@ -1,13 +1,12 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Navigate, useNavigate, useParams } from 'react-router-dom';
-import { useFocusTarget } from '@/components/hooks/useFocusTarget';
-import type { EntityRef } from '@/lib/entity-ref';
+import { useTechniqueListNav } from '@/components/technique-row/use-technique-list-nav';
+import { TechniqueFilters } from '@/components/technique-row/technique-filters';
 import {
   GitCompare,
   GraduationCap,
   NotebookPen,
   Plus,
-  Search,
   Trash2,
 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -22,7 +21,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
 import { EmptyState } from '@/components/empty-state';
 import { TechniqueRow } from '@/components/technique-row';
 import { useAllUsers, useStudentSyllabusTechniques } from '@/lib/queries';
@@ -40,8 +38,7 @@ import { AddToStudentDialog } from './components/add-to-student-dialog';
 function toLibraryShape(sst: SstRow): LibraryTechniqueRow {
   // The Header / blocks expect a LibraryTechniqueRow-shaped object; SST
   // carries the technique fields under different keys, so we adapt at the
-  // page boundary. video_count is left at 0 because SST doesn't include
-  // the aggregate (PR 4 can wire it in if the meta strip needs it).
+  // page boundary.
   return {
     id: sst.technique_id,
     name: sst.technique_name,
@@ -50,7 +47,7 @@ function toLibraryShape(sst: SstRow): LibraryTechniqueRow {
     collection_ids: [],
     collection_count: 0,
     student_count: 0,
-    video_count: 0,
+    video_count: sst.video_count,
     last_activity_at: sst.last_attempt_at,
     is_pinned: false,
   };
@@ -113,67 +110,25 @@ function Detail({
       return latestOf(b) - latestOf(a);
     });
   }, [query.data?.techniques]);
-  const [expandedValue, setExpandedValue] = useState<string>('');
-  const [scrollToVideoId, setScrollToVideoId] = useState<number | null>(null);
   const [unassignOpen, setUnassignOpen] = useState(false);
   const [graduateOpen, setGraduateOpen] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
   const [diffOpen, setDiffOpen] = useState(false);
-  const [search, setSearch] = useState('');
-  const [activeTags, setActiveTags] = useState<string[]>([]);
   const unassignMutation = useUnassignSyllabusFromStudent();
   const graduateMutation = useSetAssignmentGraduated();
 
-  const handleFocus = useCallback(
-    (ref: EntityRef, videoId: number | null) => {
-      if (ref.type !== 'sst') return false;
-      const target = techniques.find((sst) => sst.id === ref.id);
-      if (!target) return false;
-      setExpandedValue(`sst-${ref.id}`);
-      if (videoId != null) setScrollToVideoId(videoId);
-      requestAnimationFrame(() => {
-        document
-          .getElementById(`technique-row-${target.technique_id}`)
-          ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      });
-      return true;
-    },
-    [techniques],
-  );
-
-  useFocusTarget({
-    ready: techniques.length > 0,
-    onFocus: handleFocus,
+  const nav = useTechniqueListNav({
+    items: techniques,
+    kind: 'sst',
+    rowId: (sst) => sst.id,
+    rowElementId: (sst) => `technique-row-${sst.technique_id}`,
+    tagsOf: (sst) => sst.tags.map((tag) => tag.name),
+    matchesSearch: (sst, needle) =>
+      sst.technique_name.toLowerCase().includes(needle) ||
+      sst.technique_description.toLowerCase().includes(needle) ||
+      sst.tags.some((tag) => tag.name.toLowerCase().includes(needle)),
   });
-
-  const availableTags = useMemo(() => {
-    const set = new Set<string>();
-    techniques.forEach((sst) => sst.tags.forEach((tag) => set.add(tag.name)));
-    return Array.from(set).sort();
-  }, [techniques]);
-
-  const filtered = useMemo(() => {
-    const needle = search.trim().toLowerCase();
-    return techniques.filter((sst) => {
-      const matchesText =
-        !needle ||
-        sst.technique_name.toLowerCase().includes(needle) ||
-        sst.technique_description.toLowerCase().includes(needle) ||
-        sst.tags.some((tag) => tag.name.toLowerCase().includes(needle));
-      const matchesTags =
-        activeTags.length === 0 ||
-        activeTags.every((tag) =>
-          sst.tags.some((x) => x.name === tag),
-        );
-      return matchesText && matchesTags;
-    });
-  }, [techniques, search, activeTags]);
-
-  function toggleTag(tag: string) {
-    setActiveTags((prev) =>
-      prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag],
-    );
-  }
+  const { filtered } = nav;
 
   async function handleUnassign() {
     try {
@@ -302,55 +257,23 @@ function Detail({
       </div>
 
       {techniques.length > 0 && (
-        <div className="space-y-3">
-          <div className="relative">
-            <Search
-              className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
-              aria-hidden
-            />
-            <Input
-              placeholder="Search techniques"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="pl-9"
-            />
-          </div>
-          {availableTags.length > 0 && (
-            <div className="flex flex-wrap gap-1.5">
-              {availableTags.map((tag) => {
-                const active = activeTags.includes(tag);
-                return (
-                  <Badge
-                    key={tag}
-                    variant={active ? 'default' : 'outline'}
-                    className="cursor-pointer select-none"
-                    onClick={() => toggleTag(tag)}
-                  >
-                    {tag}
-                  </Badge>
-                );
-              })}
-              {activeTags.length > 0 && (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="h-6 px-2 text-xs"
-                  onClick={() => setActiveTags([])}
-                >
-                  Clear
-                </Button>
-              )}
-            </div>
-          )}
-          <p className="text-xs text-muted-foreground">
+        <>
+          <TechniqueFilters
+            search={nav.search}
+            onSearchChange={nav.setSearch}
+            availableTags={nav.availableTags}
+            activeTags={nav.tags}
+            onToggleTag={nav.toggleTag}
+            onClearTags={nav.clearTags}
+          />
+          <p className="mb-2 text-xs text-muted-foreground">
             {filtered.length === techniques.length
               ? `${techniques.length} ${
                   techniques.length === 1 ? 'technique' : 'techniques'
                 }`
               : `${filtered.length} of ${techniques.length} techniques`}
           </p>
-        </div>
+        </>
       )}
 
       <div className="overflow-hidden rounded-lg border border-border bg-card">
@@ -368,8 +291,8 @@ function Detail({
           <Accordion
             type="single"
             collapsible
-            value={expandedValue}
-            onValueChange={setExpandedValue}
+            value={nav.expandedValue}
+            onValueChange={nav.setExpandedValue}
           >
             {filtered.map((sst) => {
               const value = `sst-${sst.id}`;
@@ -380,15 +303,17 @@ function Detail({
                   context={{
                     kind: 'student-syllabus',
                     studentId,
+                    studentName,
                     syllabusId,
+                    syllabusName: assignment.syllabus_name,
                     assignmentId: assignment.id,
                     sst,
                     graduatedAt: assignment.graduated_at,
                   }}
                   value={value}
-                  isOpen={expandedValue === value}
-                  scrollToVideoId={expandedValue === value ? scrollToVideoId : null}
-                  onVideoScrolled={() => setScrollToVideoId(null)}
+                  isOpen={nav.expandedValue === value}
+                  scrollToVideoId={nav.expandedValue === value ? nav.videoId : null}
+                  onVideoScrolled={nav.consumeVideo}
                 />
               );
             })}

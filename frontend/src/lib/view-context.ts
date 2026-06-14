@@ -77,7 +77,7 @@ function syllabusContext(row: ViewContextRow): ViewContext | null {
  * resolvable deep-link target (the caller then falls back). Pure.
  */
 export function rowToViewContext(row: ViewContextRow): ViewContext | null {
-  if (row.verb === "video_watched") {
+  if (row.verb === "video_watched" || row.verb === "video_added") {
     if (row.context_kind === "syllabus") {
       return syllabusContext(row);
     }

@@ -820,35 +820,6 @@ export async function unpinTechniqueForStudent(
   }
 }
 
-export interface LibraryTechniqueCollectionRef {
-  id: number;
-  name: string;
-}
-
-export interface AttemptWeekBucket {
-  date: string;
-  count: number;
-}
-
-export interface LibraryTechniqueStats {
-  collections: LibraryTechniqueCollectionRef[];
-  status_counts: { red: number; amber: number; green: number };
-  attempts_30d: number;
-  attempts_weekly_buckets: AttemptWeekBucket[];
-  video_plays: number;
-}
-
-export async function getLibraryTechniqueStats(
-  techniqueId: number,
-): Promise<LibraryTechniqueStats> {
-  const response = await fetch(`/api/techniques/${techniqueId}/stats`, {
-    credentials: "include",
-  });
-  if (!response.ok) {
-    throw new Error("Failed to fetch technique stats");
-  }
-  return await response.json();
-}
 
 // ---- Attempts ----
 
@@ -948,19 +919,6 @@ export async function deleteAttempt(attemptId: number): Promise<Response> {
   });
 }
 
-export async function getRecentAttemptsForStudent(
-  studentId: number,
-  limit: number = 5,
-): Promise<RecentAttemptItem[]> {
-  const response = await fetch(
-    `/api/student/${studentId}/attempts/recent?limit=${limit}`,
-    { credentials: "include" },
-  );
-  if (!response.ok) throw new Error("Failed to fetch recent attempts");
-  const body = await response.json();
-  return body.attempts as RecentAttemptItem[];
-}
-
 export async function getAttemptSummary(
   studentId: number,
 ): Promise<AttemptSummary> {
@@ -969,37 +927,6 @@ export async function getAttemptSummary(
   });
   if (!response.ok) throw new Error("Failed to fetch attempt summary");
   return await response.json();
-}
-
-export async function getAttemptHeatmap(
-  studentId: number,
-  from?: string,
-  to?: string,
-): Promise<AttemptBucket[]> {
-  const params = new URLSearchParams();
-  if (from) params.set("from", from);
-  if (to) params.set("to", to);
-  const qs = params.toString();
-  const url = qs
-    ? `/api/student/${studentId}/attempts/heatmap?${qs}`
-    : `/api/student/${studentId}/attempts/heatmap`;
-  const response = await fetch(url, { credentials: "include" });
-  if (!response.ok) throw new Error("Failed to fetch attempt heatmap");
-  const body = await response.json();
-  return body.buckets as AttemptBucket[];
-}
-
-export async function getAttemptSparkline(
-  studentTechniqueId: number,
-  weeks: number = 12,
-): Promise<AttemptBucket[]> {
-  const response = await fetch(
-    `/api/student_technique/${studentTechniqueId}/attempts/sparkline?weeks=${weeks}`,
-    { credentials: "include" },
-  );
-  if (!response.ok) throw new Error("Failed to fetch sparkline");
-  const body = await response.json();
-  return body.buckets as AttemptBucket[];
 }
 
 export type VideoKind = "native" | "youtube" | "vimeo" | "drive" | "link";
@@ -1098,16 +1025,6 @@ export async function setVideoStudentVisibility(
     body: JSON.stringify({ visible }),
     credentials: "include",
   });
-}
-
-export async function getVideoStatus(
-  videoId: number,
-): Promise<{ processing_status: ProcessingStatus; processing_error?: string | null }> {
-  const response = await fetch(`/api/videos/${videoId}/status`, {
-    credentials: "include",
-  });
-  if (!response.ok) throw new Error("Failed to load video status");
-  return await response.json();
 }
 
 export async function uploadVideo(
@@ -1230,35 +1147,6 @@ export interface VideoStatsSnapshot {
   completion_rate: number;
 }
 
-export interface DashboardVideoRow {
-  video_id: number;
-  video_title: string;
-  technique_id: number;
-  technique_name: string;
-  plays_this_window: number;
-  unique_viewers: number;
-}
-
-export interface DashboardVideoOverview {
-  total_seconds_watched: number;
-  videos_processing: number;
-  top_videos: DashboardVideoRow[];
-}
-
-export interface StorageObjectRow {
-  video_id: number;
-  title: string;
-  technique_id: number;
-  technique_name: string;
-  bytes: number;
-}
-
-export interface StorageOverview {
-  total_bytes: number;
-  total_objects: number;
-  top_objects: StorageObjectRow[];
-}
-
 export async function getVideoStats(
   videoId: number,
 ): Promise<VideoStatsSnapshot> {
@@ -1267,22 +1155,6 @@ export async function getVideoStats(
   });
   if (!response.ok) throw response;
   return (await response.json()) as VideoStatsSnapshot;
-}
-
-export async function getDashboardVideoOverview(): Promise<DashboardVideoOverview> {
-  const response = await fetch(`/api/dashboard/video-overview`, {
-    credentials: "include",
-  });
-  if (!response.ok) throw response;
-  return (await response.json()) as DashboardVideoOverview;
-}
-
-export async function getAdminStorage(): Promise<StorageOverview> {
-  const response = await fetch(`/api/admin/storage`, {
-    credentials: "include",
-  });
-  if (!response.ok) throw response;
-  return (await response.json()) as StorageOverview;
 }
 
 // ============================================================
@@ -1349,6 +1221,8 @@ export interface SstRow {
   tags: Tag[];
   attempt_count: number;
   last_attempt_at: string | null;
+  /** Alive videos on the technique (global library; student-specific is future). */
+  video_count: number;
 }
 
 export interface StudentSyllabusDetailResponse {

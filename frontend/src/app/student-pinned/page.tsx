@@ -1,13 +1,13 @@
 import { useCallback, useMemo, useState } from 'react';
 import { useParams, Navigate } from 'react-router-dom';
-import { Pin, Search } from 'lucide-react';
+import { Pin } from 'lucide-react';
 import { toast } from 'sonner';
 import { Accordion } from '@/components/ui/accordion';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { EmptyState } from '@/components/empty-state';
 import { TechniqueRow } from '@/components/technique-row';
+import { TechniqueFilters } from '@/components/technique-row/technique-filters';
+import { useTechniqueListNav } from '@/components/technique-row/use-technique-list-nav';
 import { useAllUsers, useStudentPinnedTechniques } from '@/lib/queries';
 import { usePinTechnique, useUnpinTechnique } from '@/lib/mutations';
 import { useUser } from '@/lib/current-user-context';
@@ -42,10 +42,7 @@ function PinnedListing({
   studentId: number;
   isOwnView: boolean;
 }) {
-  const [expandedValue, setExpandedValue] = useState<string>('');
   const [exitingIds, setExitingIds] = useState<Set<number>>(new Set());
-  const [search, setSearch] = useState('');
-  const [activeTags, setActiveTags] = useState<string[]>([]);
   const query = useStudentPinnedTechniques(studentId);
   const usersQuery = useAllUsers();
   const pinMutation = usePinTechnique(studentId);
@@ -59,38 +56,24 @@ function PinnedListing({
   const loading = query.isLoading;
   const error = query.error ? 'Failed to load pinned techniques.' : null;
 
+  const nav = useTechniqueListNav({
+    items: techniques,
+    kind: 'technique',
+    rowId: (t) => t.id,
+    rowElementId: (t) => `technique-row-${t.id}`,
+    tagsOf: (t) => t.tags.map((tag) => tag.name),
+    matchesSearch: (t, needle) =>
+      t.name.toLowerCase().includes(needle) ||
+      t.description.toLowerCase().includes(needle) ||
+      t.tags.some((tag) => tag.name.toLowerCase().includes(needle)),
+  });
+  const { filtered } = nav;
+
   const title = isOwnView
     ? 'My Pinned Techniques'
     : studentName
       ? `${studentName}'s Pinned Techniques`
       : 'Pinned Techniques';
-
-  const availableTags = useMemo(() => {
-    const set = new Set<string>();
-    techniques.forEach((t) => t.tags.forEach((tag) => set.add(tag.name)));
-    return Array.from(set).sort();
-  }, [techniques]);
-
-  const filtered = useMemo(() => {
-    const needle = search.trim().toLowerCase();
-    return techniques.filter((t) => {
-      const matchesText =
-        !needle ||
-        t.name.toLowerCase().includes(needle) ||
-        t.description.toLowerCase().includes(needle) ||
-        t.tags.some((tag) => tag.name.toLowerCase().includes(needle));
-      const matchesTags =
-        activeTags.length === 0 ||
-        activeTags.every((tag) => t.tags.some((x) => x.name === tag));
-      return matchesText && matchesTags;
-    });
-  }, [techniques, search, activeTags]);
-
-  function toggleTag(tag: string) {
-    setActiveTags((prev) =>
-      prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag],
-    );
-  }
 
   // Two-phase unpin so the row can animate out: flag the row for exit
   // styling, wait for the transition to play, then fire the mutation. The
@@ -142,55 +125,23 @@ function PinnedListing({
       </div>
 
       {techniques.length > 0 && (
-        <div className="mb-4 space-y-3">
-          <div className="relative">
-            <Search
-              className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
-              aria-hidden
-            />
-            <Input
-              placeholder="Search techniques"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="pl-9"
-            />
-          </div>
-          {availableTags.length > 0 && (
-            <div className="flex flex-wrap gap-1.5">
-              {availableTags.map((tag) => {
-                const active = activeTags.includes(tag);
-                return (
-                  <Badge
-                    key={tag}
-                    variant={active ? 'default' : 'outline'}
-                    className="cursor-pointer select-none"
-                    onClick={() => toggleTag(tag)}
-                  >
-                    {tag}
-                  </Badge>
-                );
-              })}
-              {activeTags.length > 0 && (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="h-6 px-2 text-xs"
-                  onClick={() => setActiveTags([])}
-                >
-                  Clear
-                </Button>
-              )}
-            </div>
-          )}
-          <p className="text-xs text-muted-foreground">
+        <>
+          <TechniqueFilters
+            search={nav.search}
+            onSearchChange={nav.setSearch}
+            availableTags={nav.availableTags}
+            activeTags={nav.tags}
+            onToggleTag={nav.toggleTag}
+            onClearTags={nav.clearTags}
+          />
+          <p className="mb-2 text-xs text-muted-foreground">
             {filtered.length === techniques.length
               ? `${techniques.length} ${
                   techniques.length === 1 ? 'technique' : 'techniques'
                 }`
               : `${filtered.length} of ${techniques.length} techniques`}
           </p>
-        </div>
+        </>
       )}
 
       <div className="overflow-hidden rounded-lg border border-border bg-card">
@@ -233,8 +184,8 @@ function PinnedListing({
           <Accordion
             type="single"
             collapsible
-            value={expandedValue}
-            onValueChange={setExpandedValue}
+            value={nav.expandedValue}
+            onValueChange={nav.setExpandedValue}
           >
             {filtered.map((t) => {
               const value = String(t.id);
@@ -259,10 +210,11 @@ function PinnedListing({
                       context={{
                         kind: 'student-pinned',
                         studentId,
+                        studentName,
                         onUnpinIntent: isOwnView ? handleUnpinIntent : undefined,
                       }}
                       value={value}
-                      isOpen={expandedValue === value}
+                      isOpen={nav.expandedValue === value}
                     />
                   </div>
                 </div>

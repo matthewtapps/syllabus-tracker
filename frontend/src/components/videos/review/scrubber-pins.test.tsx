@@ -30,7 +30,7 @@ describe("ScrubberPins", () => {
     render(
       <ScrubberPins threads={[t(1, 30)]} duration={100} activeThreadId={null} onPinClick={onPinClick} onClusterClick={vi.fn()} />,
     );
-    await userEvent.click(screen.getByRole("button", { name: /moment at 0:30/i }));
+    await userEvent.click(screen.getByRole("button", { name: /comment at 0:30/i }));
     expect(onPinClick).toHaveBeenCalledWith(expect.objectContaining({ id: 1 }));
   });
 });

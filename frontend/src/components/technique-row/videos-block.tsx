@@ -34,6 +34,26 @@ export function VideosBlock({
       ? { kind: "student", studentId: context.studentId }
       : { kind: "library" };
 
+  // Surface breadcrumb shown in the video viewer header, e.g.
+  // "Global technique library" or "Sam R.'s Blue Belt Syllabus".
+  const surfaceLabel = (() => {
+    switch (context.kind) {
+      case "global-library":
+        return "Global technique library";
+      case "student-pinned":
+        return context.studentName
+          ? `${context.studentName}'s pinned techniques`
+          : "Pinned techniques";
+      case "student-syllabus":
+        return context.studentName
+          ? `${context.studentName}'s ${context.syllabusName ?? "syllabus"}`
+          : (context.syllabusName ?? "Syllabus");
+      case "syllabus-management":
+        return context.syllabusName ? `${context.syllabusName} syllabus` : "Syllabus";
+    }
+  })();
+  const contextLabel = `${surfaceLabel} · ${technique.name}`;
+
   const watchContext = useMemo<WatchContext>(() => {
     if (context.kind === "student-syllabus") {
       return {
@@ -75,6 +95,7 @@ export function VideosBlock({
         scrollToVideoId={scrollToVideoId}
         onVideoScrolled={onVideoScrolled}
         watchContext={watchContext}
+        contextLabel={contextLabel}
       />
     </section>
   );

@@ -56,6 +56,10 @@ pub struct PipelineContext {
     pub transcode: DynMediaTranscode,
     pub jobs: Arc<ProcessingJobs>,
     pub max_duration_seconds: i64,
+    /// Bounds concurrent ffmpeg transcodes. Each upload spawns its own task, so
+    /// without this a burst of uploads runs N CPU-bound transcodes at once and
+    /// starves the co-located web server. Permits queue the rest.
+    pub transcode_permits: Arc<tokio::sync::Semaphore>,
 }
 
 struct TempCleanup {
@@ -164,6 +168,9 @@ async fn run_pipeline(
         let mut transcoded = temp_input.to_path_buf();
         transcoded.set_extension("out.mp4");
         cleanup.track(transcoded.clone());
+        // Wait for a transcode slot so concurrent uploads don't peg the CPU.
+        // acquire() only errors if the semaphore is closed (never, here).
+        let _permit = ctx.transcode_permits.acquire().await;
         let transcode_started = Instant::now();
         match ctx
             .transcode
@@ -265,5 +272,15 @@ pub fn max_video_duration_seconds() -> i64 {
     dotenvy::var("VIDEO_MAX_DURATION_SECONDS")
         .ok()
         .and_then(|s| s.parse().ok())
-        .unwrap_or(180)
+        .unwrap_or(300)
+}
+
+/// Max concurrent ffmpeg transcodes. Default 1 so a burst of uploads on a
+/// small, co-located host processes serially instead of saturating the CPU.
+pub fn max_transcode_concurrency() -> usize {
+    dotenvy::var("VIDEO_TRANSCODE_CONCURRENCY")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .filter(|&n: &usize| n >= 1)
+        .unwrap_or(1)
 }
