@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { ChevronRight, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -13,6 +13,21 @@ import {
 import { useGraduatedConfirm } from "./graduated-guard";
 import { useTechniqueRow } from "./technique-row-context";
 import type { SyllabusAttempt } from "@/lib/api";
+
+// Height+fade collapse, matching the row-expand animation used elsewhere
+// (grid-rows 0fr->1fr so the content's natural height animates).
+function Collapse({ open, children }: { open: boolean; children: ReactNode }) {
+  return (
+    <div
+      className={cn(
+        "grid transition-all duration-200 ease-out",
+        open ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0",
+      )}
+    >
+      <div className="min-h-0 overflow-hidden">{children}</div>
+    </div>
+  );
+}
 
 // Attempts logged against an SST. Coaches see notes from both sides;
 // students see their own student_note plus any coach_note.
@@ -61,15 +76,16 @@ export function AttemptsBlock() {
           </Button>
         )}
       </div>
-      {adding && (
+      <Collapse open={adding}>
         <AddAttemptForm
+          open={adding}
           sstId={sst.id}
           isCoach={isCoach}
           onDone={() => setAdding(false)}
         />
-      )}
-      {expanded &&
-        (attemptsQuery.isLoading ? (
+      </Collapse>
+      <Collapse open={expanded}>
+        {attemptsQuery.isLoading ? (
           <p className="text-xs text-muted-foreground">Loading...</p>
         ) : attempts.length === 0 ? (
           <p className="text-xs italic text-muted-foreground">
@@ -81,16 +97,19 @@ export function AttemptsBlock() {
               <AttemptRow key={a.id} attempt={a} />
             ))}
           </ul>
-        ))}
+        )}
+      </Collapse>
     </section>
   );
 }
 
 function AddAttemptForm({
+  open,
   sstId,
   isCoach,
   onDone,
 }: {
+  open: boolean;
   sstId: number;
   isCoach: boolean;
   onDone: () => void;
@@ -100,6 +119,15 @@ function AddAttemptForm({
   const [note, setNote] = useState("");
   const mutation = useCreateSyllabusAttempt();
   const confirmGraduated = useGraduatedConfirm();
+
+  // The form stays mounted (so it can animate closed); reset its fields when
+  // it is hidden so reopening starts fresh.
+  useEffect(() => {
+    if (!open) {
+      setDate(today);
+      setNote("");
+    }
+  }, [open, today]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
