@@ -16,13 +16,9 @@ export const qk = {
   studentUnassigned: (id: number) => ["student", id, "unassignedTechniques"] as const,
   attemptSummary: (id: number) => ["student", id, "attemptSummary"] as const,
   attemptHeatmap: (id: number) => ["student", id, "attemptHeatmap"] as const,
-  recentAttempts: (id: number, limit: number) =>
-    ["student", id, "recentAttempts", limit] as const,
 
   studentTechnique: (stId: number) => ["studentTechnique", stId] as const,
   attempts: (stId: number) => ["studentTechnique", stId, "attempts"] as const,
-  attemptSparkline: (stId: number, weeks: number) =>
-    ["studentTechnique", stId, "sparkline", weeks] as const,
 
   tags: () => ["tags"] as const,
 
@@ -32,8 +28,6 @@ export const qk = {
 
   libraryStats: () => ["libraryStats"] as const,
   libraryTechniques: () => ["libraryTechniques"] as const,
-  libraryTechniqueStats: (id: number) =>
-    ["libraryTechnique", id, "stats"] as const,
 
   studentLibrary: (studentId: number) =>
     ["student", studentId, "library"] as const,
@@ -74,17 +68,14 @@ export const qk = {
   // could affect every viewer's copy of the list.
   techniqueVideosAll: (techniqueId: number) =>
     ["technique", techniqueId, "videos"] as const,
-  videoStatus: (videoId: number) => ["video", videoId, "status"] as const,
   videoStats: (videoId: number) => ["video", videoId, "stats"] as const,
 
-  dashboardVideoOverview: () => ["dashboard", "videoOverview"] as const,
   activityFeed: () => ["activity", "feed"] as const,
   activityDigest: () => ["activity", "digest"] as const,
   dashboardActivityFeed: () => ["activity", "dashboard-feed"] as const,
   studentActivityFeed: (studentId: number, limit: number) =>
     ["student", studentId, "activityFeed", limit] as const,
   activityUnreadCount: () => ["activity", "unreadCount"] as const,
-  adminStorage: () => ["admin", "storage"] as const,
 
   threads: (anchorKind: string, anchorId: number) =>
     ["threads", anchorKind, anchorId] as const,
