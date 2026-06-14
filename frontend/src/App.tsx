@@ -10,6 +10,7 @@ import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 import { Layout } from './components/layout';
 import { AppBreadcrumbs } from './components/breadcrumbs/app-breadcrumbs';
 import { SwUpdateToast } from './components/sw-update-toast';
+import { ScrollManager } from './components/scroll-manager';
 import { AuthErrorBoundary } from './components/auth-error-boundary';
 import { RequireAdmin, RequireAuth, RequireCoach } from './components/route-guards';
 import { TelemetryProvider } from './context/telemetry';
@@ -140,6 +141,7 @@ function AppShell() {
 
   return (
     <Router>
+      <ScrollManager />
       <TelemetryProvider>
         <CapabilitiesProvider value={capabilities}>
           {user ? (
