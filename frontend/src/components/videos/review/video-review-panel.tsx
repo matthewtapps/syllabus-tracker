@@ -127,24 +127,31 @@ function ReviewInner({ video, surface, watchEvents }: VideoReviewPanelProps) {
       {/* Player region: flex row in landscape sheet mode, stacked otherwise. */}
       <div className={sheetOpen ? "flex gap-2" : "relative"}>
         <div className={sheetOpen ? "relative min-w-0 flex-1" : "relative"}>
-          <VideoPlayerPanel video={video} events={events} />
-          {controller.canReadTime && !sheetOpen && (
-            <MomentOverlay
-              threads={threads}
-              currentTime={controller.currentTime}
-              pinnedThread={pinnedThread}
-              onOpen={focusPin}
-            />
-          )}
-          {controller.canReadTime && (
-            <ScrubberPins
-              threads={threads}
-              duration={controller.duration}
-              activeThreadId={pinnedThread?.id ?? null}
-              onPinClick={focusPin}
-              onClusterClick={(ts) => focusPin(ts[0])}
-            />
-          )}
+          <VideoPlayerPanel
+            video={video}
+            events={events}
+            overlay={
+              controller.canReadTime && !sheetOpen ? (
+                <MomentOverlay
+                  threads={threads}
+                  currentTime={controller.currentTime}
+                  pinnedThread={pinnedThread}
+                  onOpen={focusPin}
+                />
+              ) : undefined
+            }
+            sliderMarkers={
+              controller.canReadTime ? (
+                <ScrubberPins
+                  threads={threads}
+                  duration={controller.duration}
+                  activeThreadId={pinnedThread?.id ?? null}
+                  onPinClick={focusPin}
+                  onClusterClick={(ts) => focusPin(ts[0])}
+                />
+              ) : undefined
+            }
+          />
         </div>
 
         {sheetOpen && pinnedThread && (
