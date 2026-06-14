@@ -1,14 +1,12 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { Navigate, useNavigate, useNavigationType, useParams } from 'react-router-dom';
-import { useListUrlState } from '@/lib/use-list-url-state';
-import { useScrollAnchor } from '@/lib/use-scroll-anchor';
-import { scrollToTopWhenStable } from '@/lib/scroll-when-stable';
+import { useMemo, useState } from 'react';
+import { Navigate, useNavigate, useParams } from 'react-router-dom';
+import { useTechniqueListNav } from '@/components/technique-row/use-technique-list-nav';
+import { TechniqueFilters } from '@/components/technique-row/technique-filters';
 import {
   GitCompare,
   GraduationCap,
   NotebookPen,
   Plus,
-  Search,
   Trash2,
 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -23,7 +21,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
 import { EmptyState } from '@/components/empty-state';
 import { TechniqueRow } from '@/components/technique-row';
 import { useAllUsers, useStudentSyllabusTechniques } from '@/lib/queries';
@@ -117,80 +114,21 @@ function Detail({
   const [graduateOpen, setGraduateOpen] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
   const [diffOpen, setDiffOpen] = useState(false);
-  const navType = useNavigationType();
-  const { search, setSearch, tags: activeTags, setTags, focus, setFocus, videoId, anchor } =
-    useListUrlState();
-  const [videoConsumed, setVideoConsumed] = useState(false);
-  const scrollToVideoId = videoConsumed ? null : videoId;
   const unassignMutation = useUnassignSyllabusFromStudent();
   const graduateMutation = useSetAssignmentGraduated();
 
-  // Expansion in the URL (?focus=sst:<id>): shareable + restored on back.
-  const expandedValue = focus?.type === 'sst' ? `sst-${focus.id}` : '';
-  const setExpandedValue = (value: string) => {
-    const id = value.startsWith('sst-') ? Number(value.slice(4)) : NaN;
-    setFocus(Number.isFinite(id) ? { type: 'sst', id } : null);
-  };
-
-  // Scroll to the focused (expanded) row, or the scroll anchor when none is
-  // expanded, on arrival (not POP, where the scroll manager restores pixel
-  // position). Runs once when the data is ready.
-  const didScrollOnArrival = useRef(false);
-  useEffect(() => {
-    if (didScrollOnArrival.current || techniques.length === 0) return;
-    const ref = focus ?? anchor;
-    if (!ref || ref.type !== 'sst') {
-      didScrollOnArrival.current = true;
-      return;
-    }
-    const target = techniques.find((sst) => sst.id === ref.id);
-    if (!target) return;
-    didScrollOnArrival.current = true;
-    if (navType === 'POP') return;
-    requestAnimationFrame(() => {
-      const el = document.getElementById(`technique-row-${target.technique_id}`);
-      if (el) scrollToTopWhenStable(el);
-    });
-  }, [techniques, focus, anchor, navType]);
-
-  const availableTags = useMemo(() => {
-    const set = new Set<string>();
-    techniques.forEach((sst) => sst.tags.forEach((tag) => set.add(tag.name)));
-    return Array.from(set).sort();
-  }, [techniques]);
-
-  const filtered = useMemo(() => {
-    const needle = search.trim().toLowerCase();
-    return techniques.filter((sst) => {
-      const matchesText =
-        !needle ||
-        sst.technique_name.toLowerCase().includes(needle) ||
-        sst.technique_description.toLowerCase().includes(needle) ||
-        sst.tags.some((tag) => tag.name.toLowerCase().includes(needle));
-      const matchesTags =
-        activeTags.length === 0 ||
-        activeTags.every((tag) =>
-          sst.tags.some((x) => x.name === tag),
-        );
-      return matchesText && matchesTags;
-    });
-  }, [techniques, search, activeTags]);
-
-  function toggleTag(tag: string) {
-    setTags(activeTags.includes(tag) ? activeTags.filter((t) => t !== tag) : [...activeTags, tag]);
-  }
-
-  // Shareable scroll anchor (?at=sst:<id>) for the top-most visible row when
-  // none is expanded.
-  const anchorRows = useMemo(
-    () =>
-      filtered.map((sst) => ({
-        elementId: `technique-row-${sst.technique_id}`,
-        token: `sst:${sst.id}`,
-      })),
-    [filtered],
-  );
-  useScrollAnchor(anchorRows, !focus);
+  const nav = useTechniqueListNav({
+    items: techniques,
+    kind: 'sst',
+    rowId: (sst) => sst.id,
+    rowElementId: (sst) => `technique-row-${sst.technique_id}`,
+    tagsOf: (sst) => sst.tags.map((tag) => tag.name),
+    matchesSearch: (sst, needle) =>
+      sst.technique_name.toLowerCase().includes(needle) ||
+      sst.technique_description.toLowerCase().includes(needle) ||
+      sst.tags.some((tag) => tag.name.toLowerCase().includes(needle)),
+  });
+  const { filtered } = nav;
 
   async function handleUnassign() {
     try {
@@ -319,55 +257,23 @@ function Detail({
       </div>
 
       {techniques.length > 0 && (
-        <div className="space-y-3">
-          <div className="relative">
-            <Search
-              className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
-              aria-hidden
-            />
-            <Input
-              placeholder="Search techniques"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="pl-9"
-            />
-          </div>
-          {availableTags.length > 0 && (
-            <div className="flex flex-wrap gap-1.5">
-              {availableTags.map((tag) => {
-                const active = activeTags.includes(tag);
-                return (
-                  <Badge
-                    key={tag}
-                    variant={active ? 'default' : 'outline'}
-                    className="cursor-pointer select-none"
-                    onClick={() => toggleTag(tag)}
-                  >
-                    {tag}
-                  </Badge>
-                );
-              })}
-              {activeTags.length > 0 && (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="h-6 px-2 text-xs"
-                  onClick={() => setTags([])}
-                >
-                  Clear
-                </Button>
-              )}
-            </div>
-          )}
-          <p className="text-xs text-muted-foreground">
+        <>
+          <TechniqueFilters
+            search={nav.search}
+            onSearchChange={nav.setSearch}
+            availableTags={nav.availableTags}
+            activeTags={nav.tags}
+            onToggleTag={nav.toggleTag}
+            onClearTags={nav.clearTags}
+          />
+          <p className="mb-2 text-xs text-muted-foreground">
             {filtered.length === techniques.length
               ? `${techniques.length} ${
                   techniques.length === 1 ? 'technique' : 'techniques'
                 }`
               : `${filtered.length} of ${techniques.length} techniques`}
           </p>
-        </div>
+        </>
       )}
 
       <div className="overflow-hidden rounded-lg border border-border bg-card">
@@ -385,8 +291,8 @@ function Detail({
           <Accordion
             type="single"
             collapsible
-            value={expandedValue}
-            onValueChange={setExpandedValue}
+            value={nav.expandedValue}
+            onValueChange={nav.setExpandedValue}
           >
             {filtered.map((sst) => {
               const value = `sst-${sst.id}`;
@@ -405,9 +311,9 @@ function Detail({
                     graduatedAt: assignment.graduated_at,
                   }}
                   value={value}
-                  isOpen={expandedValue === value}
-                  scrollToVideoId={expandedValue === value ? scrollToVideoId : null}
-                  onVideoScrolled={() => setVideoConsumed(true)}
+                  isOpen={nav.expandedValue === value}
+                  scrollToVideoId={nav.expandedValue === value ? nav.videoId : null}
+                  onVideoScrolled={nav.consumeVideo}
                 />
               );
             })}

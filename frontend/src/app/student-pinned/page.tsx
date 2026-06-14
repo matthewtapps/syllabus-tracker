@@ -1,16 +1,13 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useParams, Navigate, useNavigationType } from 'react-router-dom';
-import { Pin, Search } from 'lucide-react';
+import { useCallback, useMemo, useState } from 'react';
+import { useParams, Navigate } from 'react-router-dom';
+import { Pin } from 'lucide-react';
 import { toast } from 'sonner';
 import { Accordion } from '@/components/ui/accordion';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { EmptyState } from '@/components/empty-state';
 import { TechniqueRow } from '@/components/technique-row';
-import { useListUrlState } from '@/lib/use-list-url-state';
-import { useScrollAnchor } from '@/lib/use-scroll-anchor';
-import { scrollToTopWhenStable } from '@/lib/scroll-when-stable';
+import { TechniqueFilters } from '@/components/technique-row/technique-filters';
+import { useTechniqueListNav } from '@/components/technique-row/use-technique-list-nav';
 import { useAllUsers, useStudentPinnedTechniques } from '@/lib/queries';
 import { usePinTechnique, useUnpinTechnique } from '@/lib/mutations';
 import { useUser } from '@/lib/current-user-context';
@@ -46,9 +43,6 @@ function PinnedListing({
   isOwnView: boolean;
 }) {
   const [exitingIds, setExitingIds] = useState<Set<number>>(new Set());
-  const navType = useNavigationType();
-  const { search, setSearch, tags: activeTags, setTags, focus, setFocus, anchor } =
-    useListUrlState();
   const query = useStudentPinnedTechniques(studentId);
   const usersQuery = useAllUsers();
   const pinMutation = usePinTechnique(studentId);
@@ -62,68 +56,24 @@ function PinnedListing({
   const loading = query.isLoading;
   const error = query.error ? 'Failed to load pinned techniques.' : null;
 
-  // Expansion in the URL (?focus=technique:<id>): shareable + restored on back.
-  const expandedValue = focus?.type === 'technique' ? String(focus.id) : '';
-  const setExpandedValue = (value: string) =>
-    setFocus(value ? { type: 'technique', id: Number(value) } : null);
-
-  // Scroll to the focused (expanded) row, or the scroll anchor when none is
-  // expanded, on arrival (not POP, where the scroll manager restores pixel
-  // position). Runs once when the data is ready.
-  const didScrollOnArrival = useRef(false);
-  useEffect(() => {
-    if (didScrollOnArrival.current || techniques.length === 0) return;
-    const target = focus ?? anchor;
-    if (!target || target.type !== 'technique') {
-      didScrollOnArrival.current = true;
-      return;
-    }
-    if (!techniques.some((t) => t.id === target.id)) return;
-    didScrollOnArrival.current = true;
-    if (navType === 'POP') return;
-    requestAnimationFrame(() => {
-      const el = document.getElementById(`technique-row-${target.id}`);
-      if (el) scrollToTopWhenStable(el);
-    });
-  }, [techniques, focus, anchor, navType]);
+  const nav = useTechniqueListNav({
+    items: techniques,
+    kind: 'technique',
+    rowId: (t) => t.id,
+    rowElementId: (t) => `technique-row-${t.id}`,
+    tagsOf: (t) => t.tags.map((tag) => tag.name),
+    matchesSearch: (t, needle) =>
+      t.name.toLowerCase().includes(needle) ||
+      t.description.toLowerCase().includes(needle) ||
+      t.tags.some((tag) => tag.name.toLowerCase().includes(needle)),
+  });
+  const { filtered } = nav;
 
   const title = isOwnView
     ? 'My Pinned Techniques'
     : studentName
       ? `${studentName}'s Pinned Techniques`
       : 'Pinned Techniques';
-
-  const availableTags = useMemo(() => {
-    const set = new Set<string>();
-    techniques.forEach((t) => t.tags.forEach((tag) => set.add(tag.name)));
-    return Array.from(set).sort();
-  }, [techniques]);
-
-  const filtered = useMemo(() => {
-    const needle = search.trim().toLowerCase();
-    return techniques.filter((t) => {
-      const matchesText =
-        !needle ||
-        t.name.toLowerCase().includes(needle) ||
-        t.description.toLowerCase().includes(needle) ||
-        t.tags.some((tag) => tag.name.toLowerCase().includes(needle));
-      const matchesTags =
-        activeTags.length === 0 ||
-        activeTags.every((tag) => t.tags.some((x) => x.name === tag));
-      return matchesText && matchesTags;
-    });
-  }, [techniques, search, activeTags]);
-
-  function toggleTag(tag: string) {
-    setTags(activeTags.includes(tag) ? activeTags.filter((t) => t !== tag) : [...activeTags, tag]);
-  }
-
-  // Shareable scroll anchor (?at=) for the top-most visible row when none is expanded.
-  const anchorRows = useMemo(
-    () => filtered.map((t) => ({ elementId: `technique-row-${t.id}`, token: `technique:${t.id}` })),
-    [filtered],
-  );
-  useScrollAnchor(anchorRows, !focus);
 
   // Two-phase unpin so the row can animate out: flag the row for exit
   // styling, wait for the transition to play, then fire the mutation. The
@@ -175,55 +125,23 @@ function PinnedListing({
       </div>
 
       {techniques.length > 0 && (
-        <div className="mb-4 space-y-3">
-          <div className="relative">
-            <Search
-              className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
-              aria-hidden
-            />
-            <Input
-              placeholder="Search techniques"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="pl-9"
-            />
-          </div>
-          {availableTags.length > 0 && (
-            <div className="flex flex-wrap gap-1.5">
-              {availableTags.map((tag) => {
-                const active = activeTags.includes(tag);
-                return (
-                  <Badge
-                    key={tag}
-                    variant={active ? 'default' : 'outline'}
-                    className="cursor-pointer select-none"
-                    onClick={() => toggleTag(tag)}
-                  >
-                    {tag}
-                  </Badge>
-                );
-              })}
-              {activeTags.length > 0 && (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="h-6 px-2 text-xs"
-                  onClick={() => setTags([])}
-                >
-                  Clear
-                </Button>
-              )}
-            </div>
-          )}
-          <p className="text-xs text-muted-foreground">
+        <>
+          <TechniqueFilters
+            search={nav.search}
+            onSearchChange={nav.setSearch}
+            availableTags={nav.availableTags}
+            activeTags={nav.tags}
+            onToggleTag={nav.toggleTag}
+            onClearTags={nav.clearTags}
+          />
+          <p className="mb-2 text-xs text-muted-foreground">
             {filtered.length === techniques.length
               ? `${techniques.length} ${
                   techniques.length === 1 ? 'technique' : 'techniques'
                 }`
               : `${filtered.length} of ${techniques.length} techniques`}
           </p>
-        </div>
+        </>
       )}
 
       <div className="overflow-hidden rounded-lg border border-border bg-card">
@@ -266,8 +184,8 @@ function PinnedListing({
           <Accordion
             type="single"
             collapsible
-            value={expandedValue}
-            onValueChange={setExpandedValue}
+            value={nav.expandedValue}
+            onValueChange={nav.setExpandedValue}
           >
             {filtered.map((t) => {
               const value = String(t.id);
@@ -296,7 +214,7 @@ function PinnedListing({
                         onUnpinIntent: isOwnView ? handleUnpinIntent : undefined,
                       }}
                       value={value}
-                      isOpen={expandedValue === value}
+                      isOpen={nav.expandedValue === value}
                     />
                   </div>
                 </div>
