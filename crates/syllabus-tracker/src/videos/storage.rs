@@ -6,7 +6,10 @@ use async_trait::async_trait;
 use aws_config::Region;
 use aws_credential_types::Credentials;
 use aws_sdk_s3::Client as S3Client;
-use aws_sdk_s3::config::{BehaviorVersion, Builder as S3ConfigBuilder};
+use aws_sdk_s3::config::{
+    BehaviorVersion, Builder as S3ConfigBuilder, RequestChecksumCalculation,
+    ResponseChecksumValidation,
+};
 use aws_sdk_s3::presigning::PresigningConfig;
 use aws_sdk_s3::primitives::ByteStream;
 use thiserror::Error;
@@ -121,8 +124,30 @@ fn build_client(config: &S3Config, endpoint: &str) -> S3Client {
         .region(Region::new(config.region.clone()))
         .credentials_provider(credentials)
         .force_path_style(config.force_path_style)
+        // aws-sdk-s3 defaults to adding a CRC32 checksum, which it sends as an
+        // `aws-chunked` streaming trailer for file-backed bodies. Several
+        // S3-compatible backends (e.g. MinIO in the local stack) reject that
+        // trailer, so larger uploads fail with a fast "put_object: service
+        // error" while small in-memory bodies (checksummed inline) succeed.
+        // Only checksum when an operation actually requires it.
+        .request_checksum_calculation(RequestChecksumCalculation::WhenRequired)
+        .response_checksum_validation(ResponseChecksumValidation::WhenRequired)
         .build();
     S3Client::from_conf(s3_config)
+}
+
+/// Flatten an error and its `source()` chain into one string. The aws-sdk
+/// `SdkError` Display is just "service error"; the real status and message live
+/// in the source chain, so surface them for diagnosis.
+fn error_chain(err: &(dyn std::error::Error)) -> String {
+    let mut out = err.to_string();
+    let mut source = err.source();
+    while let Some(inner) = source {
+        out.push_str(": ");
+        out.push_str(&inner.to_string());
+        source = inner.source();
+    }
+    out
 }
 
 #[async_trait]
@@ -145,7 +170,7 @@ impl VideoStorage for S3VideoStorage {
             .body(body)
             .send()
             .await
-            .map_err(|e| StorageError::Backend(format!("put_object: {}", e)))?;
+            .map_err(|e| StorageError::Backend(format!("put_object: {}", error_chain(&e))))?;
         Ok(())
     }
 
