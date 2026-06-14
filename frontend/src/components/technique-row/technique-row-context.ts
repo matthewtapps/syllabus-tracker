@@ -18,12 +18,18 @@ export type RowContext =
   | {
       kind: "student-pinned";
       studentId: number;
+      /** Display name for the surface breadcrumb; null when the owner views their own. */
+      studentName?: string | null;
       onUnpinIntent?: (technique: LibraryTechniqueRow) => void;
     }
   | {
       kind: "student-syllabus";
       studentId: number;
+      /** Display name for the surface breadcrumb; null when the owner views their own. */
+      studentName?: string | null;
       syllabusId: number;
+      /** Syllabus name for the surface breadcrumb. */
+      syllabusName?: string;
       assignmentId: number;
       sst: SstRow;
       /** Carries the assignment's graduated_at so coach-side mutation
@@ -38,6 +44,8 @@ export type RowContext =
   | {
       kind: "syllabus-management";
       syllabusId: number;
+      /** Syllabus name for the surface breadcrumb. */
+      syllabusName?: string;
       onRemove: (technique: LibraryTechniqueRow) => void;
     };
 

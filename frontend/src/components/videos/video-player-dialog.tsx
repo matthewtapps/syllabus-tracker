@@ -113,7 +113,7 @@ function ViewerShell({
         <span className="w-8" aria-hidden />
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto p-3 sm:p-4">
+      <div className="min-h-0 flex-1 overflow-y-auto">
         <VideoReviewPanel
           video={video}
           surface={surface}

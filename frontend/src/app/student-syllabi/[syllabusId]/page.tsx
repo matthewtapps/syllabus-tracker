@@ -380,7 +380,9 @@ function Detail({
                   context={{
                     kind: 'student-syllabus',
                     studentId,
+                    studentName,
                     syllabusId,
+                    syllabusName: assignment.syllabus_name,
                     assignmentId: assignment.id,
                     sst,
                     graduatedAt: assignment.graduated_at,

@@ -259,6 +259,7 @@ function PinnedListing({
                       context={{
                         kind: 'student-pinned',
                         studentId,
+                        studentName,
                         onUnpinIntent: isOwnView ? handleUnpinIntent : undefined,
                       }}
                       value={value}

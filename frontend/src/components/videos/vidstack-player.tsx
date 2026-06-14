@@ -104,8 +104,8 @@ export function VidstackPlayer({
       style={{ aspectRatio }}
       className={
         isPortrait
-          ? "relative mx-auto h-[78svh] w-auto max-w-full overflow-hidden rounded-md bg-black"
-          : "relative w-full overflow-hidden rounded-md bg-black"
+          ? "relative mx-auto h-[78svh] w-auto max-w-full overflow-hidden bg-black"
+          : "relative w-full overflow-hidden bg-black"
       }
     >
       <MediaProvider />

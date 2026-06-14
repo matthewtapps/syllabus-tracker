@@ -192,10 +192,13 @@ function ReviewInner({ video, surface, watchEvents, composerAction }: VideoRevie
   }
 
   return (
-    <div className="space-y-3">
+    <div>
+      {/* Player is full-bleed to the viewer edges; the comments stay inset. */}
       <div className="relative">{player}</div>
-      {composer}
-      {feed}
+      <div className="space-y-3 px-3 pb-4 sm:px-4">
+        {composer}
+        {feed}
+      </div>
     </div>
   );
 }
