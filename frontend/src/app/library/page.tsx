@@ -1,6 +1,8 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigationType } from 'react-router-dom';
 import { BookOpen, Search, X as XIcon } from 'lucide-react';
-import { useFocusTarget } from '@/components/hooks/useFocusTarget';
+import { useListUrlState } from '@/lib/use-list-url-state';
+import { scrollToTopWhenStable } from '@/lib/scroll-when-stable';
 import { Accordion } from '@/components/ui/accordion';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -27,26 +29,35 @@ export default function LibraryPage() {
   const loading = techniquesQuery.isLoading;
   const error = techniquesQuery.error ? 'Failed to load techniques.' : null;
 
-  const [expandedValue, setExpandedValue] = useState<string>('');
-  const [scrollToVideoId, setScrollToVideoId] = useState<number | null>(null);
-  const [search, setSearch] = useState('');
-  const [activeTags, setActiveTags] = useState<string[]>([]);
+  const navType = useNavigationType();
+  const { search, setSearch, tags: activeTags, setTags, focus, setFocus, videoId } =
+    useListUrlState();
+  const [videoConsumed, setVideoConsumed] = useState(false);
+  const scrollToVideoId = videoConsumed ? null : videoId;
 
-  useFocusTarget({
-    ready: techniques.length > 0,
-    onFocus: (ref, videoId) => {
-      if (ref.type !== 'technique') return false;
-      if (!techniques.some((t) => t.id === ref.id)) return false;
-      setExpandedValue(String(ref.id));
-      if (videoId != null) setScrollToVideoId(videoId);
-      requestAnimationFrame(() => {
-        document
-          .getElementById(`technique-row-${ref.id}`)
-          ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      });
-      return true;
-    },
-  });
+  // Expansion lives in the URL (?focus=technique:<id>) so the view is shareable
+  // and restored on back.
+  const expandedValue = focus?.type === 'technique' ? String(focus.id) : '';
+  const setExpandedValue = (value: string) =>
+    setFocus(value ? { type: 'technique', id: Number(value) } : null);
+
+  // On arrival with a focus token, scroll to that row once the data is ready.
+  // Skip on POP: the scroll manager restores the prior pixel position there.
+  const didScrollToFocus = useRef(false);
+  useEffect(() => {
+    if (didScrollToFocus.current || techniques.length === 0) return;
+    if (!focus || focus.type !== 'technique') {
+      didScrollToFocus.current = true;
+      return;
+    }
+    if (!techniques.some((t) => t.id === focus.id)) return;
+    didScrollToFocus.current = true;
+    if (navType === 'POP') return;
+    requestAnimationFrame(() => {
+      const el = document.getElementById(`technique-row-${focus.id}`);
+      if (el) scrollToTopWhenStable(el);
+    });
+  }, [techniques, focus, navType]);
 
   const availableTags = useMemo(() => {
     const set = new Set<string>();
@@ -70,9 +81,7 @@ export default function LibraryPage() {
   }, [techniques, search, activeTags]);
 
   function toggleTag(tag: string) {
-    setActiveTags((prev) =>
-      prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag],
-    );
+    setTags(activeTags.includes(tag) ? activeTags.filter((t) => t !== tag) : [...activeTags, tag]);
   }
 
   return (
@@ -119,7 +128,7 @@ export default function LibraryPage() {
               variant="ghost"
               size="sm"
               className="h-6 px-2 text-xs"
-              onClick={() => setActiveTags([])}
+              onClick={() => setTags([])}
             >
               <XIcon className="mr-1 h-3 w-3" aria-hidden />
               Clear
@@ -183,7 +192,7 @@ export default function LibraryPage() {
                   value={value}
                   isOpen={isOpen}
                   scrollToVideoId={isOpen ? scrollToVideoId : null}
-                  onVideoScrolled={() => setScrollToVideoId(null)}
+                  onVideoScrolled={() => setVideoConsumed(true)}
                 />
               );
             })}

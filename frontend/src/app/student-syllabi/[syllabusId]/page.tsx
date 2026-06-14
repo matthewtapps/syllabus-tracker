@@ -1,7 +1,6 @@
-import { useCallback, useMemo, useState } from 'react';
-import { Navigate, useNavigate, useParams } from 'react-router-dom';
-import { useFocusTarget } from '@/components/hooks/useFocusTarget';
-import type { EntityRef } from '@/lib/entity-ref';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Navigate, useNavigate, useNavigationType, useParams } from 'react-router-dom';
+import { useListUrlState } from '@/lib/use-list-url-state';
 import { scrollToTopWhenStable } from '@/lib/scroll-when-stable';
 import {
   GitCompare,
@@ -113,39 +112,43 @@ function Detail({
       return latestOf(b) - latestOf(a);
     });
   }, [query.data?.techniques]);
-  const [expandedValue, setExpandedValue] = useState<string>('');
-  const [scrollToVideoId, setScrollToVideoId] = useState<number | null>(null);
   const [unassignOpen, setUnassignOpen] = useState(false);
   const [graduateOpen, setGraduateOpen] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
   const [diffOpen, setDiffOpen] = useState(false);
-  const [search, setSearch] = useState('');
-  const [activeTags, setActiveTags] = useState<string[]>([]);
+  const navType = useNavigationType();
+  const { search, setSearch, tags: activeTags, setTags, focus, setFocus, videoId } =
+    useListUrlState();
+  const [videoConsumed, setVideoConsumed] = useState(false);
+  const scrollToVideoId = videoConsumed ? null : videoId;
   const unassignMutation = useUnassignSyllabusFromStudent();
   const graduateMutation = useSetAssignmentGraduated();
 
-  const handleFocus = useCallback(
-    (ref: EntityRef, videoId: number | null) => {
-      if (ref.type !== 'sst') return false;
-      const target = techniques.find((sst) => sst.id === ref.id);
-      if (!target) return false;
-      setExpandedValue(`sst-${ref.id}`);
-      if (videoId != null) setScrollToVideoId(videoId);
-      requestAnimationFrame(() => {
-        const el = document.getElementById(`technique-row-${target.technique_id}`);
-        // Scroll after the row's expand settles, not immediately: a row near the
-        // bottom can only reach the top once its expanded content grows the page.
-        if (el) scrollToTopWhenStable(el);
-      });
-      return true;
-    },
-    [techniques],
-  );
+  // Expansion in the URL (?focus=sst:<id>): shareable + restored on back.
+  const expandedValue = focus?.type === 'sst' ? `sst-${focus.id}` : '';
+  const setExpandedValue = (value: string) => {
+    const id = value.startsWith('sst-') ? Number(value.slice(4)) : NaN;
+    setFocus(Number.isFinite(id) ? { type: 'sst', id } : null);
+  };
 
-  useFocusTarget({
-    ready: techniques.length > 0,
-    onFocus: handleFocus,
-  });
+  // Scroll to the focused row on arrival (not POP, where the scroll manager
+  // restores pixel position). Runs once when the data is ready.
+  const didScrollToFocus = useRef(false);
+  useEffect(() => {
+    if (didScrollToFocus.current || techniques.length === 0) return;
+    if (!focus || focus.type !== 'sst') {
+      didScrollToFocus.current = true;
+      return;
+    }
+    const target = techniques.find((sst) => sst.id === focus.id);
+    if (!target) return;
+    didScrollToFocus.current = true;
+    if (navType === 'POP') return;
+    requestAnimationFrame(() => {
+      const el = document.getElementById(`technique-row-${target.technique_id}`);
+      if (el) scrollToTopWhenStable(el);
+    });
+  }, [techniques, focus, navType]);
 
   const availableTags = useMemo(() => {
     const set = new Set<string>();
@@ -171,9 +174,7 @@ function Detail({
   }, [techniques, search, activeTags]);
 
   function toggleTag(tag: string) {
-    setActiveTags((prev) =>
-      prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag],
-    );
+    setTags(activeTags.includes(tag) ? activeTags.filter((t) => t !== tag) : [...activeTags, tag]);
   }
 
   async function handleUnassign() {
@@ -337,7 +338,7 @@ function Detail({
                   variant="ghost"
                   size="sm"
                   className="h-6 px-2 text-xs"
-                  onClick={() => setActiveTags([])}
+                  onClick={() => setTags([])}
                 >
                   Clear
                 </Button>
@@ -391,7 +392,7 @@ function Detail({
                   value={value}
                   isOpen={expandedValue === value}
                   scrollToVideoId={expandedValue === value ? scrollToVideoId : null}
-                  onVideoScrolled={() => setScrollToVideoId(null)}
+                  onVideoScrolled={() => setVideoConsumed(true)}
                 />
               );
             })}

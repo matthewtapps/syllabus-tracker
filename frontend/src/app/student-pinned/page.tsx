@@ -1,5 +1,5 @@
-import { useCallback, useMemo, useState } from 'react';
-import { useParams, Navigate } from 'react-router-dom';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useParams, Navigate, useNavigationType } from 'react-router-dom';
 import { Pin, Search } from 'lucide-react';
 import { toast } from 'sonner';
 import { Accordion } from '@/components/ui/accordion';
@@ -8,14 +8,13 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { EmptyState } from '@/components/empty-state';
 import { TechniqueRow } from '@/components/technique-row';
-import { useFocusTarget } from '@/components/hooks/useFocusTarget';
+import { useListUrlState } from '@/lib/use-list-url-state';
 import { scrollToTopWhenStable } from '@/lib/scroll-when-stable';
 import { useAllUsers, useStudentPinnedTechniques } from '@/lib/queries';
 import { usePinTechnique, useUnpinTechnique } from '@/lib/mutations';
 import { useUser } from '@/lib/current-user-context';
 import { isCoachOrAdmin } from '@/lib/api';
 import type { LibraryTechniqueRow } from '@/lib/api';
-import type { EntityRef } from '@/lib/entity-ref';
 import { cn } from '@/lib/utils';
 
 const EXIT_MS = 220;
@@ -45,10 +44,10 @@ function PinnedListing({
   studentId: number;
   isOwnView: boolean;
 }) {
-  const [expandedValue, setExpandedValue] = useState<string>('');
   const [exitingIds, setExitingIds] = useState<Set<number>>(new Set());
-  const [search, setSearch] = useState('');
-  const [activeTags, setActiveTags] = useState<string[]>([]);
+  const navType = useNavigationType();
+  const { search, setSearch, tags: activeTags, setTags, focus, setFocus } =
+    useListUrlState();
   const query = useStudentPinnedTechniques(studentId);
   const usersQuery = useAllUsers();
   const pinMutation = usePinTechnique(studentId);
@@ -62,22 +61,28 @@ function PinnedListing({
   const loading = query.isLoading;
   const error = query.error ? 'Failed to load pinned techniques.' : null;
 
-  // Deep link from the activity feed (?focus=technique:<id>): expand and scroll
-  // to that technique's row once the list has loaded.
-  const handleFocus = useCallback(
-    (ref: EntityRef) => {
-      if (ref.type !== 'technique') return false;
-      if (!techniques.some((t) => t.id === ref.id)) return false;
-      setExpandedValue(String(ref.id));
-      requestAnimationFrame(() => {
-        const el = document.getElementById(`technique-row-${ref.id}`);
-        if (el) scrollToTopWhenStable(el);
-      });
-      return true;
-    },
-    [techniques],
-  );
-  useFocusTarget({ ready: techniques.length > 0, onFocus: handleFocus });
+  // Expansion in the URL (?focus=technique:<id>): shareable + restored on back.
+  const expandedValue = focus?.type === 'technique' ? String(focus.id) : '';
+  const setExpandedValue = (value: string) =>
+    setFocus(value ? { type: 'technique', id: Number(value) } : null);
+
+  // Scroll to the focused row on arrival (not POP, where the scroll manager
+  // restores pixel position). Runs once when the data is ready.
+  const didScrollToFocus = useRef(false);
+  useEffect(() => {
+    if (didScrollToFocus.current || techniques.length === 0) return;
+    if (!focus || focus.type !== 'technique') {
+      didScrollToFocus.current = true;
+      return;
+    }
+    if (!techniques.some((t) => t.id === focus.id)) return;
+    didScrollToFocus.current = true;
+    if (navType === 'POP') return;
+    requestAnimationFrame(() => {
+      const el = document.getElementById(`technique-row-${focus.id}`);
+      if (el) scrollToTopWhenStable(el);
+    });
+  }, [techniques, focus, navType]);
 
   const title = isOwnView
     ? 'My Pinned Techniques'
@@ -107,9 +112,7 @@ function PinnedListing({
   }, [techniques, search, activeTags]);
 
   function toggleTag(tag: string) {
-    setActiveTags((prev) =>
-      prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag],
-    );
+    setTags(activeTags.includes(tag) ? activeTags.filter((t) => t !== tag) : [...activeTags, tag]);
   }
 
   // Two-phase unpin so the row can animate out: flag the row for exit
@@ -196,7 +199,7 @@ function PinnedListing({
                   variant="ghost"
                   size="sm"
                   className="h-6 px-2 text-xs"
-                  onClick={() => setActiveTags([])}
+                  onClick={() => setTags([])}
                 >
                   Clear
                 </Button>
