@@ -10,7 +10,7 @@ export interface PinGroup {
 
 /**
  * Group timestamped threads into pins, merging any whose track positions are
- * within `gapFraction` of each other (so dense moments do not overlap).
+ * within `gapFraction` of each other (so dense comments do not overlap).
  * Threads without seconds, and any input when duration <= 0, yield no pins.
  */
 export function clusterPins(
@@ -53,15 +53,15 @@ export function ScrubberPins({
 }: ScrubberPinsProps) {
   const groups = clusterPins(threads, duration, 0.04);
   return (
-    <div className="pointer-events-none absolute inset-x-2 bottom-2 h-1">
+    <div className="pointer-events-none absolute inset-0">
       {groups.map((g, i) => {
         const isCluster = g.threads.length > 1;
         const active =
           activeThreadId != null &&
           g.threads.some((t) => t.id === activeThreadId);
         const label = isCluster
-          ? `${g.threads.length} moments`
-          : `moment at ${formatTimestamp(g.threads[0].video_ts_seconds as number)}`;
+          ? `${g.threads.length} comments`
+          : `comment at ${formatTimestamp(g.threads[0].video_ts_seconds as number)}`;
         return (
           <button
             key={i}
@@ -71,7 +71,7 @@ export function ScrubberPins({
               isCluster ? onClusterClick(g.threads) : onPinClick(g.threads[0])
             }
             style={{ left: `${g.position * 100}%` }}
-            className="pointer-events-auto absolute -top-3.5 flex h-7 w-7 -translate-x-1/2 items-center justify-center"
+            className="pointer-events-auto absolute top-1/2 flex h-7 w-7 -translate-x-1/2 -translate-y-1/2 items-center justify-center"
           >
             <span
               className={cn(
