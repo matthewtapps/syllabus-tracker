@@ -265,5 +265,5 @@ pub fn max_video_duration_seconds() -> i64 {
     dotenvy::var("VIDEO_MAX_DURATION_SECONDS")
         .ok()
         .and_then(|s| s.parse().ok())
-        .unwrap_or(180)
+        .unwrap_or(300)
 }
