@@ -51,19 +51,21 @@ export function AttemptsBlock() {
   return (
     <section className="space-y-2">
       <div className="flex items-center justify-between gap-2">
-        <button
-          type="button"
-          onClick={() => setExpanded((e) => !e)}
-          aria-expanded={expanded}
-          className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground hover:text-foreground"
-        >
-          <ChevronRight
-            className={cn("h-3.5 w-3.5 transition-transform", expanded && "rotate-90")}
-            aria-hidden
-          />
-          <span>Attempts</span>
-          <span className="normal-case tracking-normal">({count})</span>
-        </button>
+        <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          <button
+            type="button"
+            onClick={() => setExpanded((e) => !e)}
+            aria-expanded={expanded}
+            className="flex items-center gap-1.5 hover:text-foreground"
+          >
+            <ChevronRight
+              className={cn("h-3.5 w-3.5 transition-transform", expanded && "rotate-90")}
+              aria-hidden
+            />
+            <span>Attempts</span>
+            <span className="normal-case tracking-normal">({count})</span>
+          </button>
+        </h3>
         {!adding && (
           <Button
             size="sm"
