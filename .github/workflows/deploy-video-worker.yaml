@@ -1,0 +1,168 @@
+# deploy-video-worker.yaml
+#
+# Deploys the Cloudflare video Worker + Container via wrangler.
+# Replaces build-video-worker.yaml (which pushed to GHCR; CF manages its own registry).
+#
+# This workflow:
+#   1. Bundles + deploys the TypeScript Worker (src/index.ts)
+#   2. Builds the container image (crates/video-worker/Dockerfile, context = repo root)
+#      and pushes it to Cloudflare's internal container registry via `wrangler deploy`
+#   3. Sets Worker secrets non-interactively via `wrangler secret put`
+#
+# Triggers on push to main touching the video pipeline crates, and on
+# workflow_dispatch for manual re-deploys (e.g. after secret rotation).
+#
+# ---------------------------------------------------------------------------
+# Required GitHub Actions secrets (set in Settings > Secrets > Actions):
+#   CLOUDFLARE_API_TOKEN      — CF API token with Workers Scripts + Containers
+#                               deploy scope (create at dash.cloudflare.com >
+#                               My Profile > API Tokens). Source: manual.
+#   VIDEO_ENQUEUE_TOKEN       — Bearer token the app sends on POST /jobs.
+#                               Source: platform tofu output `video_enqueue_token`.
+#   VIDEO_CALLBACK_SECRET     — HMAC secret for the app's processing-result
+#                               webhook. Source: platform tofu output
+#                               `video_callback_secret`.
+#   S3_ACCESS_KEY             — R2 / S3 access key for video storage.
+#                               Source: platform tofu R2 API token output.
+#   S3_SECRET_KEY             — R2 / S3 secret key for video storage.
+#                               Source: platform tofu R2 API token output.
+#
+# Required GitHub Actions variables (set in Settings > Variables > Actions):
+#   CLOUDFLARE_ACCOUNT_ID     — Your Cloudflare account ID (not a secret).
+#                               Source: Cloudflare dashboard > account home URL.
+#   S3_ENDPOINT               — R2 endpoint URL, e.g.
+#                               https://<account_id>.r2.cloudflarestorage.com
+#                               Source: platform tofu R2 bucket output.
+#   S3_REGION                 — "auto" for R2.
+#   S3_BUCKET                 — R2 bucket name for video storage.
+#                               Source: platform tofu R2 bucket output.
+#   S3_FORCE_PATH_STYLE       — "false" for R2 (or "true" if required).
+#   S3_PUBLIC_ENDPOINT        — Public base URL for presigned playback URLs.
+#                               Source: platform tofu R2 public bucket output.
+# ---------------------------------------------------------------------------
+
+name: Deploy video-worker
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'crates/video-worker/**'
+      - 'crates/video-media/**'
+      - 'crates/video-job/**'
+      - '.github/workflows/deploy-video-worker.yaml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      # Docker buildx is required for the container image build wrangler triggers.
+      - uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install edge worker deps
+        working-directory: crates/video-worker/edge
+        run: npm ci
+
+      # `wrangler deploy` from the repo root so relative paths in wrangler.jsonc
+      # (image_build_context: "../.." relative to edge/) resolve correctly.
+      # The build context passed to docker will be the repo root, which is what
+      # the Dockerfile's `COPY . .` expects (workspace Cargo.toml is at root).
+      - name: Deploy Worker + Container
+        working-directory: crates/video-worker/edge
+        env:
+          CLOUDFLARE_API_TOKEN:  ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+        run: npx wrangler deploy
+
+      # Set Worker secrets non-interactively. Each secret is piped via stdin
+      # so no value ever appears in the process argument list or workflow logs.
+      - name: Set ENQUEUE_TOKEN secret
+        working-directory: crates/video-worker/edge
+        env:
+          CLOUDFLARE_API_TOKEN:  ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          SECRET_VALUE:          ${{ secrets.VIDEO_ENQUEUE_TOKEN }}
+        run: echo "$SECRET_VALUE" | npx wrangler secret put ENQUEUE_TOKEN
+
+      - name: Set VIDEO_CALLBACK_SECRET secret
+        working-directory: crates/video-worker/edge
+        env:
+          CLOUDFLARE_API_TOKEN:  ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          SECRET_VALUE:          ${{ secrets.VIDEO_CALLBACK_SECRET }}
+        run: echo "$SECRET_VALUE" | npx wrangler secret put VIDEO_CALLBACK_SECRET
+
+      - name: Set S3_ACCESS_KEY secret
+        working-directory: crates/video-worker/edge
+        env:
+          CLOUDFLARE_API_TOKEN:  ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          SECRET_VALUE:          ${{ secrets.S3_ACCESS_KEY }}
+        run: echo "$SECRET_VALUE" | npx wrangler secret put S3_ACCESS_KEY
+
+      - name: Set S3_SECRET_KEY secret
+        working-directory: crates/video-worker/edge
+        env:
+          CLOUDFLARE_API_TOKEN:  ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          SECRET_VALUE:          ${{ secrets.S3_SECRET_KEY }}
+        run: echo "$SECRET_VALUE" | npx wrangler secret put S3_SECRET_KEY
+
+      # Non-secret S3 config — pushed as vars (visible in CF dashboard).
+      # Using `wrangler secret put` for consistency; alternatively these could
+      # be set as [vars] in wrangler.jsonc, but keeping them out of source control
+      # makes rotation easier and keeps config in one place (CF dashboard).
+      - name: Set S3_ENDPOINT var
+        working-directory: crates/video-worker/edge
+        env:
+          CLOUDFLARE_API_TOKEN:  ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          VAR_VALUE:             ${{ vars.S3_ENDPOINT }}
+        run: echo "$VAR_VALUE" | npx wrangler secret put S3_ENDPOINT
+
+      - name: Set S3_REGION var
+        working-directory: crates/video-worker/edge
+        env:
+          CLOUDFLARE_API_TOKEN:  ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          VAR_VALUE:             ${{ vars.S3_REGION }}
+        run: echo "$VAR_VALUE" | npx wrangler secret put S3_REGION
+
+      - name: Set S3_BUCKET var
+        working-directory: crates/video-worker/edge
+        env:
+          CLOUDFLARE_API_TOKEN:  ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          VAR_VALUE:             ${{ vars.S3_BUCKET }}
+        run: echo "$VAR_VALUE" | npx wrangler secret put S3_BUCKET
+
+      - name: Set S3_FORCE_PATH_STYLE var
+        working-directory: crates/video-worker/edge
+        env:
+          CLOUDFLARE_API_TOKEN:  ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          VAR_VALUE:             ${{ vars.S3_FORCE_PATH_STYLE }}
+        run: echo "$VAR_VALUE" | npx wrangler secret put S3_FORCE_PATH_STYLE
+
+      - name: Set S3_PUBLIC_ENDPOINT var
+        working-directory: crates/video-worker/edge
+        env:
+          CLOUDFLARE_API_TOKEN:  ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          VAR_VALUE:             ${{ vars.S3_PUBLIC_ENDPOINT }}
+        run: echo "$VAR_VALUE" | npx wrangler secret put S3_PUBLIC_ENDPOINT

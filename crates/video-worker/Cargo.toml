@@ -9,8 +9,8 @@ name = "video-worker"
 path = "src/main.rs"
 
 [[bin]]
-name = "mock-transcoder"
-path = "src/bin/mock-transcoder.rs"
+name = "transcode-server"
+path = "src/bin/transcode-server.rs"
 
 [dependencies]
 # Shared crates

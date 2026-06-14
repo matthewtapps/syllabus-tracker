@@ -30,12 +30,13 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends ffmpeg ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-COPY --from=builder /app/target/release/video-worker     /usr/local/bin/video-worker
-COPY --from=builder /app/target/release/mock-transcoder  /usr/local/bin/mock-transcoder
+COPY --from=builder /app/target/release/video-worker      /usr/local/bin/video-worker
+COPY --from=builder /app/target/release/transcode-server  /usr/local/bin/transcode-server
 
 RUN useradd -r -s /usr/sbin/nologin -u 10001 worker
 USER worker
 
-# Default entrypoint is the production worker; the mock-transcoder compose
-# service overrides this via `command: ["mock-transcoder"]`.
-ENTRYPOINT ["video-worker"]
+# The container's job is to be the HTTP server: transcode-server handles
+# requests from the Cloudflare queue consumer (sync mode by default).
+# The video-worker one-shot binary stays in the image as the subprocess.
+ENTRYPOINT ["transcode-server"]

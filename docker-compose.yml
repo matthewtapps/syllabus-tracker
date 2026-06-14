@@ -118,8 +118,8 @@ services:
   # mock-transcoder (video-cloud profile only)
   #
   # Local dev stand-in for the remote Worker+Queue+Container pipeline.
-  # Accepts the same POST /jobs body that CloudflareProcessor sends, then
-  # spawns the real video-worker binary against MinIO.
+  # Runs transcode-server in async mode (TRANSCODE_SERVER_ASYNC=1) so the
+  # app upload path returns 202 immediately, exactly as before.
   #
   # Opt-in: only started when the video-cloud profile is active.
   #   docker compose --profile video-cloud up
@@ -128,7 +128,7 @@ services:
   #   VIDEO_PROCESSOR=cloudflare
   #   VIDEO_ENQUEUE_URL=http://mock-transcoder:8765/jobs
   #   VIDEO_ENQUEUE_TOKEN=dev-token       (any value; mock ignores it)
-  #   VIDEO_CALLBACK_SECRET=dev-secret    (must match MOCK_TRANSCODER below)
+  #   VIDEO_CALLBACK_SECRET=dev-secret    (must match mock-transcoder below)
   #   VIDEO_CALLBACK_BASE_URL=http://app  (in-network app URL; no port, nginx fronts it)
   #
   # Set those in .secrets.env or via `environment:` in a
@@ -140,8 +140,12 @@ services:
     build:
       context: .
       dockerfile: crates/video-worker/Dockerfile
-    command: ["mock-transcoder"]
     environment:
+      # Async mode: return 202 immediately and spawn video-worker detached,
+      # matching the old mock-transcoder behaviour for local dev.
+      TRANSCODE_SERVER_ASYNC: "1"
+      # PORT matches the host port exposed below and the VIDEO_ENQUEUE_URL.
+      PORT: "8765"
       # Same MinIO bucket + creds the app service uses.
       S3_ENDPOINT: http://minio:9000
       S3_PUBLIC_ENDPOINT: http://localhost:9000

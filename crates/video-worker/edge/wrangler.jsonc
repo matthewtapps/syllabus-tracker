@@ -1,0 +1,92 @@
+// sillybus-video-worker — Cloudflare Worker + Container config
+//
+// DO NOT put secrets here. Set them via `wrangler secret put` or CI.
+//
+// Required Worker secrets (set with `wrangler secret put <NAME>`):
+//   ENQUEUE_TOKEN         — bearer token the app sends on POST /jobs
+//   VIDEO_CALLBACK_SECRET — HMAC secret shared with the app's callback webhook
+//   S3_ACCESS_KEY         — R2 / S3 access key for video storage
+//   S3_SECRET_KEY         — R2 / S3 secret key for video storage
+//
+// Required Worker vars (non-secret, set with `wrangler secret put` or as vars):
+//   S3_ENDPOINT           — e.g. https://<account>.r2.cloudflarestorage.com
+//   S3_REGION             — e.g. auto
+//   S3_BUCKET             — R2 bucket name
+//   S3_FORCE_PATH_STYLE   — "true" if required by the S3 provider
+//   S3_PUBLIC_ENDPOINT    — public base URL for presigned playback URLs
+//
+// These values come from platform tofu outputs:
+//   ENQUEUE_TOKEN         <- video_enqueue_token output
+//   VIDEO_CALLBACK_SECRET <- video_callback_secret output
+//   S3_*                  <- R2 bucket + API token outputs
+//
+// The Cloudflare Account ID must also be set:
+//   CLOUDFLARE_ACCOUNT_ID (GH var) — used by wrangler during deploy
+//   CLOUDFLARE_API_TOKEN  (GH secret) — must have Workers + Containers deploy scope
+
+{
+  "name": "sillybus-video-worker",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-06-01",
+
+  // Container class: image path and build context are relative to this
+  // wrangler.jsonc file. ../Dockerfile resolves to crates/video-worker/Dockerfile
+  // and .. (build context) resolves to crates/video-worker/, but the Dockerfile
+  // itself uses COPY . . expecting the REPO ROOT as context (workspace Cargo.toml
+  // is needed). In CI the workflow runs `wrangler deploy` from the repo root so
+  // paths are adjusted; locally `npx wrangler deploy --dry-run` will attempt a
+  // Docker build which requires the repo root context — run from the repo root.
+  //
+  // The instance_type was renamed from "standard" to "standard-1" in wrangler
+  // >=4.x; using "standard-1" here.
+  "containers": [
+    {
+      "class_name": "VideoContainer",
+      "image": "../Dockerfile",
+      "image_build_context": "../..",
+      "max_instances": 3,
+      "instance_type": "standard-1"
+    }
+  ],
+
+  // Durable Object binding for the container class.
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "VIDEO_CONTAINER",
+        "class_name": "VideoContainer"
+      }
+    ]
+  },
+
+  // Durable Object migrations: SQLite-backed (required by @cloudflare/containers).
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["VideoContainer"]
+    }
+  ],
+
+  // Queue: one producer (the /jobs fetch handler) and one consumer
+  // (the queue message handler that fetches into the container).
+  "queues": {
+    "producers": [
+      {
+        "queue": "sillybus-video-jobs",
+        "binding": "QUEUE"
+      }
+    ],
+    "consumers": [
+      {
+        "queue": "sillybus-video-jobs",
+        "dead_letter_queue": "sillybus-video-jobs-dlq",
+        "max_retries": 3,
+        "max_batch_size": 1
+      }
+    ]
+  },
+
+  "observability": {
+    "enabled": true
+  }
+}
