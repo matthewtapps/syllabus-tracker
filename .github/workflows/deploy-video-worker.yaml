@@ -9,8 +9,23 @@
 #      and pushes it to Cloudflare's internal container registry via `wrangler deploy`
 #   3. Sets Worker secrets non-interactively via `wrangler secret put`
 #
-# Triggers on push to main touching the video pipeline crates, and on
-# workflow_dispatch for manual re-deploys (e.g. after secret rotation).
+# Trigger: workflow_dispatch ONLY for now. The push-on-main trigger is
+# intentionally disabled until the secrets/vars below are provisioned, so a
+# merge to main does not auto-fail this workflow. Re-enable the push trigger
+# once wiring is complete.
+#
+# SECURITY NOTE (read before provisioning CLOUDFLARE_API_TOKEN):
+# This repo's deploy model deliberately keeps NO long-lived provider creds in
+# GitHub Actions — deploy.yaml/staging.yml fetch everything fresh from platform
+# tfstate each run via the bootstrap R2 token (PLATFORM_STATE_R2_*). Putting the
+# broad account CLOUDFLARE_API_TOKEN here would break that model. PREFERRED:
+# mint a SCOPED wrangler-deploy token in platform tofu (Workers Scripts +
+# Queues + Containers + R2 edit only), export it, and have this job read it via
+# `tofu output -raw` (reusing PLATFORM_STATE_R2_*), exactly like the honeycomb/
+# R2 secrets — instead of the GH-secret placeholders below. The VIDEO_* and
+# S3_* values likewise already live in platform tofu outputs; reading them via
+# tofu (see staging.yml "Build runtime-secrets") avoids duplicating them as GH
+# secrets. The secrets/vars listed below are the simpler-but-less-secure path.
 #
 # ---------------------------------------------------------------------------
 # Required GitHub Actions secrets (set in Settings > Secrets > Actions):
@@ -44,13 +59,15 @@
 name: Deploy video-worker
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'crates/video-worker/**'
-      - 'crates/video-media/**'
-      - 'crates/video-job/**'
-      - '.github/workflows/deploy-video-worker.yaml'
+  # Disabled until secrets/vars are wired (see SECURITY NOTE above), so a
+  # merge to main does not auto-fail. Re-enable when ready:
+  # push:
+  #   branches: [main]
+  #   paths:
+  #     - 'crates/video-worker/**'
+  #     - 'crates/video-media/**'
+  #     - 'crates/video-job/**'
+  #     - '.github/workflows/deploy-video-worker.yaml'
   workflow_dispatch:
 
 permissions:
