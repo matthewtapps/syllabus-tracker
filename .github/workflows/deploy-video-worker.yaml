@@ -19,7 +19,7 @@
 # Post-first-deploy manual steps:
 #   1. Note the Cloud Run service URL printed to the step summary.
 #   2. gh variable set VIDEO_ENQUEUE_URL -b "<url>/jobs" -R matthewtapps/syllabus-tracker
-#   3. gh variable set VIDEO_PROCESSOR_STAGING -b "cloudflare" -R matthewtapps/syllabus-tracker
+#   3. gh variable set VIDEO_PROCESSOR_STAGING -b "remote" -R matthewtapps/syllabus-tracker
 #   4. gh workflow run staging.yml -f branch=<branch> -f refresh_db=false \
 #        -f allow_destructive_migrations=false
 #   Staging will then route video jobs to Cloud Run instead of the host transcoder.
@@ -170,5 +170,5 @@ jobs:
           echo "Next: set the repo variable and cut staging over:" >> "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
           echo "gh variable set VIDEO_ENQUEUE_URL -b \"${URL}/jobs\" -R matthewtapps/syllabus-tracker" >> "$GITHUB_STEP_SUMMARY"
-          echo "gh variable set VIDEO_PROCESSOR_STAGING -b \"cloudflare\" -R matthewtapps/syllabus-tracker" >> "$GITHUB_STEP_SUMMARY"
+          echo "gh variable set VIDEO_PROCESSOR_STAGING -b \"remote\" -R matthewtapps/syllabus-tracker" >> "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"

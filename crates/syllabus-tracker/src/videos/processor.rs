@@ -74,14 +74,14 @@ impl VideoProcessor for HostFfmpegProcessor {
 pub type DynVideoProcessor = Arc<dyn VideoProcessor>;
 
 // ---------------------------------------------------------------------------
-// Cloudflare (R2 upload + Worker enqueue) implementation
+// Remote (R2 upload + off-host HTTP transcode endpoint) implementation
 // ---------------------------------------------------------------------------
 
-/// Configuration for the remote-HTTP transcode enqueue path (currently Cloud Run,
-/// previously Cloudflare Worker). All fields are plain strings and cheap to clone.
+/// Configuration for the remote HTTP transcode enqueue path (e.g. Cloud Run).
+/// All fields are plain strings and cheap to clone.
 #[derive(Clone)]
-pub struct CloudflareConfig {
-    /// Full URL of the enqueue endpoint (Cloud Run `/jobs`).
+pub struct RemoteConfig {
+    /// Full URL of the enqueue endpoint (e.g. Cloud Run `/jobs`).
     pub enqueue_url: String,
     /// Bearer token sent as `Authorization: Bearer <token>`.
     pub enqueue_token: String,
@@ -90,11 +90,11 @@ pub struct CloudflareConfig {
 }
 
 /// Pure helper: build the (url, authorization-header-value, json-body) tuple
-/// that should be sent to the Worker enqueue endpoint.
+/// that should be sent to the remote enqueue endpoint.
 ///
 /// Kept free of I/O so it can be unit-tested without network or async.
 pub fn build_enqueue_request(
-    cfg: &CloudflareConfig,
+    cfg: &RemoteConfig,
     video_id: i64,
     source_key: &str,
 ) -> (String, String, String) {
@@ -115,36 +115,35 @@ pub fn build_enqueue_request(
 }
 
 /// Processes videos by uploading the original file to R2 and enqueueing a
-/// transcoding job on a remote HTTP transcode service (currently Cloud Run;
-/// previously a Cloudflare Worker — naming kept for continuity). `start`
-/// returns immediately after spawning; the spawned task does the upload and
-/// enqueue, and on any failure marks the video row as `Failed` so it does
-/// not hang in `processing` forever.
+/// transcoding job on a remote HTTP transcode service (e.g. Cloud Run).
+/// `start` returns immediately after spawning; the spawned task does the
+/// upload and enqueue, and on any failure marks the video row as `Failed`
+/// so it does not hang in `processing` forever.
 ///
 /// `SqlitePool` and `reqwest::Client` are cheap to clone. `DynVideoStorage`
-/// is an `Arc<dyn …>`, so cloning it is a reference-count bump. `CloudflareConfig`
+/// is an `Arc<dyn ...>`, so cloning it is a reference-count bump. `RemoteConfig`
 /// derives `Clone` (all `String` fields). No `Arc` wrapper is needed here.
-pub struct CloudflareProcessor {
+pub struct RemoteProcessor {
     pool: sqlx::SqlitePool,
     storage: crate::videos::storage::DynVideoStorage,
     http: reqwest::Client,
-    cfg: CloudflareConfig,
+    cfg: RemoteConfig,
 }
 
-impl CloudflareProcessor {
+impl RemoteProcessor {
     /// Construct from environment variables, failing fast if any required var
     /// is missing.
     pub fn from_env(pool: sqlx::SqlitePool) -> Result<Self, crate::error::AppError> {
         let read = |key: &str| -> Result<String, crate::error::AppError> {
             dotenvy::var(key).map_err(|_| {
                 crate::error::AppError::Internal(format!(
-                    "CloudflareProcessor: missing required env var {}",
+                    "RemoteProcessor: missing required env var {}",
                     key
                 ))
             })
         };
 
-        let cfg = CloudflareConfig {
+        let cfg = RemoteConfig {
             enqueue_url: read("VIDEO_ENQUEUE_URL")?,
             enqueue_token: read("VIDEO_ENQUEUE_TOKEN")?,
             callback_base_url: read("VIDEO_CALLBACK_BASE_URL")?,
@@ -153,7 +152,7 @@ impl CloudflareProcessor {
         // Reuse the same S3/R2 env vars the host storage uses.
         let s3_cfg = video_media::storage::S3Config::from_env().map_err(|e| {
             crate::error::AppError::Internal(format!(
-                "CloudflareProcessor: R2 storage config error: {}",
+                "RemoteProcessor: R2 storage config error: {}",
                 e
             ))
         })?;
@@ -172,19 +171,19 @@ impl CloudflareProcessor {
 }
 
 #[async_trait]
-impl VideoProcessor for CloudflareProcessor {
+impl VideoProcessor for RemoteProcessor {
     /// Spawns the upload+enqueue work as a detached task and returns
     /// immediately, matching the fire-and-forget contract of the trait.
     ///
     /// This is correct for Cloud Run (synchronous transcode: awaiting the POST
     /// would block the upload handler for the entire transcode duration) and
-    /// also for the original Cloudflare path (fast 202 enqueue).
+    /// also for any async-enqueue remote endpoint (fast 202 response).
     async fn start(&self, job: HostJob) {
         // Clone the fields the spawned task needs.
         // - SqlitePool: designed to be cloned (shared pool handle).
         // - DynVideoStorage: Arc<dyn ...>, clone is a ref-count bump.
         // - reqwest::Client: internally Arc-backed, cheap to clone.
-        // - CloudflareConfig: derives Clone (all String fields).
+        // - RemoteConfig: derives Clone (all String fields).
         let pool = self.pool.clone();
         let storage = self.storage.clone();
         let http = self.http.clone();
@@ -208,7 +207,7 @@ impl VideoProcessor for CloudflareProcessor {
                 .put_file(&source_key, "video/mp4", &job.original_temp_path)
                 .await
             {
-                error!(video_id, error = %e, "CloudflareProcessor: R2 upload failed");
+                error!(video_id, error = %e, "RemoteProcessor: R2 upload failed");
                 if let Err(db_err) = crate::videos::pipeline::apply_processing_result(
                     &pool,
                     video_id,
@@ -218,7 +217,7 @@ impl VideoProcessor for CloudflareProcessor {
                 )
                 .await
                 {
-                    error!(video_id, error = %db_err, "CloudflareProcessor: failed to mark video failed after upload error");
+                    error!(video_id, error = %db_err, "RemoteProcessor: failed to mark video failed after upload error");
                 }
                 return;
             }
@@ -245,7 +244,7 @@ impl VideoProcessor for CloudflareProcessor {
                         video_id,
                         http_status = status.as_u16(),
                         body = %text,
-                        "CloudflareProcessor: enqueue returned non-2xx"
+                        "RemoteProcessor: enqueue returned non-2xx"
                     );
                     if let Err(db_err) = crate::videos::pipeline::apply_processing_result(
                         &pool,
@@ -256,11 +255,11 @@ impl VideoProcessor for CloudflareProcessor {
                     )
                     .await
                     {
-                        error!(video_id, error = %db_err, "CloudflareProcessor: failed to mark video failed after enqueue error");
+                        error!(video_id, error = %db_err, "RemoteProcessor: failed to mark video failed after enqueue error");
                     }
                 }
                 Err(e) => {
-                    error!(video_id, error = %e, "CloudflareProcessor: enqueue transport error");
+                    error!(video_id, error = %e, "RemoteProcessor: enqueue transport error");
                     if let Err(db_err) = crate::videos::pipeline::apply_processing_result(
                         &pool,
                         video_id,
@@ -270,7 +269,7 @@ impl VideoProcessor for CloudflareProcessor {
                     )
                     .await
                     {
-                        error!(video_id, error = %db_err, "CloudflareProcessor: failed to mark video failed after transport error");
+                        error!(video_id, error = %db_err, "RemoteProcessor: failed to mark video failed after transport error");
                     }
                 }
             }
@@ -288,7 +287,7 @@ mod tests {
 
     #[test]
     fn build_enqueue_request_shapes_url_headers_body() {
-        let cfg = CloudflareConfig {
+        let cfg = RemoteConfig {
             enqueue_url: "https://worker.example/jobs".into(),
             enqueue_token: "tok123".into(),
             callback_base_url: "https://app.example".into(),

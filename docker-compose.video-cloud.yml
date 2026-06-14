@@ -1,4 +1,4 @@
-# docker-compose.video-cloud.yml — opt-in override for the cloudflare video path
+# docker-compose.video-cloud.yml — opt-in override for the remote video path
 #
 # Combines with the base docker-compose.yml to enable the full local
 # mock-transcoder flow. Run the whole stack with:
@@ -9,9 +9,9 @@
 #     --profile video-cloud \
 #     up
 #
-# The app service gets the cloudflare env vars; the mock-transcoder service
-# (started by --profile video-cloud) receives the same MinIO + secret config
-# and forwards real transcoding jobs to video-worker inside the same image.
+# The app service gets the remote processor env vars; the mock-transcoder
+# service (started by --profile video-cloud) receives the same MinIO + secret
+# config and forwards real transcoding jobs to video-worker inside the same image.
 #
 # Required in .secrets.env (or set inline):
 #   VIDEO_CALLBACK_SECRET=<any secret, shared by app + mock-transcoder>
@@ -21,8 +21,8 @@
 services:
   app:
     environment:
-      # Switch from host ffmpeg to the cloudflare/mock path.
-      VIDEO_PROCESSOR: cloudflare
+      # Switch from host ffmpeg to the remote (off-host HTTP transcode) path.
+      VIDEO_PROCESSOR: remote
 
       # Route enqueue calls to the mock-transcoder service on the compose network.
       VIDEO_ENQUEUE_URL: http://mock-transcoder:8765/jobs

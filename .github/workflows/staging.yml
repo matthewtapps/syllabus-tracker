@@ -245,9 +245,9 @@ jobs:
           BROWSER_HC=$(tofu output -raw _platform_honeycomb_browser_ingest)
           echo "::add-mask::$BACKEND_HC"
           echo "::add-mask::$BROWSER_HC"
-          # Video processing secrets (Cloudflare Queue/Worker). Shipped in
+          # Video processing secrets (remote transcode endpoint). Shipped in
           # the same sops bundle; only consumed by the app when the staging
-          # override sets VIDEO_PROCESSOR=cloudflare. Harmless in host mode.
+          # override sets VIDEO_PROCESSOR=remote. Harmless in host mode.
           VIDEO_ENQ_TOKEN=$(tofu output -raw _platform_video_enqueue_token)
           VIDEO_CB_SECRET=$(tofu output -raw _platform_video_callback_secret)
           echo "::add-mask::$VIDEO_ENQ_TOKEN"
@@ -284,7 +284,7 @@ jobs:
           # to cut staging over to the Cloud Run path; otherwise staging
           # stays on the default host transcoder. Prod (deploy.yaml /
           # config/prod.env) is never affected by these.
-          #   VIDEO_PROCESSOR_STAGING = "cloudflare" to cut over (else host)
+          #   VIDEO_PROCESSOR_STAGING = "remote" to cut over (else host)
           #   VIDEO_ENQUEUE_URL       = Cloud Run transcode-server /jobs URL
           VIDEO_PROCESSOR_STAGING: ${{ vars.VIDEO_PROCESSOR_STAGING }}
           VIDEO_ENQUEUE_URL: ${{ vars.VIDEO_ENQUEUE_URL }}

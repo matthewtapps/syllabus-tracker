@@ -59,7 +59,7 @@ use telemetry::TelemetryFairing;
 use telemetry::init_tracing;
 use thiserror::Error;
 use videos::{
-    CallbackSecret, CloudflareProcessor, DynVideoProcessor, HostFfmpegProcessor,
+    CallbackSecret, RemoteProcessor, DynVideoProcessor, HostFfmpegProcessor,
     api_admin_storage, api_dashboard_video_overview, api_delete_video, api_list_technique_videos,
     api_my_watch_state, api_processing_result, api_reorder_videos, api_replace_video,
     api_set_video_global_hidden, api_set_video_student_visibility, api_student_watch_activity,
@@ -399,15 +399,15 @@ pub async fn init_rocket_with_callback_secret(
             )),
         });
 
-        let is_cloudflare = std::env::var("VIDEO_PROCESSOR")
-            .map(|v| v == "cloudflare")
+        let is_remote = std::env::var("VIDEO_PROCESSOR")
+            .map(|v| v == "remote")
             .unwrap_or(false);
 
         let processor: DynVideoProcessor =
-            if is_cloudflare {
+            if is_remote {
                 std::sync::Arc::new(
-                    CloudflareProcessor::from_env(pool.clone())
-                        .expect("VIDEO_PROCESSOR=cloudflare but Cloudflare config is invalid"),
+                    RemoteProcessor::from_env(pool.clone())
+                        .expect("VIDEO_PROCESSOR=remote but remote processor config is invalid"),
                 )
             } else {
                 // Host path: any row still in `processing` from a previous
@@ -425,11 +425,11 @@ pub async fn init_rocket_with_callback_secret(
                 std::sync::Arc::new(HostFfmpegProcessor::new(pipeline_ctx.clone()))
             };
 
-        // Cloudflare-only: periodically fail rows that have been in
+        // Remote-only: periodically fail rows that have been in
         // `processing` longer than the timeout threshold. The host processor
         // uses a startup reconcile (above) instead, so this loop is skipped
         // on the host path.
-        if is_cloudflare {
+        if is_remote {
             let sweeper_pool = pool.clone();
             let timeout_secs: i64 = dotenvy::var("VIDEO_PROCESSING_TIMEOUT_SECONDS")
                 .ok()
@@ -445,7 +445,7 @@ pub async fn init_rocket_with_callback_secret(
                             tracing::warn!(
                                 count = n,
                                 timeout_secs,
-                                "stuck-row sweeper: marked {n} stale cloudflare job(s) failed"
+                                "stuck-row sweeper: marked {n} stale remote job(s) failed"
                             );
                         }
                         Ok(_) => {}

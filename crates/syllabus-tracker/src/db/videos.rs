@@ -425,7 +425,7 @@ pub async fn video_visible_to_student(
 }
 
 /// Marks rows stuck in `processing` for longer than `older_than_secs` seconds
-/// as `failed`. Called periodically on the cloudflare-processor path to time
+/// as `failed`. Called periodically on the remote-processor path to time
 /// out jobs that never delivered a callback.
 ///
 /// Returns the number of rows updated.

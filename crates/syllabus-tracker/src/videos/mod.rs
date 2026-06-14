@@ -9,7 +9,7 @@ pub use video_media::storage;
 
 pub use media::{DynMediaProbe, DynMediaTranscode, FfmpegMediaTranscode, FfprobeMediaProbe};
 pub use pipeline::{PipelineContext, ProcessingJobs, apply_processing_result};
-pub use processor::{CloudflareProcessor, DynVideoProcessor, HostFfmpegProcessor, HostJob, VideoProcessor};
+pub use processor::{RemoteProcessor, DynVideoProcessor, HostFfmpegProcessor, HostJob, VideoProcessor};
 pub use routes::{
     CallbackSecret, SigHeader,
     api_admin_storage, api_dashboard_video_overview, api_delete_video,

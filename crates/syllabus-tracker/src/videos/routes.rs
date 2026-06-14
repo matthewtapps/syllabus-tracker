@@ -811,7 +811,7 @@ impl<'r> rocket::request::FromRequest<'r> for SigHeader {
 
 /// Webhook: `POST /api/videos/<id>/processing-result`
 ///
-/// Called by the Cloudflare worker after it finishes transcoding.  Auth is
+/// Called by the remote transcode worker after it finishes transcoding.  Auth is
 /// HMAC-only (no user session guard). The raw body bytes are verified against
 /// the `X-Signature-256` header before any DB writes are attempted.
 ///
