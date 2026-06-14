@@ -1,0 +1,37 @@
+# docker-compose.video-cloud.yml — opt-in override for the cloudflare video path
+#
+# Combines with the base docker-compose.yml to enable the full local
+# mock-transcoder flow. Run the whole stack with:
+#
+#   docker compose \
+#     -f docker-compose.yml \
+#     -f docker-compose.video-cloud.yml \
+#     --profile video-cloud \
+#     up
+#
+# The app service gets the cloudflare env vars; the mock-transcoder service
+# (started by --profile video-cloud) receives the same MinIO + secret config
+# and forwards real transcoding jobs to video-worker inside the same image.
+#
+# Required in .secrets.env (or set inline):
+#   VIDEO_CALLBACK_SECRET=<any secret, shared by app + mock-transcoder>
+#
+# All other values below are hard-coded for the dev MinIO stack.
+
+services:
+  app:
+    environment:
+      # Switch from host ffmpeg to the cloudflare/mock path.
+      VIDEO_PROCESSOR: cloudflare
+
+      # Route enqueue calls to the mock-transcoder service on the compose network.
+      VIDEO_ENQUEUE_URL: http://mock-transcoder:8765/jobs
+      # Any non-empty value; the mock ignores the bearer token in dev.
+      VIDEO_ENQUEUE_TOKEN: dev-token
+
+      # The app's in-network base URL so video-worker can POST the result back.
+      # Port 80 because nginx fronts the app inside the compose network.
+      VIDEO_CALLBACK_BASE_URL: http://nginx
+
+      # Must match VIDEO_CALLBACK_SECRET set on the mock-transcoder service.
+      VIDEO_CALLBACK_SECRET: "${VIDEO_CALLBACK_SECRET:-dev-secret}"

@@ -8,6 +8,10 @@ rust-version.workspace = true
 name = "video-worker"
 path = "src/main.rs"
 
+[[bin]]
+name = "mock-transcoder"
+path = "src/bin/mock-transcoder.rs"
+
 [dependencies]
 # Shared crates
 video-media = { path = "../video-media" }
@@ -15,6 +19,9 @@ video-job = { path = "../video-job" }
 
 # Async runtime
 tokio = { workspace = true }
+
+# HTTP server (mock-transcoder only; same version as the app uses)
+axum = { version = "0.7", default-features = false, features = ["json", "tokio", "http1"] }
 
 # HTTP client (no native-tls; rustls only for container portability)
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
