@@ -1,0 +1,26 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT processing_status, processing_error FROM videos WHERE id = ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "processing_status",
+        "ordinal": 0,
+        "type_info": "Text"
+      },
+      {
+        "name": "processing_error",
+        "ordinal": 1,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      true
+    ]
+  },
+  "hash": "c53f7a9108b6cc8e27c5b531a9db19035e880d64ce7d893c206d722a457a2bd4"
+}

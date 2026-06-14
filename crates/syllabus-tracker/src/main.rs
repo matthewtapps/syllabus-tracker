@@ -391,7 +391,21 @@ pub async fn init_rocket(
                     "VIDEO_PROCESSOR=cloudflare is not yet implemented; \
                      set VIDEO_PROCESSOR=host or unset it to use the default."
                 ),
-                _ => std::sync::Arc::new(HostFfmpegProcessor::new(pipeline_ctx.clone())),
+                _ => {
+                    // Host path: any row still in `processing` from a previous
+                    // run is a zombie (the in-process task was killed).  Flip
+                    // them to `failed` now so they don't block the queue.
+                    match db::reconcile_interrupted_processing(&pool).await {
+                        Ok(n) if n > 0 => {
+                            tracing::warn!(
+                                "reconciled {n} interrupted video(s) to failed on startup"
+                            )
+                        }
+                        Ok(_) => {}
+                        Err(e) => tracing::error!("startup video reconcile failed: {e}"),
+                    }
+                    std::sync::Arc::new(HostFfmpegProcessor::new(pipeline_ctx.clone()))
+                }
             };
 
         let sampler_pool = pool.clone();

@@ -648,3 +648,98 @@ mod tests {
         Header::new(name, value)
     }
 }
+
+#[cfg(test)]
+mod db_tests {
+    use migration_engine::migrations::{migrate_database_declaratively, read_schema_file_to_string};
+    use sqlx::sqlite::SqlitePoolOptions;
+    use sqlx::{Pool, Sqlite};
+
+    async fn setup_test_db() -> Pool<Sqlite> {
+        crate::env::load_test_environment().expect("load test env");
+        let pool = SqlitePoolOptions::new()
+            .max_connections(5)
+            .connect("sqlite::memory:")
+            .await
+            .expect("in-memory db");
+        let schema_path = dotenvy::var("SCHEMA_PATH").expect("SCHEMA_PATH not set");
+        let schema = read_schema_file_to_string(std::path::Path::new(&schema_path))
+            .expect("read schema");
+        migrate_database_declaratively(pool.clone(), &schema, false)
+            .await
+            .expect("migrate");
+        pool
+    }
+
+    #[tokio::test]
+    async fn reconcile_interrupted_processing_flips_processing_to_failed() {
+        let pool = setup_test_db().await;
+
+        // Seed a minimal technique and uploader user so FK constraints pass.
+        let user_id: i64 = sqlx::query_scalar!(
+            "INSERT INTO users (username, password, role) VALUES ('u', 'h', 'coach') RETURNING id"
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("insert user");
+
+        let technique_id: i64 = sqlx::query_scalar!(
+            "INSERT INTO techniques (name, coach_id) VALUES ('T', ?) RETURNING id",
+            user_id
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("insert technique");
+
+        // Row that is stuck in processing (zombie).
+        let stuck_id: i64 = sqlx::query_scalar!(
+            "INSERT INTO videos (technique_id, title, position, kind, processing_status, uploaded_by_id)
+             VALUES (?, 'stuck', 0, 'native', 'processing', ?) RETURNING id",
+            technique_id,
+            user_id
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("insert stuck video")
+        .unwrap();
+
+        // Row that is already ready — should be left alone.
+        let ready_id: i64 = sqlx::query_scalar!(
+            "INSERT INTO videos (technique_id, title, position, kind, processing_status, uploaded_by_id)
+             VALUES (?, 'done', 1, 'native', 'ready', ?) RETURNING id",
+            technique_id,
+            user_id
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("insert ready video")
+        .unwrap();
+
+        let n = crate::db::reconcile_interrupted_processing(&pool)
+            .await
+            .expect("reconcile");
+        assert_eq!(n, 1, "expected exactly 1 row flipped");
+
+        let stuck_row = sqlx::query!(
+            "SELECT processing_status, processing_error FROM videos WHERE id = ?",
+            stuck_id
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("fetch stuck");
+        assert_eq!(stuck_row.processing_status, "failed");
+        assert!(
+            stuck_row.processing_error.is_some(),
+            "processing_error must be set"
+        );
+
+        let ready_row = sqlx::query!(
+            "SELECT processing_status FROM videos WHERE id = ?",
+            ready_id
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("fetch ready");
+        assert_eq!(ready_row.processing_status, "ready");
+    }
+}

@@ -424,6 +424,25 @@ pub async fn video_visible_to_student(
     Ok(row.map(|r| r.visible != 0).unwrap_or(false))
 }
 
+/// Flips every `processing` row to `failed` with a standard error message.
+/// Called once at startup on the host-processor path to clear zombie rows that
+/// were left in-flight when the previous process was killed mid-transcode.
+/// Returns the number of rows updated.
+pub async fn reconcile_interrupted_processing(pool: &Pool<Sqlite>) -> Result<u64, AppError> {
+    let now = Utc::now().naive_utc();
+    let res = sqlx::query!(
+        "UPDATE videos
+         SET processing_status = 'failed',
+             processing_error = 'interrupted by restart',
+             updated_at = ?
+         WHERE processing_status = 'processing'",
+        now,
+    )
+    .execute(pool)
+    .await?;
+    Ok(res.rows_affected())
+}
+
 /// Sets (or clears) the global hide flag on a video. Emits a fan-out
 /// `video_visibility_set` activity row for every affected student.
 #[instrument(skip(pool))]
