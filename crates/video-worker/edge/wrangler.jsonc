@@ -29,21 +29,20 @@
   "main": "src/index.ts",
   "compatibility_date": "2026-06-01",
 
-  // Container class: image path and build context are relative to this
-  // wrangler.jsonc file. ../Dockerfile resolves to crates/video-worker/Dockerfile
-  // and .. (build context) resolves to crates/video-worker/, but the Dockerfile
-  // itself uses COPY . . expecting the REPO ROOT as context (workspace Cargo.toml
-  // is needed). In CI the workflow runs `wrangler deploy` from the repo root so
-  // paths are adjusted; locally `npx wrangler deploy --dry-run` will attempt a
-  // Docker build which requires the repo root context — run from the repo root.
+  // Container class. Paths are relative to this wrangler.jsonc (in
+  // crates/video-worker/edge/):
+  //   image                = ../Dockerfile  -> crates/video-worker/Dockerfile
+  //   image_build_context  = ../../..       -> repo root (where the workspace
+  //                          Cargo.toml lives; the Dockerfile's `COPY . .` +
+  //                          `cargo build -p video-worker` need the whole
+  //                          workspace). `.dockerignore` trims target/, node_modules, .git.
   //
-  // The instance_type was renamed from "standard" to "standard-1" in wrangler
-  // >=4.x; using "standard-1" here.
+  // instance_type "standard-1" is the wrangler >=4.x name (was "standard").
   "containers": [
     {
       "class_name": "VideoContainer",
       "image": "../Dockerfile",
-      "image_build_context": "../..",
+      "image_build_context": "../../..",
       "max_instances": 3,
       "instance_type": "standard-1"
     }
