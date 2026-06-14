@@ -1,6 +1,10 @@
+import { useEffect, useState } from "react";
 import { StudentAvatar } from "@/components/student-avatar";
 import { formatTimestamp } from "@/lib/dates";
+import { cn } from "@/lib/utils";
 import type { ThreadView } from "@/lib/api";
+
+const FADE_MS = 300;
 
 const LEAD_IN = 3;
 const LEAD_OUT = 3;
@@ -36,10 +40,34 @@ interface MomentOverlayProps {
 }
 
 export function MomentOverlay({ threads, currentTime, pinnedThread, onOpen }: MomentOverlayProps) {
-  const moment = pinnedThread ?? activeMoment(threads, currentTime);
-  if (!moment || moment.body == null) return null;
+  const candidate = pinnedThread ?? activeMoment(threads, currentTime);
+  const active = candidate && candidate.body != null ? candidate : null;
+
+  // Keep the last comment mounted through the fade-out so it animates away
+  // instead of vanishing.
+  const [shown, setShown] = useState<ThreadView | null>(active);
+  const [visible, setVisible] = useState(active != null);
+
+  useEffect(() => {
+    if (active) {
+      setShown(active);
+      setVisible(true);
+      return;
+    }
+    setVisible(false);
+    const id = setTimeout(() => setShown(null), FADE_MS);
+    return () => clearTimeout(id);
+  }, [active]);
+
+  if (!shown) return null;
+  const moment = shown;
   return (
-    <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 via-black/35 to-transparent px-3 pb-14 pt-6">
+    <div
+      className={cn(
+        "absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 via-black/35 to-transparent px-3 pb-14 pt-6 transition-opacity duration-300",
+        visible ? "opacity-100" : "opacity-0",
+      )}
+    >
       <button
         type="button"
         onClick={() => onOpen(moment)}

@@ -101,7 +101,7 @@ export function VidstackPlayer({ video, events, overlay, sliderMarkers }: Vidsta
             <TimeSlider.Progress className="absolute h-full w-[var(--slider-progress)] rounded-full bg-white/40" />
             <TimeSlider.TrackFill className="absolute h-full w-[var(--slider-fill)] rounded-full bg-primary" />
           </TimeSlider.Track>
-          <TimeSlider.Thumb className="absolute top-1/2 size-3 -translate-y-1/2 rounded-full bg-white opacity-0 group-hover:opacity-100" />
+          <TimeSlider.Thumb className="absolute top-1/2 left-[var(--slider-fill)] size-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white shadow ring-1 ring-black/20" />
           {/* Comment pins: positioned in the slider's 0..1 track space. */}
           {sliderMarkers && (
             <div className="pointer-events-none absolute inset-0">{sliderMarkers}</div>
