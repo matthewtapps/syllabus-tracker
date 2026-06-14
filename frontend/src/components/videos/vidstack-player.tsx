@@ -30,20 +30,25 @@ export function VidstackPlayer({ video, events, overlay, sliderMarkers }: Vidsta
   const { url, loading, error, refresh } = useSignedPlaybackUrl(video.id, true);
   const playerRef = useRef<MediaPlayerInstance>(null);
 
-  // Bridge Vidstack player state to PlayerEvents. Re-subscribe when the source
-  // changes so the one-shot onPlay flag resets per video.
+  // The one-shot onPlay flag resets per video, not per signed-URL refresh, so a
+  // token refresh mid-playback does not double-count a watch (matches the old player).
+  const startedRef = useRef(false);
+  useEffect(() => {
+    startedRef.current = false;
+  }, [video.id]);
+
+  // Bridge Vidstack player state to PlayerEvents.
   useEffect(() => {
     const player = playerRef.current;
     if (!player || !url) return;
     events?.registerSeek?.((seconds) => {
       player.currentTime = Math.max(0, seconds);
     });
-    let started = false;
     const unsubscribe = player.subscribe((state) => {
-      started = applySnapshot(
+      startedRef.current = applySnapshot(
         { currentTime: state.currentTime, duration: state.duration, paused: state.paused },
         events,
-        started,
+        startedRef.current,
       );
     });
     return unsubscribe;
@@ -137,7 +142,7 @@ function TimeReadout() {
   const duration = useMediaState("duration");
   return (
     <span className="whitespace-nowrap text-xs tabular-nums text-white">
-      {formatTimestamp(currentTime)} / {Number.isFinite(duration) ? formatTimestamp(duration) : "0:00"}
+      {Number.isFinite(currentTime) ? formatTimestamp(currentTime) : "0:00"} / {Number.isFinite(duration) ? formatTimestamp(duration) : "0:00"}
     </span>
   );
 }
