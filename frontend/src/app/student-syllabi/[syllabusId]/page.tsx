@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Navigate, useNavigate, useNavigationType, useParams } from 'react-router-dom';
 import { useListUrlState } from '@/lib/use-list-url-state';
+import { useScrollAnchor } from '@/lib/use-scroll-anchor';
 import { scrollToTopWhenStable } from '@/lib/scroll-when-stable';
 import {
   GitCompare,
@@ -117,7 +118,7 @@ function Detail({
   const [addOpen, setAddOpen] = useState(false);
   const [diffOpen, setDiffOpen] = useState(false);
   const navType = useNavigationType();
-  const { search, setSearch, tags: activeTags, setTags, focus, setFocus, videoId } =
+  const { search, setSearch, tags: activeTags, setTags, focus, setFocus, videoId, anchor } =
     useListUrlState();
   const [videoConsumed, setVideoConsumed] = useState(false);
   const scrollToVideoId = videoConsumed ? null : videoId;
@@ -131,24 +132,26 @@ function Detail({
     setFocus(Number.isFinite(id) ? { type: 'sst', id } : null);
   };
 
-  // Scroll to the focused row on arrival (not POP, where the scroll manager
-  // restores pixel position). Runs once when the data is ready.
-  const didScrollToFocus = useRef(false);
+  // Scroll to the focused (expanded) row, or the scroll anchor when none is
+  // expanded, on arrival (not POP, where the scroll manager restores pixel
+  // position). Runs once when the data is ready.
+  const didScrollOnArrival = useRef(false);
   useEffect(() => {
-    if (didScrollToFocus.current || techniques.length === 0) return;
-    if (!focus || focus.type !== 'sst') {
-      didScrollToFocus.current = true;
+    if (didScrollOnArrival.current || techniques.length === 0) return;
+    const ref = focus ?? anchor;
+    if (!ref || ref.type !== 'sst') {
+      didScrollOnArrival.current = true;
       return;
     }
-    const target = techniques.find((sst) => sst.id === focus.id);
+    const target = techniques.find((sst) => sst.id === ref.id);
     if (!target) return;
-    didScrollToFocus.current = true;
+    didScrollOnArrival.current = true;
     if (navType === 'POP') return;
     requestAnimationFrame(() => {
       const el = document.getElementById(`technique-row-${target.technique_id}`);
       if (el) scrollToTopWhenStable(el);
     });
-  }, [techniques, focus, navType]);
+  }, [techniques, focus, anchor, navType]);
 
   const availableTags = useMemo(() => {
     const set = new Set<string>();
@@ -176,6 +179,18 @@ function Detail({
   function toggleTag(tag: string) {
     setTags(activeTags.includes(tag) ? activeTags.filter((t) => t !== tag) : [...activeTags, tag]);
   }
+
+  // Shareable scroll anchor (?at=sst:<id>) for the top-most visible row when
+  // none is expanded.
+  const anchorRows = useMemo(
+    () =>
+      filtered.map((sst) => ({
+        elementId: `technique-row-${sst.technique_id}`,
+        token: `sst:${sst.id}`,
+      })),
+    [filtered],
+  );
+  useScrollAnchor(anchorRows, !focus);
 
   async function handleUnassign() {
     try {

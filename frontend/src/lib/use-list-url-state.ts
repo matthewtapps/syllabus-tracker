@@ -21,6 +21,8 @@ export interface ListUrlState {
   focus: EntityRef | null;
   setFocus: (ref: EntityRef | null) => void;
   videoId: number | null;
+  /** Top-most visible row (?at=), the shareable scroll anchor. */
+  anchor: EntityRef | null;
 }
 
 export function useListUrlState(): ListUrlState {
@@ -29,6 +31,7 @@ export function useListUrlState(): ListUrlState {
   const search = params.get("q") ?? "";
   const tags = (params.get("tags") ?? "").split(",").filter(Boolean);
   const focus = parseFocusToken(params.get("focus"));
+  const anchor = parseFocusToken(params.get("at"));
   const rawVideo = params.get("video");
   const videoId = rawVideo && /^\d+$/.test(rawVideo) ? Number.parseInt(rawVideo, 10) : null;
 
@@ -69,5 +72,5 @@ export function useListUrlState(): ListUrlState {
     [update],
   );
 
-  return { search, setSearch, tags, setTags, focus, setFocus, videoId };
+  return { search, setSearch, tags, setTags, focus, setFocus, videoId, anchor };
 }

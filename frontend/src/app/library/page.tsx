@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigationType } from 'react-router-dom';
 import { BookOpen, Search, X as XIcon } from 'lucide-react';
 import { useListUrlState } from '@/lib/use-list-url-state';
+import { useScrollAnchor } from '@/lib/use-scroll-anchor';
 import { scrollToTopWhenStable } from '@/lib/scroll-when-stable';
 import { Accordion } from '@/components/ui/accordion';
 import { Badge } from '@/components/ui/badge';
@@ -30,7 +31,7 @@ export default function LibraryPage() {
   const error = techniquesQuery.error ? 'Failed to load techniques.' : null;
 
   const navType = useNavigationType();
-  const { search, setSearch, tags: activeTags, setTags, focus, setFocus, videoId } =
+  const { search, setSearch, tags: activeTags, setTags, focus, setFocus, videoId, anchor } =
     useListUrlState();
   const [videoConsumed, setVideoConsumed] = useState(false);
   const scrollToVideoId = videoConsumed ? null : videoId;
@@ -41,23 +42,24 @@ export default function LibraryPage() {
   const setExpandedValue = (value: string) =>
     setFocus(value ? { type: 'technique', id: Number(value) } : null);
 
-  // On arrival with a focus token, scroll to that row once the data is ready.
-  // Skip on POP: the scroll manager restores the prior pixel position there.
-  const didScrollToFocus = useRef(false);
+  // On arrival, scroll to the focused (expanded) row, or the scroll anchor when
+  // no row is expanded. Skip on POP: the scroll manager restores pixel position.
+  const didScrollOnArrival = useRef(false);
   useEffect(() => {
-    if (didScrollToFocus.current || techniques.length === 0) return;
-    if (!focus || focus.type !== 'technique') {
-      didScrollToFocus.current = true;
+    if (didScrollOnArrival.current || techniques.length === 0) return;
+    const target = focus ?? anchor;
+    if (!target || target.type !== 'technique') {
+      didScrollOnArrival.current = true;
       return;
     }
-    if (!techniques.some((t) => t.id === focus.id)) return;
-    didScrollToFocus.current = true;
+    if (!techniques.some((t) => t.id === target.id)) return;
+    didScrollOnArrival.current = true;
     if (navType === 'POP') return;
     requestAnimationFrame(() => {
-      const el = document.getElementById(`technique-row-${focus.id}`);
+      const el = document.getElementById(`technique-row-${target.id}`);
       if (el) scrollToTopWhenStable(el);
     });
-  }, [techniques, focus, navType]);
+  }, [techniques, focus, anchor, navType]);
 
   const availableTags = useMemo(() => {
     const set = new Set<string>();
@@ -83,6 +85,14 @@ export default function LibraryPage() {
   function toggleTag(tag: string) {
     setTags(activeTags.includes(tag) ? activeTags.filter((t) => t !== tag) : [...activeTags, tag]);
   }
+
+  // Track the top-most visible row as a shareable scroll anchor (?at=), unless a
+  // row is expanded (then ?focus= is the shareable position).
+  const anchorRows = useMemo(
+    () => filtered.map((t) => ({ elementId: `technique-row-${t.id}`, token: `technique:${t.id}` })),
+    [filtered],
+  );
+  useScrollAnchor(anchorRows, !focus);
 
   return (
     <div className="container mx-auto px-4 py-6 sm:px-6 md:py-8">
