@@ -321,8 +321,6 @@ async fn main() {
 
     let app = Router::new()
         .route("/jobs", post(handle_job))
-        // Wildcard so the CF runtime can fetch into any path.
-        .route("/{*path}", post(handle_job))
         .route("/health", axum::routing::get(health))
         .with_state(state);
 
