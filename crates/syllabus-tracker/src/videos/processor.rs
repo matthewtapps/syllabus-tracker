@@ -77,11 +77,13 @@ pub type DynVideoProcessor = Arc<dyn VideoProcessor>;
 // Cloudflare (R2 upload + Worker enqueue) implementation
 // ---------------------------------------------------------------------------
 
-/// Configuration for the Cloudflare processing path.
+/// Configuration for the remote-HTTP transcode enqueue path (currently Cloud Run,
+/// previously Cloudflare Worker). All fields are plain strings and cheap to clone.
+#[derive(Clone)]
 pub struct CloudflareConfig {
-    /// Full URL of the Cloudflare Worker enqueue endpoint.
+    /// Full URL of the enqueue endpoint (Cloud Run `/jobs`).
     pub enqueue_url: String,
-    /// Bearer token for the enqueue endpoint.
+    /// Bearer token sent as `Authorization: Bearer <token>`.
     pub enqueue_token: String,
     /// Base URL of this app (used to build the processing-result callback URL).
     pub callback_base_url: String,
@@ -113,8 +115,15 @@ pub fn build_enqueue_request(
 }
 
 /// Processes videos by uploading the original file to R2 and enqueueing a
-/// transcoding job on a Cloudflare Worker. The actual transcode happens
-/// in a remote container; the webhook (a later task) finalises the row.
+/// transcoding job on a remote HTTP transcode service (currently Cloud Run;
+/// previously a Cloudflare Worker — naming kept for continuity). `start`
+/// returns immediately after spawning; the spawned task does the upload and
+/// enqueue, and on any failure marks the video row as `Failed` so it does
+/// not hang in `processing` forever.
+///
+/// `SqlitePool` and `reqwest::Client` are cheap to clone. `DynVideoStorage`
+/// is an `Arc<dyn …>`, so cloning it is a reference-count bump. `CloudflareConfig`
+/// derives `Clone` (all `String` fields). No `Arc` wrapper is needed here.
 pub struct CloudflareProcessor {
     pool: sqlx::SqlitePool,
     storage: crate::videos::storage::DynVideoStorage,
@@ -164,90 +173,108 @@ impl CloudflareProcessor {
 
 #[async_trait]
 impl VideoProcessor for CloudflareProcessor {
+    /// Spawns the upload+enqueue work as a detached task and returns
+    /// immediately, matching the fire-and-forget contract of the trait.
+    ///
+    /// This is correct for Cloud Run (synchronous transcode: awaiting the POST
+    /// would block the upload handler for the entire transcode duration) and
+    /// also for the original Cloudflare path (fast 202 enqueue).
     async fn start(&self, job: HostJob) {
-        use tracing::error;
-        use video_job::ProcessingResult;
+        // Clone the fields the spawned task needs.
+        // - SqlitePool: designed to be cloned (shared pool handle).
+        // - DynVideoStorage: Arc<dyn ...>, clone is a ref-count bump.
+        // - reqwest::Client: internally Arc-backed, cheap to clone.
+        // - CloudflareConfig: derives Clone (all String fields).
+        let pool = self.pool.clone();
+        let storage = self.storage.clone();
+        let http = self.http.clone();
+        let cfg = self.cfg.clone();
 
-        // 1. Build the R2 key for the original upload.
-        let source_key = format!(
-            "originals/{}/{}.mp4",
-            job.video_id,
-            uuid::Uuid::new_v4()
-        );
+        tokio::task::spawn(async move {
+            use tracing::error;
+            use video_job::ProcessingResult;
 
-        // 2. PUT the original file to R2.
-        if let Err(e) = self
-            .storage
-            .put_file(&source_key, "video/mp4", &job.original_temp_path)
-            .await
-        {
-            error!(video_id = job.video_id, error = %e, "CloudflareProcessor: R2 upload failed");
-            if let Err(db_err) = crate::videos::pipeline::apply_processing_result(
-                &self.pool,
-                job.video_id,
-                ProcessingResult::Failed {
-                    error: format!("R2 upload failed: {}", e),
-                },
-            )
-            .await
+            let video_id = job.video_id;
+
+            // 1. Build the R2 key for the original upload.
+            let source_key = format!(
+                "originals/{}/{}.mp4",
+                video_id,
+                uuid::Uuid::new_v4()
+            );
+
+            // 2. PUT the original file to R2.
+            if let Err(e) = storage
+                .put_file(&source_key, "video/mp4", &job.original_temp_path)
+                .await
             {
-                error!(video_id = job.video_id, error = %db_err, "CloudflareProcessor: failed to mark video failed after upload error");
-            }
-            return;
-        }
-
-        // 3. Enqueue the processing job on the Cloudflare Worker.
-        let (url, auth, body) = build_enqueue_request(&self.cfg, job.video_id, &source_key);
-
-        let result = self
-            .http
-            .post(&url)
-            .header("Authorization", &auth)
-            .header("Content-Type", "application/json")
-            .body(body)
-            .send()
-            .await;
-
-        match result {
-            Ok(resp) if resp.status().is_success() => {
-                // Leave the row in `processing`; the webhook will finalise it.
-            }
-            Ok(resp) => {
-                let status = resp.status();
-                let text = resp.text().await.unwrap_or_default();
-                error!(
-                    video_id = job.video_id,
-                    http_status = status.as_u16(),
-                    body = %text,
-                    "CloudflareProcessor: Worker enqueue returned non-2xx"
-                );
+                error!(video_id, error = %e, "CloudflareProcessor: R2 upload failed");
                 if let Err(db_err) = crate::videos::pipeline::apply_processing_result(
-                    &self.pool,
-                    job.video_id,
+                    &pool,
+                    video_id,
                     ProcessingResult::Failed {
-                        error: format!("Worker enqueue failed with status {}: {}", status, text),
+                        error: format!("R2 upload failed: {}", e),
                     },
                 )
                 .await
                 {
-                    error!(video_id = job.video_id, error = %db_err, "CloudflareProcessor: failed to mark video failed after enqueue error");
+                    error!(video_id, error = %db_err, "CloudflareProcessor: failed to mark video failed after upload error");
+                }
+                return;
+            }
+
+            // 3. POST the processing job to the remote transcode service.
+            let (url, auth, body) = build_enqueue_request(&cfg, video_id, &source_key);
+
+            let result = http
+                .post(&url)
+                .header("Authorization", &auth)
+                .header("Content-Type", "application/json")
+                .body(body)
+                .send()
+                .await;
+
+            match result {
+                Ok(resp) if resp.status().is_success() => {
+                    // Leave the row in `processing`; the webhook will finalise it.
+                }
+                Ok(resp) => {
+                    let status = resp.status();
+                    let text = resp.text().await.unwrap_or_default();
+                    error!(
+                        video_id,
+                        http_status = status.as_u16(),
+                        body = %text,
+                        "CloudflareProcessor: enqueue returned non-2xx"
+                    );
+                    if let Err(db_err) = crate::videos::pipeline::apply_processing_result(
+                        &pool,
+                        video_id,
+                        ProcessingResult::Failed {
+                            error: format!("Enqueue failed with status {}: {}", status, text),
+                        },
+                    )
+                    .await
+                    {
+                        error!(video_id, error = %db_err, "CloudflareProcessor: failed to mark video failed after enqueue error");
+                    }
+                }
+                Err(e) => {
+                    error!(video_id, error = %e, "CloudflareProcessor: enqueue transport error");
+                    if let Err(db_err) = crate::videos::pipeline::apply_processing_result(
+                        &pool,
+                        video_id,
+                        ProcessingResult::Failed {
+                            error: format!("Enqueue transport error: {}", e),
+                        },
+                    )
+                    .await
+                    {
+                        error!(video_id, error = %db_err, "CloudflareProcessor: failed to mark video failed after transport error");
+                    }
                 }
             }
-            Err(e) => {
-                error!(video_id = job.video_id, error = %e, "CloudflareProcessor: Worker enqueue transport error");
-                if let Err(db_err) = crate::videos::pipeline::apply_processing_result(
-                    &self.pool,
-                    job.video_id,
-                    ProcessingResult::Failed {
-                        error: format!("Worker enqueue transport error: {}", e),
-                    },
-                )
-                .await
-                {
-                    error!(video_id = job.video_id, error = %db_err, "CloudflareProcessor: failed to mark video failed after transport error");
-                }
-            }
-        }
+        });
     }
 }
 
