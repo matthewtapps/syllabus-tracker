@@ -141,22 +141,69 @@ One Worker script with two entry points:
   consumer posts a `failed` webhook so the row never hangs. Queue retries with a
   dead-letter queue after N attempts.
 
-### Container image (ffmpeg runner)
+### Worker container: our own Rust crate
 
-Small image (e.g. `linuxserver/ffmpeg` base or Alpine + ffmpeg + a tiny Rust/Go
-binary). Steps:
+No off-the-shelf image fits. General ffmpeg images (`jrottenberg/ffmpeg`,
+`linuxserver/ffmpeg`) are just the ffmpeg CLI, they don't pull/push R2 or post a
+signed webhook, and Cloudflare has no managed transcode-in-container offering
+(that's Stream, which we ruled out). The orchestration (R2 in, ffmpeg, R2 out,
+HMAC callback) is ours, so we write a small Rust binary, packaged as the image
+the Container runs. Writing it in Rust (not a bash+curl+aws-cli script) lets it
+**reuse the app's existing code** instead of reimplementing R2 access, the ffmpeg
+flags, and HMAC, keeping host and worker paths byte-identical.
 
-1. Read job (`video_id`, `source_key`, `callback_url`) from env.
-2. `GET` original from R2 (`source_key`) using the R2 token.
-3. `ffprobe` for duration/width/height; enforce the duration cap.
-4. `ffmpeg -c:v libx264 -preset veryfast -crf 23 -c:a aac -movflags +faststart`
-   (identical flags to host today; cap `-threads` to the container's CPU).
+### Crate structure (cargo workspace)
+
+Refactor into a workspace so the app and the worker share code:
+
+- **`crates/video-media`** (new, extracted from today's `videos/storage.rs` +
+  `videos/media.rs`): the R2 S3 client (`S3VideoStorage`) and the ffmpeg
+  probe/transcode (`FfmpegMediaTranscode`). One home for the transcode flags
+  (incl. the 720p downscale below) so host and worker never diverge.
+- **`crates/video-job`** (new): the job + result wire types
+  (`ProcessJob`, `ProcessingResult`) and the HMAC sign/verify helpers. The single
+  source of truth for the contract; depended on by the app (enqueue producer +
+  webhook verify) and the worker (job parse + result sign).
+- **`crates/video-worker`** (new): the container binary. Depends on
+  `video-media` + `video-job`.
+- **`crates/syllabus-tracker`** (existing app): depends on `video-media` +
+  `video-job`; `HostFfmpegProcessor` and `CloudflareProcessor` both build on them.
+
+Worker binary flow (`video-worker`):
+
+1. Read job (`video_id`, `source_key`, `callback_url`) from env/args.
+2. `GET` original from R2 (`source_key`) via `video-media`'s S3 client.
+3. Probe (`video-media`) for duration/width/height; enforce the duration cap.
+4. Transcode (`video-media`) → H.264 MP4, **capped to 720p** (filter below),
+   `-threads` capped to the container's CPU.
 5. `PUT` output to R2 at the playback `storage_key`.
-6. `POST` `processing-result` (ready + metadata) to `callback_url`, HMAC-signed.
-   On any failure, POST `failed` with the error.
+6. `POST` `processing-result` (ready + metadata: duration, width, height after
+   scaling, bytes, storage_key) to `callback_url`, HMAC-signed via `video-job`.
+   On any failure, POST `failed { error }`.
 
-The image is built/pushed by CI (a workflow in this repo or infra) to a registry
-the Container service pulls from.
+Image: a minimal base with ffmpeg installed (Debian-slim + `ffmpeg`, or an
+ffmpeg base) plus the statically-ish linked `video-worker` binary, built and
+pushed by CI to a registry the Container service pulls from (registry choice is
+an open question below).
+
+### Downscale to 720p (shared, host + worker)
+
+Cap resolution at 720p to save storage/bandwidth; never upscale; preserve aspect;
+keep even dimensions. In `video-media`'s transcode, add to the existing flags:
+
+```
+-vf scale=w='if(gt(iw,ih),-2,min(720,iw))':h='if(gt(iw,ih),min(720,ih),-2)'
+```
+
+- Landscape (`iw>ih`): height ≤ 720, width auto-even. → 1280×720-class.
+- Portrait (`iw≤ih`): width ≤ 720, height auto-even. → 720×1280-class.
+- `min(720,…)` means already-small videos pass through untouched (no upscaling).
+
+Full transcode command becomes:
+`ffmpeg -i in -c:v libx264 -preset veryfast -crf 23 -vf "<scale above>" -c:a aac
+-movflags +faststart out.mp4`. The probe step still records the **post-scale**
+width/height for the row (read from the output, or computed from the filter).
+This applies to both the host path and the worker, since both call `video-media`.
 
 ## Prerequisites: Cloudflare token scopes
 
@@ -243,11 +290,17 @@ opt-in via a compose profile.
 
 ## Rollout
 
-1. Land the `VideoProcessor` seam + result applier + startup reconcile with only
-   the **host** impl (no behavior change). Ship.
-2. Build the container image + Worker + infra; wire secrets/outputs.
-3. Flip **staging** to `VIDEO_PROCESSOR=cloudflare`, verify end-to-end.
-4. Flip **prod** once staging is proven. `host` remains the instant rollback.
+1. **Workspace refactor + seam.** Extract `video-media` + `video-job` crates;
+   add the `VideoProcessor` seam + `HostFfmpegProcessor` (on `video-media`) +
+   shared result applier + startup reconcile + the 720p downscale. Host-only,
+   the only user-visible change is new uploads cap at 720p. Ship.
+2. **Cloudflare processor + webhook** (this repo): `CloudflareProcessor` +
+   HMAC `processing-result` endpoint + config. Still default host.
+3. **Worker crate + image**: `video-worker` binary + container image + CI push.
+4. **Infra** (`../infra`): Queue, Worker, Container, secrets, outputs.
+5. **Dev mock**: `mock-transcoder` compose profile.
+6. Flip **staging** to `VIDEO_PROCESSOR=cloudflare`, verify end-to-end; then
+   **prod**. `host` remains the instant rollback.
 
 ## Non-goals
 
