@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/migration-engine", "crates/syllabus-tracker", "crates/video-media"]
+members = ["crates/migration-engine", "crates/syllabus-tracker", "crates/video-media", "crates/video-job"]
 default-members = ["crates/syllabus-tracker"]
 resolver = "3"
 
