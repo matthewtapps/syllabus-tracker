@@ -336,7 +336,6 @@ export function useActivityFeed(enabled: boolean = true) {
   return useQuery({
     queryKey: qk.activityFeed(),
     queryFn: enabled ? () => getActivityFeed({ limit: 20 }) : skipToken,
-    staleTime: 30 * 1000,
   });
 }
 
@@ -350,7 +349,6 @@ export function useStudentActivityFeed(studentId: number | undefined, limit = 20
       typeof studentId === "number" && Number.isFinite(studentId)
         ? () => getStudentActivityFeed(studentId, { limit })
         : skipToken,
-    staleTime: 30 * 1000,
   });
 }
 
@@ -366,7 +364,6 @@ export function useDashboardActivityFeed(enabled: boolean = true) {
   return useQuery({
     queryKey: qk.dashboardActivityFeed(),
     queryFn: enabled ? () => getDashboardActivityFeed(30) : skipToken,
-    staleTime: 30 * 1000,
   });
 }
 
@@ -374,7 +371,6 @@ export function useActivityUnreadCount(enabled: boolean = true) {
   return useQuery({
     queryKey: qk.activityUnreadCount(),
     queryFn: enabled ? getActivityUnreadCount : skipToken,
-    staleTime: 30 * 1000,
     refetchOnWindowFocus: true,
   });
 }

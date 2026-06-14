@@ -59,10 +59,12 @@ const ForgotPasswordPage = lazy(() => import('./app/forgot-password/page'));
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      // Every mount triggers a background refetch; the cached data still
-      // renders instantly. Window-focus refetch picks up updates from other
-      // tabs / sessions.
-      staleTime: 0,
+      // Default freshness window. Cached data renders instantly; button/link
+      // navigation refetches active queries (see ScrollManager) and
+      // window-focus refetch picks up cross-tab updates, so a short default is
+      // enough. Hooks that need different behavior (live polling, rarely-
+      // changing reference data) override staleTime locally.
+      staleTime: 30 * 1000,
       gcTime: 5 * 60 * 1000,
       refetchOnWindowFocus: true,
       refetchOnReconnect: true,
