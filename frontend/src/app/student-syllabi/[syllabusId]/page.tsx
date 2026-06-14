@@ -2,6 +2,7 @@ import { useCallback, useMemo, useState } from 'react';
 import { Navigate, useNavigate, useParams } from 'react-router-dom';
 import { useFocusTarget } from '@/components/hooks/useFocusTarget';
 import type { EntityRef } from '@/lib/entity-ref';
+import { scrollToTopWhenStable } from '@/lib/scroll-when-stable';
 import {
   GitCompare,
   GraduationCap,
@@ -131,9 +132,10 @@ function Detail({
       setExpandedValue(`sst-${ref.id}`);
       if (videoId != null) setScrollToVideoId(videoId);
       requestAnimationFrame(() => {
-        document
-          .getElementById(`technique-row-${target.technique_id}`)
-          ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        const el = document.getElementById(`technique-row-${target.technique_id}`);
+        // Scroll after the row's expand settles, not immediately: a row near the
+        // bottom can only reach the top once its expanded content grows the page.
+        if (el) scrollToTopWhenStable(el);
       });
       return true;
     },

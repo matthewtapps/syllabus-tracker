@@ -8,11 +8,14 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { EmptyState } from '@/components/empty-state';
 import { TechniqueRow } from '@/components/technique-row';
+import { useFocusTarget } from '@/components/hooks/useFocusTarget';
+import { scrollToTopWhenStable } from '@/lib/scroll-when-stable';
 import { useAllUsers, useStudentPinnedTechniques } from '@/lib/queries';
 import { usePinTechnique, useUnpinTechnique } from '@/lib/mutations';
 import { useUser } from '@/lib/current-user-context';
 import { isCoachOrAdmin } from '@/lib/api';
 import type { LibraryTechniqueRow } from '@/lib/api';
+import type { EntityRef } from '@/lib/entity-ref';
 import { cn } from '@/lib/utils';
 
 const EXIT_MS = 220;
@@ -58,6 +61,23 @@ function PinnedListing({
   }, [isOwnView, usersQuery.data, studentId]);
   const loading = query.isLoading;
   const error = query.error ? 'Failed to load pinned techniques.' : null;
+
+  // Deep link from the activity feed (?focus=technique:<id>): expand and scroll
+  // to that technique's row once the list has loaded.
+  const handleFocus = useCallback(
+    (ref: EntityRef) => {
+      if (ref.type !== 'technique') return false;
+      if (!techniques.some((t) => t.id === ref.id)) return false;
+      setExpandedValue(String(ref.id));
+      requestAnimationFrame(() => {
+        const el = document.getElementById(`technique-row-${ref.id}`);
+        if (el) scrollToTopWhenStable(el);
+      });
+      return true;
+    },
+    [techniques],
+  );
+  useFocusTarget({ ready: techniques.length > 0, onFocus: handleFocus });
 
   const title = isOwnView
     ? 'My Pinned Techniques'
