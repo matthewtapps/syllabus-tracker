@@ -424,6 +424,31 @@ pub async fn video_visible_to_student(
     Ok(row.map(|r| r.visible != 0).unwrap_or(false))
 }
 
+/// Marks rows stuck in `processing` for longer than `older_than_secs` seconds
+/// as `failed`. Called periodically on the cloudflare-processor path to time
+/// out jobs that never delivered a callback.
+///
+/// Returns the number of rows updated.
+#[instrument(skip(pool))]
+pub async fn fail_stale_processing(
+    pool: &Pool<Sqlite>,
+    older_than_secs: i64,
+) -> Result<u64, AppError> {
+    let cutoff = format!("-{older_than_secs} seconds");
+    let res = sqlx::query!(
+        "UPDATE videos
+         SET processing_status = 'failed',
+             processing_error  = 'processing timed out',
+             updated_at        = CURRENT_TIMESTAMP
+         WHERE processing_status = 'processing'
+           AND updated_at <= datetime('now', ?)",
+        cutoff,
+    )
+    .execute(pool)
+    .await?;
+    Ok(res.rows_affected())
+}
+
 /// Flips every `processing` row to `failed` with a standard error message.
 /// Called once at startup on the host-processor path to clear zombie rows that
 /// were left in-flight when the previous process was killed mid-transcode.

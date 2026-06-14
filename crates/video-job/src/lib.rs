@@ -5,6 +5,13 @@ use subtle::ConstantTimeEq;
 
 type HmacSha256 = Hmac<Sha256>;
 
+/// HTTP header carrying `hex(HMAC-SHA256)` of the raw request body.
+///
+/// The Cloudflare worker sets this header; the app webhook reads it.
+/// One source of truth so both sides can stay in sync without hard-coding the
+/// string in two places.
+pub const SIGNATURE_HEADER: &str = "X-Signature-256";
+
 // ---------------------------------------------------------------------------
 // Contract types
 // ---------------------------------------------------------------------------
