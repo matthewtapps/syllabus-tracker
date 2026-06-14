@@ -10,7 +10,7 @@ import {
   useMediaState,
   type MediaPlayerInstance,
 } from "@vidstack/react";
-import { Play, Pause, Volume2, VolumeX, Maximize, Minimize } from "lucide-react";
+import { Play, Pause, Volume2, VolumeX, Maximize, Minimize, Columns2 } from "lucide-react";
 import "@vidstack/react/player/styles/base.css";
 import type { Video } from "@/lib/api";
 import { formatTimestamp } from "@/lib/dates";
@@ -25,11 +25,32 @@ interface VidstackPlayerProps {
   overlay?: ReactNode;
   /** Rendered inside the time slider, positioned in the slider's track space. */
   sliderMarkers?: ReactNode;
+  /** Show the theater (comments-beside-video) toggle in the control bar. */
+  canTheater?: boolean;
+  /** Current theater state, for the toggle's pressed/label. */
+  theater?: boolean;
+  onToggleTheater?: () => void;
 }
 
-export function VidstackPlayer({ video, events, overlay, sliderMarkers }: VidstackPlayerProps) {
+export function VidstackPlayer({
+  video,
+  events,
+  overlay,
+  sliderMarkers,
+  canTheater,
+  theater,
+  onToggleTheater,
+}: VidstackPlayerProps) {
   const { url, loading, error, refresh } = useSignedPlaybackUrl(video.id, true);
   const playerRef = useRef<MediaPlayerInstance>(null);
+
+  // Size the player to the video's real aspect ratio so portrait clips are not
+  // letterboxed into a 16:9 box. Fall back to 16:9 when dimensions are unknown.
+  const aspectRatio =
+    video.width && video.height && video.width > 0 && video.height > 0
+      ? video.width / video.height
+      : 16 / 9;
+  const isPortrait = aspectRatio < 1;
 
   // The one-shot onPlay flag resets per video, not per signed-URL refresh, so a
   // token refresh mid-playback does not double-count a watch (matches the old player).
@@ -80,7 +101,12 @@ export function VidstackPlayer({ video, events, overlay, sliderMarkers }: Vidsta
       src={{ src: url, type: "video/mp4" }}
       playsInline
       onEnded={() => events?.onEnded?.()}
-      className="relative aspect-video w-full overflow-hidden rounded-md bg-black"
+      style={{ aspectRatio }}
+      className={
+        isPortrait
+          ? "relative mx-auto h-[78svh] w-auto max-w-full overflow-hidden rounded-md bg-black"
+          : "relative w-full overflow-hidden rounded-md bg-black"
+      }
     >
       <MediaProvider />
 
@@ -117,6 +143,19 @@ export function VidstackPlayer({ video, events, overlay, sliderMarkers }: Vidsta
         </TimeSlider.Root>
 
         <TimeReadout />
+
+        {canTheater && onToggleTheater && (
+          <button
+            type="button"
+            onClick={onToggleTheater}
+            aria-pressed={theater}
+            aria-label={theater ? "Stack comments below video" : "Show comments beside video"}
+            title="Comments beside video"
+            className="text-white"
+          >
+            <Columns2 className="h-5 w-5" />
+          </button>
+        )}
 
         <FullscreenButton className="text-white">
           <FullscreenIcon />

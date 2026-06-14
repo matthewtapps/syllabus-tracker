@@ -16,7 +16,6 @@ import {
 import { MomentComposer, type MomentDraft } from "./moment-composer";
 import { MomentFeed } from "./moment-feed";
 import { MomentOverlay } from "./moment-overlay";
-import { MomentSideSheet } from "./moment-side-sheet";
 import { ScrubberPins } from "./scrubber-pins";
 
 interface VideoReviewPanelProps {
@@ -40,7 +39,14 @@ function ReviewInner({ video, surface, watchEvents, composerAction }: VideoRevie
   const user = useUser();
   const controller = usePlayerController();
   const registration = usePlayerRegistration();
-  const isLandscape = useMediaQuery("(orientation: landscape) and (max-height: 500px)");
+
+  // Theater = comments beside the video. Only offered for a landscape video on a
+  // viewport wide enough for two columns (a rotated phone clears 768px too).
+  const videoIsLandscape = !(video.width && video.height && video.height > video.width);
+  const wideEnough = useMediaQuery("(min-width: 768px)");
+  const canTheater = videoIsLandscape && wideEnough;
+  const [theaterPref, setTheaterPref] = useState(false);
+  const theater = canTheater && theaterPref;
 
   // Bridge player events -> controller registration, merged with watch events.
   const events = useMemo<PlayerEvents>(
@@ -63,7 +69,6 @@ function ReviewInner({ video, surface, watchEvents, composerAction }: VideoRevie
   const createThread = useCreateThread();
 
   const [pinnedThread, setPinnedThread] = useState<ThreadView | null>(null);
-  const sheetOpen = isLandscape && pinnedThread != null;
   const [highlightThreadId, setHighlightThreadId] = useState<number | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const pinTimerRef = useRef<number | null>(null);
@@ -78,8 +83,6 @@ function ReviewInner({ video, surface, watchEvents, composerAction }: VideoRevie
   }, []);
 
   function scrollToThread(threadId: number) {
-    // When the side sheet is open the feed is not rendered; skip the DOM scroll.
-    if (sheetOpen) return;
     setHighlightThreadId(threadId);
     const el = listRef.current?.querySelector<HTMLElement>(`[data-thread-id="${threadId}"]`);
     el?.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -87,8 +90,8 @@ function ReviewInner({ video, surface, watchEvents, composerAction }: VideoRevie
     highlightTimerRef.current = window.setTimeout(() => setHighlightThreadId(null), 2200);
   }
 
-  // Toggle pin on re-click; otherwise set it.
-  // Portrait: auto-clear after 6 s (transient overlay). Landscape: stay open until user taps X.
+  // Toggle pin on re-click; otherwise set it. The overlay chip is transient:
+  // auto-clear after 6 s; the feed (below or beside in theater) is the durable view.
   function focusPin(t: ThreadView) {
     if (pinnedThread?.id === t.id) {
       setPinnedThread(null);
@@ -102,9 +105,7 @@ function ReviewInner({ video, surface, watchEvents, composerAction }: VideoRevie
     if (t.video_ts_seconds != null) controller.seekTo(t.video_ts_seconds);
     scrollToThread(t.id);
     if (pinTimerRef.current) window.clearTimeout(pinTimerRef.current);
-    if (!isLandscape) {
-      pinTimerRef.current = window.setTimeout(() => setPinnedThread(null), 6000);
-    }
+    pinTimerRef.current = window.setTimeout(() => setPinnedThread(null), 6000);
   }
 
   async function submit(draft: MomentDraft) {
@@ -124,72 +125,77 @@ function ReviewInner({ video, surface, watchEvents, composerAction }: VideoRevie
     }
   }
 
+  const player = (
+    <VideoPlayerPanel
+      video={video}
+      events={events}
+      canTheater={canTheater}
+      theater={theater}
+      onToggleTheater={() => setTheaterPref((t) => !t)}
+      overlay={
+        controller.canReadTime ? (
+          <MomentOverlay
+            threads={threads}
+            currentTime={controller.currentTime}
+            pinnedThread={pinnedThread}
+            onOpen={focusPin}
+          />
+        ) : undefined
+      }
+      sliderMarkers={
+        controller.canReadTime ? (
+          <ScrubberPins
+            threads={threads}
+            duration={controller.duration}
+            activeThreadId={pinnedThread?.id ?? null}
+            onPinClick={focusPin}
+            onClusterClick={(ts) => focusPin(ts[0])}
+          />
+        ) : undefined
+      }
+    />
+  );
+
+  const composer = (
+    <MomentComposer
+      currentTime={controller.currentTime}
+      duration={controller.duration}
+      canStamp={controller.canReadTime}
+      onCaptureStart={() => controller.canSeek && controller.seekTo(controller.currentTime)}
+      onSubmit={submit}
+      pending={createThread.isPending}
+      actionSlot={composerAction}
+    />
+  );
+
+  const feed = (
+    <div ref={listRef}>
+      <MomentFeed
+        videoId={video.id}
+        threads={threads}
+        onSeek={(s) => controller.seekTo(s)}
+        highlightThreadId={highlightThreadId}
+      />
+    </div>
+  );
+
+  if (theater) {
+    return (
+      <div className="flex items-start gap-3">
+        <div className="relative min-w-0 flex-1">{player}</div>
+        <div className="flex max-h-[80svh] w-80 flex-none flex-col overflow-y-auto rounded-md border border-border">
+          {composer}
+          {feed}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-3">
-      {/* Player region: flex row in landscape sheet mode, stacked otherwise. */}
-      <div className={sheetOpen ? "flex gap-2" : "relative"}>
-        <div className={sheetOpen ? "relative min-w-0 flex-1" : "relative"}>
-          <VideoPlayerPanel
-            video={video}
-            events={events}
-            overlay={
-              controller.canReadTime && !sheetOpen ? (
-                <MomentOverlay
-                  threads={threads}
-                  currentTime={controller.currentTime}
-                  pinnedThread={pinnedThread}
-                  onOpen={focusPin}
-                />
-              ) : undefined
-            }
-            sliderMarkers={
-              controller.canReadTime ? (
-                <ScrubberPins
-                  threads={threads}
-                  duration={controller.duration}
-                  activeThreadId={pinnedThread?.id ?? null}
-                  onPinClick={focusPin}
-                  onClusterClick={(ts) => focusPin(ts[0])}
-                />
-              ) : undefined
-            }
-          />
-        </div>
-
-        {sheetOpen && pinnedThread && (
-          <MomentSideSheet
-            thread={pinnedThread}
-            videoId={video.id}
-            onClose={() => {
-              setPinnedThread(null);
-              if (pinTimerRef.current) window.clearTimeout(pinTimerRef.current);
-            }}
-          />
-        )}
-      </div>
-
-      {!sheetOpen && (
-        <>
-          <MomentComposer
-            currentTime={controller.currentTime}
-            duration={controller.duration}
-            canStamp={controller.canReadTime}
-            onCaptureStart={() => controller.canSeek && controller.seekTo(controller.currentTime)}
-            onSubmit={submit}
-            pending={createThread.isPending}
-            actionSlot={composerAction}
-          />
-
-          <div ref={listRef}>
-            <MomentFeed
-              videoId={video.id}
-              threads={threads}
-              onSeek={(s) => controller.seekTo(s)}
-              highlightThreadId={highlightThreadId}
-            />
-          </div>
-        </>
-      )}
+      <div className="relative">{player}</div>
+      {composer}
+      {feed}
     </div>
   );
 }

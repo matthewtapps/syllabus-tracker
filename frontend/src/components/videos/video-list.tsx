@@ -58,6 +58,8 @@ interface VideoListProps {
   onVideoScrolled?: () => void;
   /** Where this video is being watched from, for activity context tracking. */
   watchContext?: WatchContext;
+  /** Lineage label for the viewer header (e.g. the technique name). */
+  contextLabel?: string;
 }
 
 export function VideoList({
@@ -72,6 +74,7 @@ export function VideoList({
   scrollToVideoId,
   onVideoScrolled,
   watchContext,
+  contextLabel,
 }: VideoListProps) {
   const qc = useQueryClient();
   const videosQuery = useTechniqueVideos(techniqueId, forStudent, syllabus);
@@ -252,7 +255,13 @@ export function VideoList({
         </ul>
       )}
 
-      <VideoPlayerDialog video={playing} onClose={() => setPlaying(null)} surface={surface} watchContext={watchContext} />
+      <VideoPlayerDialog
+        video={playing}
+        onClose={() => setPlaying(null)}
+        surface={surface}
+        watchContext={watchContext}
+        context={contextLabel ? { label: contextLabel } : undefined}
+      />
     </div>
   );
 }

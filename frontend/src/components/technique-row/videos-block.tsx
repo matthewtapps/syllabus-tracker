@@ -75,6 +75,7 @@ export function VideosBlock({
         scrollToVideoId={scrollToVideoId}
         onVideoScrolled={onVideoScrolled}
         watchContext={watchContext}
+        contextLabel={technique.name}
       />
     </section>
   );
