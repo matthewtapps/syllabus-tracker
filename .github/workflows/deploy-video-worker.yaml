@@ -1,66 +1,39 @@
 # deploy-video-worker.yaml
 #
-# Deploys the Cloudflare video Worker + Container via wrangler.
-# Replaces build-video-worker.yaml (which pushed to GHCR; CF manages its own registry).
+# Builds the transcode-server container image and deploys it to Cloud Run
+# (australia-southeast1) via Workload Identity Federation — no long-lived
+# GCP credentials are stored in GitHub.
 #
-# This workflow:
-#   1. Bundles + deploys the TypeScript Worker (src/index.ts)
-#   2. Builds the container image (crates/video-worker/Dockerfile, context = repo root)
-#      and pushes it to Cloudflare's internal container registry via `wrangler deploy`
-#   3. Sets Worker secrets non-interactively via `wrangler secret put`
+# Auth model (keyless):
+#   WIF provider authenticates the Actions OIDC token for this repo and
+#   impersonates the deployer SA, which has Artifact Registry writer +
+#   Cloud Run developer permissions granted by platform tofu.
+#   The only GitHub secrets required are the existing PLATFORM_STATE_R2_*
+#   bootstrap credentials used to read runtime values from tofu state
+#   (same pattern as staging.yml / deploy.yaml).
 #
-# Trigger: workflow_dispatch ONLY for now. The push-on-main trigger is
-# intentionally disabled until the secrets/vars below are provisioned, so a
-# merge to main does not auto-fail this workflow. Re-enable the push trigger
-# once wiring is complete.
+# Trigger: workflow_dispatch ONLY for now.
+# Re-enable the push trigger (commented out below) once the first manual
+# deploy has succeeded and VIDEO_ENQUEUE_URL is set as a repo variable.
 #
-# SECURITY NOTE (read before provisioning CLOUDFLARE_API_TOKEN):
-# This repo's deploy model deliberately keeps NO long-lived provider creds in
-# GitHub Actions — deploy.yaml/staging.yml fetch everything fresh from platform
-# tfstate each run via the bootstrap R2 token (PLATFORM_STATE_R2_*). Putting the
-# broad account CLOUDFLARE_API_TOKEN here would break that model. PREFERRED:
-# mint a SCOPED wrangler-deploy token in platform tofu (Workers Scripts +
-# Queues + Containers + R2 edit only), export it, and have this job read it via
-# `tofu output -raw` (reusing PLATFORM_STATE_R2_*), exactly like the honeycomb/
-# R2 secrets — instead of the GH-secret placeholders below. The VIDEO_* and
-# S3_* values likewise already live in platform tofu outputs; reading them via
-# tofu (see staging.yml "Build runtime-secrets") avoids duplicating them as GH
-# secrets. The secrets/vars listed below are the simpler-but-less-secure path.
+# Post-first-deploy manual steps:
+#   1. Note the Cloud Run service URL printed to the step summary.
+#   2. gh variable set VIDEO_ENQUEUE_URL -b "<url>/jobs" -R matthewtapps/syllabus-tracker
+#   3. gh variable set VIDEO_PROCESSOR_STAGING -b "cloudflare" -R matthewtapps/syllabus-tracker
+#   4. gh workflow run staging.yml -f branch=<branch> -f refresh_db=false \
+#        -f allow_destructive_migrations=false
+#   Staging will then route video jobs to Cloud Run instead of the host transcoder.
 #
-# ---------------------------------------------------------------------------
-# Required GitHub Actions secrets (set in Settings > Secrets > Actions):
-#   CLOUDFLARE_API_TOKEN      — CF API token with Workers Scripts + Containers
-#                               deploy scope (create at dash.cloudflare.com >
-#                               My Profile > API Tokens). Source: manual.
-#   VIDEO_ENQUEUE_TOKEN       — Bearer token the app sends on POST /jobs.
-#                               Source: platform tofu output `video_enqueue_token`.
-#   VIDEO_CALLBACK_SECRET     — HMAC secret for the app's processing-result
-#                               webhook. Source: platform tofu output
-#                               `video_callback_secret`.
-#   S3_ACCESS_KEY             — R2 / S3 access key for video storage.
-#                               Source: platform tofu R2 API token output.
-#   S3_SECRET_KEY             — R2 / S3 secret key for video storage.
-#                               Source: platform tofu R2 API token output.
-#
-# Required GitHub Actions variables (set in Settings > Variables > Actions):
-#   CLOUDFLARE_ACCOUNT_ID     — Your Cloudflare account ID (not a secret).
-#                               Source: Cloudflare dashboard > account home URL.
-#   S3_ENDPOINT               — R2 endpoint URL, e.g.
-#                               https://<account_id>.r2.cloudflarestorage.com
-#                               Source: platform tofu R2 bucket output.
-#   S3_REGION                 — "auto" for R2.
-#   S3_BUCKET                 — R2 bucket name for video storage.
-#                               Source: platform tofu R2 bucket output.
-#   S3_FORCE_PATH_STYLE       — "false" for R2 (or "true" if required).
-#   S3_PUBLIC_ENDPOINT        — Public base URL for presigned playback URLs.
-#                               Source: platform tofu R2 public bucket output.
-# ---------------------------------------------------------------------------
+# CPU billing note: --no-cpu-throttling keeps CPU allocated for the full
+# request duration (sync transcode). At low volume this stays within the
+# Cloud Run free tier; the trade-off vs. the default throttled mode is that
+# idle time between requests does not bill (min-instances defaults to 0).
 
 name: Deploy video-worker
 
 on:
-  # Disabled until secrets/vars are wired (see SECURITY NOTE above), so a
-  # merge to main does not auto-fail. Re-enable when ready:
+  # Disabled until the first manual deploy has run and VIDEO_ENQUEUE_URL is set.
+  # Re-enable by uncommenting the push block below:
   # push:
   #   branches: [main]
   #   paths:
@@ -72,6 +45,7 @@ on:
 
 permissions:
   contents: read
+  id-token: write  # Required for WIF OIDC token exchange
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -81,105 +55,120 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     environment: production
+    env:
+      PROJECT: matthewtapps-sillybus
+      REGION: australia-southeast1
+      AR_REPO: australia-southeast1-docker.pkg.dev/matthewtapps-sillybus/video-worker
+      SERVICE: transcode-server
+      RUNTIME_SA: video-runtime@matthewtapps-sillybus.iam.gserviceaccount.com
+
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
-      # Docker buildx is required for the container image build wrangler triggers.
+      - name: Authenticate to Google Cloud (WIF)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/499417734093/locations/global/workloadIdentityPools/github/providers/github
+          service_account: deployer@matthewtapps-sillybus.iam.gserviceaccount.com
+
+      - name: Set up gcloud CLI
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev --quiet
+
       - uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
 
-      - uses: actions/setup-node@v4
+      - name: Build and push image to Artifact Registry
+        run: |
+          IMAGE="${{ env.AR_REPO }}/${{ env.SERVICE }}"
+          docker build \
+            -f crates/video-worker/Dockerfile \
+            -t "${IMAGE}:${{ github.sha }}" \
+            -t "${IMAGE}:latest" \
+            .
+          docker push "${IMAGE}:${{ github.sha }}"
+          docker push "${IMAGE}:latest"
+
+      - name: Install opentofu via nix
+        uses: cachix/install-nix-action@v27
         with:
-          node-version: 22
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+      - run: nix profile install nixpkgs#opentofu && tofu version
 
-      - name: Install edge worker deps
-        working-directory: crates/video-worker/edge
-        run: npm ci
-
-      # `wrangler deploy` from the repo root so relative paths in wrangler.jsonc
-      # (image_build_context: "../.." relative to edge/) resolve correctly.
-      # The build context passed to docker will be the repo root, which is what
-      # the Dockerfile's `COPY . .` expects (workspace Cargo.toml is at root).
-      - name: Deploy Worker + Container
-        working-directory: crates/video-worker/edge
+      - name: Read runtime secrets from platform tofu state
+        id: secrets
         env:
-          CLOUDFLARE_API_TOKEN:  ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
-        run: npx wrangler deploy
+          AWS_ACCESS_KEY_ID:     ${{ secrets.PLATFORM_STATE_R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.PLATFORM_STATE_R2_SECRET_ACCESS_KEY }}
+          AWS_MAX_ATTEMPTS:      "5"
+        run: |
+          cd infra
+          i=0; until tofu init -input=false; do
+            i=$((i+1)); [ $i -ge 30 ] && { echo "::error::tofu init failed after 30 attempts"; exit 1; }
+            echo "tofu init attempt $i failed; sleeping 30s"; sleep 30
+          done
+          tofu apply -refresh-only -auto-approve -input=false -lock=false
 
-      # Set Worker secrets non-interactively. Each secret is piped via stdin
-      # so no value ever appears in the process argument list or workflow logs.
-      - name: Set ENQUEUE_TOKEN secret
-        working-directory: crates/video-worker/edge
-        env:
-          CLOUDFLARE_API_TOKEN:  ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
-          SECRET_VALUE:          ${{ secrets.VIDEO_ENQUEUE_TOKEN }}
-        run: echo "$SECRET_VALUE" | npx wrangler secret put ENQUEUE_TOKEN
+          ENQUEUE_TOKEN=$(tofu output -raw _platform_video_enqueue_token)
+          VIDEO_CALLBACK_SECRET=$(tofu output -raw _platform_video_callback_secret)
+          S3_ACCESS_KEY=$(tofu output -raw _platform_runtime_r2_access_key_id)
+          S3_SECRET_KEY=$(tofu output -raw _platform_runtime_r2_secret_access_key)
 
-      - name: Set VIDEO_CALLBACK_SECRET secret
-        working-directory: crates/video-worker/edge
-        env:
-          CLOUDFLARE_API_TOKEN:  ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
-          SECRET_VALUE:          ${{ secrets.VIDEO_CALLBACK_SECRET }}
-        run: echo "$SECRET_VALUE" | npx wrangler secret put VIDEO_CALLBACK_SECRET
+          echo "::add-mask::$ENQUEUE_TOKEN"
+          echo "::add-mask::$VIDEO_CALLBACK_SECRET"
+          echo "::add-mask::$S3_ACCESS_KEY"
+          echo "::add-mask::$S3_SECRET_KEY"
 
-      - name: Set S3_ACCESS_KEY secret
-        working-directory: crates/video-worker/edge
-        env:
-          CLOUDFLARE_API_TOKEN:  ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
-          SECRET_VALUE:          ${{ secrets.S3_ACCESS_KEY }}
-        run: echo "$SECRET_VALUE" | npx wrangler secret put S3_ACCESS_KEY
+          echo "enqueue_token=$ENQUEUE_TOKEN"       >> "$GITHUB_OUTPUT"
+          echo "callback_secret=$VIDEO_CALLBACK_SECRET" >> "$GITHUB_OUTPUT"
+          echo "s3_access_key=$S3_ACCESS_KEY"       >> "$GITHUB_OUTPUT"
+          echo "s3_secret_key=$S3_SECRET_KEY"       >> "$GITHUB_OUTPUT"
 
-      - name: Set S3_SECRET_KEY secret
-        working-directory: crates/video-worker/edge
-        env:
-          CLOUDFLARE_API_TOKEN:  ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
-          SECRET_VALUE:          ${{ secrets.S3_SECRET_KEY }}
-        run: echo "$SECRET_VALUE" | npx wrangler secret put S3_SECRET_KEY
+      - name: Deploy to Cloud Run
+        run: |
+          # Use ^@^ as the env-var list delimiter so commas inside values
+          # (none expected for these token/hex values, but safe by default)
+          # are never treated as key separators by gcloud.
+          gcloud run deploy ${{ env.SERVICE }} \
+            --project=${{ env.PROJECT }} \
+            --region=${{ env.REGION }} \
+            --image=${{ env.AR_REPO }}/${{ env.SERVICE }}:${{ github.sha }} \
+            --service-account=${{ env.RUNTIME_SA }} \
+            --allow-unauthenticated \
+            --port=8080 \
+            --cpu=1 \
+            --memory=2Gi \
+            --timeout=600 \
+            --max-instances=3 \
+            --no-cpu-throttling \
+            "--set-env-vars=^@^\
+          ENQUEUE_TOKEN=${{ steps.secrets.outputs.enqueue_token }}\
+          @VIDEO_CALLBACK_SECRET=${{ steps.secrets.outputs.callback_secret }}\
+          @S3_ACCESS_KEY=${{ steps.secrets.outputs.s3_access_key }}\
+          @S3_SECRET_KEY=${{ steps.secrets.outputs.s3_secret_key }}\
+          @S3_ENDPOINT=https://ea9e8573831e597fc41f865267b8fd35.r2.cloudflarestorage.com\
+          @S3_REGION=auto\
+          @S3_BUCKET=sillybus-videos-prod\
+          @S3_FORCE_PATH_STYLE=true\
+          @S3_PUBLIC_ENDPOINT=https://ea9e8573831e597fc41f865267b8fd35.r2.cloudflarestorage.com"
 
-      # Non-secret S3 config — pushed as vars (visible in CF dashboard).
-      # Using `wrangler secret put` for consistency; alternatively these could
-      # be set as [vars] in wrangler.jsonc, but keeping them out of source control
-      # makes rotation easier and keeps config in one place (CF dashboard).
-      - name: Set S3_ENDPOINT var
-        working-directory: crates/video-worker/edge
-        env:
-          CLOUDFLARE_API_TOKEN:  ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
-          VAR_VALUE:             ${{ vars.S3_ENDPOINT }}
-        run: echo "$VAR_VALUE" | npx wrangler secret put S3_ENDPOINT
-
-      - name: Set S3_REGION var
-        working-directory: crates/video-worker/edge
-        env:
-          CLOUDFLARE_API_TOKEN:  ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
-          VAR_VALUE:             ${{ vars.S3_REGION }}
-        run: echo "$VAR_VALUE" | npx wrangler secret put S3_REGION
-
-      - name: Set S3_BUCKET var
-        working-directory: crates/video-worker/edge
-        env:
-          CLOUDFLARE_API_TOKEN:  ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
-          VAR_VALUE:             ${{ vars.S3_BUCKET }}
-        run: echo "$VAR_VALUE" | npx wrangler secret put S3_BUCKET
-
-      - name: Set S3_FORCE_PATH_STYLE var
-        working-directory: crates/video-worker/edge
-        env:
-          CLOUDFLARE_API_TOKEN:  ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
-          VAR_VALUE:             ${{ vars.S3_FORCE_PATH_STYLE }}
-        run: echo "$VAR_VALUE" | npx wrangler secret put S3_FORCE_PATH_STYLE
-
-      - name: Set S3_PUBLIC_ENDPOINT var
-        working-directory: crates/video-worker/edge
-        env:
-          CLOUDFLARE_API_TOKEN:  ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
-          VAR_VALUE:             ${{ vars.S3_PUBLIC_ENDPOINT }}
-        run: echo "$VAR_VALUE" | npx wrangler secret put S3_PUBLIC_ENDPOINT
+      - name: Print service URL
+        run: |
+          URL=$(gcloud run services describe ${{ env.SERVICE }} \
+            --region=${{ env.REGION }} \
+            --project=${{ env.PROJECT }} \
+            --format='value(status.url)')
+          echo "Cloud Run URL: ${URL}"
+          echo "VIDEO_ENQUEUE_URL = ${URL}/jobs"
+          echo "### Cloud Run deployment complete" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Service URL:** ${URL}" >> "$GITHUB_STEP_SUMMARY"
+          echo "**VIDEO_ENQUEUE_URL:** \`${URL}/jobs\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Next: set the repo variable and cut staging over:" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          echo "gh variable set VIDEO_ENQUEUE_URL -b \"${URL}/jobs\" -R matthewtapps/syllabus-tracker" >> "$GITHUB_STEP_SUMMARY"
+          echo "gh variable set VIDEO_PROCESSOR_STAGING -b \"cloudflare\" -R matthewtapps/syllabus-tracker" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"

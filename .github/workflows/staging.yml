@@ -281,11 +281,11 @@ jobs:
       - name: Ship compose stack + config
         env:
           # Staging-only video-processing cutover. Both repo vars must be set
-          # to cut staging over to the Cloudflare path; otherwise staging
+          # to cut staging over to the Cloud Run path; otherwise staging
           # stays on the default host transcoder. Prod (deploy.yaml /
           # config/prod.env) is never affected by these.
           #   VIDEO_PROCESSOR_STAGING = "cloudflare" to cut over (else host)
-          #   VIDEO_ENQUEUE_URL       = the wrangler-deployed Worker /jobs URL
+          #   VIDEO_ENQUEUE_URL       = Cloud Run transcode-server /jobs URL
           VIDEO_PROCESSOR_STAGING: ${{ vars.VIDEO_PROCESSOR_STAGING }}
           VIDEO_ENQUEUE_URL: ${{ vars.VIDEO_ENQUEUE_URL }}
         run: |
