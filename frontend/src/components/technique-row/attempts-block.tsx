@@ -197,8 +197,15 @@ function AttemptRow({ attempt }: { attempt: SyllabusAttempt }) {
     }
   }
 
+  const hasNote = Boolean(attempt.coach_note || attempt.student_note);
+
   return (
-    <li className="flex items-start justify-between gap-2 px-3 py-2 text-sm">
+    <li
+      className={cn(
+        "flex justify-between gap-2 px-3 py-2 text-sm",
+        hasNote ? "items-start" : "items-center",
+      )}
+    >
       <div className="min-w-0 flex-1 space-y-1">
         <p className="text-xs font-medium text-muted-foreground">{dateLabel}</p>
         {attempt.coach_note && (
