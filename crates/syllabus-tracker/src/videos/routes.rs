@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use chrono::{DateTime, Utc};
 use rocket::State;
 use rocket::data::{ByteUnit, ToByteUnit};
@@ -17,9 +15,8 @@ use crate::db;
 use crate::models::{ProcessingStatus, Video};
 use crate::videos::embeds;
 use crate::videos::metrics::{kv, video_metrics};
-use crate::videos::pipeline::{
-    self, PipelineContext, max_video_bytes, signed_download_ttl, signed_playback_ttl,
-};
+use crate::videos::pipeline::{self, max_video_bytes, signed_download_ttl, signed_playback_ttl};
+use crate::videos::processor::{DynVideoProcessor, HostJob};
 use crate::videos::storage::DynVideoStorage;
 
 #[derive(Serialize)]
@@ -81,14 +78,14 @@ pub fn upload_byte_limit() -> ByteUnit {
     (max_video_bytes() as u64).bytes() + 16.mebibytes()
 }
 
-#[instrument(skip(form, pool, ctx))]
+#[instrument(skip(form, pool, processor))]
 #[post("/techniques/<tid>/videos/upload", data = "<form>")]
 pub async fn api_video_upload(
     tid: i64,
     user: User,
     form: Result<Form<UploadForm<'_>>, FormErrors<'_>>,
     pool: &State<Pool<Sqlite>>,
-    ctx: &State<Arc<PipelineContext>>,
+    processor: &State<DynVideoProcessor>,
 ) -> Result<Json<UploadResponse>, Status> {
     user.require_permission(Permission::UploadVideos)?;
 
@@ -146,11 +143,13 @@ pub async fn api_video_upload(
     .await
     .map_err(Status::from)?;
 
-    let ctx_clone = ctx.inner().clone();
-    let dest_clone = dest.clone();
-    tokio::spawn(async move {
-        pipeline::process_uploaded_video(ctx_clone, video_id, tid, dest_clone).await;
-    });
+    processor
+        .start(HostJob {
+            video_id,
+            technique_id: tid,
+            original_temp_path: dest,
+        })
+        .await;
 
     Ok(Json(UploadResponse {
         video_id,
@@ -382,14 +381,15 @@ pub async fn api_reorder_videos(
     Ok(Status::NoContent)
 }
 
-#[instrument(skip(form, pool, ctx))]
+#[instrument(skip(form, pool, processor, storage))]
 #[post("/videos/<vid>/replace", data = "<form>")]
 pub async fn api_replace_video(
     vid: i64,
     user: User,
     form: Result<Form<ReplaceForm<'_>>, FormErrors<'_>>,
     pool: &State<Pool<Sqlite>>,
-    ctx: &State<Arc<PipelineContext>>,
+    processor: &State<DynVideoProcessor>,
+    storage: &State<DynVideoStorage>,
 ) -> Result<Json<UploadResponse>, Status> {
     user.require_permission(Permission::UploadVideos)?;
 
@@ -455,14 +455,16 @@ pub async fn api_replace_video(
             .map_err(Status::from)?;
     }
 
-    let ctx_clone = ctx.inner().clone();
-    let dest_clone = dest.clone();
-    tokio::spawn(async move {
-        pipeline::process_uploaded_video(ctx_clone, vid, technique_id, dest_clone).await;
-    });
+    processor
+        .start(HostJob {
+            video_id: vid,
+            technique_id,
+            original_temp_path: dest,
+        })
+        .await;
 
     if let Some(key) = existing_storage_key {
-        let storage = ctx.inner().storage.clone();
+        let storage = storage.inner().clone();
         tokio::spawn(async move {
             if let Err(e) = storage.delete(&key).await {
                 warn!("failed to delete previous storage object {}: {}", key, e);

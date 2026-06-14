@@ -59,6 +59,7 @@ use telemetry::TelemetryFairing;
 use telemetry::init_tracing;
 use thiserror::Error;
 use videos::{
+    DynVideoProcessor, HostFfmpegProcessor,
     api_admin_storage, api_dashboard_video_overview, api_delete_video, api_list_technique_videos,
     api_my_watch_state, api_reorder_videos, api_replace_video, api_set_video_global_hidden,
     api_set_video_student_visibility, api_student_watch_activity, api_update_video,
@@ -384,6 +385,15 @@ pub async fn init_rocket(
             )),
         });
 
+        let processor: DynVideoProcessor =
+            match std::env::var("VIDEO_PROCESSOR").as_deref() {
+                Ok("cloudflare") => panic!(
+                    "VIDEO_PROCESSOR=cloudflare is not yet implemented; \
+                     set VIDEO_PROCESSOR=host or unset it to use the default."
+                ),
+                _ => std::sync::Arc::new(HostFfmpegProcessor::new(pipeline_ctx.clone())),
+            };
+
         let sampler_pool = pool.clone();
         let sampler_jobs = jobs.clone();
         tokio::spawn(async move {
@@ -396,6 +406,7 @@ pub async fn init_rocket(
         rocket = rocket
             .manage(stack.storage)
             .manage(pipeline_ctx)
+            .manage(processor)
             .manage(jobs)
             .mount(
                 "/api",

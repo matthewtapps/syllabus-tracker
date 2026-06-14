@@ -53,3 +53,5 @@ dotenvy = { workspace = true }
 indicatif = { workspace = true }
 
 video-media = { path = "../video-media" }
+video-job = { path = "../video-job" }
+async-trait = "0.1.83"

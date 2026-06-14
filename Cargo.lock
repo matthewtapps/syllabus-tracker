@@ -4201,6 +4201,7 @@ name = "syllabus-tracker"
 version = "1.0.0"
 dependencies = [
  "anyhow",
+ "async-trait",
  "bcrypt",
  "chrono",
  "dotenvy",
@@ -4229,6 +4230,7 @@ dependencies = [
  "tracing-subscriber",
  "uuid",
  "validator",
+ "video-job",
  "video-media",
 ]
 
@@ -4846,6 +4848,17 @@ name = "version_check"
 version = "0.9.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
+
+[[package]]
+name = "video-job"
+version = "1.0.0"
+dependencies = [
+ "hmac",
+ "serde",
+ "serde_json",
+ "sha2",
+ "subtle",
+]
 
 [[package]]
 name = "video-media"

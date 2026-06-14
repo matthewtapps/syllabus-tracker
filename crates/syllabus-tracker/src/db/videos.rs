@@ -175,6 +175,75 @@ pub async fn mark_video_failed(pool: &Pool<Sqlite>, id: i64, error: &str) -> Res
     Ok(())
 }
 
+/// Idempotent variant of [`finalize_video_ready`]: skips the update if the
+/// row is already `ready`. Safe to call more than once (e.g. from a webhook
+/// that may fire twice).
+#[instrument(skip(pool))]
+pub async fn finalize_video_ready_if_not_ready(
+    pool: &Pool<Sqlite>,
+    id: i64,
+    storage_key: &str,
+    bytes: i64,
+    duration_seconds: i64,
+    width: Option<i64>,
+    height: Option<i64>,
+) -> Result<(), AppError> {
+    let ready_status = ProcessingStatus::Ready.as_str();
+    let now = Utc::now().naive_utc();
+    sqlx::query!(
+        "UPDATE videos
+         SET processing_status = ?,
+             processing_error = NULL,
+             storage_key = ?,
+             bytes = ?,
+             duration_seconds = ?,
+             width = ?,
+             height = ?,
+             updated_at = ?
+         WHERE id = ?
+           AND processing_status != ?",
+        ready_status,
+        storage_key,
+        bytes,
+        duration_seconds,
+        width,
+        height,
+        now,
+        id,
+        ready_status,
+    )
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+/// Idempotent variant of [`mark_video_failed`]: skips the update if the row
+/// is already `ready` so a late failure report cannot overwrite a success.
+#[instrument(skip(pool))]
+pub async fn mark_video_failed_if_not_ready(
+    pool: &Pool<Sqlite>,
+    id: i64,
+    error: &str,
+) -> Result<(), AppError> {
+    let failed_status = ProcessingStatus::Failed.as_str();
+    let ready_status = ProcessingStatus::Ready.as_str();
+    let now = Utc::now().naive_utc();
+    sqlx::query!(
+        "UPDATE videos
+         SET processing_status = ?, processing_error = ?, updated_at = ?
+         WHERE id = ?
+           AND processing_status != ?",
+        failed_status,
+        error,
+        now,
+        id,
+        ready_status,
+    )
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
 #[instrument(skip(pool))]
 pub async fn get_db_video(pool: &Pool<Sqlite>, id: i64) -> Result<Option<DbVideo>, AppError> {
     let row = sqlx::query_as!(
