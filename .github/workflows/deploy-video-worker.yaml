@@ -32,11 +32,6 @@
 name: Deploy video-worker
 
 on:
-  # TEMPORARY: branch push-trigger to fire the first Cloud Run deploy before
-  # this workflow is on the default branch (workflow_dispatch needs it on main).
-  # REVERT this push block right after the first successful deploy.
-  push:
-    branches: [roadmap/threads-08-video-processing]
   # Disabled until the first manual deploy has run and VIDEO_ENQUEUE_URL is set.
   # Re-enable by uncommenting the push block below:
   # push:
