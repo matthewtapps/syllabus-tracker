@@ -76,6 +76,23 @@ describe("rowToViewContext", () => {
       video: { type: "video", id: 7 },
     });
   });
+  test("video_added (fanned out, no context_kind) resolves to the library technique", () => {
+    expect(
+      rowToViewContext({
+        verb: "video_added",
+        context_kind: null,
+        target_student_id: 4,
+        syllabus_id: null,
+        sst_id: null,
+        technique_id: 9,
+        video_id: 7,
+      }),
+    ).toEqual({
+      kind: "library",
+      technique: { type: "technique", id: 9 },
+      video: { type: "video", id: 7 },
+    });
+  });
   test("video_watched with no resolvable context returns null", () => {
     expect(
       rowToViewContext({
