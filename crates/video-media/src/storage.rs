@@ -36,6 +36,9 @@ pub trait VideoStorage {
         source: &Path,
     ) -> Result<(), StorageError>;
 
+    /// Download an object to a local path.
+    async fn get_to_path(&self, key: &str, dest: &Path) -> Result<(), StorageError>;
+
     async fn delete(&self, key: &str) -> Result<(), StorageError>;
 
     async fn presign_get(&self, key: &str, ttl: Duration) -> Result<String, StorageError>;
@@ -174,6 +177,26 @@ impl VideoStorage for S3VideoStorage {
         Ok(())
     }
 
+    #[instrument(skip(self, dest), fields(bucket = %self.bucket, key = %key))]
+    async fn get_to_path(&self, key: &str, dest: &Path) -> Result<(), StorageError> {
+        let resp = self
+            .client
+            .get_object()
+            .bucket(&self.bucket)
+            .key(key)
+            .send()
+            .await
+            .map_err(|e| StorageError::Backend(format!("get_object: {}", error_chain(&e))))?;
+        let bytes = resp
+            .body
+            .collect()
+            .await
+            .map_err(|e| StorageError::Backend(format!("read object body: {}", error_chain(&e))))?
+            .into_bytes();
+        tokio::fs::write(dest, bytes).await?;
+        Ok(())
+    }
+
     #[instrument(skip(self), fields(bucket = %self.bucket, key = %key))]
     async fn delete(&self, key: &str) -> Result<(), StorageError> {
         self.client
@@ -224,6 +247,45 @@ impl VideoStorage for S3VideoStorage {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::test_support::InMemoryVideoStorage;
+    use super::VideoStorage;
+
+    #[tokio::test]
+    async fn in_memory_put_then_get_to_path_roundtrips() {
+        let storage = InMemoryVideoStorage::new();
+        let key = "test/roundtrip.mp4";
+
+        // Write source bytes to a temp file and put via storage.
+        let src_path = std::env::temp_dir().join("video_media_test_src.bin");
+        let dest_path = std::env::temp_dir().join("video_media_test_dest.bin");
+        let original: &[u8] = b"fake video bytes 1234";
+        tokio::fs::write(&src_path, original).await.unwrap();
+
+        storage
+            .put_file(key, "video/mp4", &src_path)
+            .await
+            .unwrap();
+        storage.get_to_path(key, &dest_path).await.unwrap();
+
+        let retrieved = tokio::fs::read(&dest_path).await.unwrap();
+        assert_eq!(retrieved, original);
+
+        // Clean up (best-effort).
+        let _ = tokio::fs::remove_file(&src_path).await;
+        let _ = tokio::fs::remove_file(&dest_path).await;
+    }
+
+    #[tokio::test]
+    async fn in_memory_get_to_path_missing_key_errors() {
+        let storage = InMemoryVideoStorage::new();
+        let dest_path = std::env::temp_dir().join("video_media_test_missing.bin");
+        let result = storage.get_to_path("no/such/key", &dest_path).await;
+        assert!(result.is_err());
+    }
+}
+
 #[cfg(any(test, feature = "test-support"))]
 pub mod test_support {
     use std::collections::HashMap;
@@ -256,6 +318,18 @@ pub mod test_support {
         ) -> Result<(), StorageError> {
             let bytes = tokio::fs::read(source).await?;
             self.objects.lock().unwrap().insert(key.to_string(), bytes);
+            Ok(())
+        }
+
+        async fn get_to_path(&self, key: &str, dest: &Path) -> Result<(), StorageError> {
+            let bytes = self
+                .objects
+                .lock()
+                .unwrap()
+                .get(key)
+                .cloned()
+                .ok_or_else(|| StorageError::Backend(format!("key not found: {}", key)))?;
+            tokio::fs::write(dest, bytes).await?;
             Ok(())
         }
 

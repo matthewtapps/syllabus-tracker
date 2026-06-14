@@ -1,13 +1,4 @@
-use std::path::Path;
-
 use anyhow::{Context, anyhow};
-use aws_config::Region;
-use aws_credential_types::Credentials;
-use aws_sdk_s3::Client as S3Client;
-use aws_sdk_s3::config::{
-    BehaviorVersion, Builder as S3ConfigBuilder, RequestChecksumCalculation,
-    ResponseChecksumValidation,
-};
 use tracing::{error, info};
 use video_job::{ProcessingResult, SIGNATURE_HEADER};
 use video_media::{
@@ -59,53 +50,6 @@ fn output_key(video_id: i64) -> String {
 }
 
 // ---------------------------------------------------------------------------
-// S3 download helper (not in VideoStorage trait; we build a client directly)
-// ---------------------------------------------------------------------------
-
-fn build_s3_client(config: &S3Config) -> S3Client {
-    let credentials = Credentials::new(
-        config.access_key.clone(),
-        config.secret_key.clone(),
-        None,
-        None,
-        "static",
-    );
-    let s3_config = S3ConfigBuilder::new()
-        .behavior_version(BehaviorVersion::latest())
-        .endpoint_url(&config.endpoint)
-        .region(Region::new(config.region.clone()))
-        .credentials_provider(credentials)
-        .force_path_style(config.force_path_style)
-        .request_checksum_calculation(RequestChecksumCalculation::WhenRequired)
-        .response_checksum_validation(ResponseChecksumValidation::WhenRequired)
-        .build();
-    S3Client::from_conf(s3_config)
-}
-
-async fn download_to_path(client: &S3Client, bucket: &str, key: &str, dest: &Path) -> anyhow::Result<()> {
-    let resp = client
-        .get_object()
-        .bucket(bucket)
-        .key(key)
-        .send()
-        .await
-        .with_context(|| format!("get_object failed for key {:?}", key))?;
-
-    let bytes = resp
-        .body
-        .collect()
-        .await
-        .context("reading S3 object body")?
-        .into_bytes();
-
-    tokio::fs::write(dest, bytes)
-        .await
-        .with_context(|| format!("writing download to {}", dest.display()))?;
-
-    Ok(())
-}
-
-// ---------------------------------------------------------------------------
 // Webhook POST helper
 // ---------------------------------------------------------------------------
 
@@ -146,8 +90,6 @@ async fn post_result(
 
 async fn process(
     cfg: &JobConfig,
-    s3_client: &S3Client,
-    s3_config: &S3Config,
     storage: &S3VideoStorage,
     probe: &FfprobeMediaProbe,
     transcode: &FfmpegMediaTranscode,
@@ -158,7 +100,10 @@ async fn process(
 
     // 1. Download source from R2
     info!(key = %cfg.source_key, "downloading source");
-    download_to_path(s3_client, &s3_config.bucket, &cfg.source_key, &input_path).await?;
+    storage
+        .get_to_path(&cfg.source_key, &input_path)
+        .await
+        .with_context(|| format!("download source key {:?}", cfg.source_key))?;
 
     // 2. Probe input for duration (duration is unchanged by transcode)
     info!("probing input");
@@ -230,7 +175,6 @@ async fn main() {
 async fn run() -> anyhow::Result<()> {
     let cfg = JobConfig::from_env().context("parsing job config from env")?;
     let s3_config = S3Config::from_env().context("parsing S3 config from env")?;
-    let s3_client = build_s3_client(&s3_config);
     let storage = S3VideoStorage::new(&s3_config);
     let probe = FfprobeMediaProbe::from_env();
     let transcode = FfmpegMediaTranscode::from_env();
@@ -238,7 +182,7 @@ async fn run() -> anyhow::Result<()> {
 
     info!(video_id = cfg.video_id, "starting video-worker");
 
-    let result = match process(&cfg, &s3_client, &s3_config, &storage, &probe, &transcode).await {
+    let result = match process(&cfg, &storage, &probe, &transcode).await {
         Ok(ready) => {
             info!("processing succeeded");
             ready

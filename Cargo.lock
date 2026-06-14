@@ -4985,9 +4985,6 @@ name = "video-worker"
 version = "1.0.0"
 dependencies = [
  "anyhow",
- "aws-config",
- "aws-credential-types",
- "aws-sdk-s3",
  "reqwest",
  "serde_json",
  "tokio",
