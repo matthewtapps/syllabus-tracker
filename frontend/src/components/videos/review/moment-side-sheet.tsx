@@ -16,7 +16,7 @@ export function MomentSideSheet({ thread, videoId, onClose }: MomentSideSheetPro
       <div className="flex items-center justify-between border-b border-border p-3">
         <span className="text-xs font-semibold">
           {thread.video_ts_seconds != null
-            ? `Moment ${formatTimestamp(thread.video_ts_seconds)}`
+            ? `Comment at ${formatTimestamp(thread.video_ts_seconds)}`
             : "Whole video"}
         </span>
         <button type="button" aria-label="Close thread" onClick={onClose}>
