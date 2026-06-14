@@ -39,21 +39,23 @@ export function MomentOverlay({ threads, currentTime, pinnedThread, onOpen }: Mo
   const moment = pinnedThread ?? activeMoment(threads, currentTime);
   if (!moment || moment.body == null) return null;
   return (
-    <button
-      type="button"
-      onClick={() => onOpen(moment)}
-      className="absolute inset-x-0 bottom-0 flex items-end gap-2 bg-gradient-to-t from-black/75 via-black/30 to-transparent px-3 pb-5 pt-8 text-left"
-    >
-      <StudentAvatar id={moment.author_id} name={moment.author_name} size="sm" />
-      <div className="min-w-0 flex-1 [text-shadow:0_1px_3px_rgba(0,0,0,0.85)]">
-        <div className="text-xs font-bold text-white">
-          {moment.author_name}
-          <span className="ml-1.5 font-semibold tabular-nums text-violet-300">
-            {formatTimestamp(moment.video_ts_seconds as number)}
-          </span>
+    <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 via-black/35 to-transparent px-3 pb-14 pt-6">
+      <button
+        type="button"
+        onClick={() => onOpen(moment)}
+        className="pointer-events-auto flex max-w-[80%] items-start gap-2 text-left"
+      >
+        <StudentAvatar id={moment.author_id} name={moment.author_name} size="sm" />
+        <div className="min-w-0 [text-shadow:0_1px_3px_rgba(0,0,0,0.85)]">
+          <div className="text-xs font-bold text-white">
+            {moment.author_name}
+            <span className="ml-1.5 font-semibold tabular-nums text-primary">
+              {formatTimestamp(moment.video_ts_seconds as number)}
+            </span>
+          </div>
+          <div className="line-clamp-2 text-[13px] text-zinc-100">{moment.body}</div>
         </div>
-        <div className="line-clamp-2 text-[13px] text-zinc-100">{moment.body}</div>
-      </div>
-    </button>
+      </button>
+    </div>
   );
 }

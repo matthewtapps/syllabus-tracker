@@ -83,12 +83,9 @@ export function VidstackPlayer({ video, events, overlay, sliderMarkers }: Vidsta
     >
       <MediaProvider />
 
-      {/* Overlay layer: covers the video above the control bar. */}
-      {overlay && (
-        <div className="pointer-events-none absolute inset-x-0 top-0 bottom-12">
-          <div className="pointer-events-auto absolute inset-x-0 bottom-0">{overlay}</div>
-        </div>
-      )}
+      {/* Overlay layer: the comment scrim spans the full frame so it blends into
+          the control-bar gradient; only the chip inside it is interactive. */}
+      {overlay && <div className="pointer-events-none absolute inset-0">{overlay}</div>}
 
       {/* Always-visible custom control bar. */}
       <div className="absolute inset-x-0 bottom-0 flex h-12 items-center gap-3 bg-gradient-to-t from-black/80 to-transparent px-3">
@@ -101,8 +98,8 @@ export function VidstackPlayer({ video, events, overlay, sliderMarkers }: Vidsta
 
         <TimeSlider.Root className="group relative inline-flex h-5 flex-1 cursor-pointer items-center">
           <TimeSlider.Track className="absolute top-1/2 h-1 w-full -translate-y-1/2 rounded-full bg-white/25">
-            <TimeSlider.Progress className="absolute h-full rounded-full bg-white/40" />
-            <TimeSlider.TrackFill className="absolute h-full rounded-full bg-violet-500" />
+            <TimeSlider.Progress className="absolute h-full w-[var(--slider-progress)] rounded-full bg-white/40" />
+            <TimeSlider.TrackFill className="absolute h-full w-[var(--slider-fill)] rounded-full bg-primary" />
           </TimeSlider.Track>
           <TimeSlider.Thumb className="absolute top-1/2 size-3 -translate-y-1/2 rounded-full bg-white opacity-0 group-hover:opacity-100" />
           {/* Comment pins: positioned in the slider's 0..1 track space. */}

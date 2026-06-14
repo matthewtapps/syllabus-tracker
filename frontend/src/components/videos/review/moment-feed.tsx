@@ -25,7 +25,7 @@ export function MomentFeed({ videoId, threads, onSeek, highlightThreadId }: Mome
             data-ts-seconds={t.video_ts_seconds ?? ""}
             className={cn(
               "p-3 transition-colors",
-              highlightThreadId === t.id && "bg-violet-500/10 ring-1 ring-ring/50",
+              highlightThreadId === t.id && "bg-primary/10 ring-1 ring-ring/50",
             )}
           >
             <div className="mb-1.5">
@@ -33,7 +33,7 @@ export function MomentFeed({ videoId, threads, onSeek, highlightThreadId }: Mome
                 <button
                   type="button"
                   onClick={() => onSeek(t.video_ts_seconds as number)}
-                  className="inline-flex items-center gap-1 rounded-md border border-border bg-muted px-2 py-0.5 text-xs font-semibold tabular-nums text-violet-500 hover:bg-muted/70"
+                  className="inline-flex items-center gap-1 rounded-md border border-border bg-muted px-2 py-0.5 text-xs font-semibold tabular-nums text-primary hover:bg-muted/70"
                 >
                   <span aria-hidden="true">&#9654;</span> {formatTimestamp(t.video_ts_seconds)}
                 </button>
