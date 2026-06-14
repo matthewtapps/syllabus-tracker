@@ -383,13 +383,19 @@ jobs:
         # keinos/sqlite3 runs as a non-root user by default and can't
         # open the file -- swap to alpine + apk-installed sqlite, which
         # runs as root in its default config and reliably has read/write.
+        #
+        # PRAGMA foreign_keys=ON is required: the sqlite3 CLI defaults it
+        # OFF, so without it `DELETE FROM videos` would NOT cascade to
+        # `threads.video_id`, leaving orphaned threads that re-attach to
+        # re-uploaded videos (id is reused since videos.id has no
+        # AUTOINCREMENT). Cascading the delete cleans the threads too.
         run: |
           ssh -i ~/.ssh/id_ed25519 "root@$VM_IP" "
             docker run --rm \
               -v ${SIBLING_NAME}_app-data:/data \
               --entrypoint /bin/sh \
               alpine:3.20 \
-              -c 'apk add --no-cache sqlite >/dev/null && sqlite3 /data/sqlite.db \"DELETE FROM video_watch_events; DELETE FROM video_watch_aggregates; DELETE FROM video_student_visibility; DELETE FROM videos;\"'
+              -c 'apk add --no-cache sqlite >/dev/null && sqlite3 /data/sqlite.db \"PRAGMA foreign_keys=ON; DELETE FROM video_watch_events; DELETE FROM video_watch_aggregates; DELETE FROM video_student_visibility; DELETE FROM videos;\"'
             echo '[wipe] videos tables emptied on staging DB'
           "
 
