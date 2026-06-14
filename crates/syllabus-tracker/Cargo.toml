@@ -9,7 +9,7 @@ default-run = "syllabus-tracker"
 # Exposes #[cfg(test)] helpers in the library (e.g. videos::media::test_support)
 # so the binary's integration tests can use them. CI and `just test-backend`
 # pass `--all-features`, which turns this on automatically.
-test-support = []
+test-support = ["video-media/test-support"]
 
 [dependencies]
 migration-engine = { path = "../migration-engine" }
@@ -52,8 +52,4 @@ dotenvy = { workspace = true }
 # seed binary terminal UI
 indicatif = { workspace = true }
 
-# Object storage
-aws-config = { version = "1.5.16", default-features = false, features = ["rt-tokio", "behavior-version-latest"] }
-aws-sdk-s3 = { version = "1.78.0", default-features = false, features = ["rt-tokio", "behavior-version-latest", "rustls"] }
-aws-credential-types = "1.2.1"
-async-trait = "0.1.83"
+video-media = { path = "../video-media" }

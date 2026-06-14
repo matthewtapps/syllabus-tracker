@@ -1,9 +1,10 @@
 pub mod embeds;
-pub mod media;
 pub mod metrics;
 pub mod pipeline;
 pub mod routes;
-pub mod storage;
+
+pub use video_media::media;
+pub use video_media::storage;
 
 pub use media::{DynMediaProbe, DynMediaTranscode, FfmpegMediaTranscode, FfprobeMediaProbe};
 pub use pipeline::{PipelineContext, ProcessingJobs};
