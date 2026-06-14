@@ -40,8 +40,7 @@ import { AddToStudentDialog } from './components/add-to-student-dialog';
 function toLibraryShape(sst: SstRow): LibraryTechniqueRow {
   // The Header / blocks expect a LibraryTechniqueRow-shaped object; SST
   // carries the technique fields under different keys, so we adapt at the
-  // page boundary. video_count is left at 0 because SST doesn't include
-  // the aggregate (PR 4 can wire it in if the meta strip needs it).
+  // page boundary.
   return {
     id: sst.technique_id,
     name: sst.technique_name,
@@ -50,7 +49,7 @@ function toLibraryShape(sst: SstRow): LibraryTechniqueRow {
     collection_ids: [],
     collection_count: 0,
     student_count: 0,
-    video_count: 0,
+    video_count: sst.video_count,
     last_activity_at: sst.last_attempt_at,
     is_pinned: false,
   };

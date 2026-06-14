@@ -34,6 +34,9 @@ pub struct SstRow {
     pub tags: Vec<Tag>,
     pub attempt_count: i64,
     pub last_attempt_at: Option<String>,
+    /// Alive videos on the technique (global library). Student-syllabus-specific
+    /// videos are a future feature; when added they will count here too.
+    pub video_count: i64,
 }
 
 #[derive(Debug, Default)]
@@ -72,6 +75,7 @@ pub async fn list_for_assignment(
                   sst.last_student_update_at AS "last_student_update_at?: NaiveDateTime",
                   sst.last_student_update_by_id,
                   COALESCE((SELECT COUNT(*) FROM syllabus_attempts WHERE student_syllabus_technique_id = sst.id), 0) AS "attempt_count!: i64",
+                  COALESCE((SELECT COUNT(*) FROM videos v WHERE v.technique_id = sst.technique_id AND v.deleted_at IS NULL), 0) AS "video_count!: i64",
                   (SELECT MAX(attempted_at) FROM syllabus_attempts WHERE student_syllabus_technique_id = sst.id) AS "last_attempt_at?: NaiveDateTime"
            FROM student_syllabus_techniques sst
            JOIN techniques t ON t.id = sst.technique_id
@@ -126,6 +130,7 @@ pub async fn list_for_assignment(
             tags: tags_by_tid.remove(&r.technique_id).unwrap_or_default(),
             attempt_count: r.attempt_count,
             last_attempt_at: r.last_attempt_at.map(rfc3339),
+            video_count: r.video_count,
         })
         .collect())
 }

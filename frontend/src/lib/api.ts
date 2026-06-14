@@ -1349,6 +1349,8 @@ export interface SstRow {
   tags: Tag[];
   attempt_count: number;
   last_attempt_at: string | null;
+  /** Alive videos on the technique (global library; student-specific is future). */
+  video_count: number;
 }
 
 export interface StudentSyllabusDetailResponse {

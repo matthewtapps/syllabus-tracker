@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT sst.id AS \"id!: i64\",\n                  sst.assignment_id AS \"assignment_id!: i64\",\n                  sst.technique_id AS \"technique_id!: i64\",\n                  t.name AS \"technique_name!: String\",\n                  t.description AS \"technique_description!: String\",\n                  sst.status AS \"status!: String\",\n                  sst.student_notes,\n                  sst.coach_notes,\n                  sst.hidden_at AS \"hidden_at?: NaiveDateTime\",\n                  sst.created_at AS \"created_at!: NaiveDateTime\",\n                  sst.updated_at AS \"updated_at!: NaiveDateTime\",\n                  sst.last_coach_update_at AS \"last_coach_update_at?: NaiveDateTime\",\n                  sst.last_coach_update_by_id,\n                  sst.last_student_update_at AS \"last_student_update_at?: NaiveDateTime\",\n                  sst.last_student_update_by_id,\n                  COALESCE((SELECT COUNT(*) FROM syllabus_attempts WHERE student_syllabus_technique_id = sst.id), 0) AS \"attempt_count!: i64\",\n                  (SELECT MAX(attempted_at) FROM syllabus_attempts WHERE student_syllabus_technique_id = sst.id) AS \"last_attempt_at?: NaiveDateTime\"\n           FROM student_syllabus_techniques sst\n           JOIN techniques t ON t.id = sst.technique_id\n           WHERE sst.assignment_id = ?\n             AND (? = 1 OR sst.hidden_at IS NULL)\n           ORDER BY t.name",
+  "query": "SELECT sst.id AS \"id!: i64\",\n                  sst.assignment_id AS \"assignment_id!: i64\",\n                  sst.technique_id AS \"technique_id!: i64\",\n                  t.name AS \"technique_name!: String\",\n                  t.description AS \"technique_description!: String\",\n                  sst.status AS \"status!: String\",\n                  sst.student_notes,\n                  sst.coach_notes,\n                  sst.hidden_at AS \"hidden_at?: NaiveDateTime\",\n                  sst.created_at AS \"created_at!: NaiveDateTime\",\n                  sst.updated_at AS \"updated_at!: NaiveDateTime\",\n                  sst.last_coach_update_at AS \"last_coach_update_at?: NaiveDateTime\",\n                  sst.last_coach_update_by_id,\n                  sst.last_student_update_at AS \"last_student_update_at?: NaiveDateTime\",\n                  sst.last_student_update_by_id,\n                  COALESCE((SELECT COUNT(*) FROM syllabus_attempts WHERE student_syllabus_technique_id = sst.id), 0) AS \"attempt_count!: i64\",\n                  COALESCE((SELECT COUNT(*) FROM videos v WHERE v.technique_id = sst.technique_id AND v.deleted_at IS NULL), 0) AS \"video_count!: i64\",\n                  (SELECT MAX(attempted_at) FROM syllabus_attempts WHERE student_syllabus_technique_id = sst.id) AS \"last_attempt_at?: NaiveDateTime\"\n           FROM student_syllabus_techniques sst\n           JOIN techniques t ON t.id = sst.technique_id\n           WHERE sst.assignment_id = ?\n             AND (? = 1 OR sst.hidden_at IS NULL)\n           ORDER BY t.name",
   "describe": {
     "columns": [
       {
@@ -84,8 +84,13 @@
         "type_info": "Null"
       },
       {
-        "name": "last_attempt_at?: NaiveDateTime",
+        "name": "video_count!: i64",
         "ordinal": 16,
+        "type_info": "Null"
+      },
+      {
+        "name": "last_attempt_at?: NaiveDateTime",
+        "ordinal": 17,
         "type_info": "Null"
       }
     ],
@@ -109,8 +114,9 @@
       true,
       true,
       null,
+      null,
       null
     ]
   },
-  "hash": "bafaad36d0ffef778a2b25b36dfcc944aa19c28629f4b7de3bdf07a7a46f2b85"
+  "hash": "0b5880f352b0cdba3e3738ed2b70add6c316e6e768fe7084c5270577e19111d6"
 }
