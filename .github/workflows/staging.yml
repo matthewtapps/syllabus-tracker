@@ -245,10 +245,19 @@ jobs:
           BROWSER_HC=$(tofu output -raw _platform_honeycomb_browser_ingest)
           echo "::add-mask::$BACKEND_HC"
           echo "::add-mask::$BROWSER_HC"
+          # Video processing secrets (Cloudflare Queue/Worker). Shipped in
+          # the same sops bundle; only consumed by the app when the staging
+          # override sets VIDEO_PROCESSOR=cloudflare. Harmless in host mode.
+          VIDEO_ENQ_TOKEN=$(tofu output -raw _platform_video_enqueue_token)
+          VIDEO_CB_SECRET=$(tofu output -raw _platform_video_callback_secret)
+          echo "::add-mask::$VIDEO_ENQ_TOKEN"
+          echo "::add-mask::$VIDEO_CB_SECRET"
 
           install -m 0600 /dev/stdin /tmp/_hc.env <<EOF
           HONEYCOMB_API_KEY=$BACKEND_HC
           VITE_HONEYCOMB_API_KEY=$BROWSER_HC
+          VIDEO_ENQUEUE_TOKEN=$VIDEO_ENQ_TOKEN
+          VIDEO_CALLBACK_SECRET=$VIDEO_CB_SECRET
           EOF
           sops --config /dev/null -e --age "$HOST_AGE_RECIPIENT" \
             --input-type=dotenv --output-type=dotenv /tmp/_hc.env > /tmp/${SIBLING_NAME}-honeycomb.enc.env
@@ -270,6 +279,15 @@ jobs:
           shred -u /tmp/${SIBLING_NAME}-honeycomb.enc.env
 
       - name: Ship compose stack + config
+        env:
+          # Staging-only video-processing cutover. Both repo vars must be set
+          # to cut staging over to the Cloudflare path; otherwise staging
+          # stays on the default host transcoder. Prod (deploy.yaml /
+          # config/prod.env) is never affected by these.
+          #   VIDEO_PROCESSOR_STAGING = "cloudflare" to cut over (else host)
+          #   VIDEO_ENQUEUE_URL       = the wrangler-deployed Worker /jobs URL
+          VIDEO_PROCESSOR_STAGING: ${{ vars.VIDEO_PROCESSOR_STAGING }}
+          VIDEO_ENQUEUE_URL: ${{ vars.VIDEO_ENQUEUE_URL }}
         run: |
           ssh -i ~/.ssh/id_ed25519 "deploy@$VM_IP" "
             sudo install -d -o deploy -g users -m 0755 /srv/${SIBLING_NAME} &&
@@ -291,6 +309,10 @@ jobs:
           # litestream container to avoid collision with the primary.
           services:
             app:
+              environment:
+                VIDEO_PROCESSOR: ${VIDEO_PROCESSOR_STAGING:-host}
+                VIDEO_ENQUEUE_URL: ${VIDEO_ENQUEUE_URL}
+                VIDEO_CALLBACK_BASE_URL: https://staging.sillybus.app
               env_file:
                 - ./config/common.env
                 - ./config/prod.env
