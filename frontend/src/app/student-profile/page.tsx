@@ -1,5 +1,5 @@
-import { useMemo } from 'react';
-import { Link, Navigate, useParams } from 'react-router-dom';
+import { useMemo } from "react";
+import { Link, Navigate, useParams } from "react-router-dom";
 import {
   BookOpen,
   ChevronRight,
@@ -8,27 +8,27 @@ import {
   NotebookPen,
   Pin,
   UserRound,
-} from 'lucide-react';
-import { toast } from 'sonner';
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+} from "lucide-react";
+import { toast } from "sonner";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
   useStudentActivityFeed,
   useAllUsers,
   useThreadsForAnchor,
-} from '@/lib/queries';
-import { useCreateThread } from '@/lib/mutations';
-import { useUser } from '@/lib/current-user-context';
-import { isCoachOrAdmin } from '@/lib/api';
-import { cn } from '@/lib/utils';
-import { ActivityFeedList } from '@/components/activity-feed-list';
-import { ThreadView } from '@/components/threads/thread-view';
-import { ThreadComposer } from '@/components/threads/thread-composer';
-import type { User } from '@/lib/api';
+} from "@/lib/queries";
+import { useCreateThread } from "@/lib/mutations";
+import { useUser } from "@/lib/current-user-context";
+import { isCoachOrAdmin } from "@/lib/api";
+import { cn } from "@/lib/utils";
+import { ActivityFeedList } from "@/components/activity-feed-list";
+import { ThreadView } from "@/components/threads/thread-view";
+import { ThreadComposer } from "@/components/threads/thread-composer";
+import type { User } from "@/lib/api";
 
-function initials(u: Pick<User, 'display_name' | 'username'>): string {
-  const source = u.display_name?.trim() || u.username || '';
+function initials(u: Pick<User, "display_name" | "username">): string {
+  const source = u.display_name?.trim() || u.username || "";
   const parts = source.split(/\s+/).filter(Boolean);
-  if (parts.length === 0) return '?';
+  if (parts.length === 0) return "?";
   if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
 }
@@ -128,24 +128,24 @@ function ProfileHub({
 
       <section className="space-y-2">
         <h2 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-          {isOwnView ? 'Your spaces' : `${displayName}'s spaces`}
+          {isOwnView ? "Your spaces" : `${displayName}'s spaces`}
         </h2>
         <div className="overflow-hidden rounded-lg border border-border bg-card">
           {/* The Library is a global gym-wide resource. Students see a link
-            * to their own library view; coaches don't need it here since
-            * the Library nav entry already takes them there. */}
+           * to their own library view; coaches don't need it here since
+           * the Library nav entry already takes them there. */}
           {isOwnView && (
             <HubLink to="/library" icon={BookOpen} title="Library" />
           )}
           <HubLink
             to={`/student/${studentId}/syllabi`}
             icon={NotebookPen}
-            title={isOwnView ? 'My syllabi' : 'Syllabi'}
+            title={isOwnView ? "My syllabi" : "Syllabi"}
           />
           <HubLink
             to={`/student/${studentId}/pinned`}
             icon={Pin}
-            title={isOwnView ? 'Pinned' : 'Pinned techniques'}
+            title={isOwnView ? "Pinned" : "Pinned techniques"}
             last
           />
         </div>
@@ -161,18 +161,21 @@ function ProfileHub({
           {profileThreadsQuery.isLoading ? (
             <div className="h-4 w-1/3 animate-pulse rounded bg-muted" />
           ) : (profileThreadsQuery.data ?? []).length === 0 ? (
-            <p className="text-sm text-muted-foreground">No discussion yet. Start one below.</p>
+            <p className="text-sm text-muted-foreground">
+              No discussion yet. Start one below.
+            </p>
           ) : (
             (profileThreadsQuery.data ?? []).map((t) => (
-              <ThreadView key={t.id} thread={t} anchorKind="student_profile" anchorId={studentId} />
+              <ThreadView
+                key={t.id}
+                thread={t}
+                anchorKind="student_profile"
+                anchorId={studentId}
+              />
             ))
           )}
           <ThreadComposer
-            placeholder={
-              isOwnView
-                ? "Message your coach…"
-                : `Message ${student.display_name ?? "this student"}…`
-            }
+            placeholder={"Start a thread..."}
             submitLabel="Post"
             pending={createProfileThread.isPending}
             onSubmit={startProfileThread}
@@ -222,8 +225,8 @@ function HubLink({
     <Link
       to={to}
       className={cn(
-        'flex items-center gap-3 px-4 py-3 transition-colors hover:bg-muted/40',
-        !last && 'border-b border-border',
+        "flex items-center gap-3 px-4 py-3 transition-colors hover:bg-muted/40",
+        !last && "border-b border-border",
       )}
     >
       <Icon className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
