@@ -1,6 +1,5 @@
 import { keepPreviousData, skipToken, useQuery } from "@tanstack/react-query";
 import {
-  getAdminStorage,
   getAllTags,
   getAllUsers,
   getActivityDigest,
@@ -8,19 +7,14 @@ import {
   getDashboardActivityFeed,
   getStudentActivityFeed,
   getActivityUnreadCount,
-  getAttemptHeatmap,
-  getAttemptSparkline,
   getAttemptSummary,
   getCapabilities,
   getCollection,
   getCollectionStudents,
   getCollections,
   getCurrentUser,
-  getDashboardVideoOverview,
   getLibraryStats,
   getLibraryTechniques,
-  getLibraryTechniqueStats,
-  getRecentAttemptsForStudent,
   getRecentSyllabusAttemptsForStudent,
   getStudentLibrary,
   getStudentPinnedTechniques,
@@ -37,7 +31,6 @@ import {
   getTechniquesForAssignment,
   listSyllabusAttemptsApi,
   getVideoStats,
-  getVideoStatus,
   listAttempts,
   listVideos,
   listThreads,
@@ -132,33 +125,6 @@ export function useAttemptSummary(studentId: number | undefined) {
   });
 }
 
-export function useAttemptHeatmap(studentId: number | undefined) {
-  return useQuery({
-    queryKey: qk.attemptHeatmap(studentId ?? 0),
-    queryFn: whenId(studentId, getAttemptHeatmap),
-  });
-}
-
-export function useAttemptSparkline(stId: number | undefined, weeks: number = 12) {
-  return useQuery({
-    queryKey: qk.attemptSparkline(stId ?? 0, weeks),
-    queryFn:
-      typeof stId === "number" && Number.isFinite(stId)
-        ? () => getAttemptSparkline(stId, weeks)
-        : skipToken,
-  });
-}
-
-export function useRecentAttempts(studentId: number | undefined, limit: number = 5) {
-  return useQuery({
-    queryKey: qk.recentAttempts(studentId ?? 0, limit),
-    queryFn:
-      typeof studentId === "number" && Number.isFinite(studentId)
-        ? () => getRecentAttemptsForStudent(studentId, limit)
-        : skipToken,
-  });
-}
-
 // ---- Tags ----
 
 // Tags change rarely; tolerate a 5-minute cache window before background
@@ -231,19 +197,6 @@ export function useStudentPinnedTechniques(studentId: number | undefined) {
   });
 }
 
-export function useLibraryTechniqueStats(
-  techniqueId: number | undefined,
-  enabled: boolean = true,
-) {
-  return useQuery({
-    queryKey: qk.libraryTechniqueStats(techniqueId ?? 0),
-    queryFn:
-      enabled && typeof techniqueId === "number" && Number.isFinite(techniqueId)
-        ? () => getLibraryTechniqueStats(techniqueId)
-        : skipToken,
-  });
-}
-
 // ---- Videos ----
 
 // Polls every 1.5s while any video is still processing; otherwise no
@@ -284,37 +237,10 @@ export function useTechniqueVideos(
   });
 }
 
-// Status endpoint for a single video; polls while still processing.
-export function useVideoStatus(videoId: number | undefined, enabled: boolean = true) {
-  return useQuery({
-    queryKey: qk.videoStatus(videoId ?? 0),
-    queryFn:
-      enabled && typeof videoId === "number" && Number.isFinite(videoId)
-        ? () => getVideoStatus(videoId)
-        : skipToken,
-    refetchInterval: (query) =>
-      query.state.data?.processing_status === "processing" ? 2000 : false,
-  });
-}
-
 export function useVideoStats(videoId: number | undefined) {
   return useQuery({
     queryKey: qk.videoStats(videoId ?? 0),
     queryFn: whenId(videoId, getVideoStats),
-  });
-}
-
-export function useDashboardVideoOverview(enabled: boolean = true) {
-  return useQuery({
-    queryKey: qk.dashboardVideoOverview(),
-    queryFn: enabled ? getDashboardVideoOverview : skipToken,
-  });
-}
-
-export function useAdminStorage(enabled: boolean = true) {
-  return useQuery({
-    queryKey: qk.adminStorage(),
-    queryFn: enabled ? getAdminStorage : skipToken,
   });
 }
 
