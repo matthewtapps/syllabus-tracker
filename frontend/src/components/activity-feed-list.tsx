@@ -158,7 +158,7 @@ function ActivityRowItem({
           {line.detail && (
             <p
               aria-hidden={hideDup}
-              className={cn("mt-0.5 text-sm text-foreground", detailed ? "" : "truncate")}
+              className={cn("mt-0.5 text-sm text-muted-foreground", detailed ? "" : "truncate")}
             >
               {line.detail}
             </p>
