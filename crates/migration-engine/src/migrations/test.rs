@@ -612,4 +612,141 @@ mod tests {
             "No FK violations should remain after migration"
         );
     }
+
+    #[tokio::test]
+    async fn test_pre_existing_fk_orphan_tolerated_across_rebuild() {
+        // A FK orphan that exists BEFORE a migration must not block it: the
+        // migration is only responsible for violations it introduces.
+        let pool = create_test_db().await;
+        sqlx::raw_sql(
+            r#"
+            CREATE TABLE users (
+                id INTEGER PRIMARY KEY,
+                username TEXT NOT NULL
+            );
+            CREATE TABLE posts (
+                id INTEGER PRIMARY KEY,
+                user_id INTEGER,
+                FOREIGN KEY (user_id) REFERENCES users (id)
+            );
+            "#,
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        // Seed the orphan with FK enforcement off (sqlx turns foreign_keys ON
+        // by default), the way historical FK-off operations created the real
+        // dirt we now tolerate. raw_sql runs the batch on one connection so the
+        // PRAGMA applies to the inserts. user_id 999 has no matching user.
+        sqlx::raw_sql(
+            "PRAGMA foreign_keys = OFF;\
+             INSERT INTO users (id, username) VALUES (1, 'alice');\
+             INSERT INTO posts (id, user_id) VALUES (1, 999);",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        // Adding `email` rebuilds users. The pre-existing posts->users orphan
+        // must NOT block the rebuild.
+        let target = r#"
+            CREATE TABLE users (
+                id INTEGER PRIMARY KEY,
+                username TEXT NOT NULL,
+                email TEXT
+            );
+            CREATE TABLE posts (
+                id INTEGER PRIMARY KEY,
+                user_id INTEGER,
+                FOREIGN KEY (user_id) REFERENCES users (id)
+            );
+        "#;
+        let result = migrate_database_declaratively(pool.clone(), target, false).await;
+        assert!(
+            result.is_ok(),
+            "pre-existing FK orphan must be tolerated across a rebuild: {:?}",
+            result.err()
+        );
+
+        // Schema change applied, and the orphan survived (not silently deleted).
+        let cols = sqlx::query("PRAGMA table_info(users)")
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+        assert!(cols.iter().any(|r| r.get::<String, _>("name") == "email"));
+        let orphan: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM posts WHERE user_id = 999")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(orphan, 1, "the pre-existing orphan should survive untouched");
+    }
+
+    #[tokio::test]
+    async fn test_migration_introducing_fk_violations_fails() {
+        // A migration that orphans existing rows (a new FK column whose default
+        // points at a missing parent) MUST fail and roll back.
+        let pool = create_test_db().await;
+        sqlx::raw_sql(
+            r#"
+            CREATE TABLE users (
+                id INTEGER PRIMARY KEY,
+                username TEXT NOT NULL
+            );
+            CREATE TABLE posts (
+                id INTEGER PRIMARY KEY,
+                title TEXT NOT NULL,
+                user_id INTEGER,
+                FOREIGN KEY (user_id) REFERENCES users (id)
+            );
+            "#,
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        sqlx::query("INSERT INTO users (id, username) VALUES (1, 'alice')")
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("INSERT INTO posts (id, title, user_id) VALUES (1, 't', 1)")
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        // Rebuild posts with a new NOT NULL FK column defaulting to a missing
+        // category -> every existing post becomes an orphan posts->categories.
+        let target = r#"
+            CREATE TABLE users (
+                id INTEGER PRIMARY KEY,
+                username TEXT NOT NULL
+            );
+            CREATE TABLE categories (
+                id INTEGER PRIMARY KEY
+            );
+            CREATE TABLE posts (
+                id INTEGER PRIMARY KEY,
+                title TEXT NOT NULL,
+                user_id INTEGER,
+                category_id INTEGER NOT NULL DEFAULT 5 REFERENCES categories (id),
+                FOREIGN KEY (user_id) REFERENCES users (id)
+            );
+        "#;
+        let result = migrate_database_declaratively(pool.clone(), target, false).await;
+        assert!(result.is_err(), "introducing FK violations must fail");
+        let msg = format!("{:?}", result.err().unwrap());
+        assert!(
+            msg.contains("introduced"),
+            "error should name introduced violations: {msg}"
+        );
+
+        // Rolled back: posts must not have the new category_id column.
+        let cols = sqlx::query("PRAGMA table_info(posts)")
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+        assert!(
+            !cols.iter().any(|r| r.get::<String, _>("name") == "category_id"),
+            "failed migration must roll back the posts rebuild"
+        );
+    }
 }
