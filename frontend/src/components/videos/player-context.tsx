@@ -10,12 +10,16 @@ export interface PlayerController {
   canReadTime: boolean;
   canSeek: boolean;
   seekTo: (seconds: number) => void;
+  isFullscreen: boolean;
+  exitFullscreen: () => void;
 }
 
 export interface PlayerRegistration {
   registerSeek: (fn: (seconds: number) => void) => void;
   reportProgress: (currentTime: number, duration: number) => void;
   reportPaused: (paused: boolean) => void;
+  registerExitFullscreen: (fn: () => void) => void;
+  reportFullscreen: (fullscreen: boolean) => void;
 }
 
 const Ctx = createContext<PlayerController | null>(null);
@@ -45,11 +49,15 @@ export function PlayerControllerProvider({ children, onReady }: ProviderProps) {
   const [canReadTime, setCanReadTime] = useState(false);
   const [canSeek, setCanSeek] = useState(false);
   const seekRef = useRef<((s: number) => void) | null>(null);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const exitFsRef = useRef<(() => void) | null>(null);
 
   const register = useMemo<PlayerRegistration>(() => ({
     registerSeek: (fn) => { seekRef.current = fn; setCanSeek(true); },
     reportProgress: (t, d) => { setCurrentTime(t); if (Number.isFinite(d)) setDuration(d); setCanReadTime(true); },
     reportPaused: (p) => setPaused(p),
+    registerExitFullscreen: (fn) => { exitFsRef.current = fn; },
+    reportFullscreen: (f) => setIsFullscreen(f),
   }), []);
 
   const firedRef = useRef(false);
@@ -60,10 +68,11 @@ export function PlayerControllerProvider({ children, onReady }: ProviderProps) {
   }, [onReady, register]);
 
   const seekTo = useCallback((seconds: number) => { seekRef.current?.(Math.max(0, seconds)); }, []);
+  const exitFullscreen = useCallback(() => { exitFsRef.current?.(); }, []);
 
   const value = useMemo<PlayerController>(
-    () => ({ currentTime, duration, paused, canReadTime, canSeek, seekTo }),
-    [currentTime, duration, paused, canReadTime, canSeek, seekTo],
+    () => ({ currentTime, duration, paused, canReadTime, canSeek, seekTo, isFullscreen, exitFullscreen }),
+    [currentTime, duration, paused, canReadTime, canSeek, seekTo, isFullscreen, exitFullscreen],
   );
 
   return (

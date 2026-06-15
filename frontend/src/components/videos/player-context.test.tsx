@@ -1,7 +1,11 @@
 import { describe, it, expect, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, act } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { PlayerControllerProvider, usePlayerController } from "./player-context";
+import {
+  PlayerControllerProvider,
+  usePlayerController,
+  type PlayerRegistration,
+} from "./player-context";
 
 function Probe() {
   const c = usePlayerController();
@@ -11,6 +15,15 @@ function Probe() {
       <span data-testid="canSeek">{String(c.canSeek)}</span>
       <button onClick={() => c.seekTo(42)}>seek</button>
     </div>
+  );
+}
+
+function FullscreenProbe() {
+  const c = usePlayerController();
+  return (
+    <button type="button" onClick={c.exitFullscreen}>
+      {c.isFullscreen ? "fs-on" : "fs-off"}
+    </button>
   );
 }
 
@@ -37,5 +50,28 @@ describe("PlayerController", () => {
     expect(screen.getByTestId("canSeek").textContent).toBe("true");
     await userEvent.click(screen.getByText("seek"));
     expect(seekSpy).toHaveBeenCalledWith(42);
+  });
+});
+
+describe("PlayerControllerProvider fullscreen channel", () => {
+  it("reflects reported fullscreen state and forwards exitFullscreen", async () => {
+    let reg: PlayerRegistration | null = null;
+    const exit = vi.fn();
+
+    render(
+      <PlayerControllerProvider onReady={(r) => { reg = r; }}>
+        <FullscreenProbe />
+      </PlayerControllerProvider>,
+    );
+
+    // Registered exit fn is invoked when the controller asks to exit.
+    act(() => reg!.registerExitFullscreen(exit));
+    expect(screen.getByRole("button").textContent).toBe("fs-off");
+
+    act(() => reg!.reportFullscreen(true));
+    expect(screen.getByRole("button").textContent).toBe("fs-on");
+
+    act(() => screen.getByRole("button").click());
+    expect(exit).toHaveBeenCalledTimes(1);
   });
 });
