@@ -237,11 +237,17 @@ pub async fn feed(
                    LEFT JOIN techniques t ON t.id = act.technique_id
                    LEFT JOIN syllabi s    ON s.id = act.syllabus_id
                    LEFT JOIN videos v     ON v.id = act.video_id
+                   LEFT JOIN threads th   ON th.id = act.thread_id
                    LEFT JOIN activity_cursors c
                           ON c.viewer_user_id = ?
                    LEFT JOIN activity_seen_overrides ov
                           ON ov.viewer_user_id = ? AND ov.activity_id = act.id
                    WHERE act.target_student_id = ?
+                     -- Hide rows whose referenced video/thread was deleted or
+                     -- wiped (orphaned activity), so they don't render as dead
+                     -- "watched a video" / "commented on" lines with no link.
+                     AND (act.video_id IS NULL OR (v.id IS NOT NULL AND v.deleted_at IS NULL))
+                     AND (act.thread_id IS NULL OR (th.id IS NOT NULL AND th.deleted_at IS NULL))
                      AND (? IS NULL OR (act.occurred_at, act.id) < (?, ?))
                    ORDER BY act.occurred_at DESC, act.id DESC
                    LIMIT ?"#,
@@ -312,11 +318,17 @@ pub async fn feed(
                    LEFT JOIN techniques t ON t.id = act.technique_id
                    LEFT JOIN syllabi s    ON s.id = act.syllabus_id
                    LEFT JOIN videos v     ON v.id = act.video_id
+                   LEFT JOIN threads th   ON th.id = act.thread_id
                    LEFT JOIN activity_cursors c
                           ON c.viewer_user_id = ?
                    LEFT JOIN activity_seen_overrides ov
                           ON ov.viewer_user_id = ? AND ov.activity_id = act.id
                    WHERE act.actor_user_id != ?
+                     -- Hide rows whose referenced video/thread was deleted or
+                     -- wiped (orphaned activity), so they don't render as dead
+                     -- "watched a video" / "commented on" lines with no link.
+                     AND (act.video_id IS NULL OR (v.id IS NOT NULL AND v.deleted_at IS NULL))
+                     AND (act.thread_id IS NULL OR (th.id IS NOT NULL AND th.deleted_at IS NULL))
                      AND (? IS NULL OR (act.occurred_at, act.id) < (?, ?))
                    ORDER BY act.occurred_at DESC, act.id DESC
                    LIMIT ?"#,
@@ -411,19 +423,22 @@ pub async fn dashboard_activity_feed(
            LEFT JOIN techniques t ON t.id = act.technique_id
            LEFT JOIN syllabi s    ON s.id = act.syllabus_id
            LEFT JOIN videos v     ON v.id = act.video_id
-           WHERE (
-                   u.role = 'student'
-                   AND act.verb IN (
-                     -- Positive student-engagement verbs only. Undo/delete and
-                     -- coach-curation verbs (technique_unpinned, attempt_deleted,
-                     -- sst_added/hidden, syllabus_technique_added, etc.) are
-                     -- history, not dashboard signal. syllabus_graduated is the
-                     -- one milestone surfaced regardless of who fired it.
-                     'video_watched', 'attempt_logged', 'attempt_edited',
-                     'sst_status_changed', 'sst_student_notes_edited', 'technique_pinned'
+           WHERE (act.video_id IS NULL OR (v.id IS NOT NULL AND v.deleted_at IS NULL))
+             AND (
+                   (
+                     u.role = 'student'
+                     AND act.verb IN (
+                       -- Positive student-engagement verbs only. Undo/delete and
+                       -- coach-curation verbs (technique_unpinned, attempt_deleted,
+                       -- sst_added/hidden, syllabus_technique_added, etc.) are
+                       -- history, not dashboard signal. syllabus_graduated is the
+                       -- one milestone surfaced regardless of who fired it.
+                       'video_watched', 'attempt_logged', 'attempt_edited',
+                       'sst_status_changed', 'sst_student_notes_edited', 'technique_pinned'
+                     )
                    )
+                   OR act.verb = 'syllabus_graduated'
                  )
-              OR act.verb = 'syllabus_graduated'
            ORDER BY act.occurred_at DESC, act.id DESC
            LIMIT ?"#,
         limit,
@@ -483,11 +498,15 @@ pub async fn unread_count(pool: &Pool<Sqlite>, viewer: i64, role: Role) -> Resul
 
     let query = format!(
         r#"SELECT COUNT(*) FROM activity act
+           LEFT JOIN videos v   ON v.id = act.video_id
+           LEFT JOIN threads th ON th.id = act.thread_id
            LEFT JOIN activity_cursors c
                   ON c.viewer_user_id = ?
            LEFT JOIN activity_seen_overrides ov
                   ON ov.viewer_user_id = ? AND ov.activity_id = act.id
            WHERE {feed_predicate}
+             AND (act.video_id IS NULL OR (v.id IS NOT NULL AND v.deleted_at IS NULL))
+             AND (act.thread_id IS NULL OR (th.id IS NOT NULL AND th.deleted_at IS NULL))
              AND act.actor_user_id != ?
              AND act.verb IN ({placeholders})
              AND CASE

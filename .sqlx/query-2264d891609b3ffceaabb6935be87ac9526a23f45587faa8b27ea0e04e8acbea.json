@@ -101,12 +101,12 @@
       {
         "name": "latest_student_note_at?: NaiveDateTime",
         "ordinal": 19,
-        "type_info": "Text"
+        "type_info": "Null"
       },
       {
         "name": "latest_watch_at?: NaiveDateTime",
         "ordinal": 20,
-        "type_info": "Text"
+        "type_info": "Null"
       },
       {
         "name": "latest_watch_video_title?: String",
