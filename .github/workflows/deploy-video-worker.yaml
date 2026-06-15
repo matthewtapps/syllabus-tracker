@@ -32,9 +32,6 @@
 name: Deploy video-worker
 
 on:
-  # TEMPORARY: branch trigger to fire the Cloud Run deploy (revert after).
-  push:
-    branches: [roadmap/threads-08-video-processing]
   # Disabled until the first manual deploy has run and VIDEO_ENQUEUE_URL is set.
   # Re-enable by uncommenting the push block below:
   # push:
