@@ -20,9 +20,9 @@ use sqlx::SqlitePool;
 use sqlx::sqlite::SqliteConnectOptions;
 use syllabus_tracker::auth::Role;
 use syllabus_tracker::db::{
-    NewExternalVideo, add_tag_to_technique, create_external_video, create_syllabus, create_tag,
-    create_technique, create_user, find_user_by_username, get_tag_by_name, run_backfill,
-    run_cursor_init,
+    NewExternalVideo, VideoParent, add_tag_to_technique, create_external_video, create_syllabus,
+    create_tag, create_technique, create_user, find_user_by_username, get_tag_by_name,
+    run_backfill, run_cursor_init,
 };
 use syllabus_tracker::env;
 use syllabus_tracker::lib::seed::{ItemOutcome, SeedReporter, TerminalSeedReporter};
@@ -1024,7 +1024,7 @@ async fn run() -> Result<()> {
             let vid = create_external_video(
                 &pool,
                 NewExternalVideo {
-                    technique_id,
+                    parent: VideoParent::Technique(technique_id),
                     title: &title,
                     description: None,
                     uploaded_by_id: coach_id,

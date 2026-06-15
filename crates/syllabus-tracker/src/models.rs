@@ -196,7 +196,10 @@ impl ProcessingStatus {
 #[derive(Debug, Serialize, Clone)]
 pub struct Video {
     pub id: i64,
-    pub technique_id: i64,
+    pub parent_kind: String,
+    pub technique_id: Option<i64>,
+    pub student_id: Option<i64>,
+    pub thread_id: Option<i64>,
     pub title: String,
     pub description: Option<String>,
     pub position: i64,
@@ -227,7 +230,10 @@ pub struct Video {
 #[derive(sqlx::FromRow, Clone, Default)]
 pub struct DbVideo {
     pub id: Option<i64>,
+    pub parent_kind: String,
     pub technique_id: Option<i64>,
+    pub student_id: Option<i64>,
+    pub thread_id: Option<i64>,
     pub title: Option<String>,
     pub description: Option<String>,
     pub position: Option<i64>,
@@ -252,7 +258,10 @@ impl From<DbVideo> for Video {
     fn from(db: DbVideo) -> Self {
         Self {
             id: db.id.unwrap_or_default(),
-            technique_id: db.technique_id.unwrap_or_default(),
+            parent_kind: db.parent_kind,
+            technique_id: db.technique_id,
+            student_id: db.student_id,
+            thread_id: db.thread_id,
             title: db.title.unwrap_or_default(),
             description: db.description,
             position: db.position.unwrap_or_default(),

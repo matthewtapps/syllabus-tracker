@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT v.id, v.technique_id, v.title, v.description, v.position, v.kind,\n                v.processing_status, v.processing_error, v.storage_key, v.bytes,\n                v.duration_seconds, v.width, v.height,\n                v.external_url, v.external_host, v.external_video_id, v.uploaded_by_id,\n                v.created_at, v.updated_at, v.hidden_at\n         FROM videos v\n         LEFT JOIN student_syllabus_video_visibility ssvv\n                ON ssvv.video_id = v.id\n               AND ssvv.student_id = ?\n               AND ssvv.syllabus_id = ?\n         WHERE v.technique_id = ?\n           AND v.deleted_at IS NULL\n           AND COALESCE(ssvv.visible, v.hidden_at IS NULL) = 1\n         ORDER BY v.position ASC, v.id ASC",
+  "query": "SELECT v.id, v.parent_kind, v.technique_id, v.student_id, v.thread_id,\n                v.title, v.description, v.position, v.kind,\n                v.processing_status, v.processing_error, v.storage_key, v.bytes,\n                v.duration_seconds, v.width, v.height,\n                v.external_url, v.external_host, v.external_video_id, v.uploaded_by_id,\n                v.created_at, v.updated_at, v.hidden_at\n         FROM videos v\n         LEFT JOIN student_syllabus_video_visibility ssvv\n                ON ssvv.video_id = v.id\n               AND ssvv.student_id = ?\n               AND ssvv.syllabus_id = ?\n         WHERE v.technique_id = ?\n           AND v.deleted_at IS NULL\n           AND COALESCE(ssvv.visible, v.hidden_at IS NULL) = 1\n         ORDER BY v.position ASC, v.id ASC",
   "describe": {
     "columns": [
       {
@@ -9,98 +9,113 @@
         "type_info": "Integer"
       },
       {
-        "name": "technique_id",
+        "name": "parent_kind",
         "ordinal": 1,
+        "type_info": "Text"
+      },
+      {
+        "name": "technique_id",
+        "ordinal": 2,
         "type_info": "Integer"
       },
       {
-        "name": "title",
-        "ordinal": 2,
-        "type_info": "Text"
-      },
-      {
-        "name": "description",
+        "name": "student_id",
         "ordinal": 3,
-        "type_info": "Text"
+        "type_info": "Integer"
       },
       {
-        "name": "position",
+        "name": "thread_id",
         "ordinal": 4,
         "type_info": "Integer"
       },
       {
-        "name": "kind",
+        "name": "title",
         "ordinal": 5,
         "type_info": "Text"
       },
       {
-        "name": "processing_status",
+        "name": "description",
         "ordinal": 6,
         "type_info": "Text"
       },
       {
-        "name": "processing_error",
+        "name": "position",
         "ordinal": 7,
-        "type_info": "Text"
+        "type_info": "Integer"
       },
       {
-        "name": "storage_key",
+        "name": "kind",
         "ordinal": 8,
         "type_info": "Text"
       },
       {
-        "name": "bytes",
+        "name": "processing_status",
         "ordinal": 9,
-        "type_info": "Integer"
+        "type_info": "Text"
       },
       {
-        "name": "duration_seconds",
+        "name": "processing_error",
         "ordinal": 10,
-        "type_info": "Integer"
+        "type_info": "Text"
       },
       {
-        "name": "width",
+        "name": "storage_key",
         "ordinal": 11,
-        "type_info": "Integer"
+        "type_info": "Text"
       },
       {
-        "name": "height",
+        "name": "bytes",
         "ordinal": 12,
         "type_info": "Integer"
       },
       {
-        "name": "external_url",
+        "name": "duration_seconds",
         "ordinal": 13,
+        "type_info": "Integer"
+      },
+      {
+        "name": "width",
+        "ordinal": 14,
+        "type_info": "Integer"
+      },
+      {
+        "name": "height",
+        "ordinal": 15,
+        "type_info": "Integer"
+      },
+      {
+        "name": "external_url",
+        "ordinal": 16,
         "type_info": "Text"
       },
       {
         "name": "external_host",
-        "ordinal": 14,
+        "ordinal": 17,
         "type_info": "Text"
       },
       {
         "name": "external_video_id",
-        "ordinal": 15,
+        "ordinal": 18,
         "type_info": "Text"
       },
       {
         "name": "uploaded_by_id",
-        "ordinal": 16,
+        "ordinal": 19,
         "type_info": "Integer"
       },
       {
         "name": "created_at",
-        "ordinal": 17,
+        "ordinal": 20,
         "type_info": "Datetime"
       },
       {
         "name": "updated_at",
-        "ordinal": 18,
+        "ordinal": 21,
         "type_info": "Datetime"
       },
       {
         "name": "hidden_at",
-        "ordinal": 19,
+        "ordinal": 22,
         "type_info": "Datetime"
       }
     ],
@@ -108,6 +123,9 @@
       "Right": 3
     },
     "nullable": [
+      true,
+      false,
+      true,
       true,
       true,
       false,
@@ -130,5 +148,5 @@
       true
     ]
   },
-  "hash": "2b568165598fdb35e41df694024f319dba3f2f7f1320034ccdf2ca437ffa444c"
+  "hash": "a1d5786a68aca300e9be8d42d1efc61843c2d910d92121e8c98786d8f0d5cfaf"
 }

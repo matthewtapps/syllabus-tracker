@@ -138,7 +138,7 @@ pub async fn api_video_upload(
 
     let video_id = db::create_processing_video(
         pool.inner(),
-        tid,
+        db::VideoParent::Technique(tid),
         form.title.trim(),
         form.description.as_deref(),
         user.id,
@@ -196,7 +196,7 @@ pub async fn api_video_link(
     let id = db::create_external_video(
         pool.inner(),
         db::NewExternalVideo {
-            technique_id: tid,
+            parent: db::VideoParent::Technique(tid),
             title: trimmed_title,
             description: req.description.as_deref(),
             uploaded_by_id: user.id,
