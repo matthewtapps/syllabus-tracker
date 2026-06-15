@@ -180,8 +180,10 @@ jobs:
             VITE_API_URL=/api
             VITE_ENVIRONMENT=staging
             VITE_HONEYCOMB_API_KEY=${{ steps.hc.outputs.vite_key }}
+          # Share the gha frontend scope with prod (was frontend-staging, which
+          # staging wrote but never read back). Small layer, gha is fine here.
           cache-from: type=gha,scope=frontend
-          cache-to: type=gha,scope=frontend-staging,mode=max
+          cache-to: type=gha,scope=frontend,mode=max
 
   deploy:
     needs: [read_platform, build_backend, build_frontend]
