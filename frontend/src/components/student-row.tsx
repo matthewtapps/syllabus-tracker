@@ -72,16 +72,6 @@ export function StudentRow({
                 title="New student activity since you last looked"
               />
             )}
-            {watchedRecently && !showWatchTitle && (
-              <Badge
-                variant="outline"
-                className="shrink-0 gap-1 border-primary/40 px-1.5 py-0 text-[10px] font-medium text-primary"
-                title="Watched a video in the last 7 days"
-              >
-                <PlayCircle className="h-3 w-3" aria-hidden />
-                Watching
-              </Badge>
-            )}
           </div>
 
           {hasSecondary && (
