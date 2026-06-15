@@ -11,6 +11,7 @@ export interface PlayerController {
   canSeek: boolean;
   seekTo: (seconds: number) => void;
   isFullscreen: boolean;
+  enterFullscreen: () => void;
   exitFullscreen: () => void;
 }
 
@@ -18,6 +19,7 @@ export interface PlayerRegistration {
   registerSeek: (fn: (seconds: number) => void) => void;
   reportProgress: (currentTime: number, duration: number) => void;
   reportPaused: (paused: boolean) => void;
+  registerEnterFullscreen: (fn: () => void) => void;
   registerExitFullscreen: (fn: () => void) => void;
   reportFullscreen: (fullscreen: boolean) => void;
 }
@@ -50,12 +52,14 @@ export function PlayerControllerProvider({ children, onReady }: ProviderProps) {
   const [canSeek, setCanSeek] = useState(false);
   const seekRef = useRef<((s: number) => void) | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const enterFsRef = useRef<(() => void) | null>(null);
   const exitFsRef = useRef<(() => void) | null>(null);
 
   const register = useMemo<PlayerRegistration>(() => ({
     registerSeek: (fn) => { seekRef.current = fn; setCanSeek(true); },
     reportProgress: (t, d) => { setCurrentTime(t); if (Number.isFinite(d)) setDuration(d); setCanReadTime(true); },
     reportPaused: (p) => setPaused(p),
+    registerEnterFullscreen: (fn) => { enterFsRef.current = fn; },
     registerExitFullscreen: (fn) => { exitFsRef.current = fn; },
     reportFullscreen: (f) => setIsFullscreen(f),
   }), []);
@@ -68,11 +72,12 @@ export function PlayerControllerProvider({ children, onReady }: ProviderProps) {
   }, [onReady, register]);
 
   const seekTo = useCallback((seconds: number) => { seekRef.current?.(Math.max(0, seconds)); }, []);
+  const enterFullscreen = useCallback(() => { enterFsRef.current?.(); }, []);
   const exitFullscreen = useCallback(() => { exitFsRef.current?.(); }, []);
 
   const value = useMemo<PlayerController>(
-    () => ({ currentTime, duration, paused, canReadTime, canSeek, seekTo, isFullscreen, exitFullscreen }),
-    [currentTime, duration, paused, canReadTime, canSeek, seekTo, isFullscreen, exitFullscreen],
+    () => ({ currentTime, duration, paused, canReadTime, canSeek, seekTo, isFullscreen, enterFullscreen, exitFullscreen }),
+    [currentTime, duration, paused, canReadTime, canSeek, seekTo, isFullscreen, enterFullscreen, exitFullscreen],
   );
 
   return (

@@ -10,7 +10,7 @@ import {
   useMediaState,
   type MediaPlayerInstance,
 } from "@vidstack/react";
-import { Play, Pause, Volume2, VolumeX, Maximize, Minimize, Columns2 } from "lucide-react";
+import { Play, Pause, Volume2, VolumeX, Maximize, Minimize } from "lucide-react";
 import "@vidstack/react/player/styles/base.css";
 import type { Video } from "@/lib/api";
 import { formatTimestamp } from "@/lib/dates";
@@ -25,11 +25,6 @@ interface VidstackPlayerProps {
   overlay?: ReactNode;
   /** Rendered inside the time slider, positioned in the slider's track space. */
   sliderMarkers?: ReactNode;
-  /** Show the theater (comments-beside-video) toggle in the control bar. */
-  canTheater?: boolean;
-  /** Current theater state, for the toggle's pressed/label. */
-  theater?: boolean;
-  onToggleTheater?: () => void;
 }
 
 export function VidstackPlayer({
@@ -37,9 +32,6 @@ export function VidstackPlayer({
   events,
   overlay,
   sliderMarkers,
-  canTheater,
-  theater,
-  onToggleTheater,
 }: VidstackPlayerProps) {
   const { url, loading, error, refresh } = useSignedPlaybackUrl(video.id, true);
   const playerRef = useRef<MediaPlayerInstance>(null);
@@ -65,6 +57,9 @@ export function VidstackPlayer({
     if (!player || !url) return;
     events?.registerSeek?.((seconds) => {
       player.currentTime = Math.max(0, seconds);
+    });
+    events?.registerEnterFullscreen?.(() => {
+      player.enterFullscreen?.().catch(() => {});
     });
     events?.registerExitFullscreen?.(() => {
       player.exitFullscreen?.().catch(() => {});
@@ -113,6 +108,9 @@ export function VidstackPlayer({
     >
       <MediaProvider />
       <FullscreenReporter onChange={events?.onFullscreenChange} />
+      {/* On a landscape clip, lock to landscape while fullscreen so phones rotate
+          (Android shows its native rotate prompt when auto-rotate is off). */}
+      <OrientationLock enabled={!isPortrait} />
 
       {/* Tap anywhere on the frame to play/pause. Sits below the controls and
           the comment chip in the DOM, so taps on those still hit them. */}
@@ -147,19 +145,6 @@ export function VidstackPlayer({
         </TimeSlider.Root>
 
         <TimeReadout />
-
-        {canTheater && onToggleTheater && (
-          <button
-            type="button"
-            onClick={onToggleTheater}
-            aria-pressed={theater}
-            aria-label={theater ? "Stack comments below video" : "Show comments beside video"}
-            title="Comments beside video"
-            className="text-white"
-          >
-            <Columns2 className="h-5 w-5" />
-          </button>
-        )}
 
         <FullscreenButton className="text-white">
           <FullscreenIcon />
@@ -202,6 +187,26 @@ function FullscreenReporter({ onChange }: { onChange?: (fullscreen: boolean) => 
   useEffect(() => {
     onChange?.(fullscreen);
   }, [fullscreen, onChange]);
+  return null;
+}
+
+/**
+ * Lock the screen to landscape while the player is fullscreen, releasing it on
+ * exit. The Screen Orientation lock API needs an active fullscreen element, so
+ * this is keyed on the player's fullscreen state. Best-effort: unsupported on
+ * iOS Safari (no `orientation.lock`), where the lock call is simply skipped.
+ */
+function OrientationLock({ enabled }: { enabled: boolean }) {
+  const fullscreen = useMediaState("fullscreen");
+  useEffect(() => {
+    if (!enabled || !fullscreen) return;
+    const orientation = window.screen?.orientation as
+      | (ScreenOrientation & { lock?: (o: string) => Promise<void> })
+      | undefined;
+    if (!orientation?.lock) return;
+    orientation.lock("landscape").catch(() => {});
+    return () => orientation.unlock?.();
+  }, [enabled, fullscreen]);
   return null;
 }
 
