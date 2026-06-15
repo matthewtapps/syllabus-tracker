@@ -42,6 +42,9 @@ export interface ActivityLine {
   verb: string;
   /** Trailing entity name in normal weight, when the copy ends with it. */
   subject?: string;
+  /** Secondary line under the verb (e.g. the video title for "added a video
+   *  to {technique}"). Rendered on its own line by the feed. */
+  detail?: string;
   href?: string;
 }
 
@@ -119,13 +122,18 @@ export function activityLine(row: ActivityRow): ActivityLine {
 
     // --- video verbs ---
     case "video_watched":
+      // Name the technique the video lives on (on its own line) so a bare
+      // video title isn't left without context.
+      if (vid && tech) return { verb: "watched", subject: vid, detail: `on ${tech}`, href: deep };
       return vid
         ? { verb: "watched", subject: vid, href: deep }
         : { verb: "watched a video" };
     case "video_added":
-      return vid
-        ? { verb: "added video", subject: vid, href: libraryVideoHref(row) }
-        : { verb: "added a video" };
+      // Name the technique the video landed on, with the title on its own line.
+      if (vid && tech)
+        return { verb: "added a video to", subject: tech, detail: vid, href: libraryVideoHref(row) };
+      if (vid) return { verb: "added a video", detail: vid, href: libraryVideoHref(row) };
+      return { verb: "added a video" };
     case "video_visibility_set":
       return vid
         ? { verb: "changed visibility of", subject: vid, href: libraryVideoHref(row) }
@@ -220,7 +228,9 @@ export function activityLine(row: ActivityRow): ActivityLine {
       }
       return {
         verb: "commented on",
-        subject: row.technique_name ?? row.video_title ?? undefined,
+        // Prefer the video title for video comments (the comment names the
+        // video, not its technique); fall back to the technique otherwise.
+        subject: row.video_title ?? row.technique_name ?? undefined,
         href,
       };
     }

@@ -80,6 +80,21 @@ describe("activityLine", () => {
     expect(result.href).toBeUndefined();
   });
 
+  test("video_watched names the technique on a detail line", () => {
+    const result = activityLine(
+      row({
+        verb: "video_watched",
+        video_id: 7,
+        video_title: "Replenish",
+        technique_id: 3,
+        technique_name: "Mount Escape",
+        context_kind: "library",
+      }),
+    );
+    expect(result.subject).toBe("Replenish");
+    expect(result.detail).toBe("on Mount Escape");
+  });
+
   test("video_watched with null video_title falls back to plain text, no href", () => {
     const result = activityLine(
       row({ verb: "video_watched", video_id: null, video_title: null }),
@@ -267,11 +282,27 @@ describe("activityLine", () => {
   });
 
   // --- video_added ---
-  test("video_added renders video title", () => {
+  test("video_added names the technique with the title on its own line", () => {
+    const result = activityLine(
+      row({
+        verb: "video_added",
+        video_id: 7,
+        video_title: "Triangle setup",
+        technique_id: 2,
+        technique_name: "Armbar",
+      }),
+    );
+    expect(lineText(result)).toBe("added a video to Armbar");
+    expect(result.detail).toBe("Triangle setup");
+  });
+
+  test("video_added without a technique falls back to the title only", () => {
     const result = activityLine(
       row({ verb: "video_added", video_id: 7, video_title: "Triangle setup" }),
     );
-    expect(lineText(result)).toBe("added video Triangle setup");
+    expect(result.verb).toBe("added a video");
+    expect(result.subject).toBeUndefined();
+    expect(result.detail).toBe("Triangle setup");
   });
 
   // --- video_visibility_set ---
@@ -310,6 +341,20 @@ describe("activityLine", () => {
       row({ verb: "thread_comment_posted", video_id: 3, video_title: "Triangle setup", thread_id: 8 }),
     );
     expect(result.verb).toBe("commented on");
+    expect(result.subject).toBe("Triangle setup");
+  });
+
+  test("thread_comment_posted on a video prefers the video over its technique", () => {
+    const result = activityLine(
+      row({
+        verb: "thread_comment_posted",
+        video_id: 3,
+        video_title: "Triangle setup",
+        technique_id: 5,
+        technique_name: "X-guard",
+        thread_id: 8,
+      }),
+    );
     expect(result.subject).toBe("Triangle setup");
   });
 

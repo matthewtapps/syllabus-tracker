@@ -116,7 +116,8 @@ export function rowToViewContext(row: ViewContextRow): ViewContext | null {
 
 export interface ActivitySurface {
   kind: ViewContext["kind"];
-  /** Display label: the syllabus name for syllabus actions, "Library" for global. */
+  /** Display label: the syllabus name for syllabus actions, "Global Technique
+   *  Library" for global. */
   label: string;
 }
 
@@ -133,5 +134,5 @@ export function activitySurface(
   if (ctx.kind === "syllabus") {
     return { kind: "syllabus", label: row.syllabus_name ?? "Syllabus" };
   }
-  return { kind: "library", label: "Library" };
+  return { kind: "library", label: "Global Technique Library" };
 }

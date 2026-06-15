@@ -3,6 +3,7 @@ import {
   Eye,
   EyeOff,
   Loader2,
+  MessageSquare,
   MoreVerticalIcon,
   PencilIcon,
   PlayIcon,
@@ -47,18 +48,13 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
-import {
   Sheet,
   SheetContent,
   SheetTitle,
 } from "@/components/ui/sheet";
+import { useSetVideoSyllabusVisibility } from "@/lib/mutations";
 import { useMediaQuery } from "@/lib/use-media-query";
 import { cn } from "@/lib/utils";
-import { SyllabusVisibilityControl } from "./syllabus-visibility-control";
 import { VisibilityPopover } from "./visibility-popover";
 
 interface VideoRowProps {
@@ -97,8 +93,10 @@ export function VideoRow({
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [renameOpen, setRenameOpen] = useState(false);
+  const [visibilityOpen, setVisibilityOpen] = useState(false);
   const statsQuery = useVideoStats(isCoach ? video.id : undefined);
   const totalPlays = statsQuery.data?.total_plays;
+  const commentCount = video.comment_count ?? 0;
 
   const isProcessing = video.processing_status === "processing";
   const isFailed = video.processing_status === "failed";
@@ -179,23 +177,19 @@ export function VideoRow({
           </span>
         )}
 
-        {canManage && syllabus ? (
-          <SyllabusVisibilityControl
-            video={video}
-            techniqueId={techniqueId}
-            studentId={syllabus.studentId}
-            syllabusId={syllabus.syllabusId}
-          />
-        ) : canManage ? (
-          <VisibilityControl
-            video={video}
-            techniqueId={techniqueId}
-            hiddenGlobally={hiddenGlobally}
-            override={override}
-            forStudent={forStudent}
-            studentDisplayName={studentDisplayName}
-          />
-        ) : null}
+        {commentCount > 0 && (
+          <span
+            className={cn(
+              "inline-flex shrink-0 items-center gap-0.5 text-xs text-muted-foreground",
+              // First trailing item carries the push-right when no play count.
+              !(isCoach && typeof totalPlays === "number") && "ml-auto",
+            )}
+            title={`${commentCount} comment${commentCount === 1 ? "" : "s"} on this video`}
+          >
+            <MessageSquare className="h-3 w-3" aria-hidden />
+            <span className="min-w-[1ch] tabular-nums">{commentCount}</span>
+          </span>
+        )}
 
         {canManage && (
           <DropdownMenu>
@@ -212,6 +206,17 @@ export function VideoRow({
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
+              <VisibilityMenuItems
+                video={video}
+                techniqueId={techniqueId}
+                hiddenGlobally={hiddenGlobally}
+                override={override}
+                forStudent={forStudent}
+                studentDisplayName={studentDisplayName}
+                syllabus={syllabus}
+                onEditStudent={() => setTimeout(() => setVisibilityOpen(true), 0)}
+              />
+              <DropdownMenuSeparator />
               <DropdownMenuItem
                 onSelect={() => {
                   // Defer mount so the dropdown's pointer-events teardown
@@ -281,6 +286,19 @@ export function VideoRow({
         video={video}
         techniqueId={techniqueId}
       />
+
+      {typeof forStudent === "number" && studentDisplayName && (
+        <StudentVisibilityEditor
+          open={visibilityOpen}
+          onOpenChange={setVisibilityOpen}
+          video={video}
+          techniqueId={techniqueId}
+          forStudent={forStudent}
+          studentDisplayName={studentDisplayName}
+          hiddenGlobally={hiddenGlobally}
+          override={override}
+        />
+      )}
     </li>
   );
 }
@@ -373,53 +391,164 @@ function RenameVideoDialog({
   );
 }
 
-interface VisibilityControlProps {
+interface VisibilityMenuItemsProps {
   video: Video;
   techniqueId: number;
   hiddenGlobally: boolean;
   override: "show" | "hide" | null;
   forStudent?: number;
   studentDisplayName?: string;
+  syllabus?: { studentId: number; syllabusId: number };
+  /** Open the richer per-student editor (student context only). */
+  onEditStudent: () => void;
 }
 
-function VisibilityControl({
+/**
+ * Visibility actions for the video row, rendered as items inside the row's
+ * actions (three-dots) menu rather than a standalone eye button -- the row is
+ * cramped on small coach screens. Three shapes by context:
+ *   - syllabus: one toggle (hide for this student in this syllabus / restore).
+ *   - student (coach viewing one student): "Visibility" opens the editor.
+ *   - library: one global toggle (hide / show for everyone).
+ */
+function VisibilityMenuItems({
   video,
   techniqueId,
   hiddenGlobally,
   override,
   forStudent,
   studentDisplayName,
-}: VisibilityControlProps) {
+  syllabus,
+  onEditStudent,
+}: VisibilityMenuItemsProps) {
   const qc = useQueryClient();
-  const [open, setOpen] = useState(false);
-  // Hoisted so the rules-of-hooks invariant holds across both render
-  // branches (library context returns early below).
-  const isDesktop = useMediaQuery("(min-width: 640px)");
-
-  const inStudentContext =
-    typeof forStudent === "number" && !!studentDisplayName;
-
-  // Eye icon state:
-  // - override "show"  → primary Eye  (explicit grant)
-  // - override "hide"  → primary EyeOff (explicit deny)
-  // - no override, globally hidden → muted EyeOff
-  // - no override, visible → muted Eye
-  const effectiveActive = override !== null;
-  const EyeIcon =
-    override === "hide" || (override === null && hiddenGlobally) ? EyeOff : Eye;
-  const iconColor = effectiveActive
-    ? "text-primary"
-    : "text-muted-foreground";
-  const ariaLabel = `Visibility for ${video.title}`;
+  const syllabusMutation = useSetVideoSyllabusVisibility();
 
   function invalidateVideos() {
     qc.invalidateQueries({ queryKey: qk.techniqueVideosAll(techniqueId) });
   }
 
-  // Direct API calls (not the mutation hooks) so the undo button's
-  // closure doesn't depend on a re-rendered mutation reference. We
-  // capture the prior state at call time and the undo callback fires a
-  // fresh request that flips back.
+  // Syllabus context: toggle the per-(student, syllabus) override. Visible →
+  // hide for this student; hidden → clear back to the global default.
+  if (syllabus) {
+    const hiddenForStudent = video.hidden_at != null;
+    return (
+      <DropdownMenuItem
+        onSelect={async () => {
+          const next = video.hidden_at == null ? false : null;
+          try {
+            await syllabusMutation.mutateAsync({
+              studentId: syllabus.studentId,
+              syllabusId: syllabus.syllabusId,
+              videoId: video.id,
+              techniqueId,
+              visible: next,
+            });
+            toast.success(
+              next === false
+                ? `Hidden ${video.title} for this student`
+                : `Restored ${video.title} to default visibility`,
+            );
+          } catch {
+            toast.error("Failed to update visibility");
+          }
+        }}
+      >
+        {hiddenForStudent ? (
+          <Eye className="mr-2 h-4 w-4" aria-hidden />
+        ) : (
+          <EyeOff className="mr-2 h-4 w-4" aria-hidden />
+        )}
+        {hiddenForStudent ? "Restore default visibility" : "Hide for this student"}
+      </DropdownMenuItem>
+    );
+  }
+
+  // Student context: defer to the richer editor (global + per-student override).
+  if (typeof forStudent === "number" && studentDisplayName) {
+    const overridden = override !== null;
+    const EyeStateIcon =
+      override === "hide" || (override === null && hiddenGlobally) ? EyeOff : Eye;
+    return (
+      <DropdownMenuItem onSelect={onEditStudent}>
+        <EyeStateIcon
+          className={cn("mr-2 h-4 w-4", overridden && "text-primary")}
+          aria-hidden
+        />
+        Visibility
+      </DropdownMenuItem>
+    );
+  }
+
+  // Library context: single global hide/show toggle, with an undo toast.
+  async function applyGlobal(hidden: boolean): Promise<boolean> {
+    const response = await setVideoGlobalHidden(video.id, hidden);
+    if (!response.ok) return false;
+    invalidateVideos();
+    return true;
+  }
+
+  return (
+    <DropdownMenuItem
+      onSelect={async () => {
+        const prevHidden = hiddenGlobally;
+        const ok = await applyGlobal(!hiddenGlobally);
+        if (!ok) {
+          toast.error("Could not update visibility");
+          return;
+        }
+        toast.success(!hiddenGlobally ? "Hidden for everyone" : "Shown to everyone", {
+          duration: 5000,
+          action: { label: "Undo", onClick: () => void applyGlobal(prevHidden) },
+        });
+      }}
+    >
+      {hiddenGlobally ? (
+        <Eye className="mr-2 h-4 w-4" aria-hidden />
+      ) : (
+        <EyeOff className="mr-2 h-4 w-4" aria-hidden />
+      )}
+      {hiddenGlobally ? "Show for everyone" : "Hide for everyone"}
+    </DropdownMenuItem>
+  );
+}
+
+interface StudentVisibilityEditorProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  video: Video;
+  techniqueId: number;
+  forStudent: number;
+  studentDisplayName: string;
+  hiddenGlobally: boolean;
+  override: "show" | "hide" | null;
+}
+
+/**
+ * Per-student visibility editor opened from the row's actions menu: the global
+ * + per-student override controls. A centered dialog on desktop, a bottom
+ * sheet on mobile (room + reachability on narrow viewports). Both are
+ * anchor-free so they work when launched from a menu item.
+ */
+function StudentVisibilityEditor({
+  open,
+  onOpenChange,
+  video,
+  techniqueId,
+  forStudent,
+  studentDisplayName,
+  hiddenGlobally,
+  override,
+}: StudentVisibilityEditorProps) {
+  const qc = useQueryClient();
+  const isDesktop = useMediaQuery("(min-width: 640px)");
+
+  function invalidateVideos() {
+    qc.invalidateQueries({ queryKey: qk.techniqueVideosAll(techniqueId) });
+  }
+
+  // Direct API calls (not the mutation hooks) so the undo button's closure
+  // doesn't depend on a re-rendered mutation reference.
   async function applyGlobal(hidden: boolean): Promise<boolean> {
     const response = await setVideoGlobalHidden(video.id, hidden);
     if (!response.ok) return false;
@@ -428,14 +557,9 @@ function VisibilityControl({
   }
 
   async function applyOverride(
-    studentId: number,
     visible: boolean | null,
   ): Promise<boolean> {
-    const response = await setVideoStudentVisibility(
-      video.id,
-      studentId,
-      visible,
-    );
+    const response = await setVideoStudentVisibility(video.id, forStudent, visible);
     if (!response.ok) return false;
     invalidateVideos();
     return true;
@@ -450,20 +574,13 @@ function VisibilityControl({
     }
     toast.success(hidden ? "Hidden for everyone" : "Shown to everyone", {
       duration: 5000,
-      action: {
-        label: "Undo",
-        onClick: () => {
-          void applyGlobal(prevHidden);
-        },
-      },
+      action: { label: "Undo", onClick: () => void applyGlobal(prevHidden) },
     });
   }
 
   async function handleSetOverride(visible: boolean | null) {
-    if (typeof forStudent !== "number") return;
-    const studentId = forStudent;
     const prev = override;
-    const ok = await applyOverride(studentId, visible);
+    const ok = await applyOverride(visible);
     if (!ok) {
       toast.error("Could not update visibility");
       return;
@@ -474,64 +591,18 @@ function VisibilityControl({
         : visible === false
           ? `Hidden for ${studentDisplayName}`
           : `Following global for ${studentDisplayName}`;
-    const prevVisible =
-      prev === "show" ? true : prev === "hide" ? false : null;
+    const prevVisible = prev === "show" ? true : prev === "hide" ? false : null;
     toast.success(label, {
       duration: 5000,
-      action: {
-        label: "Undo",
-        onClick: () => {
-          void applyOverride(studentId, prevVisible);
-        },
-      },
+      action: { label: "Undo", onClick: () => void applyOverride(prevVisible) },
     });
   }
 
-  // Library context: no popover, eye button toggles global directly.
-  if (!inStudentContext) {
-    return (
-      <Button
-        type="button"
-        variant="ghost"
-        size="icon"
-        className={cn("h-7 w-7 shrink-0", iconColor)}
-        onClick={(e) => {
-          e.stopPropagation();
-          handleSetGlobal(!hiddenGlobally);
-        }}
-        aria-label={ariaLabel}
-        title={hiddenGlobally ? "Hidden for everyone" : "Visible to everyone"}
-      >
-        <EyeIcon className="h-3.5 w-3.5" aria-hidden />
-      </Button>
-    );
-  }
-
-  // Student context: a popover on desktop, a bottom sheet on mobile. The
-  // sheet gives room + reachability on small screens (the popover was
-  // clipping on viewports <~400px) while keeping the click-anchored
-  // popover where it works well on larger screens.
-  const triggerButton = (
-    <Button
-      type="button"
-      variant="ghost"
-      size="icon"
-      className={cn("h-7 w-7 shrink-0", iconColor)}
-      onClick={(e) => {
-        e.stopPropagation();
-        setOpen(true);
-      }}
-      aria-label={ariaLabel}
-    >
-      <EyeIcon className="h-3.5 w-3.5" aria-hidden />
-    </Button>
-  );
-
-  const popoverBody = (
+  const body = (
     <VisibilityPopover
       hiddenGlobally={hiddenGlobally}
       overrideForStudent={override}
-      studentDisplayName={studentDisplayName!}
+      studentDisplayName={studentDisplayName}
       onSetGlobal={handleSetGlobal}
       onSetOverride={handleSetOverride}
     />
@@ -539,35 +610,26 @@ function VisibilityControl({
 
   if (isDesktop) {
     return (
-      <Popover open={open} onOpenChange={setOpen}>
-        <PopoverTrigger asChild>{triggerButton}</PopoverTrigger>
-        <PopoverContent
-          align="end"
-          className="w-72 p-4"
-          onClick={(e) => e.stopPropagation()}
-        >
-          {popoverBody}
-        </PopoverContent>
-      </Popover>
+      <Dialog open={open} onOpenChange={onOpenChange}>
+        <DialogContent className="max-w-sm p-4" onClick={(e) => e.stopPropagation()}>
+          <DialogTitle className="sr-only">Visibility for {video.title}</DialogTitle>
+          {body}
+        </DialogContent>
+      </Dialog>
     );
   }
 
   return (
-    <>
-      {triggerButton}
-      <Sheet open={open} onOpenChange={setOpen}>
-        <SheetContent
-          side="bottom"
-          className="rounded-t-xl px-4 pt-4 pb-[calc(env(safe-area-inset-bottom)+1rem)]"
-          onClick={(e) => e.stopPropagation()}
-        >
-          <SheetTitle className="sr-only">
-            Visibility for {video.title}
-          </SheetTitle>
-          {popoverBody}
-        </SheetContent>
-      </Sheet>
-    </>
+    <Sheet open={open} onOpenChange={onOpenChange}>
+      <SheetContent
+        side="bottom"
+        className="rounded-t-xl px-4 pt-4 pb-[calc(env(safe-area-inset-bottom)+1rem)]"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <SheetTitle className="sr-only">Visibility for {video.title}</SheetTitle>
+        {body}
+      </SheetContent>
+    </Sheet>
   );
 }
 

@@ -42,9 +42,9 @@ pub use syllabus_attempts::*;
 pub use tags::*;
 pub use techniques::*;
 pub use threads::{
-    create_comment, create_thread, get_thread, list_threads_for_anchor, soft_delete_comment,
-    soft_delete_thread, Anchor, AnchorKind, CommentView, NewThread, ThreadView, ThreadVisibility,
-    Viewer,
+    count_video_comments_visible, create_comment, create_thread, get_thread,
+    list_threads_for_anchor, soft_delete_comment, soft_delete_thread, Anchor, AnchorKind,
+    CommentView, NewThread, ThreadView, ThreadVisibility, Viewer,
 };
 pub use users::*;
 pub use videos::*;

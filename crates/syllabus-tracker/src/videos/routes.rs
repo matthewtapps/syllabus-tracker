@@ -234,6 +234,34 @@ pub struct VideoListItem {
     pub override_for_student: Option<String>,
 }
 
+/// Fills each video's `comment_count` with the number of threads on it the
+/// viewer can see. Shared by the library/technique and per-syllabus video
+/// list routes so the summary row shows the count on every surface.
+pub(crate) async fn annotate_comment_counts(
+    pool: &Pool<Sqlite>,
+    videos: &mut [Video],
+    is_coach: bool,
+    viewer_id: i64,
+) -> Result<(), crate::error::AppError> {
+    if videos.is_empty() {
+        return Ok(());
+    }
+    let video_ids: Vec<i64> = videos.iter().map(|v| v.id).collect();
+    let counts = db::count_video_comments_visible(
+        pool,
+        &video_ids,
+        db::Viewer {
+            user_id: viewer_id,
+            is_coach,
+        },
+    )
+    .await?;
+    for v in videos.iter_mut() {
+        v.comment_count = counts.get(&v.id).copied().unwrap_or(0);
+    }
+    Ok(())
+}
+
 #[instrument(skip(pool))]
 #[get("/techniques/<tid>/videos?<for_student>")]
 pub async fn api_list_technique_videos(
@@ -243,7 +271,7 @@ pub async fn api_list_technique_videos(
     pool: &State<Pool<Sqlite>>,
 ) -> Result<Json<ListVideosResponse>, Status> {
     let is_coach = user.has_permission(crate::auth::Permission::ViewAllStudents);
-    let videos = if !is_coach {
+    let mut videos = if !is_coach {
         // Library context: students see the globally-visible list only.
         // Per-student video_student_visibility overrides are NOT applied
         // here; they are a legacy concept (now replaced in PR 3+ by the
@@ -258,6 +286,9 @@ pub async fn api_list_technique_videos(
             .await
             .map_err(Status::from)?
     };
+    annotate_comment_counts(pool.inner(), &mut videos, is_coach, user.id)
+        .await
+        .map_err(Status::from)?;
 
     let items: Vec<VideoListItem> = if is_coach && for_student.is_some() {
         let student_id = for_student.unwrap();

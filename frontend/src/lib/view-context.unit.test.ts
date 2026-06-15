@@ -214,7 +214,7 @@ describe("activitySurface", () => {
       }),
     ).toEqual({ kind: "syllabus", label: "Blue Belt" });
   });
-  test("library video shows Library", () => {
+  test("library video shows the global library label", () => {
     expect(
       activitySurface({
         verb: "video_watched",
@@ -226,7 +226,7 @@ describe("activitySurface", () => {
         video_id: 7,
         syllabus_name: null,
       }),
-    ).toEqual({ kind: "library", label: "Library" });
+    ).toEqual({ kind: "library", label: "Global Technique Library" });
   });
   test("no resolvable surface returns null", () => {
     expect(

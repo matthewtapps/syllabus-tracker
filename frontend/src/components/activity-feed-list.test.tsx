@@ -8,7 +8,7 @@
  */
 import { describe, expect, test } from "vitest";
 import { screen, fireEvent } from "@testing-library/react";
-import { renderWithProviders } from "@/test/render";
+import { renderWithProviders, buildUser } from "@/test/render";
 import { ActivityFeedList } from "./activity-feed-list";
 import type { ActivityRow } from "@/lib/activity-line";
 
@@ -49,6 +49,19 @@ describe("ActivityFeedList", () => {
     expect(screen.getByText("Alex Rivera")).toBeTruthy();
     expect(screen.getByText(/logged an attempt on/)).toBeTruthy();
     expect(screen.getByText(/Knee Cut Pass/)).toBeTruthy();
+  });
+
+  test("coach viewer can open the actor's profile from the avatar", () => {
+    renderWithProviders(<ActivityFeedList rows={[row({})]} isLoading={false} />, {
+      user: buildUser({ id: 99, role: "coach" }),
+    });
+    const profileLink = screen.getByRole("link", { name: /View Alex Rivera's profile/i });
+    expect(profileLink.getAttribute("href")).toBe("/student/2");
+  });
+
+  test("student viewer gets no actor profile link", () => {
+    renderWithProviders(<ActivityFeedList rows={[row({})]} isLoading={false} />);
+    expect(screen.queryByRole("link", { name: /profile/i })).toBeNull();
   });
 
   test("renders a non-link row when there is no href", () => {
@@ -195,7 +208,7 @@ describe("ActivityFeedList", () => {
     expect(screen.getByText("Blue Belt")).toBeTruthy();
   });
 
-  test("library-context video_watched row shows the Library chip", () => {
+  test("library-context video_watched row shows the global library chip", () => {
     renderWithProviders(
       <ActivityFeedList
         rows={[
@@ -213,7 +226,7 @@ describe("ActivityFeedList", () => {
         isLoading={false}
       />,
     );
-    expect(screen.getByText("Library")).toBeTruthy();
+    expect(screen.getByText("Global Technique Library")).toBeTruthy();
   });
 
   // --- inlineAvatar: small avatar rendered inline by the actor name ---

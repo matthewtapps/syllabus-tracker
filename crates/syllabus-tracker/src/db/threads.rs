@@ -276,7 +276,19 @@ async fn apply_thread_anchor_context(
     } else if let Some(id) = technique_id {
         Ok(ev.technique(id).context_kind("library"))
     } else if let Some(id) = video_id {
-        Ok(ev.video(id).context_kind("library"))
+        // Resolve the owning technique so the feed can name it and deep-link to
+        // the library technique row, the same way a video_added row does.
+        // Runtime query (not the macro) to stay out of the offline .sqlx cache.
+        let technique_id: Option<i64> =
+            sqlx::query_scalar::<_, i64>("SELECT technique_id FROM videos WHERE id = ?")
+                .bind(id)
+                .fetch_optional(&mut **tx)
+                .await?;
+        let mut ev = ev.video(id).context_kind("library");
+        if let Some(tid) = technique_id {
+            ev = ev.technique(tid);
+        }
+        Ok(ev)
     } else {
         Ok(ev)
     }
@@ -420,6 +432,53 @@ pub async fn create_comment(
 
 fn viewer_can_see(viewer: &Viewer, visibility: &str, scope_student_id: Option<i64>) -> bool {
     viewer.is_coach || visibility == "broadcast" || scope_student_id == Some(viewer.user_id)
+}
+
+/// Counts, per video, the comment threads anchored to it (`video` and
+/// `video_timestamp`) that `viewer` may see -- the count mirrors
+/// [`viewer_can_see`]: a coach sees every thread, a student sees broadcast
+/// threads plus their own private ones. Returns `video_id -> count` for the
+/// given ids; videos with no visible threads are absent from the map.
+///
+/// Uses a runtime `QueryBuilder` (not the `query!` macro) for the dynamic
+/// `IN (...)` list, matching `list_video_syllabus_overrides`; this also keeps
+/// it out of the offline `.sqlx` cache.
+#[instrument(skip(pool, video_ids))]
+pub async fn count_video_comments_visible(
+    pool: &Pool<Sqlite>,
+    video_ids: &[i64],
+    viewer: Viewer,
+) -> Result<std::collections::HashMap<i64, i64>, AppError> {
+    use std::collections::HashMap;
+    if video_ids.is_empty() {
+        return Ok(HashMap::new());
+    }
+    let mut qb = sqlx::QueryBuilder::<sqlx::Sqlite>::new(
+        "SELECT video_id, COUNT(*) AS n FROM threads \
+         WHERE deleted_at IS NULL \
+           AND anchor_kind IN ('video', 'video_timestamp') \
+           AND video_id IN (",
+    );
+    let mut sep = qb.separated(", ");
+    for id in video_ids {
+        sep.push_bind(*id);
+    }
+    qb.push(")");
+    if !viewer.is_coach {
+        qb.push(" AND (visibility = 'broadcast' OR scope_student_id = ");
+        qb.push_bind(viewer.user_id);
+        qb.push(")");
+    }
+    qb.push(" GROUP BY video_id");
+    let rows = qb.build().fetch_all(pool).await?;
+    let mut map: HashMap<i64, i64> = HashMap::new();
+    for row in rows {
+        use sqlx::Row;
+        let video_id: i64 = row.try_get("video_id")?;
+        let n: i64 = row.try_get("n")?;
+        map.insert(video_id, n);
+    }
+    Ok(map)
 }
 
 #[instrument(skip(pool))]

@@ -6,7 +6,7 @@ import {
   CircleDot,
   Dumbbell,
   Eye,
-  Globe,
+  Library,
   GraduationCap,
   MessageSquare,
   Minus,
@@ -19,6 +19,8 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { StudentAvatar } from "@/components/student-avatar";
+import { useUser } from "@/lib/current-user-context";
+import { isCoachOrAdmin } from "@/lib/api";
 import { activityLine, type ActivityRow } from "@/lib/activity-line";
 import { coalesceActivity } from "@/lib/activity-coalesce";
 import { activitySurface } from "@/lib/view-context";
@@ -104,11 +106,21 @@ function ActivityRowItem({
   opts: RowOptions;
 }) {
   const { showAvatar, inlineAvatar, detailed, coalesce, trailing } = opts;
+  const viewer = useUser();
   const line = activityLine(activityRow);
   const surface = activitySurface(activityRow);
   const ariaLabel = `${activityRow.actor_name ?? "A student"} ${line.verb}${line.subject ? ` ${line.subject}` : ""}`;
   const hideDup = line.href ? true : undefined;
   const { Icon: VerbIcon, colorClass } = verbIconMeta(activityRow.verb);
+
+  // Coaches/admins can open the actor's profile straight from the avatar or
+  // name, overriding the row's activity deep-link. Students can't view other
+  // profiles, so they get no actor link. Self is skipped (no own student page).
+  const actorHref =
+    isCoachOrAdmin(viewer) && activityRow.actor_user_id !== viewer.id
+      ? `/student/${activityRow.actor_user_id}`
+      : undefined;
+  const actorName = activityRow.actor_name ?? "A student";
 
   return (
     <>
@@ -120,11 +132,20 @@ function ActivityRowItem({
         />
       )}
       <div className={cn("flex items-start gap-3 px-4 py-3", "relative z-10", line.href && "pointer-events-none")}>
-        {showAvatar && (
-          <span aria-hidden={hideDup}>
-            <StudentAvatar id={activityRow.actor_user_id} name={activityRow.actor_name ?? "?"} />
-          </span>
-        )}
+        {showAvatar &&
+          (actorHref ? (
+            <Link
+              to={actorHref}
+              aria-label={`View ${actorName}'s profile`}
+              className="pointer-events-auto relative z-20 shrink-0 rounded-full"
+            >
+              <StudentAvatar id={activityRow.actor_user_id} name={activityRow.actor_name ?? "?"} />
+            </Link>
+          ) : (
+            <span aria-hidden={hideDup}>
+              <StudentAvatar id={activityRow.actor_user_id} name={activityRow.actor_name ?? "?"} />
+            </span>
+          ))}
         <div className="min-w-0 flex-1">
           <div aria-hidden={hideDup} className="flex items-baseline justify-between gap-2">
             <p className={cn("flex items-center gap-1.5 text-sm font-medium", detailed ? "" : "truncate")}>
@@ -137,7 +158,19 @@ function ActivityRowItem({
                   />
                 </span>
               )}
-              {activityRow.actor_name ?? "A student"}
+              {actorHref ? (
+                // Visual shortcut to the profile; the avatar link above carries
+                // the accessible name, so this stays out of the tab order.
+                <Link
+                  to={actorHref}
+                  tabIndex={-1}
+                  className="pointer-events-auto relative z-20 hover:underline"
+                >
+                  {actorName}
+                </Link>
+              ) : (
+                actorName
+              )}
             </p>
             <span className="shrink-0 text-xs text-muted-foreground">
               {detailed
@@ -155,12 +188,20 @@ function ActivityRowItem({
             </span>
             {trailing}
           </p>
+          {line.detail && (
+            <p
+              aria-hidden={hideDup}
+              className={cn("mt-0.5 text-sm text-muted-foreground", detailed ? "" : "truncate")}
+            >
+              {line.detail}
+            </p>
+          )}
           {surface && (
             <span aria-hidden={hideDup} className="mt-1 inline-flex items-center gap-1 text-xs text-muted-foreground">
               {surface.kind === "syllabus" ? (
                 <NotebookPen className="h-3 w-3 shrink-0" aria-hidden />
               ) : (
-                <Globe className="h-3 w-3 shrink-0" aria-hidden />
+                <Library className="h-3 w-3 shrink-0" aria-hidden />
               )}
               <span className={detailed ? "" : "truncate"}>{surface.label}</span>
             </span>
