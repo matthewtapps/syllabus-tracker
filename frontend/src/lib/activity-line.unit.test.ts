@@ -80,6 +80,21 @@ describe("activityLine", () => {
     expect(result.href).toBeUndefined();
   });
 
+  test("video_watched names the technique on a detail line", () => {
+    const result = activityLine(
+      row({
+        verb: "video_watched",
+        video_id: 7,
+        video_title: "Replenish",
+        technique_id: 3,
+        technique_name: "Mount Escape",
+        context_kind: "library",
+      }),
+    );
+    expect(result.subject).toBe("Replenish");
+    expect(result.detail).toBe("on Mount Escape");
+  });
+
   test("video_watched with null video_title falls back to plain text, no href", () => {
     const result = activityLine(
       row({ verb: "video_watched", video_id: null, video_title: null }),

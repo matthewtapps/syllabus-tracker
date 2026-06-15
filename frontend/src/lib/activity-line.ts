@@ -122,6 +122,9 @@ export function activityLine(row: ActivityRow): ActivityLine {
 
     // --- video verbs ---
     case "video_watched":
+      // Name the technique the video lives on (on its own line) so a bare
+      // video title isn't left without context.
+      if (vid && tech) return { verb: "watched", subject: vid, detail: `on ${tech}`, href: deep };
       return vid
         ? { verb: "watched", subject: vid, href: deep }
         : { verb: "watched a video" };
