@@ -71,6 +71,55 @@ mod tests {
     }
 
     #[rocket::async_test]
+    async fn orphaned_video_activity_is_hidden_from_feed() {
+        use crate::db::{create_processing_video, delete_video};
+
+        let db = TestDbBuilder::new()
+            .coach("coach", None)
+            .student("alice", None)
+            .technique("Armbar", "arm lock", Some("coach"))
+            .build()
+            .await
+            .unwrap();
+        let coach = db.user_id("coach").unwrap();
+        let alice = db.user_id("alice").unwrap();
+        let tech = db.technique_id("Armbar").unwrap();
+
+        // A real video on the technique, plus a watch activity targeting alice.
+        let video_id = create_processing_video(&db.pool, tech, "Armbar detail", None, coach)
+            .await
+            .unwrap();
+        let mut tx = db.pool.begin().await.unwrap();
+        emit(
+            &mut tx,
+            NewActivity::new(Verb::VideoWatched, alice)
+                .target_student(alice)
+                .technique(tech)
+                .video(video_id),
+        )
+        .await
+        .unwrap();
+        tx.commit().await.unwrap();
+
+        // While the video exists, the watch row is in the feed with its title.
+        let before = feed(&db.pool, alice, Role::Student, None, 50).await.unwrap();
+        let watched = before
+            .iter()
+            .find(|r| r.video_id == Some(video_id))
+            .expect("watch row present while the video exists");
+        assert_eq!(watched.video_title.as_deref(), Some("Armbar detail"));
+
+        // Soft-delete the video: its activity row must drop out of the feed
+        // rather than render as a dead "watched a video" line.
+        assert!(delete_video(&db.pool, video_id).await.unwrap());
+        let after = feed(&db.pool, alice, Role::Student, None, 50).await.unwrap();
+        assert!(
+            !after.iter().any(|r| r.video_id == Some(video_id)),
+            "orphaned video activity must be hidden once the video is deleted"
+        );
+    }
+
+    #[rocket::async_test]
     async fn mark_one_read_keeps_older_unread() {
         let db = TestDbBuilder::new()
             .coach("coach", None)

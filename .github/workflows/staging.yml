@@ -9,13 +9,15 @@ name: Staging sibling
 # than the one the workflow file comes from; empty => the dispatch ref.)
 # Builds backend + frontend images and deploys to https://staging.sillybus.app.
 #
-# Differs from bootstrap-sibling.yaml in three ways:
+# Differs from bootstrap-sibling.yaml in two ways:
 #   1. Builds images from a named branch instead of using :latest.
 #   2. Hardcodes the staging hostname + cert resolver (HTTPS via
 #      Let's Encrypt) so it just works in any browser.
-#   3. Wipes the videos.* tables after restoring the DB fork from
-#      sillybus-db-backups-prod, so a staging viewer can't trigger
-#      playback against prod S3 objects.
+#
+# The DB fork from sillybus-db-backups-prod keeps its videos.* rows so the
+# activity feed renders video/comment context (titles, deep links). Prod
+# video objects have been wiped from S3, so the storage_key fields resolve
+# to nothing and a staging viewer can't pull real footage anyway.
 #
 # On first run, the staging.sillybus.app DNS A record (in infra/dns.tf)
 # must already exist — Let's Encrypt HTTP-01 challenge needs public
@@ -406,33 +408,6 @@ jobs:
               litestream/litestream:0.3.13 \
               restore -config /etc/litestream.yml /data/sqlite.db
             echo '[restore] fork from production complete'
-          "
-
-      - name: Wipe videos.* rows so staging can't trigger prod S3 reads
-        # User asked to "ignore videos" on staging. The forked DB
-        # has the rows but the storage_key fields point at the prod
-        # bucket; with the shared S3 creds in runtime-secrets the
-        # sibling could fetch them. Easier to nuke the rows than to
-        # rotate creds for one sibling.
-        #
-        # The litestream restore step writes /data/sqlite.db as root.
-        # keinos/sqlite3 runs as a non-root user by default and can't
-        # open the file -- swap to alpine + apk-installed sqlite, which
-        # runs as root in its default config and reliably has read/write.
-        #
-        # PRAGMA foreign_keys=ON is required: the sqlite3 CLI defaults it
-        # OFF, so without it `DELETE FROM videos` would NOT cascade to
-        # `threads.video_id`, leaving orphaned threads that re-attach to
-        # re-uploaded videos (id is reused since videos.id has no
-        # AUTOINCREMENT). Cascading the delete cleans the threads too.
-        run: |
-          ssh -i ~/.ssh/id_ed25519 "root@$VM_IP" "
-            docker run --rm \
-              -v ${SIBLING_NAME}_app-data:/data \
-              --entrypoint /bin/sh \
-              alpine:3.20 \
-              -c 'apk add --no-cache sqlite >/dev/null && sqlite3 /data/sqlite.db \"PRAGMA foreign_keys=ON; DELETE FROM video_watch_events; DELETE FROM video_watch_aggregates; DELETE FROM video_student_visibility; DELETE FROM videos;\"'
-            echo '[wipe] videos tables emptied on staging DB'
           "
 
       - name: Run migrations on staging DB
