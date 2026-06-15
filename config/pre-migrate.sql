@@ -26,3 +26,14 @@ UPDATE videos
         SELECT id FROM users ORDER BY (role = 'admin') DESC, id ASC LIMIT 1
    )
  WHERE uploaded_by_id NOT IN (SELECT id FROM users);
+
+-- activity / threads -> videos: rows that reference a video which no longer
+-- exists. The video was hard-deleted without its ON DELETE CASCADE firing,
+-- orphaning these rows. They are already hidden from the feed by the read-time
+-- orphan filter, but the videos-table rebuild's foreign_key_check would
+-- otherwise roll back on them. Delete them (cascading to activity seen-overrides
+-- and thread comments) -- the cleanup the video delete should have done.
+-- NB: nulling video_id is wrong here -- the feed filter keeps rows where
+-- video_id IS NULL, which would resurface them as bare "watched a video" lines.
+DELETE FROM activity WHERE video_id IS NOT NULL AND video_id NOT IN (SELECT id FROM videos);
+DELETE FROM threads  WHERE video_id IS NOT NULL AND video_id NOT IN (SELECT id FROM videos);

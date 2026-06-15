@@ -126,6 +126,7 @@ async fn run() -> Result<()> {
                     .execute(&pool)
                     .await
                     .context("Pre-migration repair SQL failed")?;
+                eprintln!("Applied pre-migration repairs from {}", pre_path.display());
             }
         }
     }
