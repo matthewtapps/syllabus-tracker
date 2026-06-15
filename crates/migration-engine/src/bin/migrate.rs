@@ -110,6 +110,26 @@ async fn run() -> Result<()> {
     let schema = read_schema_file_to_string(Path::new(&schema_path))
         .map_err(|e| anyhow::anyhow!("Failed to read schema file at {}: {}", schema_path, e))?;
 
+    // Optional pre-migration data repairs: idempotent SQL run (with the pool's
+    // foreign_keys=ON) before the declarative sync, so a table rebuild's
+    // foreign_key_check does not trip on pre-existing FK orphans. Lives in a
+    // `pre-migrate.sql` sibling of the schema file. Skipped if absent or in
+    // --dry-run (the gate must not mutate the DB copy it checks).
+    if !args.dry_run {
+        let pre_path = Path::new(&schema_path).with_file_name("pre-migrate.sql");
+        if pre_path.exists() {
+            let pre_sql = std::fs::read_to_string(&pre_path).with_context(|| {
+                format!("Failed to read pre-migrate file at {}", pre_path.display())
+            })?;
+            if !pre_sql.trim().is_empty() {
+                sqlx::raw_sql(&pre_sql)
+                    .execute(&pool)
+                    .await
+                    .context("Pre-migration repair SQL failed")?;
+            }
+        }
+    }
+
     let changes = get_schema_changes(pool.clone(), &schema)
         .await
         .map_err(|e| anyhow::anyhow!("Failed to analyze schema changes: {:?}", e))?;
