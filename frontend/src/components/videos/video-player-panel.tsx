@@ -13,10 +13,6 @@ interface VideoPlayerPanelProps {
   /** Native-player-only slots; ignored for embeds, which cannot host them. */
   overlay?: ReactNode;
   sliderMarkers?: ReactNode;
-  /** Native-player-only theater toggle; embeds cannot report a playhead. */
-  canTheater?: boolean;
-  theater?: boolean;
-  onToggleTheater?: () => void;
 }
 
 export function VideoPlayerPanel({
@@ -24,9 +20,6 @@ export function VideoPlayerPanel({
   events,
   overlay,
   sliderMarkers,
-  canTheater,
-  theater,
-  onToggleTheater,
 }: VideoPlayerPanelProps) {
   if (video.processing_status === "processing") {
     return (
@@ -52,9 +45,6 @@ export function VideoPlayerPanel({
           events={events}
           overlay={overlay}
           sliderMarkers={sliderMarkers}
-          canTheater={canTheater}
-          theater={theater}
-          onToggleTheater={onToggleTheater}
         />
       );
     case "youtube":

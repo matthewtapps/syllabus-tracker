@@ -17,7 +17,7 @@ import { MomentComposer, type MomentDraft } from "./moment-composer";
 import { MomentFeed } from "./moment-feed";
 import { MomentOverlay } from "./moment-overlay";
 import { ScrubberPins } from "./scrubber-pins";
-import { effectiveTheater, resolvePinFocus } from "./review-logic";
+import { resolvePinFocus } from "./review-logic";
 
 interface VideoReviewPanelProps {
   video: Video;
@@ -41,20 +41,18 @@ function ReviewInner({ video, surface, watchEvents, composerAction }: VideoRevie
   const controller = usePlayerController();
   const registration = usePlayerRegistration();
 
-  // Theater = comments beside the video. Only offered for a landscape video on a
-  // viewport wide enough for two columns (a rotated phone clears 768px too).
+  // Rotating the phone to landscape on a landscape clip drives the video into
+  // fullscreen (with auto-rotate on it lands there; with auto-rotate off the
+  // orientation lock in the player makes Android offer its native rotate prompt).
   const videoIsLandscape = !(video.width && video.height && video.height > video.width);
-  const wideEnough = useMediaQuery("(min-width: 768px)");
-  const canTheater = videoIsLandscape && wideEnough;
-  const [theaterPref, setTheaterPref] = useState<boolean | null>(null);
-  const theater = effectiveTheater(canTheater, theaterPref);
-
-  // Re-apply auto whenever the device orientation flips, so rotating to
-  // landscape lands in theater (room permitting) without a manual tap.
   const landscape = useMediaQuery("(orientation: landscape)");
+  const { enterFullscreen, isFullscreen } = controller;
+  const wasLandscape = useRef(landscape);
   useEffect(() => {
-    setTheaterPref(null);
-  }, [landscape]);
+    const flippedToLandscape = landscape && !wasLandscape.current;
+    wasLandscape.current = landscape;
+    if (flippedToLandscape && videoIsLandscape && !isFullscreen) enterFullscreen();
+  }, [landscape, videoIsLandscape, isFullscreen, enterFullscreen]);
 
   // Bridge player events -> controller registration, merged with watch events.
   const events = useMemo<PlayerEvents>(
@@ -68,6 +66,7 @@ function ReviewInner({ video, surface, watchEvents, composerAction }: VideoRevie
       },
       onPaused: (p) => registration?.reportPaused(p),
       registerSeek: (fn) => registration?.registerSeek(fn),
+      registerEnterFullscreen: (fn) => registration?.registerEnterFullscreen(fn),
       registerExitFullscreen: (fn) => registration?.registerExitFullscreen(fn),
       onFullscreenChange: (f) => registration?.reportFullscreen(f),
     }),
@@ -103,7 +102,7 @@ function ReviewInner({ video, surface, watchEvents, composerAction }: VideoRevie
   }
 
   // Toggle pin on re-click; otherwise set it. The overlay chip is transient:
-  // auto-clear after 6 s; the feed (below or beside in theater) is the durable view.
+  // auto-clear after 6 s; the feed stacked below the video is the durable view.
   function focusPin(t: ThreadView) {
     if (pinnedThread?.id === t.id) {
       setPinnedThread(null);
@@ -117,14 +116,12 @@ function ReviewInner({ video, surface, watchEvents, composerAction }: VideoRevie
 
     const actions = resolvePinFocus(controller.isFullscreen);
     if (actions.exitFullscreen) controller.exitFullscreen();
-    if (actions.forceTheater) setTheaterPref(true);
 
     if (t.video_ts_seconds != null) controller.seekTo(t.video_ts_seconds);
 
-    if (actions.exitFullscreen || actions.forceTheater) {
-      // Layout is about to change (fullscreen exit / theater turning on): defer
-      // the scroll two frames so the row exists after those commits before
-      // scrollIntoView runs.
+    if (actions.exitFullscreen) {
+      // Fullscreen is exiting and the stacked feed is about to mount: defer the
+      // scroll two frames so the row exists before scrollIntoView runs.
       if (pinScrollRafRef.current) cancelAnimationFrame(pinScrollRafRef.current);
       pinScrollRafRef.current = requestAnimationFrame(() => {
         pinScrollRafRef.current = requestAnimationFrame(() => scrollToThread(t.id));
@@ -159,9 +156,6 @@ function ReviewInner({ video, surface, watchEvents, composerAction }: VideoRevie
     <VideoPlayerPanel
       video={video}
       events={events}
-      canTheater={canTheater}
-      theater={theater}
-      onToggleTheater={() => setTheaterPref(!theater)}
       overlay={
         controller.canReadTime ? (
           <MomentOverlay
@@ -208,18 +202,6 @@ function ReviewInner({ video, surface, watchEvents, composerAction }: VideoRevie
       />
     </div>
   );
-
-  if (theater) {
-    return (
-      <div className="flex items-start gap-3">
-        <div className="relative min-w-0 flex-1">{player}</div>
-        <div className="flex max-h-[80svh] w-80 flex-none flex-col overflow-y-auto rounded-md border border-border">
-          {composer}
-          {feed}
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div>
