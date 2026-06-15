@@ -7,4 +7,8 @@ export interface PlayerEvents {
   onPaused?: (paused: boolean) => void;
   /** Player hands up a seek function; absent for embeds that cannot seek. */
   registerSeek?: (fn: (seconds: number) => void) => void;
+  /** Player hands up a fullscreen-exit function; absent for embeds. */
+  registerExitFullscreen?: (fn: () => void) => void;
+  /** Fired when the player enters/leaves fullscreen. */
+  onFullscreenChange?: (fullscreen: boolean) => void;
 }
