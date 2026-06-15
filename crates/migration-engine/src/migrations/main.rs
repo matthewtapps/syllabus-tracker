@@ -182,11 +182,30 @@ impl DeclarativeMigrator {
                     .fetch_all(&mut *tx)
                     .await?;
                 if !violations.is_empty() {
+                    // Summarise by (child table -> parent table) so the failure
+                    // is diagnosable from the log: a bare count tells you
+                    // nothing about which data is orphaned. PRAGMA
+                    // foreign_key_check columns: 0=child table, 1=rowid,
+                    // 2=parent table, 3=fkid.
+                    let mut by_pair: HashMap<(String, String), usize> = HashMap::new();
+                    for row in &violations {
+                        let child: String = row.try_get(0).unwrap_or_default();
+                        let parent: String = row.try_get(2).unwrap_or_default();
+                        *by_pair.entry((child, parent)).or_insert(0) += 1;
+                    }
+                    let mut pairs: Vec<((String, String), usize)> = by_pair.into_iter().collect();
+                    pairs.sort_by(|a, b| b.1.cmp(&a.1));
+                    let breakdown = pairs
+                        .iter()
+                        .map(|((child, parent), n)| format!("{child}->{parent}: {n}"))
+                        .collect::<Vec<_>>()
+                        .join(", ");
                     tx.rollback().await?;
                     return Err(MigrationError {
                         message: format!(
-                            "Foreign key violations detected after migration: {} row(s)",
-                            violations.len()
+                            "Foreign key violations detected after migration: {} row(s) [{}]",
+                            violations.len(),
+                            breakdown
                         ),
                     });
                 }
