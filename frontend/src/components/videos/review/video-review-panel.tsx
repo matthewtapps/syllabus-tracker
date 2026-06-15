@@ -121,12 +121,18 @@ function ReviewInner({ video, surface, watchEvents, composerAction }: VideoRevie
 
     if (t.video_ts_seconds != null) controller.seekTo(t.video_ts_seconds);
 
-    // Defer the scroll two frames so the row exists after the fullscreen exit
-    // and the theater re-render have committed before scrollIntoView runs.
-    if (pinScrollRafRef.current) cancelAnimationFrame(pinScrollRafRef.current);
-    pinScrollRafRef.current = requestAnimationFrame(() => {
-      pinScrollRafRef.current = requestAnimationFrame(() => scrollToThread(t.id));
-    });
+    if (actions.exitFullscreen || actions.forceTheater) {
+      // Layout is about to change (fullscreen exit / theater turning on): defer
+      // the scroll two frames so the row exists after those commits before
+      // scrollIntoView runs.
+      if (pinScrollRafRef.current) cancelAnimationFrame(pinScrollRafRef.current);
+      pinScrollRafRef.current = requestAnimationFrame(() => {
+        pinScrollRafRef.current = requestAnimationFrame(() => scrollToThread(t.id));
+      });
+    } else {
+      // Feed already laid out: scroll immediately, no lag.
+      scrollToThread(t.id);
+    }
 
     if (pinTimerRef.current) window.clearTimeout(pinTimerRef.current);
     pinTimerRef.current = window.setTimeout(() => setPinnedThread(null), 6000);
