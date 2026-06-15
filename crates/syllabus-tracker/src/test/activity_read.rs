@@ -72,7 +72,7 @@ mod tests {
 
     #[rocket::async_test]
     async fn orphaned_video_activity_is_hidden_from_feed() {
-        use crate::db::{create_processing_video, delete_video};
+        use crate::db::{create_processing_video, delete_video, VideoParent};
 
         let db = TestDbBuilder::new()
             .coach("coach", None)
@@ -86,7 +86,7 @@ mod tests {
         let tech = db.technique_id("Armbar").unwrap();
 
         // A real video on the technique, plus a watch activity targeting alice.
-        let video_id = create_processing_video(&db.pool, tech, "Armbar detail", None, coach)
+        let video_id = create_processing_video(&db.pool, VideoParent::Technique(tech), "Armbar detail", None, coach)
             .await
             .unwrap();
         let mut tx = db.pool.begin().await.unwrap();
