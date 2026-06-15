@@ -961,6 +961,59 @@ mod tests {
         assert_eq!(row.technique_id, Some(technique_id));
     }
 
+    /// A video-anchored comment denormalises the video's owning technique onto
+    /// its activity row, so the feed can name the technique and deep-link to the
+    /// library technique row (not just the bare video).
+    #[rocket::async_test]
+    async fn video_comment_emits_technique_context() {
+        let db = TestDbBuilder::new()
+            .coach("coach_user", Some("Coach"))
+            .technique("Armbar", "an armbar", Some("coach_user"))
+            .build()
+            .await
+            .unwrap();
+        let coach_id = db.user_id("coach_user").unwrap();
+        let technique_id = db.technique_id("Armbar").unwrap();
+        let video_id = insert_live_video(&db.pool, technique_id, coach_id).await;
+
+        let thread_id = create_thread(
+            &db.pool,
+            NewThread {
+                author_id: coach_id,
+                anchor: Anchor {
+                    kind: AnchorKind::Video,
+                    id: video_id,
+                    video_ts_seconds: None,
+                    pinned_student_id: None,
+                },
+                visibility: ThreadVisibility::Broadcast,
+                scope_student_id: None,
+                body: "Nice detail here.".to_string(),
+            },
+        )
+        .await
+        .unwrap();
+
+        // Runtime query (not the macro) so this assertion needs no .sqlx entry.
+        use sqlx::Row;
+        let row = sqlx::query(
+            "SELECT context_kind, video_id, technique_id
+               FROM activity
+               WHERE verb = 'thread_comment_posted' AND thread_id = ?",
+        )
+        .bind(thread_id)
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+
+        let context_kind: Option<String> = row.try_get("context_kind").unwrap();
+        let got_video_id: Option<i64> = row.try_get("video_id").unwrap();
+        let got_technique_id: Option<i64> = row.try_get("technique_id").unwrap();
+        assert_eq!(context_kind.as_deref(), Some("library"));
+        assert_eq!(got_video_id, Some(video_id));
+        assert_eq!(got_technique_id, Some(technique_id), "video comment carries its technique");
+    }
+
     /// An SST-anchored thread resolves and denormalises the syllabus id and the
     /// syllabus context_kind, so the feed can deep-link to the student's
     /// syllabus surface. A private thread keeps target_student_id = scope.

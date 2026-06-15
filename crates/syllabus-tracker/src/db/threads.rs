@@ -276,7 +276,19 @@ async fn apply_thread_anchor_context(
     } else if let Some(id) = technique_id {
         Ok(ev.technique(id).context_kind("library"))
     } else if let Some(id) = video_id {
-        Ok(ev.video(id).context_kind("library"))
+        // Resolve the owning technique so the feed can name it and deep-link to
+        // the library technique row, the same way a video_added row does.
+        // Runtime query (not the macro) to stay out of the offline .sqlx cache.
+        let technique_id: Option<i64> =
+            sqlx::query_scalar::<_, i64>("SELECT technique_id FROM videos WHERE id = ?")
+                .bind(id)
+                .fetch_optional(&mut **tx)
+                .await?;
+        let mut ev = ev.video(id).context_kind("library");
+        if let Some(tid) = technique_id {
+            ev = ev.technique(tid);
+        }
+        Ok(ev)
     } else {
         Ok(ev)
     }
