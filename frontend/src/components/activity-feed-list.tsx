@@ -6,7 +6,7 @@ import {
   CircleDot,
   Dumbbell,
   Eye,
-  Globe,
+  Library,
   GraduationCap,
   MessageSquare,
   Minus,
@@ -155,12 +155,20 @@ function ActivityRowItem({
             </span>
             {trailing}
           </p>
+          {line.detail && (
+            <p
+              aria-hidden={hideDup}
+              className={cn("mt-0.5 text-sm text-foreground", detailed ? "" : "truncate")}
+            >
+              {line.detail}
+            </p>
+          )}
           {surface && (
             <span aria-hidden={hideDup} className="mt-1 inline-flex items-center gap-1 text-xs text-muted-foreground">
               {surface.kind === "syllabus" ? (
                 <NotebookPen className="h-3 w-3 shrink-0" aria-hidden />
               ) : (
-                <Globe className="h-3 w-3 shrink-0" aria-hidden />
+                <Library className="h-3 w-3 shrink-0" aria-hidden />
               )}
               <span className={detailed ? "" : "truncate"}>{surface.label}</span>
             </span>

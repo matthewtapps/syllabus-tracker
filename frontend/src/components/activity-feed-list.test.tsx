@@ -195,7 +195,7 @@ describe("ActivityFeedList", () => {
     expect(screen.getByText("Blue Belt")).toBeTruthy();
   });
 
-  test("library-context video_watched row shows the Library chip", () => {
+  test("library-context video_watched row shows the global library chip", () => {
     renderWithProviders(
       <ActivityFeedList
         rows={[
@@ -213,7 +213,7 @@ describe("ActivityFeedList", () => {
         isLoading={false}
       />,
     );
-    expect(screen.getByText("Library")).toBeTruthy();
+    expect(screen.getByText("Global Technique Library")).toBeTruthy();
   });
 
   // --- inlineAvatar: small avatar rendered inline by the actor name ---
