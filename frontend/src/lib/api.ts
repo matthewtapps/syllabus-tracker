@@ -957,6 +957,9 @@ export interface Video {
   /** Set only on coach views of a specific student's technique page when an
    * explicit per-student override exists for this video. Omitted otherwise. */
   override_for_student?: "show" | "hide";
+  /** Number of comment threads on this video the viewer can see. Defaults to
+   * 0 from list endpoints that don't annotate it. */
+  comment_count?: number;
 }
 
 export interface SignedUrl {
