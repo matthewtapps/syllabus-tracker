@@ -128,7 +128,11 @@ jobs:
         with:
           primary-key: nix-${{ runner.os }}-checks-${{ hashFiles('flake.lock', '**/Cargo.lock') }}
           restore-prefixes-first-match: nix-${{ runner.os }}-checks-
-          gc-max-store-size-linux: 5G
+          # Raised from 5G: the backend + video-worker Docker layer caches now
+          # use a registry backend, so they no longer compete with this
+          # nix/cargo cache for the shared 10 GB GHA cache pool. More headroom
+          # here means fewer cargo recompiles in clippy/nextest.
+          gc-max-store-size-linux: 8G
           paths: |
             ~/.cargo/registry/index/
             ~/.cargo/registry/cache/
