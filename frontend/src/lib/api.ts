@@ -934,7 +934,10 @@ export type ProcessingStatus = "processing" | "ready" | "failed";
 
 export interface Video {
   id: number;
-  technique_id: number;
+  parent_kind: "technique" | "student_profile" | "thread" | "loose";
+  technique_id: number | null;
+  student_id: number | null;
+  thread_id: number | null;
   title: string;
   description?: string | null;
   position: number;
