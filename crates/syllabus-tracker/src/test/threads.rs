@@ -321,6 +321,50 @@ mod tests {
     }
 
     #[rocket::async_test]
+    async fn count_video_comments_respects_visibility() {
+        use crate::db::threads::count_video_comments_visible;
+        let db = TestDbBuilder::new()
+            .coach("coach_user", Some("Coach"))
+            .student("student_user", Some("Sam"))
+            .student("student2", Some("Mia"))
+            .technique("Armbar", "an armbar", Some("coach_user"))
+            .build()
+            .await
+            .unwrap();
+        let coach_id = db.user_id("coach_user").unwrap();
+        let student_id = db.user_id("student_user").unwrap();
+        let other_id = db.user_id("student2").unwrap();
+        let technique_id = db.technique_id("Armbar").unwrap();
+        let video_id = insert_live_video(&db.pool, technique_id, coach_id).await;
+
+        // One private thread scoped to each student.
+        for sid in [student_id, other_id] {
+            create_thread(
+                &db.pool,
+                NewThread {
+                    author_id: coach_id,
+                    anchor: Anchor { kind: AnchorKind::Video, id: video_id, video_ts_seconds: None, pinned_student_id: None },
+                    visibility: ThreadVisibility::Private,
+                    scope_student_id: Some(sid),
+                    body: "note".to_string(),
+                },
+            )
+            .await
+            .unwrap();
+        }
+
+        let ids = [video_id];
+        let coach_counts = count_video_comments_visible(&db.pool, &ids, Viewer { user_id: coach_id, is_coach: true }).await.unwrap();
+        assert_eq!(coach_counts.get(&video_id).copied().unwrap_or(0), 2, "coach sees every thread");
+
+        let sam_counts = count_video_comments_visible(&db.pool, &ids, Viewer { user_id: student_id, is_coach: false }).await.unwrap();
+        assert_eq!(sam_counts.get(&video_id).copied().unwrap_or(0), 1, "student sees only their own private thread");
+
+        let mia_counts = count_video_comments_visible(&db.pool, &ids, Viewer { user_id: other_id, is_coach: false }).await.unwrap();
+        assert_eq!(mia_counts.get(&video_id).copied().unwrap_or(0), 1, "other student counts only their own");
+    }
+
+    #[rocket::async_test]
     async fn video_timestamp_thread_surfaces_alongside_video_thread() {
         use crate::db::threads::list_threads_for_anchor;
         let db = TestDbBuilder::new()

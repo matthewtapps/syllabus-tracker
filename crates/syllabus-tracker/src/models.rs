@@ -217,6 +217,11 @@ pub struct Video {
     /// from students (coaches still see, badged). Per-student overrides may
     /// flip the effective visibility either way.
     pub hidden_at: Option<DateTime<Utc>>,
+    /// Number of comment threads on this video that the requesting viewer can
+    /// see (coach: all; student: broadcast + their own private). Annotated by
+    /// the list routes after the DB fetch; `0` on a bare `From<DbVideo>`.
+    #[serde(default)]
+    pub comment_count: i64,
 }
 
 #[derive(sqlx::FromRow, Clone, Default)]
@@ -267,6 +272,7 @@ impl From<DbVideo> for Video {
             created_at: db.created_at.map(naive_to_utc).unwrap_or_else(Utc::now),
             updated_at: db.updated_at.map(naive_to_utc).unwrap_or_else(Utc::now),
             hidden_at: db.hidden_at.map(naive_to_utc),
+            comment_count: 0,
         }
     }
 }

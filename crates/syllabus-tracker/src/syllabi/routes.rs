@@ -667,10 +667,12 @@ pub async fn api_list_syllabus_technique_videos(
     if sst_id.is_none() {
         return Err(Status::NotFound.into());
     }
-    let videos = if user.has_permission(Permission::ViewAllStudents) {
+    let is_coach = user.has_permission(Permission::ViewAllStudents);
+    let mut videos = if is_coach {
         db::list_videos_for_technique(db, tid).await?
     } else {
         db::list_videos_for_technique_in_syllabus_visible_to(db, tid, syid, sid).await?
     };
+    crate::videos::routes::annotate_comment_counts(db, &mut videos, is_coach, user.id).await?;
     Ok(Json(SyllabusVideoListResponse { videos }))
 }
