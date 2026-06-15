@@ -10,6 +10,74 @@ use crate::db::activity::{
 use crate::error::AppError;
 use crate::models::{DbVideo, ProcessingStatus, Video, VideoKind};
 
+/// The kinds of thing a video can hang off. Typed-column polymorphism,
+/// mirrors `threads::AnchorKind`. Camp and match parents are added when
+/// those tables exist.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum VideoParent {
+    Technique(i64),
+    StudentProfile(i64),
+    /// A video reply living under a thread. Per CX-010 a thread can NOT be
+    /// started on a video whose parent is a thread (no endless reply chains);
+    /// that guard lives in `db::threads::validate_anchor` (a later task).
+    Thread(i64),
+    Loose,
+}
+
+/// The four typed columns a `VideoParent` resolves to in the `videos` table.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ParentColumns {
+    pub kind: &'static str,
+    pub technique_id: Option<i64>,
+    pub student_id: Option<i64>,
+    pub thread_id: Option<i64>,
+}
+
+impl VideoParent {
+    pub fn columns(self) -> ParentColumns {
+        match self {
+            VideoParent::Technique(id) => ParentColumns {
+                kind: "technique", technique_id: Some(id), student_id: None, thread_id: None,
+            },
+            VideoParent::StudentProfile(id) => ParentColumns {
+                kind: "student_profile", technique_id: None, student_id: Some(id), thread_id: None,
+            },
+            VideoParent::Thread(id) => ParentColumns {
+                kind: "thread", technique_id: None, student_id: None, thread_id: Some(id),
+            },
+            VideoParent::Loose => ParentColumns {
+                kind: "loose", technique_id: None, student_id: None, thread_id: None,
+            },
+        }
+    }
+}
+
+/// Confirms the parent row exists before inserting a video against it.
+/// Loose has no parent to check.
+#[instrument(skip(pool))]
+pub async fn validate_parent(pool: &Pool<Sqlite>, parent: VideoParent) -> Result<(), AppError> {
+    let exists = match parent {
+        VideoParent::Technique(id) => {
+            sqlx::query_scalar!("SELECT 1 FROM techniques WHERE id = ?", id)
+                .fetch_optional(pool).await?.is_some()
+        }
+        VideoParent::StudentProfile(id) => {
+            sqlx::query_scalar!("SELECT 1 FROM users WHERE id = ?", id)
+                .fetch_optional(pool).await?.is_some()
+        }
+        VideoParent::Thread(id) => {
+            sqlx::query_scalar!("SELECT 1 FROM threads WHERE id = ? AND deleted_at IS NULL", id)
+                .fetch_optional(pool).await?.is_some()
+        }
+        VideoParent::Loose => true,
+    };
+    if exists {
+        Ok(())
+    } else {
+        Err(AppError::NotFound("parent for video not found".into()))
+    }
+}
+
 #[instrument(skip(pool))]
 pub async fn next_video_position(pool: &Pool<Sqlite>, technique_id: i64) -> Result<i64, AppError> {
     let row = sqlx::query!(
@@ -854,4 +922,29 @@ pub async fn list_video_syllabus_overrides(
         map.insert(video_id, visible);
     }
     Ok(map)
+}
+
+#[cfg(test)]
+mod parent_tests {
+    use super::*;
+
+    #[test]
+    fn parent_columns_map_each_kind_to_exactly_one_id() {
+        assert_eq!(
+            VideoParent::Technique(7).columns(),
+            ParentColumns { kind: "technique", technique_id: Some(7), student_id: None, thread_id: None }
+        );
+        assert_eq!(
+            VideoParent::StudentProfile(3).columns(),
+            ParentColumns { kind: "student_profile", technique_id: None, student_id: Some(3), thread_id: None }
+        );
+        assert_eq!(
+            VideoParent::Thread(11).columns(),
+            ParentColumns { kind: "thread", technique_id: None, student_id: None, thread_id: Some(11) }
+        );
+        assert_eq!(
+            VideoParent::Loose.columns(),
+            ParentColumns { kind: "loose", technique_id: None, student_id: None, thread_id: None }
+        );
+    }
 }
