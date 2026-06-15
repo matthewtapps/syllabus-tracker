@@ -2,9 +2,12 @@ name: Staging sibling
 
 # Deploys a parallel ("sibling") stack on sugar-glider for inspecting
 # WIP roadmap work BEFORE it merges to main. Triggered manually via
-# workflow_dispatch with a branch input — the workflow builds backend
-# and frontend images from that branch and deploys them to
-# https://staging.sillybus.app.
+# workflow_dispatch. Recommended form dispatches the feature branch as the
+# ref so staging runs that branch's OWN workflow file and builds its code:
+#   gh workflow run staging.yml --ref <branch>
+# (the `branch` input is an optional override for building a branch other
+# than the one the workflow file comes from; empty => the dispatch ref.)
+# Builds backend + frontend images and deploys to https://staging.sillybus.app.
 #
 # Differs from bootstrap-sibling.yaml in three ways:
 #   1. Builds images from a named branch instead of using :latest.
@@ -23,9 +26,13 @@ on:
   workflow_dispatch:
     inputs:
       branch:
-        description: "Branch to build and deploy"
-        required: true
-        default: main
+        # Leave empty and dispatch with `--ref <branch>` to build the dispatch
+        # ref itself (recommended: staging then runs that branch's own workflow
+        # file too). Set it explicitly only to build a branch other than the
+        # one the workflow file is taken from. Must have no default, or the
+        # `inputs.branch || github.ref_name` fallback below never fires.
+        description: "Branch to build/deploy. Empty + --ref <branch> builds the dispatch ref."
+        required: false
       refresh_db:
         description: "Wipe the staging DB and re-fork from prod backups"
         required: true
@@ -97,13 +104,13 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
-          ref: ${{ github.event.inputs.branch }}
+          ref: ${{ github.event.inputs.branch || github.ref_name }}
       - name: Resolve branch HEAD SHA
         id: sha
         run: |
           SHORT=$(git rev-parse --short HEAD)
           echo "short=$SHORT" >> "$GITHUB_OUTPUT"
-          echo "Building backend from ${{ github.event.inputs.branch }} @ $SHORT"
+          echo "Building backend from ${{ github.event.inputs.branch || github.ref_name }} @ $SHORT"
       - uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
       - uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
         with:
@@ -118,8 +125,13 @@ jobs:
           tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/app:staging-${{ steps.sha.outputs.short }}
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/app:staging-latest
-          cache-from: type=gha,scope=backend
-          cache-to: type=gha,scope=backend-staging,mode=max
+          # Registry-backed layer cache, shared ref with prod (deploy.yaml) so
+          # staging reuses prod's warm cargo-chef dependency layer and vice
+          # versa. Off the 10 GB GHA cache pool, no eviction. Previously staging
+          # read scope=backend but wrote scope=backend-staging, so it never
+          # reused its own cache and the duplicate write evicted prod's.
+          cache-from: type=registry,ref=ghcr.io/matthewtapps/syllabus-tracker/buildcache:backend
+          cache-to: type=registry,ref=ghcr.io/matthewtapps/syllabus-tracker/buildcache:backend,mode=max
 
   build_frontend:
     runs-on: ubuntu-latest
@@ -129,13 +141,13 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
-          ref: ${{ github.event.inputs.branch }}
+          ref: ${{ github.event.inputs.branch || github.ref_name }}
       - name: Resolve branch HEAD SHA
         id: sha
         run: |
           SHORT=$(git rev-parse --short HEAD)
           echo "short=$SHORT" >> "$GITHUB_OUTPUT"
-          echo "Building frontend from ${{ github.event.inputs.branch }} @ $SHORT"
+          echo "Building frontend from ${{ github.event.inputs.branch || github.ref_name }} @ $SHORT"
       - uses: cachix/install-nix-action@v27
         with:
           extra_nix_config: |
@@ -175,8 +187,10 @@ jobs:
             VITE_API_URL=/api
             VITE_ENVIRONMENT=staging
             VITE_HONEYCOMB_API_KEY=${{ steps.hc.outputs.vite_key }}
+          # Share the gha frontend scope with prod (was frontend-staging, which
+          # staging wrote but never read back). Small layer, gha is fine here.
           cache-from: type=gha,scope=frontend
-          cache-to: type=gha,scope=frontend-staging,mode=max
+          cache-to: type=gha,scope=frontend,mode=max
 
   deploy:
     needs: [read_platform, build_backend, build_frontend]
@@ -191,7 +205,7 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
-          ref: ${{ github.event.inputs.branch }}
+          ref: ${{ github.event.inputs.branch || github.ref_name }}
       - uses: cachix/install-nix-action@v27
         with:
           extra_nix_config: |
@@ -488,7 +502,7 @@ jobs:
             if curl -fsSL --max-time 5 https://${HOSTNAME}/api/health; then
               echo ""
               echo "Staging deployed: https://${HOSTNAME}"
-              echo "  branch:   ${{ github.event.inputs.branch }}"
+              echo "  branch:   ${{ github.event.inputs.branch || github.ref_name }}"
               echo "  app:      ${REGISTRY}/${IMAGE_NAME}/app:${APP_TAG}"
               echo "  frontend: ${REGISTRY}/${IMAGE_NAME}/frontend:${FRONTEND_TAG}"
               exit 0

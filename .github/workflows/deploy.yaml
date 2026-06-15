@@ -128,7 +128,11 @@ jobs:
         with:
           primary-key: nix-${{ runner.os }}-checks-${{ hashFiles('flake.lock', '**/Cargo.lock') }}
           restore-prefixes-first-match: nix-${{ runner.os }}-checks-
-          gc-max-store-size-linux: 5G
+          # Raised from 5G: the backend + video-worker Docker layer caches now
+          # use a registry backend, so they no longer compete with this
+          # nix/cargo cache for the shared 10 GB GHA cache pool. More headroom
+          # here means fewer cargo recompiles in clippy/nextest.
+          gc-max-store-size-linux: 8G
           paths: |
             ~/.cargo/registry/index/
             ~/.cargo/registry/cache/
@@ -210,7 +214,9 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
       - uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
-        if: github.event_name != 'pull_request'
+        # Log in on PRs too (read-only via GITHUB_TOKEN) so the registry-backed
+        # layer cache can be pulled on PR builds. Image push stays gated on
+        # push:/cache-to below.
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
@@ -223,8 +229,11 @@ jobs:
           tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/app:${{ github.sha }}
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/app:latest
-          cache-from: type=gha,scope=backend
-          cache-to: type=gha,scope=backend,mode=max
+          # Registry-backed layer cache: no 10 GB GHA cache-pool cap, no LRU
+          # eviction. Shared ref with staging so both envs reuse one warm
+          # cargo-chef dependency layer. cache-to only on push (PRs can't write).
+          cache-from: type=registry,ref=ghcr.io/matthewtapps/syllabus-tracker/buildcache:backend
+          cache-to: ${{ github.event_name != 'pull_request' && 'type=registry,ref=ghcr.io/matthewtapps/syllabus-tracker/buildcache:backend,mode=max' || '' }}
 
   # Same pattern as build_backend, plus the platform-state read for the
   # browser-side Honeycomb key (push/dispatch only). On PR runs the
