@@ -19,7 +19,7 @@
   - `*.unit.test.ts` → Node environment. **These run on this dev box.**
   - `*.test.tsx` / `*.test.ts` → Chromium via Playwright. **These run in CI, not on this NixOS box** (`pnpm test` will try to launch Chromium and fail locally). Write them to convention; do not expect to execute them here.
 - Run a single unit test file locally with:
-  `pnpm exec vitest run --project unit src/components/videos/review/review-logic.unit.test.ts`
+  `pnpm exec vitest run --project node src/components/videos/review/review-logic.unit.test.ts`
 - Typecheck + lint gate locally: `pnpm exec tsc -b` and `pnpm lint`.
 - Pure-logic tests use `*.unit.test.ts` (no DOM). Component tests use `render` from `@testing-library/react` (`@/test/render` provides `renderWithProviders` + `buildUser` when context is needed).
 - `VideoReviewPanel` mounts `VidstackPlayer`, which fetches a signed URL and mounts a real `<video>`. It is not unit-testable cheaply; that is why the decision logic is extracted into the pure helpers below, which carry the test coverage. The panel/vidstack glue is verified by typecheck + manual steps.
@@ -80,7 +80,7 @@ describe("resolvePinFocus", () => {
 
 - [ ] **Step 2: Run it to confirm it fails**
 
-Run: `pnpm exec vitest run --project unit src/components/videos/review/review-logic.unit.test.ts`
+Run: `pnpm exec vitest run --project node src/components/videos/review/review-logic.unit.test.ts`
 Expected: FAIL — cannot resolve `./review-logic`.
 
 - [ ] **Step 3: Implement the helpers**
@@ -116,7 +116,7 @@ export function resolvePinFocus(isFullscreen: boolean): PinFocusActions {
 
 - [ ] **Step 4: Run the test to confirm it passes**
 
-Run: `pnpm exec vitest run --project unit src/components/videos/review/review-logic.unit.test.ts`
+Run: `pnpm exec vitest run --project node src/components/videos/review/review-logic.unit.test.ts`
 Expected: PASS (5 tests).
 
 - [ ] **Step 5: Commit**
@@ -535,7 +535,7 @@ Read `scrubber-pins.tsx`, `moment-overlay.tsx`, `moment-feed.tsx`, `moment-compo
 Make the small edits. Then:
 Run: `pnpm exec tsc -b` → no type errors.
 Run: `pnpm lint` → clean.
-Run: `pnpm exec vitest run --project unit` → existing unit tests pass.
+Run: `pnpm exec vitest run --project node` → existing unit tests pass.
 
 - [ ] **Step 3: Commit**
 
@@ -552,7 +552,7 @@ If no change is warranted after review, skip this task and note "no tidy needed"
 
 - [ ] `pnpm exec tsc -b` clean.
 - [ ] `pnpm lint` clean.
-- [ ] `pnpm exec vitest run --project unit` passes (includes `review-logic.unit.test.ts`).
+- [ ] `pnpm exec vitest run --project node` passes (includes `review-logic.unit.test.ts`).
 - [ ] In CI: `pnpm test` (browser project) passes, including `player-context.test.tsx` and the updated `moment-composer.test.tsx`.
 - [ ] Manual checks from Task 5 Step 6 done.
 - [ ] `just verify` (repo root) passes if run before pushing (frontend lint/build/test gate).
