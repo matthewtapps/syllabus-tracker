@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE videos\n         SET processing_status = 'failed',\n             processing_error = 'interrupted by restart',\n             updated_at = ?\n         WHERE processing_status = 'processing'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": []
+  },
+  "hash": "e4a3c3ac104907cf9912b7f7264aba3c74b3ebafb0329580f4102dcfe29fa09b"
+}

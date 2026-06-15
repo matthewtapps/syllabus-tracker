@@ -59,12 +59,13 @@ use telemetry::TelemetryFairing;
 use telemetry::init_tracing;
 use thiserror::Error;
 use videos::{
+    CallbackSecret, RemoteProcessor, DynVideoProcessor, HostFfmpegProcessor,
     api_admin_storage, api_dashboard_video_overview, api_delete_video, api_list_technique_videos,
-    api_my_watch_state, api_reorder_videos, api_replace_video, api_set_video_global_hidden,
-    api_set_video_student_visibility, api_student_watch_activity, api_update_video,
-    api_video_download_url, api_video_link, api_video_playback_url, api_video_privacy_ack,
-    api_video_privacy_ack_status, api_video_stats, api_video_status, api_video_upload,
-    api_video_watch_events,
+    api_my_watch_state, api_processing_result, api_reorder_videos, api_replace_video,
+    api_set_video_global_hidden, api_set_video_student_visibility, api_student_watch_activity,
+    api_update_video, api_video_download_url, api_video_link, api_video_playback_url,
+    api_video_privacy_ack, api_video_privacy_ack_status, api_video_stats, api_video_status,
+    api_video_upload, api_video_watch_events,
 };
 
 use sqlx::SqlitePool;
@@ -201,7 +202,8 @@ async fn rocket() -> _ {
         None
     };
 
-    init_rocket(pool, video_stack).await
+    let callback_secret = dotenvy::var("VIDEO_CALLBACK_SECRET").ok();
+    init_rocket_with_callback_secret(pool, video_stack, callback_secret).await
 }
 
 async fn sample_video_gauges(pool: &SqlitePool, active_jobs: i64) {
@@ -222,6 +224,14 @@ async fn sample_video_gauges(pool: &SqlitePool, active_jobs: i64) {
 pub async fn init_rocket(
     pool: SqlitePool,
     video_stack: Option<videos::VideoStack>,
+) -> Rocket<Build> {
+    init_rocket_with_callback_secret(pool, video_stack, None).await
+}
+
+pub async fn init_rocket_with_callback_secret(
+    pool: SqlitePool,
+    video_stack: Option<videos::VideoStack>,
+    callback_secret: Option<String>,
 ) -> Rocket<Build> {
     info!("Starting syllabus tracker");
 
@@ -368,7 +378,12 @@ pub async fn init_rocket(
             ],
         )
         .mount("/api", routes![health, api_capabilities])
-        .attach(TelemetryFairing);
+        .attach(TelemetryFairing)
+        // Manage the callback secret so the webhook handler can read it
+        // regardless of which processor is active. When videos are disabled
+        // the route is not mounted but we still manage the state so that
+        // `CallbackSecret` is always present in the type system.
+        .manage(CallbackSecret(callback_secret));
 
     if let Some(stack) = video_stack {
         let jobs = std::sync::Arc::new(videos::ProcessingJobs::new());
@@ -384,6 +399,64 @@ pub async fn init_rocket(
             )),
         });
 
+        let is_remote = std::env::var("VIDEO_PROCESSOR")
+            .map(|v| v == "remote")
+            .unwrap_or(false);
+
+        let processor: DynVideoProcessor =
+            if is_remote {
+                std::sync::Arc::new(
+                    RemoteProcessor::from_env(pool.clone())
+                        .expect("VIDEO_PROCESSOR=remote but remote processor config is invalid"),
+                )
+            } else {
+                // Host path: any row still in `processing` from a previous
+                // run is a zombie (the in-process task was killed).  Flip
+                // them to `failed` now so they don't block the queue.
+                match db::reconcile_interrupted_processing(&pool).await {
+                    Ok(n) if n > 0 => {
+                        tracing::warn!(
+                            "reconciled {n} interrupted video(s) to failed on startup"
+                        )
+                    }
+                    Ok(_) => {}
+                    Err(e) => tracing::error!("startup video reconcile failed: {e}"),
+                }
+                std::sync::Arc::new(HostFfmpegProcessor::new(pipeline_ctx.clone()))
+            };
+
+        // Remote-only: periodically fail rows that have been in
+        // `processing` longer than the timeout threshold. The host processor
+        // uses a startup reconcile (above) instead, so this loop is skipped
+        // on the host path.
+        if is_remote {
+            let sweeper_pool = pool.clone();
+            let timeout_secs: i64 = dotenvy::var("VIDEO_PROCESSING_TIMEOUT_SECONDS")
+                .ok()
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(1800); // default 30 minutes
+            tokio::spawn(async move {
+                let mut interval =
+                    tokio::time::interval(tokio::time::Duration::from_secs(60));
+                loop {
+                    interval.tick().await;
+                    match db::fail_stale_processing(&sweeper_pool, timeout_secs).await {
+                        Ok(n) if n > 0 => {
+                            tracing::warn!(
+                                count = n,
+                                timeout_secs,
+                                "stuck-row sweeper: marked {n} stale remote job(s) failed"
+                            );
+                        }
+                        Ok(_) => {}
+                        Err(e) => {
+                            tracing::error!(error = %e, "stuck-row sweeper error");
+                        }
+                    }
+                }
+            });
+        }
+
         let sampler_pool = pool.clone();
         let sampler_jobs = jobs.clone();
         tokio::spawn(async move {
@@ -396,6 +469,7 @@ pub async fn init_rocket(
         rocket = rocket
             .manage(stack.storage)
             .manage(pipeline_ctx)
+            .manage(processor)
             .manage(jobs)
             .mount(
                 "/api",
@@ -420,6 +494,7 @@ pub async fn init_rocket(
                     api_my_watch_state,
                     api_dashboard_video_overview,
                     api_admin_storage,
+                    api_processing_result,
                 ],
             );
     }

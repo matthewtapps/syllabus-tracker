@@ -1,0 +1,43 @@
+[package]
+name = "video-worker"
+edition.workspace = true
+version.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "video-worker"
+path = "src/main.rs"
+
+[[bin]]
+name = "transcode-server"
+path = "src/bin/transcode-server.rs"
+
+[dependencies]
+# Shared crates
+video-media = { path = "../video-media" }
+video-job = { path = "../video-job" }
+
+# Async runtime
+tokio = { workspace = true }
+
+# HTTP server (mock-transcoder only; same version as the app uses)
+axum = { version = "0.7", default-features = false, features = ["json", "tokio", "http1"] }
+
+# HTTP client (no native-tls; rustls only for container portability)
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+
+# Error handling
+anyhow = { workspace = true }
+
+# Logging
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+
+# UUID generation
+uuid = { version = "1.16", features = ["v4"] }
+
+# JSON serialization
+serde_json = "1.0.140"
+
+# Constant-time comparison (bearer token check)
+subtle = "2.6.1"

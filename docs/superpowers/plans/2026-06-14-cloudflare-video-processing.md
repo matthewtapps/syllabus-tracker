@@ -68,7 +68,10 @@ In `media.rs`, add a `fn scale_filter() -> &'static str` and a unit test asserti
 fn scale_filter_caps_720_both_orientations() {
     assert_eq!(
         scale_filter(),
-        "scale=w='if(gt(iw,ih),-2,min(720,iw))':h='if(gt(iw,ih),min(720,ih),-2)'"
+        // Direct tokio::process exec (no shell): escape commas with `\,` and
+        // use NO single quotes. Shell-quoting would be passed literally to
+        // ffmpeg's filtergraph parser and fail.
+        "scale=w=if(gt(iw\\,ih)\\,-2\\,min(720\\,iw)):h=if(gt(iw\\,ih)\\,min(720\\,ih)\\,-2)"
     );
 }
 ```

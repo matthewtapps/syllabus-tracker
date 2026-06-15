@@ -1,0 +1,174 @@
+# deploy-video-worker.yaml
+#
+# Builds the transcode-server container image and deploys it to Cloud Run
+# (australia-southeast1) via Workload Identity Federation — no long-lived
+# GCP credentials are stored in GitHub.
+#
+# Auth model (keyless):
+#   WIF provider authenticates the Actions OIDC token for this repo and
+#   impersonates the deployer SA, which has Artifact Registry writer +
+#   Cloud Run developer permissions granted by platform tofu.
+#   The only GitHub secrets required are the existing PLATFORM_STATE_R2_*
+#   bootstrap credentials used to read runtime values from tofu state
+#   (same pattern as staging.yml / deploy.yaml).
+#
+# Trigger: workflow_dispatch ONLY for now.
+# Re-enable the push trigger (commented out below) once the first manual
+# deploy has succeeded and VIDEO_ENQUEUE_URL is set as a repo variable.
+#
+# Post-first-deploy manual steps:
+#   1. Note the Cloud Run service URL printed to the step summary.
+#   2. gh variable set VIDEO_ENQUEUE_URL -b "<url>/jobs" -R matthewtapps/syllabus-tracker
+#   3. gh variable set VIDEO_PROCESSOR_STAGING -b "remote" -R matthewtapps/syllabus-tracker
+#   4. gh workflow run staging.yml -f branch=<branch> -f refresh_db=false \
+#        -f allow_destructive_migrations=false
+#   Staging will then route video jobs to Cloud Run instead of the host transcoder.
+#
+# CPU billing note: --no-cpu-throttling keeps CPU allocated for the full
+# request duration (sync transcode). At low volume this stays within the
+# Cloud Run free tier; the trade-off vs. the default throttled mode is that
+# idle time between requests does not bill (min-instances defaults to 0).
+
+name: Deploy video-worker
+
+on:
+  # Disabled until the first manual deploy has run and VIDEO_ENQUEUE_URL is set.
+  # Re-enable by uncommenting the push block below:
+  # push:
+  #   branches: [main]
+  #   paths:
+  #     - 'crates/video-worker/**'
+  #     - 'crates/video-media/**'
+  #     - 'crates/video-job/**'
+  #     - '.github/workflows/deploy-video-worker.yaml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write  # Required for WIF OIDC token exchange
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      PROJECT: matthewtapps-sillybus
+      REGION: australia-southeast1
+      AR_REPO: australia-southeast1-docker.pkg.dev/matthewtapps-sillybus/video-worker
+      SERVICE: transcode-server
+      RUNTIME_SA: video-runtime@matthewtapps-sillybus.iam.gserviceaccount.com
+
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Authenticate to Google Cloud (WIF)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/499417734093/locations/global/workloadIdentityPools/github/providers/github
+          service_account: deployer@matthewtapps-sillybus.iam.gserviceaccount.com
+
+      - name: Set up gcloud CLI
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev --quiet
+
+      - uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
+
+      - name: Build and push image to Artifact Registry
+        run: |
+          IMAGE="${{ env.AR_REPO }}/${{ env.SERVICE }}"
+          docker build \
+            -f crates/video-worker/Dockerfile \
+            -t "${IMAGE}:${{ github.sha }}" \
+            -t "${IMAGE}:latest" \
+            .
+          docker push "${IMAGE}:${{ github.sha }}"
+          docker push "${IMAGE}:latest"
+
+      - name: Install opentofu via nix
+        uses: cachix/install-nix-action@v27
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+      - run: nix profile install nixpkgs#opentofu && tofu version
+
+      - name: Read runtime secrets from platform tofu state
+        id: secrets
+        env:
+          AWS_ACCESS_KEY_ID:     ${{ secrets.PLATFORM_STATE_R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.PLATFORM_STATE_R2_SECRET_ACCESS_KEY }}
+          AWS_MAX_ATTEMPTS:      "5"
+        run: |
+          cd infra
+          i=0; until tofu init -input=false; do
+            i=$((i+1)); [ $i -ge 30 ] && { echo "::error::tofu init failed after 30 attempts"; exit 1; }
+            echo "tofu init attempt $i failed; sleeping 30s"; sleep 30
+          done
+          tofu apply -refresh-only -auto-approve -input=false -lock=false
+
+          ENQUEUE_TOKEN=$(tofu output -raw _platform_video_enqueue_token)
+          VIDEO_CALLBACK_SECRET=$(tofu output -raw _platform_video_callback_secret)
+          S3_ACCESS_KEY=$(tofu output -raw _platform_runtime_r2_access_key_id)
+          S3_SECRET_KEY=$(tofu output -raw _platform_runtime_r2_secret_access_key)
+
+          echo "::add-mask::$ENQUEUE_TOKEN"
+          echo "::add-mask::$VIDEO_CALLBACK_SECRET"
+          echo "::add-mask::$S3_ACCESS_KEY"
+          echo "::add-mask::$S3_SECRET_KEY"
+
+          echo "enqueue_token=$ENQUEUE_TOKEN"       >> "$GITHUB_OUTPUT"
+          echo "callback_secret=$VIDEO_CALLBACK_SECRET" >> "$GITHUB_OUTPUT"
+          echo "s3_access_key=$S3_ACCESS_KEY"       >> "$GITHUB_OUTPUT"
+          echo "s3_secret_key=$S3_SECRET_KEY"       >> "$GITHUB_OUTPUT"
+
+      - name: Deploy to Cloud Run
+        run: |
+          # Use ^@^ as the env-var list delimiter so commas inside values
+          # (none expected for these token/hex values, but safe by default)
+          # are never treated as key separators by gcloud.
+          gcloud run deploy ${{ env.SERVICE }} \
+            --project=${{ env.PROJECT }} \
+            --region=${{ env.REGION }} \
+            --image=${{ env.AR_REPO }}/${{ env.SERVICE }}:${{ github.sha }} \
+            --service-account=${{ env.RUNTIME_SA }} \
+            --allow-unauthenticated \
+            --port=8080 \
+            --cpu=1 \
+            --memory=2Gi \
+            --timeout=600 \
+            --max-instances=3 \
+            --no-cpu-throttling \
+            "--set-env-vars=^@^\
+          ENQUEUE_TOKEN=${{ steps.secrets.outputs.enqueue_token }}\
+          @VIDEO_CALLBACK_SECRET=${{ steps.secrets.outputs.callback_secret }}\
+          @S3_ACCESS_KEY=${{ steps.secrets.outputs.s3_access_key }}\
+          @S3_SECRET_KEY=${{ steps.secrets.outputs.s3_secret_key }}\
+          @S3_ENDPOINT=https://ea9e8573831e597fc41f865267b8fd35.r2.cloudflarestorage.com\
+          @S3_REGION=auto\
+          @S3_BUCKET=sillybus-videos-prod\
+          @S3_FORCE_PATH_STYLE=true\
+          @S3_PUBLIC_ENDPOINT=https://ea9e8573831e597fc41f865267b8fd35.r2.cloudflarestorage.com"
+
+      - name: Print service URL
+        run: |
+          URL=$(gcloud run services describe ${{ env.SERVICE }} \
+            --region=${{ env.REGION }} \
+            --project=${{ env.PROJECT }} \
+            --format='value(status.url)')
+          echo "Cloud Run URL: ${URL}"
+          echo "VIDEO_ENQUEUE_URL = ${URL}/jobs"
+          echo "### Cloud Run deployment complete" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Service URL:** ${URL}" >> "$GITHUB_STEP_SUMMARY"
+          echo "**VIDEO_ENQUEUE_URL:** \`${URL}/jobs\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Next: set the repo variable and cut staging over:" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          echo "gh variable set VIDEO_ENQUEUE_URL -b \"${URL}/jobs\" -R matthewtapps/syllabus-tracker" >> "$GITHUB_STEP_SUMMARY"
+          echo "gh variable set VIDEO_PROCESSOR_STAGING -b \"remote\" -R matthewtapps/syllabus-tracker" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"

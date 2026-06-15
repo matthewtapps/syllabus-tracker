@@ -1,15 +1,13 @@
-use std::sync::Arc;
-
 use chrono::{DateTime, Utc};
 use rocket::State;
-use rocket::data::{ByteUnit, ToByteUnit};
+use rocket::data::{ByteUnit, Data, ToByteUnit};
 use rocket::form::{Errors as FormErrors, Form};
 use rocket::fs::TempFile;
 use rocket::http::Status;
 use rocket::serde::{Deserialize, Serialize, json::Json};
 use rocket::tokio;
 use sqlx::{Pool, Sqlite};
-use tracing::{error, instrument, warn};
+use tracing::{error, info, instrument, warn};
 use uuid::Uuid;
 
 use crate::auth::{Permission, User};
@@ -17,10 +15,12 @@ use crate::db;
 use crate::models::{ProcessingStatus, Video};
 use crate::videos::embeds;
 use crate::videos::metrics::{kv, video_metrics};
-use crate::videos::pipeline::{
-    self, PipelineContext, max_video_bytes, signed_download_ttl, signed_playback_ttl,
-};
+use crate::videos::pipeline::{self, apply_processing_result, max_video_bytes, signed_download_ttl, signed_playback_ttl};
+use crate::videos::processor::{DynVideoProcessor, HostJob};
 use crate::videos::storage::DynVideoStorage;
+
+/// Newtype wrapping the optional callback secret managed in Rocket state.
+pub struct CallbackSecret(pub Option<String>);
 
 #[derive(Serialize)]
 pub struct ListVideosResponse {
@@ -81,14 +81,14 @@ pub fn upload_byte_limit() -> ByteUnit {
     (max_video_bytes() as u64).bytes() + 16.mebibytes()
 }
 
-#[instrument(skip(form, pool, ctx))]
+#[instrument(skip(form, pool, processor))]
 #[post("/techniques/<tid>/videos/upload", data = "<form>")]
 pub async fn api_video_upload(
     tid: i64,
     user: User,
     form: Result<Form<UploadForm<'_>>, FormErrors<'_>>,
     pool: &State<Pool<Sqlite>>,
-    ctx: &State<Arc<PipelineContext>>,
+    processor: &State<DynVideoProcessor>,
 ) -> Result<Json<UploadResponse>, Status> {
     user.require_permission(Permission::UploadVideos)?;
 
@@ -146,11 +146,13 @@ pub async fn api_video_upload(
     .await
     .map_err(Status::from)?;
 
-    let ctx_clone = ctx.inner().clone();
-    let dest_clone = dest.clone();
-    tokio::spawn(async move {
-        pipeline::process_uploaded_video(ctx_clone, video_id, tid, dest_clone).await;
-    });
+    processor
+        .start(HostJob {
+            video_id,
+            technique_id: tid,
+            original_temp_path: dest,
+        })
+        .await;
 
     Ok(Json(UploadResponse {
         video_id,
@@ -382,14 +384,15 @@ pub async fn api_reorder_videos(
     Ok(Status::NoContent)
 }
 
-#[instrument(skip(form, pool, ctx))]
+#[instrument(skip(form, pool, processor, storage))]
 #[post("/videos/<vid>/replace", data = "<form>")]
 pub async fn api_replace_video(
     vid: i64,
     user: User,
     form: Result<Form<ReplaceForm<'_>>, FormErrors<'_>>,
     pool: &State<Pool<Sqlite>>,
-    ctx: &State<Arc<PipelineContext>>,
+    processor: &State<DynVideoProcessor>,
+    storage: &State<DynVideoStorage>,
 ) -> Result<Json<UploadResponse>, Status> {
     user.require_permission(Permission::UploadVideos)?;
 
@@ -455,14 +458,16 @@ pub async fn api_replace_video(
             .map_err(Status::from)?;
     }
 
-    let ctx_clone = ctx.inner().clone();
-    let dest_clone = dest.clone();
-    tokio::spawn(async move {
-        pipeline::process_uploaded_video(ctx_clone, vid, technique_id, dest_clone).await;
-    });
+    processor
+        .start(HostJob {
+            video_id: vid,
+            technique_id,
+            original_temp_path: dest,
+        })
+        .await;
 
     if let Some(key) = existing_storage_key {
-        let storage = ctx.inner().storage.clone();
+        let storage = storage.inner().clone();
         tokio::spawn(async move {
             if let Err(e) = storage.delete(&key).await {
                 warn!("failed to delete previous storage object {}: {}", key, e);
@@ -782,6 +787,121 @@ pub async fn api_admin_storage(
         .await
         .map_err(Status::from)?;
     Ok(Json(overview))
+}
+
+// A thin FromRequest guard that plucks the HMAC signature header from the
+// request. Using a guard here lets us access request headers inside a Rocket
+// handler alongside a `Data<'_>` body parameter.
+pub struct SigHeader(pub Option<String>);
+
+#[rocket::async_trait]
+impl<'r> rocket::request::FromRequest<'r> for SigHeader {
+    type Error = ();
+
+    async fn from_request(
+        req: &'r rocket::Request<'_>,
+    ) -> rocket::request::Outcome<Self, Self::Error> {
+        let val = req
+            .headers()
+            .get_one(video_job::SIGNATURE_HEADER)
+            .map(|s| s.to_owned());
+        rocket::request::Outcome::Success(SigHeader(val))
+    }
+}
+
+/// Webhook: `POST /api/videos/<id>/processing-result`
+///
+/// Called by the remote transcode worker after it finishes transcoding.  Auth is
+/// HMAC-only (no user session guard). The raw body bytes are verified against
+/// the `X-Signature-256` header before any DB writes are attempted.
+///
+/// Response codes:
+/// - 200 OK: result applied (or idempotently no-op'd if already ready).
+/// - 400 Bad Request: body exceeds 64 KiB or JSON parse failed.
+/// - 401 Unauthorized: missing or invalid HMAC signature.
+/// - 404 Not Found: `video_id` not in the database.
+/// - 503 Service Unavailable: no callback secret is configured.
+#[instrument(skip(body, sig_header, secret, pool))]
+#[post("/videos/<video_id>/processing-result", data = "<body>")]
+pub async fn api_processing_result(
+    video_id: i64,
+    body: Data<'_>,
+    sig_header: SigHeader,
+    secret: &State<CallbackSecret>,
+    pool: &State<Pool<Sqlite>>,
+) -> Result<Status, Status> {
+    const MAX_BODY: u64 = 64 * 1024; // 64 KiB
+
+    // 503 if no secret configured.
+    let secret_str = match secret.0.as_deref() {
+        Some(s) => s,
+        None => {
+            warn!("processing-result webhook called but VIDEO_CALLBACK_SECRET is not set");
+            return Err(Status::ServiceUnavailable);
+        }
+    };
+
+    // Read the raw body with a size cap.
+    let raw: Vec<u8> = match body.open(MAX_BODY.bytes()).into_bytes().await {
+        Ok(bytes) if bytes.is_complete() => bytes.into_inner(),
+        Ok(_) => {
+            warn!(video_id, "processing-result body exceeded 64 KiB limit");
+            return Err(Status::PayloadTooLarge);
+        }
+        Err(e) => {
+            error!(video_id, error = %e, "failed to read processing-result body");
+            return Err(Status::BadRequest);
+        }
+    };
+
+    // 401 if signature header is missing.
+    let sig_hex = match sig_header.0.as_deref() {
+        Some(s) => s,
+        None => {
+            warn!(video_id, "processing-result request missing X-Signature-256 header");
+            return Err(Status::Unauthorized);
+        }
+    };
+
+    // Constant-time HMAC verification.
+    if !video_job::verify(secret_str.as_bytes(), &raw, sig_hex) {
+        warn!(video_id, "processing-result HMAC verification failed");
+        return Err(Status::Unauthorized);
+    }
+
+    // Parse the JSON payload.
+    let result: video_job::ProcessingResult = match serde_json::from_slice(&raw) {
+        Ok(r) => r,
+        Err(e) => {
+            error!(video_id, error = %e, "processing-result body failed JSON parse");
+            return Err(Status::BadRequest);
+        }
+    };
+
+    // Verify the video exists before writing.
+    match db::get_db_video(pool.inner(), video_id).await {
+        Ok(Some(_)) => {}
+        Ok(None) => {
+            warn!(video_id, "processing-result callback for unknown video");
+            return Err(Status::NotFound);
+        }
+        Err(e) => {
+            error!(video_id, error = %e, "db lookup failed in processing-result webhook");
+            return Err(Status::InternalServerError);
+        }
+    }
+
+    // Apply idempotently.
+    match apply_processing_result(pool.inner(), video_id, result).await {
+        Ok(()) => {
+            info!(video_id, "processing-result applied successfully");
+            Ok(Status::Ok)
+        }
+        Err(e) => {
+            error!(video_id, error = %e, "failed to apply processing-result");
+            Err(Status::InternalServerError)
+        }
+    }
 }
 
 fn is_mp4(content_type: Option<&rocket::http::ContentType>) -> bool {

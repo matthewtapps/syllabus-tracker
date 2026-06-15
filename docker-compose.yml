@@ -114,6 +114,56 @@ services:
     networks:
       - syllabus-net
 
+  # ---------------------------------------------------------------------------
+  # mock-transcoder (video-cloud profile only)
+  #
+  # Local dev stand-in for the remote Worker+Queue+Container pipeline.
+  # Runs transcode-server in async mode (TRANSCODE_SERVER_ASYNC=1) so the
+  # app upload path returns 202 immediately, exactly as before.
+  #
+  # Opt-in: only started when the video-cloud profile is active.
+  #   docker compose --profile video-cloud up
+  #
+  # The app service also needs these env vars to route through the mock:
+  #   VIDEO_PROCESSOR=cloudflare
+  #   VIDEO_ENQUEUE_URL=http://mock-transcoder:8765/jobs
+  #   VIDEO_ENQUEUE_TOKEN=dev-token       (any value; mock ignores it)
+  #   VIDEO_CALLBACK_SECRET=dev-secret    (must match mock-transcoder below)
+  #   VIDEO_CALLBACK_BASE_URL=http://app  (in-network app URL; no port, nginx fronts it)
+  #
+  # Set those in .secrets.env or via `environment:` in a
+  # docker-compose.video-cloud.yml override.
+  # ---------------------------------------------------------------------------
+  mock-transcoder:
+    profiles:
+      - video-cloud
+    build:
+      context: .
+      dockerfile: crates/video-worker/Dockerfile
+    environment:
+      # Async mode: return 202 immediately and spawn video-worker detached,
+      # matching the old mock-transcoder behaviour for local dev.
+      TRANSCODE_SERVER_ASYNC: "1"
+      # PORT matches the host port exposed below and the VIDEO_ENQUEUE_URL.
+      PORT: "8765"
+      # Same MinIO bucket + creds the app service uses.
+      S3_ENDPOINT: http://minio:9000
+      S3_PUBLIC_ENDPOINT: http://localhost:9000
+      S3_REGION: auto
+      S3_BUCKET: syllabus-tracker-videos-dev
+      S3_ACCESS_KEY: minioadmin
+      S3_SECRET_KEY: minioadmin
+      S3_FORCE_PATH_STYLE: "true"
+      # Must match VIDEO_CALLBACK_SECRET set on the app service.
+      VIDEO_CALLBACK_SECRET: "${VIDEO_CALLBACK_SECRET:-dev-secret}"
+      RUST_LOG: "info"
+    ports:
+      - "8765:8765"
+    depends_on:
+      - minio-init
+    networks:
+      - syllabus-net
+
 networks:
   syllabus-net:
 

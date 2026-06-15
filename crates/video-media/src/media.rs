@@ -146,6 +146,10 @@ impl MediaProbe for FfprobeMediaProbe {
     }
 }
 
+fn scale_filter() -> &'static str {
+    "scale=w=if(gt(iw\\,ih)\\,-2\\,min(720\\,iw)):h=if(gt(iw\\,ih)\\,min(720\\,ih)\\,-2)"
+}
+
 pub struct FfmpegMediaTranscode {
     pub binary: String,
 }
@@ -179,6 +183,8 @@ impl MediaTranscode for FfmpegMediaTranscode {
                 "veryfast",
                 "-crf",
                 "23",
+                "-vf",
+                scale_filter(),
                 "-c:a",
                 "aac",
                 "-movflags",
@@ -193,6 +199,19 @@ impl MediaTranscode for FfmpegMediaTranscode {
             return Err(MediaError::Transcode(stderr));
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::scale_filter;
+
+    #[test]
+    fn scale_filter_caps_720_both_orientations() {
+        assert_eq!(
+            scale_filter(),
+            "scale=w=if(gt(iw\\,ih)\\,-2\\,min(720\\,iw)):h=if(gt(iw\\,ih)\\,min(720\\,ih)\\,-2)"
+        );
     }
 }
 
