@@ -17,6 +17,7 @@ import { MomentComposer, type MomentDraft } from "./moment-composer";
 import { MomentFeed } from "./moment-feed";
 import { MomentOverlay } from "./moment-overlay";
 import { ScrubberPins } from "./scrubber-pins";
+import { effectiveTheater, resolvePinFocus } from "./review-logic";
 
 interface VideoReviewPanelProps {
   video: Video;
@@ -45,8 +46,15 @@ function ReviewInner({ video, surface, watchEvents, composerAction }: VideoRevie
   const videoIsLandscape = !(video.width && video.height && video.height > video.width);
   const wideEnough = useMediaQuery("(min-width: 768px)");
   const canTheater = videoIsLandscape && wideEnough;
-  const [theaterPref, setTheaterPref] = useState(false);
-  const theater = canTheater && theaterPref;
+  const [theaterPref, setTheaterPref] = useState<boolean | null>(null);
+  const theater = effectiveTheater(canTheater, theaterPref);
+
+  // Re-apply auto whenever the device orientation flips, so rotating to
+  // landscape lands in theater (room permitting) without a manual tap.
+  const landscape = useMediaQuery("(orientation: landscape)");
+  useEffect(() => {
+    setTheaterPref(null);
+  }, [landscape]);
 
   // Bridge player events -> controller registration, merged with watch events.
   const events = useMemo<PlayerEvents>(
@@ -60,6 +68,8 @@ function ReviewInner({ video, surface, watchEvents, composerAction }: VideoRevie
       },
       onPaused: (p) => registration?.reportPaused(p),
       registerSeek: (fn) => registration?.registerSeek(fn),
+      registerExitFullscreen: (fn) => registration?.registerExitFullscreen(fn),
+      onFullscreenChange: (f) => registration?.reportFullscreen(f),
     }),
     [watchEvents, registration],
   );
@@ -73,12 +83,14 @@ function ReviewInner({ video, surface, watchEvents, composerAction }: VideoRevie
   const listRef = useRef<HTMLDivElement>(null);
   const pinTimerRef = useRef<number | null>(null);
   const highlightTimerRef = useRef<number | null>(null);
+  const pinScrollRafRef = useRef<number | null>(null);
 
   // Clear both timers on unmount to prevent setState-after-unmount warnings.
   useEffect(() => {
     return () => {
       if (pinTimerRef.current) window.clearTimeout(pinTimerRef.current);
       if (highlightTimerRef.current) window.clearTimeout(highlightTimerRef.current);
+      if (pinScrollRafRef.current) cancelAnimationFrame(pinScrollRafRef.current);
     };
   }, []);
 
@@ -102,8 +114,20 @@ function ReviewInner({ video, surface, watchEvents, composerAction }: VideoRevie
       return;
     }
     setPinnedThread(t);
+
+    const actions = resolvePinFocus(controller.isFullscreen);
+    if (actions.exitFullscreen) controller.exitFullscreen();
+    if (actions.forceTheater) setTheaterPref(true);
+
     if (t.video_ts_seconds != null) controller.seekTo(t.video_ts_seconds);
-    scrollToThread(t.id);
+
+    // Defer the scroll two frames so the row exists after the fullscreen exit
+    // and the theater re-render have committed before scrollIntoView runs.
+    if (pinScrollRafRef.current) cancelAnimationFrame(pinScrollRafRef.current);
+    pinScrollRafRef.current = requestAnimationFrame(() => {
+      pinScrollRafRef.current = requestAnimationFrame(() => scrollToThread(t.id));
+    });
+
     if (pinTimerRef.current) window.clearTimeout(pinTimerRef.current);
     pinTimerRef.current = window.setTimeout(() => setPinnedThread(null), 6000);
   }
@@ -131,7 +155,7 @@ function ReviewInner({ video, surface, watchEvents, composerAction }: VideoRevie
       events={events}
       canTheater={canTheater}
       theater={theater}
-      onToggleTheater={() => setTheaterPref((t) => !t)}
+      onToggleTheater={() => setTheaterPref(!theater)}
       overlay={
         controller.canReadTime ? (
           <MomentOverlay
