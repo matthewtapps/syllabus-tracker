@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT COALESCE(MAX(position), -1) AS max_position\n         FROM videos\n         WHERE deleted_at IS NULL\n           AND parent_kind = ?\n           AND (technique_id IS ? OR (technique_id IS NULL AND ? IS NULL))\n           AND (student_id   IS ? OR (student_id   IS NULL AND ? IS NULL))\n           AND (thread_id    IS ? OR (thread_id    IS NULL AND ? IS NULL))",
+  "describe": {
+    "columns": [
+      {
+        "name": "max_position",
+        "ordinal": 0,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 7
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "fa62722c99847eb1bbf4a1ce69ca4319e07a6c80dc967fee779a8bdf58e55ad6"
+}

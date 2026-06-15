@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT id, technique_id, title, description, position, kind,\n                processing_status, processing_error, storage_key, bytes,\n                duration_seconds, width, height,\n                external_url, external_host, external_video_id, uploaded_by_id,\n                created_at, updated_at, hidden_at\n         FROM videos\n         WHERE technique_id = ? AND deleted_at IS NULL\n         ORDER BY position ASC, id ASC",
+  "query": "SELECT id, parent_kind, technique_id, student_id, thread_id, title, description,\n                position, kind, processing_status, processing_error, storage_key, bytes,\n                duration_seconds, width, height,\n                external_url, external_host, external_video_id, uploaded_by_id,\n                created_at, updated_at, hidden_at\n         FROM videos\n         WHERE id = ? AND deleted_at IS NULL",
   "describe": {
     "columns": [
       {
@@ -9,98 +9,113 @@
         "type_info": "Integer"
       },
       {
-        "name": "technique_id",
+        "name": "parent_kind",
         "ordinal": 1,
+        "type_info": "Text"
+      },
+      {
+        "name": "technique_id",
+        "ordinal": 2,
         "type_info": "Integer"
       },
       {
-        "name": "title",
-        "ordinal": 2,
-        "type_info": "Text"
-      },
-      {
-        "name": "description",
+        "name": "student_id",
         "ordinal": 3,
-        "type_info": "Text"
+        "type_info": "Integer"
       },
       {
-        "name": "position",
+        "name": "thread_id",
         "ordinal": 4,
         "type_info": "Integer"
       },
       {
-        "name": "kind",
+        "name": "title",
         "ordinal": 5,
         "type_info": "Text"
       },
       {
-        "name": "processing_status",
+        "name": "description",
         "ordinal": 6,
         "type_info": "Text"
       },
       {
-        "name": "processing_error",
+        "name": "position",
         "ordinal": 7,
-        "type_info": "Text"
+        "type_info": "Integer"
       },
       {
-        "name": "storage_key",
+        "name": "kind",
         "ordinal": 8,
         "type_info": "Text"
       },
       {
-        "name": "bytes",
+        "name": "processing_status",
         "ordinal": 9,
-        "type_info": "Integer"
+        "type_info": "Text"
       },
       {
-        "name": "duration_seconds",
+        "name": "processing_error",
         "ordinal": 10,
-        "type_info": "Integer"
+        "type_info": "Text"
       },
       {
-        "name": "width",
+        "name": "storage_key",
         "ordinal": 11,
-        "type_info": "Integer"
+        "type_info": "Text"
       },
       {
-        "name": "height",
+        "name": "bytes",
         "ordinal": 12,
         "type_info": "Integer"
       },
       {
-        "name": "external_url",
+        "name": "duration_seconds",
         "ordinal": 13,
+        "type_info": "Integer"
+      },
+      {
+        "name": "width",
+        "ordinal": 14,
+        "type_info": "Integer"
+      },
+      {
+        "name": "height",
+        "ordinal": 15,
+        "type_info": "Integer"
+      },
+      {
+        "name": "external_url",
+        "ordinal": 16,
         "type_info": "Text"
       },
       {
         "name": "external_host",
-        "ordinal": 14,
+        "ordinal": 17,
         "type_info": "Text"
       },
       {
         "name": "external_video_id",
-        "ordinal": 15,
+        "ordinal": 18,
         "type_info": "Text"
       },
       {
         "name": "uploaded_by_id",
-        "ordinal": 16,
+        "ordinal": 19,
         "type_info": "Integer"
       },
       {
         "name": "created_at",
-        "ordinal": 17,
+        "ordinal": 20,
         "type_info": "Datetime"
       },
       {
         "name": "updated_at",
-        "ordinal": 18,
+        "ordinal": 21,
         "type_info": "Datetime"
       },
       {
         "name": "hidden_at",
-        "ordinal": 19,
+        "ordinal": 22,
         "type_info": "Datetime"
       }
     ],
@@ -108,6 +123,9 @@
       "Right": 1
     },
     "nullable": [
+      false,
+      false,
+      true,
       true,
       true,
       false,
@@ -130,5 +148,5 @@
       true
     ]
   },
-  "hash": "264efc84559526075686b2f8d41e8834999ef7c9b215e58d8128dce14d56ab5f"
+  "hash": "f59e54621cc1d9fe53229556d53dc739e1e12e697e13b3b795009f1325d5cbe7"
 }

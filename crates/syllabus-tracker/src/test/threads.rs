@@ -490,6 +490,72 @@ mod tests {
         assert_eq!(threads[1].video_ts_seconds, Some(42), "timestamped thread must carry 42");
     }
 
+    /// CX-010: a video whose parent is a thread (a "video reply") must not be
+    /// allowed to anchor a NEW thread. No endless reply chains.
+    #[rocket::async_test]
+    async fn cannot_start_thread_on_a_thread_reply_video() {
+        use crate::db::{create_processing_video, VideoParent};
+        let db = db_with_coach_and_student().await;
+        let coach_id = db.user_id("coach_user").unwrap();
+        let student_id = db.user_id("student_user").unwrap();
+
+        // A root thread on the student profile.
+        let root_thread_id = create_thread(
+            &db.pool,
+            NewThread {
+                author_id: coach_id,
+                anchor: Anchor {
+                    kind: AnchorKind::StudentProfile,
+                    id: student_id,
+                    video_ts_seconds: None,
+                    pinned_student_id: None,
+                },
+                visibility: ThreadVisibility::Private,
+                scope_student_id: Some(student_id),
+                body: "Here's a fix.".to_string(),
+            },
+        )
+        .await
+        .unwrap();
+
+        // A video reply hanging off that thread.
+        let reply_video_id = create_processing_video(
+            &db.pool,
+            VideoParent::Thread(root_thread_id),
+            "reply clip",
+            None,
+            coach_id,
+        )
+        .await
+        .unwrap();
+
+        // Attempting to anchor a NEW thread on that reply video must be rejected.
+        let result = create_thread(
+            &db.pool,
+            NewThread {
+                author_id: coach_id,
+                anchor: Anchor {
+                    kind: AnchorKind::Video,
+                    id: reply_video_id,
+                    video_ts_seconds: None,
+                    pinned_student_id: None,
+                },
+                visibility: ThreadVisibility::Private,
+                scope_student_id: Some(student_id),
+                body: "should be rejected".to_string(),
+            },
+        )
+        .await;
+        // Must be rejected by the CX-010 validation guard specifically (a 400),
+        // not incidentally by a downstream constraint failure.
+        match result {
+            Err(crate::error::AppError::Validation(_)) => {}
+            other => panic!(
+                "CX-010: a thread-reply video must be rejected with a Validation error, got {other:?}"
+            ),
+        }
+    }
+
     #[rocket::async_test]
     async fn validate_anchor_rejects_missing_video() {
         let db = TestDbBuilder::new()

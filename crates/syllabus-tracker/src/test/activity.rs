@@ -656,7 +656,13 @@ mod tests {
             .await
             .unwrap();
 
-        crate::db::create_processing_video(&db.pool, armbar, "Test Video", None, coach)
+        crate::db::create_processing_video(
+            &db.pool,
+            crate::db::VideoParent::Technique(armbar),
+            "Test Video",
+            None,
+            coach,
+        )
             .await
             .unwrap();
 
@@ -692,7 +698,7 @@ mod tests {
         crate::db::create_external_video(
             &db.pool,
             crate::db::NewExternalVideo {
-                technique_id: armbar,
+                parent: crate::db::VideoParent::Technique(armbar),
                 title: "External Test",
                 description: None,
                 uploaded_by_id: coach,

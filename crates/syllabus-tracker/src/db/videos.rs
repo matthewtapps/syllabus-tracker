@@ -10,13 +10,92 @@ use crate::db::activity::{
 use crate::error::AppError;
 use crate::models::{DbVideo, ProcessingStatus, Video, VideoKind};
 
+/// The kinds of thing a video can hang off. Typed-column polymorphism,
+/// mirrors `threads::AnchorKind`. Camp and match parents are added when
+/// those tables exist.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum VideoParent {
+    Technique(i64),
+    StudentProfile(i64),
+    /// A video reply living under a thread. Per CX-010 a thread can NOT be
+    /// started on a video whose parent is a thread (no endless reply chains);
+    /// that guard lives in `db::threads::validate_anchor` (a later task).
+    Thread(i64),
+    Loose,
+}
+
+/// The four typed columns a `VideoParent` resolves to in the `videos` table.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ParentColumns {
+    pub kind: &'static str,
+    pub technique_id: Option<i64>,
+    pub student_id: Option<i64>,
+    pub thread_id: Option<i64>,
+}
+
+impl VideoParent {
+    pub fn columns(self) -> ParentColumns {
+        match self {
+            VideoParent::Technique(id) => ParentColumns {
+                kind: "technique", technique_id: Some(id), student_id: None, thread_id: None,
+            },
+            VideoParent::StudentProfile(id) => ParentColumns {
+                kind: "student_profile", technique_id: None, student_id: Some(id), thread_id: None,
+            },
+            VideoParent::Thread(id) => ParentColumns {
+                kind: "thread", technique_id: None, student_id: None, thread_id: Some(id),
+            },
+            VideoParent::Loose => ParentColumns {
+                kind: "loose", technique_id: None, student_id: None, thread_id: None,
+            },
+        }
+    }
+}
+
+/// Confirms the parent row exists before inserting a video against it.
+/// Loose has no parent to check.
 #[instrument(skip(pool))]
-pub async fn next_video_position(pool: &Pool<Sqlite>, technique_id: i64) -> Result<i64, AppError> {
+pub async fn validate_parent(pool: &Pool<Sqlite>, parent: VideoParent) -> Result<(), AppError> {
+    let exists = match parent {
+        VideoParent::Technique(id) => {
+            sqlx::query_scalar!("SELECT 1 FROM techniques WHERE id = ?", id)
+                .fetch_optional(pool).await?.is_some()
+        }
+        VideoParent::StudentProfile(id) => {
+            sqlx::query_scalar!("SELECT 1 FROM users WHERE id = ?", id)
+                .fetch_optional(pool).await?.is_some()
+        }
+        VideoParent::Thread(id) => {
+            sqlx::query_scalar!("SELECT 1 FROM threads WHERE id = ? AND deleted_at IS NULL", id)
+                .fetch_optional(pool).await?.is_some()
+        }
+        VideoParent::Loose => true,
+    };
+    if exists {
+        Ok(())
+    } else {
+        Err(AppError::NotFound("parent for video not found".into()))
+    }
+}
+
+#[instrument(skip(pool))]
+pub async fn next_video_position(pool: &Pool<Sqlite>, parent: VideoParent) -> Result<i64, AppError> {
+    let c = parent.columns();
     let row = sqlx::query!(
         "SELECT COALESCE(MAX(position), -1) AS max_position
          FROM videos
-         WHERE technique_id = ? AND deleted_at IS NULL",
-        technique_id
+         WHERE deleted_at IS NULL
+           AND parent_kind = ?
+           AND (technique_id IS ? OR (technique_id IS NULL AND ? IS NULL))
+           AND (student_id   IS ? OR (student_id   IS NULL AND ? IS NULL))
+           AND (thread_id    IS ? OR (thread_id    IS NULL AND ? IS NULL))",
+        c.kind,
+        c.technique_id,
+        c.technique_id,
+        c.student_id,
+        c.student_id,
+        c.thread_id,
+        c.thread_id,
     )
     .fetch_one(pool)
     .await?;
@@ -26,22 +105,27 @@ pub async fn next_video_position(pool: &Pool<Sqlite>, technique_id: i64) -> Resu
 #[instrument(skip(pool))]
 pub async fn create_processing_video(
     pool: &Pool<Sqlite>,
-    technique_id: i64,
+    parent: VideoParent,
     title: &str,
     description: Option<&str>,
     uploaded_by_id: i64,
 ) -> Result<i64, AppError> {
     info!("Creating processing video");
-    let position = next_video_position(pool, technique_id).await?;
+    validate_parent(pool, parent).await?;
+    let c = parent.columns();
+    let position = next_video_position(pool, parent).await?;
     let kind = VideoKind::Native.as_str();
     let status = ProcessingStatus::Processing.as_str();
     let mut tx = pool.begin().await?;
     let res = sqlx::query!(
         "INSERT INTO videos (
-            technique_id, title, description, position, kind, processing_status,
-            uploaded_by_id
-         ) VALUES (?, ?, ?, ?, ?, ?, ?)",
-        technique_id,
+            parent_kind, technique_id, student_id, thread_id,
+            title, description, position, kind, processing_status, uploaded_by_id
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        c.kind,
+        c.technique_id,
+        c.student_id,
+        c.thread_id,
         title,
         description,
         position,
@@ -52,21 +136,23 @@ pub async fn create_processing_video(
     .execute(&mut *tx)
     .await?;
     let video_id = res.last_insert_rowid();
-    let affected = affected_students_for_technique(&mut tx, technique_id).await?;
-    emit_fanout(
-        &mut tx,
-        NewActivity::new(Verb::VideoAdded, uploaded_by_id)
-            .video(video_id)
-            .technique(technique_id),
-        &affected,
-    )
-    .await?;
+    if let VideoParent::Technique(technique_id) = parent {
+        let affected = affected_students_for_technique(&mut tx, technique_id).await?;
+        emit_fanout(
+            &mut tx,
+            NewActivity::new(Verb::VideoAdded, uploaded_by_id)
+                .video(video_id)
+                .technique(technique_id),
+            &affected,
+        )
+        .await?;
+    }
     tx.commit().await?;
     Ok(video_id)
 }
 
 pub struct NewExternalVideo<'a> {
-    pub technique_id: i64,
+    pub parent: VideoParent,
     pub title: &'a str,
     pub description: Option<&'a str>,
     pub uploaded_by_id: i64,
@@ -76,24 +162,29 @@ pub struct NewExternalVideo<'a> {
     pub external_video_id: Option<&'a str>,
 }
 
-#[instrument(skip(pool, input), fields(technique_id = input.technique_id))]
+#[instrument(skip(pool, input))]
 pub async fn create_external_video(
     pool: &Pool<Sqlite>,
     input: NewExternalVideo<'_>,
 ) -> Result<i64, AppError> {
     info!("Creating external video");
-    let position = next_video_position(pool, input.technique_id).await?;
+    validate_parent(pool, input.parent).await?;
+    let c = input.parent.columns();
+    let position = next_video_position(pool, input.parent).await?;
     let kind_str = input.kind.as_str();
     let status = ProcessingStatus::Ready.as_str();
-    let technique_id = input.technique_id;
     let uploaded_by_id = input.uploaded_by_id;
     let mut tx = pool.begin().await?;
     let res = sqlx::query!(
         "INSERT INTO videos (
-            technique_id, title, description, position, kind, processing_status,
+            parent_kind, technique_id, student_id, thread_id,
+            title, description, position, kind, processing_status,
             external_url, external_host, external_video_id, uploaded_by_id
-         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        input.technique_id,
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        c.kind,
+        c.technique_id,
+        c.student_id,
+        c.thread_id,
         input.title,
         input.description,
         position,
@@ -107,15 +198,17 @@ pub async fn create_external_video(
     .execute(&mut *tx)
     .await?;
     let video_id = res.last_insert_rowid();
-    let affected = affected_students_for_technique(&mut tx, technique_id).await?;
-    emit_fanout(
-        &mut tx,
-        NewActivity::new(Verb::VideoAdded, uploaded_by_id)
-            .video(video_id)
-            .technique(technique_id),
-        &affected,
-    )
-    .await?;
+    if let VideoParent::Technique(technique_id) = input.parent {
+        let affected = affected_students_for_technique(&mut tx, technique_id).await?;
+        emit_fanout(
+            &mut tx,
+            NewActivity::new(Verb::VideoAdded, uploaded_by_id)
+                .video(video_id)
+                .technique(technique_id),
+            &affected,
+        )
+        .await?;
+    }
     tx.commit().await?;
     Ok(video_id)
 }
@@ -248,8 +341,8 @@ pub async fn mark_video_failed_if_not_ready(
 pub async fn get_db_video(pool: &Pool<Sqlite>, id: i64) -> Result<Option<DbVideo>, AppError> {
     let row = sqlx::query_as!(
         DbVideo,
-        "SELECT id, technique_id, title, description, position, kind,
-                processing_status, processing_error, storage_key, bytes,
+        "SELECT id, parent_kind, technique_id, student_id, thread_id, title, description,
+                position, kind, processing_status, processing_error, storage_key, bytes,
                 duration_seconds, width, height,
                 external_url, external_host, external_video_id, uploaded_by_id,
                 created_at, updated_at, hidden_at
@@ -278,8 +371,8 @@ pub async fn list_videos_for_technique(
 ) -> Result<Vec<Video>, AppError> {
     let rows = sqlx::query_as!(
         DbVideo,
-        "SELECT id, technique_id, title, description, position, kind,
-                processing_status, processing_error, storage_key, bytes,
+        "SELECT id, parent_kind, technique_id, student_id, thread_id, title, description,
+                position, kind, processing_status, processing_error, storage_key, bytes,
                 duration_seconds, width, height,
                 external_url, external_host, external_video_id, uploaded_by_id,
                 created_at, updated_at, hidden_at
@@ -309,7 +402,8 @@ pub async fn list_videos_for_technique_in_syllabus_visible_to(
 ) -> Result<Vec<Video>, AppError> {
     let rows = sqlx::query_as!(
         DbVideo,
-        "SELECT v.id, v.technique_id, v.title, v.description, v.position, v.kind,
+        "SELECT v.id, v.parent_kind, v.technique_id, v.student_id, v.thread_id,
+                v.title, v.description, v.position, v.kind,
                 v.processing_status, v.processing_error, v.storage_key, v.bytes,
                 v.duration_seconds, v.width, v.height,
                 v.external_url, v.external_host, v.external_video_id, v.uploaded_by_id,
@@ -344,8 +438,8 @@ pub async fn list_videos_for_technique_global_visible(
 ) -> Result<Vec<Video>, AppError> {
     let rows = sqlx::query_as!(
         DbVideo,
-        "SELECT id, technique_id, title, description, position, kind,
-                processing_status, processing_error, storage_key, bytes,
+        "SELECT id, parent_kind, technique_id, student_id, thread_id, title, description,
+                position, kind, processing_status, processing_error, storage_key, bytes,
                 duration_seconds, width, height,
                 external_url, external_host, external_video_id, uploaded_by_id,
                 created_at, updated_at, hidden_at
@@ -355,6 +449,45 @@ pub async fn list_videos_for_technique_global_visible(
            AND hidden_at IS NULL
          ORDER BY position ASC, id ASC",
         technique_id,
+    )
+    .fetch_all(pool)
+    .await?;
+    Ok(rows.into_iter().map(Video::from).collect())
+}
+
+/// Lists the globally-visible (not soft-deleted, not globally-hidden) videos
+/// hanging off a given parent. Used by profile/thread/loose surfaces, which
+/// per CX-019 apply only the global hide (no per-student override layers).
+// Consumed by the profile/thread/loose video surfaces in later PRs; kept here
+// so this slab delivers the read primitive alongside the write path.
+#[allow(dead_code)]
+#[instrument(skip(pool))]
+pub async fn list_videos_for_parent_global_visible(
+    pool: &Pool<Sqlite>,
+    parent: VideoParent,
+) -> Result<Vec<Video>, AppError> {
+    let c = parent.columns();
+    let rows = sqlx::query_as!(
+        DbVideo,
+        "SELECT id, parent_kind, technique_id, student_id, thread_id, title, description,
+                position, kind, processing_status, processing_error, storage_key, bytes,
+                duration_seconds, width, height,
+                external_url, external_host, external_video_id, uploaded_by_id,
+                created_at, updated_at, hidden_at
+         FROM videos
+         WHERE deleted_at IS NULL AND hidden_at IS NULL
+           AND parent_kind = ?
+           AND (technique_id IS ? OR (technique_id IS NULL AND ? IS NULL))
+           AND (student_id   IS ? OR (student_id   IS NULL AND ? IS NULL))
+           AND (thread_id    IS ? OR (thread_id    IS NULL AND ? IS NULL))
+         ORDER BY position ASC, id ASC",
+        c.kind,
+        c.technique_id,
+        c.technique_id,
+        c.student_id,
+        c.student_id,
+        c.thread_id,
+        c.thread_id,
     )
     .fetch_all(pool)
     .await?;
@@ -375,7 +508,8 @@ pub async fn list_videos_for_technique_visible_to(
 ) -> Result<Vec<Video>, AppError> {
     let rows = sqlx::query_as!(
         DbVideo,
-        "SELECT v.id, v.technique_id, v.title, v.description, v.position, v.kind,
+        "SELECT v.id, v.parent_kind, v.technique_id, v.student_id, v.thread_id,
+                v.title, v.description, v.position, v.kind,
                 v.processing_status, v.processing_error, v.storage_key, v.bytes,
                 v.duration_seconds, v.width, v.height,
                 v.external_url, v.external_host, v.external_video_id, v.uploaded_by_id,
@@ -479,7 +613,7 @@ pub async fn set_video_hidden_globally(
 ) -> Result<bool, AppError> {
     let now = Utc::now().naive_utc();
     let technique_id = sqlx::query_scalar!(
-        r#"SELECT technique_id AS "technique_id!: i64" FROM videos WHERE id = ?"#,
+        r#"SELECT technique_id AS "technique_id?: i64" FROM videos WHERE id = ?"#,
         video_id,
     )
     .fetch_one(pool)
@@ -505,16 +639,20 @@ pub async fn set_video_hidden_globally(
         .execute(&mut *tx)
         .await?
     };
-    let affected = affected_students_for_technique(&mut tx, technique_id).await?;
-    emit_fanout(
-        &mut tx,
-        NewActivity::new(Verb::VideoVisibilitySet, actor_id)
-            .video(video_id)
-            .technique(technique_id)
-            .payload(payload::video_visibility_set("global", !hidden)),
-        &affected,
-    )
-    .await?;
+    // Only technique-parented videos have syllabus students to fan out to.
+    // Profile/thread/loose videos have no such audience, so skip the emit.
+    if let Some(technique_id) = technique_id {
+        let affected = affected_students_for_technique(&mut tx, technique_id).await?;
+        emit_fanout(
+            &mut tx,
+            NewActivity::new(Verb::VideoVisibilitySet, actor_id)
+                .video(video_id)
+                .technique(technique_id)
+                .payload(payload::video_visibility_set("global", !hidden)),
+            &affected,
+        )
+        .await?;
+    }
     tx.commit().await?;
     Ok(result.rows_affected() > 0)
 }
@@ -854,4 +992,29 @@ pub async fn list_video_syllabus_overrides(
         map.insert(video_id, visible);
     }
     Ok(map)
+}
+
+#[cfg(test)]
+mod parent_tests {
+    use super::*;
+
+    #[test]
+    fn parent_columns_map_each_kind_to_exactly_one_id() {
+        assert_eq!(
+            VideoParent::Technique(7).columns(),
+            ParentColumns { kind: "technique", technique_id: Some(7), student_id: None, thread_id: None }
+        );
+        assert_eq!(
+            VideoParent::StudentProfile(3).columns(),
+            ParentColumns { kind: "student_profile", technique_id: None, student_id: Some(3), thread_id: None }
+        );
+        assert_eq!(
+            VideoParent::Thread(11).columns(),
+            ParentColumns { kind: "thread", technique_id: None, student_id: None, thread_id: Some(11) }
+        );
+        assert_eq!(
+            VideoParent::Loose.columns(),
+            ParentColumns { kind: "loose", technique_id: None, student_id: None, thread_id: None }
+        );
+    }
 }

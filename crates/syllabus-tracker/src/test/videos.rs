@@ -642,6 +642,84 @@ mod tests {
         assert_eq!(body["acked"], true);
     }
 
+    #[rocket::async_test]
+    async fn create_video_for_each_parent_kind_round_trips() {
+        use crate::db::{
+            create_processing_video, get_db_video, list_videos_for_parent_global_visible,
+            VideoParent,
+        };
+        use crate::test::test_utils::TestDbBuilder;
+
+        let db = TestDbBuilder::new()
+            .coach("coach", None)
+            .student("alice", None)
+            .technique("Armbar", "arm lock", Some("coach"))
+            .build()
+            .await
+            .unwrap();
+        let coach = db.user_id("coach").unwrap();
+        let alice = db.user_id("alice").unwrap();
+        let tech = db.technique_id("Armbar").unwrap();
+
+        let tech_vid = create_processing_video(&db.pool, VideoParent::Technique(tech), "t", None, coach)
+            .await
+            .unwrap();
+        let prof_vid =
+            create_processing_video(&db.pool, VideoParent::StudentProfile(alice), "p", None, alice)
+                .await
+                .unwrap();
+        let loose_vid = create_processing_video(&db.pool, VideoParent::Loose, "l", None, coach)
+            .await
+            .unwrap();
+
+        assert_eq!(
+            get_db_video(&db.pool, tech_vid)
+                .await
+                .unwrap()
+                .unwrap()
+                .parent_kind,
+            "technique"
+        );
+        assert_eq!(
+            get_db_video(&db.pool, prof_vid)
+                .await
+                .unwrap()
+                .unwrap()
+                .parent_kind,
+            "student_profile"
+        );
+        assert_eq!(
+            get_db_video(&db.pool, loose_vid)
+                .await
+                .unwrap()
+                .unwrap()
+                .parent_kind,
+            "loose"
+        );
+
+        let prof_list =
+            list_videos_for_parent_global_visible(&db.pool, VideoParent::StudentProfile(alice))
+                .await
+                .unwrap();
+        assert_eq!(prof_list.len(), 1);
+        assert_eq!(prof_list[0].id, prof_vid);
+        assert_eq!(prof_list[0].technique_id, None);
+    }
+
+    #[rocket::async_test]
+    async fn create_video_rejects_missing_parent() {
+        use crate::db::{create_processing_video, VideoParent};
+        use crate::test::test_utils::TestDbBuilder;
+
+        let db = TestDbBuilder::new().coach("coach", None).build().await.unwrap();
+        let err =
+            create_processing_video(&db.pool, VideoParent::Technique(999_999), "x", None, 1).await;
+        assert!(
+            err.is_err(),
+            "creating a video for a non-existent technique must fail"
+        );
+    }
+
     // Silence unused Header import when adding follow-up cases.
     #[allow(dead_code)]
     fn _header(name: &'static str, value: &'static str) -> Header<'static> {

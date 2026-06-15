@@ -130,15 +130,30 @@ async fn validate_anchor(pool: &Pool<Sqlite>, anchor: &Anchor) -> Result<(), App
         )
         .fetch_one(pool)
         .await?,
-        AnchorKind::Video | AnchorKind::VideoTimestamp => sqlx::query_scalar!(
-            r#"SELECT EXISTS(
-                  SELECT 1 FROM videos
-                  WHERE id = ? AND deleted_at IS NULL AND hidden_at IS NULL
-               ) AS "e!: i64""#,
-            anchor.id
-        )
-        .fetch_one(pool)
-        .await?,
+        AnchorKind::Video | AnchorKind::VideoTimestamp => {
+            // Read the live video's parent_kind so we can both confirm it exists
+            // and enforce CX-010 below. A missing row falls through to the
+            // shared not-found error at the end of this function.
+            let row = sqlx::query!(
+                r#"SELECT parent_kind
+                   FROM videos
+                   WHERE id = ? AND deleted_at IS NULL AND hidden_at IS NULL"#,
+                anchor.id
+            )
+            .fetch_optional(pool)
+            .await?;
+            match row {
+                // CX-010: a video that is itself a thread reply cannot anchor a
+                // new thread (prevents endless reply chains).
+                Some(r) if r.parent_kind == "thread" => {
+                    return Err(AppError::Validation(
+                        "cannot start a thread on a video that is a thread reply".to_string(),
+                    ));
+                }
+                Some(_) => 1,
+                None => 0,
+            }
+        }
         AnchorKind::Sst => sqlx::query_scalar!(
             r#"SELECT EXISTS(SELECT 1 FROM student_syllabus_techniques WHERE id = ?) AS "e!: i64""#,
             anchor.id

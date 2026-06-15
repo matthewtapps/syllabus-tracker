@@ -41,6 +41,11 @@ function ReviewInner({ video, surface, watchEvents, composerAction }: VideoRevie
   const controller = usePlayerController();
   const registration = usePlayerRegistration();
 
+  // CX-010: a video reply (parent_kind 'thread') cannot anchor a new thread,
+  // so don't render the create-comment composer for it. Existing threads on
+  // the video still render via the feed below.
+  const isReplyVideo = video.parent_kind === "thread";
+
   // Rotating the phone to landscape on a landscape clip drives the video into
   // fullscreen (with auto-rotate on it lands there; with auto-rotate off the
   // orientation lock in the player makes Android offer its native rotate prompt).
@@ -208,7 +213,7 @@ function ReviewInner({ video, surface, watchEvents, composerAction }: VideoRevie
       {/* Player is full-bleed to the viewer edges; the comments stay inset. */}
       <div className="relative">{player}</div>
       <div className="space-y-3 px-3 pb-4 sm:px-4">
-        {composer}
+        {!isReplyVideo && composer}
         {feed}
       </div>
     </div>

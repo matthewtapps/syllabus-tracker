@@ -121,7 +121,15 @@ CREATE INDEX IF NOT EXISTS idx_attempts_recorder
 
 CREATE TABLE IF NOT EXISTS videos (
     id INTEGER PRIMARY KEY,
-    technique_id INTEGER NOT NULL REFERENCES techniques (id) ON DELETE CASCADE,
+    -- Parent is polymorphic (typed-column pattern, mirrors threads.anchor_kind).
+    -- DEFAULT 'technique' so the declarative table-rebuild backfills existing
+    -- rows (which all have technique_id set) into the technique branch.
+    parent_kind TEXT NOT NULL DEFAULT 'technique' CHECK (parent_kind IN (
+        'technique', 'student_profile', 'thread', 'loose'
+    )),
+    technique_id INTEGER REFERENCES techniques (id) ON DELETE CASCADE,
+    student_id INTEGER REFERENCES users (id) ON DELETE CASCADE,
+    thread_id INTEGER REFERENCES threads (id) ON DELETE CASCADE,
     title TEXT NOT NULL,
     description TEXT,
     position INTEGER NOT NULL DEFAULT 0,
@@ -148,7 +156,13 @@ CREATE TABLE IF NOT EXISTS videos (
     -- Global hide. When set, students don't see the video at all (unless
     -- they have an explicit per-student override row pointing the other
     -- way). Coaches still see the video, badged "Hidden".
-    hidden_at TIMESTAMP
+    hidden_at TIMESTAMP,
+    CHECK (
+      (parent_kind = 'technique'       AND technique_id IS NOT NULL AND student_id IS NULL     AND thread_id IS NULL) OR
+      (parent_kind = 'student_profile' AND student_id IS NOT NULL    AND technique_id IS NULL   AND thread_id IS NULL) OR
+      (parent_kind = 'thread'          AND thread_id IS NOT NULL      AND technique_id IS NULL   AND student_id IS NULL) OR
+      (parent_kind = 'loose'           AND technique_id IS NULL       AND student_id IS NULL     AND thread_id IS NULL)
+    )
 );
 CREATE INDEX IF NOT EXISTS idx_videos_technique_position
     ON videos (technique_id, position);
@@ -156,6 +170,8 @@ CREATE INDEX IF NOT EXISTS idx_videos_status
     ON videos (processing_status);
 CREATE INDEX IF NOT EXISTS idx_videos_alive_by_technique
     ON videos (technique_id) WHERE deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_videos_parent
+    ON videos (parent_kind, technique_id, student_id, thread_id);
 
 -- Per-student visibility override for a single video. A row exists only
 -- when a coach has explicitly set a non-default visibility for that
