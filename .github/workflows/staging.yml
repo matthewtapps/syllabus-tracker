@@ -118,8 +118,13 @@ jobs:
           tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/app:staging-${{ steps.sha.outputs.short }}
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/app:staging-latest
-          cache-from: type=gha,scope=backend
-          cache-to: type=gha,scope=backend-staging,mode=max
+          # Registry-backed layer cache, shared ref with prod (deploy.yaml) so
+          # staging reuses prod's warm cargo-chef dependency layer and vice
+          # versa. Off the 10 GB GHA cache pool, no eviction. Previously staging
+          # read scope=backend but wrote scope=backend-staging, so it never
+          # reused its own cache and the duplicate write evicted prod's.
+          cache-from: type=registry,ref=ghcr.io/matthewtapps/syllabus-tracker/buildcache:backend
+          cache-to: type=registry,ref=ghcr.io/matthewtapps/syllabus-tracker/buildcache:backend,mode=max
 
   build_frontend:
     runs-on: ubuntu-latest
