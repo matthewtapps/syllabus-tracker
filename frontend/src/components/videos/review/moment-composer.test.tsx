@@ -77,4 +77,24 @@ describe("MomentComposer", () => {
     );
     expect(screen.getByRole("button", { name: /download video/i })).toBeTruthy();
   });
+
+  it("re-grabs the stamp from the live playhead via use current frame", async () => {
+    const onSubmit = vi.fn().mockResolvedValue(undefined);
+    const { rerender } = render(
+      <MomentComposer currentTime={10} duration={60} canStamp onSubmit={onSubmit} />,
+    );
+    await userEvent.click(screen.getByRole("button", { name: /comment at 0:10/i }));
+    // Playhead moves while the composer is open.
+    rerender(<MomentComposer currentTime={55} duration={60} canStamp onSubmit={onSubmit} />);
+    await userEvent.click(screen.getByRole("button", { name: /use current frame/i }));
+    await userEvent.type(screen.getByRole("textbox"), "here");
+    await userEvent.click(screen.getByRole("button", { name: /^post$/i }));
+    expect(onSubmit).toHaveBeenCalledWith({ video_ts_seconds: 55, body: "here" });
+  });
+
+  it("hides use current frame when stamping is unavailable", async () => {
+    render(<MomentComposer currentTime={0} duration={60} canStamp={false} onSubmit={vi.fn()} />);
+    await userEvent.click(screen.getByRole("button", { name: /comment on video/i }));
+    expect(screen.queryByRole("button", { name: /use current frame/i })).toBeNull();
+  });
 });

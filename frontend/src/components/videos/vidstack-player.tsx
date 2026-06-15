@@ -66,6 +66,9 @@ export function VidstackPlayer({
     events?.registerSeek?.((seconds) => {
       player.currentTime = Math.max(0, seconds);
     });
+    events?.registerExitFullscreen?.(() => {
+      player.exitFullscreen?.().catch(() => {});
+    });
     const unsubscribe = player.subscribe((state) => {
       startedRef.current = applySnapshot(
         { currentTime: state.currentTime, duration: state.duration, paused: state.paused },
@@ -109,6 +112,7 @@ export function VidstackPlayer({
       }
     >
       <MediaProvider />
+      <FullscreenReporter onChange={events?.onFullscreenChange} />
 
       {/* Tap anywhere on the frame to play/pause. Sits below the controls and
           the comment chip in the DOM, so taps on those still hit them. */}
@@ -191,6 +195,14 @@ function MuteIcon() {
 function FullscreenIcon() {
   const fullscreen = useMediaState("fullscreen");
   return fullscreen ? <Minimize className="h-5 w-5" /> : <Maximize className="h-5 w-5" />;
+}
+
+function FullscreenReporter({ onChange }: { onChange?: (fullscreen: boolean) => void }) {
+  const fullscreen = useMediaState("fullscreen");
+  useEffect(() => {
+    onChange?.(fullscreen);
+  }, [fullscreen, onChange]);
+  return null;
 }
 
 function TimeReadout() {

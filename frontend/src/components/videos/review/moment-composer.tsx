@@ -134,6 +134,15 @@ export function MomentComposer({
           </button>
         </div>
       )}
+      {canStamp && (
+        <button
+          type="button"
+          className="text-xs text-muted-foreground underline underline-offset-2"
+          onClick={() => setStamp(Math.max(0, Math.floor(currentTime)))}
+        >
+          Use current frame
+        </button>
+      )}
       <Textarea
         autoFocus
         rows={2}

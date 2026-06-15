@@ -77,7 +77,10 @@ export function ScrubberPins({
               className={cn(
                 "rounded-full border-2 border-black bg-primary",
                 isCluster
-                  ? "flex h-3.5 min-w-[1.25rem] items-center justify-center px-1 text-[9px] font-bold text-white"
+                  ? cn(
+                      "flex h-3.5 min-w-[1.25rem] items-center justify-center px-1 text-[9px] font-bold",
+                      active ? "text-primary" : "text-white",
+                    )
                   : "h-3 w-3",
                 active && "bg-white ring-2 ring-primary",
               )}
