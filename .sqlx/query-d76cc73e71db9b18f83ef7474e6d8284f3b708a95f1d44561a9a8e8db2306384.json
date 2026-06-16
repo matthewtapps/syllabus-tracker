@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT id, parent_kind, technique_id, student_id, thread_id, title, description,\n                position, kind, processing_status, processing_error, storage_key, bytes,\n                duration_seconds, width, height,\n                external_url, external_host, external_video_id, uploaded_by_id,\n                created_at, updated_at, hidden_at\n         FROM videos\n         WHERE deleted_at IS NULL\n           AND (\n                 (parent_kind = 'technique' AND technique_id = ?1)\n              OR (parent_kind = 'syllabus_technique'\n                  AND syllabus_technique_id IN (\n                        SELECT id FROM syllabus_techniques\n                        WHERE syllabus_id = ?2 AND technique_id = ?1))\n              OR (parent_kind = 'student_syllabus_technique'\n                  AND student_syllabus_technique_id IN (\n                        SELECT id FROM student_syllabus_techniques\n                        WHERE assignment_id = ?3 AND technique_id = ?1))\n               )\n         ORDER BY\n            CASE parent_kind\n                WHEN 'technique' THEN 0\n                WHEN 'syllabus_technique' THEN 1\n                ELSE 2\n            END ASC,\n            position ASC,\n            id ASC",
+  "query": "SELECT id, parent_kind, technique_id, student_id, thread_id,\n                camp_id AS \"camp_id?: i64\", title, description,\n                position, kind, processing_status, processing_error, storage_key, bytes,\n                duration_seconds, width, height,\n                external_url, external_host, external_video_id, uploaded_by_id,\n                created_at, updated_at, hidden_at\n         FROM videos\n         WHERE deleted_at IS NULL\n           AND (\n                 (parent_kind = 'technique' AND technique_id = ?1)\n              OR (parent_kind = 'syllabus_technique'\n                  AND syllabus_technique_id IN (\n                        SELECT id FROM syllabus_techniques\n                        WHERE syllabus_id = ?2 AND technique_id = ?1))\n              OR (parent_kind = 'student_syllabus_technique'\n                  AND student_syllabus_technique_id IN (\n                        SELECT id FROM student_syllabus_techniques\n                        WHERE assignment_id = ?3 AND technique_id = ?1))\n               )\n         ORDER BY\n            CASE parent_kind\n                WHEN 'technique' THEN 0\n                WHEN 'syllabus_technique' THEN 1\n                ELSE 2\n            END ASC,\n            position ASC,\n            id ASC",
   "describe": {
     "columns": [
       {
@@ -29,93 +29,98 @@
         "type_info": "Integer"
       },
       {
-        "name": "title",
+        "name": "camp_id?: i64",
         "ordinal": 5,
-        "type_info": "Text"
+        "type_info": "Integer"
       },
       {
-        "name": "description",
+        "name": "title",
         "ordinal": 6,
         "type_info": "Text"
       },
       {
-        "name": "position",
+        "name": "description",
         "ordinal": 7,
+        "type_info": "Text"
+      },
+      {
+        "name": "position",
+        "ordinal": 8,
         "type_info": "Integer"
       },
       {
         "name": "kind",
-        "ordinal": 8,
-        "type_info": "Text"
-      },
-      {
-        "name": "processing_status",
         "ordinal": 9,
         "type_info": "Text"
       },
       {
-        "name": "processing_error",
+        "name": "processing_status",
         "ordinal": 10,
         "type_info": "Text"
       },
       {
-        "name": "storage_key",
+        "name": "processing_error",
         "ordinal": 11,
         "type_info": "Text"
       },
       {
-        "name": "bytes",
+        "name": "storage_key",
         "ordinal": 12,
-        "type_info": "Integer"
+        "type_info": "Text"
       },
       {
-        "name": "duration_seconds",
+        "name": "bytes",
         "ordinal": 13,
         "type_info": "Integer"
       },
       {
-        "name": "width",
+        "name": "duration_seconds",
         "ordinal": 14,
         "type_info": "Integer"
       },
       {
-        "name": "height",
+        "name": "width",
         "ordinal": 15,
         "type_info": "Integer"
       },
       {
-        "name": "external_url",
+        "name": "height",
         "ordinal": 16,
-        "type_info": "Text"
+        "type_info": "Integer"
       },
       {
-        "name": "external_host",
+        "name": "external_url",
         "ordinal": 17,
         "type_info": "Text"
       },
       {
-        "name": "external_video_id",
+        "name": "external_host",
         "ordinal": 18,
         "type_info": "Text"
       },
       {
-        "name": "uploaded_by_id",
+        "name": "external_video_id",
         "ordinal": 19,
+        "type_info": "Text"
+      },
+      {
+        "name": "uploaded_by_id",
+        "ordinal": 20,
         "type_info": "Integer"
       },
       {
         "name": "created_at",
-        "ordinal": 20,
-        "type_info": "Datetime"
-      },
-      {
-        "name": "updated_at",
         "ordinal": 21,
         "type_info": "Datetime"
       },
       {
-        "name": "hidden_at",
+        "name": "updated_at",
         "ordinal": 22,
+        "type_info": "Datetime"
+      },
+      {
+        "name": "hidden_at",
+        "ordinal": 23,
         "type_info": "Datetime"
       }
     ],
@@ -125,6 +130,7 @@
     "nullable": [
       true,
       false,
+      true,
       true,
       true,
       true,
@@ -148,5 +154,5 @@
       true
     ]
   },
-  "hash": "5123f8696333c26a2a623309b655e0d782acb842d881c928ac89e6a0d4b7c23e"
+  "hash": "d76cc73e71db9b18f83ef7474e6d8284f3b708a95f1d44561a9a8e8db2306384"
 }

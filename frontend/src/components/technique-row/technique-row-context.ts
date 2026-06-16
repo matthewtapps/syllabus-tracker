@@ -51,6 +51,15 @@ export type RowContext =
       /** Syllabus name for the surface breadcrumb. */
       syllabusName?: string;
       onRemove: (technique: LibraryTechniqueRow) => void;
+    }
+  | {
+      kind: "camp";
+      campId: number;
+      studentId: number;
+      /** Display name for the surface breadcrumb; null when the owner views their own. */
+      studentName?: string | null;
+      /** Coach-only: remove the technique from the camp. Absent for students. */
+      onRemove?: (technique: LibraryTechniqueRow) => void;
     };
 
 export interface TechniqueRowState {

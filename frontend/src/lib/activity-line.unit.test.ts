@@ -26,6 +26,7 @@ function row(overrides: Partial<ActivityRow>): ActivityRow {
     unread: false,
     context_kind: null,
     thread_id: null,
+    camp_id: null,
     ...overrides,
   };
 }
@@ -734,5 +735,33 @@ describe("activityLine", () => {
       row({ verb: "syllabus_assigned", syllabus_id: 2, syllabus_name: "Blue Belt", target_student_id: null }),
     );
     expect(result.href).toBe("/syllabi/2");
+  });
+
+  // --- camp verbs ---
+  test("camp_created routes to the camp page", () => {
+    const result = activityLine(
+      row({ verb: "camp_created", context_kind: "camp", camp_id: 9 }),
+    );
+    expect(result.href).toBe("/camps/9?focus=camp:9");
+  });
+
+  test("camp_technique_added routes to the camp page", () => {
+    const result = activityLine(
+      row({
+        verb: "camp_technique_added",
+        context_kind: "camp",
+        camp_id: 9,
+        technique_id: 5,
+        technique_name: "Armbar",
+      }),
+    );
+    expect(result.href).toBe("/camps/9?focus=camp:9");
+  });
+
+  test("camp_archived routes to the camp page", () => {
+    const result = activityLine(
+      row({ verb: "camp_archived", context_kind: "camp", camp_id: 9 }),
+    );
+    expect(result.href).toBe("/camps/9?focus=camp:9");
   });
 });

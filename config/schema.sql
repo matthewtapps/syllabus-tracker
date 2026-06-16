@@ -126,7 +126,7 @@ CREATE TABLE IF NOT EXISTS videos (
     -- DEFAULT 'technique' so the declarative table-rebuild backfills existing
     -- rows (which all have technique_id set) into the technique branch.
     parent_kind TEXT NOT NULL DEFAULT 'technique' CHECK (parent_kind IN (
-        'technique', 'student_profile', 'thread', 'loose',
+        'technique', 'student_profile', 'thread', 'loose', 'camp',
         'syllabus_technique', 'student_syllabus_technique'
     )),
     technique_id INTEGER REFERENCES techniques (id) ON DELETE CASCADE,
@@ -134,6 +134,7 @@ CREATE TABLE IF NOT EXISTS videos (
     thread_id INTEGER REFERENCES threads (id) ON DELETE CASCADE,
     syllabus_technique_id INTEGER REFERENCES syllabus_techniques (id) ON DELETE CASCADE,
     student_syllabus_technique_id INTEGER REFERENCES student_syllabus_techniques (id) ON DELETE CASCADE,
+    camp_id INTEGER REFERENCES camps (id) ON DELETE CASCADE,
     title TEXT NOT NULL,
     description TEXT,
     position INTEGER NOT NULL DEFAULT 0,
@@ -162,12 +163,13 @@ CREATE TABLE IF NOT EXISTS videos (
     -- way). Coaches still see the video, badged "Hidden".
     hidden_at TIMESTAMP,
     CHECK (
-      (parent_kind = 'technique'                  AND technique_id IS NOT NULL                  AND student_id IS NULL AND thread_id IS NULL AND syllabus_technique_id IS NULL         AND student_syllabus_technique_id IS NULL) OR
-      (parent_kind = 'student_profile'            AND student_id IS NOT NULL                    AND technique_id IS NULL AND thread_id IS NULL AND syllabus_technique_id IS NULL       AND student_syllabus_technique_id IS NULL) OR
-      (parent_kind = 'thread'                     AND thread_id IS NOT NULL                     AND technique_id IS NULL AND student_id IS NULL AND syllabus_technique_id IS NULL      AND student_syllabus_technique_id IS NULL) OR
-      (parent_kind = 'syllabus_technique'         AND syllabus_technique_id IS NOT NULL         AND technique_id IS NULL AND student_id IS NULL AND thread_id IS NULL                  AND student_syllabus_technique_id IS NULL) OR
-      (parent_kind = 'student_syllabus_technique' AND student_syllabus_technique_id IS NOT NULL AND technique_id IS NULL AND student_id IS NULL AND thread_id IS NULL                  AND syllabus_technique_id IS NULL) OR
-      (parent_kind = 'loose'                      AND technique_id IS NULL                      AND student_id IS NULL AND thread_id IS NULL AND syllabus_technique_id IS NULL         AND student_syllabus_technique_id IS NULL)
+      (parent_kind = 'technique'                  AND technique_id IS NOT NULL                  AND student_id IS NULL AND thread_id IS NULL AND syllabus_technique_id IS NULL         AND student_syllabus_technique_id IS NULL AND camp_id IS NULL) OR
+      (parent_kind = 'student_profile'            AND student_id IS NOT NULL                    AND technique_id IS NULL AND thread_id IS NULL AND syllabus_technique_id IS NULL       AND student_syllabus_technique_id IS NULL AND camp_id IS NULL) OR
+      (parent_kind = 'thread'                     AND thread_id IS NOT NULL                     AND technique_id IS NULL AND student_id IS NULL AND syllabus_technique_id IS NULL      AND student_syllabus_technique_id IS NULL AND camp_id IS NULL) OR
+      (parent_kind = 'syllabus_technique'         AND syllabus_technique_id IS NOT NULL         AND technique_id IS NULL AND student_id IS NULL AND thread_id IS NULL                  AND student_syllabus_technique_id IS NULL AND camp_id IS NULL) OR
+      (parent_kind = 'student_syllabus_technique' AND student_syllabus_technique_id IS NOT NULL AND technique_id IS NULL AND student_id IS NULL AND thread_id IS NULL                  AND syllabus_technique_id IS NULL AND camp_id IS NULL) OR
+      (parent_kind = 'loose'                      AND technique_id IS NULL                      AND student_id IS NULL AND thread_id IS NULL AND syllabus_technique_id IS NULL         AND student_syllabus_technique_id IS NULL AND camp_id IS NULL) OR
+      (parent_kind = 'camp'                       AND camp_id IS NOT NULL                       AND technique_id IS NULL AND student_id IS NULL AND thread_id IS NULL AND syllabus_technique_id IS NULL AND student_syllabus_technique_id IS NULL)
     )
 );
 CREATE INDEX IF NOT EXISTS idx_videos_technique_position
@@ -177,7 +179,9 @@ CREATE INDEX IF NOT EXISTS idx_videos_status
 CREATE INDEX IF NOT EXISTS idx_videos_alive_by_technique
     ON videos (technique_id) WHERE deleted_at IS NULL;
 CREATE INDEX IF NOT EXISTS idx_videos_parent
-    ON videos (parent_kind, technique_id, student_id, thread_id);
+    ON videos (parent_kind, technique_id, student_id, thread_id, camp_id);
+CREATE INDEX IF NOT EXISTS idx_videos_camp
+    ON videos (camp_id) WHERE deleted_at IS NULL;
 
 CREATE TABLE IF NOT EXISTS video_watch_events (
     id INTEGER PRIMARY KEY,
@@ -221,6 +225,35 @@ CREATE TABLE IF NOT EXISTS student_pinned_techniques (
     PRIMARY KEY (student_id, technique_id)
 );
 CREATE INDEX IF NOT EXISTS idx_spt_student ON student_pinned_techniques (student_id);
+
+-- A camp: a stretch of intentional work between one coach and one student,
+-- holding techniques, videos, and discussion. Slice 1 = generic camp only;
+-- competition_id / references_camp_id are intentionally absent (nullable adds
+-- later cost nothing under the declarative migrator).
+CREATE TABLE IF NOT EXISTS camps (
+    id             INTEGER PRIMARY KEY,
+    student_id     INTEGER NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+    coach_id       INTEGER NOT NULL REFERENCES users (id),
+    name           TEXT NOT NULL,
+    description    TEXT,
+    created_at     TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    archived_at    TIMESTAMP,
+    archived_by_id INTEGER REFERENCES users (id)
+);
+CREATE INDEX IF NOT EXISTS idx_camps_student
+    ON camps (student_id) WHERE archived_at IS NULL;
+
+-- Membership of (global library) techniques in a camp, with display order.
+CREATE TABLE IF NOT EXISTS camp_techniques (
+    camp_id      INTEGER NOT NULL REFERENCES camps (id) ON DELETE CASCADE,
+    technique_id INTEGER NOT NULL REFERENCES techniques (id) ON DELETE CASCADE,
+    position     INTEGER NOT NULL DEFAULT 0,
+    added_at     TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    added_by_id  INTEGER REFERENCES users (id),
+    PRIMARY KEY (camp_id, technique_id)
+);
+CREATE INDEX IF NOT EXISTS idx_camp_techniques_position
+    ON camp_techniques (camp_id, position);
 
 -- New "syllabus" stack (PR 3). Parallel to legacy collections /
 -- student_techniques / attempts. From PR 3 onward all new writes flow
@@ -361,6 +394,7 @@ CREATE TABLE IF NOT EXISTS activity (
     sst_id            INTEGER REFERENCES student_syllabus_techniques(id) ON DELETE SET NULL,
     video_id          INTEGER REFERENCES videos(id)     ON DELETE SET NULL,
     thread_id         INTEGER REFERENCES threads(id)    ON DELETE SET NULL,
+    camp_id           INTEGER REFERENCES camps(id)      ON DELETE SET NULL,
     payload_json      TEXT,
     -- Names the surface a student was on when the activity happened, so the
     -- feed can deep-link back to it without inferring from which reference
@@ -379,6 +413,8 @@ CREATE INDEX IF NOT EXISTS idx_activity_recent
     ON activity (occurred_at DESC, id DESC);
 CREATE INDEX IF NOT EXISTS idx_activity_coalesce
     ON activity (actor_user_id, verb, occurred_at DESC);
+CREATE INDEX IF NOT EXISTS idx_activity_camp
+    ON activity (camp_id, occurred_at DESC, id DESC);
 
 CREATE TABLE IF NOT EXISTS activity_cursors (
     viewer_user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
@@ -402,13 +438,14 @@ CREATE TABLE IF NOT EXISTS threads (
 
     anchor_kind     TEXT NOT NULL CHECK (anchor_kind IN (
                         'student_profile','technique','video',
-                        'video_timestamp','sst','pinned_technique')),
+                        'video_timestamp','sst','pinned_technique','camp')),
 
     student_id      INTEGER REFERENCES users(id)                       ON DELETE CASCADE,
     technique_id    INTEGER REFERENCES techniques(id)                  ON DELETE CASCADE,
     video_id        INTEGER REFERENCES videos(id)                      ON DELETE CASCADE,
     video_ts_seconds INTEGER,
     sst_id          INTEGER REFERENCES student_syllabus_techniques(id) ON DELETE CASCADE,
+    camp_id         INTEGER REFERENCES camps(id)                       ON DELETE CASCADE,
 
     visibility      TEXT NOT NULL DEFAULT 'broadcast'
                         CHECK (visibility IN ('broadcast','private')),
@@ -419,12 +456,13 @@ CREATE TABLE IF NOT EXISTS threads (
     deleted_by_id   INTEGER REFERENCES users(id),
 
     CHECK (
-      (anchor_kind='student_profile'  AND student_id IS NOT NULL AND technique_id IS NULL AND video_id IS NULL AND video_ts_seconds IS NULL AND sst_id IS NULL) OR
-      (anchor_kind='technique'        AND technique_id IS NOT NULL AND student_id IS NULL AND video_id IS NULL AND video_ts_seconds IS NULL AND sst_id IS NULL) OR
-      (anchor_kind='video'            AND video_id IS NOT NULL AND video_ts_seconds IS NULL AND student_id IS NULL AND technique_id IS NULL AND sst_id IS NULL) OR
-      (anchor_kind='video_timestamp'  AND video_id IS NOT NULL AND video_ts_seconds IS NOT NULL AND student_id IS NULL AND technique_id IS NULL AND sst_id IS NULL) OR
-      (anchor_kind='sst'              AND sst_id IS NOT NULL AND student_id IS NULL AND technique_id IS NULL AND video_id IS NULL AND video_ts_seconds IS NULL) OR
-      (anchor_kind='pinned_technique' AND student_id IS NOT NULL AND technique_id IS NOT NULL AND video_id IS NULL AND video_ts_seconds IS NULL AND sst_id IS NULL)
+      (anchor_kind='student_profile'  AND student_id IS NOT NULL AND technique_id IS NULL AND video_id IS NULL AND video_ts_seconds IS NULL AND sst_id IS NULL AND camp_id IS NULL) OR
+      (anchor_kind='technique'        AND technique_id IS NOT NULL AND student_id IS NULL AND video_id IS NULL AND video_ts_seconds IS NULL AND sst_id IS NULL AND camp_id IS NULL) OR
+      (anchor_kind='video'            AND video_id IS NOT NULL AND video_ts_seconds IS NULL AND student_id IS NULL AND technique_id IS NULL AND sst_id IS NULL AND camp_id IS NULL) OR
+      (anchor_kind='video_timestamp'  AND video_id IS NOT NULL AND video_ts_seconds IS NOT NULL AND student_id IS NULL AND technique_id IS NULL AND sst_id IS NULL AND camp_id IS NULL) OR
+      (anchor_kind='sst'              AND sst_id IS NOT NULL AND student_id IS NULL AND technique_id IS NULL AND video_id IS NULL AND video_ts_seconds IS NULL AND camp_id IS NULL) OR
+      (anchor_kind='pinned_technique' AND student_id IS NOT NULL AND technique_id IS NOT NULL AND video_id IS NULL AND video_ts_seconds IS NULL AND sst_id IS NULL AND camp_id IS NULL) OR
+      (anchor_kind='camp'             AND camp_id IS NOT NULL AND student_id IS NULL AND technique_id IS NULL AND video_id IS NULL AND video_ts_seconds IS NULL AND sst_id IS NULL)
     ),
     CHECK (
       (visibility='private'   AND scope_student_id IS NOT NULL) OR
@@ -441,6 +479,7 @@ CREATE INDEX IF NOT EXISTS idx_threads_technique ON threads(technique_id) WHERE 
 CREATE INDEX IF NOT EXISTS idx_threads_video     ON threads(video_id)     WHERE deleted_at IS NULL;
 CREATE INDEX IF NOT EXISTS idx_threads_sst       ON threads(sst_id)       WHERE deleted_at IS NULL;
 CREATE INDEX IF NOT EXISTS idx_threads_scope     ON threads(scope_student_id) WHERE scope_student_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_threads_camp      ON threads(camp_id) WHERE deleted_at IS NULL;
 
 CREATE TABLE IF NOT EXISTS thread_comments (
     id                INTEGER PRIMARY KEY AUTOINCREMENT,

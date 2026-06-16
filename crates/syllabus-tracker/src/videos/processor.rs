@@ -2,17 +2,44 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use opentelemetry::propagation::Injector;
+use tracing::Instrument;
+use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 use crate::videos::pipeline::{PipelineContext, process_uploaded_video};
+
+/// Injector that writes W3C propagation headers into a `HashMap`.
+struct HashMapInjector<'a>(&'a mut std::collections::HashMap<String, String>);
+
+impl Injector for HashMapInjector<'_> {
+    fn set(&mut self, key: &str, value: String) {
+        self.0.insert(key.to_string(), value);
+    }
+}
+
+/// Serialise the current span's trace context into a W3C `traceparent` string,
+/// or `None` if there is no recording span / no propagator configured.
+fn current_traceparent() -> Option<String> {
+    let cx = tracing::Span::current().context();
+    let mut carrier = std::collections::HashMap::new();
+    opentelemetry::global::get_text_map_propagator(|p| {
+        p.inject_context(&cx, &mut HashMapInjector(&mut carrier))
+    });
+    carrier.remove("traceparent")
+}
 
 // ---------------------------------------------------------------------------
 // Public types
 // ---------------------------------------------------------------------------
 
 /// Arguments for a single video processing job.
+///
+/// `parent_id` is the id of the video's parent entity (technique or camp).
+/// It is used to construct the storage key prefix (`videos/<parent_id>/<uuid>.mp4`)
+/// and is recorded as a tracing span field.
 pub struct HostJob {
     pub video_id: i64,
-    pub technique_id: i64,
+    pub parent_id: i64,
     pub original_temp_path: PathBuf,
 }
 
@@ -57,7 +84,7 @@ impl VideoProcessor for HostFfmpegProcessor {
             process_uploaded_video(
                 ctx,
                 job.video_id,
-                job.technique_id,
+                job.parent_id,
                 job.original_temp_path,
             )
             .await;
@@ -97,6 +124,7 @@ pub fn build_enqueue_request(
     cfg: &RemoteConfig,
     video_id: i64,
     source_key: &str,
+    traceparent: Option<String>,
 ) -> (String, String, String) {
     let url = cfg.enqueue_url.clone();
     let auth = format!("Bearer {}", cfg.enqueue_token);
@@ -109,6 +137,7 @@ pub fn build_enqueue_request(
         video_id,
         source_key: source_key.to_string(),
         callback_url,
+        traceparent,
     };
     let body = serde_json::to_string(&job).expect("ProcessJob is always serializable");
     (url, auth, body)
@@ -189,7 +218,16 @@ impl VideoProcessor for RemoteProcessor {
         let http = self.http.clone();
         let cfg = self.cfg.clone();
 
-        tokio::task::spawn(async move {
+        // Capture the upload request's trace context and continue it on a
+        // dedicated enqueue span, so the detached task (R2 upload + remote
+        // enqueue) stays in the same distributed trace rather than starting a
+        // disconnected one — `tokio::spawn` otherwise drops the parent span.
+        let parent_cx = tracing::Span::current().context();
+        let enqueue_span = tracing::info_span!("remote_video_enqueue", video_id = job.video_id);
+        enqueue_span.set_parent(parent_cx);
+
+        tokio::task::spawn(
+            async move {
             use tracing::error;
             use video_job::ProcessingResult;
 
@@ -223,7 +261,11 @@ impl VideoProcessor for RemoteProcessor {
             }
 
             // 3. POST the processing job to the remote transcode service.
-            let (url, auth, body) = build_enqueue_request(&cfg, video_id, &source_key);
+            // Carry this enqueue span's trace context so the worker continues
+            // the same trace and can echo it back on the result callback.
+            let traceparent = current_traceparent();
+            let (url, auth, body) =
+                build_enqueue_request(&cfg, video_id, &source_key, traceparent);
 
             let result = http
                 .post(&url)
@@ -273,7 +315,9 @@ impl VideoProcessor for RemoteProcessor {
                     }
                 }
             }
-        });
+            }
+            .instrument(enqueue_span),
+        );
     }
 }
 
@@ -296,6 +340,7 @@ mod tests {
             &cfg,
             /*video_id*/ 42,
             /*source_key*/ "originals/42/abc.mp4",
+            /*traceparent*/ Some("00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01".into()),
         );
         assert_eq!(url, "https://worker.example/jobs");
         assert_eq!(auth, "Bearer tok123");
@@ -306,6 +351,10 @@ mod tests {
         assert_eq!(
             job.callback_url,
             "https://app.example/api/videos/42/processing-result"
+        );
+        assert_eq!(
+            job.traceparent.as_deref(),
+            Some("00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01")
         );
     }
 }

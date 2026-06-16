@@ -5,6 +5,9 @@ import {
   getActivityDigest,
   getActivityFeed,
   getDashboardActivityFeed,
+  getCamp,
+  getCampVideos,
+  getCampsForStudent,
   getStudentActivityFeed,
   getActivityUnreadCount,
   getAttemptSummary,
@@ -401,6 +404,29 @@ export function useSyllabusAttemptHeatmap(studentId: number | undefined) {
   return useQuery({
     queryKey: qk.studentSyllabusAttemptHeatmap(studentId ?? 0),
     queryFn: whenId(studentId, getSyllabusAttemptHeatmap),
+  });
+}
+
+// ---- Camps ----
+
+export function useCampsForStudent(studentId: number | undefined) {
+  return useQuery({
+    queryKey: qk.campsForStudent(studentId ?? 0),
+    queryFn: whenId(studentId, getCampsForStudent),
+  });
+}
+
+export function useCamp(id: number | undefined) {
+  return useQuery({
+    queryKey: qk.camp(id ?? 0),
+    queryFn: whenId(id, getCamp),
+  });
+}
+
+export function useCampVideos(campId: number | undefined) {
+  return useQuery({
+    queryKey: qk.campVideos(campId ?? 0),
+    queryFn: whenId(campId, getCampVideos),
   });
 }
 

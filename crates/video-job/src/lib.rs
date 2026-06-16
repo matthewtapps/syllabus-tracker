@@ -22,6 +22,11 @@ pub struct ProcessJob {
     pub video_id: i64,
     pub source_key: String,
     pub callback_url: String,
+    /// W3C `traceparent` of the enqueue span, so the worker can continue the
+    /// same distributed trace (and propagate it back on the result callback).
+    /// Optional + serde-default so older payloads still deserialize.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub traceparent: Option<String>,
 }
 
 /// Result POSTed back to the app once the worker finishes.

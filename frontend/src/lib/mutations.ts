@@ -1311,6 +1311,60 @@ export function useDeleteComment(anchorKind: string, anchorId: number) {
   });
 }
 
+// ============================================================
+// Camps
+// ============================================================
+
+import {
+  addCampTechnique,
+  archiveCamp,
+  createCamp,
+  removeCampTechnique,
+} from "./api";
+
+export function useCreateCamp(studentId: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: { name: string; description: string | null }) =>
+      createCamp({ student_id: studentId, ...data }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: qk.campsForStudent(studentId) });
+    },
+  });
+}
+
+export function useArchiveCamp(studentId: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) => archiveCamp(id),
+    onSuccess: (_d, id) => {
+      qc.invalidateQueries({ queryKey: qk.campsForStudent(studentId) });
+      qc.invalidateQueries({ queryKey: qk.camp(id) });
+    },
+  });
+}
+
+export function useAddCampTechnique(campId: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (techniqueId: number) => addCampTechnique(campId, techniqueId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: qk.camp(campId) });
+    },
+  });
+}
+
+export function useRemoveCampTechnique(campId: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (techniqueId: number) =>
+      removeCampTechnique(campId, techniqueId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: qk.camp(campId) });
+    },
+  });
+}
+
 // Bundled diff apply mutation. The plan calls this the second optimistic
 // patch in PR 4 (pin/unpin from PR 1 is the first). On mutate we patch
 // the studentSyllabusTechniques + studentSyllabusDiff caches; on error

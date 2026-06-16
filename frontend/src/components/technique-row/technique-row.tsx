@@ -87,6 +87,8 @@ export function TechniqueRow({
       case "syllabus-management":
         // Coach surface; no "owning student" concept applies.
         return false;
+      case "camp":
+        return user.id === context.studentId;
     }
   }, [context, user.id, user.role]);
 
@@ -107,7 +109,9 @@ export function TechniqueRow({
   const showPinButton =
     viewerIsOwner &&
     (context.kind === "global-library" || context.kind === "student-pinned");
-  const showRemoveButton = context.kind === "syllabus-management";
+  const showRemoveButton =
+    context.kind === "syllabus-management" ||
+    (context.kind === "camp" && context.onRemove != null);
   const showHiddenToggle =
     context.kind === "student-syllabus" &&
     (user.role === "coach" || user.role === "admin");

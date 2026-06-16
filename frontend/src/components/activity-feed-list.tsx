@@ -217,6 +217,8 @@ function ActivityRowItem({
             <span aria-hidden={hideDup} className="mt-1 inline-flex items-center gap-1 text-xs text-muted-foreground">
               {surface.kind === "syllabus" ? (
                 <NotebookPen className="h-3 w-3 shrink-0" aria-hidden />
+              ) : surface.kind === "camp" ? (
+                <Dumbbell className="h-3 w-3 shrink-0" aria-hidden />
               ) : (
                 <Library className="h-3 w-3 shrink-0" aria-hidden />
               )}

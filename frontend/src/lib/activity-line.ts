@@ -37,6 +37,7 @@ export interface ActivityRow {
   unread: boolean;
   context_kind: string | null;
   thread_id: number | null;
+  camp_id: number | null;
 }
 
 export interface ActivityLine {
@@ -286,6 +287,14 @@ export function activityLine(row: ActivityRow, scope: ActivityScope = { kind: "g
         href,
       };
     }
+
+    // --- camp verbs ---
+    case "camp_created":
+      return { verb: "started a camp", href: deep };
+    case "camp_technique_added":
+      return { verb: "added a technique to a camp", href: deep };
+    case "camp_archived":
+      return { verb: "archived a camp", href: deep };
 
     default:
       return { verb: "performed an action" };

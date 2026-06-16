@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT id AS \"id!: i64\" FROM threads\n                   WHERE anchor_kind = 'camp' AND camp_id = ? AND deleted_at IS NULL\n                   ORDER BY last_activity_at DESC",
+  "describe": {
+    "columns": [
+      {
+        "name": "id!: i64",
+        "ordinal": 0,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "2fd10995198a592b4db96de2845f6ac3922c3444dd85c18e1d222494b5e7ff22"
+}

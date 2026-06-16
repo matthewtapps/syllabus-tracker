@@ -32,6 +32,7 @@ function row(overrides: Partial<ActivityRow> = {}): ActivityRow {
     unread: false,
     context_kind: null,
     thread_id: null,
+    camp_id: null,
     ...overrides,
   };
 }

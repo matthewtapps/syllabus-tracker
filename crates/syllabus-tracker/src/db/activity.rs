@@ -20,6 +20,7 @@ pub enum EntityKind {
     Sst,
     Video,
     Thread,
+    Camp,
 }
 
 /// The activity verbs. Named `<target>_<past_tense>`. Each carries static
@@ -48,10 +49,13 @@ pub enum Verb {
     VideoVisibilitySet,
     TechniqueEdited,
     ThreadCommentPosted,
+    CampCreated,
+    CampTechniqueAdded,
+    CampArchived,
 }
 
 impl Verb {
-    pub const ALL: [Verb; 21] = [
+    pub const ALL: [Verb; 24] = [
         Verb::VideoWatched,
         Verb::AttemptLogged,
         Verb::AttemptEdited,
@@ -73,6 +77,9 @@ impl Verb {
         Verb::VideoVisibilitySet,
         Verb::TechniqueEdited,
         Verb::ThreadCommentPosted,
+        Verb::CampCreated,
+        Verb::CampTechniqueAdded,
+        Verb::CampArchived,
     ];
 
     pub fn as_str(self) -> &'static str {
@@ -98,6 +105,9 @@ impl Verb {
             Verb::VideoVisibilitySet => "video_visibility_set",
             Verb::TechniqueEdited => "technique_edited",
             Verb::ThreadCommentPosted => "thread_comment_posted",
+            Verb::CampCreated => "camp_created",
+            Verb::CampTechniqueAdded => "camp_technique_added",
+            Verb::CampArchived => "camp_archived",
         }
     }
 
@@ -118,6 +128,7 @@ impl Verb {
                 | Verb::SstUnhidden
                 | Verb::SyllabusTechniqueRemoved
                 | Verb::VideoVisibilitySet
+                | Verb::CampArchived
         )
     }
 
@@ -125,7 +136,13 @@ impl Verb {
     /// window. `ThreadCommentPosted` is non-coalescing: every comment is a
     /// discrete event and collapsing two comments into one would lose a message.
     pub fn coalesces(self) -> bool {
-        !matches!(self, Verb::ThreadCommentPosted)
+        !matches!(
+            self,
+            Verb::ThreadCommentPosted
+                | Verb::CampCreated
+                | Verb::CampTechniqueAdded
+                | Verb::CampArchived
+        )
     }
 
     /// The column the coalesce key uses to identify "the same thing happening
@@ -152,6 +169,7 @@ impl Verb {
             | Verb::SyllabusTechniqueAdded
             | Verb::SyllabusTechniqueRemoved => EntityKind::Syllabus,
             Verb::ThreadCommentPosted => EntityKind::Thread,
+            Verb::CampCreated | Verb::CampTechniqueAdded | Verb::CampArchived => EntityKind::Camp,
         }
     }
 }
@@ -168,6 +186,7 @@ pub struct NewActivity {
     pub sst_id: Option<i64>,
     pub video_id: Option<i64>,
     pub thread_id: Option<i64>,
+    pub camp_id: Option<i64>,
     pub payload_json: Option<String>,
     pub context_kind: Option<&'static str>,
 }
@@ -183,6 +202,7 @@ impl NewActivity {
             sst_id: None,
             video_id: None,
             thread_id: None,
+            camp_id: None,
             payload_json: None,
             context_kind: None,
         }
@@ -212,6 +232,10 @@ impl NewActivity {
         self.thread_id = Some(id);
         self
     }
+    pub fn camp(mut self, id: i64) -> Self {
+        self.camp_id = Some(id);
+        self
+    }
     pub fn payload(mut self, json: String) -> Self {
         self.payload_json = Some(json);
         self
@@ -232,6 +256,7 @@ impl NewActivity {
             EntityKind::Sst => self.sst_id,
             EntityKind::Video => self.video_id,
             EntityKind::Thread => self.thread_id,
+            EntityKind::Camp => self.camp_id,
         }
     }
 }
@@ -324,8 +349,8 @@ pub async fn emit(tx: &mut Transaction<'_, Sqlite>, ev: NewActivity) -> Result<(
     sqlx::query!(
         "INSERT INTO activity
             (occurred_at, verb, actor_user_id, target_student_id,
-             technique_id, syllabus_id, sst_id, video_id, thread_id, payload_json, context_kind)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+             technique_id, syllabus_id, sst_id, video_id, thread_id, camp_id, payload_json, context_kind)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         now,
         verb,
         ev.actor_user_id,
@@ -335,6 +360,7 @@ pub async fn emit(tx: &mut Transaction<'_, Sqlite>, ev: NewActivity) -> Result<(
         ev.sst_id,
         ev.video_id,
         ev.thread_id,
+        ev.camp_id,
         ev.payload_json,
         ev.context_kind,
     )
@@ -428,6 +454,9 @@ async fn find_coalesce_target(
         // Thread verbs are non-coalescing; this branch is unreachable in
         // practice because emit() skips find_coalesce_target for them.
         EntityKind::Thread => None,
+        // Camp verbs are non-coalescing; this branch is unreachable in
+        // practice because emit() skips find_coalesce_target for them.
+        EntityKind::Camp => None,
     };
     Ok(id)
 }
@@ -828,6 +857,7 @@ mod registry_tests {
             "sst_unhidden",
             "syllabus_technique_removed",
             "video_visibility_set",
+            "camp_archived",
         ];
         want.sort_unstable();
         assert_eq!(got, want);

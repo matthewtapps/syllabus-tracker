@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "DELETE FROM camp_techniques WHERE camp_id = ? AND technique_id = ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "b5994eccebb682c25ebfb0d73d8df317308e5ee14bdbc238d7a286a008104b3b"
+}

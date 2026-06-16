@@ -1,5 +1,6 @@
-import { describe, expect, test } from "vitest";
+import { describe, expect, it, test } from "vitest";
 import { viewContextHref, rowToViewContext, activitySurface } from "./view-context";
+import { parseFocusToken, refToken } from "./entity-ref";
 
 describe("viewContextHref", () => {
   test("library context without video", () => {
@@ -50,6 +51,7 @@ describe("rowToViewContext", () => {
         sst_id: 42,
         technique_id: 9,
         video_id: 7,
+        camp_id: null,
       }),
     ).toEqual({
       kind: "syllabus",
@@ -69,6 +71,7 @@ describe("rowToViewContext", () => {
         sst_id: null,
         technique_id: 9,
         video_id: 7,
+        camp_id: null,
       }),
     ).toEqual({
       kind: "library",
@@ -86,6 +89,7 @@ describe("rowToViewContext", () => {
         sst_id: null,
         technique_id: 9,
         video_id: 7,
+        camp_id: null,
       }),
     ).toEqual({
       kind: "library",
@@ -103,6 +107,7 @@ describe("rowToViewContext", () => {
         sst_id: null,
         technique_id: null,
         video_id: 7,
+        camp_id: null,
       }),
     ).toBeNull();
   });
@@ -116,6 +121,7 @@ describe("rowToViewContext", () => {
         sst_id: 42,
         technique_id: 9,
         video_id: null,
+        camp_id: null,
       }),
     ).toEqual({
       kind: "syllabus",
@@ -134,6 +140,7 @@ describe("rowToViewContext", () => {
         sst_id: null,
         technique_id: 9,
         video_id: null,
+        camp_id: null,
       }),
     ).toBeNull();
   });
@@ -147,6 +154,7 @@ describe("rowToViewContext", () => {
         sst_id: 42,
         technique_id: 9,
         video_id: null,
+        camp_id: null,
       }),
     ).toEqual({
       kind: "syllabus",
@@ -165,6 +173,7 @@ describe("rowToViewContext", () => {
         sst_id: null,
         technique_id: 9,
         video_id: null,
+        camp_id: null,
       }),
     ).toBeNull();
   });
@@ -178,6 +187,7 @@ describe("rowToViewContext", () => {
         sst_id: 42,
         technique_id: 9,
         video_id: null,
+        camp_id: null,
       }),
     ).toEqual({
       kind: "syllabus",
@@ -196,6 +206,7 @@ describe("rowToViewContext", () => {
         sst_id: null,
         technique_id: 9,
         video_id: null,
+        camp_id: null,
       }),
     ).toEqual({
       kind: "library",
@@ -212,6 +223,7 @@ describe("rowToViewContext", () => {
         sst_id: 42,
         technique_id: 9,
         video_id: null,
+        camp_id: null,
       }),
     ).toBeNull();
   });
@@ -225,6 +237,7 @@ describe("rowToViewContext", () => {
         sst_id: null,
         technique_id: null,
         video_id: null,
+        camp_id: null,
       }),
     ).toBeNull();
   });
@@ -241,6 +254,7 @@ describe("activitySurface", () => {
         sst_id: 42,
         technique_id: 9,
         video_id: null,
+        camp_id: null,
         syllabus_name: "Blue Belt",
       }),
     ).toEqual({ kind: "syllabus", label: "Blue Belt" });
@@ -255,6 +269,7 @@ describe("activitySurface", () => {
         sst_id: 42,
         technique_id: 9,
         video_id: null,
+        camp_id: null,
         syllabus_name: "Blue Belt",
       }),
     ).toEqual({ kind: "syllabus", label: "Blue Belt" });
@@ -269,6 +284,7 @@ describe("activitySurface", () => {
         sst_id: null,
         technique_id: 9,
         video_id: 7,
+        camp_id: null,
         syllabus_name: null,
       }),
     ).toEqual({ kind: "library", label: "Global Technique Library" });
@@ -283,8 +299,45 @@ describe("activitySurface", () => {
         sst_id: null,
         technique_id: null,
         video_id: null,
+        camp_id: null,
         syllabus_name: "Blue Belt",
       }),
     ).toBeNull();
+  });
+});
+
+describe("camp deep links", () => {
+  it("round-trips a camp EntityRef token", () => {
+    expect(refToken({ type: "camp", id: 7 })).toBe("camp:7");
+    expect(parseFocusToken("camp:7")).toEqual({ type: "camp", id: 7 });
+  });
+
+  it("routes a camp_created row to the camp page", () => {
+    const ctx = rowToViewContext({
+      verb: "camp_created",
+      context_kind: "camp",
+      target_student_id: 3,
+      syllabus_id: null,
+      sst_id: null,
+      technique_id: null,
+      video_id: null,
+      camp_id: 7,
+    });
+    expect(ctx).not.toBeNull();
+    expect(viewContextHref(ctx!)).toBe("/camps/7?focus=camp:7");
+  });
+
+  it("routes a camp video_added row focused on the video", () => {
+    const ctx = rowToViewContext({
+      verb: "video_added",
+      context_kind: "camp",
+      target_student_id: 3,
+      syllabus_id: null,
+      sst_id: null,
+      technique_id: null,
+      video_id: 12,
+      camp_id: 7,
+    });
+    expect(viewContextHref(ctx!)).toBe("/camps/7?focus=camp:7&video=12");
   });
 });

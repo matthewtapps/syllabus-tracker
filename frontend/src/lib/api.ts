@@ -971,10 +971,11 @@ export type ProcessingStatus = "processing" | "ready" | "failed";
 
 export interface Video {
   id: number;
-  parent_kind: "technique" | "student_profile" | "thread" | "loose";
+  parent_kind: "technique" | "student_profile" | "thread" | "camp" | "loose";
   technique_id: number | null;
   student_id: number | null;
   thread_id: number | null;
+  camp_id: number | null;
   title: string;
   description?: string | null;
   position: number;
@@ -1858,7 +1859,8 @@ export type AnchorKind =
   | "video"
   | "video_timestamp"
   | "sst"
-  | "pinned_technique";
+  | "pinned_technique"
+  | "camp";
 export type ThreadVisibility = "private" | "broadcast";
 
 export interface CommentView {
@@ -1943,5 +1945,147 @@ export async function deleteComment(commentId: number): Promise<Response> {
   return fetch(`/api/comments/${commentId}`, {
     method: "DELETE",
     credentials: "include",
+  });
+}
+
+// ============================================================
+// Camps
+// ============================================================
+
+export interface Camp {
+  id: number;
+  student_id: number;
+  coach_id: number;
+  name: string;
+  description: string | null;
+  created_at: string;
+  archived_at: string | null;
+}
+
+export interface CampTechnique {
+  technique_id: number;
+  name: string;
+  description: string | null;
+  position: number;
+  tags: Tag[];
+  video_count: number;
+}
+
+export interface CampDetail extends Camp {
+  techniques: CampTechnique[];
+}
+
+export async function getCampsForStudent(studentId: number): Promise<Camp[]> {
+  const res = await fetch(`/api/camps?student_id=${studentId}`, {
+    credentials: "include",
+  });
+  if (!res.ok) throw res;
+  return ((await res.json()) as { camps: Camp[] }).camps;
+}
+
+export async function getCamp(id: number): Promise<CampDetail> {
+  const res = await fetch(`/api/camps/${id}`, { credentials: "include" });
+  if (!res.ok) throw res;
+  return (await res.json()) as CampDetail;
+}
+
+export async function createCamp(data: {
+  student_id: number;
+  name: string;
+  description: string | null;
+}): Promise<{ id: number }> {
+  const res = await fetch("/api/camps", {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) throw res;
+  return (await res.json()) as { id: number };
+}
+
+export async function archiveCamp(id: number): Promise<void> {
+  const res = await fetch(`/api/camps/${id}/archive`, {
+    method: "POST",
+    credentials: "include",
+  });
+  if (!res.ok) throw res;
+}
+
+export async function addCampTechnique(
+  campId: number,
+  techniqueId: number,
+): Promise<void> {
+  const res = await fetch(`/api/camps/${campId}/techniques`, {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ technique_id: techniqueId }),
+  });
+  if (!res.ok) throw res;
+}
+
+export async function removeCampTechnique(
+  campId: number,
+  techniqueId: number,
+): Promise<void> {
+  const res = await fetch(`/api/camps/${campId}/techniques/${techniqueId}`, {
+    method: "DELETE",
+    credentials: "include",
+  });
+  if (!res.ok) throw res;
+}
+
+export async function getCampVideos(campId: number): Promise<Video[]> {
+  const res = await fetch(`/api/camps/${campId}/videos`, {
+    credentials: "include",
+  });
+  if (!res.ok) throw res;
+  return ((await res.json()) as { videos: Video[] }).videos;
+}
+
+export async function uploadCampVideo(
+  campId: number,
+  file: File,
+  fields: { title: string; description?: string },
+  onProgress?: (loaded: number, total: number) => void,
+): Promise<UploadResponse> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", `/api/camps/${campId}/videos/upload`);
+    xhr.withCredentials = true;
+
+    if (onProgress) {
+      xhr.upload.addEventListener("progress", (e) => {
+        if (e.lengthComputable) onProgress(e.loaded, e.total);
+      });
+    }
+
+    xhr.addEventListener("load", () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try {
+          resolve(JSON.parse(xhr.responseText) as UploadResponse);
+        } catch {
+          reject(new Error("Invalid response from server"));
+        }
+      } else {
+        reject(
+          new Response(xhr.responseText || null, {
+            status: xhr.status,
+            statusText: xhr.statusText,
+          }),
+        );
+      }
+    });
+
+    xhr.addEventListener("error", () => reject(new Error("Network error during upload")));
+    xhr.addEventListener("abort", () => reject(new Error("Upload was cancelled")));
+
+    const body = new FormData();
+    body.append("file", file);
+    body.append("title", fields.title);
+    if (fields.description) body.append("description", fields.description);
+
+    xhr.send(body);
   });
 }

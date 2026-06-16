@@ -1,22 +1,51 @@
-import { useMemo } from "react";
-import { Link, Navigate, useParams } from "react-router-dom";
+import { useMemo, useState } from "react";
+import { Link, Navigate, useNavigate, useParams } from "react-router-dom";
 import {
   BookOpen,
   ChevronRight,
+  Dumbbell,
   History,
   MessageSquare,
   NotebookPen,
   Pin,
+  Plus,
   UserRound,
 } from "lucide-react";
+import { z } from "zod";
+import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "@/components/ui/form";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { TracedForm } from "@/components/traced-form";
+import {
+  handleApiFormError,
+  useFormWithValidation,
+} from "@/components/hooks/useFormErrors";
 import {
   useStudentActivityFeed,
   useAllUsers,
   useThreadsForAnchor,
 } from "@/lib/queries";
-import { useCreateThread } from "@/lib/mutations";
+import { useCreateCamp, useCreateThread } from "@/lib/mutations";
 import { useUser } from "@/lib/current-user-context";
 import { isCoachOrAdmin } from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -24,6 +53,15 @@ import { ActivityFeedList } from "@/components/activity-feed-list";
 import { ThreadView } from "@/components/threads/thread-view";
 import { ThreadComposer } from "@/components/threads/thread-composer";
 import type { User } from "@/lib/api";
+
+const createCampSchema = z.object({
+  name: z
+    .string()
+    .min(1, "Name is required")
+    .max(100, "Name must be under 100 characters"),
+  description: z.string().max(1000, "Description is too long").optional(),
+});
+type CreateCampValues = z.infer<typeof createCampSchema>;
 
 function initials(u: Pick<User, "display_name" | "username">): string {
   const source = u.display_name?.trim() || u.username || "";
@@ -59,6 +97,10 @@ function ProfileHub({
   isOwnView: boolean;
 }) {
   const viewer = useUser();
+  const navigate = useNavigate();
+  // Coaches can create a camp for the student whose profile they're viewing.
+  const canCreateCamp = isCoachOrAdmin(viewer) && !isOwnView;
+  const [createCampOpen, setCreateCampOpen] = useState(false);
   // For the owning student we already have the viewer; for coaches we
   // need to fetch the student by id. /api/me only returns the current
   // user, so coaches use the users list (cached, cheap) to resolve.
@@ -127,9 +169,29 @@ function ProfileHub({
       </section>
 
       <section className="space-y-2">
-        <h2 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-          {isOwnView ? "Your spaces" : `${displayName}'s spaces`}
-        </h2>
+        <div className="flex items-center justify-between gap-2">
+          <h2 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            {isOwnView ? "Your spaces" : `${displayName}'s spaces`}
+          </h2>
+          {canCreateCamp && (
+            <Dialog open={createCampOpen} onOpenChange={setCreateCampOpen}>
+              <DialogTrigger asChild>
+                <Button size="sm" variant="outline" className="gap-1.5">
+                  <Plus className="h-4 w-4" aria-hidden />
+                  <span>New camp</span>
+                </Button>
+              </DialogTrigger>
+              <CreateCampDialog
+                studentId={studentId}
+                studentName={displayName}
+                onCreated={(id) => {
+                  setCreateCampOpen(false);
+                  navigate(`/camps/${id}`);
+                }}
+              />
+            </Dialog>
+          )}
+        </div>
         <div className="overflow-hidden rounded-lg border border-border bg-card">
           {/* The Library is a global gym-wide resource. Students see a link
            * to their own library view; coaches don't need it here since
@@ -146,6 +208,11 @@ function ProfileHub({
             to={`/student/${studentId}/pinned`}
             icon={Pin}
             title={isOwnView ? "Pinned" : "Pinned techniques"}
+          />
+          <HubLink
+            to={`/student/${studentId}/camps`}
+            icon={Dumbbell}
+            title="Camps"
             last
           />
         </div>
@@ -237,5 +304,93 @@ function HubLink({
         aria-hidden
       />
     </Link>
+  );
+}
+
+function CreateCampDialog({
+  studentId,
+  studentName,
+  onCreated,
+}: {
+  studentId: number;
+  studentName: string;
+  onCreated: (id: number) => void;
+}) {
+  const createMutation = useCreateCamp(studentId);
+  const form = useFormWithValidation<CreateCampValues>({
+    resolver: zodResolver(createCampSchema),
+    defaultValues: { name: "", description: "" },
+  });
+
+  async function handleSubmit(values: CreateCampValues) {
+    try {
+      const { id } = await createMutation.mutateAsync({
+        name: values.name,
+        description: values.description?.trim() ? values.description : null,
+      });
+      toast.success(`Created ${values.name}`);
+      onCreated(id);
+    } catch (err) {
+      const handled = await handleApiFormError(
+        err,
+        form.setError,
+        Object.keys(form.getValues()),
+      );
+      if (!handled) toast.error("Failed to create camp");
+    }
+  }
+
+  return (
+    <DialogContent>
+      <DialogHeader>
+        <DialogTitle>New camp for {studentName}</DialogTitle>
+        <DialogDescription>
+          Add a name and optional description. You can add techniques after.
+        </DialogDescription>
+      </DialogHeader>
+      <Form {...form}>
+        <TracedForm
+          id="create_camp"
+          onSubmit={form.handleSubmit(handleSubmit)}
+          className="space-y-3"
+        >
+          <FormField
+            control={form.control}
+            name="name"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Name</FormLabel>
+                <FormControl>
+                  <Input autoFocus placeholder="e.g. Worlds prep" {...field} />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          <FormField
+            control={form.control}
+            name="description"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Description</FormLabel>
+                <FormControl>
+                  <Textarea {...field} className="min-h-20" />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          <DialogFooter>
+            <Button
+              type="submit"
+              size="sm"
+              disabled={form.formState.isSubmitting}
+            >
+              {form.formState.isSubmitting ? "Creating..." : "Create"}
+            </Button>
+          </DialogFooter>
+        </TracedForm>
+      </Form>
+    </DialogContent>
   );
 }

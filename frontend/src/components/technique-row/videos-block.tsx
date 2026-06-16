@@ -46,8 +46,13 @@ export function VideosBlock({
       ? { studentId: context.studentId, syllabusId: context.syllabusId }
       : undefined;
 
+  // A camp is a private coach-student space, like the pinned/syllabus
+  // surfaces: a coach's video thread here must be scoped to the camp's
+  // student, not broadcast to everyone (see deriveThreadVisibility).
   const surface: VideoThreadSurface =
-    context.kind === "student-pinned" || context.kind === "student-syllabus"
+    context.kind === "student-pinned" ||
+    context.kind === "student-syllabus" ||
+    context.kind === "camp"
       ? { kind: "student", studentId: context.studentId }
       : { kind: "library" };
 
@@ -67,6 +72,8 @@ export function VideosBlock({
           : (context.syllabusName ?? "Syllabus");
       case "syllabus-management":
         return context.syllabusName ? `${context.syllabusName} syllabus` : "Syllabus";
+      case "camp":
+        return context.studentName ? `${context.studentName}'s camp` : "Camp";
     }
   })();
   const contextLabel = `${surfaceLabel} · ${technique.name}`;

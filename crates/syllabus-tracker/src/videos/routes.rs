@@ -201,7 +201,89 @@ pub async fn api_video_upload(
     processor
         .start(HostJob {
             video_id,
-            technique_id: tid,
+            parent_id: tid,
+            original_temp_path: dest,
+        })
+        .await;
+
+    Ok(Json(UploadResponse {
+        video_id,
+        processing_status: ProcessingStatus::Processing.as_str().to_string(),
+    }))
+}
+
+#[instrument(skip(form, pool, processor))]
+#[post("/camps/<camp_id>/videos/upload", data = "<form>")]
+pub async fn api_camp_video_upload(
+    camp_id: i64,
+    user: User,
+    form: Result<Form<UploadForm<'_>>, FormErrors<'_>>,
+    pool: &State<Pool<Sqlite>>,
+    processor: &State<DynVideoProcessor>,
+) -> Result<Json<UploadResponse>, Status> {
+    // All coaches (ManageCamps) may upload to any camp. Per-coach scoping is
+    // intentionally not enforced in v1 (matches the gym-wide coach model;
+    // substitute teaching makes per-coach ownership noisy).
+    user.require_permission(Permission::ManageCamps)?;
+
+    let mut form = form.map_err(|errs| {
+        error!(
+            camp_id,
+            errors = %errs,
+            "camp video upload form failed to parse"
+        );
+        Status::BadRequest
+    })?;
+
+    let metrics = video_metrics();
+    if !is_mp4(form.file.content_type()) {
+        metrics.uploads_total.add(1, &[kv("result", "fail_format")]);
+        return Err(Status::UnsupportedMediaType);
+    }
+
+    if form.file.len() > max_video_bytes() as u64 {
+        metrics.uploads_total.add(1, &[kv("result", "fail_size")]);
+        return Err(Status::PayloadTooLarge);
+    }
+
+    tokio::fs::create_dir_all(pipeline::temp_dir())
+        .await
+        .map_err(|e| {
+            error!(
+                camp_id,
+                temp_dir = ?pipeline::temp_dir(),
+                error = %e,
+                "failed to create video temp dir for camp upload"
+            );
+            Status::InternalServerError
+        })?;
+    let mut dest = pipeline::temp_dir();
+    dest.push(format!("{}.mp4", Uuid::new_v4()));
+
+    form.file.persist_to(&dest).await.map_err(|e| {
+        error!(
+            camp_id,
+            dest = ?dest,
+            error = %e,
+            "failed to persist camp video upload to disk"
+        );
+        Status::InternalServerError
+    })?;
+
+    let video_id = db::create_processing_video(
+        pool.inner(),
+        db::VideoParent::Camp(camp_id),
+        form.title.trim(),
+        form.description.as_deref(),
+        user.id,
+    )
+    .await
+    .map_err(Status::from)?;
+
+    processor
+        .start(HostJob {
+            video_id,
+            parent_id: camp_id, // the video's parent is the camp
             original_temp_path: dest,
         })
         .await;
@@ -548,7 +630,7 @@ pub async fn api_replace_video(
     processor
         .start(HostJob {
             video_id: vid,
-            technique_id,
+            parent_id: technique_id,
             original_temp_path: dest,
         })
         .await;
@@ -908,7 +990,7 @@ impl<'r> rocket::request::FromRequest<'r> for SigHeader {
 /// - 401 Unauthorized: missing or invalid HMAC signature.
 /// - 404 Not Found: `video_id` not in the database.
 /// - 503 Service Unavailable: no callback secret is configured.
-#[instrument(skip(body, sig_header, secret, pool))]
+#[instrument(skip(body, sig_header, secret, pool, main))]
 #[post("/videos/<video_id>/processing-result", data = "<body>")]
 pub async fn api_processing_result(
     video_id: i64,
@@ -916,6 +998,7 @@ pub async fn api_processing_result(
     sig_header: SigHeader,
     secret: &State<CallbackSecret>,
     pool: &State<Pool<Sqlite>>,
+    main: crate::telemetry::MainSpan,
 ) -> Result<Status, Status> {
     const MAX_BODY: u64 = 64 * 1024; // 64 KiB
 
@@ -964,6 +1047,18 @@ pub async fn api_processing_result(
             return Err(Status::BadRequest);
         }
     };
+
+    // Stamp the callback outcome onto the request's main wide-event span. This
+    // request is the worker -> backend leg of the trace; the worker injects
+    // `traceparent` so it already shares the upload's trace id.
+    main.set("video.id", video_id);
+    main.set(
+        "video.processing.result",
+        match &result {
+            video_job::ProcessingResult::Ready { .. } => "ready",
+            video_job::ProcessingResult::Failed { .. } => "failed",
+        },
+    );
 
     // Verify the video exists before writing.
     match db::get_db_video(pool.inner(), video_id).await {

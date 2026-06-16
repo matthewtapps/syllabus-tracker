@@ -119,16 +119,21 @@ jobs:
           VIDEO_CALLBACK_SECRET=$(tofu output -raw _platform_video_callback_secret)
           S3_ACCESS_KEY=$(tofu output -raw _platform_runtime_r2_access_key_id)
           S3_SECRET_KEY=$(tofu output -raw _platform_runtime_r2_secret_access_key)
+          # Reuse the backend ingest key (create_datasets=true) so the worker's
+          # `syllabus-tracker-video-worker` dataset materialises on first export.
+          HONEYCOMB_KEY=$(tofu output -raw _platform_honeycomb_backend_ingest)
 
           echo "::add-mask::$ENQUEUE_TOKEN"
           echo "::add-mask::$VIDEO_CALLBACK_SECRET"
           echo "::add-mask::$S3_ACCESS_KEY"
           echo "::add-mask::$S3_SECRET_KEY"
+          echo "::add-mask::$HONEYCOMB_KEY"
 
           echo "enqueue_token=$ENQUEUE_TOKEN"       >> "$GITHUB_OUTPUT"
           echo "callback_secret=$VIDEO_CALLBACK_SECRET" >> "$GITHUB_OUTPUT"
           echo "s3_access_key=$S3_ACCESS_KEY"       >> "$GITHUB_OUTPUT"
           echo "s3_secret_key=$S3_SECRET_KEY"       >> "$GITHUB_OUTPUT"
+          echo "honeycomb_key=$HONEYCOMB_KEY"       >> "$GITHUB_OUTPUT"
 
       - name: Deploy to Cloud Run
         run: |
@@ -156,7 +161,11 @@ jobs:
           @S3_REGION=auto\
           @S3_BUCKET=sillybus-videos-prod\
           @S3_FORCE_PATH_STYLE=true\
-          @S3_PUBLIC_ENDPOINT=https://ea9e8573831e597fc41f865267b8fd35.r2.cloudflarestorage.com"
+          @S3_PUBLIC_ENDPOINT=https://ea9e8573831e597fc41f865267b8fd35.r2.cloudflarestorage.com\
+          @OTEL_EXPORTER_OTLP_ENDPOINT=https://api.honeycomb.io\
+          @OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf\
+          @OTEL_EXPORTER_OTLP_HEADERS=x-honeycomb-team=${{ steps.secrets.outputs.honeycomb_key }}\
+          @OTEL_RESOURCE_ATTRIBUTES=deployment.environment.name=production"
 
       - name: Print service URL
         run: |

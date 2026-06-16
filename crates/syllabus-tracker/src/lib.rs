@@ -3,6 +3,7 @@ extern crate rocket;
 
 pub mod api;
 pub mod auth;
+pub mod camps;
 pub mod capabilities;
 pub mod catchers;
 pub mod db;

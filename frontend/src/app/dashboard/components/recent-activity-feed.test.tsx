@@ -30,6 +30,7 @@ const mockRow: ActivityRow = {
   unread: false,
   context_kind: null,
   thread_id: null,
+  camp_id: null,
 };
 
 function makeStubFetch(rows: ActivityRow[]) {

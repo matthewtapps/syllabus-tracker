@@ -16,7 +16,8 @@ export type ViewContext =
       syllabus: EntityRef;
       sst: EntityRef;
       video?: EntityRef;
-    };
+    }
+  | { kind: "camp"; camp: EntityRef; video?: EntityRef };
 
 /** The one place deep-link routing lives. Pure. */
 export function viewContextHref(ctx: ViewContext): string {
@@ -31,6 +32,10 @@ export function viewContextHref(ctx: ViewContext): string {
         ctx.sst,
       )}${video}`;
     }
+    case "camp": {
+      const video = ctx.video ? `&video=${ctx.video.id}` : "";
+      return `/camps/${ctx.camp.id}?focus=${refToken(ctx.camp)}${video}`;
+    }
   }
 }
 
@@ -44,6 +49,7 @@ export interface ViewContextRow {
   sst_id: number | null;
   technique_id: number | null;
   video_id: number | null;
+  camp_id: number | null;
 }
 
 const SYLLABUS_SCOPED_VERBS = new Set([
@@ -78,6 +84,16 @@ function syllabusContext(row: ViewContextRow): ViewContext | null {
  * resolvable deep-link target (the caller then falls back). Pure.
  */
 export function rowToViewContext(row: ViewContextRow): ViewContext | null {
+  // Camp rows carry context_kind="camp" regardless of verb (including
+  // video_added), so this must be checked before the verb dispatch below or a
+  // camp video row would fall into the library branch and misroute.
+  if (row.context_kind === "camp" && row.camp_id != null) {
+    return {
+      kind: "camp",
+      camp: { type: "camp", id: row.camp_id },
+      video: row.video_id != null ? { type: "video", id: row.video_id } : undefined,
+    };
+  }
   if (row.verb === "video_watched" || row.verb === "video_added") {
     if (row.context_kind === "syllabus") {
       return syllabusContext(row);
@@ -134,6 +150,9 @@ export function activitySurface(
   if (!ctx) return null;
   if (ctx.kind === "syllabus") {
     return { kind: "syllabus", label: row.syllabus_name ?? "Syllabus" };
+  }
+  if (ctx.kind === "camp") {
+    return { kind: "camp", label: "Camp" };
   }
   return { kind: "library", label: "Global Technique Library" };
 }

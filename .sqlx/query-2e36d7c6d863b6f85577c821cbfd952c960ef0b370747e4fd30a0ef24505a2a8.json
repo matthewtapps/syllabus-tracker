@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE camps SET archived_at = CURRENT_TIMESTAMP, archived_by_id = ?\n         WHERE id = ? AND archived_at IS NULL",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "2e36d7c6d863b6f85577c821cbfd952c960ef0b370747e4fd30a0ef24505a2a8"
+}

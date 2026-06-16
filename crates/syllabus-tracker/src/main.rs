@@ -2,7 +2,7 @@
 extern crate rocket;
 
 pub use syllabus_tracker::{
-    api, auth, capabilities, catchers, db, env, error, models, syllabi, telemetry, threads,
+    api, auth, camps, capabilities, catchers, db, env, error, models, syllabi, telemetry, threads,
     validation, videos,
 };
 
@@ -53,6 +53,10 @@ use syllabi::{
     api_set_assignment_graduated, api_set_sst_hidden, api_set_video_syllabus_visibility,
     api_unassign_syllabus, api_update_sst, api_update_syllabus, api_update_syllabus_attempt,
 };
+use camps::{
+    api_add_camp_technique, api_archive_camp, api_create_camp, api_get_camp, api_list_camps,
+    api_list_camp_videos, api_remove_camp_technique, api_update_camp,
+};
 use threads::{
     api_create_thread, api_list_threads, api_create_comment, api_delete_thread, api_delete_comment,
 };
@@ -61,12 +65,12 @@ use telemetry::init_tracing;
 use thiserror::Error;
 use videos::{
     CallbackSecret, RemoteProcessor, DynVideoProcessor, HostFfmpegProcessor,
-    api_admin_storage, api_dashboard_video_overview, api_delete_video, api_list_technique_videos,
-    api_my_watch_state, api_processing_result, api_reorder_videos, api_replace_video,
-    api_set_video_global_hidden, api_set_video_student_visibility, api_student_watch_activity,
-    api_update_video, api_video_download_url, api_video_link, api_video_playback_url,
-    api_video_privacy_ack, api_video_privacy_ack_status, api_video_stats, api_video_status,
-    api_video_upload, api_video_watch_events,
+    api_admin_storage, api_camp_video_upload, api_dashboard_video_overview, api_delete_video,
+    api_list_technique_videos, api_my_watch_state, api_processing_result, api_reorder_videos,
+    api_replace_video, api_set_video_global_hidden, api_set_video_student_visibility,
+    api_student_watch_activity, api_update_video, api_video_download_url, api_video_link,
+    api_video_playback_url, api_video_privacy_ack, api_video_privacy_ack_status, api_video_stats,
+    api_video_status, api_video_upload, api_video_watch_events,
 };
 
 use sqlx::SqlitePool;
@@ -366,6 +370,14 @@ pub async fn init_rocket_with_callback_secret(
                 api_create_comment,
                 api_delete_thread,
                 api_delete_comment,
+                api_create_camp,
+                api_list_camps,
+                api_get_camp,
+                api_update_camp,
+                api_archive_camp,
+                api_add_camp_technique,
+                api_remove_camp_technique,
+                api_list_camp_videos,
             ],
         )
         .register(
@@ -478,6 +490,7 @@ pub async fn init_rocket_with_callback_secret(
                 "/api",
                 routes![
                     api_video_upload,
+                    api_camp_video_upload,
                     api_video_status,
                     api_video_link,
                     api_list_technique_videos,
