@@ -243,6 +243,87 @@ mod tests {
     }
 
     #[rocket::async_test]
+    async fn test_create_library_technique_api() {
+        let test_db = TestDbBuilder::new()
+            .coach("coach_user", Some("Coach User"))
+            .build()
+            .await
+            .expect("Failed to build test DB");
+
+        let (client, _test_db) = setup_test_client(test_db).await;
+        let cookies = login_test_user(&client, "coach_user", "password123").await;
+
+        let response = client
+            .post("/api/techniques")
+            .cookies(cookies.clone())
+            .header(ContentType::JSON)
+            .body(
+                json!({
+                    "name": "Kimura from side control",
+                    "description": "Isolate the far arm and figure-four."
+                })
+                .to_string(),
+            )
+            .dispatch()
+            .await;
+
+        assert_eq!(response.status(), Status::Ok);
+
+        // The new technique shows up in the global library list.
+        let library = client
+            .get("/api/techniques")
+            .cookies(cookies)
+            .dispatch()
+            .await;
+        let body = library.into_string().await.unwrap();
+        assert!(body.contains("Kimura from side control"));
+    }
+
+    #[rocket::async_test]
+    async fn test_create_library_technique_rejects_blank_name() {
+        let test_db = TestDbBuilder::new()
+            .coach("coach_user", Some("Coach User"))
+            .build()
+            .await
+            .expect("Failed to build test DB");
+
+        let (client, _test_db) = setup_test_client(test_db).await;
+        let cookies = login_test_user(&client, "coach_user", "password123").await;
+
+        let response = client
+            .post("/api/techniques")
+            .cookies(cookies)
+            .header(ContentType::JSON)
+            .body(json!({ "name": "", "description": "" }).to_string())
+            .dispatch()
+            .await;
+
+        assert_eq!(response.status(), Status::UnprocessableEntity);
+    }
+
+    #[rocket::async_test]
+    async fn test_create_library_technique_forbidden_for_student() {
+        let test_db = TestDbBuilder::new()
+            .student("student_user", Some("Student User"))
+            .build()
+            .await
+            .expect("Failed to build test DB");
+
+        let (client, _test_db) = setup_test_client(test_db).await;
+        let cookies = login_test_user(&client, "student_user", "password123").await;
+
+        let response = client
+            .post("/api/techniques")
+            .cookies(cookies)
+            .header(ContentType::JSON)
+            .body(json!({ "name": "Sneaky student technique", "description": "" }).to_string())
+            .dispatch()
+            .await;
+
+        assert_eq!(response.status(), Status::Forbidden);
+    }
+
+    #[rocket::async_test]
     async fn test_assign_techniques_api() {
         let test_db = TestDbBuilder::new()
             .coach("coach_user", Some("Coach User"))

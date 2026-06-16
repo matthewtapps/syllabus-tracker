@@ -23,7 +23,8 @@ use crate::db::{
     attempt_buckets_for_student, attempt_summary_for_student, attempt_weekly_buckets_for_technique,
     authenticate_user, claim_invite, count_techniques, create_and_assign_technique, create_attempt,
     create_collection, create_invite_token, create_self_registered_user, create_tag,
-    create_technique_in_collection, create_user, create_user_session, create_user_stub,
+    create_technique, create_technique_in_collection, create_user, create_user_session,
+    create_user_stub,
     dashboard_activity_feed, delete_attempt, delete_collection, delete_tag, feed, feed_max_id,
     find_user_by_username, find_valid_invite_token, get_all_collections, get_all_tags,
     get_all_users, get_collection, get_student_technique, get_student_techniques,
@@ -618,6 +619,45 @@ pub async fn api_list_library_techniques(
     user.require_permission(Permission::ViewLibrary)?;
     let rows = crate::db::list_library_techniques(db).await?;
     Ok(Json(rows))
+}
+
+#[derive(Deserialize, Validate, Clone)]
+pub struct CreateLibraryTechniqueRequest {
+    #[validate(length(
+        min = 1,
+        max = 100,
+        message = "Technique name must be between 1 and 100 characters"
+    ))]
+    name: String,
+    // Description is optional for a quick library add; the coach can flesh it
+    // out later from the technique's edit form.
+    #[serde(default)]
+    description: String,
+}
+
+/// Create a technique straight into the global library, unattached to any
+/// student or collection. Used by the coach library's "New technique" flow.
+#[post("/techniques", data = "<body>")]
+pub async fn api_create_library_technique(
+    body: Json<CreateLibraryTechniqueRequest>,
+    user: User,
+    db: &State<Pool<Sqlite>>,
+) -> ApiResult<Json<TechniqueLibraryResponse>> {
+    body.validate()?;
+    user.require_permission(Permission::CreateTechniques)?;
+    let technique_id = create_technique(db, &body.name, &body.description, user.id).await?;
+    let coach_name = if user.display_name.is_empty() {
+        user.username.clone()
+    } else {
+        user.display_name.clone()
+    };
+    Ok(Json(TechniqueLibraryResponse {
+        id: technique_id,
+        name: body.name.clone(),
+        description: body.description.clone(),
+        coach_id: user.id,
+        coach_name,
+    }))
 }
 
 #[get("/student/<id>/library")]
