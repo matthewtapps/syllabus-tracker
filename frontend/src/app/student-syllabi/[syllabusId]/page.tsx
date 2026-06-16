@@ -213,46 +213,44 @@ function Detail({
           )}
         </p>
         {!isOwnView && (
-          <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
-            <Button
-              variant="outline"
-              size="icon"
-              aria-label="Sync with current syllabus"
-              onClick={() => setDiffOpen(true)}
-            >
-              <GitCompare className="h-4 w-4" aria-hidden />
+          <>
+            <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+              <Button
+                variant="outline"
+                size="icon"
+                aria-label="Sync with current syllabus"
+                onClick={() => setDiffOpen(true)}
+              >
+                <GitCompare className="h-4 w-4" aria-hidden />
+              </Button>
+              <Button
+                variant="outline"
+                size="icon"
+                aria-label={
+                  assignment.graduated_at
+                    ? 'Ungraduate this syllabus'
+                    : 'Graduate this syllabus'
+                }
+                onClick={() => setGraduateOpen(true)}
+                className={cn(assignment.graduated_at && 'text-status-green')}
+              >
+                <GraduationCap className="h-4 w-4" aria-hidden />
+              </Button>
+              <Button
+                variant="outline"
+                size="icon"
+                aria-label="Unassign syllabus"
+                onClick={() => setUnassignOpen(true)}
+                className="text-destructive"
+              >
+                <Trash2 className="h-4 w-4" aria-hidden />
+              </Button>
+            </div>
+            <Button className="w-full" onClick={() => setAddOpen(true)}>
+              <Plus className="mr-2 h-4 w-4" aria-hidden />
+              Add technique
             </Button>
-            <Button
-              variant="outline"
-              size="icon"
-              aria-label="Add technique to this student"
-              onClick={() => setAddOpen(true)}
-            >
-              <Plus className="h-4 w-4" aria-hidden />
-            </Button>
-            <Button
-              variant="outline"
-              size="icon"
-              aria-label={
-                assignment.graduated_at
-                  ? 'Ungraduate this syllabus'
-                  : 'Graduate this syllabus'
-              }
-              onClick={() => setGraduateOpen(true)}
-              className={cn(assignment.graduated_at && 'text-status-green')}
-            >
-              <GraduationCap className="h-4 w-4" aria-hidden />
-            </Button>
-            <Button
-              variant="outline"
-              size="icon"
-              aria-label="Unassign syllabus"
-              onClick={() => setUnassignOpen(true)}
-              className="text-destructive"
-            >
-              <Trash2 className="h-4 w-4" aria-hidden />
-            </Button>
-          </div>
+          </>
         )}
       </div>
 
