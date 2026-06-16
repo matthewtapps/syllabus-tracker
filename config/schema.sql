@@ -21,6 +21,7 @@ CREATE TABLE IF NOT EXISTS techniques (
     description TEXT,
     coach_id INTEGER,
     coach_name TEXT,
+    is_global INTEGER NOT NULL DEFAULT 1,
     FOREIGN KEY (coach_id) REFERENCES users (id)
 );
 
