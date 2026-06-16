@@ -45,6 +45,39 @@ mod tests {
         body
     }
 
+    /// Like [`multipart_upload_body`] but also appends `parent_kind` /
+    /// `parent_id` form fields so the upload route can scope the new video to a
+    /// non-technique tier.
+    fn multipart_upload_body_with_parent(
+        file_bytes: &[u8],
+        filename: &str,
+        title: &str,
+        description: Option<&str>,
+        parent: Option<(&str, i64)>,
+    ) -> Vec<u8> {
+        let mut body = multipart_upload_body(file_bytes, filename, title, description);
+        if let Some((kind, id)) = parent {
+            // The base helper closed the body with `--BOUNDARY--\r\n`; strip the
+            // trailing close marker, append the extra parts, then re-close.
+            let close = format!("--{}--\r\n", BOUNDARY);
+            let len = body.len() - close.len();
+            body.truncate(len);
+
+            body.extend_from_slice(format!("--{}\r\n", BOUNDARY).as_bytes());
+            body.extend_from_slice(b"Content-Disposition: form-data; name=\"parent_kind\"\r\n\r\n");
+            body.extend_from_slice(kind.as_bytes());
+            body.extend_from_slice(b"\r\n");
+
+            body.extend_from_slice(format!("--{}\r\n", BOUNDARY).as_bytes());
+            body.extend_from_slice(b"Content-Disposition: form-data; name=\"parent_id\"\r\n\r\n");
+            body.extend_from_slice(id.to_string().as_bytes());
+            body.extend_from_slice(b"\r\n");
+
+            body.extend_from_slice(close.as_bytes());
+        }
+        body
+    }
+
     fn multipart_content_type() -> ContentType {
         ContentType::parse_flexible(&format!("multipart/form-data; boundary={}", BOUNDARY))
             .expect("multipart content type")
@@ -198,6 +231,172 @@ mod tests {
         let body: serde_json::Value =
             serde_json::from_str(&response.into_string().await.unwrap()).unwrap();
         assert_eq!(body["kind"], "link");
+    }
+
+    /// Seeds a syllabus_technique (T2) membership row and a
+    /// student_syllabus_technique (T3) row for the Armbar technique, returning
+    /// `(syllabus_technique_id, sst_id)`. Mirrors the raw-SQL seeding used by
+    /// the db-level tiered tests.
+    async fn seed_syllabus_tiers(db: &TestDb) -> (i64, i64) {
+        let coach = db.user_id("coach_user").unwrap();
+        let alice = db.user_id("student_user").unwrap();
+        let tech = first_technique_id(db).await;
+
+        let syllabus_id: i64 = sqlx::query_scalar!(
+            "INSERT INTO syllabi (name, created_by_id) VALUES ('Blue Belt', ?) RETURNING id AS \"id!\"",
+            coach
+        )
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+        let st_id: i64 = sqlx::query_scalar!(
+            "INSERT INTO syllabus_techniques (syllabus_id, technique_id, position, added_by_id)
+             VALUES (?, ?, 0, ?) RETURNING id AS \"id!\"",
+            syllabus_id,
+            tech,
+            coach
+        )
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+        let assignment_id: i64 = sqlx::query_scalar!(
+            "INSERT INTO syllabus_assignments (student_id, syllabus_id, assigned_by_id)
+             VALUES (?, ?, ?) RETURNING id AS \"id!\"",
+            alice,
+            syllabus_id,
+            coach
+        )
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+        let sst_id: i64 = sqlx::query_scalar!(
+            "INSERT INTO student_syllabus_techniques (assignment_id, technique_id)
+             VALUES (?, ?) RETURNING id AS \"id!\"",
+            assignment_id,
+            tech
+        )
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+        (st_id, sst_id)
+    }
+
+    #[rocket::async_test]
+    async fn link_video_at_syllabus_technique_parent() {
+        let test_db = create_standard_test_db().await;
+        let (client, db) = setup_test_client(test_db).await;
+        let tid = first_technique_id(&db).await;
+        let (st_id, _sst_id) = seed_syllabus_tiers(&db).await;
+
+        login_as(&client, "coach_user").await;
+        let response = client
+            .post(format!("/api/techniques/{}/videos/link", tid))
+            .header(ContentType::JSON)
+            .body(
+                json!({
+                    "title": "T2 link",
+                    "url": "https://youtu.be/t2abc",
+                    "parent_kind": "syllabus_technique",
+                    "parent_id": st_id,
+                })
+                .to_string(),
+            )
+            .dispatch()
+            .await;
+        assert_eq!(response.status(), Status::Ok);
+        let body: serde_json::Value =
+            serde_json::from_str(&response.into_string().await.unwrap()).unwrap();
+        let vid = body["id"].as_i64().unwrap();
+
+        let row = sqlx::query!(
+            "SELECT parent_kind, syllabus_technique_id FROM videos WHERE id = ?",
+            vid
+        )
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+        assert_eq!(row.parent_kind, "syllabus_technique");
+        assert_eq!(row.syllabus_technique_id, Some(st_id));
+    }
+
+    #[rocket::async_test]
+    async fn upload_video_at_student_syllabus_technique_parent() {
+        let test_db = create_standard_test_db().await;
+        let (client, db) = setup_test_client(test_db).await;
+        let tid = first_technique_id(&db).await;
+        let (_st_id, sst_id) = seed_syllabus_tiers(&db).await;
+
+        login_as(&client, "coach_user").await;
+        let body = multipart_upload_body_with_parent(
+            b"fake-mp4-bytes",
+            "clip.mp4",
+            "T3 upload",
+            None,
+            Some(("student_syllabus_technique", sst_id)),
+        );
+        let response = client
+            .post(format!("/api/techniques/{}/videos/upload", tid))
+            .header(multipart_content_type())
+            .body(body)
+            .dispatch()
+            .await;
+        assert_eq!(response.status(), Status::Ok);
+        let body: serde_json::Value =
+            serde_json::from_str(&response.into_string().await.unwrap()).unwrap();
+        let vid = body["video_id"].as_i64().unwrap();
+
+        let row = sqlx::query!(
+            "SELECT parent_kind, student_syllabus_technique_id FROM videos WHERE id = ?",
+            vid
+        )
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+        assert_eq!(row.parent_kind, "student_syllabus_technique");
+        assert_eq!(row.student_syllabus_technique_id, Some(sst_id));
+    }
+
+    #[rocket::async_test]
+    async fn tiered_create_requires_coach_permission() {
+        let test_db = create_standard_test_db().await;
+        let (client, db) = setup_test_client(test_db).await;
+        let tid = first_technique_id(&db).await;
+        let (st_id, sst_id) = seed_syllabus_tiers(&db).await;
+
+        login_as(&client, "student_user").await;
+
+        // T2 link as a student -> forbidden.
+        let response = client
+            .post(format!("/api/techniques/{}/videos/link", tid))
+            .header(ContentType::JSON)
+            .body(
+                json!({
+                    "title": "nope",
+                    "url": "https://youtu.be/nope",
+                    "parent_kind": "syllabus_technique",
+                    "parent_id": st_id,
+                })
+                .to_string(),
+            )
+            .dispatch()
+            .await;
+        assert_eq!(response.status(), Status::Forbidden);
+
+        // T3 upload as a student -> forbidden.
+        let upload = multipart_upload_body_with_parent(
+            b"fake-mp4-bytes",
+            "clip.mp4",
+            "nope",
+            None,
+            Some(("student_syllabus_technique", sst_id)),
+        );
+        let response = client
+            .post(format!("/api/techniques/{}/videos/upload", tid))
+            .header(multipart_content_type())
+            .body(upload)
+            .dispatch()
+            .await;
+        assert_eq!(response.status(), Status::Forbidden);
     }
 
     #[rocket::async_test]

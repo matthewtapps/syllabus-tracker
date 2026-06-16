@@ -50,6 +50,12 @@ pub struct UploadForm<'r> {
     pub file: TempFile<'r>,
     pub title: String,
     pub description: Option<String>,
+    /// Optional parent tier. When both are present the new video is scoped to
+    /// that tier (`syllabus_technique` / `student_syllabus_technique`); when
+    /// absent it defaults to the technique in the URL path. Mirrors the
+    /// `{anchor_kind, anchor_id}` convention used by the threads routes.
+    pub parent_kind: Option<String>,
+    pub parent_id: Option<i64>,
 }
 
 #[derive(Deserialize)]
@@ -57,6 +63,47 @@ pub struct LinkVideoRequest {
     pub title: String,
     pub description: Option<String>,
     pub url: String,
+    /// Optional parent tier; see [`UploadForm::parent_kind`].
+    pub parent_kind: Option<String>,
+    pub parent_id: Option<i64>,
+}
+
+/// Resolves the parent a create request targets and enforces the create
+/// permission for that tier.
+///
+/// Default (no `parent_kind`/`parent_id`) is the technique from the URL path,
+/// preserving the original technique-video behaviour. When a parent tier is
+/// supplied it must be one of the three technique tiers (`technique`,
+/// `syllabus_technique`, `student_syllabus_technique`); profile/thread/loose
+/// videos are created on their own surfaces, not here.
+///
+/// Permissions: every tier requires `UploadVideos` (coach/admin). The
+/// `student_syllabus_technique` (T3) tier additionally requires `ManageSyllabi`,
+/// the same guard the other per-student syllabus mutations use (e.g.
+/// `api_set_sst_hidden`). `validate_parent` (called by the db layer) confirms
+/// the row exists.
+fn resolve_create_parent(
+    user: &User,
+    technique_id: i64,
+    parent_kind: Option<&str>,
+    parent_id: Option<i64>,
+) -> Result<db::VideoParent, Status> {
+    user.require_permission(Permission::UploadVideos)?;
+
+    let parent = match (parent_kind, parent_id) {
+        (None, None) => db::VideoParent::Technique(technique_id),
+        (Some(kind), Some(id)) => {
+            db::VideoParent::from_kind_id(kind, id).ok_or(Status::BadRequest)?
+        }
+        // A partial parent spec is a malformed request.
+        _ => return Err(Status::BadRequest),
+    };
+
+    if matches!(parent, db::VideoParent::StudentSyllabusTechnique(_)) {
+        user.require_permission(Permission::ManageSyllabi)?;
+    }
+
+    Ok(parent)
 }
 
 #[derive(Deserialize)]
@@ -90,8 +137,6 @@ pub async fn api_video_upload(
     pool: &State<Pool<Sqlite>>,
     processor: &State<DynVideoProcessor>,
 ) -> Result<Json<UploadResponse>, Status> {
-    user.require_permission(Permission::UploadVideos)?;
-
     let mut form = form.map_err(|errs| {
         error!(
             technique_id = tid,
@@ -100,6 +145,13 @@ pub async fn api_video_upload(
         );
         Status::BadRequest
     })?;
+
+    let parent = resolve_create_parent(
+        &user,
+        tid,
+        form.parent_kind.as_deref(),
+        form.parent_id,
+    )?;
 
     let metrics = video_metrics();
     if !is_mp4(form.file.content_type()) {
@@ -138,7 +190,7 @@ pub async fn api_video_upload(
 
     let video_id = db::create_processing_video(
         pool.inner(),
-        db::VideoParent::Technique(tid),
+        parent,
         form.title.trim(),
         form.description.as_deref(),
         user.id,
@@ -185,8 +237,13 @@ pub async fn api_video_link(
     body: Json<LinkVideoRequest>,
     pool: &State<Pool<Sqlite>>,
 ) -> Result<Json<Video>, Status> {
-    user.require_permission(Permission::UploadVideos)?;
     let req = body.into_inner();
+    let parent = resolve_create_parent(
+        &user,
+        tid,
+        req.parent_kind.as_deref(),
+        req.parent_id,
+    )?;
     let trimmed_title = req.title.trim();
     if trimmed_title.is_empty() || req.url.trim().is_empty() {
         return Err(Status::UnprocessableEntity);
@@ -196,7 +253,7 @@ pub async fn api_video_link(
     let id = db::create_external_video(
         pool.inner(),
         db::NewExternalVideo {
-            parent: db::VideoParent::Technique(tid),
+            parent,
             title: trimmed_title,
             description: req.description.as_deref(),
             uploaded_by_id: user.id,

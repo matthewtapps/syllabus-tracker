@@ -41,6 +41,19 @@ pub struct ParentColumns {
 }
 
 impl VideoParent {
+    /// Resolves a `(kind, id)` pair from a request into a typed parent. Mirrors
+    /// `threads::AnchorKind::from_str_kind`. Only the three technique tiers are
+    /// constructable from a create request; profile / thread / loose videos are
+    /// created on their own dedicated surfaces, so they return `None` here.
+    pub fn from_kind_id(kind: &str, id: i64) -> Option<VideoParent> {
+        match kind {
+            "technique" => Some(VideoParent::Technique(id)),
+            "syllabus_technique" => Some(VideoParent::SyllabusTechnique(id)),
+            "student_syllabus_technique" => Some(VideoParent::StudentSyllabusTechnique(id)),
+            _ => None,
+        }
+    }
+
     pub fn columns(self) -> ParentColumns {
         match self {
             VideoParent::Technique(id) => ParentColumns {
