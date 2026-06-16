@@ -1,10 +1,13 @@
 use anyhow::{Context, anyhow};
-use tracing::{error, info};
+use tracing::{Instrument, error, info};
+use tracing_opentelemetry::OpenTelemetrySpanExt;
 use video_job::{ProcessingResult, SIGNATURE_HEADER};
 use video_media::{
     media::{FfmpegMediaTranscode, FfprobeMediaProbe, MediaProbe, MediaTranscode},
     storage::{S3Config, S3VideoStorage, VideoStorage},
 };
+
+mod telemetry;
 
 // ---------------------------------------------------------------------------
 // Pure helpers (tested below)
@@ -16,6 +19,8 @@ struct JobConfig {
     source_key: String,
     callback_url: String,
     callback_secret: String,
+    /// W3C `traceparent` forwarded from the backend, if any.
+    traceparent: Option<String>,
 }
 
 impl JobConfig {
@@ -36,6 +41,7 @@ impl JobConfig {
             source_key: require("SOURCE_KEY")?,
             callback_url: require("CALLBACK_URL")?,
             callback_secret: require("VIDEO_CALLBACK_SECRET")?,
+            traceparent: get("TRACEPARENT").filter(|s| !s.is_empty()),
         })
     }
 
@@ -62,10 +68,18 @@ async fn post_result(
     let body = serde_json::to_string(result).context("serializing ProcessingResult")?;
     let sig = video_job::sign(secret.as_bytes(), body.as_bytes());
 
-    let resp = client
+    let mut req = client
         .post(url)
         .header(SIGNATURE_HEADER, sig)
-        .header("Content-Type", "application/json")
+        .header("Content-Type", "application/json");
+
+    // Continue the distributed trace on the callback: the backend webhook
+    // extracts this `traceparent` and nests under the worker's job span.
+    if let Some(tp) = telemetry::current_traceparent() {
+        req = req.header("traceparent", tp);
+    }
+
+    let resp = req
         .body(body)
         .send()
         .await
@@ -159,14 +173,20 @@ async fn process(
 
 #[tokio::main]
 async fn main() {
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
-        )
-        .init();
+    let provider = telemetry::init();
 
-    if let Err(e) = run().await {
+    let result = run().await;
+
+    // Short-lived process: flush + shut down the exporter so the job's spans
+    // actually reach Honeycomb before we exit.
+    if let Some(provider) = provider {
+        if let Err(e) = provider.force_flush() {
+            eprintln!("video-worker: otel flush error: {e:?}");
+        }
+        let _ = provider.shutdown();
+    }
+
+    if let Err(e) = result {
         error!(error = %e, "video-worker failed");
         std::process::exit(1);
     }
@@ -174,39 +194,71 @@ async fn main() {
 
 async fn run() -> anyhow::Result<()> {
     let cfg = JobConfig::from_env().context("parsing job config from env")?;
-    let s3_config = S3Config::from_env().context("parsing S3 config from env")?;
-    let storage = S3VideoStorage::new(&s3_config);
-    let probe = FfprobeMediaProbe::from_env();
-    let transcode = FfmpegMediaTranscode::from_env();
-    let http = reqwest::Client::new();
 
-    info!(video_id = cfg.video_id, "starting video-worker");
+    // One wide span per transcode job, continuing the backend's trace.
+    let span = tracing::info_span!("transcode_job");
+    span.set_parent(telemetry::parent_context(cfg.traceparent.as_deref()));
+    span.set_attribute("video.id", cfg.video_id);
+    span.set_attribute("video.source_key", cfg.source_key.clone());
 
-    let result = match process(&cfg, &storage, &probe, &transcode).await {
-        Ok(ready) => {
-            info!("processing succeeded");
-            ready
-        }
-        Err(err) => {
-            error!(error = %err, "processing failed, reporting Failed to callback");
-            let failed = ProcessingResult::Failed {
-                error: format!("{:#}", err),
-            };
-            // Best-effort POST; if this also fails, log and exit nonzero.
-            if let Err(post_err) = post_result(&http, &cfg.callback_url, &cfg.callback_secret, &failed).await {
-                error!(error = %post_err, "failed to POST Failed result to callback");
+    async move {
+        let s3_config = S3Config::from_env().context("parsing S3 config from env")?;
+        let storage = S3VideoStorage::new(&s3_config);
+        let probe = FfprobeMediaProbe::from_env();
+        let transcode = FfmpegMediaTranscode::from_env();
+        let http = reqwest::Client::new();
+
+        info!(video_id = cfg.video_id, "starting video-worker");
+
+        let result = match process(&cfg, &storage, &probe, &transcode).await {
+            Ok(ready) => {
+                info!("processing succeeded");
+                ready
             }
-            std::process::exit(1);
+            Err(err) => {
+                error!(error = %err, "processing failed, reporting Failed to callback");
+                tracing::Span::current().set_attribute("video.processing.result", "failed");
+                let failed = ProcessingResult::Failed {
+                    error: format!("{:#}", err),
+                };
+                // Best-effort POST; if this also fails, log it. We return Err so
+                // `main` can flush telemetry before exiting nonzero.
+                if let Err(post_err) =
+                    post_result(&http, &cfg.callback_url, &cfg.callback_secret, &failed).await
+                {
+                    error!(error = %post_err, "failed to POST Failed result to callback");
+                }
+                return Err(anyhow!("video processing failed"));
+            }
+        };
+
+        // Stamp the wide-event output attributes onto the job span.
+        let span = tracing::Span::current();
+        span.set_attribute("video.processing.result", "ready");
+        if let ProcessingResult::Ready {
+            duration_seconds,
+            width,
+            height,
+            bytes,
+            ..
+        } = &result
+        {
+            span.set_attribute("video.duration_seconds", *duration_seconds);
+            span.set_attribute("video.width", *width);
+            span.set_attribute("video.height", *height);
+            span.set_attribute("video.output_bytes", *bytes);
         }
-    };
 
-    // POST the Ready result
-    post_result(&http, &cfg.callback_url, &cfg.callback_secret, &result)
-        .await
-        .context("POST Ready result to callback")?;
+        // POST the Ready result
+        post_result(&http, &cfg.callback_url, &cfg.callback_secret, &result)
+            .await
+            .context("POST Ready result to callback")?;
 
-    info!("video-worker complete");
-    Ok(())
+        info!("video-worker complete");
+        Ok(())
+    }
+    .instrument(span)
+    .await
 }
 
 // ---------------------------------------------------------------------------
