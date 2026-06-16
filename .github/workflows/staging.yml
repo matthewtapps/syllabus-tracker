@@ -329,6 +329,12 @@ jobs:
                 VIDEO_PROCESSOR: ${VIDEO_PROCESSOR_STAGING:-host}
                 VIDEO_ENQUEUE_URL: ${VIDEO_ENQUEUE_URL}
                 VIDEO_CALLBACK_BASE_URL: https://staging.sillybus.app
+                # Tag staging telemetry as staging (these override the
+                # production values inherited from config/prod.env), so staging
+                # and prod spans coexist in one Honeycomb env, split by
+                # deployment.environment.name.
+                OTEL_ENVIRONMENT: staging
+                OTEL_RESOURCE_ATTRIBUTES: deployment.environment.name=staging
               env_file:
                 - ./config/common.env
                 - ./config/prod.env
@@ -348,6 +354,10 @@ jobs:
                 - /run/runtime-secrets/${SIBLING_NAME}.env
                 - /run/runtime-secrets/${SIBLING_NAME}-honeycomb.env
             otel-collector:
+              environment:
+                # Collector stamps deployment.environment.name on nginx (and
+                # any resourceless) spans from OTEL_ENVIRONMENT; force staging.
+                OTEL_ENVIRONMENT: staging
               env_file:
                 - ./config/common.env
                 - ./config/prod.env

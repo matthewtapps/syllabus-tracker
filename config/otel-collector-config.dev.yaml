@@ -16,7 +16,7 @@ processors:
         key: service.instance.id
         value: "${HOSTNAME}"
       - action: insert
-        key: deployment.environment
+        key: deployment.environment.name
         value: "${OTEL_ENVIRONMENT}"
 
 exporters:
