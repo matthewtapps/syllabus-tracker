@@ -707,6 +707,101 @@ mod tests {
     }
 
     #[rocket::async_test]
+    async fn create_video_for_syllabus_tiers_round_trips() {
+        use crate::db::{create_processing_video, VideoParent};
+        use crate::test::test_utils::TestDbBuilder;
+
+        let db = TestDbBuilder::new()
+            .coach("coach", None)
+            .student("alice", None)
+            .technique("Armbar", "arm lock", Some("coach"))
+            .build()
+            .await
+            .unwrap();
+        let coach = db.user_id("coach").unwrap();
+        let alice = db.user_id("alice").unwrap();
+        let tech = db.technique_id("Armbar").unwrap();
+
+        // Seed a syllabus + syllabus_techniques membership row.
+        let syllabus_id: i64 = sqlx::query_scalar!(
+            "INSERT INTO syllabi (name, created_by_id) VALUES ('Blue Belt', ?) RETURNING id AS \"id!\"",
+            coach
+        )
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+        let st_id: i64 = sqlx::query_scalar!(
+            "INSERT INTO syllabus_techniques (syllabus_id, technique_id, position, added_by_id)
+             VALUES (?, ?, 0, ?) RETURNING id AS \"id!\"",
+            syllabus_id,
+            tech,
+            coach
+        )
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+
+        // Seed an assignment + a student_syllabus_techniques (SST) row.
+        let assignment_id: i64 = sqlx::query_scalar!(
+            "INSERT INTO syllabus_assignments (student_id, syllabus_id, assigned_by_id)
+             VALUES (?, ?, ?) RETURNING id AS \"id!\"",
+            alice,
+            syllabus_id,
+            coach
+        )
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+        let sst_id: i64 = sqlx::query_scalar!(
+            "INSERT INTO student_syllabus_techniques (assignment_id, technique_id)
+             VALUES (?, ?) RETURNING id AS \"id!\"",
+            assignment_id,
+            tech
+        )
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+
+        let st_vid =
+            create_processing_video(&db.pool, VideoParent::SyllabusTechnique(st_id), "st", None, coach)
+                .await
+                .unwrap();
+        let sst_vid = create_processing_video(
+            &db.pool,
+            VideoParent::StudentSyllabusTechnique(sst_id),
+            "sst",
+            None,
+            coach,
+        )
+        .await
+        .unwrap();
+
+        let st_row = sqlx::query!(
+            "SELECT parent_kind, syllabus_technique_id, student_syllabus_technique_id
+             FROM videos WHERE id = ?",
+            st_vid
+        )
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+        assert_eq!(st_row.parent_kind, "syllabus_technique");
+        assert_eq!(st_row.syllabus_technique_id, Some(st_id));
+        assert_eq!(st_row.student_syllabus_technique_id, None);
+
+        let sst_row = sqlx::query!(
+            "SELECT parent_kind, syllabus_technique_id, student_syllabus_technique_id
+             FROM videos WHERE id = ?",
+            sst_vid
+        )
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+        assert_eq!(sst_row.parent_kind, "student_syllabus_technique");
+        assert_eq!(sst_row.syllabus_technique_id, None);
+        assert_eq!(sst_row.student_syllabus_technique_id, Some(sst_id));
+    }
+
+    #[rocket::async_test]
     async fn create_video_rejects_missing_parent() {
         use crate::db::{create_processing_video, VideoParent};
         use crate::test::test_utils::TestDbBuilder;

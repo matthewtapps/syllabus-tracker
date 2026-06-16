@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT id, parent_kind, technique_id, student_id, thread_id, title, description,\n                position, kind, processing_status, processing_error, storage_key, bytes,\n                duration_seconds, width, height,\n                external_url, external_host, external_video_id, uploaded_by_id,\n                created_at, updated_at, hidden_at\n         FROM videos\n         WHERE deleted_at IS NULL AND hidden_at IS NULL\n           AND parent_kind = ?\n           AND (technique_id IS ? OR (technique_id IS NULL AND ? IS NULL))\n           AND (student_id   IS ? OR (student_id   IS NULL AND ? IS NULL))\n           AND (thread_id    IS ? OR (thread_id    IS NULL AND ? IS NULL))\n         ORDER BY position ASC, id ASC",
+  "query": "SELECT id, parent_kind, technique_id, student_id, thread_id, title, description,\n                position, kind, processing_status, processing_error, storage_key, bytes,\n                duration_seconds, width, height,\n                external_url, external_host, external_video_id, uploaded_by_id,\n                created_at, updated_at, hidden_at\n         FROM videos\n         WHERE deleted_at IS NULL AND hidden_at IS NULL\n           AND parent_kind = ?\n           AND (technique_id IS ? OR (technique_id IS NULL AND ? IS NULL))\n           AND (student_id   IS ? OR (student_id   IS NULL AND ? IS NULL))\n           AND (thread_id    IS ? OR (thread_id    IS NULL AND ? IS NULL))\n           AND (syllabus_technique_id IS ? OR (syllabus_technique_id IS NULL AND ? IS NULL))\n           AND (student_syllabus_technique_id IS ? OR (student_syllabus_technique_id IS NULL AND ? IS NULL))\n         ORDER BY position ASC, id ASC",
   "describe": {
     "columns": [
       {
@@ -120,7 +120,7 @@
       }
     ],
     "parameters": {
-      "Right": 7
+      "Right": 11
     },
     "nullable": [
       true,
@@ -148,5 +148,5 @@
       true
     ]
   },
-  "hash": "5e78faf6c2ae06a56839799c33c694abd0c01fadac9a0eb3dd5e5e5dcc374e04"
+  "hash": "4f1c4c0ca6939b7161b60f2ce889e63e2b4e9d1ec2641aa03b3e2275ed65b21d"
 }
