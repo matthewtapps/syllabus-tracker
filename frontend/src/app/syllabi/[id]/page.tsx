@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link, Navigate, useNavigate, useParams } from 'react-router-dom';
+import { Link, Navigate, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
   NotebookPen,
   Pencil,
@@ -61,6 +61,7 @@ import type {
   SyllabusTechniqueRow,
   User,
 } from '@/lib/api';
+import { parseFocusToken } from '@/lib/entity-ref';
 import { AssignStudentDialog } from '../components/assign-student-dialog';
 
 const editSchema = z.object({
@@ -99,6 +100,7 @@ export default function SyllabusDetailPage() {
 
 function SyllabusDetail({ syllabusId }: { syllabusId: number }) {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const syllabusQuery = useSyllabus(syllabusId);
   const studentsQuery = useSyllabusStudents(syllabusId);
   const syllabus = syllabusQuery.data;
@@ -118,6 +120,37 @@ function SyllabusDetail({ syllabusId }: { syllabusId: number }) {
   const [studentSearch, setStudentSearch] = useState('');
 
   const deleteMutation = useDeleteSyllabus();
+
+  // When landing with ?focus=technique:<id>, clear filters that would hide
+  // the row, expand it, scroll to it, then strip the param so
+  // back/forward navigation does not re-trigger.
+  const focusRef = parseFocusToken(searchParams.get('focus'));
+  const focusTechniqueId = focusRef?.type === 'technique' ? focusRef.id : null;
+  useEffect(() => {
+    if (focusTechniqueId === null || !syllabus) return;
+    const target = syllabus.techniques.find((t) => t.technique_id === focusTechniqueId);
+    if (!target) {
+      setSearchParams((prev) => {
+        const next = new URLSearchParams(prev);
+        next.delete('focus');
+        return next;
+      }, { replace: true });
+      return;
+    }
+    // Clear any filter that would hide the focused row (setters are no-ops when
+    // already cleared, aside from one harmless render on focus navigation).
+    setTechSearch('');
+    setTechTags([]);
+    setTechExpanded(String(focusTechniqueId));
+    requestAnimationFrame(() => {
+      document.getElementById(`technique-row-${focusTechniqueId}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.delete('focus');
+      return next;
+    }, { replace: true });
+  }, [focusTechniqueId, syllabus, setSearchParams]);
 
   if (syllabusQuery.isLoading) {
     return (

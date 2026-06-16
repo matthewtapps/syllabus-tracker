@@ -98,6 +98,11 @@ function syllabusHref(row: ActivityRow): string | undefined {
   return row.syllabus_id != null ? `/syllabi/${row.syllabus_id}` : undefined;
 }
 
+function syllabusTechniqueHref(row: ActivityRow): string | undefined {
+  if (row.syllabus_id == null || row.technique_id == null) return undefined;
+  return `/syllabi/${row.syllabus_id}?focus=${refToken({ type: "technique", id: row.technique_id })}`;
+}
+
 function studentSyllabusHref(row: ActivityRow): string | undefined {
   if (row.target_student_id == null || row.syllabus_id == null) return undefined;
   return `/student/${row.target_student_id}/syllabi/${row.syllabus_id}`;
@@ -239,10 +244,10 @@ export function activityLine(row: ActivityRow, scope: ActivityScope = { kind: "g
     case "syllabus_technique_added":
       if (tech && syll) {
         // both names are essential; neither alone is the trailing subject
-        return { verb: `added ${tech} to ${syll}`, href: syllabusHref(row) };
+        return { verb: `added ${tech} to ${syll}`, href: syllabusTechniqueHref(row) ?? syllabusHref(row) };
       }
       return tech
-        ? { verb: `added ${tech} to a syllabus`, href: syllabusHref(row) }
+        ? { verb: `added ${tech} to a syllabus`, href: syllabusTechniqueHref(row) ?? syllabusHref(row) }
         : { verb: "added a technique to a syllabus" };
     case "syllabus_technique_removed":
       if (tech && syll) {

@@ -435,6 +435,45 @@ describe("activityLine", () => {
     expect(lineText(result)).toBe("added Armbar to Blue Belt");
   });
 
+  test("syllabus_technique_added deep-links to the technique row on the syllabus page", () => {
+    const result = activityLine(
+      row({
+        verb: "syllabus_technique_added",
+        technique_id: 5,
+        technique_name: "Armbar",
+        syllabus_id: 2,
+        syllabus_name: "Blue Belt",
+      }),
+    );
+    expect(result.href).toBe("/syllabi/2?focus=technique:5");
+  });
+
+  test("syllabus_technique_added with technique but no syllabus name still deep-links to the technique row", () => {
+    const result = activityLine(
+      row({
+        verb: "syllabus_technique_added",
+        technique_id: 5,
+        technique_name: "Armbar",
+        syllabus_id: 2,
+        syllabus_name: null,
+      }),
+    );
+    expect(result.href).toBe("/syllabi/2?focus=technique:5");
+  });
+
+  test("syllabus_technique_added with no syllabus_id has no href", () => {
+    const result = activityLine(
+      row({
+        verb: "syllabus_technique_added",
+        technique_id: 5,
+        technique_name: "Armbar",
+        syllabus_id: null,
+        syllabus_name: null,
+      }),
+    );
+    expect(result.href).toBeUndefined();
+  });
+
   test("syllabus_technique_removed renders technique + syllabus", () => {
     const result = activityLine(
       row({
