@@ -1,12 +1,13 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { Link, Navigate, useParams } from 'react-router-dom';
-import { NotebookPen } from 'lucide-react';
+import { NotebookPen, Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/empty-state';
 import { useAllUsers, useStudentSyllabi } from '@/lib/queries';
 import { useUser } from '@/lib/current-user-context';
 import { isCoachOrAdmin } from '@/lib/api';
 import { cn } from '@/lib/utils';
+import { AssignSyllabusDialog } from './components/assign-syllabus-dialog';
 
 export default function StudentSyllabiPage() {
   const params = useParams<{ id: string }>();
@@ -41,6 +42,11 @@ function StudentSyllabiList({
     const u = (usersQuery.data ?? []).find((u) => u.id === studentId);
     return u ? u.display_name || u.username : null;
   }, [isOwnView, usersQuery.data, studentId]);
+  const assignedIds = useMemo(
+    () => new Set(assignments.map((a) => a.syllabus_id)),
+    [assignments],
+  );
+  const [assignOpen, setAssignOpen] = useState(false);
   const loading = query.isLoading;
   const error = query.error ? 'Failed to load syllabi.' : null;
 
@@ -52,11 +58,17 @@ function StudentSyllabiList({
 
   return (
     <div className="container mx-auto px-4 py-6 sm:px-6 md:py-8">
-      <div className="mb-4">
+      <div className="mb-4 flex items-center justify-between gap-2">
         <h1 className="flex items-center gap-2 text-base font-semibold">
           <NotebookPen className="h-4 w-4" aria-hidden />
           {title}
         </h1>
+        {!isOwnView && (
+          <Button size="sm" className="shrink-0" onClick={() => setAssignOpen(true)}>
+            <Plus className="mr-2 h-4 w-4" aria-hidden />
+            Assign syllabus
+          </Button>
+        )}
       </div>
 
       <div className="overflow-hidden rounded-lg border border-border bg-card">
@@ -116,6 +128,16 @@ function StudentSyllabiList({
           </ul>
         )}
       </div>
+
+      {!isOwnView && (
+        <AssignSyllabusDialog
+          open={assignOpen}
+          onOpenChange={setAssignOpen}
+          studentId={studentId}
+          studentName={studentName}
+          assignedIds={assignedIds}
+        />
+      )}
     </div>
   );
 }
