@@ -399,6 +399,15 @@ pub async fn create_and_assign_technique(
 }
 
 #[instrument]
+pub async fn set_technique_global(pool: &Pool<Sqlite>, technique_id: i64) -> Result<(), AppError> {
+    info!("Promoting technique to global library");
+    sqlx::query!("UPDATE techniques SET is_global = 1 WHERE id = ?", technique_id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+#[instrument]
 pub async fn count_techniques(pool: &Pool<Sqlite>) -> Result<i64, AppError> {
     let row = sqlx::query!("SELECT COUNT(*) as count FROM techniques")
         .fetch_one(pool)

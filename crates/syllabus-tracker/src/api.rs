@@ -32,7 +32,8 @@ use crate::db::{
     get_unassigned_techniques, get_user, invalidate_session, list_attempts,
     list_recent_attempts_for_student, mark_all_read, mark_one_read, mark_one_unread,
     mark_student_technique_seen, remove_tag_from_technique,
-    remove_technique_from_collection, request_password_reset, reset_user_claim, set_user_archived,
+    remove_technique_from_collection, request_password_reset, reset_user_claim,
+    set_technique_global, set_user_archived,
     set_user_graduated, unread_count, update_attempt_note, update_attempt_timestamp,
     update_collection, update_student_notes, update_student_technique, update_technique,
     update_user_display_name, update_user_password, update_user_role, update_username,
@@ -668,6 +669,19 @@ pub async fn api_create_library_technique(
         coach_id: user.id,
         coach_name,
     }))
+}
+
+/// Promote a student-only technique into the global library by flipping its
+/// `is_global` flag. Mirrors the create-library permission gate.
+#[patch("/techniques/<id>/global")]
+pub async fn api_promote_technique_to_global(
+    id: i64,
+    user: User,
+    db: &State<Pool<Sqlite>>,
+) -> ApiResult<Status> {
+    user.require_permission(Permission::CreateTechniques)?;
+    set_technique_global(db, id).await?;
+    Ok(Status::Ok)
 }
 
 #[get("/student/<id>/library")]

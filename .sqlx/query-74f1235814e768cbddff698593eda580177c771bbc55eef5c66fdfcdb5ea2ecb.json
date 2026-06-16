@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO techniques (name, description, is_global) VALUES ('Promote Me','',0)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": []
+  },
+  "hash": "74f1235814e768cbddff698593eda580177c771bbc55eef5c66fdfcdb5ea2ecb"
+}
