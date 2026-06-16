@@ -35,6 +35,7 @@ mod tests {
             last_coach_activity_at: None,
             pinned_count: None,
             recent_activity_count: None,
+            completed_syllabus_count: None,
         }
     }
     fn student_actor(id: i64) -> User {
@@ -72,6 +73,52 @@ mod tests {
         let alice_row = students.iter().find(|u| u.id == alice).unwrap();
         assert_eq!(alice_row.total_techniques, Some(2));
         assert_eq!(alice_row.red_count, Some(2)); // default status red
+    }
+
+    #[rocket::async_test]
+    async fn graduated_syllabi_excluded_from_counts_and_tallied_separately() {
+        use crate::db::graduate;
+
+        let db = TestDbBuilder::new()
+            .coach("coach", None)
+            .student("alice", None)
+            .technique("Armbar", "", Some("coach"))
+            .technique("Triangle", "", Some("coach"))
+            .build()
+            .await
+            .unwrap();
+        let coach = db.user_id("coach").unwrap();
+        let alice = db.user_id("alice").unwrap();
+        let armbar = db.technique_id("Armbar").unwrap();
+        let triangle = db.technique_id("Triangle").unwrap();
+
+        // Active syllabus with one technique stays in the progress counts.
+        let active = create_syllabus(&db.pool, "Active", None, coach)
+            .await
+            .unwrap();
+        let active_aid = assign(&db.pool, coach, alice, active).await.unwrap();
+        add_technique_to_assignment(&db.pool, active_aid, armbar, coach)
+            .await
+            .unwrap();
+
+        // Graduated syllabus with one technique drops out of the counts and is
+        // tallied via completed_syllabus_count instead.
+        let done = create_syllabus(&db.pool, "Done", None, coach).await.unwrap();
+        let done_aid = assign(&db.pool, coach, alice, done).await.unwrap();
+        add_technique_to_assignment(&db.pool, done_aid, triangle, coach)
+            .await
+            .unwrap();
+        graduate(&db.pool, coach, done_aid).await.unwrap();
+
+        let students = get_students_by_recent_updates(&db.pool, false, coach)
+            .await
+            .unwrap();
+        let alice_row = students.iter().find(|u| u.id == alice).unwrap();
+        // Only the active syllabus contributes to the technique tallies.
+        assert_eq!(alice_row.total_techniques, Some(1));
+        assert_eq!(alice_row.red_count, Some(1));
+        // The graduated syllabus is counted on its own.
+        assert_eq!(alice_row.completed_syllabus_count, Some(1));
     }
 
     #[rocket::async_test]

@@ -143,6 +143,7 @@ pub struct UserData {
     pub last_coach_activity_at: Option<String>,
     pub pinned_count: Option<i64>,
     pub recent_activity_count: Option<i64>,
+    pub completed_syllabus_count: Option<i64>,
 }
 
 impl From<User> for UserData {
@@ -174,6 +175,7 @@ impl From<User> for UserData {
             last_coach_activity_at: user.last_coach_activity_at.clone(),
             pinned_count: user.pinned_count,
             recent_activity_count: user.recent_activity_count,
+            completed_syllabus_count: user.completed_syllabus_count,
         }
     }
 }
