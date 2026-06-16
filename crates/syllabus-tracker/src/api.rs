@@ -633,6 +633,15 @@ pub struct CreateLibraryTechniqueRequest {
     // out later from the technique's edit form.
     #[serde(default)]
     description: String,
+    // Whether the technique joins the shared global library. Defaults to true
+    // so existing callers (and the standard "New technique" flow) keep creating
+    // library techniques; set false to create a student-only (non-global) one.
+    #[serde(default = "default_true")]
+    is_global: bool,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 /// Create a technique straight into the global library, unattached to any
@@ -645,7 +654,8 @@ pub async fn api_create_library_technique(
 ) -> ApiResult<Json<TechniqueLibraryResponse>> {
     body.validate()?;
     user.require_permission(Permission::CreateTechniques)?;
-    let technique_id = create_technique(db, &body.name, &body.description, user.id).await?;
+    let technique_id =
+        create_technique(db, &body.name, &body.description, user.id, body.is_global).await?;
     let coach_name = if user.display_name.is_empty() {
         user.username.clone()
     } else {

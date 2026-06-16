@@ -363,14 +363,16 @@ pub async fn create_technique(
     name: &str,
     description: &str,
     coach_id: i64,
+    is_global: bool,
 ) -> Result<i64, AppError> {
     info!("Creating technique");
     let res = sqlx::query!(
-        "INSERT INTO techniques (name, description, coach_id)
-         VALUES (?, ?, ?)",
+        "INSERT INTO techniques (name, description, coach_id, is_global)
+         VALUES (?, ?, ?, ?)",
         name,
         description,
-        coach_id
+        coach_id,
+        is_global
     )
     .execute(pool)
     .await?;
@@ -388,7 +390,7 @@ pub async fn create_and_assign_technique(
 ) -> Result<(), AppError> {
     info!("Creating and assigning technique to student");
     let technique_id =
-        create_technique(pool, technique_name, technique_description, coach_id).await?;
+        create_technique(pool, technique_name, technique_description, coach_id, true).await?;
 
     super::assign_technique_to_student(pool, technique_id, student_id, collection_id, coach_id)
         .await?;

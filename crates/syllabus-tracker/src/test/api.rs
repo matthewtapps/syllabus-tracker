@@ -324,6 +324,34 @@ mod tests {
     }
 
     #[rocket::async_test]
+    async fn create_student_only_technique_is_excluded_from_library() {
+        let test_db = TestDbBuilder::new()
+            .coach("coach_user", Some("Coach User"))
+            .build()
+            .await
+            .expect("Failed to build test DB");
+
+        let (client, db) = setup_test_client(test_db).await;
+        let cookies = login_test_user(&client, "coach_user", "password123").await;
+
+        let response = client
+            .post("/api/techniques")
+            .cookies(cookies)
+            .header(ContentType::JSON)
+            .body(r#"{"name":"Private Move","description":"","is_global":false}"#)
+            .dispatch()
+            .await;
+
+        assert_eq!(response.status(), Status::Ok);
+
+        let rows = crate::db::list_library_techniques(&db.pool).await.unwrap();
+        assert!(
+            !rows.iter().any(|r| r.name == "Private Move"),
+            "student-only technique must not appear in the library"
+        );
+    }
+
+    #[rocket::async_test]
     async fn test_assign_techniques_api() {
         let test_db = TestDbBuilder::new()
             .coach("coach_user", Some("Coach User"))

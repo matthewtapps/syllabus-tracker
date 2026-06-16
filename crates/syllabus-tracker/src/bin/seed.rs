@@ -382,7 +382,7 @@ async fn ensure_technique(
     if let Some((id,)) = existing {
         return Ok((id, ItemOutcome::Existed));
     }
-    let id = create_technique(pool, name, description, coach_id).await?;
+    let id = create_technique(pool, name, description, coach_id, true).await?;
     for &tag_id in tag_ids {
         add_tag_to_technique(pool, id, tag_id, coach_id).await?;
     }

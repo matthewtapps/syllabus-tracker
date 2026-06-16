@@ -175,7 +175,7 @@ mod tests {
             .len();
 
         // Create a new technique not in any SST yet.
-        let new_tid = db::create_technique(&db.pool, "Side Control", "", coach_id)
+        let new_tid = db::create_technique(&db.pool, "Side Control", "", coach_id, true)
             .await
             .unwrap();
         db::add_technique_to_syllabus(

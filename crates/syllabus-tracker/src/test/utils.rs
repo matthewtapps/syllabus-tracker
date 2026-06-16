@@ -188,8 +188,14 @@ pub mod test_utils {
 
                 if let Some(coach_id) = coach_id {
                     let technique_id =
-                        create_technique(&pool, &technique.name, &technique.description, coach_id)
-                            .await?;
+                        create_technique(
+                            &pool,
+                            &technique.name,
+                            &technique.description,
+                            coach_id,
+                            true,
+                        )
+                        .await?;
 
                     technique_id_map.insert(technique.name.clone(), technique_id);
                 } else if !self.users.is_empty() {
@@ -199,6 +205,7 @@ pub mod test_utils {
                         &technique.name,
                         &technique.description,
                         first_user_id,
+                        true,
                     )
                     .await?;
 

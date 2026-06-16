@@ -208,7 +208,7 @@ pub async fn create_technique_in_collection(
     description: &str,
 ) -> Result<i64, AppError> {
     info!("Creating technique in collection");
-    let technique_id = super::create_technique(pool, name, description, coach_id).await?;
+    let technique_id = super::create_technique(pool, name, description, coach_id, true).await?;
     add_technique_to_collection(pool, collection_id, technique_id).await?;
     Ok(technique_id)
 }
