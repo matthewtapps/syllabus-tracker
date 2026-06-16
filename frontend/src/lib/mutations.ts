@@ -43,6 +43,7 @@ import type {
   Technique,
   TechniqueUpdate,
   User,
+  VideoParentInput,
 } from "./api";
 import { qk } from "./query-keys";
 
@@ -663,16 +664,42 @@ export function useDeleteAttempt(studentTechniqueId?: number, studentId?: number
 // Videos
 // ============================================================
 
-export function useLinkVideo(techniqueId: number) {
+export function useLinkVideo(
+  techniqueId: number,
+  syllabus?: { studentId: number; syllabusId: number },
+) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (payload: {
+    mutationFn: async (vars: {
       title: string;
       description?: string;
       url: string;
-    }) => linkVideo(techniqueId, payload),
-    onSuccess: () =>
-      qc.invalidateQueries({ queryKey: qk.techniqueVideos(techniqueId) }),
+      parent?: VideoParentInput;
+    }) => {
+      const { parent, ...payload } = vars;
+      return linkVideo(techniqueId, payload, parent);
+    },
+    onSuccess: () => {
+      const tasks: Promise<unknown>[] = [
+        // Invalidate every per-viewer bucket: a T1 video appears for every
+        // student, and parenting at a tier still surfaces via cascade.
+        qc.invalidateQueries({ queryKey: qk.techniqueVideosAll(techniqueId) }),
+      ];
+      // Ensure a newly created T2/T3 video shows up in the student-syllabus
+      // video list the form was opened from.
+      if (syllabus) {
+        tasks.push(
+          qc.invalidateQueries({
+            queryKey: qk.syllabusTechniqueVideos(
+              syllabus.studentId,
+              syllabus.syllabusId,
+              techniqueId,
+            ),
+          }),
+        );
+      }
+      return Promise.all(tasks);
+    },
   });
 }
 

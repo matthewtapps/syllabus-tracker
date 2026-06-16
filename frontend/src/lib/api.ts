@@ -1012,6 +1012,16 @@ export interface UploadResponse {
   processing_status: ProcessingStatus;
 }
 
+/** Optional parent tier for a video-create call. When omitted, the backend
+ *  defaults to a `technique` parent equal to the `<tid>` in the route, which
+ *  preserves the existing library New-video behaviour. When provided, the
+ *  video is parented at the given tier (T1 technique / T2 syllabus_technique /
+ *  T3 student_syllabus_technique). */
+export type VideoParentInput =
+  | { kind: "technique"; id: number }
+  | { kind: "syllabus_technique"; id: number }
+  | { kind: "student_syllabus_technique"; id: number };
+
 export async function listVideos(
   techniqueId: number,
   opts?: {
@@ -1075,6 +1085,7 @@ export async function uploadVideo(
   file: File,
   fields: { title: string; description?: string },
   onProgress?: (loaded: number, total: number) => void,
+  parent?: VideoParentInput,
 ): Promise<UploadResponse> {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
@@ -1112,6 +1123,10 @@ export async function uploadVideo(
     body.append("file", file);
     body.append("title", fields.title);
     if (fields.description) body.append("description", fields.description);
+    if (parent) {
+      body.append("parent_kind", parent.kind);
+      body.append("parent_id", String(parent.id));
+    }
 
     xhr.send(body);
   });
@@ -1120,12 +1135,17 @@ export async function uploadVideo(
 export async function linkVideo(
   techniqueId: number,
   payload: { title: string; description?: string; url: string },
+  parent?: VideoParentInput,
 ): Promise<Video> {
   const response = await fetch(`/api/techniques/${techniqueId}/videos/link`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     credentials: "include",
-    body: JSON.stringify(payload),
+    body: JSON.stringify(
+      parent
+        ? { ...payload, parent_kind: parent.kind, parent_id: parent.id }
+        : payload,
+    ),
   });
   if (!response.ok) throw response;
   return (await response.json()) as Video;
