@@ -1,6 +1,6 @@
 import { type ReactNode } from "react";
 import { Link } from "react-router-dom";
-import { Activity, Archive, ChevronRight, Clock, Pin, PlayCircle } from "lucide-react";
+import { Activity, Archive, ChevronRight, Clock, GraduationCap, Pin, PlayCircle } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import type { User } from "@/lib/api";
@@ -28,6 +28,7 @@ export function StudentRow({
   const total = student.total_techniques ?? 0;
   const green = student.green_count ?? 0;
   const amber = student.amber_count ?? 0;
+  const completedSyllabi = student.completed_syllabus_count ?? 0;
   const progressPct = total > 0 ? Math.round((green / total) * 100) : 0;
   const pinnedCount = student.pinned_count ?? 0;
   const recentActivity = student.recent_activity_count ?? 0;
@@ -90,7 +91,8 @@ export function StudentRow({
             </p>
           )}
 
-          {total > 0 ? (
+          {/* Progress bar reflects only active, ungraduated syllabi. */}
+          {total > 0 && (
             <div className="flex items-center gap-3">
               <Progress value={progressPct} className="h-1.5 max-w-40" />
               <span className="shrink-0 text-xs text-muted-foreground">
@@ -98,7 +100,17 @@ export function StudentRow({
                 {amber > 0 && ` · ${amber} doing`}
               </span>
             </div>
-          ) : (
+          )}
+
+          {completedSyllabi > 0 && (
+            <p className="flex items-center gap-1 text-xs text-muted-foreground">
+              <GraduationCap className="h-3 w-3 shrink-0" aria-hidden />
+              {completedSyllabi} completed{' '}
+              {completedSyllabi === 1 ? 'syllabus' : 'syllabi'}
+            </p>
+          )}
+
+          {total === 0 && completedSyllabi === 0 && (
             <p className="text-xs text-muted-foreground">No active syllabi</p>
           )}
 

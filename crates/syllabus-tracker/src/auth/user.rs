@@ -41,6 +41,10 @@ pub struct User {
     /// Count of the student's own activity-log events in the last 7 days,
     /// matching the coach dashboard's student-actor recent-activity window.
     pub recent_activity_count: Option<i64>,
+    /// Count of active assignments the student has already graduated. Technique
+    /// tallies above exclude these, so a fully-graduated student reports zero
+    /// techniques here but a non-zero completed count.
+    pub completed_syllabus_count: Option<i64>,
 }
 
 #[derive(sqlx::FromRow, Clone)]
@@ -92,6 +96,7 @@ impl From<DbUser> for User {
             last_coach_activity_at: None,
             pinned_count: None,
             recent_activity_count: None,
+            completed_syllabus_count: None,
         }
     }
 }

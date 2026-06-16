@@ -50,6 +50,7 @@ struct UserWithActivityDto {
     pub last_coach_activity_at: Option<NaiveDateTime>,
     pub pinned_count: Option<i64>,
     pub recent_activity_count: Option<i64>,
+    pub completed_syllabus_count: Option<i64>,
 }
 
 #[instrument(skip(pool))]
@@ -72,10 +73,46 @@ pub async fn get_students_by_recent_updates(
             u.reset_requested_at as "reset_requested_at?: NaiveDateTime",
             MAX(sst.updated_at) as "last_update?: NaiveDateTime",
             MAX(sst.last_coach_update_at) as "last_coach_update_at?: NaiveDateTime",
-            COUNT(sst.id) as "total_techniques?: i64",
-            COALESCE(SUM(CASE WHEN sst.status = 'red'   THEN 1 ELSE 0 END), 0) as "red_count?: i64",
-            COALESCE(SUM(CASE WHEN sst.status = 'amber' THEN 1 ELSE 0 END), 0) as "amber_count?: i64",
-            COALESCE(SUM(CASE WHEN sst.status = 'green' THEN 1 ELSE 0 END), 0) as "green_count?: i64",
+            -- Technique tallies cover only active, *ungraduated* syllabi so the
+            -- progress bar reflects current work. Graduated syllabi are reported
+            -- separately via completed_syllabus_count below.
+            (SELECT COUNT(*)
+               FROM syllabus_assignments csa
+               JOIN student_syllabus_techniques csst
+                 ON csst.assignment_id = csa.id AND csst.hidden_at IS NULL
+              WHERE csa.student_id = u.id
+                AND csa.unassigned_at IS NULL
+                AND csa.graduated_at IS NULL) as "total_techniques?: i64",
+            (SELECT COUNT(*)
+               FROM syllabus_assignments csa
+               JOIN student_syllabus_techniques csst
+                 ON csst.assignment_id = csa.id AND csst.hidden_at IS NULL
+              WHERE csa.student_id = u.id
+                AND csa.unassigned_at IS NULL
+                AND csa.graduated_at IS NULL
+                AND csst.status = 'red') as "red_count?: i64",
+            (SELECT COUNT(*)
+               FROM syllabus_assignments csa
+               JOIN student_syllabus_techniques csst
+                 ON csst.assignment_id = csa.id AND csst.hidden_at IS NULL
+              WHERE csa.student_id = u.id
+                AND csa.unassigned_at IS NULL
+                AND csa.graduated_at IS NULL
+                AND csst.status = 'amber') as "amber_count?: i64",
+            (SELECT COUNT(*)
+               FROM syllabus_assignments csa
+               JOIN student_syllabus_techniques csst
+                 ON csst.assignment_id = csa.id AND csst.hidden_at IS NULL
+              WHERE csa.student_id = u.id
+                AND csa.unassigned_at IS NULL
+                AND csa.graduated_at IS NULL
+                AND csst.status = 'green') as "green_count?: i64",
+            -- Count of active assignments the student has already graduated.
+            (SELECT COUNT(*)
+               FROM syllabus_assignments gsa
+              WHERE gsa.student_id = u.id
+                AND gsa.unassigned_at IS NULL
+                AND gsa.graduated_at IS NOT NULL) as "completed_syllabus_count?: i64",
             -- Simple unseen heuristic, no per-coach memory: the student has
             -- student-side activity strictly newer than any coach-side activity.
             -- datetime(...) wrapping normalises mixed timestamp text formats.
@@ -176,6 +213,7 @@ pub async fn get_students_by_recent_updates(
                     .map(|dt| naive_to_utc(dt).to_rfc3339()),
                 pinned_count: dto.pinned_count,
                 recent_activity_count: dto.recent_activity_count,
+                completed_syllabus_count: dto.completed_syllabus_count,
             }
         })
         .collect();

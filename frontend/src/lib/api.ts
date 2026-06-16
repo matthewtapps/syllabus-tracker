@@ -99,6 +99,10 @@ export interface User {
   last_coach_activity_at?: string | null;
   pinned_count?: number | null;
   recent_activity_count?: number | null;
+  /** Active syllabi the student has already graduated. Technique counts above
+   *  exclude these, so a fully-graduated student has 0 techniques but a
+   *  non-zero completed count. */
+  completed_syllabus_count?: number | null;
 }
 
 export async function getCurrentUser(): Promise<User | null> {

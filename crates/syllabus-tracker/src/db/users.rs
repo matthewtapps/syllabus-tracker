@@ -154,6 +154,7 @@ pub async fn authenticate_user(
                     last_coach_activity_at: None,
                     pinned_count: None,
                     recent_activity_count: None,
+                    completed_syllabus_count: None,
                 }))
             } else {
                 Ok(None)

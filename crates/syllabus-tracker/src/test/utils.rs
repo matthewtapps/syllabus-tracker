@@ -269,6 +269,7 @@ pub mod test_utils {
                             last_coach_activity_at: None,
                             pinned_count: None,
                             recent_activity_count: None,
+                            completed_syllabus_count: None,
                         };
                         update_student_technique(
                             &pool,

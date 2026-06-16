@@ -1,29 +1,12 @@
 import { useMemo } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { toast } from 'sonner';
-import {
-  Archive,
-  MoreVertical,
-  NotebookPen,
-  Search,
-  UserPlus,
-  Users,
-  X,
-} from 'lucide-react';
-import { type User, isAdmin } from '@/lib/api';
-import { useUser } from '@/lib/current-user-context';
+import { NotebookPen, Search, UserPlus, Users, X } from 'lucide-react';
+import { type User } from '@/lib/api';
 import { useStudents } from '@/lib/queries';
-import { useToggleUserArchived } from '@/lib/mutations';
 import { categorizeStudent, isStudentLed } from '@/lib/student-triage';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
 import {
   Select,
   SelectContent,
@@ -72,6 +55,24 @@ function isActiveView(v: string | null): v is ActiveView {
   return v !== null && ACTIVE_VIEW_VALUES.has(v as ActiveView);
 }
 
+function tsOf(v: string | null | undefined): number {
+  if (!v) return 0;
+  const t = Date.parse(v);
+  return Number.isFinite(t) ? t : 0;
+}
+
+// Most recent signal on a student, from any side. Quiet students have no
+// *recent* activity, so the backend's recency order leaves them mostly tied
+// at null; this surfaces the least-stale of them first.
+function recencyScore(s: User): number {
+  return Math.max(
+    tsOf(s.last_student_activity_at),
+    tsOf(s.last_coach_activity_at),
+    tsOf(s.last_update),
+    tsOf(s.last_coach_update_at),
+  );
+}
+
 function flavour(tab: ActivityTab, view: ActiveView): string {
   if (tab === 'quiet') return 'No recent activity from either side.';
   if (view === 'student_led')
@@ -82,16 +83,14 @@ function flavour(tab: ActivityTab, view: ActiveView): string {
 }
 
 export default function StudentsList() {
-  const user = useUser();
   const navigate = useNavigate();
-  const admin = isAdmin(user);
-  const studentsQuery = useStudents('recent_update', true);
+  // Archived students are hidden here; unarchive lives on the admin page.
+  const studentsQuery = useStudents('recent_update', false);
   const students = useMemo(() => studentsQuery.data ?? [], [studentsQuery.data]);
   const loading = studentsQuery.isLoading;
   const error = studentsQuery.error
     ? 'Failed to load students. Please try again.'
     : null;
-  const archiveMutation = useToggleUserArchived();
   const [searchParams, setSearchParams] = useSearchParams();
   const filter = searchParams.get('q') ?? '';
   function setFilter(next: string) {
@@ -172,22 +171,14 @@ export default function StudentsList() {
     });
     if (sortBy === 'alphabetical') {
       result = [...result].sort((a, b) => (a.display_name || a.username).localeCompare(b.display_name || b.username));
+    } else if (activityTab === 'quiet') {
+      // Order quiet students by most recent activity too, freshest at top.
+      result = [...result].sort((a, b) => recencyScore(b) - recencyScore(a));
     }
     return result;
   }, [students, filter, sortBy, activityTab, activeView, now]);
 
-  function handleUnArchive(student: User) {
-    archiveMutation.mutate(
-      { userId: student.id, archived: false },
-      {
-        onSuccess: () => toast.success('Unarchived'),
-        onError: () => toast.error('Failed to unarchive'),
-      },
-    );
-  }
-
   function rowActions(student: User) {
-    const showUnArchive = admin && student.archived;
     return (
       <div className="flex items-center gap-1">
         <Button
@@ -204,28 +195,6 @@ export default function StudentsList() {
             <NotebookPen className="h-4 w-4" aria-hidden />
           </Link>
         </Button>
-        {showUnArchive && (
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-9 w-9"
-                aria-label={`Actions for ${student.display_name || student.username}`}
-              >
-                <MoreVertical className="h-4 w-4" aria-hidden />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem
-                onSelect={() => setTimeout(() => handleUnArchive(student), 0)}
-              >
-                <Archive className="mr-2 h-4 w-4" aria-hidden />
-                Unarchive
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        )}
       </div>
     );
   }
