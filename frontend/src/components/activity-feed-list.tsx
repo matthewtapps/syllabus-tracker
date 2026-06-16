@@ -21,7 +21,7 @@ import {
 import { StudentAvatar } from "@/components/student-avatar";
 import { useUser } from "@/lib/current-user-context";
 import { isCoachOrAdmin } from "@/lib/api";
-import { activityLine, type ActivityRow } from "@/lib/activity-line";
+import { activityLine, type ActivityRow, type ActivityScope } from "@/lib/activity-line";
 import { coalesceActivity } from "@/lib/activity-coalesce";
 import { activitySurface } from "@/lib/view-context";
 import { formatAbsolute, formatRelativeShort } from "@/lib/dates";
@@ -87,6 +87,8 @@ interface ActivityFeedListProps {
   emptyText?: string;
   /** Show absolute timestamps and full text without truncation. Default false. */
   detailed?: boolean;
+  /** Viewing scope: "gym" for a mixed-actor feed, "student" for a single-student profile. Default gym. */
+  scope?: ActivityScope;
 }
 
 interface RowOptions {
@@ -94,6 +96,7 @@ interface RowOptions {
   inlineAvatar: boolean;
   detailed: boolean;
   coalesce: boolean;
+  scope: ActivityScope;
   /** Optional JSX appended inside the description <p> after the verb/subject. */
   trailing?: React.ReactNode;
 }
@@ -107,7 +110,7 @@ function ActivityRowItem({
 }) {
   const { showAvatar, inlineAvatar, detailed, coalesce, trailing } = opts;
   const viewer = useUser();
-  const line = activityLine(activityRow);
+  const line = activityLine(activityRow, opts.scope);
   const surface = activitySurface(activityRow);
   const ariaLabel = `${activityRow.actor_name ?? "A student"} ${line.verb}${line.subject ? ` ${line.subject}` : ""}`;
   const hideDup = line.href ? true : undefined;
@@ -196,7 +199,7 @@ function ActivityRowItem({
               {line.detail}
             </p>
           )}
-          {surface && (
+          {surface && !line.suppressSurface && (
             <span aria-hidden={hideDup} className="mt-1 inline-flex items-center gap-1 text-xs text-muted-foreground">
               {surface.kind === "syllabus" ? (
                 <NotebookPen className="h-3 w-3 shrink-0" aria-hidden />
@@ -230,6 +233,7 @@ export function ActivityFeedList({
   inlineAvatar = false,
   emptyText = "No recent activity yet.",
   detailed = false,
+  scope = { kind: "gym" },
 }: ActivityFeedListProps) {
   const [expandedKeys, setExpandedKeys] = useState<Set<string>>(new Set());
 
@@ -288,7 +292,7 @@ export function ActivityFeedList({
             </>
           ) : undefined;
 
-        const opts: RowOptions = { showAvatar, inlineAvatar, detailed, coalesce, trailing: expandToggle };
+        const opts: RowOptions = { showAvatar, inlineAvatar, detailed, coalesce, scope, trailing: expandToggle };
 
         const extraMembers = item.members.slice(1);
 
@@ -308,7 +312,7 @@ export function ActivityFeedList({
                   <ul className="ml-4 space-y-1 border-l-2 border-border py-1">
                     {extraMembers.map((memberRow) => {
                       const memberKey = `${memberRow.actor_user_id}-${memberRow.id}-${memberRow.occurred_at}`;
-                      const memberLine = activityLine(memberRow);
+                      const memberLine = activityLine(memberRow, scope);
                       // Show only the differing part: the subject (technique/video/syllabus).
                       // Fall back to the verb text when no subject exists (rare).
                       const displayText = memberLine.subject ?? memberLine.verb;

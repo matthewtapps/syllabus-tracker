@@ -256,4 +256,53 @@ describe("ActivityFeedList", () => {
     );
     expect(screen.queryByTestId("inline-avatar")).toBeNull();
   });
+
+  // --- scope: suppressSurface hides the standalone chip ---
+  test("gym-scope sst_status_changed coach action shows inline copy and no surface chip", () => {
+    // Coach (actor_user_id=2) acted on target student (target_student_id=4).
+    // activityLine returns suppressSurface:true, so the chip must be absent.
+    renderWithProviders(
+      <ActivityFeedList
+        rows={[
+          row({
+            verb: "sst_status_changed",
+            actor_user_id: 2,
+            target_student_id: 4,
+            target_student_name: "Jordan Blake",
+            technique_name: "Knee Cut Pass",
+            syllabus_name: "Blue Belt",
+            payload_json: JSON.stringify({ to: "amber" }),
+          }),
+        ]}
+        isLoading={false}
+      />,
+    );
+    // Inline copy names the technique, status label, student, and syllabus.
+    expect(screen.getByText(/set Knee Cut Pass to Doing on/)).toBeTruthy();
+    expect(screen.getByText(/Jordan Blake's Blue Belt/)).toBeTruthy();
+    // The standalone surface chip must NOT appear (syllabus already named inline).
+    expect(screen.queryByText("Blue Belt")).toBeNull();
+  });
+
+  // --- scope: syllabus_graduated in gym scope names the target student ---
+  test("gym-scope syllabus_graduated coach action names the target student", () => {
+    renderWithProviders(
+      <ActivityFeedList
+        rows={[
+          row({
+            verb: "syllabus_graduated",
+            actor_user_id: 2,
+            target_student_id: 4,
+            target_student_name: "Jordan Blake",
+            syllabus_name: "Blue Belt",
+            technique_id: null,
+            sst_id: null,
+          }),
+        ]}
+        isLoading={false}
+      />,
+    );
+    expect(screen.getByText(/graduated/)).toBeTruthy();
+    expect(screen.getByText(/Jordan Blake's Blue Belt/)).toBeTruthy();
+  });
 });
