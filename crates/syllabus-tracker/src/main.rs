@@ -54,9 +54,9 @@ use syllabi::{
     api_unassign_syllabus, api_update_sst, api_update_syllabus, api_update_syllabus_attempt,
 };
 use camps::{
-    api_add_camp_technique, api_archive_camp, api_create_camp, api_get_camp, api_list_camps,
-    api_list_camp_videos, api_promote_pinned_to_camp, api_remove_camp_technique, api_update_camp,
-    api_set_camp_video_visibility,
+    api_add_camp_technique, api_archive_camp, api_create_camp, api_create_camp_technique,
+    api_get_camp, api_list_camps, api_list_camp_videos, api_promote_pinned_to_camp,
+    api_remove_camp_technique, api_update_camp, api_set_camp_video_visibility,
 };
 use suggestions::{
     api_create_suggestion, api_list_pending_suggestions, api_student_suggestions,
@@ -391,6 +391,7 @@ pub async fn init_rocket_with_callback_secret(
                 api_update_camp,
                 api_archive_camp,
                 api_add_camp_technique,
+                api_create_camp_technique,
                 api_remove_camp_technique,
                 api_list_camp_videos,
                 api_set_camp_video_visibility,

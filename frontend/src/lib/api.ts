@@ -2063,6 +2063,21 @@ export async function removeCampTechnique(
   if (!res.ok) throw res;
 }
 
+/** CC-009/010: Create a brand-new technique inside a camp and add it there. */
+export async function createCampTechnique(
+  campId: number,
+  data: { name: string; description: string; scope: "global" | "scoped" },
+): Promise<{ id: number }> {
+  const res = await fetch(`/api/camps/${campId}/techniques/create`, {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) throw res;
+  return res.json();
+}
+
 export async function promotePinnedToCamp(
   studentId: number,
   techniqueId: number,

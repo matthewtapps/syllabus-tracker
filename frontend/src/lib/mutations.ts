@@ -1319,6 +1319,7 @@ import {
   addCampTechnique,
   archiveCamp,
   createCamp,
+  createCampTechnique,
   promotePinnedToCamp,
   removeCampTechnique,
   setCampVideoVisibility,
@@ -1368,6 +1369,18 @@ export function useAddCampTechnique(campId: number) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (techniqueId: number) => addCampTechnique(campId, techniqueId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: qk.camp(campId) });
+    },
+  });
+}
+
+/** CC-009/010: Create a new technique inside a camp (global or scoped). */
+export function useCreateCampTechnique(campId: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: { name: string; description: string; scope: "global" | "scoped" }) =>
+      createCampTechnique(campId, vars),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: qk.camp(campId) });
     },

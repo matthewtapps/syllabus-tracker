@@ -22,6 +22,9 @@ CREATE TABLE IF NOT EXISTS techniques (
     coach_id INTEGER,
     coach_name TEXT,
     is_global INTEGER NOT NULL DEFAULT 1,
+    -- Set when is_global=0 and the technique was created inside a specific camp.
+    -- A scoped technique: is_global=0 AND scoped_camp_id=<camp>.
+    scoped_camp_id INTEGER REFERENCES camps (id),
     FOREIGN KEY (coach_id) REFERENCES users (id)
 );
 

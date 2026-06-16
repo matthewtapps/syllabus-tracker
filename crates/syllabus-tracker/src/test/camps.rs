@@ -1252,4 +1252,269 @@ mod tests {
         .unwrap();
         assert_eq!(count, 1);
     }
+
+    // -----------------------------------------------------------------------
+    // CC-009/010: create-in-camp technique (global vs scoped)
+    // -----------------------------------------------------------------------
+
+    /// A scoped technique appears in the camp technique list but NOT in the
+    /// global library list (`list_library_techniques`) and NOT in the
+    /// assignable-techniques list for a student.
+    #[rocket::async_test]
+    async fn scoped_technique_in_camp_not_in_library_or_assignable() {
+        use crate::db::camps::{create_camp_technique_new, list_camp_techniques, TechniqueScope};
+        use crate::db::{list_library_techniques, get_unassigned_techniques};
+
+        let db = TestDbBuilder::new()
+            .coach("coach_user", Some("Coach"))
+            .student("student_user", Some("Sam"))
+            .build()
+            .await
+            .unwrap();
+
+        let coach = db.user_id("coach_user").unwrap();
+        let student = db.user_id("student_user").unwrap();
+
+        let camp_id: i64 = sqlx::query_scalar(
+            "INSERT INTO camps (student_id, coach_id, name) VALUES (?, ?, 'Scoped test') RETURNING id",
+        )
+        .bind(student)
+        .bind(coach)
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+
+        // Create a scoped technique inside this camp.
+        let tech_id = create_camp_technique_new(
+            &db.pool,
+            camp_id,
+            "Camp-only guard drill",
+            "Only for this camp",
+            TechniqueScope::Scoped,
+            coach,
+        )
+        .await
+        .unwrap();
+
+        // It must appear in the camp's technique list.
+        let camp_techs = list_camp_techniques(&db.pool, camp_id).await.unwrap();
+        assert!(
+            camp_techs.iter().any(|t| t.technique_id == tech_id),
+            "scoped technique should be in the camp list"
+        );
+
+        // It must NOT appear in the global library list.
+        let library = list_library_techniques(&db.pool).await.unwrap();
+        assert!(
+            !library.iter().any(|t| t.id == tech_id),
+            "scoped technique must not appear in the global library"
+        );
+
+        // It must NOT appear in the assignable (unassigned) list for a student.
+        let assignable = get_unassigned_techniques(&db.pool, student).await.unwrap();
+        assert!(
+            !assignable.iter().any(|t| t.id == tech_id),
+            "scoped technique must not appear in the assignable list"
+        );
+
+        // Verify DB invariant: is_global=0 AND scoped_camp_id=camp_id.
+        let (is_global, scoped_camp_id): (i64, i64) = sqlx::query_as(
+            "SELECT is_global, scoped_camp_id FROM techniques WHERE id = ?",
+        )
+        .bind(tech_id)
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+        assert_eq!(is_global, 0, "scoped technique must have is_global=0");
+        assert_eq!(scoped_camp_id, camp_id, "scoped_camp_id must equal the camp");
+    }
+
+    /// A global technique created inside a camp appears BOTH in the camp list
+    /// AND in the global library (because is_global=1).
+    #[rocket::async_test]
+    async fn global_technique_in_camp_also_in_library() {
+        use crate::db::camps::{create_camp_technique_new, list_camp_techniques, TechniqueScope};
+        use crate::db::list_library_techniques;
+
+        let db = TestDbBuilder::new()
+            .coach("coach_user", Some("Coach"))
+            .student("student_user", Some("Sam"))
+            .build()
+            .await
+            .unwrap();
+
+        let coach = db.user_id("coach_user").unwrap();
+        let student = db.user_id("student_user").unwrap();
+
+        let camp_id: i64 = sqlx::query_scalar(
+            "INSERT INTO camps (student_id, coach_id, name) VALUES (?, ?, 'Global test') RETURNING id",
+        )
+        .bind(student)
+        .bind(coach)
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+
+        // Create a global technique inside this camp.
+        let tech_id = create_camp_technique_new(
+            &db.pool,
+            camp_id,
+            "Global guard drill",
+            "Goes into the library",
+            TechniqueScope::Global,
+            coach,
+        )
+        .await
+        .unwrap();
+
+        // It must appear in the camp's technique list.
+        let camp_techs = list_camp_techniques(&db.pool, camp_id).await.unwrap();
+        assert!(
+            camp_techs.iter().any(|t| t.technique_id == tech_id),
+            "global technique should be in the camp list"
+        );
+
+        // It MUST appear in the global library list.
+        let library = list_library_techniques(&db.pool).await.unwrap();
+        assert!(
+            library.iter().any(|t| t.id == tech_id),
+            "global technique must appear in the global library"
+        );
+
+        // Verify DB invariant: is_global=1 AND scoped_camp_id=NULL.
+        let (is_global, scoped_camp_id): (i64, Option<i64>) = sqlx::query_as(
+            "SELECT is_global, scoped_camp_id FROM techniques WHERE id = ?",
+        )
+        .bind(tech_id)
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+        assert_eq!(is_global, 1, "global technique must have is_global=1");
+        assert!(scoped_camp_id.is_none(), "global technique must not have scoped_camp_id set");
+    }
+
+    /// `POST /api/camps/<id>/techniques/create` returns 403 for a student
+    /// and 200 for a coach (global scope).
+    #[rocket::async_test]
+    async fn create_camp_technique_route_auth() {
+        use crate::test::test_utils::{create_standard_test_db, setup_test_client};
+        use rocket::http::{ContentType, Status};
+
+        let test_db = create_standard_test_db().await;
+        let coach_id = test_db.user_id("coach_user").unwrap();
+        let student_id = test_db.user_id("student_user").unwrap();
+        let (client, db) = setup_test_client(test_db).await;
+
+        let camp_id: i64 = sqlx::query_scalar(
+            "INSERT INTO camps (student_id, coach_id, name) VALUES (?, ?, 'Auth test') RETURNING id",
+        )
+        .bind(student_id)
+        .bind(coach_id)
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+
+        // Student cannot create.
+        login_as(&client, "student_user").await;
+        let resp = client
+            .post(format!("/api/camps/{}/techniques/create", camp_id))
+            .header(ContentType::JSON)
+            .body(r#"{"name":"Guard","description":"test","scope":"global"}"#)
+            .dispatch()
+            .await;
+        assert_eq!(resp.status(), Status::Forbidden);
+
+        // Coach can create a global technique.
+        login_as(&client, "coach_user").await;
+        let resp = client
+            .post(format!("/api/camps/{}/techniques/create", camp_id))
+            .header(ContentType::JSON)
+            .body(r#"{"name":"Guard","description":"test","scope":"global"}"#)
+            .dispatch()
+            .await;
+        assert_eq!(resp.status(), Status::Ok);
+        let body: serde_json::Value =
+            serde_json::from_str(&resp.into_string().await.unwrap()).unwrap();
+        assert!(body["id"].as_i64().unwrap() > 0, "route must return an id");
+    }
+
+    /// `POST /api/camps/<id>/techniques/create` with `scope=scoped` creates a
+    /// camp-only technique that is absent from the library route.
+    #[rocket::async_test]
+    async fn create_camp_technique_route_scoped_not_in_library() {
+        use crate::test::test_utils::{create_standard_test_db, setup_test_client};
+        use rocket::http::{ContentType, Status};
+
+        let test_db = create_standard_test_db().await;
+        let coach_id = test_db.user_id("coach_user").unwrap();
+        let student_id = test_db.user_id("student_user").unwrap();
+        let (client, db) = setup_test_client(test_db).await;
+
+        let camp_id: i64 = sqlx::query_scalar(
+            "INSERT INTO camps (student_id, coach_id, name) VALUES (?, ?, 'Scoped route test') RETURNING id",
+        )
+        .bind(student_id)
+        .bind(coach_id)
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+
+        login_as(&client, "coach_user").await;
+        let resp = client
+            .post(format!("/api/camps/{}/techniques/create", camp_id))
+            .header(ContentType::JSON)
+            .body(r#"{"name":"Camp-only choke","description":"only here","scope":"scoped"}"#)
+            .dispatch()
+            .await;
+        assert_eq!(resp.status(), Status::Ok);
+        let body: serde_json::Value =
+            serde_json::from_str(&resp.into_string().await.unwrap()).unwrap();
+        let tech_id = body["id"].as_i64().unwrap();
+
+        // Camp detail must include the technique.
+        let camp_resp = client
+            .get(format!("/api/camps/{}", camp_id))
+            .dispatch()
+            .await;
+        assert_eq!(camp_resp.status(), Status::Ok);
+        let camp_body: serde_json::Value =
+            serde_json::from_str(&camp_resp.into_string().await.unwrap()).unwrap();
+        let tech_ids: Vec<i64> = camp_body["techniques"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|t| t["technique_id"].as_i64())
+            .collect();
+        assert!(tech_ids.contains(&tech_id), "camp detail must list the scoped technique");
+
+        // Global library must NOT include the technique.
+        let library_resp = client
+            .get("/api/techniques")
+            .dispatch()
+            .await;
+        assert_eq!(library_resp.status(), Status::Ok);
+        let library_body: serde_json::Value =
+            serde_json::from_str(&library_resp.into_string().await.unwrap()).unwrap();
+        let library_ids: Vec<i64> = library_body
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|t| t["id"].as_i64())
+            .collect();
+        assert!(
+            !library_ids.contains(&tech_id),
+            "scoped technique must not appear in the global library route"
+        );
+
+        // Verify DB: is_global=0, scoped_camp_id=camp_id.
+        let (is_global, scoped_camp_id): (i64, i64) = sqlx::query_as(
+            "SELECT is_global, scoped_camp_id FROM techniques WHERE id = ?",
+        )
+        .bind(tech_id)
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+        assert_eq!(is_global, 0);
+        assert_eq!(scoped_camp_id, camp_id);
+    }
 }

@@ -14,6 +14,13 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from "@/components/ui/tabs";
 import {
   Select,
   SelectContent,
@@ -49,6 +56,7 @@ import {
 import {
   useAddCampTechnique,
   useArchiveCamp,
+  useCreateCampTechnique,
   useCreateThread,
   useDeleteMatch,
   useLinkMatchTechnique,
@@ -99,16 +107,18 @@ function toCampLibraryShape(t: CampTechnique): LibraryTechniqueRow {
   };
 }
 
-function AddCampTechniqueDialog({
-  open,
-  onOpenChange,
+// ---------------------------------------------------------------------------
+// Pick-existing sub-panel (original behaviour)
+// ---------------------------------------------------------------------------
+
+function PickExistingPanel({
   campId,
   existingTechniqueIds,
+  onDone,
 }: {
-  open: boolean;
-  onOpenChange: (b: boolean) => void;
   campId: number;
   existingTechniqueIds: Set<number>;
+  onDone: () => void;
 }) {
   const libraryQuery = useLibraryTechniques();
   const techniques = useMemo(
@@ -119,14 +129,6 @@ function AddCampTechniqueDialog({
   const [search, setSearch] = useState("");
   const [activeTags, setActiveTags] = useState<string[]>([]);
   const [selected, setSelected] = useState<Set<number>>(new Set());
-
-  useEffect(() => {
-    if (!open) {
-      setSelected(new Set());
-      setSearch("");
-      setActiveTags([]);
-    }
-  }, [open]);
 
   const availableTags = useMemo(() => {
     const set = new Set<string>();
@@ -195,11 +197,314 @@ function AddCampTechniqueDialog({
       toast.success(
         ids.length === 1 ? "Added 1 technique" : `Added ${ids.length} techniques`,
       );
-      onOpenChange(false);
+      onDone();
     } catch {
       toast.error("Failed to add techniques. Please try again.");
     }
   }
+
+  return (
+    <div className="flex min-h-0 flex-1 flex-col gap-3">
+      <Input
+        value={search}
+        onChange={(e) => setSearch(e.target.value)}
+        placeholder="Search techniques"
+      />
+
+      {availableTags.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {availableTags.map((tag) => {
+            const on = activeTags.includes(tag);
+            return (
+              <Badge
+                key={tag}
+                variant={on ? "default" : "outline"}
+                className="cursor-pointer select-none"
+                onClick={() => toggleTag(tag)}
+              >
+                {tag}
+              </Badge>
+            );
+          })}
+          {activeTags.length > 0 && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-6 px-2 text-xs"
+              onClick={() => setActiveTags([])}
+            >
+              Clear
+            </Button>
+          )}
+        </div>
+      )}
+
+      <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
+        <span>
+          <span className="font-medium text-foreground">{selected.size}</span>{" "}
+          selected · {filtered.length} of {techniques.length} shown
+        </span>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="h-6 px-2 text-xs"
+          disabled={filtered.length === 0}
+          onClick={allVisibleSelected ? deselectAllVisible : selectAllVisible}
+        >
+          {allVisibleSelected ? "Deselect all visible" : "Select all visible"}
+        </Button>
+      </div>
+
+      <div className="min-h-0 flex-1 overflow-y-auto rounded border border-border bg-card">
+        {filtered.length === 0 ? (
+          <p className="px-4 py-6 text-center text-xs text-muted-foreground">
+            {techniques.length === 0
+              ? "Every library technique is already in this camp."
+              : "No techniques match the current filters."}
+          </p>
+        ) : (
+          <ul className="divide-y divide-border">
+            {filtered.map((t) => {
+              const checked = selected.has(t.id);
+              return (
+                <li key={t.id}>
+                  <label
+                    htmlFor={`add-camp-tech-${t.id}`}
+                    className="flex cursor-pointer items-start gap-3 px-3 py-2 transition-colors hover:bg-muted/40"
+                  >
+                    <Checkbox
+                      id={`add-camp-tech-${t.id}`}
+                      checked={checked}
+                      onCheckedChange={() => toggle(t.id)}
+                      className="mt-0.5"
+                    />
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium">{t.name}</p>
+                      {t.tags.length > 0 && (
+                        <div className="mt-1 flex flex-wrap gap-1">
+                          {t.tags.map((tag) => (
+                            <Badge
+                              key={tag.id}
+                              variant="outline"
+                              className="px-1.5 py-0 text-[10px]"
+                            >
+                              {tag.name}
+                            </Badge>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </label>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </div>
+
+      <DialogFooter className="grid grid-cols-2 gap-2 sm:flex-none sm:justify-stretch">
+        <Button
+          variant="outline"
+          onClick={onDone}
+          disabled={addMutation.isPending}
+          className="w-full"
+        >
+          Cancel
+        </Button>
+        <Button
+          onClick={handleAdd}
+          disabled={selected.size === 0 || addMutation.isPending}
+          className="w-full"
+        >
+          {addMutation.isPending
+            ? "Adding..."
+            : selected.size === 0
+              ? "Add"
+              : selected.size === 1
+                ? "Add 1 technique"
+                : `Add ${selected.size} techniques`}
+        </Button>
+      </DialogFooter>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Create-new sub-panel (CC-009/010)
+// ---------------------------------------------------------------------------
+
+/**
+ * Scope option displayed as a selectable card. No default is pre-selected so
+ * the coach must make an explicit choice (per the CC-010 concept doc).
+ */
+function ScopeOption({
+  value,
+  selected,
+  onSelect,
+  label,
+  description,
+}: {
+  value: "global" | "scoped";
+  selected: boolean;
+  onSelect: (v: "global" | "scoped") => void;
+  label: string;
+  description: string;
+}) {
+  return (
+    <button
+      type="button"
+      role="radio"
+      aria-checked={selected}
+      onClick={() => onSelect(value)}
+      className={cn(
+        "w-full rounded-lg border p-3 text-left transition-colors",
+        selected
+          ? "border-primary bg-primary/5 ring-1 ring-primary"
+          : "border-border bg-card hover:bg-muted/40",
+      )}
+    >
+      <p className="text-sm font-medium leading-tight">{label}</p>
+      <p className="mt-0.5 text-xs text-muted-foreground">{description}</p>
+    </button>
+  );
+}
+
+function CreateNewPanel({
+  campId,
+  onDone,
+}: {
+  campId: number;
+  onDone: () => void;
+}) {
+  const createMutation = useCreateCampTechnique(campId);
+  const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
+  const [scope, setScope] = useState<"global" | "scoped" | null>(null);
+  const [nameError, setNameError] = useState<string | null>(null);
+  const [scopeError, setScopeError] = useState<string | null>(null);
+
+  async function handleCreate() {
+    setNameError(null);
+    setScopeError(null);
+    let hasError = false;
+    if (!name.trim()) {
+      setNameError("Name is required.");
+      hasError = true;
+    }
+    if (!scope) {
+      setScopeError("Please choose where this technique should appear.");
+      hasError = true;
+    }
+    if (hasError || !scope) return;
+
+    try {
+      await createMutation.mutateAsync({ name: name.trim(), description: description.trim(), scope });
+      toast.success("Technique created and added to camp.");
+      onDone();
+    } catch {
+      toast.error("Failed to create technique. Please try again.");
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="space-y-1">
+        <label htmlFor="new-tech-name" className="text-sm font-medium">
+          Name
+        </label>
+        <Input
+          id="new-tech-name"
+          value={name}
+          onChange={(e) => { setName(e.target.value); setNameError(null); }}
+          placeholder="e.g. Single leg X guard entry"
+          aria-invalid={nameError != null}
+        />
+        {nameError && <p className="text-xs text-destructive">{nameError}</p>}
+      </div>
+
+      <div className="space-y-1">
+        <label htmlFor="new-tech-desc" className="text-sm font-medium">
+          Description <span className="font-normal text-muted-foreground">(optional)</span>
+        </label>
+        <Textarea
+          id="new-tech-desc"
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+          placeholder="Notes or focus points for this technique"
+          rows={3}
+        />
+      </div>
+
+      <div className="space-y-2">
+        <p className="text-sm font-medium">Where should this technique appear?</p>
+        <div
+          role="radiogroup"
+          aria-label="Technique scope"
+          className="grid grid-cols-1 gap-2 sm:grid-cols-2"
+        >
+          <ScopeOption
+            value="global"
+            selected={scope === "global"}
+            onSelect={setScope}
+            label="Add to global library"
+            description="Visible to all students and coaches, and can be assigned from the library."
+          />
+          <ScopeOption
+            value="scoped"
+            selected={scope === "scoped"}
+            onSelect={setScope}
+            label="Only this camp"
+            description="Visible only inside this camp. Does not appear in the global library."
+          />
+        </div>
+        {scopeError && <p className="text-xs text-destructive">{scopeError}</p>}
+      </div>
+
+      <DialogFooter className="grid grid-cols-2 gap-2 sm:flex-none sm:justify-stretch">
+        <Button
+          type="button"
+          variant="outline"
+          onClick={onDone}
+          disabled={createMutation.isPending}
+          className="w-full"
+        >
+          Cancel
+        </Button>
+        <Button
+          type="button"
+          onClick={handleCreate}
+          disabled={createMutation.isPending}
+          className="w-full"
+        >
+          {createMutation.isPending ? "Creating..." : "Create technique"}
+        </Button>
+      </DialogFooter>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Combined dialog: tab between "Pick existing" and "Create new"
+// ---------------------------------------------------------------------------
+
+function AddCampTechniqueDialog({
+  open,
+  onOpenChange,
+  campId,
+  existingTechniqueIds,
+}: {
+  open: boolean;
+  onOpenChange: (b: boolean) => void;
+  campId: number;
+  existingTechniqueIds: Set<number>;
+}) {
+  const [tab, setTab] = useState<"pick" | "create">("pick");
+
+  useEffect(() => {
+    if (!open) setTab("pick");
+  }, [open]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -208,131 +513,34 @@ function AddCampTechniqueDialog({
         aria-describedby={undefined}
       >
         <DialogHeader>
-          <DialogTitle>Add techniques</DialogTitle>
+          <DialogTitle>Add technique</DialogTitle>
         </DialogHeader>
 
-        <Input
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search techniques"
-        />
+        <Tabs
+          value={tab}
+          onValueChange={(v) => setTab(v as "pick" | "create")}
+          className="flex min-h-0 flex-1 flex-col"
+        >
+          <TabsList className="w-full">
+            <TabsTrigger value="pick" className="flex-1">Pick existing</TabsTrigger>
+            <TabsTrigger value="create" className="flex-1">Create new</TabsTrigger>
+          </TabsList>
 
-        {availableTags.length > 0 && (
-          <div className="flex flex-wrap gap-1.5">
-            {availableTags.map((tag) => {
-              const on = activeTags.includes(tag);
-              return (
-                <Badge
-                  key={tag}
-                  variant={on ? "default" : "outline"}
-                  className="cursor-pointer select-none"
-                  onClick={() => toggleTag(tag)}
-                >
-                  {tag}
-                </Badge>
-              );
-            })}
-            {activeTags.length > 0 && (
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className="h-6 px-2 text-xs"
-                onClick={() => setActiveTags([])}
-              >
-                Clear
-              </Button>
-            )}
-          </div>
-        )}
+          <TabsContent value="pick" className="mt-3 flex min-h-0 flex-1 flex-col">
+            <PickExistingPanel
+              campId={campId}
+              existingTechniqueIds={existingTechniqueIds}
+              onDone={() => onOpenChange(false)}
+            />
+          </TabsContent>
 
-        <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
-          <span>
-            <span className="font-medium text-foreground">{selected.size}</span>{" "}
-            selected · {filtered.length} of {techniques.length} shown
-          </span>
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            className="h-6 px-2 text-xs"
-            disabled={filtered.length === 0}
-            onClick={allVisibleSelected ? deselectAllVisible : selectAllVisible}
-          >
-            {allVisibleSelected ? "Deselect all visible" : "Select all visible"}
-          </Button>
-        </div>
-
-        <div className="min-h-0 flex-1 overflow-y-auto rounded border border-border bg-card">
-          {filtered.length === 0 ? (
-            <p className="px-4 py-6 text-center text-xs text-muted-foreground">
-              {techniques.length === 0
-                ? "Every library technique is already in this camp."
-                : "No techniques match the current filters."}
-            </p>
-          ) : (
-            <ul className="divide-y divide-border">
-              {filtered.map((t) => {
-                const checked = selected.has(t.id);
-                return (
-                  <li key={t.id}>
-                    <label
-                      htmlFor={`add-camp-tech-${t.id}`}
-                      className="flex cursor-pointer items-start gap-3 px-3 py-2 transition-colors hover:bg-muted/40"
-                    >
-                      <Checkbox
-                        id={`add-camp-tech-${t.id}`}
-                        checked={checked}
-                        onCheckedChange={() => toggle(t.id)}
-                        className="mt-0.5"
-                      />
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-sm font-medium">{t.name}</p>
-                        {t.tags.length > 0 && (
-                          <div className="mt-1 flex flex-wrap gap-1">
-                            {t.tags.map((tag) => (
-                              <Badge
-                                key={tag.id}
-                                variant="outline"
-                                className="px-1.5 py-0 text-[10px]"
-                              >
-                                {tag.name}
-                              </Badge>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    </label>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-        </div>
-
-        <DialogFooter className="grid grid-cols-2 gap-2 sm:flex-none sm:justify-stretch">
-          <Button
-            variant="outline"
-            onClick={() => onOpenChange(false)}
-            disabled={addMutation.isPending}
-            className="w-full"
-          >
-            Cancel
-          </Button>
-          <Button
-            onClick={handleAdd}
-            disabled={selected.size === 0 || addMutation.isPending}
-            className="w-full"
-          >
-            {addMutation.isPending
-              ? "Adding..."
-              : selected.size === 0
-                ? "Add"
-                : selected.size === 1
-                  ? "Add 1 technique"
-                  : `Add ${selected.size} techniques`}
-          </Button>
-        </DialogFooter>
+          <TabsContent value="create" className="mt-3">
+            <CreateNewPanel
+              campId={campId}
+              onDone={() => onOpenChange(false)}
+            />
+          </TabsContent>
+        </Tabs>
       </DialogContent>
     </Dialog>
   );

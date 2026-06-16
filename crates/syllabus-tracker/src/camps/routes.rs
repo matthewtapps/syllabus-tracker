@@ -6,8 +6,9 @@ use tracing::instrument;
 
 use crate::auth::{Permission, User};
 use crate::db::camps::{
-    add_camp_technique, archive_camp, create_camp, get_camp, list_camp_techniques,
-    list_camps_for_student, remove_camp_technique, update_camp, Camp, CampTechnique, NewCamp,
+    add_camp_technique, archive_camp, create_camp, create_camp_technique_new, get_camp,
+    list_camp_techniques, list_camps_for_student, remove_camp_technique, update_camp, Camp,
+    CampTechnique, NewCamp, TechniqueScope,
 };
 use crate::db::competitions::{get_competition, registration_for};
 use crate::db::{list_videos_for_camp, set_video_camp_visibility};
@@ -60,6 +61,16 @@ pub struct UpdateCampRequest {
 #[derive(Deserialize)]
 pub struct AddTechniqueRequest {
     pub technique_id: i64,
+}
+
+/// Body for `POST /api/camps/<id>/techniques/create` (CC-009/010).
+#[derive(Deserialize)]
+pub struct CreateCampTechniqueRequest {
+    pub name: String,
+    pub description: String,
+    /// `"global"` → technique is added to the shared library (CC-009).
+    /// `"scoped"` → technique is camp-only (CC-010).
+    pub scope: String,
 }
 
 #[derive(Serialize)]
@@ -253,6 +264,45 @@ pub async fn api_add_camp_technique(
             other => Status::from(other),
         })?;
     Ok(Status::NoContent)
+}
+
+/// CC-009/010: Create a brand-new technique and immediately add it to the camp.
+///
+/// `scope = "global"` → technique joins the global library (CC-009).
+/// `scope = "scoped"` → technique is visible only inside this camp (CC-010).
+///
+/// Returns `{id: <technique_id>}` on success. Requires `ManageCamps`.
+#[instrument(skip(req, pool, user))]
+#[post("/camps/<id>/techniques/create", data = "<req>")]
+pub async fn api_create_camp_technique(
+    id: i64,
+    user: User,
+    req: Json<CreateCampTechniqueRequest>,
+    pool: &State<Pool<Sqlite>>,
+) -> Result<Json<CreatedResponse>, Status> {
+    require_camps(&user)?;
+
+    let name = req.name.trim();
+    let description = req.description.trim();
+    if name.is_empty() {
+        return Err(Status::UnprocessableEntity);
+    }
+
+    let scope = match req.scope.as_str() {
+        "global" => TechniqueScope::Global,
+        "scoped" => TechniqueScope::Scoped,
+        _ => return Err(Status::UnprocessableEntity),
+    };
+
+    let technique_id =
+        create_camp_technique_new(pool.inner(), id, name, description, scope, user.id)
+            .await
+            .map_err(|e| match e {
+                crate::error::AppError::NotFound(_) => Status::NotFound,
+                other => Status::from(other),
+            })?;
+
+    Ok(Json(CreatedResponse { id: technique_id }))
 }
 
 #[instrument(skip(pool, user))]

@@ -11,6 +11,15 @@ use crate::db::activity::{emit, NewActivity, Verb};
 use crate::error::AppError;
 use crate::models::Tag;
 
+/// Scope for a technique created inside a camp.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TechniqueScope {
+    /// Technique joins the global library (is_global=1, scoped_camp_id=NULL).
+    Global,
+    /// Technique is scoped to this camp only (is_global=0, scoped_camp_id=<camp>).
+    Scoped,
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct Camp {
     pub id: i64,
@@ -348,4 +357,60 @@ pub async fn list_camp_techniques(
             }
         })
         .collect())
+}
+
+/// CC-009 (global) + CC-010 (scoped): create a NEW technique inside a camp,
+/// then add it to that camp's technique list.
+///
+/// `scope = TechniqueScope::Global`  → technique joins the shared library
+///   (`is_global=1`, `scoped_camp_id=NULL`).
+/// `scope = TechniqueScope::Scoped`  → technique is camp-only
+///   (`is_global=0`, `scoped_camp_id=camp_id`).
+///
+/// The technique INSERT and the camp_technique INSERT run sequentially (two
+/// separate transactions is fine here: the technique exists before the
+/// camp_technique row, and add_camp_technique opens its own tx).
+#[instrument(skip(pool))]
+pub async fn create_camp_technique_new(
+    pool: &Pool<Sqlite>,
+    camp_id: i64,
+    name: &str,
+    description: &str,
+    scope: TechniqueScope,
+    by_id: i64,
+) -> Result<i64, AppError> {
+    let technique_id = match scope {
+        TechniqueScope::Global => {
+            // is_global=1, scoped_camp_id stays NULL.
+            let res = sqlx::query!(
+                "INSERT INTO techniques (name, description, coach_id, is_global)
+                 VALUES (?, ?, ?, 1)",
+                name,
+                description,
+                by_id,
+            )
+            .execute(pool)
+            .await?;
+            res.last_insert_rowid()
+        }
+        TechniqueScope::Scoped => {
+            // is_global=0, scoped_camp_id=camp_id.
+            let res = sqlx::query!(
+                "INSERT INTO techniques (name, description, coach_id, is_global, scoped_camp_id)
+                 VALUES (?, ?, ?, 0, ?)",
+                name,
+                description,
+                by_id,
+                camp_id,
+            )
+            .execute(pool)
+            .await?;
+            res.last_insert_rowid()
+        }
+    };
+
+    // Link the newly-created technique to the camp (opens its own transaction).
+    add_camp_technique(pool, camp_id, technique_id, by_id).await?;
+
+    Ok(technique_id)
 }
