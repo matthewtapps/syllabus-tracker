@@ -275,6 +275,31 @@ jobs:
           echo "::add-mask::$VITE_HC"
           # Step output stays within the job; doesn't cross boundary.
           echo "vite_key=$VITE_HC" >> "$GITHUB_OUTPUT"
+      - name: Ensure frontend Honeycomb dataset exists
+        # The browser ingest key is create_datasets=false (it ships in the
+        # public Vite bundle), so the browser's first OTLP export to a
+        # not-yet-existing dataset is rejected 401 "API key cannot create
+        # datasets". Materialize the dataset here with the create-capable
+        # backend ingest key; idempotent (a no-op once it exists). The
+        # dataset name MUST match ATTR_SERVICE_NAME in
+        # frontend/src/lib/telemetry.ts. tofu state is already initialised
+        # by the previous step in this job.
+        if: github.event_name != 'pull_request'
+        env:
+          AWS_ACCESS_KEY_ID:     ${{ secrets.PLATFORM_STATE_R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.PLATFORM_STATE_R2_SECRET_ACCESS_KEY }}
+          AWS_MAX_ATTEMPTS:      "5"
+        run: |
+          cd infra
+          BACKEND=$(tofu output -raw _platform_honeycomb_backend_ingest)
+          echo "::add-mask::$BACKEND"
+          NOW=$(date +%s)000000000
+          payload='{"resourceSpans":[{"resource":{"attributes":[{"key":"service.name","value":{"stringValue":"syllabus-tracker-frontend"}}]},"scopeSpans":[{"scope":{"name":"dataset-init"},"spans":[{"traceId":"00000000000000000000000000000001","spanId":"0000000000000001","name":"dataset-init","kind":1,"startTimeUnixNano":"'"$NOW"'","endTimeUnixNano":"'"$NOW"'"}]}]}]}'
+          code=$(curl -s -o /dev/null -w '%{http_code}' -X POST https://api.honeycomb.io/v1/traces \
+            -H 'Content-Type: application/json' -H "x-honeycomb-team: $BACKEND" \
+            --data-binary "$payload")
+          echo "ensure-dataset HTTP $code"
+          [ "$code" = "200" ] || { echo "::error::failed to ensure frontend dataset (HTTP $code)"; exit 1; }
       - uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
       - uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
         if: github.event_name != 'pull_request'
