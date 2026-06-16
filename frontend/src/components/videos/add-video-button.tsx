@@ -13,12 +13,27 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { LinkVideoForm } from "./link-video-form";
 import { UploadVideoForm } from "./upload-video-form";
 
+/** When the add-video flow runs on a student's syllabus technique, the forms
+ *  surface a "also add to global library" switch. When off, the new video is
+ *  scoped to this student's syllabus technique (T3) rather than the global
+ *  technique (T1). Absent in library/other contexts (no switch, T1 default). */
+export interface StudentSyllabusScope {
+  studentId: number;
+  syllabusId: number;
+  sstId: number;
+}
+
 interface AddVideoButtonProps {
   techniqueId: number;
+  studentSyllabus?: StudentSyllabusScope;
   onAdded: (videoIdOrVideo: number | Video) => void;
 }
 
-export function AddVideoButton({ techniqueId, onAdded }: AddVideoButtonProps) {
+export function AddVideoButton({
+  techniqueId,
+  studentSyllabus,
+  onAdded,
+}: AddVideoButtonProps) {
   const [open, setOpen] = useState(false);
   const [tab, setTab] = useState<"upload" | "link">("upload");
 
@@ -63,6 +78,7 @@ export function AddVideoButton({ techniqueId, onAdded }: AddVideoButtonProps) {
             <TabsContent value="upload" className="pt-4">
               <UploadVideoForm
                 techniqueId={techniqueId}
+                studentSyllabus={studentSyllabus}
                 onCancel={close}
                 onUploaded={(videoId) => {
                   close();
@@ -73,6 +89,7 @@ export function AddVideoButton({ techniqueId, onAdded }: AddVideoButtonProps) {
             <TabsContent value="link" className="pt-4">
               <LinkVideoForm
                 techniqueId={techniqueId}
+                studentSyllabus={studentSyllabus}
                 onCancel={close}
                 onLinked={(video) => {
                   close();

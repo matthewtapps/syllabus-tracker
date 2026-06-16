@@ -8,8 +8,12 @@ import {
   MAX_VIDEO_DURATION_SECONDS,
   formatBytes,
 } from "./limits";
+import type { VideoParentInput } from "@/lib/api";
 import { uploadVideo } from "@/lib/api";
 import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
+import type { StudentSyllabusScope } from "./add-video-button";
 import {
   Form,
   FormControl,
@@ -26,6 +30,9 @@ import { TracedForm } from "@/components/traced-form";
 
 interface UploadVideoFormProps {
   techniqueId: number;
+  /** Present only in a student's syllabus context. Enables the "also add to
+   *  global library" switch and the T3 (student syllabus technique) parent. */
+  studentSyllabus?: StudentSyllabusScope;
   onCancel: () => void;
   onUploaded: (videoId: number) => void;
 }
@@ -42,12 +49,16 @@ type FormValues = z.infer<typeof schema>;
 
 export function UploadVideoForm({
   techniqueId,
+  studentSyllabus,
   onCancel,
   onUploaded,
 }: UploadVideoFormProps) {
   const [file, setFile] = useState<File | null>(null);
   const [fileError, setFileError] = useState<string | null>(null);
   const [progressPct, setProgressPct] = useState<number | null>(null);
+  // Defaults ON: a coach adding a video usually wants it in the global
+  // library. Off scopes the video to just this student's syllabus technique.
+  const [alsoGlobal, setAlsoGlobal] = useState(true);
   const galleryInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
 
@@ -106,6 +117,13 @@ export function UploadVideoForm({
       return;
     }
     setProgressPct(0);
+    // In the library context there's no switch: parent stays undefined (T1).
+    // In a student-syllabus context, switching off scopes to this student's
+    // syllabus technique (T3).
+    const parent: VideoParentInput | undefined =
+      studentSyllabus && !alsoGlobal
+        ? { kind: "student_syllabus_technique", id: studentSyllabus.sstId }
+        : undefined;
     try {
       const result = await uploadVideo(
         techniqueId,
@@ -117,8 +135,13 @@ export function UploadVideoForm({
         (loaded, total) => {
           if (total > 0) setProgressPct(Math.round((loaded / total) * 100));
         },
+        parent,
       );
-      toast.success("Upload received. Processing now...");
+      toast.success(
+        studentSyllabus && !alsoGlobal
+          ? "Video added for this student"
+          : "Upload received. Processing now...",
+      );
       onUploaded(result.video_id);
     } catch (err) {
       setProgressPct(null);
@@ -228,6 +251,25 @@ export function UploadVideoForm({
             <p className="text-xs text-muted-foreground">
               Uploading... {progressPct}%
             </p>
+          </div>
+        )}
+
+        {studentSyllabus && (
+          <div className="flex items-start justify-between gap-3 rounded-md border p-3">
+            <div className="space-y-0.5">
+              <Label htmlFor="upload-also-global">
+                Also add to global technique library
+              </Label>
+              <p className="text-xs text-muted-foreground">
+                Off keeps this video on this student&apos;s syllabus only.
+              </p>
+            </div>
+            <Switch
+              id="upload-also-global"
+              checked={alsoGlobal}
+              onCheckedChange={setAlsoGlobal}
+              disabled={isSubmitting}
+            />
           </div>
         )}
 
