@@ -5,6 +5,8 @@
  * - Camp name renders from the stubbed GET /api/camps/1 response.
  * - Empty technique state text appears when techniques: [].
  * - Empty discussion state text appears when threads: [].
+ * - "Builds on" link renders when references_camp_id + references_camp_name
+ *   are present in the camp payload.
  *
  * NOTE: .test.tsx files run in Chromium via vitest-browser and cannot execute
  * on this NixOS dev box (Chromium shared-lib dependencies are absent). This
@@ -122,6 +124,75 @@ describe("CampDetailPage", () => {
     await waitFor(() => {
       expect(screen.getByText(/no discussion yet/i)).toBeInTheDocument();
     });
+    fetchSpy.mockRestore();
+  });
+
+  test("renders Builds-on link when references_camp_id and references_camp_name are present", async () => {
+    const fetchSpy = vi.spyOn(window, "fetch").mockImplementation(
+      (input: RequestInfo | URL) => {
+        const url = typeof input === "string" ? input : input.toString();
+
+        if (/\/api\/camps\/\d+$/.test(url)) {
+          return Promise.resolve(
+            new Response(
+              JSON.stringify({
+                id: 1,
+                student_id: 2,
+                coach_id: 1,
+                name: "Worlds prep",
+                description: null,
+                created_at: "2026-06-16T00:00:00Z",
+                archived_at: null,
+                references_camp_id: 7,
+                references_camp_name: "Foundation camp",
+                techniques: [],
+              }),
+              { status: 200, headers: { "Content-Type": "application/json" } },
+            ),
+          );
+        }
+
+        if (url.includes("/api/threads")) {
+          return Promise.resolve(
+            new Response(
+              JSON.stringify({ threads: [] }),
+              { status: 200, headers: { "Content-Type": "application/json" } },
+            ),
+          );
+        }
+
+        if (url.includes("/api/activity/unread_count")) {
+          return Promise.resolve(
+            new Response(
+              JSON.stringify({ count: 0 }),
+              { status: 200, headers: { "Content-Type": "application/json" } },
+            ),
+          );
+        }
+
+        return Promise.resolve(
+          new Response(JSON.stringify({}), { status: 200 }),
+        );
+      },
+    );
+
+    renderWithProviders(
+      <Routes>
+        <Route path="/camps/:id" element={<CampDetailPage />} />
+      </Routes>,
+      {
+        user: buildUser({ id: 1, role: "coach" }),
+        initialEntries: ["/camps/1"],
+      },
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("Foundation camp")).toBeInTheDocument();
+    });
+
+    // The heading label should also be visible.
+    expect(screen.getByText(/builds on/i)).toBeInTheDocument();
+
     fetchSpy.mockRestore();
   });
 });

@@ -96,6 +96,10 @@ export const qk = {
   matchTechniques: (matchId: number) =>
     ["matches", matchId, "techniques"] as const,
 
+  pendingSuggestions: () => ["suggestions", "pending"] as const,
+  studentSuggestions: (studentId: number) =>
+    ["student", studentId, "suggestions"] as const,
+
   studentSyllabusTechniquesFlat: (studentId: number) =>
     ["student", studentId, "syllabusTechniquesFlat"] as const,
   studentRecentSyllabusAttempts: (studentId: number, limit: number) =>

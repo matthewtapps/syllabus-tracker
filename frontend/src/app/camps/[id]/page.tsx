@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, Navigate, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
-import { Archive, ExternalLink, Plus, Trophy, Trash2 } from "lucide-react";
+import { Archive, ExternalLink, GitBranch, Plus, Trophy, Trash2 } from "lucide-react";
 import { Accordion } from "@/components/ui/accordion";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -1302,6 +1302,25 @@ function CampDetail({
           <p className="text-sm text-muted-foreground">Not linked to a competition.</p>
         )}
       </section>
+
+      {/* Builds-on section (only when this camp references a prior one) */}
+      {camp.references_camp_id != null && (
+        <section className="space-y-2">
+          <h2 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            Builds on
+          </h2>
+          <div className="flex items-center gap-2">
+            <GitBranch className="h-4 w-4 text-muted-foreground" />
+            <Link
+              to={`/camps/${camp.references_camp_id}`}
+              className="text-sm font-medium hover:underline underline-offset-2 flex items-center gap-1"
+            >
+              {camp.references_camp_name ?? `Camp #${camp.references_camp_id}`}
+              <ExternalLink className="h-3 w-3 opacity-60" />
+            </Link>
+          </div>
+        </section>
+      )}
 
       {/* Techniques section */}
       <section className="space-y-2">

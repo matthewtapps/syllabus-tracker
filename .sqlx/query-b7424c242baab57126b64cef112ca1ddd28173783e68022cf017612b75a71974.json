@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE technique_suggestions\n         SET status = ?,\n             decided_by_id = ?,\n             decided_at = CURRENT_TIMESTAMP,\n             replacement_technique_id = ?,\n             decided_camp_id = ?\n         WHERE id = ? AND status = 'pending'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 5
+    },
+    "nullable": []
+  },
+  "hash": "b7424c242baab57126b64cef112ca1ddd28173783e68022cf017612b75a71974"
+}

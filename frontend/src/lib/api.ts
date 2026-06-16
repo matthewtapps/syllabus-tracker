@@ -1962,9 +1962,11 @@ export interface Camp {
   created_at: string;
   archived_at: string | null;
   // The list endpoint (GET /api/camps) serializes the bare DB row, which only
-  // carries competition_id. competition_name + registration_id are resolved
-  // and sent ONLY by the detail endpoint (CampDetail below).
+  // carries competition_id and references_camp_id. competition_name,
+  // registration_id, and references_camp_name are resolved and sent ONLY by
+  // the detail endpoint (CampDetail below).
   competition_id: number | null;
+  references_camp_id: number | null;
 }
 
 export interface CampTechnique {
@@ -1980,6 +1982,8 @@ export interface CampDetail extends Camp {
   competition_name: string | null;
   registration_id: number | null;
   techniques: CampTechnique[];
+  /// Name of the camp this one builds on, resolved server-side.
+  references_camp_name: string | null;
 }
 
 export async function getCampsForStudent(studentId: number): Promise<Camp[]> {
@@ -2000,6 +2004,7 @@ export async function createCamp(data: {
   student_id: number;
   name: string;
   description: string | null;
+  references_camp_id?: number | null;
 }): Promise<{ id: number }> {
   const res = await fetch("/api/camps", {
     method: "POST",
@@ -2040,6 +2045,23 @@ export async function removeCampTechnique(
     method: "DELETE",
     credentials: "include",
   });
+  if (!res.ok) throw res;
+}
+
+export async function promotePinnedToCamp(
+  studentId: number,
+  techniqueId: number,
+  campId: number,
+): Promise<void> {
+  const res = await fetch(
+    `/api/students/${studentId}/pinned/${techniqueId}/promote`,
+    {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ camp_id: campId }),
+    },
+  );
   if (!res.ok) throw res;
 }
 
@@ -2403,4 +2425,87 @@ export async function uploadMatchVideo(
 
     xhr.send(body);
   });
+}
+
+// ============================================================
+// Suggestions
+// ============================================================
+
+/** Mirrors db/suggestions.rs TechniqueSuggestion. */
+export interface TechniqueSuggestion {
+  id: number;
+  student_id: number;
+  technique_id: number;
+  anchor_video_id: number | null;
+  anchor_seconds: number | null;
+  status: "pending" | "approved" | "replaced" | "dismissed";
+  created_at: string;
+  decided_by_id: number | null;
+  decided_at: string | null;
+  replacement_technique_id: number | null;
+  decided_camp_id: number | null;
+}
+
+/** Mirrors db/suggestions.rs PendingSuggestion (enriched coach-queue row). */
+export interface PendingSuggestion {
+  id: number;
+  student_id: number;
+  student_name: string | null;
+  technique_id: number;
+  technique_name: string;
+  anchor_video_id: number | null;
+  anchor_video_title: string | null;
+  anchor_seconds: number | null;
+  created_at: string;
+}
+
+export async function createSuggestion(data: {
+  technique_id: number;
+  anchor_video_id?: number | null;
+  anchor_seconds?: number | null;
+}): Promise<{ id: number }> {
+  const res = await fetch("/api/suggestions", {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) throw res;
+  return (await res.json()) as { id: number };
+}
+
+export async function getPendingSuggestions(): Promise<PendingSuggestion[]> {
+  const res = await fetch("/api/suggestions/pending", { credentials: "include" });
+  if (!res.ok) throw res;
+  return ((await res.json()) as { suggestions: PendingSuggestion[] }).suggestions;
+}
+
+export async function getStudentSuggestions(
+  studentId: number,
+): Promise<TechniqueSuggestion[]> {
+  const res = await fetch(`/api/students/${studentId}/suggestions`, {
+    credentials: "include",
+  });
+  if (!res.ok) throw res;
+  return ((await res.json()) as { suggestions: TechniqueSuggestion[] }).suggestions;
+}
+
+export interface DecideSuggestionBody {
+  decision: "approve" | "replace" | "dismiss";
+  camp_id?: number | null;
+  replacement_technique_id?: number | null;
+}
+
+export async function decideSuggestion(
+  id: number,
+  body: DecideSuggestionBody,
+): Promise<Response> {
+  const res = await fetch(`/api/suggestions/${id}/decide`, {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw res;
+  return res;
 }

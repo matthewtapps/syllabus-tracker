@@ -1319,6 +1319,7 @@ import {
   addCampTechnique,
   archiveCamp,
   createCamp,
+  promotePinnedToCamp,
   removeCampTechnique,
   createCompetition,
   updateCompetition,
@@ -1340,8 +1341,11 @@ import type {
 export function useCreateCamp(studentId: number) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (data: { name: string; description: string | null }) =>
-      createCamp({ student_id: studentId, ...data }),
+    mutationFn: (data: {
+      name: string;
+      description: string | null;
+      references_camp_id?: number | null;
+    }) => createCamp({ student_id: studentId, ...data }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: qk.campsForStudent(studentId) });
     },
@@ -1535,6 +1539,18 @@ export function useUnregisterStudent(competitionId: number) {
   });
 }
 
+export function usePromotePinnedToCamp(studentId: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: { techniqueId: number; campId: number }) =>
+      promotePinnedToCamp(studentId, vars.techniqueId, vars.campId),
+    onSuccess: (_res, vars) => {
+      qc.invalidateQueries({ queryKey: qk.campsForStudent(studentId) });
+      qc.invalidateQueries({ queryKey: qk.camp(vars.campId) });
+    },
+  });
+}
+
 export function usePromoteCampToCompetition(campId: number) {
   const qc = useQueryClient();
   return useMutation({
@@ -1624,6 +1640,45 @@ export function useUnlinkMatchTechnique(matchId: number) {
     mutationFn: (techniqueId: number) => unlinkMatchTechnique(matchId, techniqueId),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: qk.matchTechniques(matchId) });
+    },
+  });
+}
+
+// ============================================================
+// Suggestions
+// ============================================================
+
+import {
+  createSuggestion,
+  decideSuggestion,
+} from "./api";
+import type { DecideSuggestionBody } from "./api";
+
+export function useCreateSuggestion() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: {
+      technique_id: number;
+      anchor_video_id?: number | null;
+      anchor_seconds?: number | null;
+    }) => createSuggestion(data),
+    onSuccess: () => {
+      // Invalidate the student's own suggestion list (all students, simple).
+      qc.invalidateQueries({ queryKey: ["student"] });
+    },
+  });
+}
+
+export function useDecideSuggestion() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: { id: number; body: DecideSuggestionBody; campId?: number }) =>
+      decideSuggestion(vars.id, vars.body),
+    onSuccess: (_res, vars) => {
+      qc.invalidateQueries({ queryKey: qk.pendingSuggestions() });
+      if (vars.campId !== undefined) {
+        qc.invalidateQueries({ queryKey: qk.camp(vars.campId) });
+      }
     },
   });
 }

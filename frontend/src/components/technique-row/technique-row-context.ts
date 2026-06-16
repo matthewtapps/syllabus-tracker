@@ -21,6 +21,8 @@ export type RowContext =
       /** Display name for the surface breadcrumb; null when the owner views their own. */
       studentName?: string | null;
       onUnpinIntent?: (technique: LibraryTechniqueRow) => void;
+      /** Coach-only: opens the camp picker for this technique. */
+      onAddToCampIntent?: (technique: LibraryTechniqueRow) => void;
     }
   | {
       kind: "student-syllabus";

@@ -1,0 +1,68 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT\n               ts.id           AS \"id!: i64\",\n               ts.student_id   AS \"student_id!: i64\",\n               u.display_name  AS student_name,\n               ts.technique_id AS \"technique_id!: i64\",\n               t.name          AS \"technique_name!: String\",\n               ts.anchor_video_id AS \"anchor_video_id?: i64\",\n               v.title         AS anchor_video_title,\n               ts.anchor_seconds AS \"anchor_seconds?: i64\",\n               ts.created_at   AS \"created_at!: NaiveDateTime\"\n           FROM technique_suggestions ts\n           JOIN techniques t ON t.id = ts.technique_id\n           JOIN users u ON u.id = ts.student_id\n           LEFT JOIN videos v ON v.id = ts.anchor_video_id\n           WHERE ts.status = 'pending'\n           ORDER BY ts.created_at ASC",
+  "describe": {
+    "columns": [
+      {
+        "name": "id!: i64",
+        "ordinal": 0,
+        "type_info": "Integer"
+      },
+      {
+        "name": "student_id!: i64",
+        "ordinal": 1,
+        "type_info": "Integer"
+      },
+      {
+        "name": "student_name",
+        "ordinal": 2,
+        "type_info": "Text"
+      },
+      {
+        "name": "technique_id!: i64",
+        "ordinal": 3,
+        "type_info": "Integer"
+      },
+      {
+        "name": "technique_name!: String",
+        "ordinal": 4,
+        "type_info": "Text"
+      },
+      {
+        "name": "anchor_video_id?: i64",
+        "ordinal": 5,
+        "type_info": "Integer"
+      },
+      {
+        "name": "anchor_video_title",
+        "ordinal": 6,
+        "type_info": "Text"
+      },
+      {
+        "name": "anchor_seconds?: i64",
+        "ordinal": 7,
+        "type_info": "Integer"
+      },
+      {
+        "name": "created_at!: NaiveDateTime",
+        "ordinal": 8,
+        "type_info": "Datetime"
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      true,
+      false,
+      true,
+      false,
+      false,
+      true,
+      true,
+      true,
+      false
+    ]
+  },
+  "hash": "474461b42effc6c5974ac1d83334a03184860715389f96b9f0fd1654a8cf0973"
+}

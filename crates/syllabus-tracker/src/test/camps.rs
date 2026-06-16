@@ -663,6 +663,7 @@ mod tests {
                 coach_id: coach,
                 name: "Worlds prep".into(),
                 description: Some("focus".into()),
+                references_camp_id: None,
             },
         )
         .await
@@ -671,6 +672,7 @@ mod tests {
         let camp = get_camp(&db.pool, camp_id).await.unwrap().unwrap();
         assert_eq!(camp.name, "Worlds prep");
         assert!(camp.archived_at.is_none());
+        assert!(camp.references_camp_id.is_none());
 
         add_camp_technique(&db.pool, camp_id, tech, coach).await.unwrap();
         let techs = list_camp_techniques(&db.pool, camp_id).await.unwrap();
@@ -684,5 +686,316 @@ mod tests {
 
         let listed = list_camps_for_student(&db.pool, student, true).await.unwrap();
         assert_eq!(listed.len(), 1);
+    }
+
+    // -----------------------------------------------------------------------
+    // S3-4: next-camp references (builds-on lineage)
+    // -----------------------------------------------------------------------
+
+    #[rocket::async_test]
+    async fn create_camp_with_references_camp_id_roundtrip() {
+        let db = TestDbBuilder::new()
+            .coach("coach_user", Some("Coach"))
+            .student("student_user", Some("Sam"))
+            .build()
+            .await
+            .unwrap();
+
+        let coach = db.user_id("coach_user").unwrap();
+        let student = db.user_id("student_user").unwrap();
+
+        // Create the prior camp (no references_camp_id).
+        let prior_id = create_camp(
+            &db.pool,
+            NewCamp {
+                student_id: student,
+                coach_id: coach,
+                name: "Guard retention".into(),
+                description: None,
+                references_camp_id: None,
+            },
+        )
+        .await
+        .unwrap();
+
+        // Create a new camp that builds on the prior one.
+        let next_id = create_camp(
+            &db.pool,
+            NewCamp {
+                student_id: student,
+                coach_id: coach,
+                name: "Guard retention v2".into(),
+                description: None,
+                references_camp_id: Some(prior_id),
+            },
+        )
+        .await
+        .unwrap();
+
+        let next = get_camp(&db.pool, next_id).await.unwrap().unwrap();
+        assert_eq!(next.references_camp_id, Some(prior_id));
+
+        // list_camps_for_student should carry references_camp_id through.
+        let camps = list_camps_for_student(&db.pool, student, true)
+            .await
+            .unwrap();
+        let next_listed = camps.iter().find(|c| c.id == next_id).unwrap();
+        assert_eq!(next_listed.references_camp_id, Some(prior_id));
+    }
+
+    #[rocket::async_test]
+    async fn get_camp_via_route_returns_references_camp_name() {
+        use crate::test::test_utils::{create_standard_test_db, setup_test_client};
+        use rocket::http::{ContentType, Status};
+
+        let test_db = create_standard_test_db().await;
+        let coach_id = test_db.user_id("coach_user").unwrap();
+        let student_id = test_db.user_id("student_user").unwrap();
+        let (client, db) = setup_test_client(test_db).await;
+
+        // Create the prior camp directly.
+        let prior_id: i64 = sqlx::query_scalar(
+            "INSERT INTO camps (student_id, coach_id, name) VALUES (?, ?, 'Prior camp') RETURNING id",
+        )
+        .bind(student_id)
+        .bind(coach_id)
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+
+        // Login as coach and create the next camp via the API.
+        let _ = crate::test::test_utils::login_test_user(&client, "coach_user", "password123").await;
+        let resp = client
+            .post("/api/camps")
+            .header(ContentType::JSON)
+            .body(format!(
+                r#"{{"student_id": {}, "name": "Next camp", "description": null, "references_camp_id": {}}}"#,
+                student_id, prior_id
+            ))
+            .dispatch()
+            .await;
+        assert_eq!(resp.status(), Status::Ok);
+        let created: serde_json::Value =
+            serde_json::from_str(&resp.into_string().await.unwrap()).unwrap();
+        let next_id = created["id"].as_i64().unwrap();
+
+        // Fetch the next camp's detail and check references_camp_name is resolved.
+        let resp = client
+            .get(format!("/api/camps/{}", next_id))
+            .dispatch()
+            .await;
+        assert_eq!(resp.status(), Status::Ok);
+        let detail: serde_json::Value =
+            serde_json::from_str(&resp.into_string().await.unwrap()).unwrap();
+        assert_eq!(detail["references_camp_id"].as_i64(), Some(prior_id));
+        assert_eq!(
+            detail["references_camp_name"].as_str(),
+            Some("Prior camp")
+        );
+    }
+
+    #[rocket::async_test]
+    async fn schema_creates_camp_reference_link_tables() {
+        let db = TestDbBuilder::new()
+            .coach("coach_user", Some("Coach"))
+            .student("student_user", Some("Sam"))
+            .build()
+            .await
+            .unwrap();
+
+        // Verify the three link tables exist and are empty.
+        let rm: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM camp_referenced_matches")
+            .fetch_one(&db.pool)
+            .await
+            .unwrap();
+        assert_eq!(rm, 0);
+
+        let rt: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM camp_referenced_threads")
+            .fetch_one(&db.pool)
+            .await
+            .unwrap();
+        assert_eq!(rt, 0);
+
+        let rv: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM camp_technique_referenced_videos")
+            .fetch_one(&db.pool)
+            .await
+            .unwrap();
+        assert_eq!(rv, 0);
+
+        // Verify references_camp_id column exists on camps.
+        let col: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM pragma_table_info('camps') WHERE name = 'references_camp_id'",
+        )
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+        assert_eq!(col, 1);
+    }
+
+    // -----------------------------------------------------------------------
+    // S3-5: promote pinned technique into a camp
+    // -----------------------------------------------------------------------
+
+    #[rocket::async_test]
+    async fn coach_promotes_pinned_technique_to_camp_returns_204_and_technique_in_camp() {
+        use crate::db::camps::list_camp_techniques;
+        use crate::db::pin_technique;
+        use crate::test::test_utils::{create_standard_test_db, setup_test_client};
+        use rocket::http::{ContentType, Status};
+
+        let test_db = create_standard_test_db().await;
+        let coach_id = test_db.user_id("coach_user").unwrap();
+        let student_id = test_db.user_id("student_user").unwrap();
+        let technique_id = test_db.technique_id("Armbar").unwrap();
+        let (client, db) = setup_test_client(test_db).await;
+
+        // Pin the technique for the student.
+        pin_technique(&db.pool, student_id, technique_id).await.unwrap();
+
+        // Create a camp for the student.
+        let camp_id: i64 = sqlx::query_scalar(
+            "INSERT INTO camps (student_id, coach_id, name) VALUES (?, ?, 'Promo test camp') RETURNING id",
+        )
+        .bind(student_id)
+        .bind(coach_id)
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+
+        // Coach promotes.
+        let _ = crate::test::test_utils::login_test_user(&client, "coach_user", "password123").await;
+        let resp = client
+            .post(format!(
+                "/api/students/{}/pinned/{}/promote",
+                student_id, technique_id
+            ))
+            .header(ContentType::JSON)
+            .body(format!(r#"{{"camp_id": {}}}"#, camp_id))
+            .dispatch()
+            .await;
+        assert_eq!(resp.status(), Status::NoContent);
+
+        // Technique should now be in the camp.
+        let techs = list_camp_techniques(&db.pool, camp_id).await.unwrap();
+        assert_eq!(techs.len(), 1);
+        assert_eq!(techs[0].technique_id, technique_id);
+    }
+
+    #[rocket::async_test]
+    async fn promoting_non_pinned_technique_returns_404() {
+        use crate::test::test_utils::{create_standard_test_db, setup_test_client};
+        use rocket::http::{ContentType, Status};
+
+        let test_db = create_standard_test_db().await;
+        let coach_id = test_db.user_id("coach_user").unwrap();
+        let student_id = test_db.user_id("student_user").unwrap();
+        let technique_id = test_db.technique_id("Armbar").unwrap();
+        let (client, db) = setup_test_client(test_db).await;
+
+        // Do NOT pin the technique.
+
+        let camp_id: i64 = sqlx::query_scalar(
+            "INSERT INTO camps (student_id, coach_id, name) VALUES (?, ?, 'No pin camp') RETURNING id",
+        )
+        .bind(student_id)
+        .bind(coach_id)
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+
+        let _ = crate::test::test_utils::login_test_user(&client, "coach_user", "password123").await;
+        let resp = client
+            .post(format!(
+                "/api/students/{}/pinned/{}/promote",
+                student_id, technique_id
+            ))
+            .header(ContentType::JSON)
+            .body(format!(r#"{{"camp_id": {}}}"#, camp_id))
+            .dispatch()
+            .await;
+        assert_eq!(resp.status(), Status::NotFound);
+    }
+
+    #[rocket::async_test]
+    async fn non_coach_cannot_promote_pinned_technique_returns_403() {
+        use crate::db::pin_technique;
+        use crate::test::test_utils::{create_standard_test_db, setup_test_client};
+        use rocket::http::{ContentType, Status};
+
+        let test_db = create_standard_test_db().await;
+        let coach_id = test_db.user_id("coach_user").unwrap();
+        let student_id = test_db.user_id("student_user").unwrap();
+        let technique_id = test_db.technique_id("Armbar").unwrap();
+        let (client, db) = setup_test_client(test_db).await;
+
+        pin_technique(&db.pool, student_id, technique_id).await.unwrap();
+
+        let camp_id: i64 = sqlx::query_scalar(
+            "INSERT INTO camps (student_id, coach_id, name) VALUES (?, ?, 'Auth test camp') RETURNING id",
+        )
+        .bind(student_id)
+        .bind(coach_id)
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+
+        // Student cannot promote.
+        let _ = crate::test::test_utils::login_test_user(&client, "student_user", "password123").await;
+        let resp = client
+            .post(format!(
+                "/api/students/{}/pinned/{}/promote",
+                student_id, technique_id
+            ))
+            .header(ContentType::JSON)
+            .body(format!(r#"{{"camp_id": {}}}"#, camp_id))
+            .dispatch()
+            .await;
+        assert_eq!(resp.status(), Status::Forbidden);
+    }
+
+    #[rocket::async_test]
+    async fn promoting_into_other_students_camp_returns_400() {
+        use crate::db::pin_technique;
+        use crate::test::test_utils::{create_standard_test_db, setup_test_client};
+        use rocket::http::{ContentType, Status};
+
+        let test_db = create_standard_test_db().await;
+        let coach_id = test_db.user_id("coach_user").unwrap();
+        let student_id = test_db.user_id("student_user").unwrap();
+        let technique_id = test_db.technique_id("Armbar").unwrap();
+        let (client, db) = setup_test_client(test_db).await;
+
+        pin_technique(&db.pool, student_id, technique_id).await.unwrap();
+
+        // Create a second student and a camp belonging to that second student.
+        let other_student_id: i64 = sqlx::query_scalar(
+            "INSERT INTO users (username, role, password, display_name, approved_at, claimed_at)
+             SELECT 'other_student', 'student', password, 'Other Student', approved_at, claimed_at
+             FROM users WHERE username = 'student_user' RETURNING id",
+        )
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+
+        let other_camp_id: i64 = sqlx::query_scalar(
+            "INSERT INTO camps (student_id, coach_id, name) VALUES (?, ?, 'Other camp') RETURNING id",
+        )
+        .bind(other_student_id)
+        .bind(coach_id)
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+
+        let _ = crate::test::test_utils::login_test_user(&client, "coach_user", "password123").await;
+        let resp = client
+            .post(format!(
+                "/api/students/{}/pinned/{}/promote",
+                student_id, technique_id
+            ))
+            .header(ContentType::JSON)
+            .body(format!(r#"{{"camp_id": {}}}"#, other_camp_id))
+            .dispatch()
+            .await;
+        assert_eq!(resp.status(), Status::BadRequest);
     }
 }

@@ -43,6 +43,8 @@ import {
   getStudentMatches,
   getMatchVideos,
   getMatchTechniques,
+  getPendingSuggestions,
+  getStudentSuggestions,
 } from "./api";
 import type { AnchorKind } from "./api";
 import { qk } from "./query-keys";
@@ -497,5 +499,21 @@ export function useMatchTechniques(matchId: number | undefined) {
   return useQuery({
     queryKey: qk.matchTechniques(matchId ?? 0),
     queryFn: whenId(matchId, getMatchTechniques),
+  });
+}
+
+// ---- Suggestions ----
+
+export function usePendingSuggestions() {
+  return useQuery({
+    queryKey: qk.pendingSuggestions(),
+    queryFn: getPendingSuggestions,
+  });
+}
+
+export function useStudentSuggestions(studentId: number | undefined) {
+  return useQuery({
+    queryKey: qk.studentSuggestions(studentId ?? 0),
+    queryFn: whenId(studentId, getStudentSuggestions),
   });
 }

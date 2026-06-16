@@ -13,6 +13,25 @@ use crate::db::competitions::{get_competition, registration_for};
 use crate::db::list_videos_for_camp;
 use crate::models::Video;
 
+/// Guard query: is the given technique pinned for the given student?
+async fn is_technique_pinned(
+    pool: &Pool<Sqlite>,
+    student_id: i64,
+    technique_id: i64,
+) -> Result<bool, Status> {
+    let count = sqlx::query_scalar!(
+        r#"SELECT COUNT(*) AS "c!: i64"
+           FROM student_pinned_techniques
+           WHERE student_id = ? AND technique_id = ?"#,
+        student_id,
+        technique_id,
+    )
+    .fetch_one(pool)
+    .await
+    .map_err(|_| Status::InternalServerError)?;
+    Ok(count > 0)
+}
+
 fn require_camps(user: &User) -> Result<(), Status> {
     user.require_permission(Permission::ManageCamps)
         .map_err(|_| Status::Forbidden)
@@ -28,6 +47,8 @@ pub struct CreateCampRequest {
     pub student_id: i64,
     pub name: String,
     pub description: Option<String>,
+    /// Optional id of an earlier camp this new camp builds on ("builds-on" lineage).
+    pub references_camp_id: Option<i64>,
 }
 
 #[derive(Deserialize)]
@@ -70,6 +91,11 @@ pub struct CampDetailResponse {
     /// when competition_id is set and the student is registered. The frontend
     /// uses this to key match queries without a separate registration lookup.
     pub registration_id: Option<i64>,
+    /// Id of the camp this camp builds on, if any.
+    pub references_camp_id: Option<i64>,
+    /// Name of the referenced camp, resolved eagerly (mirrors competition_name).
+    /// Present only when references_camp_id is set.
+    pub references_camp_name: Option<String>,
 }
 
 #[instrument(skip(req, pool, user))]
@@ -87,6 +113,7 @@ pub async fn api_create_camp(
             coach_id: user.id,
             name: req.name.clone(),
             description: req.description.clone(),
+            references_camp_id: req.references_camp_id,
         },
     )
     .await
@@ -148,6 +175,16 @@ pub async fn api_get_camp(
         (None, None)
     };
 
+    // Resolve the referenced camp name when this camp builds on a prior one.
+    let references_camp_name = if let Some(ref_id) = camp.references_camp_id {
+        get_camp(pool, ref_id)
+            .await
+            .map_err(Status::from)?
+            .map(|c| c.name)
+    } else {
+        None
+    };
+
     Ok(Json(CampDetailResponse {
         id: camp.id,
         student_id: camp.student_id,
@@ -160,6 +197,8 @@ pub async fn api_get_camp(
         competition_id: camp.competition_id,
         competition_name,
         registration_id,
+        references_camp_id: camp.references_camp_id,
+        references_camp_name,
     }))
 }
 
@@ -257,4 +296,49 @@ pub async fn api_list_camp_videos(
         .await
         .map_err(Status::from)?;
     Ok(Json(CampVideosResponse { videos }))
+}
+
+#[derive(Deserialize)]
+pub struct PromotePinnedToCampRequest {
+    pub camp_id: i64,
+}
+
+/// Coach-only: promote a pinned technique into one of the student's camps.
+/// Verifies:
+///   - the technique is actually pinned for `student_id` (404 if not)
+///   - the camp belongs to `student_id` (400 if not)
+/// Then calls `add_camp_technique` (idempotent) and returns 204.
+/// Notes are already shared by (student, technique) so they surface in the
+/// camp automatically; no thread/comment relinking is needed for Slice 3.
+#[instrument(skip(req, pool, user))]
+#[post("/students/<student_id>/pinned/<technique_id>/promote", data = "<req>")]
+pub async fn api_promote_pinned_to_camp(
+    student_id: i64,
+    technique_id: i64,
+    user: User,
+    req: Json<PromotePinnedToCampRequest>,
+    pool: &State<Pool<Sqlite>>,
+) -> Result<Status, Status> {
+    require_camps(&user)?;
+    let pool = pool.inner();
+
+    // Guard 1: technique must be pinned for this student.
+    if !is_technique_pinned(pool, student_id, technique_id).await? {
+        return Err(Status::NotFound);
+    }
+
+    // Guard 2: the target camp must belong to this student.
+    let camp = get_camp(pool, req.camp_id)
+        .await
+        .map_err(Status::from)?
+        .ok_or(Status::NotFound)?;
+    if camp.student_id != student_id {
+        return Err(Status::BadRequest);
+    }
+
+    add_camp_technique(pool, req.camp_id, technique_id, user.id)
+        .await
+        .map_err(Status::from)?;
+
+    Ok(Status::NoContent)
 }

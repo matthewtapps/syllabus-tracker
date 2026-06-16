@@ -35,6 +35,13 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { TracedForm } from "@/components/traced-form";
 import {
@@ -44,6 +51,7 @@ import {
 import {
   useStudentActivityFeed,
   useAllUsers,
+  useCampsForStudent,
   useThreadsForAnchor,
 } from "@/lib/queries";
 import { useCreateCamp, useCreateThread } from "@/lib/mutations";
@@ -61,6 +69,7 @@ const createCampSchema = z.object({
     .min(1, "Name is required")
     .max(100, "Name must be under 100 characters"),
   description: z.string().max(1000, "Description is too long").optional(),
+  references_camp_id: z.string().optional(),
 });
 type CreateCampValues = z.infer<typeof createCampSchema>;
 
@@ -323,16 +332,24 @@ function CreateCampDialog({
   onCreated: (id: number) => void;
 }) {
   const createMutation = useCreateCamp(studentId);
+  const campsQuery = useCampsForStudent(studentId);
+  const existingCamps = campsQuery.data ?? [];
+
   const form = useFormWithValidation<CreateCampValues>({
     resolver: zodResolver(createCampSchema),
-    defaultValues: { name: "", description: "" },
+    defaultValues: { name: "", description: "", references_camp_id: "" },
   });
 
   async function handleSubmit(values: CreateCampValues) {
     try {
+      const refId =
+        values.references_camp_id && values.references_camp_id !== "none"
+          ? Number(values.references_camp_id)
+          : null;
       const { id } = await createMutation.mutateAsync({
         name: values.name,
         description: values.description?.trim() ? values.description : null,
+        references_camp_id: refId,
       });
       toast.success(`Created ${values.name}`);
       onCreated(id);
@@ -386,6 +403,37 @@ function CreateCampDialog({
               </FormItem>
             )}
           />
+          {existingCamps.length > 0 && (
+            <FormField
+              control={form.control}
+              name="references_camp_id"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Builds on (optional)</FormLabel>
+                  <Select
+                    value={field.value ?? ""}
+                    onValueChange={field.onChange}
+                  >
+                    <FormControl>
+                      <SelectTrigger>
+                        <SelectValue placeholder="None" />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      <SelectItem value="none">None</SelectItem>
+                      {existingCamps.map((c) => (
+                        <SelectItem key={c.id} value={String(c.id)}>
+                          {c.name}
+                          {c.archived_at ? " (archived)" : ""}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+          )}
           <DialogFooter>
             <Button
               type="submit"

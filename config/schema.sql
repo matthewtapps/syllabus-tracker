@@ -255,18 +255,19 @@ CREATE TABLE IF NOT EXISTS competition_registrations (
 
 -- A camp: a stretch of intentional work between one coach and one student,
 -- holding techniques, videos, and discussion. Slice 1 = generic camp only;
--- references_camp_id is intentionally absent (nullable adds later cost nothing
--- under the declarative migrator). competition_id added in C-Slice 2.
+-- competition_id added in C-Slice 2. references_camp_id added in C-Slice 3
+-- to capture "builds on" lineage (a new camp that continues from a prior one).
 CREATE TABLE IF NOT EXISTS camps (
-    id             INTEGER PRIMARY KEY,
-    student_id     INTEGER NOT NULL REFERENCES users (id) ON DELETE CASCADE,
-    coach_id       INTEGER NOT NULL REFERENCES users (id),
-    name           TEXT NOT NULL,
-    description    TEXT,
-    created_at     TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    archived_at    TIMESTAMP,
-    archived_by_id INTEGER REFERENCES users (id),
-    competition_id INTEGER REFERENCES competitions(id)
+    id                 INTEGER PRIMARY KEY,
+    student_id         INTEGER NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+    coach_id           INTEGER NOT NULL REFERENCES users (id),
+    name               TEXT NOT NULL,
+    description        TEXT,
+    created_at         TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    archived_at        TIMESTAMP,
+    archived_by_id     INTEGER REFERENCES users (id),
+    competition_id     INTEGER REFERENCES competitions(id),
+    references_camp_id INTEGER REFERENCES camps(id)
 );
 CREATE INDEX IF NOT EXISTS idx_camps_student
     ON camps (student_id) WHERE archived_at IS NULL;
@@ -282,6 +283,35 @@ CREATE TABLE IF NOT EXISTS camp_techniques (
 );
 CREATE INDEX IF NOT EXISTS idx_camp_techniques_position
     ON camp_techniques (camp_id, position);
+
+-- Referenced-footage link tables (C-Slice 3). All three are pure join tables
+-- with no extra columns; ON DELETE CASCADE cleans up automatically.
+
+-- A match that a camp explicitly references (e.g. "we reviewed this match
+-- footage to choose techniques for this camp").
+CREATE TABLE IF NOT EXISTS camp_referenced_matches (
+    camp_id  INTEGER NOT NULL REFERENCES camps (id) ON DELETE CASCADE,
+    match_id INTEGER NOT NULL REFERENCES matches (id) ON DELETE CASCADE,
+    PRIMARY KEY (camp_id, match_id)
+);
+
+-- A thread that a camp explicitly references (e.g. an earlier coaching thread
+-- whose insights informed this camp).
+CREATE TABLE IF NOT EXISTS camp_referenced_threads (
+    camp_id   INTEGER NOT NULL REFERENCES camps (id) ON DELETE CASCADE,
+    thread_id INTEGER NOT NULL REFERENCES threads (id) ON DELETE CASCADE,
+    PRIMARY KEY (camp_id, thread_id)
+);
+
+-- A specific video on a camp technique that has been pinned as reference
+-- footage for that technique in this camp (e.g. the student's footage that
+-- first identified the gap this technique addresses).
+CREATE TABLE IF NOT EXISTS camp_technique_referenced_videos (
+    camp_id      INTEGER NOT NULL REFERENCES camps (id) ON DELETE CASCADE,
+    technique_id INTEGER NOT NULL REFERENCES techniques (id) ON DELETE CASCADE,
+    video_id     INTEGER NOT NULL REFERENCES videos (id) ON DELETE CASCADE,
+    PRIMARY KEY (camp_id, technique_id, video_id)
+);
 
 -- A logged match within a registration. No opponent fields by design.
 CREATE TABLE IF NOT EXISTS matches (
@@ -550,6 +580,29 @@ CREATE TABLE IF NOT EXISTS thread_comments (
     deleted_by_id     INTEGER REFERENCES users(id)
 );
 CREATE INDEX IF NOT EXISTS idx_thread_comments_thread ON thread_comments(thread_id, created_at);
+
+-- Student-initiated technique suggestions, created from footage review.
+-- A student flags a technique they want added to a camp; a coach approves,
+-- replaces with a related technique, or dismisses. On approve/replace the
+-- chosen technique is automatically added to the given camp.
+CREATE TABLE IF NOT EXISTS technique_suggestions (
+    id                       INTEGER PRIMARY KEY AUTOINCREMENT,
+    student_id               INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    technique_id             INTEGER NOT NULL REFERENCES techniques(id) ON DELETE CASCADE,
+    anchor_video_id          INTEGER REFERENCES videos(id) ON DELETE SET NULL,
+    anchor_seconds           INTEGER,
+    status                   TEXT NOT NULL DEFAULT 'pending'
+                                   CHECK (status IN ('pending','approved','replaced','dismissed')),
+    created_at               TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    decided_by_id            INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    decided_at               TIMESTAMP,
+    replacement_technique_id INTEGER REFERENCES techniques(id) ON DELETE SET NULL,
+    decided_camp_id          INTEGER REFERENCES camps(id) ON DELETE SET NULL
+);
+CREATE INDEX IF NOT EXISTS idx_ts_status_created
+    ON technique_suggestions (status, created_at);
+CREATE INDEX IF NOT EXISTS idx_ts_student
+    ON technique_suggestions (student_id);
 
 -- Litestream-owned bookkeeping tables. Declared here only so the migration
 -- engine recognises them as expected and doesn't try to drop them. Litestream

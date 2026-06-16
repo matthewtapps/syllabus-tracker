@@ -1,14 +1,170 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, Navigate, useParams, useSearchParams } from "react-router-dom";
-import { Trophy } from "lucide-react";
+import { Lightbulb, Trophy } from "lucide-react";
+import { toast } from "sonner";
 import { useUser } from "@/lib/current-user-context";
 import { isCoachOrAdmin } from "@/lib/api";
-import { useAllUsers, useMatchVideos, useStudentMatches } from "@/lib/queries";
+import { useAllUsers, useLibraryTechniques, useMatchVideos, useStudentMatches } from "@/lib/queries";
+import { useCreateSuggestion } from "@/lib/mutations";
 import { parseFocusToken } from "@/lib/entity-ref";
 import type { MatchResult, MatchMethod, StudentMatch, Video } from "@/lib/api";
 import { VideoRow } from "@/components/videos/video-row";
 import { VideoPlayerDialog } from "@/components/videos/video-player-dialog";
+import { usePlayerController } from "@/components/videos/player-context";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
+
+// ---------------------------------------------------------------------------
+// SuggestTechniqueButton
+//
+// Rendered inside the video viewer's composer row (inside PlayerControllerProvider)
+// so it can read currentTime from the player. Gated to the owning student only.
+// ---------------------------------------------------------------------------
+
+interface SuggestTechniqueButtonProps {
+  videoId: number;
+}
+
+function SuggestTechniqueButton({ videoId }: SuggestTechniqueButtonProps) {
+  const controller = usePlayerController();
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState("");
+  const [selectedId, setSelectedId] = useState<number | null>(null);
+  const techQuery = useLibraryTechniques();
+  const createSuggestion = useCreateSuggestion();
+
+  const techniques = techQuery.data ?? [];
+  const filtered = techniques.filter((t) =>
+    t.name.toLowerCase().includes(search.toLowerCase()),
+  );
+
+  // Capture the current playback position when the dialog opens.
+  const [capturedSeconds, setCapturedSeconds] = useState<number | null>(null);
+
+  function handleOpen() {
+    const t = controller.canReadTime ? Math.floor(controller.currentTime) : null;
+    const atEdge =
+      t !== null &&
+      (t <= 0 ||
+        (controller.duration > 0 && t >= Math.floor(controller.duration)));
+    setCapturedSeconds(t !== null && !atEdge ? t : null);
+    setSearch("");
+    setSelectedId(null);
+    setOpen(true);
+  }
+
+  async function handleConfirm() {
+    if (selectedId === null) {
+      toast.error("Pick a technique first");
+      return;
+    }
+    try {
+      await createSuggestion.mutateAsync({
+        technique_id: selectedId,
+        anchor_video_id: videoId,
+        anchor_seconds: capturedSeconds,
+      });
+      toast.success("Suggestion sent to your coach");
+      setOpen(false);
+    } catch {
+      toast.error("Failed to send suggestion");
+    }
+  }
+
+  return (
+    <>
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        onClick={handleOpen}
+        aria-label="Suggest a technique from this footage"
+        title="Suggest a technique"
+        className="shrink-0"
+      >
+        <Lightbulb className="h-4 w-4" aria-hidden />
+        <span className="ml-1.5 hidden sm:inline">Suggest technique</span>
+      </Button>
+
+      <Dialog open={open} onOpenChange={(o) => !o && setOpen(false)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Suggest a technique</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            Pick a technique to suggest to your coach
+            {capturedSeconds !== null
+              ? ` (anchored at ${formatSeconds(capturedSeconds)})`
+              : " from this footage"}
+            . Your coach will see it in their queue.
+          </p>
+          <Input
+            placeholder="Search techniques..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            autoFocus
+          />
+          <ul className="max-h-60 overflow-y-auto divide-y divide-border rounded-md border border-border">
+            {techQuery.isLoading ? (
+              <li className="px-3 py-2 text-sm text-muted-foreground">
+                Loading...
+              </li>
+            ) : filtered.length === 0 ? (
+              <li className="px-3 py-2 text-sm text-muted-foreground">
+                No techniques found.
+              </li>
+            ) : (
+              filtered.map((t) => (
+                <li key={t.id}>
+                  <button
+                    type="button"
+                    className={cn(
+                      "w-full px-3 py-2 text-left text-sm hover:bg-muted/50",
+                      selectedId === t.id && "bg-muted font-medium",
+                    )}
+                    onClick={() => setSelectedId(t.id)}
+                  >
+                    {t.name}
+                  </button>
+                </li>
+              ))
+            )}
+          </ul>
+          <div className="flex justify-end gap-2 pt-1">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setOpen(false)}
+              disabled={createSuggestion.isPending}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              onClick={handleConfirm}
+              disabled={createSuggestion.isPending || selectedId === null}
+            >
+              {createSuggestion.isPending ? "Sending..." : "Send suggestion"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+
+function formatSeconds(s: number): string {
+  const m = Math.floor(s / 60);
+  const sec = s % 60;
+  return `${m}:${String(sec).padStart(2, "0")}`;
+}
 
 // ---------------------------------------------------------------------------
 // ResultBadge (replicated from camp detail; extraction kept minimal to avoid
@@ -50,9 +206,11 @@ function ResultBadge({ result }: { result: MatchResult }) {
 function MatchVideoList({
   matchId,
   studentId,
+  isOwner,
 }: {
   matchId: number;
   studentId: number;
+  isOwner: boolean;
 }) {
   const videosQuery = useMatchVideos(matchId);
   const videos = videosQuery.data ?? [];
@@ -89,6 +247,11 @@ function MatchVideoList({
         onClose={() => setPlaying(null)}
         surface={{ kind: "student", studentId }}
         context={{ label: "Match video" }}
+        composerAction={
+          isOwner && playing ? (
+            <SuggestTechniqueButton videoId={playing.id} />
+          ) : undefined
+        }
       />
     </>
   );
@@ -109,11 +272,13 @@ const methodLabel: Record<string, string> = {
 function MatchCard({
   match,
   studentId,
+  isOwner,
   highlighted,
   cardRef,
 }: {
   match: StudentMatch;
   studentId: number;
+  isOwner: boolean;
   highlighted: boolean;
   cardRef?: React.Ref<HTMLDivElement>;
 }) {
@@ -161,7 +326,7 @@ function MatchCard({
         )}
       </div>
 
-      <MatchVideoList matchId={match.id} studentId={studentId} />
+      <MatchVideoList matchId={match.id} studentId={studentId} isOwner={isOwner} />
     </div>
   );
 }
@@ -258,6 +423,7 @@ function MatchesListing({
               key={m.id}
               match={m}
               studentId={studentId}
+              isOwner={isOwnView}
               highlighted={highlightId === m.id}
               cardRef={(el) => {
                 if (el) cardRefs.current.set(m.id, el);

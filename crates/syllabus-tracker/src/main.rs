@@ -2,8 +2,8 @@
 extern crate rocket;
 
 pub use syllabus_tracker::{
-    api, auth, camps, capabilities, catchers, competitions, db, env, error, models, syllabi,
-    telemetry, threads, validation, videos,
+    api, auth, camps, capabilities, catchers, competitions, db, env, error, models, suggestions,
+    syllabi, telemetry, threads, validation, videos,
 };
 
 #[cfg(test)]
@@ -55,7 +55,11 @@ use syllabi::{
 };
 use camps::{
     api_add_camp_technique, api_archive_camp, api_create_camp, api_get_camp, api_list_camps,
-    api_list_camp_videos, api_remove_camp_technique, api_update_camp,
+    api_list_camp_videos, api_promote_pinned_to_camp, api_remove_camp_technique, api_update_camp,
+};
+use suggestions::{
+    api_create_suggestion, api_list_pending_suggestions, api_student_suggestions,
+    api_decide_suggestion,
 };
 use competitions::{
     api_create_competition, api_list_competitions, api_get_competition, api_update_competition,
@@ -388,6 +392,12 @@ pub async fn init_rocket_with_callback_secret(
                 api_add_camp_technique,
                 api_remove_camp_technique,
                 api_list_camp_videos,
+                api_promote_pinned_to_camp,
+                // suggestions
+                api_create_suggestion,
+                api_list_pending_suggestions,
+                api_student_suggestions,
+                api_decide_suggestion,
                 // competitions + matches
                 api_create_competition,
                 api_list_competitions,

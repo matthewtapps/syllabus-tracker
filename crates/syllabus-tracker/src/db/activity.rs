@@ -61,10 +61,13 @@ pub enum Verb {
     // S2-4: match verbs
     MatchLogged,
     MatchTechniqueLinked,
+    // S3-1: suggestion queue verbs
+    TechniqueSuggested,
+    SuggestionDecided,
 }
 
 impl Verb {
-    pub const ALL: [Verb; 29] = [
+    pub const ALL: [Verb; 31] = [
         Verb::VideoWatched,
         Verb::AttemptLogged,
         Verb::AttemptEdited,
@@ -94,6 +97,8 @@ impl Verb {
         Verb::CampPromotedToCompetition,
         Verb::MatchLogged,
         Verb::MatchTechniqueLinked,
+        Verb::TechniqueSuggested,
+        Verb::SuggestionDecided,
     ];
 
     pub fn as_str(self) -> &'static str {
@@ -127,6 +132,8 @@ impl Verb {
             Verb::CampPromotedToCompetition => "camp_promoted_to_competition",
             Verb::MatchLogged => "match_logged",
             Verb::MatchTechniqueLinked => "match_technique_linked",
+            Verb::TechniqueSuggested => "technique_suggested",
+            Verb::SuggestionDecided => "suggestion_decided",
         }
     }
 
@@ -167,6 +174,8 @@ impl Verb {
                 | Verb::CampPromotedToCompetition
                 | Verb::MatchLogged
                 | Verb::MatchTechniqueLinked
+                | Verb::TechniqueSuggested
+                | Verb::SuggestionDecided
         )
     }
 
@@ -199,6 +208,7 @@ impl Verb {
             | Verb::StudentRegistered
             | Verb::CampPromotedToCompetition => EntityKind::Competition,
             Verb::MatchLogged | Verb::MatchTechniqueLinked => EntityKind::Match,
+            Verb::TechniqueSuggested | Verb::SuggestionDecided => EntityKind::Technique,
         }
     }
 }
@@ -329,6 +339,13 @@ pub mod payload {
 
     pub fn attempt_pointer(attempt_id: i64) -> String {
         json!({ "attempt_id": attempt_id }).to_string()
+    }
+
+    /// Suggestion decision payload. Carries the suggestion id and its outcome
+    /// status so the feed can describe what happened without a separate DB
+    /// lookup.
+    pub fn suggestion(suggestion_id: i64, status: &str) -> String {
+        json!({ "suggestion_id": suggestion_id, "status": status }).to_string()
     }
 
     /// `technique_edited` delta. Pass which fields changed; tags carry the

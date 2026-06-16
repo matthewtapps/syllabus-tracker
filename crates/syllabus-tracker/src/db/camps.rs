@@ -21,6 +21,8 @@ pub struct Camp {
     pub created_at: NaiveDateTime,
     pub archived_at: Option<NaiveDateTime>,
     pub competition_id: Option<i64>,
+    /// Id of the camp this camp builds on (set at creation, optional).
+    pub references_camp_id: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -38,18 +40,37 @@ pub struct NewCamp {
     pub coach_id: i64,
     pub name: String,
     pub description: Option<String>,
+    /// Optional id of an earlier camp this new camp builds on.
+    pub references_camp_id: Option<i64>,
 }
 
 #[instrument(skip(pool, new))]
 pub async fn create_camp(pool: &Pool<Sqlite>, new: NewCamp) -> Result<i64, AppError> {
+    // A "builds on" reference must point at a camp of the SAME student, so we
+    // don't link to (or leak the name of) another student's camp.
+    if let Some(ref_id) = new.references_camp_id {
+        let ref_student = sqlx::query_scalar!(
+            r#"SELECT student_id AS "student_id!: i64" FROM camps WHERE id = ?"#,
+            ref_id
+        )
+        .fetch_optional(pool)
+        .await?
+        .ok_or_else(|| AppError::NotFound(format!("referenced camp #{ref_id} not found")))?;
+        if ref_student != new.student_id {
+            return Err(AppError::Validation(
+                "referenced camp belongs to a different student".to_string(),
+            ));
+        }
+    }
     let mut tx = pool.begin().await?;
     let id = sqlx::query_scalar!(
-        r#"INSERT INTO camps (student_id, coach_id, name, description)
-           VALUES (?, ?, ?, ?) RETURNING id AS "id!: i64""#,
+        r#"INSERT INTO camps (student_id, coach_id, name, description, references_camp_id)
+           VALUES (?, ?, ?, ?, ?) RETURNING id AS "id!: i64""#,
         new.student_id,
         new.coach_id,
         new.name,
         new.description,
+        new.references_camp_id,
     )
     .fetch_one(&mut *tx)
     .await?;
@@ -72,7 +93,8 @@ pub async fn get_camp(pool: &Pool<Sqlite>, id: i64) -> Result<Option<Camp>, AppE
                   coach_id AS "coach_id!: i64", name, description,
                   created_at AS "created_at!: NaiveDateTime",
                   archived_at AS "archived_at?: NaiveDateTime",
-                  competition_id AS "competition_id?: i64"
+                  competition_id AS "competition_id?: i64",
+                  references_camp_id AS "references_camp_id?: i64"
            FROM camps WHERE id = ?"#,
         id
     )
@@ -87,6 +109,7 @@ pub async fn get_camp(pool: &Pool<Sqlite>, id: i64) -> Result<Option<Camp>, AppE
         created_at: r.created_at,
         archived_at: r.archived_at,
         competition_id: r.competition_id,
+        references_camp_id: r.references_camp_id,
     }))
 }
 
@@ -101,7 +124,8 @@ pub async fn list_camps_for_student(
                   coach_id AS "coach_id!: i64", name, description,
                   created_at AS "created_at!: NaiveDateTime",
                   archived_at AS "archived_at?: NaiveDateTime",
-                  competition_id AS "competition_id?: i64"
+                  competition_id AS "competition_id?: i64",
+                  references_camp_id AS "references_camp_id?: i64"
            FROM camps
            WHERE student_id = ? AND (? OR archived_at IS NULL)
            ORDER BY (archived_at IS NOT NULL), created_at DESC"#,
@@ -121,6 +145,7 @@ pub async fn list_camps_for_student(
             created_at: r.created_at,
             archived_at: r.archived_at,
             competition_id: r.competition_id,
+            references_camp_id: r.references_camp_id,
         })
         .collect())
 }
