@@ -434,18 +434,24 @@ pub async fn dashboard_activity_feed(
            LEFT JOIN videos v     ON v.id = act.video_id
            WHERE (act.video_id IS NULL OR (v.id IS NOT NULL AND v.deleted_at IS NULL))
              AND (
-                   (
-                     u.role = 'student'
-                     AND act.verb IN (
-                       -- Positive student-engagement verbs only. Undo/delete and
-                       -- coach-curation verbs (technique_unpinned, attempt_deleted,
-                       -- sst_added/hidden, syllabus_technique_added, etc.) are
-                       -- history, not dashboard signal. syllabus_graduated is the
-                       -- one milestone surfaced regardless of who fired it.
-                       'video_watched', 'attempt_logged', 'attempt_edited',
-                       'sst_status_changed', 'sst_student_notes_edited', 'technique_pinned'
-                     )
-                   )
+                   -- Student-originated positive engagement verbs. This is a tight
+                   -- allow-list (a subset of the notifiable verbs in db/activity.rs),
+                   -- not the full notifiable set: only the verbs that read as student
+                   -- progress on the glance.
+                   ( u.role = 'student' AND act.verb IN (
+                     'video_watched', 'attempt_logged', 'attempt_edited',
+                     'sst_status_changed', 'sst_student_notes_edited', 'technique_pinned'
+                   ) )
+                   -- Coach/admin actions surface on the dashboard EXCEPT undo/delete
+                   -- history verbs (the non-notifiable verbs in db/activity.rs) and
+                   -- thread_comment_posted (comments have their own surface; this query
+                   -- does not join threads, so a comment row could not deep-link here).
+                   OR ( u.role != 'student' AND act.verb NOT IN (
+                     'attempt_deleted', 'technique_unpinned', 'syllabus_unassigned',
+                     'sst_hidden', 'sst_unhidden', 'syllabus_technique_removed',
+                     'video_visibility_set', 'thread_comment_posted'
+                   ) )
+                   -- Graduation milestone surfaces regardless of who fired it.
                    OR act.verb = 'syllabus_graduated'
                  )
            ORDER BY act.occurred_at DESC, act.id DESC

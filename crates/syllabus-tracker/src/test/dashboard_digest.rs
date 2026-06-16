@@ -135,8 +135,78 @@ mod tests {
         assert_eq!(metric(&digest, "active_students").count, 0);
     }
 
+    /// Coach performing sst_status_changed must appear in the dashboard feed,
+    /// and target_student_name must be populated from the student user record.
     #[rocket::async_test]
-    async fn dashboard_feed_includes_engagement_excludes_coach_curation() {
+    async fn dashboard_feed_surfaces_coach_sst_status_changed_with_student_name() {
+        use crate::db::dashboard_activity_feed;
+        let db = TestDbBuilder::new()
+            .coach("coach", Some("Coach Dave"))
+            .student("alice", Some("Alice Smith"))
+            .build()
+            .await
+            .unwrap();
+        let coach = db.user_id("coach").unwrap();
+        let alice = db.user_id("alice").unwrap();
+
+        // Coach changes a student's SST status (simulates the prod migration pattern).
+        let mut tx = db.pool.begin().await.unwrap();
+        emit(
+            &mut tx,
+            NewActivity::new(Verb::SstStatusChanged, coach).target_student(alice),
+        )
+        .await
+        .unwrap();
+        tx.commit().await.unwrap();
+
+        let rows = dashboard_activity_feed(&db.pool, 30).await.unwrap();
+
+        // The coach's sst_status_changed must appear (not filtered out).
+        assert_eq!(rows.len(), 1, "coach status change appears in the dashboard feed");
+        assert_eq!(rows[0].verb, "sst_status_changed");
+        assert_eq!(rows[0].actor_user_id, coach, "actor is the coach");
+
+        // target_student_name must be alice's display name.
+        assert_eq!(
+            rows[0].target_student_name.as_deref(),
+            Some("Alice Smith"),
+            "target_student_name is populated with the student display name"
+        );
+    }
+
+    /// Coach undo/delete history verbs (and thread comments) stay off the glance
+    /// even though the coach arm is otherwise a denylist. Guards against the
+    /// excluded set silently shrinking.
+    #[rocket::async_test]
+    async fn dashboard_feed_excludes_coach_history_and_comment_verbs() {
+        use crate::db::dashboard_activity_feed;
+        let db = TestDbBuilder::new()
+            .coach("coach", Some("Coach Dave"))
+            .student("alice", Some("Alice Smith"))
+            .technique("Armbar", "", Some("coach"))
+            .build()
+            .await
+            .unwrap();
+        let coach = db.user_id("coach").unwrap();
+        let alice = db.user_id("alice").unwrap();
+        let armbar = db.technique_id("Armbar").unwrap();
+
+        let mut tx = db.pool.begin().await.unwrap();
+        // An excluded history verb and a thread comment: neither belongs on the glance.
+        emit(&mut tx, NewActivity::new(Verb::TechniqueUnpinned, coach).target_student(alice).technique(armbar)).await.unwrap();
+        emit(&mut tx, NewActivity::new(Verb::ThreadCommentPosted, coach).target_student(alice).technique(armbar)).await.unwrap();
+        // A surfacing verb so the feed is not trivially empty.
+        emit(&mut tx, NewActivity::new(Verb::SstStatusChanged, coach).target_student(alice).technique(armbar)).await.unwrap();
+        tx.commit().await.unwrap();
+
+        let rows = dashboard_activity_feed(&db.pool, 30).await.unwrap();
+        assert!(rows.iter().any(|r| r.verb == "sst_status_changed"), "status change surfaces");
+        assert!(!rows.iter().any(|r| r.verb == "technique_unpinned"), "undo verb stays excluded");
+        assert!(!rows.iter().any(|r| r.verb == "thread_comment_posted"), "thread comment stays off the glance");
+    }
+
+    #[rocket::async_test]
+    async fn dashboard_feed_includes_engagement_and_coach_curation() {
         use crate::db::dashboard_activity_feed;
         let db = TestDbBuilder::new()
             .coach("coach", None)
@@ -152,14 +222,16 @@ mod tests {
         let mut tx = db.pool.begin().await.unwrap();
         // Student engagement: should appear.
         emit(&mut tx, NewActivity::new(Verb::AttemptLogged, alice).target_student(alice).technique(armbar)).await.unwrap();
-        // Coach curation: should NOT appear in the engagement feed.
+        // Coach curation (syllabus_technique_added): now surfaces on the dashboard
+        // because it is a coach action not in the excluded (undo/delete) set.
         emit(&mut tx, NewActivity::new(Verb::SyllabusTechniqueAdded, coach).target_student(alice).technique(armbar)).await.unwrap();
         tx.commit().await.unwrap();
 
         let rows = dashboard_activity_feed(&db.pool, 30).await.unwrap();
-        assert_eq!(rows.len(), 1, "only the student engagement row");
-        assert_eq!(rows[0].verb, "attempt_logged");
-        assert!(!rows[0].unread, "dashboard feed never sets unread");
+        assert_eq!(rows.len(), 2, "both the student engagement and the coach curation row appear");
+        assert!(rows.iter().any(|r| r.verb == "attempt_logged"), "student attempt is present");
+        assert!(rows.iter().any(|r| r.verb == "syllabus_technique_added"), "coach curation row now surfaces");
+        assert!(rows.iter().all(|r| !r.unread), "dashboard feed never sets unread");
 
         // syllabus_graduated surfaces regardless of actor role.
         let mut tx = db.pool.begin().await.unwrap();
