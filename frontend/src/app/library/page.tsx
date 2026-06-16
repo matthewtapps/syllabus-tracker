@@ -1,8 +1,9 @@
-import { useMemo } from 'react';
-import { BookOpen } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import { BookOpen, Plus } from 'lucide-react';
 import { Accordion } from '@/components/ui/accordion';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/empty-state';
+import NewTechniqueDialog from '@/components/new-technique-dialog';
 import { TechniqueRow } from '@/components/technique-row';
 import { TechniqueFilters } from '@/components/technique-row/technique-filters';
 import { useTechniqueListNav } from '@/components/technique-row/use-technique-list-nav';
@@ -13,6 +14,7 @@ import { isCoachOrAdmin } from '@/lib/api';
 export default function LibraryPage() {
   const user = useUser();
   const isCoach = isCoachOrAdmin(user);
+  const [newOpen, setNewOpen] = useState(false);
 
   // Coaches get the role-agnostic library; students get the same shape
   // augmented with is_pinned for the viewing student.
@@ -41,10 +43,26 @@ export default function LibraryPage() {
 
   return (
     <div className="container mx-auto px-4 py-6 sm:px-6 md:py-8">
-      <h1 className="mb-4 flex items-center gap-2 text-base font-semibold">
-        <BookOpen className="h-4 w-4" aria-hidden />
-        Global Technique Library
-      </h1>
+      <div className="mb-4 flex items-center justify-between gap-2">
+        <h1 className="flex items-center gap-2 text-base font-semibold">
+          <BookOpen className="h-4 w-4" aria-hidden />
+          Global Technique Library
+        </h1>
+        {isCoach && (
+          <Button size="sm" onClick={() => setNewOpen(true)}>
+            <Plus className="h-4 w-4" aria-hidden />
+            New technique
+          </Button>
+        )}
+      </div>
+
+      {isCoach && (
+        <NewTechniqueDialog
+          open={newOpen}
+          onOpenChange={setNewOpen}
+          existingNames={techniques.map((t) => t.name)}
+        />
+      )}
       {/* Legacy 'Collections' tab removed in PR 5; the /legacy/collections
        *  URL is still reachable for prod migration but not surfaced in
        *  navigation. */}

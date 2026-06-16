@@ -769,6 +769,27 @@ export async function getLibraryTechniques(): Promise<LibraryTechniqueRow[]> {
   return await response.json();
 }
 
+/** Newly created library technique, as returned by `POST /api/techniques`. */
+export interface CreatedLibraryTechnique {
+  id: number;
+  name: string;
+  description: string;
+  coach_id: number;
+  coach_name: string;
+}
+
+export async function createLibraryTechnique(data: {
+  name: string;
+  description: string;
+}): Promise<Response> {
+  return await fetch("/api/techniques", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+    credentials: "include",
+  });
+}
+
 export async function getStudentLibrary(
   studentId: number,
 ): Promise<LibraryTechniqueRow[]> {
