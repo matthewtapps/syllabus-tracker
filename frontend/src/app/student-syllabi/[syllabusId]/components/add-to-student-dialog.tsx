@@ -15,7 +15,11 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { NewTechniqueForm } from "@/components/new-technique-form";
 import type { CreatedLibraryTechnique } from "@/lib/api";
 import { useLibraryTechniques } from "@/lib/queries";
-import { useAddTechniqueToStudentSyllabus } from "@/lib/mutations";
+import {
+  useAddTechniqueToStudentSyllabus,
+  useSetSstHidden,
+} from "@/lib/mutations";
+import { matchHiddenByName, type HiddenMatchCandidate } from "../sst-view";
 
 interface AddToStudentDialogProps {
   open: boolean;
@@ -34,6 +38,7 @@ export function AddToStudentDialog({
   studentId,
   syllabusId,
   visibleTechniqueIds,
+  hiddenTechniqueSstByTid,
 }: AddToStudentDialogProps) {
   const libraryQuery = useLibraryTechniques();
   const techniques = useMemo(
@@ -41,6 +46,7 @@ export function AddToStudentDialog({
     [libraryQuery.data],
   );
   const addMutation = useAddTechniqueToStudentSyllabus();
+  const unhideMutation = useSetSstHidden();
   const [search, setSearch] = useState("");
   const [activeTags, setActiveTags] = useState<string[]>([]);
   const [selected, setSelected] = useState<Set<number>>(new Set());
@@ -99,6 +105,19 @@ export function AddToStudentDialog({
       return matchesText && matchesTags && notAlreadyVisible;
     });
   }, [techniques, search, activeTags, visibleTechniqueIds]);
+
+  const hiddenCandidates = useMemo<HiddenMatchCandidate[]>(() => {
+    const byId = new Map(techniques.map((t) => [t.id, t.name]));
+    const out: HiddenMatchCandidate[] = [];
+    for (const [techniqueId, sstId] of hiddenTechniqueSstByTid) {
+      const technique_name = byId.get(techniqueId);
+      if (technique_name === undefined) continue;
+      out.push({ technique_id: techniqueId, technique_name, sstId });
+    }
+    return out;
+  }, [techniques, hiddenTechniqueSstByTid]);
+
+  const hiddenMatch = matchHiddenByName(hiddenCandidates, search);
 
   function toggle(id: number) {
     setSelected((prev) => {
@@ -193,6 +212,31 @@ export function AddToStudentDialog({
               </span>{" "}
               selected · {filtered.length} of {techniques.length} shown
             </p>
+            {hiddenMatch && (
+              <div className="flex items-center justify-between gap-2 rounded border border-border bg-muted/40 px-3 py-2 text-sm">
+                <span>{hiddenMatch.technique_name} is on their list but hidden.</span>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={unhideMutation.isPending}
+                  onClick={async () => {
+                    try {
+                      await unhideMutation.mutateAsync({
+                        sstId: hiddenMatch.sstId,
+                        studentId,
+                        syllabusId,
+                        hidden: false,
+                      });
+                      toast.success(`Showing ${hiddenMatch.technique_name}`);
+                    } catch {
+                      toast.error("Failed to update visibility");
+                    }
+                  }}
+                >
+                  Make visible
+                </Button>
+              </div>
+            )}
             <div className="min-h-0 flex-1 overflow-y-auto rounded border border-border bg-card">
               {filtered.length === 0 ? (
                 <p className="px-4 py-6 text-center text-xs text-muted-foreground">
