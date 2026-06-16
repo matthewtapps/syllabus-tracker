@@ -38,6 +38,7 @@ export default function NewTechniqueDialog({
             toast.success(`Created "${created.name}"`);
             onOpenChange(false);
           }}
+          onCancel={() => onOpenChange(false)}
         />
       </DialogContent>
     </Dialog>

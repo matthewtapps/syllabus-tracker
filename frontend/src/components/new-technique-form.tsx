@@ -48,6 +48,8 @@ export interface NewTechniqueFormProps {
   onAddToGlobalChange?: (next: boolean) => void;
   /** Called after the technique is created AND its tags attached, with the created technique. */
   onCreated: (created: CreatedLibraryTechnique) => void | Promise<void>;
+  /** When provided, render a ghost Cancel button in the footer. */
+  onCancel?: () => void;
 }
 
 interface FormValues {
@@ -68,6 +70,7 @@ export function NewTechniqueForm({
   addToGlobal,
   onAddToGlobalChange,
   onCreated,
+  onCancel,
 }: NewTechniqueFormProps) {
   const queryClient = useQueryClient();
   const { data: allTags = [] } = useAllTags();
@@ -383,6 +386,11 @@ export function NewTechniqueForm({
       )}
 
       <div className="flex justify-end gap-2">
+        {onCancel && (
+          <Button type="button" variant="ghost" onClick={onCancel}>
+            Cancel
+          </Button>
+        )}
         <Button type="submit" disabled={form.formState.isSubmitting}>
           {form.formState.isSubmitting ? 'Creating...' : 'Create technique'}
         </Button>
