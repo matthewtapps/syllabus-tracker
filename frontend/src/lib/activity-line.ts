@@ -108,6 +108,12 @@ function studentSyllabusHref(row: ActivityRow): string | undefined {
   return `/student/${row.target_student_id}/syllabi/${row.syllabus_id}`;
 }
 
+/** Library deep-link to a technique row (no video context). */
+function libraryTechniqueHref(row: ActivityRow): string | undefined {
+  if (row.technique_id == null) return undefined;
+  return `/library?focus=${refToken({ type: "technique", id: row.technique_id })}`;
+}
+
 /** Library deep-link for a video that is not tied to a watch context (added /
  *  visibility changed). Mirrors the pre-existing behavior in the new token form. */
 function libraryVideoHref(row: ActivityRow): string | undefined {
@@ -233,7 +239,7 @@ export function activityLine(row: ActivityRow, scope: ActivityScope = { kind: "g
     // --- sst curation verbs ---
     case "sst_added":
       return tech
-        ? { verb: `added ${tech} to syllabus`, href: syllabusHref(row) }
+        ? { verb: `added ${tech} to syllabus`, href: deep ?? syllabusHref(row) }
         : { verb: "added a technique to syllabus" };
     case "sst_hidden":
       return tech ? { verb: "hid", subject: tech } : { verb: "hid a technique" };
@@ -260,7 +266,7 @@ export function activityLine(row: ActivityRow, scope: ActivityScope = { kind: "g
 
     // --- technique edited fanout ---
     case "technique_edited":
-      return tech ? { verb: "edited", subject: tech } : { verb: "edited a technique" };
+      return tech ? { verb: "edited", subject: tech, href: libraryTechniqueHref(row) } : { verb: "edited a technique" };
 
     // --- thread verbs ---
     case "thread_comment_posted": {

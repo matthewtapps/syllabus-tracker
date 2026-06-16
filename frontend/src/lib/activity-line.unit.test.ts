@@ -336,6 +336,17 @@ describe("activityLine", () => {
     expect(lineText(result)).toBe("edited Armbar");
   });
 
+  test("technique_edited with technique_id deep-links to the library row", () => {
+    const result = activityLine(
+      row({
+        verb: "technique_edited",
+        technique_id: 5,
+        technique_name: "Armbar",
+      }),
+    );
+    expect(result.href).toBe("/library?focus=technique:5");
+  });
+
   // --- null entity: no href, plain fallback text ---
   test("row with null technique_name renders plain text with no href", () => {
     const result = activityLine(
@@ -402,6 +413,35 @@ describe("activityLine", () => {
   test("sst_added renders technique name", () => {
     const result = activityLine(
       row({ verb: "sst_added", technique_id: 5, technique_name: "Armbar", sst_id: 10, syllabus_id: 2 }),
+    );
+    expect(lineText(result)).toBe("added Armbar to syllabus");
+    // default row has target_student_id:3, so deep resolves to the student syllabus focus link
+    expect(result.href).toBe("/student/3/syllabi/2?focus=sst:10");
+  });
+  test("sst_added with full ids deep-links to the student's syllabus sst row", () => {
+    const result = activityLine(
+      row({
+        verb: "sst_added",
+        technique_id: 5,
+        technique_name: "Armbar",
+        target_student_id: 4,
+        syllabus_id: 2,
+        sst_id: 42,
+      }),
+    );
+    expect(lineText(result)).toBe("added Armbar to syllabus");
+    expect(result.href).toBe("/student/4/syllabi/2?focus=sst:42");
+  });
+  test("sst_added without student/sst ids falls back to bare syllabus href", () => {
+    const result = activityLine(
+      row({
+        verb: "sst_added",
+        technique_id: 5,
+        technique_name: "Armbar",
+        target_student_id: null,
+        sst_id: null,
+        syllabus_id: 2,
+      }),
     );
     expect(lineText(result)).toBe("added Armbar to syllabus");
     expect(result.href).toBe("/syllabi/2");
