@@ -322,6 +322,34 @@ pub async fn remove_technique_from_syllabus(
 ) -> Result<(), AppError> {
     let mut tx = pool.begin().await?;
 
+    // Tier-2 videos hang off the `syllabus_techniques` membership row via a
+    // `videos.syllabus_technique_id` FK with `ON DELETE CASCADE`. Deleting the
+    // membership row below would HARD-delete those videos (and their override
+    // rows), losing the storage_key + watch history that the soft-delete
+    // (`deleted_at`) discipline exists to preserve. So before removing the
+    // membership row, soft-delete the live T2 videos AND detach them to the
+    // `loose` parent kind (nulling `syllabus_technique_id`) so the cascade has
+    // nothing to take. The CHECK constraint's `loose` branch requires every
+    // parent FK NULL, which a T2 video already satisfies for all columns
+    // except `syllabus_technique_id`, nulled here.
+    let now = chrono::Utc::now().naive_utc();
+    sqlx::query!(
+        "UPDATE videos
+         SET deleted_at = ?, updated_at = ?, parent_kind = 'loose', syllabus_technique_id = NULL
+         WHERE deleted_at IS NULL
+           AND parent_kind = 'syllabus_technique'
+           AND syllabus_technique_id IN (
+               SELECT id FROM syllabus_techniques
+               WHERE syllabus_id = ? AND technique_id = ?
+           )",
+        now,
+        now,
+        syllabus_id,
+        technique_id,
+    )
+    .execute(&mut *tx)
+    .await?;
+
     sqlx::query!(
         "DELETE FROM syllabus_techniques
          WHERE syllabus_id = ? AND technique_id = ?",
@@ -332,7 +360,6 @@ pub async fn remove_technique_from_syllabus(
     .await?;
 
     if matches!(mode, PropagationMode::Cascade) {
-        let now = chrono::Utc::now().naive_utc();
         sqlx::query!(
             "UPDATE student_syllabus_techniques
              SET hidden_at = ?, hidden_by_id = ?, updated_at = ?

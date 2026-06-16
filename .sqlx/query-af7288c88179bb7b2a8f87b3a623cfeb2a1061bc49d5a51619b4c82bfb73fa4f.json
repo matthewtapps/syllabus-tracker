@@ -1,0 +1,32 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT deleted_at, parent_kind, syllabus_technique_id\n             FROM videos WHERE id = ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "deleted_at",
+        "ordinal": 0,
+        "type_info": "Datetime"
+      },
+      {
+        "name": "parent_kind",
+        "ordinal": 1,
+        "type_info": "Text"
+      },
+      {
+        "name": "syllabus_technique_id",
+        "ordinal": 2,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      true,
+      false,
+      true
+    ]
+  },
+  "hash": "af7288c88179bb7b2a8f87b3a623cfeb2a1061bc49d5a51619b4c82bfb73fa4f"
+}

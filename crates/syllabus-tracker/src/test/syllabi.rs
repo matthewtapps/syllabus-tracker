@@ -281,6 +281,76 @@ mod tests {
     }
 
     #[rocket::async_test]
+    async fn remove_technique_preserves_tier2_videos_as_soft_deleted() {
+        use crate::db::{create_processing_video, VideoParent};
+
+        let (_client, db, syllabus_id, _student_id, coach_id, armbar_id, _) =
+            assign_syllabus_and_seed_techniques().await;
+
+        // The syllabus_techniques membership row for armbar.
+        let st_id: i64 = sqlx::query_scalar!(
+            "SELECT id AS \"id!\" FROM syllabus_techniques
+             WHERE syllabus_id = ? AND technique_id = ?",
+            syllabus_id,
+            armbar_id,
+        )
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+
+        // Tier-2 video parented on that membership row.
+        let vid = create_processing_video(
+            &db.pool,
+            VideoParent::SyllabusTechnique(st_id),
+            "t2 video",
+            None,
+            coach_id,
+        )
+        .await
+        .unwrap();
+
+        db::remove_technique_from_syllabus(
+            &db.pool,
+            syllabus_id,
+            armbar_id,
+            coach_id,
+            PropagationMode::Cascade,
+        )
+        .await
+        .unwrap();
+
+        // Membership row is gone.
+        let st_gone = sqlx::query_scalar!(
+            "SELECT COUNT(*) AS \"c!\" FROM syllabus_techniques WHERE id = ?",
+            st_id,
+        )
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+        assert_eq!(st_gone, 0, "membership row should be removed");
+
+        // The T2 video row STILL EXISTS, soft-deleted and detached.
+        let row = sqlx::query!(
+            "SELECT deleted_at, parent_kind, syllabus_technique_id
+             FROM videos WHERE id = ?",
+            vid,
+        )
+        .fetch_optional(&db.pool)
+        .await
+        .unwrap()
+        .expect("T2 video row must survive removal (soft-delete, not cascade hard-delete)");
+        assert!(
+            row.deleted_at.is_some(),
+            "video must be soft-deleted (deleted_at set)"
+        );
+        assert_eq!(row.parent_kind, "loose", "video should be detached to loose");
+        assert_eq!(
+            row.syllabus_technique_id, None,
+            "syllabus_technique_id must be nulled so the cascade can't take it"
+        );
+    }
+
+    #[rocket::async_test]
     async fn re_assign_preserves_hidden_at_on_existing_sst() {
         let (_client, db, syllabus_id, student_id, coach_id, armbar_id, _) =
             assign_syllabus_and_seed_techniques().await;
