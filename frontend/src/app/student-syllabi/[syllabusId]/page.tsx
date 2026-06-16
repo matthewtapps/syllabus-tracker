@@ -21,8 +21,14 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import {
+  Tabs,
+  TabsList,
+  TabsTrigger,
+} from '@/components/ui/tabs';
 import { EmptyState } from '@/components/empty-state';
 import { TechniqueRow } from '@/components/technique-row';
+import { partitionSsts } from './sst-view';
 import { useAllUsers, useStudentSyllabusTechniques } from '@/lib/queries';
 import {
   useSetAssignmentGraduated,
@@ -93,9 +99,28 @@ function Detail({
     const u = (usersQuery.data ?? []).find((u) => u.id === studentId);
     return u ? u.display_name || u.username : null;
   }, [isOwnView, usersQuery.data, studentId]);
+  const allSsts = useMemo(
+    () => query.data?.techniques ?? [],
+    [query.data?.techniques],
+  );
+  const [tab, setTab] = useState<'main' | 'custom' | 'hidden'>('main');
+  // Placeholder for D2 (techniques just hidden this session linger in Main).
+  const [ghostTechniqueIds] = useState<Set<number>>(new Set());
+  const { main, custom, hidden } = useMemo(
+    () => partitionSsts(allSsts, ghostTechniqueIds),
+    [allSsts, ghostTechniqueIds],
+  );
+  // The student's own view always shows just their visible techniques; coaches
+  // drive the list off the selected tab.
+  const activeRows = isOwnView
+    ? allSsts.filter((r) => r.hidden_at == null)
+    : tab === 'main'
+      ? main
+      : tab === 'custom'
+        ? custom
+        : hidden;
   const techniques = useMemo(() => {
-    const rows = query.data?.techniques ?? [];
-    return [...rows].sort((a, b) => {
+    return [...activeRows].sort((a, b) => {
       const latestOf = (sst: SstRow): number => {
         const candidates = [
           sst.last_attempt_at,
@@ -109,7 +134,7 @@ function Detail({
       };
       return latestOf(b) - latestOf(a);
     });
-  }, [query.data?.techniques]);
+  }, [activeRows]);
   const [unassignOpen, setUnassignOpen] = useState(false);
   const [graduateOpen, setGraduateOpen] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
@@ -253,6 +278,23 @@ function Detail({
           </>
         )}
       </div>
+
+      {!isOwnView && (
+        <Tabs
+          value={tab}
+          onValueChange={(v) => setTab(v as 'main' | 'custom' | 'hidden')}
+        >
+          <TabsList>
+            <TabsTrigger value="main">Main</TabsTrigger>
+            <TabsTrigger value="custom">
+              Custom{custom.length ? ` (${custom.length})` : ''}
+            </TabsTrigger>
+            <TabsTrigger value="hidden">
+              Hidden{hidden.length ? ` (${hidden.length})` : ''}
+            </TabsTrigger>
+          </TabsList>
+        </Tabs>
+      )}
 
       {techniques.length > 0 && (
         <>
