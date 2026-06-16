@@ -538,10 +538,33 @@ pub struct DiffMissing {
     pub sst_id: Option<i64>,
 }
 
+/// Which kind of per-technique video divergence a [`DiffVideo`] reports.
+#[derive(Debug, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum DiffVideoKind {
+    /// A T1/T2 library video that resolves hidden for this assignment because
+    /// of an `assignment`-scope override `visible=0`. Coach can restore it.
+    HiddenForStudent,
+    /// A T3 video parented to one of this assignment's SST rows: it exists only
+    /// for this student. Coach can promote it to a global (T1) technique video.
+    StudentOnly,
+}
+
+#[derive(Debug, Serialize)]
+pub struct DiffVideo {
+    /// The technique this video is grouped under (resolved owning technique).
+    pub technique_id: i64,
+    pub technique_name: String,
+    pub video_id: i64,
+    pub video_title: String,
+    pub kind: DiffVideoKind,
+}
+
 #[derive(Debug, Serialize)]
 pub struct SyllabusAssignmentDiff {
     pub ghosts: Vec<DiffGhost>,
     pub missing: Vec<DiffMissing>,
+    pub videos: Vec<DiffVideo>,
 }
 
 #[instrument]
@@ -591,6 +614,73 @@ pub async fn diff_for_assignment(
     .fetch_all(pool)
     .await?;
 
+    // hidden_for_student: T1/T2 videos with an assignment-scope override
+    // visible=0 for this assignment. Group each under its owning technique
+    // (T1 -> videos.technique_id; T2 -> the membership's technique_id).
+    let hidden_video_rows = sqlx::query!(
+        r#"SELECT v.id AS "video_id!: i64",
+                  v.title AS "video_title!: String",
+                  t.id AS "technique_id!: i64",
+                  t.name AS "technique_name!: String"
+           FROM video_visibility_overrides ov
+           JOIN videos v ON v.id = ov.video_id
+           LEFT JOIN syllabus_techniques st ON st.id = v.syllabus_technique_id
+           JOIN techniques t
+                  ON t.id = CASE v.parent_kind
+                              WHEN 'technique' THEN v.technique_id
+                              WHEN 'syllabus_technique' THEN st.technique_id
+                            END
+           WHERE ov.scope_kind = 'assignment'
+             AND ov.scope_id = ?
+             AND ov.visible = 0
+             AND v.deleted_at IS NULL
+             AND v.parent_kind IN ('technique', 'syllabus_technique')
+           ORDER BY t.name, v.position"#,
+        assignment_id,
+    )
+    .fetch_all(pool)
+    .await?;
+
+    // student_only: T3 videos parented to one of this assignment's SST rows.
+    // The owning technique is the SST's technique_id.
+    let student_only_rows = sqlx::query!(
+        r#"SELECT v.id AS "video_id!: i64",
+                  v.title AS "video_title!: String",
+                  t.id AS "technique_id!: i64",
+                  t.name AS "technique_name!: String"
+           FROM videos v
+           JOIN student_syllabus_techniques sst
+                  ON sst.id = v.student_syllabus_technique_id
+           JOIN techniques t ON t.id = sst.technique_id
+           WHERE v.parent_kind = 'student_syllabus_technique'
+             AND sst.assignment_id = ?
+             AND v.deleted_at IS NULL
+           ORDER BY t.name, v.position"#,
+        assignment_id,
+    )
+    .fetch_all(pool)
+    .await?;
+
+    let mut videos: Vec<DiffVideo> = Vec::new();
+    for r in hidden_video_rows {
+        videos.push(DiffVideo {
+            technique_id: r.technique_id,
+            technique_name: r.technique_name,
+            video_id: r.video_id,
+            video_title: r.video_title,
+            kind: DiffVideoKind::HiddenForStudent,
+        });
+    }
+    for r in student_only_rows {
+        videos.push(DiffVideo {
+            technique_id: r.technique_id,
+            technique_name: r.technique_name,
+            video_id: r.video_id,
+            video_title: r.video_title,
+            kind: DiffVideoKind::StudentOnly,
+        });
+    }
+
     Ok(SyllabusAssignmentDiff {
         ghosts: ghost_rows
             .into_iter()
@@ -609,5 +699,6 @@ pub async fn diff_for_assignment(
                 sst_id: r.sst_id,
             })
             .collect(),
+        videos,
     })
 }

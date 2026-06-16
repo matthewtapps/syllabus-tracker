@@ -975,6 +975,68 @@ pub async fn clear_video_override(
     Ok(())
 }
 
+/// Promotes a student-only (T3, `parent_kind='student_syllabus_technique'`)
+/// video to a global library video (T1, `parent_kind='technique'`) in place,
+/// preserving the `video.id` (and thus watch history). The owning technique is
+/// resolved from the parent SST's `technique_id`. Any now-meaningless
+/// visibility overrides on the video are cleared, since at the global tier the
+/// per-(assignment/syllabus/student) hide overrides no longer make sense.
+///
+/// No-op (returns `Ok(false)`) if the video is not a T3 video or is deleted.
+#[instrument(skip(pool))]
+pub async fn promote_video_to_global(
+    pool: &Pool<Sqlite>,
+    video_id: i64,
+) -> Result<bool, AppError> {
+    let mut tx = pool.begin().await?;
+
+    // Resolve the owning technique via the parent SST. Only T3 alive videos
+    // are eligible.
+    let technique_id: Option<i64> = sqlx::query_scalar!(
+        r#"SELECT sst.technique_id AS "technique_id!: i64"
+           FROM videos v
+           JOIN student_syllabus_techniques sst
+                  ON sst.id = v.student_syllabus_technique_id
+           WHERE v.id = ?
+             AND v.parent_kind = 'student_syllabus_technique'
+             AND v.deleted_at IS NULL"#,
+        video_id,
+    )
+    .fetch_optional(&mut *tx)
+    .await?;
+
+    let Some(technique_id) = technique_id else {
+        tx.rollback().await?;
+        return Ok(false);
+    };
+
+    // Re-parent in place: flip the typed columns to the technique tier.
+    sqlx::query!(
+        "UPDATE videos
+         SET parent_kind = 'technique',
+             technique_id = ?,
+             student_syllabus_technique_id = NULL,
+             updated_at = CURRENT_TIMESTAMP
+         WHERE id = ?",
+        technique_id,
+        video_id,
+    )
+    .execute(&mut *tx)
+    .await?;
+
+    // Clear all per-scope visibility overrides; they were scoped to the old
+    // student-only tier and no longer apply once the video is global.
+    sqlx::query!(
+        "DELETE FROM video_visibility_overrides WHERE video_id = ?",
+        video_id,
+    )
+    .execute(&mut *tx)
+    .await?;
+
+    tx.commit().await?;
+    Ok(true)
+}
+
 /// Marks rows stuck in `processing` for longer than `older_than_secs` seconds
 /// as `failed`. Called periodically on the remote-processor path to time
 /// out jobs that never delivered a callback.

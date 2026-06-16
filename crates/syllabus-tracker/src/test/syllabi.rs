@@ -805,6 +805,187 @@ mod pr4_tests {
     }
 
     #[rocket::async_test]
+    async fn diff_lists_hidden_and_student_only_videos() {
+        use crate::db::{
+            create_processing_video, DiffVideoKind, VideoParent,
+        };
+        // Two students on the same syllabus so we can assert no cross-bleed.
+        let test_db = create_standard_test_db().await;
+        let coach_id = test_db.user_id("coach_user").unwrap();
+        let alice = test_db.user_id("student_user").unwrap();
+        let bob = db::create_user(&test_db.pool, "bob", "password123", "student", None)
+            .await
+            .unwrap();
+        let armbar_id = test_db.technique_id("Armbar").unwrap();
+        let syllabus_id = db::create_syllabus(&test_db.pool, "S", None, coach_id)
+            .await
+            .unwrap();
+        db::add_technique_to_syllabus(
+            &test_db.pool,
+            syllabus_id,
+            armbar_id,
+            coach_id,
+            PropagationMode::SyllabusOnly,
+        )
+        .await
+        .unwrap();
+        let alice_asgn = db::assign(&test_db.pool, coach_id, alice, syllabus_id)
+            .await
+            .unwrap();
+        let bob_asgn = db::assign(&test_db.pool, coach_id, bob, syllabus_id)
+            .await
+            .unwrap();
+
+        // A T1 library video on Armbar, hidden for alice's assignment only.
+        let t1_video =
+            create_processing_video(&test_db.pool, VideoParent::Technique(armbar_id), "t1", None, coach_id)
+                .await
+                .unwrap();
+        db::set_video_override(
+            &test_db.pool,
+            "assignment",
+            alice_asgn,
+            t1_video,
+            false,
+            coach_id,
+        )
+        .await
+        .unwrap();
+
+        // A T3 student-only video on alice's Armbar SST.
+        let alice_sst = db::get_sst_id(&test_db.pool, alice_asgn, armbar_id)
+            .await
+            .unwrap()
+            .unwrap();
+        let t3_video = create_processing_video(
+            &test_db.pool,
+            VideoParent::StudentSyllabusTechnique(alice_sst),
+            "t3",
+            None,
+            coach_id,
+        )
+        .await
+        .unwrap();
+
+        let alice_diff = db::diff_for_assignment(&test_db.pool, alice_asgn)
+            .await
+            .unwrap();
+        assert!(
+            alice_diff.videos.iter().any(|v| v.video_id == t1_video
+                && v.kind == DiffVideoKind::HiddenForStudent
+                && v.technique_id == armbar_id),
+            "alice's hidden T1 video should appear as hidden_for_student"
+        );
+        assert!(
+            alice_diff.videos.iter().any(|v| v.video_id == t3_video
+                && v.kind == DiffVideoKind::StudentOnly
+                && v.technique_id == armbar_id),
+            "alice's T3 video should appear as student_only"
+        );
+
+        // Bob's diff must not see either: no override + the T3 belongs to alice.
+        let bob_diff = db::diff_for_assignment(&test_db.pool, bob_asgn)
+            .await
+            .unwrap();
+        assert!(
+            bob_diff.videos.is_empty(),
+            "bob's diff must not bleed alice's video divergences, got {:?}",
+            bob_diff.videos
+        );
+    }
+
+    #[rocket::async_test]
+    async fn apply_diff_restores_and_promotes_videos() {
+        use crate::db::{create_processing_video, VideoParent};
+        let (client, db, syllabus_id, student_id, coach_id, assignment_id, sst_id) =
+            seed_active_assignment().await;
+        let armbar_id = db.technique_id("Armbar").unwrap();
+
+        // Hidden T1 video for this assignment.
+        let t1_video =
+            create_processing_video(&db.pool, VideoParent::Technique(armbar_id), "t1", None, coach_id)
+                .await
+                .unwrap();
+        db::set_video_override(&db.pool, "assignment", assignment_id, t1_video, false, coach_id)
+            .await
+            .unwrap();
+        // Hidden BEFORE apply.
+        assert!(
+            !db::effective_video_visible(&db.pool, t1_video, assignment_id)
+                .await
+                .unwrap()
+        );
+
+        // T3 student-only video on the Armbar SST.
+        let t3_video = create_processing_video(
+            &db.pool,
+            VideoParent::StudentSyllabusTechnique(sst_id),
+            "t3",
+            None,
+            coach_id,
+        )
+        .await
+        .unwrap();
+
+        let _ = login_test_user(&client, "coach_user", "password123").await;
+        let resp = client
+            .post(format!(
+                "/api/student/{}/syllabi/{}/assignment/diff/apply",
+                student_id, syllabus_id
+            ))
+            .header(ContentType::JSON)
+            .body(
+                json!({
+                    "ghost_actions": [],
+                    "missing_actions": [],
+                    "video_actions": [
+                        { "video_id": t1_video, "action": "restore" },
+                        { "video_id": t3_video, "action": "promote_to_global" },
+                    ],
+                })
+                .to_string(),
+            )
+            .dispatch()
+            .await;
+        assert_eq!(resp.status(), Status::Ok);
+        let body: Value = serde_json::from_str(&resp.into_string().await.unwrap()).unwrap();
+        assert_eq!(body["applied"].as_i64(), Some(2));
+
+        // restore: the assignment-scope override is gone, video visible again.
+        let override_count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM video_visibility_overrides
+             WHERE scope_kind = 'assignment' AND scope_id = ? AND video_id = ?",
+        )
+        .bind(assignment_id)
+        .bind(t1_video)
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+        assert_eq!(override_count, 0, "restore should clear the override");
+        assert!(
+            db::effective_video_visible(&db.pool, t1_video, assignment_id)
+                .await
+                .unwrap(),
+            "video should be visible again after restore"
+        );
+
+        // promote: the T3 video is now a T1 technique video, id preserved.
+        let promoted = sqlx::query!(
+            r#"SELECT parent_kind AS "parent_kind!: String",
+                      technique_id AS "technique_id?: i64",
+                      student_syllabus_technique_id AS "sst_id?: i64"
+               FROM videos WHERE id = ?"#,
+            t3_video,
+        )
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+        assert_eq!(promoted.parent_kind, "technique");
+        assert_eq!(promoted.technique_id, Some(armbar_id));
+        assert_eq!(promoted.sst_id, None);
+    }
+
+    #[rocket::async_test]
     async fn add_technique_to_assignment_unhides_existing() {
         let (_client, db, _, _, coach_id, assignment_id, sst_id) = seed_active_assignment().await;
         let armbar_id = db.technique_id("Armbar").unwrap();

@@ -1099,6 +1099,7 @@ import {
   deleteComment,
   type GhostActionEntry,
   type MissingActionEntry,
+  type VideoActionEntry,
   type SyllabusAssignmentDiff,
   type SstRow,
   type StudentSyllabusDetailResponse,
@@ -1322,10 +1323,12 @@ export function useApplyAssignmentDiff() {
       syllabusId: number;
       ghost_actions: GhostActionEntry[];
       missing_actions: MissingActionEntry[];
+      video_actions?: VideoActionEntry[];
     }) =>
       applyAssignmentDiffApi(vars.studentId, vars.syllabusId, {
         ghost_actions: vars.ghost_actions,
         missing_actions: vars.missing_actions,
+        video_actions: vars.video_actions,
       }),
     onMutate: async (vars) => {
       const sstKey = qk.studentSyllabusTechniques(
@@ -1369,11 +1372,17 @@ export function useApplyAssignmentDiff() {
             .filter((m) => m.action !== "ignore")
             .map((m) => m.technique_id),
         );
+        const videoIds = new Set(
+          (vars.video_actions ?? [])
+            .filter((v) => v.action !== "ignore")
+            .map((v) => v.video_id),
+        );
         qc.setQueryData<SyllabusAssignmentDiff>(diffKey, {
           ghosts: prevDiff.ghosts.filter((g) => !ghostSstIds.has(g.sst_id)),
           missing: prevDiff.missing.filter(
             (m) => !missingTechIds.has(m.technique_id),
           ),
+          videos: prevDiff.videos.filter((v) => !videoIds.has(v.video_id)),
         });
       }
       return { prevSst, prevDiff, sstKey, diffKey };

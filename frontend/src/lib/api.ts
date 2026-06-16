@@ -1527,9 +1527,20 @@ export interface DiffMissing {
   sst_id: number | null;
 }
 
+export type DiffVideoKind = "hidden_for_student" | "student_only";
+
+export interface DiffVideo {
+  technique_id: number;
+  technique_name: string;
+  video_id: number;
+  video_title: string;
+  kind: DiffVideoKind;
+}
+
 export interface SyllabusAssignmentDiff {
   ghosts: DiffGhost[];
   missing: DiffMissing[];
+  videos: DiffVideo[];
 }
 
 export type GhostActionKind =
@@ -1538,6 +1549,11 @@ export type GhostActionKind =
   | "ignore";
 
 export type MissingActionKind = "add_to_student" | "ignore";
+
+export type VideoActionKind =
+  | "restore"
+  | "promote_to_global"
+  | "ignore";
 
 export interface GhostActionEntry {
   sst_id: number;
@@ -1548,6 +1564,11 @@ export interface GhostActionEntry {
 export interface MissingActionEntry {
   technique_id: number;
   action: MissingActionKind;
+}
+
+export interface VideoActionEntry {
+  video_id: number;
+  action: VideoActionKind;
 }
 
 export async function setAssignmentGraduatedApi(
@@ -1585,6 +1606,7 @@ export async function applyAssignmentDiffApi(
   body: {
     ghost_actions: GhostActionEntry[];
     missing_actions: MissingActionEntry[];
+    video_actions?: VideoActionEntry[];
   },
 ): Promise<{ applied: number }> {
   const response = await fetch(

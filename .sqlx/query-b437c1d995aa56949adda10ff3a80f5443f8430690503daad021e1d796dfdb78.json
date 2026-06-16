@@ -1,0 +1,32 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT parent_kind AS \"parent_kind!: String\",\n                      technique_id AS \"technique_id?: i64\",\n                      student_syllabus_technique_id AS \"sst_id?: i64\"\n               FROM videos WHERE id = ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "parent_kind!: String",
+        "ordinal": 0,
+        "type_info": "Text"
+      },
+      {
+        "name": "technique_id?: i64",
+        "ordinal": 1,
+        "type_info": "Integer"
+      },
+      {
+        "name": "sst_id?: i64",
+        "ordinal": 2,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      true,
+      true
+    ]
+  },
+  "hash": "b437c1d995aa56949adda10ff3a80f5443f8430690503daad021e1d796dfdb78"
+}

@@ -1,0 +1,38 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT v.id AS \"video_id!: i64\",\n                  v.title AS \"video_title!: String\",\n                  t.id AS \"technique_id!: i64\",\n                  t.name AS \"technique_name!: String\"\n           FROM videos v\n           JOIN student_syllabus_techniques sst\n                  ON sst.id = v.student_syllabus_technique_id\n           JOIN techniques t ON t.id = sst.technique_id\n           WHERE v.parent_kind = 'student_syllabus_technique'\n             AND sst.assignment_id = ?\n             AND v.deleted_at IS NULL\n           ORDER BY t.name, v.position",
+  "describe": {
+    "columns": [
+      {
+        "name": "video_id!: i64",
+        "ordinal": 0,
+        "type_info": "Integer"
+      },
+      {
+        "name": "video_title!: String",
+        "ordinal": 1,
+        "type_info": "Text"
+      },
+      {
+        "name": "technique_id!: i64",
+        "ordinal": 2,
+        "type_info": "Integer"
+      },
+      {
+        "name": "technique_name!: String",
+        "ordinal": 3,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      true,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "88304de35906f0ebbc30ed9972c5b68b48630805fac7788e366bb0c18492a11d"
+}

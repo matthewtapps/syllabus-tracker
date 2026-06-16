@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "DELETE FROM video_visibility_overrides WHERE video_id = ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": []
+  },
+  "hash": "df9e9678516b4abf3ed7da0910a677de902d760b340f3289c04598040b77b7f3"
+}
