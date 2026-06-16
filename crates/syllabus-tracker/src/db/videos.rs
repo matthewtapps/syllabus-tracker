@@ -416,7 +416,7 @@ pub async fn list_videos_for_technique(
                 external_url, external_host, external_video_id, uploaded_by_id,
                 created_at, updated_at, hidden_at
          FROM videos
-         WHERE technique_id = ? AND deleted_at IS NULL
+         WHERE technique_id = ? AND parent_kind = 'technique' AND deleted_at IS NULL
          ORDER BY position ASC, id ASC",
         technique_id
     )
@@ -452,7 +452,8 @@ pub async fn list_videos_for_technique_in_syllabus_visible_to(
     };
 
     // Candidate videos for the technique; the resolver decides which the
-    // student actually sees in this assignment's context.
+    // student actually sees in this assignment's context. T1-only: the per-tier
+    // (T2/T3) videos are read by the dedicated per-syllabus union path.
     let candidates = sqlx::query_as!(
         DbVideo,
         "SELECT id, parent_kind, technique_id, student_id, thread_id, title, description,
@@ -461,7 +462,7 @@ pub async fn list_videos_for_technique_in_syllabus_visible_to(
                 external_url, external_host, external_video_id, uploaded_by_id,
                 created_at, updated_at, hidden_at
          FROM videos
-         WHERE technique_id = ? AND deleted_at IS NULL
+         WHERE technique_id = ? AND parent_kind = 'technique' AND deleted_at IS NULL
          ORDER BY position ASC, id ASC",
         technique_id,
     )
@@ -497,6 +498,7 @@ pub async fn list_videos_for_technique_global_visible(
                 created_at, updated_at, hidden_at
          FROM videos
          WHERE technique_id = ?
+           AND parent_kind = 'technique'
            AND deleted_at IS NULL
            AND hidden_at IS NULL
          ORDER BY position ASC, id ASC",
@@ -581,6 +583,72 @@ pub async fn video_visible_to_student(
     .fetch_optional(pool)
     .await?;
     Ok(row.map(|r| r.visible != 0).unwrap_or(false))
+}
+
+/// Playback/download guard for direct-URL access. A globally-owned video is
+/// reachable from multiple syllabi, so the student may see it if it is visible
+/// under ANY of their (non-unassigned) assignments. Library/profile/thread
+/// surfaces have their own reads; this guards the per-student video access.
+///
+/// Syllabus-owned tiers (technique / syllabus_technique / student_syllabus_technique)
+/// are resolved through [`effective_video_visible`] against each of the
+/// student's live assignments: visible under one is enough. The non-syllabus
+/// surfaces the old guard implicitly served (student_profile / thread / loose)
+/// were never per-syllabus scoped, so they fall back to the global rule
+/// (`deleted_at` IS NULL AND `hidden_at` IS NULL).
+#[instrument(skip(pool))]
+pub async fn video_visible_to_student_anywhere(
+    pool: &Pool<Sqlite>,
+    video_id: i64,
+    student_id: i64,
+) -> Result<bool, AppError> {
+    let parent_kind = sqlx::query_scalar!(
+        r#"SELECT parent_kind AS "parent_kind!: String"
+           FROM videos
+           WHERE id = ? AND deleted_at IS NULL"#,
+        video_id,
+    )
+    .fetch_optional(pool)
+    .await?;
+    let Some(parent_kind) = parent_kind else {
+        // No live row (missing or soft-deleted) -> never visible.
+        return Ok(false);
+    };
+
+    // Non-syllabus surfaces have no per-assignment scoping; follow the global
+    // rule only. (deleted_at was already excluded above.)
+    if !matches!(
+        parent_kind.as_str(),
+        "technique" | "syllabus_technique" | "student_syllabus_technique"
+    ) {
+        let visible = sqlx::query_scalar!(
+            r#"SELECT (hidden_at IS NULL) AS "visible!: bool"
+               FROM videos
+               WHERE id = ?"#,
+            video_id,
+        )
+        .fetch_one(pool)
+        .await?;
+        return Ok(visible);
+    }
+
+    // Syllabus-owned tiers: visible if effectively visible under ANY of the
+    // student's live (non-unassigned) assignments.
+    let assignment_ids = sqlx::query_scalar!(
+        r#"SELECT id AS "id!: i64"
+           FROM syllabus_assignments
+           WHERE student_id = ? AND unassigned_at IS NULL"#,
+        student_id,
+    )
+    .fetch_all(pool)
+    .await?;
+
+    for assignment_id in assignment_ids {
+        if effective_video_visible(pool, video_id, assignment_id).await? {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
 /// Single source of truth for whether a student sees a video within a given
@@ -1062,7 +1130,7 @@ pub async fn reorder_videos(
         sqlx::query!(
             "UPDATE videos
              SET position = ?, updated_at = ?
-             WHERE id = ? AND technique_id = ? AND deleted_at IS NULL",
+             WHERE id = ? AND technique_id = ? AND parent_kind = 'technique' AND deleted_at IS NULL",
             position,
             now,
             video_id,

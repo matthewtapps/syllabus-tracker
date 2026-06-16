@@ -989,6 +989,98 @@ mod tests {
     }
 
     #[rocket::async_test]
+    async fn anywhere_guard_respects_assignment_scope_hide() {
+        use crate::db::{
+            create_processing_video, set_video_override, video_visible_to_student,
+            video_visible_to_student_anywhere, VideoParent,
+        };
+        use crate::test::test_utils::TestDbBuilder;
+
+        let db = TestDbBuilder::new()
+            .coach("coach", None)
+            .student("alice", None)
+            .technique("Armbar", "arm lock", Some("coach"))
+            .build()
+            .await
+            .unwrap();
+        let coach = db.user_id("coach").unwrap();
+        let alice = db.user_id("alice").unwrap();
+        let tech = db.technique_id("Armbar").unwrap();
+
+        // Syllabus + assignment + SST on the owning technique so the T1 video
+        // is owned-in-scope for the assignment.
+        let syllabus_id: i64 = sqlx::query_scalar!(
+            "INSERT INTO syllabi (name, created_by_id) VALUES ('Blue Belt', ?) RETURNING id AS \"id!\"",
+            coach
+        )
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+        sqlx::query!(
+            "INSERT INTO syllabus_techniques (syllabus_id, technique_id, position, added_by_id)
+             VALUES (?, ?, 0, ?)",
+            syllabus_id,
+            tech,
+            coach
+        )
+        .execute(&db.pool)
+        .await
+        .unwrap();
+        let assignment_id: i64 = sqlx::query_scalar!(
+            "INSERT INTO syllabus_assignments (student_id, syllabus_id, assigned_by_id)
+             VALUES (?, ?, ?) RETURNING id AS \"id!\"",
+            alice,
+            syllabus_id,
+            coach
+        )
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+        sqlx::query!(
+            "INSERT INTO student_syllabus_techniques (assignment_id, technique_id)
+             VALUES (?, ?)",
+            assignment_id,
+            tech
+        )
+        .execute(&db.pool)
+        .await
+        .unwrap();
+
+        let video_id =
+            create_processing_video(&db.pool, VideoParent::Technique(tech), "t1", None, coach)
+                .await
+                .unwrap();
+
+        // Visible under the only assignment -> the anywhere guard allows it.
+        assert!(
+            video_visible_to_student_anywhere(&db.pool, video_id, alice)
+                .await
+                .unwrap(),
+            "video visible under at least one assignment should be allowed"
+        );
+
+        // Hide the video at the assignment's scope (override visible=0). The
+        // OLD guard only checks student-scope + global hide, so it still
+        // allows the video; the NEW anywhere guard must refuse it.
+        set_video_override(&db.pool, "assignment", assignment_id, video_id, false, coach)
+            .await
+            .unwrap();
+
+        assert!(
+            video_visible_to_student(&db.pool, video_id, alice)
+                .await
+                .unwrap(),
+            "old guard misses assignment-scope hides (the gap we are closing)"
+        );
+        assert!(
+            !video_visible_to_student_anywhere(&db.pool, video_id, alice)
+                .await
+                .unwrap(),
+            "anywhere guard must honour an assignment-scope hide"
+        );
+    }
+
+    #[rocket::async_test]
     async fn backfill_maps_legacy_visibility_and_skips_orphans() {
         use crate::db::{create_processing_video, run_video_visibility_backfill, VideoParent};
         use crate::test::test_utils::TestDbBuilder;

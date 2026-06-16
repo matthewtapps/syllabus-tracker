@@ -545,7 +545,7 @@ pub async fn api_video_playback_url(
     // visible to them. Coaches bypass the check (library / preview flow).
     let is_coach = user.has_permission(crate::auth::Permission::ViewAllStudents);
     if !is_coach {
-        let visible = db::video_visible_to_student(pool.inner(), vid, user.id)
+        let visible = db::video_visible_to_student_anywhere(pool.inner(), vid, user.id)
             .await
             .map_err(Status::from)?;
         if !visible {
@@ -594,7 +594,7 @@ pub async fn api_video_download_url(
         .ok_or(Status::NotFound)?;
     let is_coach = user.has_permission(crate::auth::Permission::ViewAllStudents);
     if !is_coach {
-        let visible = db::video_visible_to_student(pool.inner(), vid, user.id)
+        let visible = db::video_visible_to_student_anywhere(pool.inner(), vid, user.id)
             .await
             .map_err(Status::from)?;
         if !visible {

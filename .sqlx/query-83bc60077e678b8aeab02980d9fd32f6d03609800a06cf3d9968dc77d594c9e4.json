@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT id, parent_kind, technique_id, student_id, thread_id, title, description,\n                position, kind, processing_status, processing_error, storage_key, bytes,\n                duration_seconds, width, height,\n                external_url, external_host, external_video_id, uploaded_by_id,\n                created_at, updated_at, hidden_at\n         FROM videos\n         WHERE technique_id = ? AND deleted_at IS NULL\n         ORDER BY position ASC, id ASC",
+  "query": "SELECT id, parent_kind, technique_id, student_id, thread_id, title, description,\n                position, kind, processing_status, processing_error, storage_key, bytes,\n                duration_seconds, width, height,\n                external_url, external_host, external_video_id, uploaded_by_id,\n                created_at, updated_at, hidden_at\n         FROM videos\n         WHERE technique_id = ? AND parent_kind = 'technique' AND deleted_at IS NULL\n         ORDER BY position ASC, id ASC",
   "describe": {
     "columns": [
       {
@@ -148,5 +148,5 @@
       true
     ]
   },
-  "hash": "2fbddf6a1e78d8f72f95871808c64922fd498ed36123c26c34d9b1612ff1455e"
+  "hash": "83bc60077e678b8aeab02980d9fd32f6d03609800a06cf3d9968dc77d594c9e4"
 }

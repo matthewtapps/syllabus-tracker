@@ -279,7 +279,7 @@ pub async fn library_technique_stats(
         r#"SELECT COALESCE(SUM(a.play_count), 0) AS "plays!: i64"
            FROM video_watch_aggregates a
            JOIN videos v ON v.id = a.video_id
-           WHERE v.technique_id = ? AND v.deleted_at IS NULL"#,
+           WHERE v.technique_id = ? AND v.parent_kind = 'technique' AND v.deleted_at IS NULL"#,
         technique_id
     )
     .fetch_one(pool)

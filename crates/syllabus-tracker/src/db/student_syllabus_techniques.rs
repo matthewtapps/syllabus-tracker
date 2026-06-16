@@ -77,7 +77,7 @@ pub async fn list_for_assignment(
                   sst.last_student_update_at AS "last_student_update_at?: NaiveDateTime",
                   sst.last_student_update_by_id,
                   COALESCE((SELECT COUNT(*) FROM syllabus_attempts WHERE student_syllabus_technique_id = sst.id), 0) AS "attempt_count!: i64",
-                  COALESCE((SELECT COUNT(*) FROM videos v WHERE v.technique_id = sst.technique_id AND v.deleted_at IS NULL), 0) AS "video_count!: i64",
+                  COALESCE((SELECT COUNT(*) FROM videos v WHERE v.technique_id = sst.technique_id AND v.parent_kind = 'technique' AND v.deleted_at IS NULL), 0) AS "video_count!: i64",
                   (SELECT MAX(attempted_at) FROM syllabus_attempts WHERE student_syllabus_technique_id = sst.id) AS "last_attempt_at?: NaiveDateTime"
            FROM student_syllabus_techniques sst
            JOIN techniques t ON t.id = sst.technique_id

@@ -100,6 +100,57 @@ mod tests {
     }
 
     #[rocket::async_test]
+    async fn t3_video_does_not_inflate_technique_video_count() {
+        use crate::db::{create_processing_video, VideoParent};
+
+        let (_client, db, syllabus_id, student_id, coach_id, armbar_id, _triangle_id) =
+            assign_syllabus_and_seed_techniques().await;
+        let assignment_id = db::assign(&db.pool, coach_id, student_id, syllabus_id)
+            .await
+            .unwrap();
+        let user = crate::db::get_user(&db.pool, coach_id).await.unwrap();
+
+        // The Armbar SST for this assignment.
+        let armbar_sst_id: i64 = sqlx::query_scalar!(
+            r#"SELECT id AS "id!: i64"
+               FROM student_syllabus_techniques
+               WHERE assignment_id = ? AND technique_id = ?"#,
+            assignment_id,
+            armbar_id,
+        )
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+
+        // One T1 (technique-owned) video plus one T3 (per-SST) video on the
+        // same technique. Only the T1 video should count toward video_count.
+        create_processing_video(&db.pool, VideoParent::Technique(armbar_id), "t1", None, coach_id)
+            .await
+            .unwrap();
+        create_processing_video(
+            &db.pool,
+            VideoParent::StudentSyllabusTechnique(armbar_sst_id),
+            "t3",
+            None,
+            coach_id,
+        )
+        .await
+        .unwrap();
+
+        let rows = db::list_for_assignment(&db.pool, assignment_id, &user)
+            .await
+            .unwrap();
+        let armbar = rows
+            .iter()
+            .find(|r| r.technique_id == armbar_id)
+            .expect("armbar sst present");
+        assert_eq!(
+            armbar.video_count, 1,
+            "video_count must count only T1 (technique-owned) videos, not T3 per-SST videos"
+        );
+    }
+
+    #[rocket::async_test]
     async fn cascade_add_inserts_sst_for_active_assignments() {
         // Seed an assignment first, then add a new technique with Cascade
         // and confirm the SST appears in the existing assignment.
