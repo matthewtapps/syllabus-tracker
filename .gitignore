@@ -24,3 +24,5 @@ sqlite.db-wal
 
 # Visual brainstorming companion
 .superpowers/
+
+scripts/oneoff
