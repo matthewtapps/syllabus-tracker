@@ -1,9 +1,8 @@
-use once_cell::sync::OnceCell;
 use opentelemetry::{
-    Context, KeyValue,
+    Key, KeyValue, Value,
     global::{self},
     propagation::{Extractor, TextMapCompositePropagator},
-    trace::TracerProvider as _,
+    trace::{Status as OtelStatus, TracerProvider as _},
 };
 use opentelemetry_otlp::MetricExporter;
 use opentelemetry_sdk::{
@@ -14,7 +13,10 @@ use opentelemetry_sdk::{
 };
 use opentelemetry_semantic_conventions::{
     SCHEMA_URL,
-    attribute::{HTTP_URL, HTTP_USER_AGENT, SERVICE_NAME, SERVICE_VERSION, SESSION_ID, USER_ID},
+    attribute::{
+        ERROR_TYPE, HTTP_ROUTE, SERVICE_NAME, SERVICE_VERSION, SESSION_ID, URL_PATH, URL_QUERY,
+        USER_AGENT_ORIGINAL, USER_ID,
+    },
     trace::{HTTP_REQUEST_METHOD, HTTP_RESPONSE_STATUS_CODE},
 };
 use rocket::{
@@ -24,11 +26,9 @@ use rocket::{
     request::{FromRequest, Outcome},
 };
 use std::collections::HashMap;
-use tracing::{Span, field};
+use tracing::Span;
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 use tracing_subscriber::{Registry, layer::SubscriberExt};
-
-static REQUEST_CONTEXT: OnceCell<Context> = OnceCell::new();
 
 #[derive(Clone)]
 pub struct TracingSpan<T = Span>(pub T);
@@ -41,6 +41,50 @@ impl<'r> FromRequest<'r> for TracingSpan {
         match request.local_cache(|| TracingSpan::<Option<Span>>(None)) {
             TracingSpan(Some(span)) => Outcome::Success(TracingSpan(span.to_owned())),
             TracingSpan(_) => Outcome::Error((Status::InternalServerError, ())),
+        }
+    }
+}
+
+/// Stamp a wide-event attribute onto the request's "main" span (the per-request
+/// root span cached by [`TelemetryFairing`]). This is the building block of the
+/// wide-event pattern: accumulate as much context as possible onto one span per
+/// unit of work, then query it in Honeycomb.
+///
+/// We go through the OTel attribute API (`set_attribute`) rather than tracing's
+/// `record`, because these keys are not declared as fields on Rocket's auto
+/// request span and `record` silently drops undeclared fields. No-op if the
+/// main span has not been cached yet (e.g. before the fairing's `on_request`).
+pub fn set_main_attr(
+    request: &Request<'_>,
+    key: impl Into<Key>,
+    value: impl Into<Value>,
+) {
+    let TracingSpan(span) = request.local_cache(|| TracingSpan::<Option<Span>>(None));
+    if let Some(span) = span {
+        span.set_attribute(key, value);
+    }
+}
+
+/// Request guard handing back the request's main wide-event span so handlers
+/// can layer domain attributes onto it via [`MainSpan::set`] without threading
+/// `&Request` around. Always succeeds; `set` is a no-op if the span is absent.
+pub struct MainSpan(Option<Span>);
+
+#[rocket::async_trait]
+impl<'r> FromRequest<'r> for MainSpan {
+    type Error = std::convert::Infallible;
+
+    async fn from_request(request: &'r Request<'_>) -> Outcome<Self, Self::Error> {
+        let TracingSpan(span) = request.local_cache(|| TracingSpan::<Option<Span>>(None));
+        Outcome::Success(MainSpan(span.clone()))
+    }
+}
+
+impl MainSpan {
+    /// Stamp a wide-event attribute onto the main span.
+    pub fn set(&self, key: impl Into<Key>, value: impl Into<Value>) {
+        if let Some(span) = &self.0 {
+            span.set_attribute(key, value);
         }
     }
 }
@@ -90,32 +134,65 @@ impl Fairing for TelemetryFairing {
         let user_id = request
             .cookies()
             .get("user_id")
-            .map(|cookie| cookie.value().to_string())
-            .unwrap_or_else(|| "unknown_session".to_string());
+            .map(|cookie| cookie.value().to_string());
 
         let extractor = OwnedHeaderExtractor { headers };
 
         let parent_context =
             global::get_text_map_propagator(|propagator| propagator.extract(&extractor));
 
-        let _ = REQUEST_CONTEXT.set(parent_context.clone());
-
+        // Rocket's `trace` feature opens a per-request span; this is it. We
+        // treat it as the request's single wide-event "main" span.
         let span = tracing::Span::current();
 
-        let route_path = request.uri().path().to_string();
-
-        let route_name = request.route().map(|route| route.name.clone().unwrap());
-        let span_name = format!("{} {} - {:?}", request.method(), route_path, route_name);
-
-        span.record("otel.name", field::display(span_name));
-        span.record(HTTP_REQUEST_METHOD, field::display(request.method()));
-        span.record(HTTP_URL, field::display(request.uri().path()));
-        span.record(
-            HTTP_USER_AGENT,
-            field::display(request.headers().get_one("User-Agent").unwrap_or("")),
+        // Baseline request attributes. Stamped via the OTel attribute API so
+        // they actually land on the span (see `set_main_attr`).
+        span.set_attribute("main", true);
+        span.set_attribute(HTTP_REQUEST_METHOD, request.method().as_str().to_string());
+        span.set_attribute(URL_PATH, request.uri().path().to_string());
+        if let Some(route) = request.route() {
+            // http.route is the matched, low-cardinality template (good for
+            // grouping); the concrete path lives on url.path above.
+            span.set_attribute(HTTP_ROUTE, route.uri.to_string());
+            if let Some(name) = &route.name {
+                span.set_attribute("route.handler", name.to_string());
+            }
+        }
+        span.set_attribute(
+            USER_AGENT_ORIGINAL,
+            request
+                .headers()
+                .get_one("User-Agent")
+                .unwrap_or("")
+                .to_string(),
         );
-        span.record(SESSION_ID, field::display(session_id));
-        span.record(USER_ID, field::display(user_id));
+        span.set_attribute(SESSION_ID, session_id);
+        if let Some(user_id) = user_id {
+            span.set_attribute(USER_ID, user_id);
+        }
+        if let Some(sha) = option_env!("GIT_SHA") {
+            span.set_attribute("app.build.git_sha", sha.to_string());
+        }
+
+        // Cheap, broadly-useful per-request context (the wide-event "soft
+        // context"): client IP (set by nginx X-Real-IP), referer, query
+        // string and request body size. All best-effort.
+        if let Some(ip) = request.client_ip() {
+            span.set_attribute("client.address", ip.to_string());
+        }
+        if let Some(referer) = request.headers().get_one("Referer") {
+            span.set_attribute("http.request.header.referer", referer.to_string());
+        }
+        if let Some(query) = request.uri().query() {
+            span.set_attribute(URL_QUERY, query.to_string());
+        }
+        if let Some(len) = request
+            .headers()
+            .get_one("Content-Length")
+            .and_then(|v| v.parse::<i64>().ok())
+        {
+            span.set_attribute("http.request.body.size", len);
+        }
 
         span.set_parent(parent_context);
 
@@ -128,19 +205,17 @@ impl Fairing for TelemetryFairing {
             .0
             .to_owned()
         {
-            span.record(
-                HTTP_RESPONSE_STATUS_CODE,
-                field::display(response.status().code),
-            );
+            let code = response.status().code;
+            span.set_attribute(HTTP_RESPONSE_STATUS_CODE, code as i64);
 
-            if response.status().code >= 400 {
-                let error_category = if response.status().code >= 500 {
+            if code >= 400 {
+                let error_category = if code >= 500 {
                     "server_error"
                 } else {
                     "client_error"
                 };
 
-                let error_type = match response.status().code {
+                let error_type = match code {
                     401 => "unauthorized",
                     403 => "forbidden",
                     404 => "not_found",
@@ -152,22 +227,18 @@ impl Fairing for TelemetryFairing {
                     _ => error_category,
                 };
 
-                span.record("error", field::display(true));
-                span.record("error.kind", field::display(error_type));
-                span.record("error.status_code", field::display(response.status().code));
-
-                if let Some(route) = request.route() {
-                    if let Some(name) = &route.name {
-                        span.record("route.handler", field::display(name));
-                    }
-                }
+                span.set_attribute("error", true);
+                span.set_attribute(ERROR_TYPE, error_type);
 
                 if let Some(err_msg) = request.local_cache(|| Option::<String>::None) {
-                    span.record("error.message", field::display(err_msg));
+                    span.set_attribute("error.message", err_msg.clone());
                 }
 
-                if response.status().code >= 500 {
-                    span.record("otel.status_code", field::display("ERROR"));
+                // Only 5xx flips the OTel span status to ERROR; 4xx are
+                // client faults and stay OK so error-rate alerts track real
+                // server failures.
+                if code >= 500 {
+                    span.set_status(OtelStatus::error(error_type.to_string()));
                 }
             }
         }
@@ -189,28 +260,20 @@ impl Fairing for ErrorTelemetryFairing {
         let status = response.status();
 
         if status.code >= 500 {
-            let span = request
+            if let Some(span) = request
                 .local_cache(|| TracingSpan::<Option<Span>>(None))
                 .0
-                .to_owned();
-
-            if let Some(span) = span {
-                let entered_span = span.entered();
-
-                entered_span.record(
-                    "error",
-                    tracing::field::display(format!("HTTP Error: {}", status.code)),
-                );
-                entered_span.record("error.kind", tracing::field::display("server_error"));
-                entered_span.record("http.status_code", status.code);
+                .to_owned()
+            {
+                span.set_attribute("error", true);
+                span.set_attribute(ERROR_TYPE, "server_error");
+                span.set_attribute(HTTP_RESPONSE_STATUS_CODE, status.code as i64);
 
                 if let Some(err_msg) = request.local_cache(|| Option::<String>::None) {
-                    entered_span.record("error.message", tracing::field::display(err_msg));
+                    span.set_attribute("error.message", err_msg.clone());
                 }
 
-                entered_span.record("otel.status_code", tracing::field::display("ERROR"));
-
-                drop(entered_span)
+                span.set_status(OtelStatus::error(format!("HTTP Error: {}", status.code)));
             }
         }
     }

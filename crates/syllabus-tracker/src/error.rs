@@ -1,7 +1,9 @@
 use migration_engine::migrations::MigrationError;
+use opentelemetry_semantic_conventions::attribute::ERROR_TYPE;
 use rocket::http::Status;
 use thiserror::Error;
 use tracing::{Span, error, warn};
+use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 #[derive(Error, Debug)]
 pub enum AppError {
@@ -65,10 +67,17 @@ impl AppError {
         };
 
         if is_valid_span {
-            current_span.record("error", tracing::field::display(true));
-            current_span.record("error.kind", tracing::field::display(error_kind));
-            current_span.record("error.message", tracing::field::display(&message));
-            current_span.record("otel.status_code", tracing::field::display("ERROR"));
+            // Stamp the error onto the request's main span via the OTel
+            // attribute API (tracing `record` would drop these undeclared
+            // fields). Only 5xx flips the span status to ERROR; 4xx are client
+            // faults and stay OK so error-rate queries track real failures.
+            current_span.set_attribute("error", true);
+            current_span.set_attribute(ERROR_TYPE, error_kind);
+            current_span.set_attribute("error.message", message.clone());
+            if self.status_code().code >= 500 {
+                current_span
+                    .set_status(opentelemetry::trace::Status::error(message.clone()));
+            }
         }
     }
 

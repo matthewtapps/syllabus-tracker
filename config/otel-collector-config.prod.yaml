@@ -37,7 +37,7 @@ processors:
         key: service.instance.id
         value: "${HOSTNAME}"
       - action: insert
-        key: deployment.environment
+        key: deployment.environment.name
         value: "${OTEL_ENVIRONMENT}"
   # The nginx receiver emits resourceless metrics; stamp service.name so
   # Honeycomb routes them to the right dataset (it auto-routes metrics

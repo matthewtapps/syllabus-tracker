@@ -46,6 +46,8 @@ export function initTelemetry(): void {
     spanProcessors: [new BatchSpanProcessor(exporter)],
     resource: resourceFromAttributes({
       [ATTR_SERVICE_NAME]: "syllabus-tracker-frontend",
+      "deployment.environment.name": import.meta.env.VITE_ENVIRONMENT || "unknown",
+      "app.name": import.meta.env.VITE_APP_NAME || "syllabus-tracker",
       "session.id": getOrCreateSessionId(),
     }),
   });
@@ -54,8 +56,27 @@ export function initTelemetry(): void {
     contextManager: new ZoneContextManager(),
   });
 
+  // Only propagate W3C trace context to our own backend (same-origin `/api`),
+  // so browser spans link to the backend trace. Never propagate to third
+  // parties; explicitly ignore the Honeycomb export endpoint so the exporter's
+  // own POSTs aren't traced (which would feed back on itself).
+  const apiTraceUrls = [new RegExp(`${window.location.origin}/api`)];
+  const honeycombUrls = [/api\.honeycomb\.io/];
+
   registerInstrumentations({
-    instrumentations: [getWebAutoInstrumentations()],
+    instrumentations: [
+      getWebAutoInstrumentations({
+        "@opentelemetry/instrumentation-fetch": {
+          propagateTraceHeaderCorsUrls: apiTraceUrls,
+          ignoreUrls: honeycombUrls,
+          clearTimingResources: true,
+        },
+        "@opentelemetry/instrumentation-xml-http-request": {
+          propagateTraceHeaderCorsUrls: apiTraceUrls,
+          ignoreUrls: honeycombUrls,
+        },
+      }),
+    ],
   });
 }
 
@@ -102,10 +123,19 @@ export function recordRouteChange(path: string, previousPath?: string): void {
   const currentTracer = getTracer("recordRouteChange");
   const span = currentTracer.startSpan("route_change");
 
+  // Wide event: load this client-side navigation up with cheap context so the
+  // frontend dataset is queryable by route, session, env and viewport.
   span.setAttribute("app.route", path);
   if (previousPath) {
     span.setAttribute("app.previous_route", previousPath);
   }
+  span.setAttribute("session.id", getOrCreateSessionId());
+  if (document.referrer) {
+    span.setAttribute("app.referrer", document.referrer);
+  }
+  span.setAttribute("browser.viewport.width", window.innerWidth);
+  span.setAttribute("browser.viewport.height", window.innerHeight);
+  span.setAttribute("browser.language", navigator.language);
 
   span.end();
 }

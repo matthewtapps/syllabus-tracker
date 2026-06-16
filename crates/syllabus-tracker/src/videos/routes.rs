@@ -852,7 +852,7 @@ impl<'r> rocket::request::FromRequest<'r> for SigHeader {
 /// - 401 Unauthorized: missing or invalid HMAC signature.
 /// - 404 Not Found: `video_id` not in the database.
 /// - 503 Service Unavailable: no callback secret is configured.
-#[instrument(skip(body, sig_header, secret, pool))]
+#[instrument(skip(body, sig_header, secret, pool, main))]
 #[post("/videos/<video_id>/processing-result", data = "<body>")]
 pub async fn api_processing_result(
     video_id: i64,
@@ -860,6 +860,7 @@ pub async fn api_processing_result(
     sig_header: SigHeader,
     secret: &State<CallbackSecret>,
     pool: &State<Pool<Sqlite>>,
+    main: crate::telemetry::MainSpan,
 ) -> Result<Status, Status> {
     const MAX_BODY: u64 = 64 * 1024; // 64 KiB
 
@@ -908,6 +909,18 @@ pub async fn api_processing_result(
             return Err(Status::BadRequest);
         }
     };
+
+    // Stamp the callback outcome onto the request's main wide-event span. This
+    // request is the worker -> backend leg of the trace; the worker injects
+    // `traceparent` so it already shares the upload's trace id.
+    main.set("video.id", video_id);
+    main.set(
+        "video.processing.result",
+        match &result {
+            video_job::ProcessingResult::Ready { .. } => "ready",
+            video_job::ProcessingResult::Failed { .. } => "failed",
+        },
+    );
 
     // Verify the video exists before writing.
     match db::get_db_video(pool.inner(), video_id).await {
