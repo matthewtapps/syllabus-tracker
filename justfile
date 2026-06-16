@@ -206,6 +206,14 @@ init-activity-cursors: migrate
     SQLX_OFFLINE=true DATABASE_URL=sqlite://data/sqlite.db SCHEMA_PATH=./config/schema.sql \
         cargo run -p syllabus-tracker --bin init_activity_cursors
 
+# One-shot idempotent backfill of the two legacy video-visibility tables into
+# video_visibility_overrides. MUST run BEFORE `just migrate` drops them (so it
+# deliberately does NOT depend on migrate). Safe to re-run.
+[group('db')]
+backfill-video-visibility:
+    SQLX_OFFLINE=true DATABASE_URL=sqlite://data/sqlite.db SCHEMA_PATH=./config/schema.sql \
+        cargo run -p syllabus-tracker --bin backfill_video_visibility
+
 # Wipe just the attempts table then reseed (keeps users/techniques).
 [group('db')]
 reseed-attempts:

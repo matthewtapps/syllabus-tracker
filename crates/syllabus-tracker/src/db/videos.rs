@@ -426,12 +426,11 @@ pub async fn list_videos_for_technique(
 }
 
 /// Lists videos for a technique in a specific (student, syllabus) context,
-/// filtered to what the student should actually see: globally-visible by
-/// default, then per-(student, syllabus, video) overrides from
-/// `student_syllabus_video_visibility` layered on top. Does NOT join the
-/// legacy `video_student_visibility` table -- syllabus context uses the
-/// new override table only. Library context (PR 1) uses
-/// list_videos_for_technique_global_visible and never applies overrides.
+/// filtered to what the student should actually see. Visibility is resolved
+/// through [`effective_video_visible`] against the (student, syllabus)
+/// assignment, so the full override precedence (assignment > syllabus >
+/// student scope, SST-hidden cascade, global hide) applies. If the student
+/// has no assignment for this syllabus, nothing is visible.
 #[instrument(skip(pool))]
 pub async fn list_videos_for_technique_in_syllabus_visible_to(
     pool: &Pool<Sqlite>,
@@ -439,37 +438,51 @@ pub async fn list_videos_for_technique_in_syllabus_visible_to(
     syllabus_id: i64,
     student_id: i64,
 ) -> Result<Vec<Video>, AppError> {
-    let rows = sqlx::query_as!(
-        DbVideo,
-        "SELECT v.id, v.parent_kind, v.technique_id, v.student_id, v.thread_id,
-                v.title, v.description, v.position, v.kind,
-                v.processing_status, v.processing_error, v.storage_key, v.bytes,
-                v.duration_seconds, v.width, v.height,
-                v.external_url, v.external_host, v.external_video_id, v.uploaded_by_id,
-                v.created_at, v.updated_at, v.hidden_at
-         FROM videos v
-         LEFT JOIN student_syllabus_video_visibility ssvv
-                ON ssvv.video_id = v.id
-               AND ssvv.student_id = ?
-               AND ssvv.syllabus_id = ?
-         WHERE v.technique_id = ?
-           AND v.deleted_at IS NULL
-           AND COALESCE(ssvv.visible, v.hidden_at IS NULL) = 1
-         ORDER BY v.position ASC, v.id ASC",
+    let assignment_id = sqlx::query_scalar!(
+        r#"SELECT id AS "id!: i64"
+           FROM syllabus_assignments
+           WHERE student_id = ? AND syllabus_id = ?"#,
         student_id,
         syllabus_id,
+    )
+    .fetch_optional(pool)
+    .await?;
+    let Some(assignment_id) = assignment_id else {
+        return Ok(Vec::new());
+    };
+
+    // Candidate videos for the technique; the resolver decides which the
+    // student actually sees in this assignment's context.
+    let candidates = sqlx::query_as!(
+        DbVideo,
+        "SELECT id, parent_kind, technique_id, student_id, thread_id, title, description,
+                position, kind, processing_status, processing_error, storage_key, bytes,
+                duration_seconds, width, height,
+                external_url, external_host, external_video_id, uploaded_by_id,
+                created_at, updated_at, hidden_at
+         FROM videos
+         WHERE technique_id = ? AND deleted_at IS NULL
+         ORDER BY position ASC, id ASC",
         technique_id,
     )
     .fetch_all(pool)
     .await?;
-    Ok(rows.into_iter().map(Video::from).collect())
+
+    let mut visible = Vec::with_capacity(candidates.len());
+    for row in candidates {
+        let video = Video::from(row);
+        if effective_video_visible(pool, video.id, assignment_id).await? {
+            visible.push(video);
+        }
+    }
+    Ok(visible)
 }
 
 /// Lists the globally-visible (not soft-deleted, not globally-hidden) videos
-/// for a technique. Used by the library video read for student viewers. The
-/// legacy per-student `video_student_visibility` table is intentionally NOT
-/// joined: library context is "see the technique in the abstract", and
-/// per-student overrides only apply inside a syllabus assignment.
+/// for a technique. Used by the library video read for student viewers.
+/// Per-student / per-assignment overrides are intentionally NOT applied:
+/// library context is "see the technique in the abstract", and overrides
+/// only apply inside a syllabus assignment.
 #[instrument(skip(pool))]
 pub async fn list_videos_for_technique_global_visible(
     pool: &Pool<Sqlite>,
@@ -539,41 +552,6 @@ pub async fn list_videos_for_parent_global_visible(
     Ok(rows.into_iter().map(Video::from).collect())
 }
 
-/// Lists videos for a technique, filtered to what `student_id` should
-/// actually see (effective visibility: per-student override beats global
-/// hide, soft-deleted videos always excluded).
-#[deprecated(note = "Legacy per-student visibility join. Library reads should use \
-            list_videos_for_technique_global_visible; syllabus-context \
-            reads (PR 3+) use the per-syllabus override table.")]
-#[instrument(skip(pool))]
-pub async fn list_videos_for_technique_visible_to(
-    pool: &Pool<Sqlite>,
-    technique_id: i64,
-    student_id: i64,
-) -> Result<Vec<Video>, AppError> {
-    let rows = sqlx::query_as!(
-        DbVideo,
-        "SELECT v.id, v.parent_kind, v.technique_id, v.student_id, v.thread_id,
-                v.title, v.description, v.position, v.kind,
-                v.processing_status, v.processing_error, v.storage_key, v.bytes,
-                v.duration_seconds, v.width, v.height,
-                v.external_url, v.external_host, v.external_video_id, v.uploaded_by_id,
-                v.created_at, v.updated_at, v.hidden_at
-         FROM videos v
-         LEFT JOIN video_student_visibility vsv
-                ON vsv.video_id = v.id AND vsv.student_id = ?
-         WHERE v.technique_id = ?
-           AND v.deleted_at IS NULL
-           AND COALESCE(vsv.visible, v.hidden_at IS NULL) = 1
-         ORDER BY v.position ASC, v.id ASC",
-        student_id,
-        technique_id,
-    )
-    .fetch_all(pool)
-    .await?;
-    Ok(rows.into_iter().map(Video::from).collect())
-}
-
 /// Returns the effective visibility for a single (video, student) pair.
 /// Used by playback / download guards to refuse access if the student
 /// shouldn't be able to see the video. Coaches bypass this check.
@@ -587,13 +565,15 @@ pub async fn video_visible_to_student(
         "SELECT
             CASE
                 WHEN v.deleted_at IS NOT NULL THEN 0
-                WHEN vsv.visible IS NOT NULL THEN vsv.visible
+                WHEN ov.visible IS NOT NULL THEN ov.visible
                 WHEN v.hidden_at IS NULL THEN 1
                 ELSE 0
             END AS \"visible!: i64\"
          FROM videos v
-         LEFT JOIN video_student_visibility vsv
-                ON vsv.video_id = v.id AND vsv.student_id = ?
+         LEFT JOIN video_visibility_overrides ov
+                ON ov.video_id = v.id
+               AND ov.scope_kind = 'student'
+               AND ov.scope_id = ?
          WHERE v.id = ?",
         student_id,
         video_id,
@@ -630,7 +610,6 @@ pub async fn video_visible_to_student(
 ///     `technique_id` and the `assignment_id` it belongs to.
 /// The cascade SST is then the `student_syllabus_techniques` row for
 /// (assignment_id, resolved owning technique_id).
-#[allow(dead_code)]
 #[instrument(skip(pool))]
 pub async fn effective_video_visible(
     pool: &Pool<Sqlite>,
@@ -709,11 +688,129 @@ pub async fn effective_video_visible(
     Ok(row.map(|r| r.visible != 0).unwrap_or(false))
 }
 
+/// Number of rows moved by [`run_video_visibility_backfill`], for logging.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct VideoVisibilityBackfillCounts {
+    /// Rows copied from `student_syllabus_video_visibility` that had a
+    /// matching assignment row.
+    pub assignment_inserted: u64,
+    /// `student_syllabus_video_visibility` rows skipped because no
+    /// `syllabus_assignments` row exists for their (student, syllabus).
+    pub assignment_orphaned: u64,
+    /// Rows copied from `video_student_visibility`.
+    pub student_inserted: u64,
+}
+
+/// Whether a base table exists in the connected SQLite database. Used by the
+/// backfill to no-op against a DB whose legacy tables are already dropped.
+async fn table_exists(pool: &Pool<Sqlite>, name: &str) -> Result<bool, AppError> {
+    let found: Option<i64> = sqlx::query_scalar(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
+    )
+    .bind(name)
+    .fetch_optional(pool)
+    .await?;
+    Ok(found.is_some())
+}
+
+/// One-shot idempotent backfill of the two legacy visibility tables into the
+/// unified `video_visibility_overrides` table. Run once before the legacy
+/// tables are dropped (see `bin/backfill_video_visibility.rs`).
+///
+/// Uses runtime queries (not the `query!` macros) on purpose: the legacy
+/// tables are removed from `config/schema.sql` in this same change, so the
+/// compile-time macro could no longer verify a read against them. The
+/// backfill must still be able to read them at runtime on a not-yet-migrated
+/// database.
+///
+/// Mapping (per the V3b decisions):
+///   - `student_syllabus_video_visibility(student,syllabus,video)` ->
+///     `('assignment', syllabus_assignments.id, video, visible)`. Rows with
+///     NO matching assignment row are orphaned and skipped (counted).
+///   - `video_student_visibility(student,video)` ->
+///     `('student', student_id, video, visible)` (no fan-out).
+///
+/// Idempotent via `INSERT OR IGNORE` against the override PK
+/// `(scope_kind, scope_id, video_id)`.
+pub async fn run_video_visibility_backfill(
+    pool: &Pool<Sqlite>,
+) -> Result<VideoVisibilityBackfillCounts, AppError> {
+    // Both legacy tables are dropped by the migration that ships with this
+    // change. If they are already gone (the migration ran first, or a fresh DB
+    // never had them) the backfill is a no-op.
+    let has_ssvv = table_exists(pool, "student_syllabus_video_visibility").await?;
+    let has_vsv = table_exists(pool, "video_student_visibility").await?;
+
+    let mut tx = pool.begin().await?;
+
+    let (assignment_inserted, assignment_orphaned) = if has_ssvv {
+        // assignment scope: only rows that have a matching assignment.
+        let assignment_res = sqlx::query(
+            "INSERT OR IGNORE INTO video_visibility_overrides
+                (scope_kind, scope_id, video_id, visible, set_by_id, set_at)
+             SELECT 'assignment', sa.id, ssvv.video_id, ssvv.visible,
+                    ssvv.updated_by_id, ssvv.updated_at
+             FROM student_syllabus_video_visibility ssvv
+             JOIN syllabus_assignments sa
+                  ON sa.student_id = ssvv.student_id
+                 AND sa.syllabus_id = ssvv.syllabus_id",
+        )
+        .execute(&mut *tx)
+        .await?;
+
+        // Count orphans (ssvv rows with no matching assignment) for the log.
+        let orphaned: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*)
+             FROM student_syllabus_video_visibility ssvv
+             WHERE NOT EXISTS (
+                 SELECT 1 FROM syllabus_assignments sa
+                 WHERE sa.student_id = ssvv.student_id
+                   AND sa.syllabus_id = ssvv.syllabus_id
+             )",
+        )
+        .fetch_one(&mut *tx)
+        .await?;
+        (assignment_res.rows_affected(), orphaned as u64)
+    } else {
+        (0, 0)
+    };
+
+    let student_inserted = if has_vsv {
+        // student scope: straight copy, no fan-out.
+        let student_res = sqlx::query(
+            "INSERT OR IGNORE INTO video_visibility_overrides
+                (scope_kind, scope_id, video_id, visible, set_by_id, set_at)
+             SELECT 'student', vsv.student_id, vsv.video_id, vsv.visible,
+                    vsv.set_by_id, vsv.set_at
+             FROM video_student_visibility vsv",
+        )
+        .execute(&mut *tx)
+        .await?;
+        student_res.rows_affected()
+    } else {
+        0
+    };
+
+    tx.commit().await?;
+
+    let counts = VideoVisibilityBackfillCounts {
+        assignment_inserted,
+        assignment_orphaned,
+        student_inserted,
+    };
+    info!(
+        assignment_inserted = counts.assignment_inserted,
+        assignment_orphaned = counts.assignment_orphaned,
+        student_inserted = counts.student_inserted,
+        "Backfilled legacy video visibility into video_visibility_overrides",
+    );
+    Ok(counts)
+}
+
 /// Upserts an explicit visibility override for a video at the given scope
 /// (`student` / `syllabus` / `assignment`). `visible = true` forces the video
 /// shown, `false` forces it hidden, within that scope. Absence of a row =
 /// inherit (see [`effective_video_visible`]).
-#[allow(dead_code)]
 #[instrument(skip(pool))]
 pub async fn set_video_override(
     pool: &Pool<Sqlite>,
@@ -744,7 +841,6 @@ pub async fn set_video_override(
 
 /// Removes an explicit override at the given scope, reverting that scope to
 /// inherited visibility. No-op if no row exists.
-#[allow(dead_code)]
 #[instrument(skip(pool))]
 pub async fn clear_video_override(
     pool: &Pool<Sqlite>,
@@ -874,36 +970,9 @@ pub async fn set_video_student_visibility(
     visible: Option<bool>,
     actor_id: i64,
 ) -> Result<(), AppError> {
-    let now = Utc::now().naive_utc();
     match visible {
-        Some(b) => {
-            sqlx::query!(
-                "INSERT INTO video_student_visibility
-                    (video_id, student_id, visible, set_by_id, set_at)
-                 VALUES (?, ?, ?, ?, ?)
-                 ON CONFLICT (video_id, student_id) DO UPDATE
-                    SET visible = excluded.visible,
-                        set_by_id = excluded.set_by_id,
-                        set_at = excluded.set_at",
-                video_id,
-                student_id,
-                b,
-                actor_id,
-                now,
-            )
-            .execute(pool)
-            .await?;
-        }
-        None => {
-            sqlx::query!(
-                "DELETE FROM video_student_visibility
-                 WHERE video_id = ? AND student_id = ?",
-                video_id,
-                student_id,
-            )
-            .execute(pool)
-            .await?;
-        }
+        Some(b) => set_video_override(pool, "student", student_id, video_id, b, actor_id).await?,
+        None => clear_video_override(pool, "student", student_id, video_id).await?,
     }
     Ok(())
 }
@@ -928,8 +997,8 @@ pub async fn list_video_student_overrides(
         .collect::<Vec<_>>()
         .join(",");
     let sql = format!(
-        "SELECT video_id, visible FROM video_student_visibility
-         WHERE student_id = ? AND video_id IN ({placeholders})"
+        "SELECT video_id, visible FROM video_visibility_overrides
+         WHERE scope_kind = 'student' AND scope_id = ? AND video_id IN ({placeholders})"
     );
     let rows: Vec<(i64, bool)> = sqlx::query_as(&sql)
         .bind(student_id)
@@ -1110,40 +1179,25 @@ pub async fn set_video_syllabus_visibility(
     visible: Option<bool>,
     by_user_id: i64,
 ) -> Result<(), AppError> {
-    let now = chrono::Utc::now().naive_utc();
-    let mut tx = pool.begin().await?;
+    // Resolve the assignment row for this (student, syllabus); the per-syllabus
+    // override now lives at 'assignment' scope in video_visibility_overrides.
+    let assignment_id = sqlx::query_scalar!(
+        r#"SELECT id AS "id!: i64"
+           FROM syllabus_assignments
+           WHERE student_id = ? AND syllabus_id = ?"#,
+        student_id,
+        syllabus_id,
+    )
+    .fetch_optional(pool)
+    .await?
+    .ok_or_else(|| AppError::NotFound("no assignment for (student, syllabus)".into()))?;
+
     match visible {
-        Some(b) => {
-            sqlx::query!(
-                "INSERT INTO student_syllabus_video_visibility
-                    (student_id, syllabus_id, video_id, visible, updated_by_id, updated_at)
-                 VALUES (?, ?, ?, ?, ?, ?)
-                 ON CONFLICT (student_id, syllabus_id, video_id) DO UPDATE
-                    SET visible = excluded.visible,
-                        updated_by_id = excluded.updated_by_id,
-                        updated_at = excluded.updated_at",
-                student_id,
-                syllabus_id,
-                video_id,
-                b,
-                by_user_id,
-                now,
-            )
-            .execute(&mut *tx)
-            .await?;
-        }
-        None => {
-            sqlx::query!(
-                "DELETE FROM student_syllabus_video_visibility
-                 WHERE student_id = ? AND syllabus_id = ? AND video_id = ?",
-                student_id,
-                syllabus_id,
-                video_id,
-            )
-            .execute(&mut *tx)
-            .await?;
-        }
+        Some(b) => set_video_override(pool, "assignment", assignment_id, video_id, b, by_user_id).await?,
+        None => clear_video_override(pool, "assignment", assignment_id, video_id).await?,
     }
+
+    let mut tx = pool.begin().await?;
     emit(
         &mut tx,
         NewActivity::new(Verb::VideoVisibilitySet, by_user_id)
@@ -1174,15 +1228,28 @@ pub async fn list_video_syllabus_overrides(
     if video_ids.is_empty() {
         return Ok(HashMap::new());
     }
+    // The per-syllabus override now lives at 'assignment' scope in
+    // video_visibility_overrides. Resolve the assignment for this
+    // (student, syllabus); if none, there are no overrides to report.
+    let assignment_id = sqlx::query_scalar!(
+        r#"SELECT id AS "id!: i64"
+           FROM syllabus_assignments
+           WHERE student_id = ? AND syllabus_id = ?"#,
+        student_id,
+        syllabus_id,
+    )
+    .fetch_optional(pool)
+    .await?;
+    let Some(assignment_id) = assignment_id else {
+        return Ok(HashMap::new());
+    };
     // Build an IN-list via query_builder so we keep the dynamic-length
     // shape that SQLx's compile-time macro doesn't handle.
     let mut qb = sqlx::QueryBuilder::<sqlx::Sqlite>::new(
-        "SELECT video_id, visible FROM student_syllabus_video_visibility \
-         WHERE student_id = ",
+        "SELECT video_id, visible FROM video_visibility_overrides \
+         WHERE scope_kind = 'assignment' AND scope_id = ",
     );
-    qb.push_bind(student_id);
-    qb.push(" AND syllabus_id = ");
-    qb.push_bind(syllabus_id);
+    qb.push_bind(assignment_id);
     qb.push(" AND video_id IN (");
     let mut sep = qb.separated(", ");
     for id in video_ids {

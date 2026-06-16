@@ -989,6 +989,173 @@ mod tests {
     }
 
     #[rocket::async_test]
+    async fn backfill_maps_legacy_visibility_and_skips_orphans() {
+        use crate::db::{create_processing_video, run_video_visibility_backfill, VideoParent};
+        use crate::test::test_utils::TestDbBuilder;
+
+        let db = TestDbBuilder::new()
+            .coach("coach", None)
+            .student("alice", None)
+            .technique("Armbar", "arm lock", Some("coach"))
+            .build()
+            .await
+            .unwrap();
+        let coach = db.user_id("coach").unwrap();
+        let alice = db.user_id("alice").unwrap();
+        let tech = db.technique_id("Armbar").unwrap();
+
+        // The legacy tables are dropped from schema.sql in this change, so the
+        // test DB does not have them. Re-create them locally so the backfill
+        // has something to read (mirrors a not-yet-migrated production DB).
+        sqlx::query(
+            "CREATE TABLE student_syllabus_video_visibility (
+                student_id INTEGER NOT NULL,
+                syllabus_id INTEGER NOT NULL,
+                video_id INTEGER NOT NULL,
+                visible BOOLEAN NOT NULL,
+                created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_by_id INTEGER,
+                PRIMARY KEY (student_id, syllabus_id, video_id)
+            )",
+        )
+        .execute(&db.pool)
+        .await
+        .unwrap();
+        sqlx::query(
+            "CREATE TABLE video_student_visibility (
+                video_id INTEGER NOT NULL,
+                student_id INTEGER NOT NULL,
+                visible BOOLEAN NOT NULL,
+                set_by_id INTEGER,
+                set_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (video_id, student_id)
+            )",
+        )
+        .execute(&db.pool)
+        .await
+        .unwrap();
+
+        // Syllabus + an assignment for alice (so her ssvv row maps).
+        let syllabus_id: i64 = sqlx::query_scalar!(
+            "INSERT INTO syllabi (name, created_by_id) VALUES ('Blue Belt', ?) RETURNING id AS \"id!\"",
+            coach
+        )
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+        let assignment_id: i64 = sqlx::query_scalar!(
+            "INSERT INTO syllabus_assignments (student_id, syllabus_id, assigned_by_id)
+             VALUES (?, ?, ?) RETURNING id AS \"id!\"",
+            alice,
+            syllabus_id,
+            coach
+        )
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+
+        let video_id =
+            create_processing_video(&db.pool, VideoParent::Technique(tech), "t1", None, coach)
+                .await
+                .unwrap();
+
+        // ssvv row for (alice, blue belt) -> maps to assignment scope.
+        sqlx::query(
+            "INSERT INTO student_syllabus_video_visibility
+                (student_id, syllabus_id, video_id, visible, updated_by_id)
+             VALUES (?, ?, ?, 0, ?)",
+        )
+        .bind(alice)
+        .bind(syllabus_id)
+        .bind(video_id)
+        .bind(coach)
+        .execute(&db.pool)
+        .await
+        .unwrap();
+
+        // Orphan ssvv row for a syllabus alice is NOT assigned to -> skipped.
+        let other_syllabus: i64 = sqlx::query_scalar!(
+            "INSERT INTO syllabi (name, created_by_id) VALUES ('Purple Belt', ?) RETURNING id AS \"id!\"",
+            coach
+        )
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO student_syllabus_video_visibility
+                (student_id, syllabus_id, video_id, visible, updated_by_id)
+             VALUES (?, ?, ?, 1, ?)",
+        )
+        .bind(alice)
+        .bind(other_syllabus)
+        .bind(video_id)
+        .bind(coach)
+        .execute(&db.pool)
+        .await
+        .unwrap();
+
+        // vsv row -> maps to student scope.
+        sqlx::query(
+            "INSERT INTO video_student_visibility
+                (video_id, student_id, visible, set_by_id)
+             VALUES (?, ?, 0, ?)",
+        )
+        .bind(video_id)
+        .bind(alice)
+        .bind(coach)
+        .execute(&db.pool)
+        .await
+        .unwrap();
+
+        let counts = run_video_visibility_backfill(&db.pool).await.unwrap();
+        assert_eq!(counts.assignment_inserted, 1, "one mapped ssvv row");
+        assert_eq!(counts.assignment_orphaned, 1, "one orphan ssvv row skipped");
+        assert_eq!(counts.student_inserted, 1, "one vsv row");
+
+        // assignment-scope override exists with the mapped scope_id + visible.
+        let row = sqlx::query!(
+            r#"SELECT scope_id AS "scope_id!: i64", visible AS "visible!: bool"
+               FROM video_visibility_overrides
+               WHERE scope_kind = 'assignment' AND video_id = ?"#,
+            video_id
+        )
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+        assert_eq!(row.scope_id, assignment_id);
+        assert!(!row.visible, "ssvv visible=0 preserved");
+
+        // student-scope override exists with scope_id = student_id.
+        let srow = sqlx::query!(
+            r#"SELECT scope_id AS "scope_id!: i64", visible AS "visible!: bool"
+               FROM video_visibility_overrides
+               WHERE scope_kind = 'student' AND video_id = ?"#,
+            video_id
+        )
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+        assert_eq!(srow.scope_id, alice);
+        assert!(!srow.visible);
+
+        // The orphan produced no assignment-scope row beyond the mapped one.
+        let assignment_rows: i64 = sqlx::query_scalar!(
+            r#"SELECT COUNT(*) AS "c!: i64" FROM video_visibility_overrides
+               WHERE scope_kind = 'assignment'"#
+        )
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+        assert_eq!(assignment_rows, 1, "orphan must not create an assignment row");
+
+        // Re-running is idempotent (no new rows, no error).
+        let again = run_video_visibility_backfill(&db.pool).await.unwrap();
+        assert_eq!(again.assignment_inserted, 0);
+        assert_eq!(again.student_inserted, 0);
+    }
+
+    #[rocket::async_test]
     async fn create_video_rejects_missing_parent() {
         use crate::db::{create_processing_video, VideoParent};
         use crate::test::test_utils::TestDbBuilder;
