@@ -802,6 +802,193 @@ mod tests {
     }
 
     #[rocket::async_test]
+    async fn effective_video_visible_precedence() {
+        use crate::db::{
+            clear_video_override, create_processing_video, effective_video_visible,
+            set_video_override, VideoParent,
+        };
+        use crate::test::test_utils::TestDbBuilder;
+
+        let db = TestDbBuilder::new()
+            .coach("coach", None)
+            .student("alice", None)
+            .technique("Armbar", "arm lock", Some("coach"))
+            .build()
+            .await
+            .unwrap();
+        let coach = db.user_id("coach").unwrap();
+        let alice = db.user_id("alice").unwrap();
+        let tech = db.technique_id("Armbar").unwrap();
+
+        // Seed a syllabus + assignment (= a (student, syllabus) pair) + SST row
+        // on the owning technique, so the T1 video is owned-in-scope for it.
+        let syllabus_id: i64 = sqlx::query_scalar!(
+            "INSERT INTO syllabi (name, created_by_id) VALUES ('Blue Belt', ?) RETURNING id AS \"id!\"",
+            coach
+        )
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+        sqlx::query!(
+            "INSERT INTO syllabus_techniques (syllabus_id, technique_id, position, added_by_id)
+             VALUES (?, ?, 0, ?)",
+            syllabus_id,
+            tech,
+            coach
+        )
+        .execute(&db.pool)
+        .await
+        .unwrap();
+        let assignment_id: i64 = sqlx::query_scalar!(
+            "INSERT INTO syllabus_assignments (student_id, syllabus_id, assigned_by_id)
+             VALUES (?, ?, ?) RETURNING id AS \"id!\"",
+            alice,
+            syllabus_id,
+            coach
+        )
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+        let sst_id: i64 = sqlx::query_scalar!(
+            "INSERT INTO student_syllabus_techniques (assignment_id, technique_id)
+             VALUES (?, ?) RETURNING id AS \"id!\"",
+            assignment_id,
+            tech
+        )
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+
+        // A technique-owned (T1) video on the owning technique.
+        let video_id =
+            create_processing_video(&db.pool, VideoParent::Technique(tech), "t1", None, coach)
+                .await
+                .unwrap();
+
+        // Rung: no overrides, not globally hidden, technique present & not
+        // SST-hidden -> visible.
+        assert!(
+            effective_video_visible(&db.pool, video_id, assignment_id)
+                .await
+                .unwrap(),
+            "baseline owned-in-scope video should be visible"
+        );
+
+        // Rung: global hide, no overrides -> hidden.
+        sqlx::query!("UPDATE videos SET hidden_at = CURRENT_TIMESTAMP WHERE id = ?", video_id)
+            .execute(&db.pool)
+            .await
+            .unwrap();
+        assert!(
+            !effective_video_visible(&db.pool, video_id, assignment_id)
+                .await
+                .unwrap(),
+            "globally hidden video with no overrides should be hidden"
+        );
+
+        // Rung: global hide + assignment-scope override visible=1 -> visible
+        // (explicit beats global).
+        set_video_override(&db.pool, "assignment", assignment_id, video_id, true, coach)
+            .await
+            .unwrap();
+        assert!(
+            effective_video_visible(&db.pool, video_id, assignment_id)
+                .await
+                .unwrap(),
+            "assignment override visible=1 should beat global hide"
+        );
+
+        // Rung: assignment override visible=0 -> hidden, even if syllabus
+        // override says visible=1.
+        set_video_override(&db.pool, "syllabus", syllabus_id, video_id, true, coach)
+            .await
+            .unwrap();
+        set_video_override(&db.pool, "assignment", assignment_id, video_id, false, coach)
+            .await
+            .unwrap();
+        assert!(
+            !effective_video_visible(&db.pool, video_id, assignment_id)
+                .await
+                .unwrap(),
+            "assignment override visible=0 should beat syllabus override visible=1"
+        );
+
+        // Rung: syllabus override visible=0, no assignment override -> hidden.
+        clear_video_override(&db.pool, "assignment", assignment_id, video_id)
+            .await
+            .unwrap();
+        set_video_override(&db.pool, "syllabus", syllabus_id, video_id, false, coach)
+            .await
+            .unwrap();
+        assert!(
+            !effective_video_visible(&db.pool, video_id, assignment_id)
+                .await
+                .unwrap(),
+            "syllabus override visible=0 with no assignment override should hide"
+        );
+
+        // Rung: student override visible=0, no syllabus/assignment override ->
+        // hidden.
+        clear_video_override(&db.pool, "syllabus", syllabus_id, video_id)
+            .await
+            .unwrap();
+        set_video_override(&db.pool, "student", alice, video_id, false, coach)
+            .await
+            .unwrap();
+        assert!(
+            !effective_video_visible(&db.pool, video_id, assignment_id)
+                .await
+                .unwrap(),
+            "student override visible=0 with no higher override should hide"
+        );
+
+        // Rung: owning technique's SST hidden_at set -> hidden (cascade),
+        // regardless of overrides showing the video.
+        clear_video_override(&db.pool, "student", alice, video_id)
+            .await
+            .unwrap();
+        sqlx::query!("UPDATE videos SET hidden_at = NULL WHERE id = ?", video_id)
+            .execute(&db.pool)
+            .await
+            .unwrap();
+        set_video_override(&db.pool, "assignment", assignment_id, video_id, true, coach)
+            .await
+            .unwrap();
+        sqlx::query!(
+            "UPDATE student_syllabus_techniques SET hidden_at = CURRENT_TIMESTAMP WHERE id = ?",
+            sst_id
+        )
+        .execute(&db.pool)
+        .await
+        .unwrap();
+        assert!(
+            !effective_video_visible(&db.pool, video_id, assignment_id)
+                .await
+                .unwrap(),
+            "SST hidden_at should cascade-hide the video even with an override showing it"
+        );
+
+        // Rung: soft-deleted video -> hidden, regardless of everything.
+        sqlx::query!(
+            "UPDATE student_syllabus_techniques SET hidden_at = NULL WHERE id = ?",
+            sst_id
+        )
+        .execute(&db.pool)
+        .await
+        .unwrap();
+        sqlx::query!("UPDATE videos SET deleted_at = CURRENT_TIMESTAMP WHERE id = ?", video_id)
+            .execute(&db.pool)
+            .await
+            .unwrap();
+        assert!(
+            !effective_video_visible(&db.pool, video_id, assignment_id)
+                .await
+                .unwrap(),
+            "soft-deleted video should never be visible"
+        );
+    }
+
+    #[rocket::async_test]
     async fn create_video_rejects_missing_parent() {
         use crate::db::{create_processing_video, VideoParent};
         use crate::test::test_utils::TestDbBuilder;

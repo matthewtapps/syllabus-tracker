@@ -603,6 +603,167 @@ pub async fn video_visible_to_student(
     Ok(row.map(|r| r.visible != 0).unwrap_or(false))
 }
 
+/// Single source of truth for whether a student sees a video within a given
+/// assignment (an assignment row = a (student_id, syllabus_id) pair).
+///
+/// Precedence, highest first:
+///   1. soft-deleted (`videos.deleted_at`)          -> never visible
+///   2. owning-technique SST hidden (`student_syllabus_techniques.hidden_at`
+///      for this assignment + the video's owning technique) -> hidden
+///   3. assignment-scope override (`scope_kind='assignment'`, scope_id=assignment_id)
+///   4. syllabus-scope override   (`scope_kind='syllabus'`,   scope_id=assignment's syllabus_id)
+///   5. student-scope override    (`scope_kind='student'`,    scope_id=assignment's student_id)
+///   6. owned-in-scope ? global `videos.hidden_at` : absent (not a candidate -> hidden)
+///
+/// "Owned-in-scope" means the video's parent tier resolves into this
+/// assignment: T1 (technique) is owned by any assignment whose SST ladder
+/// reaches the technique; T2 (syllabus_technique) only if that membership row
+/// belongs to this assignment's syllabus; T3 (student_syllabus_technique) only
+/// if that SST belongs to this assignment.
+///
+/// Resolving the owning technique across tiers (for the SST-hidden cascade and
+/// the owned-in-scope test) is done with COALESCE over three LEFT JOINs:
+///   - T1: `videos.technique_id` directly.
+///   - T2: `syllabus_techniques.technique_id` via `videos.syllabus_technique_id`,
+///     also yielding that membership's `syllabus_id` for the owned-in-scope test.
+///   - T3: the video's `student_syllabus_technique_id`, whose row gives both the
+///     `technique_id` and the `assignment_id` it belongs to.
+/// The cascade SST is then the `student_syllabus_techniques` row for
+/// (assignment_id, resolved owning technique_id).
+#[allow(dead_code)]
+#[instrument(skip(pool))]
+pub async fn effective_video_visible(
+    pool: &Pool<Sqlite>,
+    video_id: i64,
+    assignment_id: i64,
+) -> Result<bool, AppError> {
+    let row = sqlx::query!(
+        r#"
+        SELECT
+            CASE
+                -- 1. Soft delete trumps everything.
+                WHEN v.deleted_at IS NOT NULL THEN 0
+                -- Owned-in-scope gate: the video's parent tier must resolve into
+                -- this assignment. T1 -> the technique is on the ladder (resolved
+                -- technique_id is non-null); T2 -> the membership's syllabus equals
+                -- this assignment's syllabus; T3 -> the parent SST is this
+                -- assignment's SST. If not owned in scope, it's not a candidate.
+                WHEN owning_technique_id IS NULL THEN 0
+                WHEN v.parent_kind = 'syllabus_technique' AND st.syllabus_id IS NOT sa.syllabus_id THEN 0
+                WHEN v.parent_kind = 'student_syllabus_technique' AND parent_sst.assignment_id IS NOT sa.id THEN 0
+                -- 2. Owning-technique SST hidden for this assignment cascades a hide.
+                WHEN cascade_sst.hidden_at IS NOT NULL THEN 0
+                -- 3. Assignment-scope override (explicit show/hide).
+                WHEN ov_assignment.visible IS NOT NULL THEN ov_assignment.visible
+                -- 4. Syllabus-scope override.
+                WHEN ov_syllabus.visible IS NOT NULL THEN ov_syllabus.visible
+                -- 5. Student-scope override.
+                WHEN ov_student.visible IS NOT NULL THEN ov_student.visible
+                -- 6. No override: follow the global hide flag.
+                WHEN v.hidden_at IS NULL THEN 1
+                ELSE 0
+            END AS "visible!: i64"
+        FROM videos v
+        -- The assignment under which we're resolving (gives student_id + syllabus_id).
+        JOIN syllabus_assignments sa ON sa.id = ?2
+        -- T2: the membership row, for its technique_id + syllabus_id.
+        LEFT JOIN syllabus_techniques st
+               ON st.id = v.syllabus_technique_id
+        -- T3: the parent SST, for its technique_id + assignment_id.
+        LEFT JOIN student_syllabus_techniques parent_sst
+               ON parent_sst.id = v.student_syllabus_technique_id
+        -- Resolve the owning technique across the three owning tiers.
+        , (SELECT
+              COALESCE(
+                  (SELECT technique_id FROM videos WHERE id = ?1 AND parent_kind = 'technique'),
+                  (SELECT technique_id FROM syllabus_techniques
+                    WHERE id = (SELECT syllabus_technique_id FROM videos WHERE id = ?1)),
+                  (SELECT technique_id FROM student_syllabus_techniques
+                    WHERE id = (SELECT student_syllabus_technique_id FROM videos WHERE id = ?1))
+              ) AS owning_technique_id
+          ) owner
+        -- 2. The cascade SST = this assignment's row for the owning technique.
+        LEFT JOIN student_syllabus_techniques cascade_sst
+               ON cascade_sst.assignment_id = sa.id
+              AND cascade_sst.technique_id = owner.owning_technique_id
+        -- 3/4/5. The three override scopes.
+        LEFT JOIN video_visibility_overrides ov_assignment
+               ON ov_assignment.video_id = v.id
+              AND ov_assignment.scope_kind = 'assignment'
+              AND ov_assignment.scope_id = sa.id
+        LEFT JOIN video_visibility_overrides ov_syllabus
+               ON ov_syllabus.video_id = v.id
+              AND ov_syllabus.scope_kind = 'syllabus'
+              AND ov_syllabus.scope_id = sa.syllabus_id
+        LEFT JOIN video_visibility_overrides ov_student
+               ON ov_student.video_id = v.id
+              AND ov_student.scope_kind = 'student'
+              AND ov_student.scope_id = sa.student_id
+        WHERE v.id = ?1
+        "#,
+        video_id,
+        assignment_id,
+    )
+    .fetch_optional(pool)
+    .await?;
+    Ok(row.map(|r| r.visible != 0).unwrap_or(false))
+}
+
+/// Upserts an explicit visibility override for a video at the given scope
+/// (`student` / `syllabus` / `assignment`). `visible = true` forces the video
+/// shown, `false` forces it hidden, within that scope. Absence of a row =
+/// inherit (see [`effective_video_visible`]).
+#[allow(dead_code)]
+#[instrument(skip(pool))]
+pub async fn set_video_override(
+    pool: &Pool<Sqlite>,
+    scope_kind: &str,
+    scope_id: i64,
+    video_id: i64,
+    visible: bool,
+    by_id: i64,
+) -> Result<(), AppError> {
+    sqlx::query!(
+        "INSERT INTO video_visibility_overrides
+            (scope_kind, scope_id, video_id, visible, set_by_id, set_at)
+         VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+         ON CONFLICT (scope_kind, scope_id, video_id)
+         DO UPDATE SET visible = excluded.visible,
+                       set_by_id = excluded.set_by_id,
+                       set_at = CURRENT_TIMESTAMP",
+        scope_kind,
+        scope_id,
+        video_id,
+        visible,
+        by_id,
+    )
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+/// Removes an explicit override at the given scope, reverting that scope to
+/// inherited visibility. No-op if no row exists.
+#[allow(dead_code)]
+#[instrument(skip(pool))]
+pub async fn clear_video_override(
+    pool: &Pool<Sqlite>,
+    scope_kind: &str,
+    scope_id: i64,
+    video_id: i64,
+) -> Result<(), AppError> {
+    sqlx::query!(
+        "DELETE FROM video_visibility_overrides
+         WHERE scope_kind = ? AND scope_id = ? AND video_id = ?",
+        scope_kind,
+        scope_id,
+        video_id,
+    )
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
 /// Marks rows stuck in `processing` for longer than `older_than_secs` seconds
 /// as `failed`. Called periodically on the remote-processor path to time
 /// out jobs that never delivered a callback.
