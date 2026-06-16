@@ -371,9 +371,18 @@ jobs:
           BROWSER=$(tofu output -raw _platform_honeycomb_browser_ingest)
           echo "::add-mask::$BACKEND"
           echo "::add-mask::$BROWSER"
+          # Video processing secrets (remote transcode endpoint). Shipped in
+          # the same sops bundle as the honeycomb keys; consumed by the app
+          # only when VIDEO_PROCESSOR=remote (set in config/prod.env).
+          VIDEO_ENQ_TOKEN=$(tofu output -raw _platform_video_enqueue_token)
+          VIDEO_CB_SECRET=$(tofu output -raw _platform_video_callback_secret)
+          echo "::add-mask::$VIDEO_ENQ_TOKEN"
+          echo "::add-mask::$VIDEO_CB_SECRET"
           install -m 0600 /dev/stdin /tmp/_sb_hc.env <<EOF
           HONEYCOMB_API_KEY=$BACKEND
           VITE_HONEYCOMB_API_KEY=$BROWSER
+          VIDEO_ENQUEUE_TOKEN=$VIDEO_ENQ_TOKEN
+          VIDEO_CALLBACK_SECRET=$VIDEO_CB_SECRET
           EOF
           sops --config /dev/null -e --age "$HOST_AGE_RECIPIENT" \
             --input-type=dotenv --output-type=dotenv /tmp/_sb_hc.env > /tmp/sillybus-honeycomb.enc.env
