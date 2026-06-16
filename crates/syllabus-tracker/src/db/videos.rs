@@ -431,6 +431,10 @@ pub async fn list_videos_for_technique(
 /// assignment, so the full override precedence (assignment > syllabus >
 /// student scope, SST-hidden cascade, global hide) applies. If the student
 /// has no assignment for this syllabus, nothing is visible.
+///
+/// Candidates are unioned across all three owning tiers: the technique's T1
+/// videos, this syllabus's T2 (`syllabus_technique`) videos for the technique,
+/// and this assignment's T3 (`student_syllabus_technique`) videos for it.
 #[instrument(skip(pool))]
 pub async fn list_videos_for_technique_in_syllabus_visible_to(
     pool: &Pool<Sqlite>,
@@ -451,9 +455,19 @@ pub async fn list_videos_for_technique_in_syllabus_visible_to(
         return Ok(Vec::new());
     };
 
-    // Candidate videos for the technique; the resolver decides which the
-    // student actually sees in this assignment's context. T1-only: the per-tier
-    // (T2/T3) videos are read by the dedicated per-syllabus union path.
+    // Candidate videos for the technique across all three owning tiers; the
+    // resolver decides which the student actually sees in this assignment's
+    // context. The owned-in-scope gate inside `effective_video_visible` already
+    // excludes T2 rows from other syllabi and T3 rows from other assignments,
+    // but we narrow the candidate set up front (this syllabus's membership row,
+    // this assignment's SST) so the read stays cheap.
+    //   - T1: parent_kind='technique' AND technique_id = :technique_id
+    //   - T2: parent_kind='syllabus_technique' AND syllabus_technique_id IN
+    //         (this syllabus's membership rows for this technique)
+    //   - T3: parent_kind='student_syllabus_technique' AND
+    //         student_syllabus_technique_id IN (this assignment's SST rows for
+    //         this technique)
+    // Ordered T1, T2, T3 (tier first), then position, id within each tier.
     let candidates = sqlx::query_as!(
         DbVideo,
         "SELECT id, parent_kind, technique_id, student_id, thread_id, title, description,
@@ -462,9 +476,29 @@ pub async fn list_videos_for_technique_in_syllabus_visible_to(
                 external_url, external_host, external_video_id, uploaded_by_id,
                 created_at, updated_at, hidden_at
          FROM videos
-         WHERE technique_id = ? AND parent_kind = 'technique' AND deleted_at IS NULL
-         ORDER BY position ASC, id ASC",
+         WHERE deleted_at IS NULL
+           AND (
+                 (parent_kind = 'technique' AND technique_id = ?1)
+              OR (parent_kind = 'syllabus_technique'
+                  AND syllabus_technique_id IN (
+                        SELECT id FROM syllabus_techniques
+                        WHERE syllabus_id = ?2 AND technique_id = ?1))
+              OR (parent_kind = 'student_syllabus_technique'
+                  AND student_syllabus_technique_id IN (
+                        SELECT id FROM student_syllabus_techniques
+                        WHERE assignment_id = ?3 AND technique_id = ?1))
+               )
+         ORDER BY
+            CASE parent_kind
+                WHEN 'technique' THEN 0
+                WHEN 'syllabus_technique' THEN 1
+                ELSE 2
+            END ASC,
+            position ASC,
+            id ASC",
         technique_id,
+        syllabus_id,
+        assignment_id,
     )
     .fetch_all(pool)
     .await?;
