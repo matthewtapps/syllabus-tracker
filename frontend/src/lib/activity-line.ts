@@ -14,6 +14,7 @@
 
 import { rowToViewContext, viewContextHref } from "./view-context";
 import { refToken } from "./entity-ref";
+import { STATUS_LABELS } from "./status";
 
 /** Canonical ActivityRow type. Exported so api.ts and callers can import it
  *  rather than re-declaring an identical shape. */
@@ -24,6 +25,7 @@ export interface ActivityRow {
   actor_user_id: number;
   actor_name: string | null;
   target_student_id: number | null;
+  target_student_name: string | null;
   technique_id: number | null;
   technique_name: string | null;
   syllabus_id: number | null;
@@ -46,7 +48,14 @@ export interface ActivityLine {
    *  to {technique}"). Rendered on its own line by the feed. */
   detail?: string;
   href?: string;
+  /** When true, the feed should not render the syllabus surface chip (the
+   *  syllabus is already named inline). */
+  suppressSurface?: boolean;
 }
+
+export type ActivityScope =
+  | { kind: "gym" }
+  | { kind: "student"; studentId: number };
 
 // Payload shapes mirror the Rust payload constructors in db/activity.rs.
 interface SstStatusChangedPayload {
@@ -84,6 +93,11 @@ function syllabusHref(row: ActivityRow): string | undefined {
   return row.syllabus_id != null ? `/syllabi/${row.syllabus_id}` : undefined;
 }
 
+function studentSyllabusHref(row: ActivityRow): string | undefined {
+  if (row.target_student_id == null || row.syllabus_id == null) return undefined;
+  return `/student/${row.target_student_id}/syllabi/${row.syllabus_id}`;
+}
+
 /** Library deep-link for a video that is not tied to a watch context (added /
  *  visibility changed). Mirrors the pre-existing behavior in the new token form. */
 function libraryVideoHref(row: ActivityRow): string | undefined {
@@ -99,11 +113,20 @@ function libraryVideoHref(row: ActivityRow): string | undefined {
  * deep-link href). Never throws; falls back to plain copy when payload is
  * missing or malformed.
  */
-export function activityLine(row: ActivityRow): ActivityLine {
+export function activityLine(row: ActivityRow, scope: ActivityScope = { kind: "gym" }): ActivityLine {
   const tech = row.technique_name ?? undefined;
   const syll = row.syllabus_name ?? undefined;
   const vid = row.video_title ?? undefined;
   const deep = contextHref(row);
+
+  const isCoachAction =
+    row.target_student_id != null && row.target_student_id !== row.actor_user_id;
+  const surfaceImplicit =
+    scope.kind === "student" && scope.studentId === row.target_student_id;
+  const studentName =
+    isCoachAction && row.target_student_name && !surfaceImplicit
+      ? row.target_student_name
+      : undefined;
 
   switch (row.verb) {
     // --- attempt verbs ---
@@ -142,8 +165,12 @@ export function activityLine(row: ActivityRow): ActivityLine {
     // --- sst status ---
     case "sst_status_changed": {
       const payload = parsePayload<SstStatusChangedPayload>(row.payload_json);
-      if (payload?.to && tech) {
-        return { verb: `went ${payload.to} on`, subject: tech, href: deep };
+      const label = payload?.to ? STATUS_LABELS[payload.to] : undefined;
+      if (label && tech) {
+        if (studentName && syll) {
+          return { verb: `set ${tech} to ${label} on`, subject: `${studentName}'s ${syll}`, href: deep, suppressSurface: true };
+        }
+        return { verb: `set ${tech} to ${label}`, href: deep };
       }
       return tech
         ? { verb: "updated status on", subject: tech, href: deep }
@@ -179,10 +206,13 @@ export function activityLine(row: ActivityRow): ActivityLine {
       return syll
         ? { verb: "unassigned from", subject: syll, href: syllabusHref(row) }
         : { verb: "unassigned from a syllabus" };
-    case "syllabus_graduated":
+    case "syllabus_graduated": {
+      const href = studentSyllabusHref(row) ?? syllabusHref(row);
+      if (studentName && syll) return { verb: "graduated", subject: `${studentName}'s ${syll}`, href };
       return syll
-        ? { verb: "graduated", subject: syll, href: syllabusHref(row) }
+        ? { verb: "graduated", subject: syll, href }
         : { verb: "graduated a syllabus" };
+    }
 
     // --- sst curation verbs ---
     case "sst_added":

@@ -22,6 +22,7 @@ function buildActivityRow(overrides: Partial<ActivityRow> = {}): ActivityRow {
     actor_user_id: 42,
     actor_name: "Alice",
     target_student_id: 42,
+    target_student_name: null,
     technique_id: 101,
     technique_name: "Armbar",
     syllabus_id: null,
@@ -143,7 +144,7 @@ describe("StudentProfilePage / recent activity", () => {
     await waitFor(() => {
       expect(screen.getByText(/logged an attempt on Armbar/i)).toBeInTheDocument();
     });
-    expect(screen.getByText(/went green on Kimura/i)).toBeInTheDocument();
+    expect(screen.getByText(/set Kimura to Done/i)).toBeInTheDocument();
   });
 
   test("shows empty state when feed is empty", async () => {

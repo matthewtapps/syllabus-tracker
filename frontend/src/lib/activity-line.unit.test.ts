@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import { activityLine } from "./activity-line";
-import type { ActivityLine, ActivityRow } from "./activity-line";
+import type { ActivityLine, ActivityRow, ActivityScope } from "./activity-line";
 
 function lineText(line: ActivityLine): string {
   return line.subject ? `${line.verb} ${line.subject}` : line.verb;
@@ -14,6 +14,7 @@ function row(overrides: Partial<ActivityRow>): ActivityRow {
     actor_user_id: 2,
     actor_name: "Coach Matt",
     target_student_id: 3,
+    target_student_name: null,
     technique_id: null,
     technique_name: null,
     syllabus_id: null,
@@ -104,30 +105,35 @@ describe("activityLine", () => {
   });
 
   // --- sst_status_changed ---
-  test("sst_status_changed to green renders 'went green on {technique}'", () => {
+  test("sst_status_changed to green renders 'set {technique} to Done'", () => {
     const result = activityLine(
       row({
         verb: "sst_status_changed",
         technique_id: 5,
         technique_name: "Kimura",
         sst_id: 10,
+        // actor === target so isCoachAction is false, plain student self-action
+        actor_user_id: 3,
+        target_student_id: 3,
         payload_json: JSON.stringify({ from: "amber", to: "green" }),
       }),
     );
-    expect(lineText(result)).toBe("went green on Kimura");
+    expect(lineText(result)).toBe("set Kimura to Done");
   });
 
-  test("sst_status_changed to amber renders 'went amber on {technique}'", () => {
+  test("sst_status_changed to amber renders 'set {technique} to Doing'", () => {
     const result = activityLine(
       row({
         verb: "sst_status_changed",
         technique_id: 5,
         technique_name: "Triangle",
         sst_id: 10,
+        actor_user_id: 3,
+        target_student_id: 3,
         payload_json: JSON.stringify({ from: "red", to: "amber" }),
       }),
     );
-    expect(lineText(result)).toBe("went amber on Triangle");
+    expect(lineText(result)).toBe("set Triangle to Doing");
   });
 
   test("sst_status_changed with malformed payload falls back gracefully", () => {
@@ -142,6 +148,105 @@ describe("activityLine", () => {
     );
     expect(lineText(result)).toBe("updated status on Kimura");
     expect(() => activityLine(row({ verb: "sst_status_changed", payload_json: "bad" }))).not.toThrow();
+  });
+
+  // --- scope-aware: coach graduation ---
+  test("syllabus_graduated by coach on gym scope names the student possessively", () => {
+    const result = activityLine(
+      row({
+        verb: "syllabus_graduated",
+        actor_user_id: 10,
+        target_student_id: 7,
+        target_student_name: "Dan Bennet",
+        syllabus_id: 3,
+        syllabus_name: "Blue Belt Syllabus",
+      }),
+      // default gym scope
+    );
+    expect(lineText(result)).toBe("graduated Dan Bennet's Blue Belt Syllabus");
+    expect(result.href).toBe("/student/7/syllabi/3");
+  });
+
+  test("syllabus_graduated by coach on student scope drops the possessive", () => {
+    const scope: ActivityScope = { kind: "student", studentId: 7 };
+    const result = activityLine(
+      row({
+        verb: "syllabus_graduated",
+        actor_user_id: 10,
+        target_student_id: 7,
+        target_student_name: "Dan Bennet",
+        syllabus_id: 3,
+        syllabus_name: "Blue Belt Syllabus",
+      }),
+      scope,
+    );
+    expect(lineText(result)).toBe("graduated Blue Belt Syllabus");
+    expect(result.href).toBe("/student/7/syllabi/3");
+  });
+
+  // --- scope-aware: coach status change ---
+  test("sst_status_changed by coach on gym scope names student possessively and sets suppressSurface", () => {
+    const result = activityLine(
+      row({
+        verb: "sst_status_changed",
+        actor_user_id: 10,
+        target_student_id: 7,
+        target_student_name: "Charlotte",
+        technique_id: 5,
+        technique_name: "Armbar",
+        syllabus_id: 3,
+        syllabus_name: "Blue Belt Syllabus",
+        sst_id: 42,
+        payload_json: JSON.stringify({ from: "red", to: "amber" }),
+      }),
+      // default gym scope
+    );
+    expect(result.verb).toBe("set Armbar to Doing on");
+    expect(result.subject).toBe("Charlotte's Blue Belt Syllabus");
+    expect(result.suppressSurface).toBe(true);
+  });
+
+  test("sst_status_changed by coach on student scope drops the possessive and suppressSurface is falsy", () => {
+    const scope: ActivityScope = { kind: "student", studentId: 7 };
+    const result = activityLine(
+      row({
+        verb: "sst_status_changed",
+        actor_user_id: 10,
+        target_student_id: 7,
+        target_student_name: "Charlotte",
+        technique_id: 5,
+        technique_name: "Armbar",
+        syllabus_id: 3,
+        syllabus_name: "Blue Belt Syllabus",
+        sst_id: 42,
+        payload_json: JSON.stringify({ from: "red", to: "amber" }),
+      }),
+      scope,
+    );
+    expect(lineText(result)).toBe("set Armbar to Doing");
+    expect(result.suppressSurface).toBeFalsy();
+  });
+
+  test("sst_status_changed where actor equals target is treated as self-action regardless of scope", () => {
+    const gymScope: ActivityScope = { kind: "gym" };
+    const result = activityLine(
+      row({
+        verb: "sst_status_changed",
+        actor_user_id: 7,
+        target_student_id: 7,
+        target_student_name: "Charlotte",
+        technique_id: 5,
+        technique_name: "Armbar",
+        syllabus_id: 3,
+        syllabus_name: "Blue Belt Syllabus",
+        sst_id: 42,
+        payload_json: JSON.stringify({ from: "red", to: "amber" }),
+      }),
+      gymScope,
+    );
+    // actor === target so isCoachAction is false; no possessive even on gym scope
+    expect(lineText(result)).toBe("set Armbar to Doing");
+    expect(result.suppressSurface).toBeFalsy();
   });
 
   // --- technique_edited ---

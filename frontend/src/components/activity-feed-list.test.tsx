@@ -20,6 +20,7 @@ function row(overrides: Partial<ActivityRow> = {}): ActivityRow {
     actor_user_id: 2,
     actor_name: "Alex Rivera",
     target_student_id: 4,
+    target_student_name: null,
     technique_id: 5,
     technique_name: "Knee Cut Pass",
     syllabus_id: 2,

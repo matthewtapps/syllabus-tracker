@@ -5,7 +5,7 @@ import type { ActivityRow } from "./activity-line";
 function row(p: Partial<ActivityRow>): ActivityRow {
   return {
     id: 0, occurred_at: "2026-06-11T00:00:00Z", verb: "attempt_logged",
-    actor_user_id: 1, actor_name: "Alex", target_student_id: 1,
+    actor_user_id: 1, actor_name: "Alex", target_student_id: 1, target_student_name: null,
     technique_id: 1, technique_name: "Armbar", syllabus_id: null, syllabus_name: null,
     sst_id: null, video_id: null, video_title: null, payload_json: null, unread: false,
     context_kind: null, thread_id: null,

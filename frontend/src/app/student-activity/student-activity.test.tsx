@@ -21,6 +21,7 @@ function buildActivityRow(overrides: Partial<ActivityRow> = {}): ActivityRow {
     actor_user_id: 4,
     actor_name: "Jordan Smith",
     target_student_id: 4,
+    target_student_name: null,
     technique_id: 5,
     technique_name: "Armbar",
     syllabus_id: 2,
