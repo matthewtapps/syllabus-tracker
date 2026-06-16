@@ -269,6 +269,12 @@ fn build_command(
     cmd.env("SOURCE_KEY",   &job.source_key);
     cmd.env("CALLBACK_URL", &job.callback_url);
 
+    // Forward the distributed-trace context so the child video-worker continues
+    // the same trace (and echoes it back on the result callback).
+    if let Some(tp) = &job.traceparent {
+        cmd.env("TRACEPARENT", tp);
+    }
+
     // Pass-through vars from the server's own env
     for (name, val) in pass_through {
         if let Some(v) = val {
