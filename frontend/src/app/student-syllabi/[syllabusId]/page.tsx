@@ -3,6 +3,7 @@ import { Navigate, useNavigate, useParams } from 'react-router-dom';
 import { useTechniqueListNav } from '@/components/technique-row/use-technique-list-nav';
 import { TechniqueFilters } from '@/components/technique-row/technique-filters';
 import {
+  EllipsisVertical,
   GitCompare,
   GraduationCap,
   NotebookPen,
@@ -33,6 +34,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { EmptyState } from '@/components/empty-state';
 import { TechniqueRow } from '@/components/technique-row';
 import { partitionSsts, sortSsts, type SstSort } from './sst-view';
@@ -250,37 +258,44 @@ function Detail({
           )}
         </p>
         {!isOwnView && (
-          <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
-            <Button
-              variant="outline"
-              size="icon"
-              aria-label="Sync with current syllabus"
-              onClick={() => setDiffOpen(true)}
-            >
-              <GitCompare className="h-4 w-4" aria-hidden />
-            </Button>
-            <Button
-              variant="outline"
-              size="icon"
-              aria-label={
-                assignment.graduated_at
-                  ? 'Ungraduate this syllabus'
-                  : 'Graduate this syllabus'
-              }
-              onClick={() => setGraduateOpen(true)}
-              className={cn(assignment.graduated_at && 'text-status-green')}
-            >
-              <GraduationCap className="h-4 w-4" aria-hidden />
-            </Button>
-            <Button
-              variant="outline"
-              size="icon"
-              aria-label="Unassign syllabus"
-              onClick={() => setUnassignOpen(true)}
-              className="text-destructive"
-            >
-              <Trash2 className="h-4 w-4" aria-hidden />
-            </Button>
+          <div className="pt-0.5">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  aria-label="Syllabus actions"
+                >
+                  <EllipsisVertical className="h-4 w-4" aria-hidden />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="w-56">
+                <DropdownMenuItem onSelect={() => setDiffOpen(true)}>
+                  <GitCompare className="mr-2 h-4 w-4" aria-hidden />
+                  Sync with current syllabus
+                </DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => setGraduateOpen(true)}>
+                  <GraduationCap
+                    className={cn(
+                      'mr-2 h-4 w-4',
+                      assignment.graduated_at && 'text-status-green',
+                    )}
+                    aria-hidden
+                  />
+                  {assignment.graduated_at
+                    ? 'Ungraduate syllabus'
+                    : 'Graduate syllabus'}
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  onSelect={() => setUnassignOpen(true)}
+                  className="text-destructive focus:text-destructive"
+                >
+                  <Trash2 className="mr-2 h-4 w-4" aria-hidden />
+                  Unassign syllabus
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         )}
       </div>

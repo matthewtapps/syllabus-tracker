@@ -29,7 +29,7 @@ export function AppBreadcrumbs() {
   if (chain.length <= 1) return null;
 
   return (
-    <nav className="container mx-auto px-4 pt-4 sm:px-6">
+    <nav className="container mx-auto hidden px-4 pt-4 sm:block sm:px-6">
     <Breadcrumb>
       <BreadcrumbList>
         {chain.map((crumb, idx) => {
