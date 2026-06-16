@@ -361,7 +361,8 @@ pub async fn get_unassigned_techniques(
         FROM techniques t
         LEFT JOIN technique_tags tt ON t.id = tt.technique_id
         LEFT JOIN tags tag ON tt.tag_id = tag.id
-        WHERE t.id NOT IN (
+        WHERE t.is_global = 1
+          AND t.id NOT IN (
             SELECT technique_id FROM student_techniques
             WHERE student_id = ?
         )

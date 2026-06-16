@@ -53,6 +53,7 @@ pub async fn list_library_techniques(
             COALESCE((SELECT COUNT(*) FROM videos v WHERE v.technique_id = t.id AND v.deleted_at IS NULL), 0) AS "video_count!: i64",
             (SELECT MAX(st.updated_at) FROM student_techniques st WHERE st.technique_id = t.id) AS "last_activity_at?: NaiveDateTime"
         FROM techniques t
+        WHERE t.is_global = 1
         ORDER BY t.name
         "#
     )

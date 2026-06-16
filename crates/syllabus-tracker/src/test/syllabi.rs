@@ -383,6 +383,40 @@ mod tests {
     }
 
     #[rocket::async_test]
+    async fn library_excludes_student_only_techniques() {
+        let test_db = create_standard_test_db().await;
+        sqlx::query!("INSERT INTO techniques (name, description) VALUES ('Global Move', '')")
+            .execute(&test_db.pool)
+            .await
+            .unwrap();
+        sqlx::query!(
+            "INSERT INTO techniques (name, description, is_global) VALUES ('Private Move', '', 0)"
+        )
+        .execute(&test_db.pool)
+        .await
+        .unwrap();
+        let rows = db::list_library_techniques(&test_db.pool).await.unwrap();
+        let names: Vec<&str> = rows.iter().map(|r| r.name.as_str()).collect();
+        assert!(names.contains(&"Global Move"));
+        assert!(!names.contains(&"Private Move"));
+    }
+
+    #[rocket::async_test]
+    async fn list_for_assignment_exposes_is_global() {
+        let (_client, db, syllabus_id, student_id, coach_id, _, _) =
+            assign_syllabus_and_seed_techniques().await;
+        let assignment_id = db::assign(&db.pool, coach_id, student_id, syllabus_id)
+            .await
+            .unwrap();
+        let user = crate::db::get_user(&db.pool, coach_id).await.unwrap();
+        let rows = db::list_for_assignment(&db.pool, assignment_id, &user)
+            .await
+            .unwrap();
+        // The seeded techniques default to is_global = 1.
+        assert!(rows[0].is_global);
+    }
+
+    #[rocket::async_test]
     async fn syllabus_attempt_rejects_future_timestamp() {
         let (client, db, syllabus_id, student_id, coach_id, armbar_id, _) =
             assign_syllabus_and_seed_techniques().await;

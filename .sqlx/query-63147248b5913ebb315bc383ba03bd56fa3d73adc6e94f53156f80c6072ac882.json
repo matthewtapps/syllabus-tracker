@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO techniques (name, description, is_global) VALUES ('Private Move', '', 0)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": []
+  },
+  "hash": "63147248b5913ebb315bc383ba03bd56fa3d73adc6e94f53156f80c6072ac882"
+}
