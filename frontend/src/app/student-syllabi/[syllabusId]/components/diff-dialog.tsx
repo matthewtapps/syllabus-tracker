@@ -18,7 +18,11 @@ import {
 } from '@/components/ui/select';
 import { useAssignmentDiff } from '@/lib/queries';
 import { useApplyAssignmentDiff } from '@/lib/mutations';
-import type { GhostActionKind, MissingActionKind } from '@/lib/api';
+import type {
+  GhostActionKind,
+  MissingActionKind,
+  VideoActionKind,
+} from '@/lib/api';
 
 interface DiffDialogProps {
   open: boolean;
@@ -46,6 +50,9 @@ export function DiffDialog({
   const [missingActions, setMissingActions] = useState<
     Map<number, MissingActionKind>
   >(new Map());
+  const [videoActions, setVideoActions] = useState<
+    Map<number, VideoActionKind>
+  >(new Map());
 
   const diff = diffQuery.data;
   const stagedCount = useMemo(() => {
@@ -56,8 +63,11 @@ export function DiffDialog({
     missingActions.forEach((v) => {
       if (v !== 'ignore') n += 1;
     });
+    videoActions.forEach((v) => {
+      if (v !== 'ignore') n += 1;
+    });
     return n;
-  }, [ghostActions, missingActions]);
+  }, [ghostActions, missingActions, videoActions]);
 
   function setGhost(sstId: number, action: GhostActionKind) {
     setGhostActions((prev) => {
@@ -70,6 +80,13 @@ export function DiffDialog({
     setMissingActions((prev) => {
       const next = new Map(prev);
       next.set(techniqueId, action);
+      return next;
+    });
+  }
+  function setVideo(videoId: number, action: VideoActionKind) {
+    setVideoActions((prev) => {
+      const next = new Map(prev);
+      next.set(videoId, action);
       return next;
     });
   }
@@ -89,12 +106,19 @@ export function DiffDialog({
         action: missingActions.get(m.technique_id) ?? ('ignore' as const),
       }))
       .filter((m) => m.action !== 'ignore');
+    const videos = diff.videos
+      .map((v) => ({
+        video_id: v.video_id,
+        action: videoActions.get(v.video_id) ?? ('ignore' as const),
+      }))
+      .filter((v) => v.action !== 'ignore');
     try {
       const { applied } = await applyMutation.mutateAsync({
         studentId,
         syllabusId,
         ghost_actions: ghosts,
         missing_actions: missing,
+        video_actions: videos,
       });
       toast.success(
         applied === 1
@@ -103,6 +127,7 @@ export function DiffDialog({
       );
       setGhostActions(new Map());
       setMissingActions(new Map());
+      setVideoActions(new Map());
       onOpenChange(false);
     } catch {
       toast.error('Failed to apply changes');
@@ -124,7 +149,10 @@ export function DiffDialog({
 
         {diffQuery.isLoading ? (
           <p className="text-sm text-muted-foreground">Loading...</p>
-        ) : !diff || (diff.ghosts.length === 0 && diff.missing.length === 0) ? (
+        ) : !diff ||
+          (diff.ghosts.length === 0 &&
+            diff.missing.length === 0 &&
+            diff.videos.length === 0) ? (
           <p className="text-sm text-muted-foreground">
             Up to date. The student's syllabus matches the current syllabus.
           </p>
@@ -202,6 +230,60 @@ export function DiffDialog({
                           <SelectItem value="add_to_student">
                             Add to this student
                           </SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            )}
+            {diff.videos.length > 0 && (
+              <section className="space-y-2">
+                <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                  Videos ({diff.videos.length})
+                </h3>
+                <p className="text-xs text-muted-foreground">
+                  These videos differ between this student's syllabus and the
+                  library.
+                </p>
+                <ul className="divide-y divide-border rounded-md border border-border">
+                  {diff.videos.map((v) => (
+                    <li
+                      key={v.video_id}
+                      className="flex items-center justify-between gap-2 px-3 py-2"
+                    >
+                      <span className="min-w-0 truncate text-sm">
+                        {v.video_title}
+                        <span className="block truncate text-xs text-muted-foreground">
+                          {v.technique_name} ·{' '}
+                          {v.kind === 'hidden_for_student'
+                            ? 'Hidden for this student'
+                            : "Only on this student's syllabus"}
+                        </span>
+                      </span>
+                      <Select
+                        value={videoActions.get(v.video_id) ?? 'ignore'}
+                        onValueChange={(val) =>
+                          setVideo(v.video_id, val as VideoActionKind)
+                        }
+                      >
+                        <SelectTrigger size="sm" className="w-44">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {v.kind === 'hidden_for_student' ? (
+                            <>
+                              <SelectItem value="ignore">Leave alone</SelectItem>
+                              <SelectItem value="restore">Restore</SelectItem>
+                            </>
+                          ) : (
+                            <>
+                              <SelectItem value="ignore">Leave alone</SelectItem>
+                              <SelectItem value="promote_to_global">
+                                Add to library
+                              </SelectItem>
+                            </>
+                          )}
                         </SelectContent>
                       </Select>
                     </li>
