@@ -76,6 +76,7 @@ function ActivityHub({
           inlineAvatar
           detailed
           emptyText="No activity yet."
+          scope={{ kind: "student", studentId }}
         />
       </div>
     </div>

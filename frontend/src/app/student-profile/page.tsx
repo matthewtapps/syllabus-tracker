@@ -203,6 +203,7 @@ function ProfileHub({
             showAvatar={false}
             inlineAvatar
             emptyText="No activity recorded yet."
+            scope={{ kind: "student", studentId }}
           />
         </div>
       </section>
