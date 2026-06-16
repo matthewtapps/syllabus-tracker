@@ -126,11 +126,14 @@ CREATE TABLE IF NOT EXISTS videos (
     -- DEFAULT 'technique' so the declarative table-rebuild backfills existing
     -- rows (which all have technique_id set) into the technique branch.
     parent_kind TEXT NOT NULL DEFAULT 'technique' CHECK (parent_kind IN (
-        'technique', 'student_profile', 'thread', 'loose'
+        'technique', 'student_profile', 'thread', 'loose',
+        'syllabus_technique', 'student_syllabus_technique'
     )),
     technique_id INTEGER REFERENCES techniques (id) ON DELETE CASCADE,
     student_id INTEGER REFERENCES users (id) ON DELETE CASCADE,
     thread_id INTEGER REFERENCES threads (id) ON DELETE CASCADE,
+    syllabus_technique_id INTEGER REFERENCES syllabus_techniques (id) ON DELETE CASCADE,
+    student_syllabus_technique_id INTEGER REFERENCES student_syllabus_techniques (id) ON DELETE CASCADE,
     title TEXT NOT NULL,
     description TEXT,
     position INTEGER NOT NULL DEFAULT 0,
@@ -159,10 +162,12 @@ CREATE TABLE IF NOT EXISTS videos (
     -- way). Coaches still see the video, badged "Hidden".
     hidden_at TIMESTAMP,
     CHECK (
-      (parent_kind = 'technique'       AND technique_id IS NOT NULL AND student_id IS NULL     AND thread_id IS NULL) OR
-      (parent_kind = 'student_profile' AND student_id IS NOT NULL    AND technique_id IS NULL   AND thread_id IS NULL) OR
-      (parent_kind = 'thread'          AND thread_id IS NOT NULL      AND technique_id IS NULL   AND student_id IS NULL) OR
-      (parent_kind = 'loose'           AND technique_id IS NULL       AND student_id IS NULL     AND thread_id IS NULL)
+      (parent_kind = 'technique'                  AND technique_id IS NOT NULL                  AND student_id IS NULL AND thread_id IS NULL AND syllabus_technique_id IS NULL         AND student_syllabus_technique_id IS NULL) OR
+      (parent_kind = 'student_profile'            AND student_id IS NOT NULL                    AND technique_id IS NULL AND thread_id IS NULL AND syllabus_technique_id IS NULL       AND student_syllabus_technique_id IS NULL) OR
+      (parent_kind = 'thread'                     AND thread_id IS NOT NULL                     AND technique_id IS NULL AND student_id IS NULL AND syllabus_technique_id IS NULL      AND student_syllabus_technique_id IS NULL) OR
+      (parent_kind = 'syllabus_technique'         AND syllabus_technique_id IS NOT NULL         AND technique_id IS NULL AND student_id IS NULL AND thread_id IS NULL                  AND student_syllabus_technique_id IS NULL) OR
+      (parent_kind = 'student_syllabus_technique' AND student_syllabus_technique_id IS NOT NULL AND technique_id IS NULL AND student_id IS NULL AND thread_id IS NULL                  AND syllabus_technique_id IS NULL) OR
+      (parent_kind = 'loose'                      AND technique_id IS NULL                      AND student_id IS NULL AND thread_id IS NULL AND syllabus_technique_id IS NULL         AND student_syllabus_technique_id IS NULL)
     )
 );
 CREATE INDEX IF NOT EXISTS idx_videos_technique_position
@@ -252,12 +257,13 @@ CREATE TABLE IF NOT EXISTS syllabi (
 
 -- Membership of techniques in a syllabus, with display ordering.
 CREATE TABLE IF NOT EXISTS syllabus_techniques (
+    id           INTEGER PRIMARY KEY,
     syllabus_id  INTEGER NOT NULL REFERENCES syllabi (id) ON DELETE CASCADE,
     technique_id INTEGER NOT NULL REFERENCES techniques (id) ON DELETE CASCADE,
     position     INTEGER NOT NULL DEFAULT 0,
     added_at     TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     added_by_id  INTEGER REFERENCES users (id),
-    PRIMARY KEY (syllabus_id, technique_id)
+    UNIQUE (syllabus_id, technique_id)
 );
 CREATE INDEX IF NOT EXISTS idx_st_position
     ON syllabus_techniques (syllabus_id, position);
@@ -349,6 +355,19 @@ CREATE TABLE IF NOT EXISTS student_syllabus_video_visibility (
 );
 CREATE INDEX IF NOT EXISTS idx_ssvv_student_syllabus
     ON student_syllabus_video_visibility (student_id, syllabus_id);
+
+-- Visibility override keyed by an arbitrary scope (student / syllabus /
+-- assignment) for a single video. Replaces the two legacy override tables
+-- above once a later task migrates and drops them.
+CREATE TABLE IF NOT EXISTS video_visibility_overrides (
+    scope_kind  TEXT NOT NULL CHECK (scope_kind IN ('student','syllabus','assignment')),
+    scope_id    INTEGER NOT NULL,
+    video_id    INTEGER NOT NULL REFERENCES videos (id) ON DELETE CASCADE,
+    visible     BOOLEAN NOT NULL,
+    set_by_id   INTEGER REFERENCES users (id),
+    set_at      TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (scope_kind, scope_id, video_id)
+);
 
 CREATE TABLE IF NOT EXISTS activity (
     id                INTEGER PRIMARY KEY AUTOINCREMENT,
