@@ -1,0 +1,26 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT target_student_id AS \"t?: i64\", payload_json AS \"p?\"\n               FROM activity WHERE verb = 'video_visibility_set'\n               ORDER BY target_student_id NULLS LAST",
+  "describe": {
+    "columns": [
+      {
+        "name": "t?: i64",
+        "ordinal": 0,
+        "type_info": "Integer"
+      },
+      {
+        "name": "p?",
+        "ordinal": 1,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      true,
+      true
+    ]
+  },
+  "hash": "2b0fa8224a56e6e90bf24c3e609da22579df865c348db57d5dff0e39342f565a"
+}

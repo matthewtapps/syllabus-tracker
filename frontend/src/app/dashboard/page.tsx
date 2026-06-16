@@ -7,20 +7,20 @@ import {
   CheckCircle2,
   ChevronRight,
   Dumbbell,
-  GraduationCap,
   type LucideIcon,
   PlayCircle,
   Sparkles,
   Users,
 } from 'lucide-react';
 import type { User } from '@/lib/api';
+import { useUser } from '@/lib/current-user-context';
 import { toast } from 'sonner';
 import { type InviteResponse, type RecentAttemptItem } from '@/lib/api';
 import {
-  useAttemptHeatmap,
   useLibraryStats,
-  useRecentAttempts,
-  useStudentTechniques,
+  useStudentSyllabusTechniquesFlat,
+  useRecentSyllabusAttempts,
+  useSyllabusAttemptHeatmap,
   useStudents,
 } from '@/lib/queries';
 import { useApproveUser, useResetUserClaim } from '@/lib/mutations';
@@ -34,13 +34,11 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { ClaimLinkPanel } from '@/components/claim-link-panel';
-import { StudentRow } from '@/components/student-row';
-import type { Technique } from '@/lib/api';
+import type { StudentSyllabusTechniqueOverview, Technique } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { formatRelative } from '@/lib/dates';
 import { statusToDotClass } from '@/lib/status';
 import { Button } from '@/components/ui/button';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { AttemptHeatmap } from '@/components/attempt-heatmap';
 import { EmptyState } from '@/components/empty-state';
 import {
@@ -49,13 +47,10 @@ import {
 } from '@/components/skeleton-row';
 import { StatusDonut } from '@/components/status-donut';
 import type { Status } from '@/lib/status';
-import { VideoOverviewCard } from '@/components/videos/video-overview-card';
-import { useCapabilities } from '@/context/capabilities-context';
 import { DashboardTotals } from './components/dashboard-totals';
 import { QueuePanel } from './components/queue-panel';
-
-const STALE_THRESHOLD_DAYS = 14;
-const INITIATIVE_THRESHOLD_DAYS = 7;
+import { ActivityDigest } from './components/activity-digest';
+import { RecentActivityFeed } from './components/recent-activity-feed';
 
 const DASHBOARD_DATE_FORMAT = new Intl.DateTimeFormat(undefined, {
   weekday: 'long',
@@ -63,20 +58,16 @@ const DASHBOARD_DATE_FORMAT = new Intl.DateTimeFormat(undefined, {
   day: 'numeric',
 });
 
-type RosterTab = 'initiative' | 'recent' | 'quiet';
-
-interface DashboardProps {
-  user: User;
-}
-
-export default function Dashboard({ user }: DashboardProps) {
+export default function Dashboard() {
+  const user = useUser();
   if (user.role === 'student') {
-    return <StudentDashboard user={user} />;
+    return <StudentDashboard />;
   }
-  return <CoachDashboard user={user} />;
+  return <CoachDashboard />;
 }
 
-function CoachDashboard({ user }: { user: User }) {
+function CoachDashboard() {
+  const user = useUser();
   const qc = useQueryClient();
   const studentsQuery = useStudents('recent_update', false);
   const libraryStatsQuery = useLibraryStats();
@@ -86,48 +77,24 @@ function CoachDashboard({ user }: { user: User }) {
   const error = studentsQuery.error ? 'Failed to load dashboard data. Please try again.' : null;
   const resetClaimMutation = useResetUserClaim();
   const approveMutation = useApproveUser();
-  const { videos: videosEnabled } = useCapabilities();
 
   const activeStudents = useMemo(
-    () => (students ?? []).filter((s) => !s.archived && !s.graduated_at),
+    () => (students ?? []).filter((s) => !s.archived),
     [students],
   );
 
-  const statusCounts = useMemo<Record<Status, number>>(() => {
-    const totals: Record<Status, number> = { red: 0, amber: 0, green: 0 };
+  const totalAssignments = useMemo(() => {
+    let red = 0, amber = 0, green = 0;
     for (const s of activeStudents) {
-      totals.red += s.red_count ?? 0;
-      totals.amber += s.amber_count ?? 0;
-      totals.green += s.green_count ?? 0;
+      red += s.red_count ?? 0;
+      amber += s.amber_count ?? 0;
+      green += s.green_count ?? 0;
     }
-    return totals;
-  }, [activeStudents]);
-
-  const totalAssignments =
-    statusCounts.red + statusCounts.amber + statusCounts.green;
-
-  const initiativeStudents = useMemo(() => {
-    const cutoff = Date.now() - INITIATIVE_THRESHOLD_DAYS * 86400 * 1000;
-    return activeStudents.filter((s) => {
-      const ts = s.last_student_initiative_at;
-      if (!ts) return false;
-      const parsed = Date.parse(ts);
-      return Number.isFinite(parsed) && parsed >= cutoff;
-    });
+    return red + amber + green;
   }, [activeStudents]);
 
   const pendingApprovals = useMemo(
     () => activeStudents.filter((s) => s.claimed_at && !s.approved_at),
-    [activeStudents],
-  );
-
-  const needsSyllabus = useMemo(
-    () =>
-      activeStudents.filter((s) => {
-        if ((s.total_techniques ?? 0) !== 0) return false;
-        if (s.claimed_at && !s.approved_at) return false;
-        return true;
-      }),
     [activeStudents],
   );
 
@@ -168,41 +135,6 @@ function CoachDashboard({ user }: { user: User }) {
       toast.error('Failed to approve');
     }
   }
-
-  const recentStudents = useMemo(() => {
-    const cutoff = Date.now() - STALE_THRESHOLD_DAYS * 86400 * 1000;
-    return activeStudents.filter((s) => {
-      if (!s.last_update) return false;
-      const ts = Date.parse(s.last_update);
-      return Number.isFinite(ts) && ts >= cutoff;
-    });
-  }, [activeStudents]);
-
-  const quietStudents = useMemo(() => {
-    const cutoff = Date.now() - STALE_THRESHOLD_DAYS * 86400 * 1000;
-    return activeStudents.filter((s) => {
-      if ((s.total_techniques ?? 0) === 0) return false;
-      const last = s.last_coach_update_at ?? s.last_update;
-      if (!last) return true;
-      const ts = new Date(last).getTime();
-      return !isNaN(ts) && ts < cutoff;
-    });
-  }, [activeStudents]);
-
-  const [rosterTab, setRosterTab] = useState<RosterTab>('initiative');
-
-  const rosterCounts = {
-    initiative: initiativeStudents.length,
-    recent: recentStudents.length,
-    quiet: quietStudents.length,
-  };
-
-  const rosterForTab =
-    rosterTab === 'initiative'
-      ? initiativeStudents
-      : rosterTab === 'quiet'
-        ? quietStudents
-        : recentStudents;
 
   if (loading) {
     return (
@@ -274,52 +206,18 @@ function CoachDashboard({ user }: { user: User }) {
         assignments={totalAssignments}
       />
 
-      {totalAssignments > 0 && <StatusDonut counts={statusCounts} className="mb-6" />}
-
-      <Tabs
-        value={rosterTab}
-        onValueChange={(v) => setRosterTab(v as RosterTab)}
-        className="mb-8 gap-3"
-      >
-        <TabsList className="w-full">
-          <TabsTrigger value="initiative">
-            Initiative
-            <RosterCountBadge n={rosterCounts.initiative} />
-          </TabsTrigger>
-          <TabsTrigger value="recent">
-            Recent
-            <RosterCountBadge n={rosterCounts.recent} />
-          </TabsTrigger>
-          <TabsTrigger value="quiet">
-            Quiet
-            <RosterCountBadge n={rosterCounts.quiet} />
-          </TabsTrigger>
-        </TabsList>
-
-        <p className="px-1 text-xs text-muted-foreground">
-          {rosterDescription(rosterTab)}
-        </p>
-
-        <TabsContent value={rosterTab}>
-          <Roster
-            students={rosterForTab}
-            emptyMessage={rosterEmptyMessage(rosterTab)}
-            showWatchTitle={rosterTab === 'initiative'}
-          />
-        </TabsContent>
-      </Tabs>
+      <ActivityDigest className="mb-6" />
 
       <div className="mb-8">
         <QueuePanel
           resetRequests={resetRequests}
           pendingApprovals={pendingApprovals}
-          needsSyllabus={needsSyllabus}
           onSendResetLink={handleSendResetLink}
           onApprove={handleApprove}
         />
       </div>
 
-      {videosEnabled && <VideoOverviewCard />}
+      <RecentActivityFeed />
 
       <Dialog
         open={!!issuedClaimUrl}
@@ -351,71 +249,39 @@ function CoachDashboard({ user }: { user: User }) {
   );
 }
 
-function Roster({
-  students,
-  emptyMessage,
-  showWatchTitle,
-}: {
-  students: User[];
-  emptyMessage: string;
-  showWatchTitle?: boolean;
-}) {
-  if (students.length === 0) {
-    return (
-      <div className="rounded-lg border border-border bg-card px-4 py-10 text-center">
-        <p className="text-sm text-muted-foreground">{emptyMessage}</p>
-      </div>
-    );
-  }
-  return (
-    <div className="divide-y divide-border overflow-hidden rounded-lg border border-border bg-card">
-      {students.map((s) => (
-        <StudentRow
-          key={s.id}
-          student={s}
-          href={`/student/${s.id}?from=dashboard`}
-          showWatchTitle={showWatchTitle}
-        />
-      ))}
-    </div>
-  );
+// Minimal adapter: maps a StudentSyllabusTechniqueOverview onto the Technique
+// shape expected by TechniqueSection. Only the fields TechniqueSection reads
+// are populated; the rest are set to safe empty values.
+function sstOverviewToTechnique(t: StudentSyllabusTechniqueOverview): Technique {
+  return {
+    id: t.sst_id,
+    technique_id: t.technique_id,
+    technique_name: t.technique_name,
+    technique_description: '',
+    status: t.status,
+    student_notes: '',
+    coach_notes: '',
+    created_at: t.updated_at,
+    updated_at: t.updated_at,
+    last_coach_update_at: t.last_coach_update_at,
+    last_coach_update_by_name: null,
+    last_student_update_at: t.last_student_update_at,
+    last_student_update_by_name: null,
+    has_unseen_activity: false,
+    collection_id: null,
+    collection_name: null,
+    tags: [],
+    attempt_count: 0,
+    last_attempt_at: t.last_attempt_at,
+  };
 }
 
-function rosterDescription(tab: RosterTab): string {
-  switch (tab) {
-    case 'initiative':
-      return `Students who edited their own notes or watched a video in the last ${INITIATIVE_THRESHOLD_DAYS} days.`;
-    case 'recent':
-      return `Any update (by you or them) in the last ${STALE_THRESHOLD_DAYS} days.`;
-    case 'quiet':
-      return `Students with techniques assigned but no coach update in the last ${STALE_THRESHOLD_DAYS} days.`;
-  }
-}
-
-function RosterCountBadge({ n }: { n: number }) {
-  return (
-    <span className="ml-1 inline-flex h-4 min-w-4 items-center justify-center rounded bg-muted px-1 text-[10px] font-semibold tabular-nums text-muted-foreground">
-      {n}
-    </span>
-  );
-}
-
-function rosterEmptyMessage(tab: RosterTab): string {
-  switch (tab) {
-    case 'initiative':
-      return 'No students active in the past week.';
-    case 'quiet':
-      return `No students have gone ${STALE_THRESHOLD_DAYS} days without a coach update.`;
-    case 'recent':
-      return `No activity in the last ${STALE_THRESHOLD_DAYS} days.`;
-  }
-}
-
-function StudentDashboard({ user }: { user: User }) {
-  const techniquesQuery = useStudentTechniques(user.id);
-  const recentAttemptsQuery = useRecentAttempts(user.id, 5);
-  const heatmapQuery = useAttemptHeatmap(user.id);
-  const techniques = techniquesQuery.data?.techniques ?? null;
+function StudentDashboard() {
+  const user = useUser();
+  const techniquesQuery = useStudentSyllabusTechniquesFlat(user.id);
+  const recentAttemptsQuery = useRecentSyllabusAttempts(user.id, 5);
+  const heatmapQuery = useSyllabusAttemptHeatmap(user.id);
+  const techniques = techniquesQuery.data ?? null;
   const recentAttempts: RecentAttemptItem[] = recentAttemptsQuery.data ?? [];
   const heatmap = heatmapQuery.data ?? [];
   const loading = techniquesQuery.isLoading;
@@ -431,31 +297,47 @@ function StudentDashboard({ user }: { user: User }) {
 
   const total = counts.red + counts.amber + counts.green;
   const pctDone = total > 0 ? Math.round((counts.green / total) * 100) : 0;
-  const isGraduate = !!user.graduated_at;
 
-  const currentlyWorking = useMemo(() => {
+  // Techniques the student is actively working on: amber status, most recently
+  // updated first. Mapped to the Technique shape expected by TechniqueSection.
+  const currentlyWorking = useMemo<Technique[]>(() => {
     return (techniques ?? [])
       .filter((t) => t.status === 'amber')
       .sort((a, b) => Date.parse(b.updated_at) - Date.parse(a.updated_at))
-      .slice(0, 5);
+      .slice(0, 5)
+      .map((t) => sstOverviewToTechnique(t));
   }, [techniques]);
 
-  const recentlyDone = useMemo(() => {
+  // Techniques the student has marked green, most recently updated first.
+  const recentlyDone = useMemo<Technique[]>(() => {
     return (techniques ?? [])
       .filter((t) => t.status === 'green')
       .sort((a, b) => Date.parse(b.updated_at) - Date.parse(a.updated_at))
-      .slice(0, 3);
+      .slice(0, 3)
+      .map((t) => sstOverviewToTechnique(t));
   }, [techniques]);
 
-  const newFromCoach = useMemo(() => {
+  // Techniques with recent coach attention the student hasn't yet responded to:
+  // not green, coach has touched it, and no student update since then (or ever).
+  const newFromCoach = useMemo<Technique[]>(() => {
     return (techniques ?? [])
-      .filter((t) => t.has_unseen_activity)
+      .filter((t) => {
+        if (t.status === 'green') return false;
+        if (!t.last_coach_update_at) return false;
+        if (
+          t.last_student_update_at &&
+          t.last_student_update_at >= t.last_coach_update_at
+        )
+          return false;
+        return true;
+      })
       .sort(
         (a, b) =>
           Date.parse(b.last_coach_update_at ?? '0') -
           Date.parse(a.last_coach_update_at ?? '0'),
       )
-      .slice(0, 5);
+      .slice(0, 5)
+      .map((t) => sstOverviewToTechnique(t));
   }, [techniques]);
 
   const greetingName = user.display_name || user.username;
@@ -468,18 +350,6 @@ function StudentDashboard({ user }: { user: User }) {
       <h1 className="mb-4 text-2xl font-semibold tracking-tight">
         Hi, {greetingName}
       </h1>
-
-      {isGraduate && (
-        <div className="mb-6 flex items-start gap-3 rounded-lg border border-status-green/30 bg-status-green-bg px-4 py-3 text-sm">
-          <GraduationCap className="mt-0.5 h-4 w-4 shrink-0 text-status-green" aria-hidden />
-          <div className="space-y-0.5">
-            <p className="font-medium text-status-green">Congrats on graduating 🎓</p>
-            <p className="text-muted-foreground">
-              Keep taking notes on your techniques.
-            </p>
-          </div>
-        </div>
-      )}
 
       {loading ? (
         <div className="grid grid-cols-3 gap-3 sm:gap-4">

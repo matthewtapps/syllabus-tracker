@@ -57,10 +57,11 @@ mod tests {
             .await
             .expect("Failed to create tag");
 
-        add_tag_to_technique(&test_db.pool, technique_id, tag1_id)
+        let coach_id = test_db.user_id("coach_user").unwrap();
+        add_tag_to_technique(&test_db.pool, technique_id, tag1_id, coach_id)
             .await
             .expect("Failed to add tag to technique");
-        add_tag_to_technique(&test_db.pool, technique_id, tag2_id)
+        add_tag_to_technique(&test_db.pool, technique_id, tag2_id, coach_id)
             .await
             .expect("Failed to add tag to technique");
 
@@ -84,14 +85,15 @@ mod tests {
 
         let technique_id = test_db.technique_id("Armbar").expect("Technique not found");
 
+        let coach_id = test_db.user_id("coach_user").unwrap();
         let tag_id = create_tag(&test_db.pool, "Attack")
             .await
             .expect("Failed to create tag");
-        add_tag_to_technique(&test_db.pool, technique_id, tag_id)
+        add_tag_to_technique(&test_db.pool, technique_id, tag_id, coach_id)
             .await
             .expect("Failed to add tag to technique");
 
-        remove_tag_from_technique(&test_db.pool, technique_id, tag_id)
+        remove_tag_from_technique(&test_db.pool, technique_id, tag_id, coach_id)
             .await
             .expect("Failed to remove tag from technique");
 
@@ -116,13 +118,14 @@ mod tests {
             .technique_id("Triangle")
             .expect("Technique not found");
 
+        let coach_id = test_db.user_id("coach_user").unwrap();
         let tag_id = create_tag(&test_db.pool, "Submission")
             .await
             .expect("Failed to create tag");
-        add_tag_to_technique(&test_db.pool, armbar_id, tag_id)
+        add_tag_to_technique(&test_db.pool, armbar_id, tag_id, coach_id)
             .await
             .expect("Failed to add tag to armbar");
-        add_tag_to_technique(&test_db.pool, triangle_id, tag_id)
+        add_tag_to_technique(&test_db.pool, triangle_id, tag_id, coach_id)
             .await
             .expect("Failed to add tag to triangle");
 
@@ -173,6 +176,7 @@ mod tests {
         println!("db: {:?}", test_db);
 
         let technique_id = test_db.technique_id("Armbar").expect("Technique not found");
+        let coach_id = test_db.user_id("coach_user").unwrap();
 
         // Create tag
         let tag_id = create_tag(&test_db.pool, "Attack")
@@ -180,12 +184,12 @@ mod tests {
             .expect("Failed to create tag");
 
         // Add tag to technique
-        add_tag_to_technique(&test_db.pool, technique_id, tag_id)
+        add_tag_to_technique(&test_db.pool, technique_id, tag_id, coach_id)
             .await
             .expect("Failed to add tag to technique");
 
         // Try to add the same tag again
-        let result = add_tag_to_technique(&test_db.pool, technique_id, tag_id).await;
+        let result = add_tag_to_technique(&test_db.pool, technique_id, tag_id, coach_id).await;
         assert!(result.is_ok(), "Adding the same tag twice should not error");
 
         // Verify there's still only one tag

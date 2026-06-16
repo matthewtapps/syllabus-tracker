@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT OR IGNORE INTO student_pinned_techniques (student_id, technique_id) VALUES (?, ?)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "7c43b3acdd7e1a1f2fd5a546399d73f323d5b5051ff12b646b0ab6e5935acf44"
+}

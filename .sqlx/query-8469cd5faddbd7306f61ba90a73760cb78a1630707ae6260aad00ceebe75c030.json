@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "DELETE FROM student_syllabus_video_visibility\n                 WHERE student_id = ? AND syllabus_id = ? AND video_id = ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": []
+  },
+  "hash": "8469cd5faddbd7306f61ba90a73760cb78a1630707ae6260aad00ceebe75c030"
+}

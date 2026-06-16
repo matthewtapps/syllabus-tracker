@@ -1,0 +1,17 @@
+[package]
+name = "video-job"
+edition.workspace = true
+version.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+# Serialization
+serde = { version = "1.0.219", features = ["derive"] }
+serde_json = "1.0.140"
+
+# HMAC-SHA256 signing
+hmac = "0.12.1"
+sha2 = "0.10.8"
+
+# Constant-time comparison
+subtle = "2.6.1"

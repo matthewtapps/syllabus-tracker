@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT parent_kind\n                   FROM videos\n                   WHERE id = ? AND deleted_at IS NULL AND hidden_at IS NULL",
+  "describe": {
+    "columns": [
+      {
+        "name": "parent_kind",
+        "ordinal": 0,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "c256e31d5bb1dffcd9bfb72454ff37baaa073aa881e26054d4f6fe96ed45c8b4"
+}

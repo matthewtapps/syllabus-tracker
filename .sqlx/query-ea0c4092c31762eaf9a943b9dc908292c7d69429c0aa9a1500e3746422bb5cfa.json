@@ -1,0 +1,74 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT sst.id AS \"sst_id!: i64\",\n                  sst.technique_id AS \"technique_id!: i64\",\n                  t.name AS \"technique_name!: String\",\n                  sa.syllabus_id AS \"syllabus_id!: i64\",\n                  s.name AS \"syllabus_name!: String\",\n                  sst.status AS \"status!: String\",\n                  sst.updated_at AS \"updated_at!: NaiveDateTime\",\n                  (SELECT MAX(attempted_at) FROM syllabus_attempts\n                    WHERE student_syllabus_technique_id = sst.id) AS \"last_attempt_at?: NaiveDateTime\",\n                  sst.last_coach_update_at AS \"last_coach_update_at?: NaiveDateTime\",\n                  sst.last_student_update_at AS \"last_student_update_at?: NaiveDateTime\"\n           FROM student_syllabus_techniques sst\n           JOIN syllabus_assignments sa ON sa.id = sst.assignment_id\n           JOIN syllabi s ON s.id = sa.syllabus_id\n           JOIN techniques t ON t.id = sst.technique_id\n           WHERE sa.student_id = ? AND sa.unassigned_at IS NULL AND sst.hidden_at IS NULL\n           ORDER BY sst.updated_at DESC",
+  "describe": {
+    "columns": [
+      {
+        "name": "sst_id!: i64",
+        "ordinal": 0,
+        "type_info": "Integer"
+      },
+      {
+        "name": "technique_id!: i64",
+        "ordinal": 1,
+        "type_info": "Integer"
+      },
+      {
+        "name": "technique_name!: String",
+        "ordinal": 2,
+        "type_info": "Text"
+      },
+      {
+        "name": "syllabus_id!: i64",
+        "ordinal": 3,
+        "type_info": "Integer"
+      },
+      {
+        "name": "syllabus_name!: String",
+        "ordinal": 4,
+        "type_info": "Text"
+      },
+      {
+        "name": "status!: String",
+        "ordinal": 5,
+        "type_info": "Text"
+      },
+      {
+        "name": "updated_at!: NaiveDateTime",
+        "ordinal": 6,
+        "type_info": "Datetime"
+      },
+      {
+        "name": "last_attempt_at?: NaiveDateTime",
+        "ordinal": 7,
+        "type_info": "Null"
+      },
+      {
+        "name": "last_coach_update_at?: NaiveDateTime",
+        "ordinal": 8,
+        "type_info": "Datetime"
+      },
+      {
+        "name": "last_student_update_at?: NaiveDateTime",
+        "ordinal": 9,
+        "type_info": "Datetime"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      true,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      null,
+      true,
+      true
+    ]
+  },
+  "hash": "ea0c4092c31762eaf9a943b9dc908292c7d69429c0aa9a1500e3746422bb5cfa"
+}

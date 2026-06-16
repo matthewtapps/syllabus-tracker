@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO videos (technique_id, title, description, position, kind,\n                                 processing_status, uploaded_by_id)\n             VALUES (?, 'Visible Clip', '', 0, 'external', 'ready', ?),\n                    (?, 'Globally Hidden Clip', '', 1, 'external', 'ready', ?)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 4
+    },
+    "nullable": []
+  },
+  "hash": "33356662652cd745779a4dd891c4298f31d3db61c10feedf92b44a9e7efc8a5e"
+}

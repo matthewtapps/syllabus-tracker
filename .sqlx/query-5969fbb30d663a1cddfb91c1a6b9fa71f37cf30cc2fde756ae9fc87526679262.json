@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT OR IGNORE INTO syllabus_techniques\n            (syllabus_id, technique_id, added_by_id)\n         VALUES (?, ?, ?)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": []
+  },
+  "hash": "5969fbb30d663a1cddfb91c1a6b9fa71f37cf30cc2fde756ae9fc87526679262"
+}

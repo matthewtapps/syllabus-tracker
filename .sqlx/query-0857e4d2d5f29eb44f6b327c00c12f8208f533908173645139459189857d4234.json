@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO activity\n            (occurred_at, verb, actor_user_id, target_student_id,\n             technique_id, syllabus_id, sst_id, video_id, thread_id, payload_json, context_kind)\n         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 11
+    },
+    "nullable": []
+  },
+  "hash": "0857e4d2d5f29eb44f6b327c00c12f8208f533908173645139459189857d4234"
+}

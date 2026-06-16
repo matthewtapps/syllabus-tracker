@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT student_id AS \"student_id!: i64\"\n           FROM syllabus_assignments\n           WHERE syllabus_id = ? AND unassigned_at IS NULL\n           ORDER BY assigned_at DESC",
+  "describe": {
+    "columns": [
+      {
+        "name": "student_id!: i64",
+        "ordinal": 0,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "3f57a7215d7ebf86b8d3547477763e556083d8aab4bbec19b3da55dd9dfe3a84"
+}

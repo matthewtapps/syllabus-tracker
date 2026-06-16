@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT OR IGNORE INTO activity_cursors (viewer_user_id, max_seen_id)\n         SELECT id, ? FROM users",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": []
+  },
+  "hash": "1de7876709097d1fcbad75e22fee017aa00dfaa86bd1d2dc4cded9ce0af55b7b"
+}

@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE videos\n         SET processing_status = 'failed',\n             processing_error  = 'processing timed out',\n             updated_at        = CURRENT_TIMESTAMP\n         WHERE processing_status = 'processing'\n           AND updated_at <= datetime('now', ?)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": []
+  },
+  "hash": "76c8fb17ea008efe6dd7513a7c269dc6264330393fa2e5acc68607cc74a6f7ad"
+}

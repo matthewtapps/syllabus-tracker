@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT DISTINCT student_id AS \"id!: i64\"\n           FROM syllabus_assignments\n           WHERE syllabus_id = ? AND unassigned_at IS NULL\n           ORDER BY student_id",
+  "describe": {
+    "columns": [
+      {
+        "name": "id!: i64",
+        "ordinal": 0,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "a49f1cc0e3d5a461a73be3b67c9c738eb2052e5e9489ec3bb6a64700703a749b"
+}

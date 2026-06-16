@@ -1,0 +1,32 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT target_student_id AS \"t?: i64\",\n                      payload_json AS \"p?\",\n                      actor_user_id AS \"a!: i64\"\n               FROM activity WHERE verb = 'technique_edited'",
+  "describe": {
+    "columns": [
+      {
+        "name": "t?: i64",
+        "ordinal": 0,
+        "type_info": "Integer"
+      },
+      {
+        "name": "p?",
+        "ordinal": 1,
+        "type_info": "Text"
+      },
+      {
+        "name": "a!: i64",
+        "ordinal": 2,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      true,
+      true,
+      false
+    ]
+  },
+  "hash": "af92303361507cdd83f84bb0adaa01253e341aa3c6c598a248cb35dc7d0a08cf"
+}

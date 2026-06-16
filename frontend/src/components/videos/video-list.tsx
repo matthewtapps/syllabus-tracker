@@ -27,10 +27,17 @@ import { cn } from "@/lib/utils";
 import { PrivacyAckBanner } from "./privacy-ack-banner";
 import { VideoPlayerDialog } from "./video-player-dialog";
 import { VideoRow } from "./video-row";
+import type { WatchContext } from "./useWatchTracker";
+import type { VideoThreadSurface } from "@/lib/thread-visibility";
 
 interface VideoListProps {
   techniqueId: number;
   canManage: boolean;
+  /** Where this video list lives, for thread-visibility derivation. */
+  surface: VideoThreadSurface;
+  /** When true, each video row shows a muted per-video play count. Should
+   * only be passed as true when the current viewer is a coach or admin. */
+  isCoach?: boolean;
   reloadKey?: number;
   /** When set, the list is fetched in the context of viewing this student's
    * techniques: coaches see per-student override info per row and the
@@ -39,24 +46,38 @@ interface VideoListProps {
   /** Name shown in the per-student visibility controls. Only used when
    * `forStudent` is also set. */
   studentDisplayName?: string;
+  /** When set, scopes the fetch to a per-(student, syllabus) view: the
+   *  per-syllabus video endpoint is hit instead, and the per-video
+   *  override toggle (PR 4) targets `student_syllabus_video_visibility`
+   *  rather than the legacy per-student visibility table. */
+  syllabus?: { studentId: number; syllabusId: number };
   /** When set, scroll the matching video row into view once the list loads.
    * Used by the dashboard "recently watched" link to land on the specific
    * video the user tapped. */
   scrollToVideoId?: number | null;
   onVideoScrolled?: () => void;
+  /** Where this video is being watched from, for activity context tracking. */
+  watchContext?: WatchContext;
+  /** Lineage label for the viewer header (e.g. the technique name). */
+  contextLabel?: string;
 }
 
 export function VideoList({
   techniqueId,
   canManage,
+  surface,
+  isCoach = false,
   reloadKey = 0,
   forStudent,
   studentDisplayName,
+  syllabus,
   scrollToVideoId,
   onVideoScrolled,
+  watchContext,
+  contextLabel,
 }: VideoListProps) {
   const qc = useQueryClient();
-  const videosQuery = useTechniqueVideos(techniqueId, forStudent);
+  const videosQuery = useTechniqueVideos(techniqueId, forStudent, syllabus);
   const serverVideos = videosQuery.data ?? null;
   const error = videosQuery.error ? "Could not load videos" : null;
   const reorderMutation = useReorderVideos(techniqueId);
@@ -204,8 +225,10 @@ export function VideoList({
                   video={video}
                   techniqueId={techniqueId}
                   canManage={canManage}
+                  isCoach={isCoach}
                   forStudent={forStudent}
                   studentDisplayName={studentDisplayName}
+                  syllabus={syllabus}
                   onPlay={() => setPlaying(video)}
                   onDeleted={handleDeleted}
                 />
@@ -221,8 +244,10 @@ export function VideoList({
               video={video}
               techniqueId={techniqueId}
               canManage={canManage}
+              isCoach={isCoach}
               forStudent={forStudent}
               studentDisplayName={studentDisplayName}
+              syllabus={syllabus}
               onPlay={() => setPlaying(video)}
               onDeleted={handleDeleted}
             />
@@ -230,7 +255,13 @@ export function VideoList({
         </ul>
       )}
 
-      <VideoPlayerDialog video={playing} onClose={() => setPlaying(null)} />
+      <VideoPlayerDialog
+        video={playing}
+        onClose={() => setPlaying(null)}
+        surface={surface}
+        watchContext={watchContext}
+        context={contextLabel ? { label: contextLabel } : undefined}
+      />
     </div>
   );
 }
@@ -239,8 +270,10 @@ interface SortableVideoRowProps {
   video: Video;
   techniqueId: number;
   canManage: boolean;
+  isCoach?: boolean;
   forStudent?: number;
   studentDisplayName?: string;
+  syllabus?: { studentId: number; syllabusId: number };
   onPlay: () => void;
   onDeleted: (videoId: number) => void;
 }
@@ -249,8 +282,10 @@ function SortableVideoRow({
   video,
   techniqueId,
   canManage,
+  isCoach = false,
   forStudent,
   studentDisplayName,
+  syllabus,
   onPlay,
   onDeleted,
 }: SortableVideoRowProps) {
@@ -292,8 +327,10 @@ function SortableVideoRow({
         video={video}
         techniqueId={techniqueId}
         canManage={canManage}
+        isCoach={isCoach}
         forStudent={forStudent}
         studentDisplayName={studentDisplayName}
+        syllabus={syllabus}
         onPlay={onPlay}
         onDeleted={onDeleted}
         dragHandle={handle}

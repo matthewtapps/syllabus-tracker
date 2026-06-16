@@ -4,26 +4,48 @@
 //! fanning out one-way to leaf modules. Each submodule re-exports its public
 //! names through this `mod.rs` so call sites stay flat (`crate::db::foo`).
 
+mod activity;
+mod activity_read;
+pub mod dashboard;
 mod attempts;
 mod collections;
 mod invites;
+mod pinned;
 mod reporting;
 mod sessions;
+mod student_syllabus_techniques;
 mod student_techniques;
+mod syllabi;
+mod syllabus_assignments;
+mod syllabus_attempts;
 mod tags;
 mod techniques;
 mod users;
+pub mod threads;
 mod videos;
 mod watch;
 
+pub use activity::*;
+pub use activity_read::*;
+pub use dashboard::{activity_digest, ActivityDigest, DigestMetric};
 pub use attempts::*;
 pub use collections::*;
 pub use invites::*;
+pub use pinned::*;
 pub use reporting::*;
 pub use sessions::*;
+pub use student_syllabus_techniques::*;
 pub use student_techniques::*;
+pub use syllabi::*;
+pub use syllabus_assignments::*;
+pub use syllabus_attempts::*;
 pub use tags::*;
 pub use techniques::*;
+pub use threads::{
+    count_video_comments_visible, create_comment, create_thread, get_thread,
+    list_threads_for_anchor, soft_delete_comment, soft_delete_thread, Anchor, AnchorKind,
+    CommentView, NewThread, ThreadView, ThreadVisibility, Viewer,
+};
 pub use users::*;
 pub use videos::*;
 pub use watch::*;

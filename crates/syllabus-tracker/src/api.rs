@@ -17,21 +17,24 @@ use validator::ValidationErrors;
 use crate::auth::UserSession;
 use crate::auth::{Permission, User};
 use crate::db::{
-    add_tag_to_technique, add_techniques_to_collection, add_techniques_to_student, approve_user,
-    assign_collection_to_student, attempt_buckets_for_student, attempt_summary_for_student,
-    attempt_weekly_buckets_for_technique, authenticate_user, claim_invite, count_techniques,
-    create_and_assign_technique, create_attempt, create_collection, create_invite_token,
-    create_self_registered_user, create_tag, create_technique_in_collection, create_user,
-    create_user_session, create_user_stub, delete_attempt, delete_collection, delete_tag,
+    ActivityDigest, ActivityRow, AttemptSuggestion, Collection, activity_digest,
+    add_tag_to_technique, add_techniques_to_collection,
+    add_techniques_to_student, advance_cursor_to, approve_user, assign_collection_to_student,
+    attempt_buckets_for_student, attempt_summary_for_student, attempt_weekly_buckets_for_technique,
+    authenticate_user, claim_invite, count_techniques, create_and_assign_technique, create_attempt,
+    create_collection, create_invite_token, create_self_registered_user, create_tag,
+    create_technique_in_collection, create_user, create_user_session, create_user_stub,
+    dashboard_activity_feed, delete_attempt, delete_collection, delete_tag, feed, feed_max_id,
     find_user_by_username, find_valid_invite_token, get_all_collections, get_all_tags,
     get_all_users, get_collection, get_student_technique, get_student_techniques,
     get_students_by_recent_updates, get_students_with_collection, get_tags_for_technique,
     get_unassigned_techniques, get_user, invalidate_session, list_attempts,
-    list_recent_attempts_for_student, mark_student_technique_seen, remove_tag_from_technique,
+    list_recent_attempts_for_student, mark_all_read, mark_one_read, mark_one_unread,
+    mark_student_technique_seen, remove_tag_from_technique,
     remove_technique_from_collection, request_password_reset, reset_user_claim, set_user_archived,
-    set_user_graduated, update_attempt_note, update_attempt_timestamp, update_collection,
-    update_student_notes, update_student_technique, update_technique, update_user_display_name,
-    update_user_password, update_user_role, update_username, AttemptSuggestion, Collection,
+    set_user_graduated, unread_count, update_attempt_note, update_attempt_timestamp,
+    update_collection, update_student_notes, update_student_technique, update_technique,
+    update_user_display_name, update_user_password, update_user_role, update_username,
 };
 use crate::error::AppError;
 use crate::models::Tag;
@@ -136,6 +139,10 @@ pub struct UserData {
     pub last_student_initiative_at: Option<String>,
     pub last_watch_at: Option<String>,
     pub last_watch_video_title: Option<String>,
+    pub last_student_activity_at: Option<String>,
+    pub last_coach_activity_at: Option<String>,
+    pub pinned_count: Option<i64>,
+    pub recent_activity_count: Option<i64>,
 }
 
 impl From<User> for UserData {
@@ -163,6 +170,10 @@ impl From<User> for UserData {
             last_student_initiative_at: user.last_student_initiative_at.clone(),
             last_watch_at: user.last_watch_at.clone(),
             last_watch_video_title: user.last_watch_video_title.clone(),
+            last_student_activity_at: user.last_student_activity_at.clone(),
+            last_coach_activity_at: user.last_coach_activity_at.clone(),
+            pinned_count: user.pinned_count,
+            recent_activity_count: user.recent_activity_count,
         }
     }
 }
@@ -459,6 +470,7 @@ pub async fn api_update_student_technique(
                 student_technique.technique_id,
                 &technique_name,
                 &technique_description,
+                user.id,
             )
             .await?;
         }
@@ -601,9 +613,75 @@ pub async fn api_list_library_techniques(
     user: User,
     db: &State<Pool<Sqlite>>,
 ) -> ApiResult<Json<Vec<crate::db::LibraryTechniqueRow>>> {
-    user.require_permission(Permission::ViewAllStudents)?;
+    user.require_permission(Permission::ViewLibrary)?;
     let rows = crate::db::list_library_techniques(db).await?;
     Ok(Json(rows))
+}
+
+#[get("/student/<id>/library")]
+pub async fn api_get_student_library(
+    id: i64,
+    user: User,
+    db: &State<Pool<Sqlite>>,
+) -> ApiResult<Json<Vec<crate::db::LibraryTechniqueRow>>> {
+    if user.id != id && !user.has_permission(Permission::ViewAllStudents) {
+        return Err(Status::Forbidden.into());
+    }
+
+    let mut rows = crate::db::list_library_techniques(db).await?;
+    let pinned_ids = crate::db::pinned_technique_ids_for_student(db, id).await?;
+    for row in rows.iter_mut() {
+        row.is_pinned = pinned_ids.contains(&row.id);
+    }
+    Ok(Json(rows))
+}
+
+#[get("/student/<id>/pinned_techniques")]
+pub async fn api_get_pinned_techniques(
+    id: i64,
+    user: User,
+    db: &State<Pool<Sqlite>>,
+) -> ApiResult<Json<Vec<crate::db::LibraryTechniqueRow>>> {
+    if user.id != id && !user.has_permission(Permission::ViewAllStudents) {
+        return Err(Status::Forbidden.into());
+    }
+    let rows = crate::db::list_pinned_for_student(db, id).await?;
+    Ok(Json(rows))
+}
+
+#[derive(Deserialize)]
+pub struct PinTechniqueRequest {
+    pub technique_id: i64,
+}
+
+#[post("/student/<id>/pinned_techniques", data = "<body>")]
+pub async fn api_pin_technique(
+    id: i64,
+    body: Json<PinTechniqueRequest>,
+    user: User,
+    db: &State<Pool<Sqlite>>,
+) -> ApiResult<Status> {
+    // Coaches do not pin on a student's behalf; the viewer must be the
+    // owning student. Flip to allow coach-pinning is trivial later.
+    if user.id != id {
+        return Err(Status::Forbidden.into());
+    }
+    crate::db::pin_technique(db, id, body.technique_id).await?;
+    Ok(Status::NoContent)
+}
+
+#[delete("/student/<id>/pinned_techniques/<technique_id>")]
+pub async fn api_unpin_technique(
+    id: i64,
+    technique_id: i64,
+    user: User,
+    db: &State<Pool<Sqlite>>,
+) -> ApiResult<Status> {
+    if user.id != id {
+        return Err(Status::Forbidden.into());
+    }
+    crate::db::unpin_technique(db, id, technique_id).await?;
+    Ok(Status::NoContent)
 }
 
 #[get("/techniques/<id>/stats")]
@@ -645,11 +723,7 @@ pub async fn api_logout(cookies: &CookieJar<'_>, db: &State<Pool<Sqlite>>) -> Re
 pub struct ProfileUpdateRequest {
     #[validate(length(max = 100, message = "Display name must be under 100 characters"))]
     display_name: String,
-    #[validate(length(
-        min = 1,
-        max = 50,
-        message = "Username must be 1-50 characters"
-    ))]
+    #[validate(length(min = 1, max = 50, message = "Username must be 1-50 characters"))]
     username: Option<String>,
 }
 
@@ -958,7 +1032,7 @@ pub async fn api_add_tag_to_technique(
     db: &State<Pool<Sqlite>>,
 ) -> ApiResult<Status> {
     user.require_permission(Permission::ManageTags)?;
-    add_tag_to_technique(db, request.technique_id, request.tag_id).await?;
+    add_tag_to_technique(db, request.technique_id, request.tag_id, user.id).await?;
     Ok(Status::Ok)
 }
 
@@ -970,7 +1044,7 @@ pub async fn api_remove_tag_from_technique(
     db: &State<Pool<Sqlite>>,
 ) -> ApiResult<Status> {
     user.require_permission(Permission::ManageTags)?;
-    remove_tag_from_technique(db, technique_id, tag_id).await?;
+    remove_tag_from_technique(db, technique_id, tag_id, user.id).await?;
     Ok(Status::Ok)
 }
 
@@ -1162,11 +1236,7 @@ pub async fn api_self_register(
 }
 
 #[post("/admin/users/<id>/approve")]
-pub async fn api_approve_user(
-    id: i64,
-    user: User,
-    db: &State<Pool<Sqlite>>,
-) -> ApiResult<Status> {
+pub async fn api_approve_user(id: i64, user: User, db: &State<Pool<Sqlite>>) -> ApiResult<Status> {
     user.require_permission(Permission::RegisterUsers)?;
     approve_user(db, id).await?;
     Ok(Status::Ok)
@@ -1192,7 +1262,7 @@ pub async fn api_reset_user_claim(
     }))
 }
 
-// ---- Collections / syllabuses ----
+// ---- Collections / syllabi ----
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct CollectionResponse {
@@ -1411,7 +1481,7 @@ pub async fn api_update_library_technique(
 ) -> ApiResult<Status> {
     body.validate()?;
     user.require_permission(Permission::EditAllTechniques)?;
-    update_technique(db, id, &body.name, &body.description).await?;
+    update_technique(db, id, &body.name, &body.description, user.id).await?;
     Ok(Status::Ok)
 }
 
@@ -1493,7 +1563,9 @@ pub struct CreateAttemptResponse {
     pub status_suggestion: Option<String>,
 }
 
-fn parse_optional_datetime(raw: Option<&str>) -> Result<Option<chrono::DateTime<chrono::Utc>>, ApiError> {
+fn parse_optional_datetime(
+    raw: Option<&str>,
+) -> Result<Option<chrono::DateTime<chrono::Utc>>, ApiError> {
     match raw {
         None => Ok(None),
         Some(s) => match chrono::DateTime::parse_from_rfc3339(s) {
@@ -1590,8 +1662,8 @@ pub async fn api_create_attempt(
     db: &State<Pool<Sqlite>>,
 ) -> ApiResult<Json<CreateAttemptResponse>> {
     body.validate()?;
-    let attempted_at = parse_optional_datetime(body.attempted_at.as_deref())?
-        .unwrap_or_else(chrono::Utc::now);
+    let attempted_at =
+        parse_optional_datetime(body.attempted_at.as_deref())?.unwrap_or_else(chrono::Utc::now);
     let result = create_attempt(db, &user, id, attempted_at, body.note.as_deref()).await?;
     let suggestion = match result.suggestion {
         AttemptSuggestion::Amber => Some("amber".to_string()),
@@ -1817,3 +1889,277 @@ pub async fn api_attempt_sparkline(
             .collect(),
     }))
 }
+
+// ---- Activity feed routes (Task 23) ----------------------------------------
+
+const ACTIVITY_FEED_DEFAULT_LIMIT: i64 = 50;
+const ACTIVITY_FEED_MAX_LIMIT: i64 = 200;
+
+#[derive(FromForm)]
+pub struct ActivityFeedQuery {
+    before_ts: Option<String>,
+    before_id: Option<i64>,
+    limit: Option<i64>,
+}
+
+/// Parse an optional RFC3339 or SQLite naive-datetime string into
+/// `chrono::NaiveDateTime`. Returns `None` when the input is `None`.
+fn parse_before_ts(s: &str) -> Option<chrono::NaiveDateTime> {
+    // Try the SQLite storage format first (no T, no offset), then RFC3339,
+    // then RFC3339 with sub-seconds.
+    chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S%.f")
+        .or_else(|_| chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S"))
+        .or_else(|_| chrono::DateTime::parse_from_rfc3339(s).map(|dt| dt.naive_utc()))
+        .ok()
+}
+
+/// `GET /api/activity/feed?before_ts=&before_id=&limit=`
+///
+/// Returns the viewer's activity feed as a JSON array. The viewer's cursor is
+/// advanced to `feed_max_id` (snapshotted BEFORE building the page) so rows
+/// that arrive during the request are not silently marked as seen.
+#[get("/activity/feed?<params..>")]
+pub async fn api_activity_feed(
+    params: ActivityFeedQuery,
+    user: User,
+    db: &State<Pool<Sqlite>>,
+) -> ApiResult<Json<Vec<ActivityRow>>> {
+    let limit = params
+        .limit
+        .unwrap_or(ACTIVITY_FEED_DEFAULT_LIMIT)
+        .clamp(1, ACTIVITY_FEED_MAX_LIMIT);
+
+    let before = match (&params.before_ts, params.before_id) {
+        (Some(ts_str), Some(id)) => {
+            let ts = parse_before_ts(ts_str).ok_or_else(|| {
+                warn!(
+                    raw = ts_str,
+                    "rejected activity/feed: unparseable before_ts"
+                );
+                ApiError::from(Status::BadRequest)
+            })?;
+            Some((ts, id))
+        }
+        (None, None) => None,
+        _ => {
+            warn!(
+                "rejected activity/feed: partial cursor (before_ts and before_id must both be present or both absent)"
+            );
+            return Err(Status::BadRequest.into());
+        }
+    };
+
+    // Snapshot the max id BEFORE building the page; advance cursor AFTER.
+    let snapshot_max = feed_max_id(db, user.id, user.role.clone()).await?;
+    let rows = feed(db, user.id, user.role.clone(), before, limit).await?;
+    advance_cursor_to(db, user.id, snapshot_max).await?;
+
+    Ok(Json(rows))
+}
+
+#[derive(Serialize)]
+pub struct UnreadCountResponse {
+    pub count: i64,
+}
+
+/// `GET /api/activity/unread_count`
+#[get("/activity/unread_count")]
+pub async fn api_activity_unread_count(
+    user: User,
+    db: &State<Pool<Sqlite>>,
+) -> ApiResult<Json<UnreadCountResponse>> {
+    let count = unread_count(db, user.id, user.role.clone()).await?;
+    Ok(Json(UnreadCountResponse { count }))
+}
+
+/// `POST /api/activity/mark_all_read`
+#[post("/activity/mark_all_read")]
+pub async fn api_activity_mark_all_read(user: User, db: &State<Pool<Sqlite>>) -> ApiResult<Status> {
+    mark_all_read(db, user.id).await?;
+    Ok(Status::NoContent)
+}
+
+/// `POST /api/activity/<activity_id>/read`
+#[post("/activity/<activity_id>/read")]
+pub async fn api_activity_mark_one_read(
+    activity_id: i64,
+    user: User,
+    db: &State<Pool<Sqlite>>,
+) -> ApiResult<Status> {
+    mark_one_read(db, user.id, activity_id).await?;
+    Ok(Status::NoContent)
+}
+
+/// `POST /api/activity/<activity_id>/unread`
+#[post("/activity/<activity_id>/unread")]
+pub async fn api_activity_mark_one_unread(
+    activity_id: i64,
+    user: User,
+    db: &State<Pool<Sqlite>>,
+) -> ApiResult<Status> {
+    mark_one_unread(db, user.id, activity_id).await?;
+    Ok(Status::NoContent)
+}
+
+// ---- Coach dashboard routes ------------------------------------------------
+
+/// `GET /api/dashboard/activity_digest`
+///
+/// Returns a rolling 7-day activity digest (counts + sparklines). Coach/admin
+/// only: calls `require_permission(Permission::ViewAllStudents)`.
+#[get("/dashboard/activity_digest")]
+pub async fn api_activity_digest(
+    user: User,
+    db: &State<Pool<Sqlite>>,
+) -> ApiResult<Json<ActivityDigest>> {
+    user.require_permission(Permission::ViewAllStudents)?;
+    Ok(Json(activity_digest(db).await?))
+}
+
+/// `GET /api/dashboard/activity_feed?limit=<i64>`
+///
+/// Returns the gym-wide recent activity feed for the coach dashboard. Does NOT
+/// advance any activity cursor. Coach/admin only.
+#[get("/dashboard/activity_feed?<limit>")]
+pub async fn api_dashboard_activity_feed(
+    user: User,
+    db: &State<Pool<Sqlite>>,
+    limit: Option<i64>,
+) -> ApiResult<Json<Vec<ActivityRow>>> {
+    user.require_permission(Permission::ViewAllStudents)?;
+    let limit = limit.unwrap_or(30).clamp(1, 100);
+    Ok(Json(dashboard_activity_feed(db, limit).await?))
+}
+
+// ---- Student-scoped activity feed (coach viewing a student profile) --------
+
+/// `GET /api/student/<sid>/activity_feed?before_ts=&before_id=&limit=`
+///
+/// Returns activity rows scoped to the given student (target_student_id = sid).
+/// Authorized for the owning student OR any viewer with ViewAllStudents (coaches).
+///
+/// The student variant of `feed` already filters `target_student_id = sid` and
+/// annotates unread against sid's own cursor, so the result is exactly what the
+/// student themselves would see. This route does NOT advance any cursor
+/// (read-only scoped view; the student's own cursor is advanced by the main
+/// `/api/activity/feed` endpoint when the student opens their own feed).
+#[get("/student/<sid>/activity_feed?<params..>")]
+pub async fn api_student_activity_feed(
+    sid: i64,
+    params: ActivityFeedQuery,
+    user: User,
+    db: &State<Pool<Sqlite>>,
+) -> ApiResult<Json<Vec<ActivityRow>>> {
+    if user.id != sid && !user.has_permission(Permission::ViewAllStudents) {
+        return Err(Status::Forbidden.into());
+    }
+
+    let limit = params
+        .limit
+        .unwrap_or(ACTIVITY_FEED_DEFAULT_LIMIT)
+        .clamp(1, ACTIVITY_FEED_MAX_LIMIT);
+
+    let before = match (&params.before_ts, params.before_id) {
+        (Some(ts_str), Some(id)) => {
+            let ts = parse_before_ts(ts_str).ok_or_else(|| {
+                warn!(
+                    raw = ts_str,
+                    "rejected student activity_feed: unparseable before_ts"
+                );
+                ApiError::from(Status::BadRequest)
+            })?;
+            Some((ts, id))
+        }
+        (None, None) => None,
+        _ => {
+            warn!(
+                "rejected student activity_feed: partial cursor (before_ts and before_id must both be present or both absent)"
+            );
+            return Err(Status::BadRequest.into());
+        }
+    };
+
+    // Use the student-variant of feed (target_student_id = sid, unread
+    // annotated against sid's cursor). Pass sid as the viewer so unread
+    // annotations reflect the student's perspective.
+    let rows = feed(db, sid, crate::auth::Role::Student, before, limit).await?;
+
+    Ok(Json(rows))
+}
+
+// ---- Shared helpers ---------------------------------------------------------
+
+/// Resolves the from/to window for heatmap queries.
+/// Defaults: from = today minus 365 days, to = today.
+/// Returns `Err(ApiError)` if either string is present but not YYYY-MM-DD.
+fn resolve_heatmap_window(
+    params: &HeatmapQuery,
+) -> Result<(chrono::NaiveDate, chrono::NaiveDate), ApiError> {
+    let today = chrono::Utc::now().date_naive();
+    let default_from = today - chrono::Duration::days(365);
+    let from = match params.from.as_deref() {
+        Some(s) => chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d").map_err(|e| {
+            warn!(raw = s, error = %e, "rejected heatmap: unparseable date");
+            ApiError::from(Status::BadRequest)
+        })?,
+        None => default_from,
+    };
+    let to = match params.to.as_deref() {
+        Some(s) => chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d").map_err(|e| {
+            warn!(raw = s, error = %e, "rejected heatmap: unparseable date");
+            ApiError::from(Status::BadRequest)
+        })?,
+        None => today,
+    };
+    Ok((from, to))
+}
+
+// ---- Coach dashboard recently-active route (Task 24) -----------------------
+
+// ---- New syllabus-backed student dashboard routes --------------------------
+
+#[get("/student/<id>/syllabus_techniques")]
+pub async fn api_student_syllabus_techniques_flat(
+    id: i64,
+    user: User,
+    db: &State<Pool<Sqlite>>,
+) -> ApiResult<Json<Vec<crate::db::StudentSyllabusTechniqueOverview>>> {
+    if user.id != id && !user.has_permission(Permission::ViewAllStudents) {
+        return Err(Status::Forbidden.into());
+    }
+    Ok(Json(crate::db::list_sst_flat_for_student(db, id).await?))
+}
+
+#[get("/student/<id>/syllabus_attempts/recent?<params..>")]
+pub async fn api_student_recent_syllabus_attempts(
+    id: i64,
+    params: RecentAttemptsQuery,
+    user: User,
+    db: &State<Pool<Sqlite>>,
+) -> ApiResult<Json<Vec<crate::models::AttemptListItem>>> {
+    if user.id != id && !user.has_permission(Permission::ViewAllStudents) {
+        return Err(Status::Forbidden.into());
+    }
+    let limit = params.limit.unwrap_or(5).clamp(1, 50);
+    Ok(Json(
+        crate::db::list_recent_syllabus_attempts_for_student(db, id, limit).await?,
+    ))
+}
+
+#[get("/student/<id>/syllabus_attempts/heatmap?<params..>")]
+pub async fn api_student_syllabus_attempt_heatmap(
+    id: i64,
+    params: HeatmapQuery,
+    user: User,
+    db: &State<Pool<Sqlite>>,
+) -> ApiResult<Json<Vec<crate::models::AttemptBucket>>> {
+    if user.id != id && !user.has_permission(Permission::ViewAllStudents) {
+        return Err(Status::Forbidden.into());
+    }
+    // Reuse the same default window the legacy heatmap route uses.
+    let (from, to) = resolve_heatmap_window(&params)?;
+    Ok(Json(
+        crate::db::syllabus_attempt_buckets_for_student(db, id, from, to).await?,
+    ))
+}
+

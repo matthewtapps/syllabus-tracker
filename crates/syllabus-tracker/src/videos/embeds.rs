@@ -17,17 +17,18 @@ static YOUTUBE_LONG: Lazy<Regex> = Lazy::new(|| {
 });
 static YOUTUBE_SHORT: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"youtu\.be/([A-Za-z0-9_-]{6,})").expect("youtube short regex"));
-static VIMEO: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"vimeo\.com/(?:video/)?(\d{5,})").expect("vimeo regex")
-});
-static DRIVE: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"drive\.google\.com/file/d/([A-Za-z0-9_-]+)").expect("drive regex")
-});
+static VIMEO: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"vimeo\.com/(?:video/)?(\d{5,})").expect("vimeo regex"));
+static DRIVE: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"drive\.google\.com/file/d/([A-Za-z0-9_-]+)").expect("drive regex"));
 
 pub fn parse(url: &str) -> ParsedEmbed {
     let trimmed = url.trim();
 
-    if let Some(c) = YOUTUBE_LONG.captures(trimmed).or_else(|| YOUTUBE_SHORT.captures(trimmed)) {
+    if let Some(c) = YOUTUBE_LONG
+        .captures(trimmed)
+        .or_else(|| YOUTUBE_SHORT.captures(trimmed))
+    {
         let id = c.get(1).map(|m| m.as_str().to_string());
         return ParsedEmbed {
             kind: VideoKind::Youtube,

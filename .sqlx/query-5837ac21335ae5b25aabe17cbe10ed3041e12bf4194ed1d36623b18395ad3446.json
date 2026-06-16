@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE student_syllabus_techniques\n             SET hidden_at = ?, hidden_by_id = ?, updated_at = ?\n             WHERE id = ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 4
+    },
+    "nullable": []
+  },
+  "hash": "5837ac21335ae5b25aabe17cbe10ed3041e12bf4194ed1d36623b18395ad3446"
+}

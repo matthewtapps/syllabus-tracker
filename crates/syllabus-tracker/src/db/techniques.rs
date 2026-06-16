@@ -5,6 +5,9 @@ use serde::Serialize;
 use sqlx::{Pool, Sqlite};
 use tracing::{info, instrument};
 
+use crate::db::activity::{
+    NewActivity, Verb, affected_students_for_technique, emit_fanout, payload,
+};
 use crate::error::AppError;
 use crate::models::{AttemptBucket, Tag, Technique};
 
@@ -26,6 +29,11 @@ pub struct LibraryTechniqueRow {
     pub student_count: i64,
     pub video_count: i64,
     pub last_activity_at: Option<String>,
+    /// Defaults to false. Set to true by the student-library endpoint when
+    /// the viewing student has the technique pinned. Coach-facing endpoints
+    /// always emit false.
+    #[serde(default)]
+    pub is_pinned: bool,
 }
 
 #[instrument]
@@ -103,6 +111,7 @@ pub async fn list_library_techniques(
                 chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(dt, chrono::Utc)
                     .to_rfc3339()
             }),
+            is_pinned: false,
         })
         .collect())
 }
@@ -212,10 +221,12 @@ pub async fn library_technique_stats(
 
     let status_row = sqlx::query!(
         r#"SELECT
-            COALESCE(SUM(CASE WHEN status = 'red'   THEN 1 ELSE 0 END), 0) AS "red!: i64",
-            COALESCE(SUM(CASE WHEN status = 'amber' THEN 1 ELSE 0 END), 0) AS "amber!: i64",
-            COALESCE(SUM(CASE WHEN status = 'green' THEN 1 ELSE 0 END), 0) AS "green!: i64"
-           FROM student_techniques WHERE technique_id = ?"#,
+            COALESCE(SUM(CASE WHEN sst.status = 'red'   THEN 1 ELSE 0 END), 0) AS "red!: i64",
+            COALESCE(SUM(CASE WHEN sst.status = 'amber' THEN 1 ELSE 0 END), 0) AS "amber!: i64",
+            COALESCE(SUM(CASE WHEN sst.status = 'green' THEN 1 ELSE 0 END), 0) AS "green!: i64"
+           FROM student_syllabus_techniques sst
+           JOIN syllabus_assignments sa ON sa.id = sst.assignment_id
+           WHERE sst.technique_id = ? AND sa.unassigned_at IS NULL AND sst.hidden_at IS NULL"#,
         technique_id
     )
     .fetch_one(pool)
@@ -226,25 +237,26 @@ pub async fn library_technique_stats(
         green: status_row.green,
     };
 
+    // attempts in the last 30 days for this technique, across the new tables
     let attempts_30d_row = sqlx::query!(
         r#"SELECT COUNT(*) AS "count!: i64"
-           FROM attempts a
-           JOIN student_techniques st ON st.id = a.student_technique_id
-           WHERE st.technique_id = ?
-             AND a.attempted_at >= datetime('now', '-30 days')"#,
+           FROM syllabus_attempts sa
+           JOIN student_syllabus_techniques sst ON sst.id = sa.student_syllabus_technique_id
+           WHERE sst.technique_id = ?
+             AND sa.attempted_at >= datetime('now', '-30 days')"#,
         technique_id
     )
     .fetch_one(pool)
     .await?;
 
     let bucket_rows = sqlx::query!(
-        r#"SELECT date(a.attempted_at, 'weekday 0', '-6 days') AS "week_start!: String",
+        r#"SELECT date(sa.attempted_at, 'weekday 0', '-6 days') AS "week_start!: String",
                   COUNT(*) AS "count!: i64"
-           FROM attempts a
-           JOIN student_techniques st ON st.id = a.student_technique_id
-           WHERE st.technique_id = ?
-             AND a.attempted_at >= datetime('now', '-56 days')
-           GROUP BY date(a.attempted_at, 'weekday 0', '-6 days')
+           FROM syllabus_attempts sa
+           JOIN student_syllabus_techniques sst ON sst.id = sa.student_syllabus_technique_id
+           WHERE sst.technique_id = ?
+             AND sa.attempted_at >= datetime('now', '-56 days')
+           GROUP BY date(sa.attempted_at, 'weekday 0', '-6 days')
            ORDER BY 1"#,
         technique_id,
     )
@@ -287,8 +299,20 @@ pub async fn update_technique(
     technique_id: i64,
     name: &str,
     description: &str,
+    actor_id: i64,
 ) -> Result<(), AppError> {
     info!("Updating technique");
+    let mut tx = pool.begin().await?;
+
+    let old = sqlx::query!(
+        r#"SELECT name AS "name!: String", description FROM techniques WHERE id = ?"#,
+        technique_id
+    )
+    .fetch_one(&mut *tx)
+    .await?;
+    let name_changed = old.name != name;
+    let description_changed = old.description.unwrap_or_default() != description;
+
     sqlx::query!(
         "UPDATE techniques
          SET name = ?, description = ?
@@ -297,7 +321,7 @@ pub async fn update_technique(
         description,
         technique_id
     )
-    .execute(pool)
+    .execute(&mut *tx)
     .await?;
 
     sqlx::query!(
@@ -308,9 +332,27 @@ pub async fn update_technique(
         description,
         technique_id
     )
-    .execute(pool)
+    .execute(&mut *tx)
     .await?;
 
+    if name_changed || description_changed {
+        let affected = affected_students_for_technique(&mut tx, technique_id).await?;
+        emit_fanout(
+            &mut tx,
+            NewActivity::new(Verb::TechniqueEdited, actor_id)
+                .technique(technique_id)
+                .payload(payload::technique_edited(
+                    name_changed,
+                    description_changed,
+                    &[],
+                    &[],
+                )),
+            &affected,
+        )
+        .await?;
+    }
+
+    tx.commit().await?;
     Ok(())
 }
 

@@ -1,6 +1,12 @@
 import { useCallback, useEffect, useRef } from "react";
 import type { PlayerEvents } from "./player-events";
 
+export interface WatchContext {
+  technique_id: number;
+  syllabus_id?: number;
+  sst_id?: number;
+}
+
 interface WatchEventPayload {
   event: string;
   seconds_watched?: number;
@@ -34,7 +40,7 @@ function endpoint(videoId: number): string {
   return `/api/videos/${videoId}/watch-events`;
 }
 
-export function useWatchTracker(videoId: number): PlayerEvents {
+export function useWatchTracker(videoId: number, context?: WatchContext): PlayerEvents {
   const stateRef = useRef<PendingState>({
     playId: generatePlayId(),
     buffer: [],
@@ -45,14 +51,20 @@ export function useWatchTracker(videoId: number): PlayerEvents {
     lastFlushedSeconds: 0,
   });
   const flushTimerRef = useRef<number | null>(null);
+  const contextRef = useRef(context);
+  useEffect(() => {
+    contextRef.current = context;
+  }, [context]);
 
   const flush = useCallback(
     (useBeacon: boolean = false) => {
       const state = stateRef.current;
       if (state.buffer.length === 0) return;
+      const ctx = contextRef.current;
       const payload = {
         play_id: state.playId,
         events: state.buffer,
+        ...(ctx ? { context: ctx } : {}),
       };
       state.buffer = [];
       state.lastFlushedSeconds = state.maxSeconds;

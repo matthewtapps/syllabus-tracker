@@ -448,7 +448,10 @@ mod tests {
         assert!(t.last_coach_update_at.is_some());
         assert!(t.last_student_update_at.is_some());
         assert_eq!(t.last_coach_update_by_name.as_deref(), Some("Coach User"));
-        assert_eq!(t.last_student_update_by_name.as_deref(), Some("Student User"));
+        assert_eq!(
+            t.last_student_update_by_name.as_deref(),
+            Some("Student User")
+        );
     }
 
     /// Helper: fetch the techniques list as the given user and pull out the
@@ -509,8 +512,7 @@ mod tests {
             .dispatch()
             .await;
 
-        let flag =
-            fetch_unseen_flag(&client, student_cookies, student_id, st_id).await;
+        let flag = fetch_unseen_flag(&client, student_cookies, student_id, st_id).await;
         assert!(!flag, "student should not see a dot for their own edit");
     }
 
@@ -732,31 +734,47 @@ mod tests {
 
     #[rocket::async_test]
     async fn test_taking_initiative_recent_student_note_update() {
+        // Initiative is now sourced from the syllabus stack (SST rows), so we
+        // need a syllabus assignment before the student note triggers a signal.
         let test_db = TestDbBuilder::new()
             .coach("coach_user", Some("Coach User"))
             .student("student_user", Some("Student User"))
             .technique("Armbar", "desc", Some("coach_user"))
-            .assign_technique(Some("Armbar"), Some("student_user"), "red", "", "")
             .build()
             .await
             .expect("Failed to build test DB");
 
-        let (client, test_db) = setup_test_client(test_db).await;
-        let st_id = test_db
-            .student_technique_id("student_user", "Armbar")
+        let coach_id = test_db.user_id("coach_user").unwrap();
+        let student_id = test_db.user_id("student_user").unwrap();
+        let armbar_id = test_db.technique_id("Armbar").unwrap();
+
+        // Create a syllabus assignment with the technique so SST exists.
+        let syllabus_id = crate::db::create_syllabus(&test_db.pool, "S", None, coach_id)
             .await
-            .expect("Failed to get id");
+            .unwrap();
+        let assignment_id = crate::db::assign(&test_db.pool, coach_id, student_id, syllabus_id)
+            .await
+            .unwrap();
+        crate::db::add_technique_to_assignment(&test_db.pool, assignment_id, armbar_id, coach_id)
+            .await
+            .unwrap();
+        let sst_id = crate::db::get_sst_id(&test_db.pool, assignment_id, armbar_id)
+            .await
+            .unwrap()
+            .expect("SST row must exist after add_technique_to_assignment");
+
+        let (client, _test_db) = setup_test_client(test_db).await;
 
         let before = chrono::Utc::now();
         let student_cookies = login_test_user(&client, "student_user", "password123").await;
         let resp = client
-            .put(format!("/api/student_technique/{}", st_id))
+            .patch(format!("/api/student_syllabus_techniques/{}", sst_id))
             .cookies(student_cookies)
             .header(ContentType::JSON)
             .body(json!({ "student_notes": "drilled this morning" }).to_string())
             .dispatch()
             .await;
-        assert_eq!(resp.status(), Status::Ok);
+        assert_eq!(resp.status(), Status::NoContent);
 
         let coach_cookies = login_test_user(&client, "coach_user", "password123").await;
         let initiative = fetch_initiative(&client, coach_cookies, "student_user")
@@ -814,10 +832,8 @@ mod tests {
         let initiative = fetch_initiative(&client, coach_cookies, "student_user")
             .await
             .expect("expected last_student_initiative_at to be set from watch aggregate");
-        let watched_utc = chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(
-            watched_at,
-            chrono::Utc,
-        );
+        let watched_utc =
+            chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(watched_at, chrono::Utc);
         assert!(
             (initiative - watched_utc).num_seconds().abs() <= 1,
             "initiative {} should match watch time {}",
@@ -885,10 +901,8 @@ mod tests {
         let initiative = fetch_initiative(&client, coach_cookies, "student_user")
             .await
             .expect("expected initiative timestamp");
-        let watched_utc = chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(
-            watched_at,
-            chrono::Utc,
-        );
+        let watched_utc =
+            chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(watched_at, chrono::Utc);
         assert!(
             (initiative - watched_utc).num_seconds().abs() <= 1,
             "initiative {} should equal the more recent watch {}",
@@ -1104,10 +1118,7 @@ mod tests {
         let login_response = client
             .post("/api/login")
             .header(ContentType::JSON)
-            .body(
-                json!({ "username": "new_student", "password": "secret123" })
-                    .to_string(),
-            )
+            .body(json!({ "username": "new_student", "password": "secret123" }).to_string())
             .dispatch()
             .await;
         assert_eq!(login_response.status(), Status::Ok);
@@ -1167,18 +1178,13 @@ mod tests {
             .await
             .expect("Failed to build test DB");
         let (client, test_db) = setup_test_client(test_db).await;
-        let student_id = test_db
-            .user_id("student_user")
-            .expect("student not found");
+        let student_id = test_db.user_id("student_user").expect("student not found");
 
         // Student can currently log in.
         let before = client
             .post("/api/login")
             .header(ContentType::JSON)
-            .body(
-                json!({ "username": "student_user", "password": "password123" })
-                    .to_string(),
-            )
+            .body(json!({ "username": "student_user", "password": "password123" }).to_string())
             .dispatch()
             .await;
         let body = before.into_string().await.unwrap();
@@ -1201,10 +1207,7 @@ mod tests {
         let after = client
             .post("/api/login")
             .header(ContentType::JSON)
-            .body(
-                json!({ "username": "student_user", "password": "password123" })
-                    .to_string(),
-            )
+            .body(json!({ "username": "student_user", "password": "password123" }).to_string())
             .dispatch()
             .await;
         let body = after.into_string().await.unwrap();
@@ -1330,4 +1333,70 @@ async fn test_tag_apis() {
     let tags_json = get_tags_response.into_string().await.unwrap();
     let tags_response: TagsResponse = serde_json::from_str(&tags_json).unwrap();
     assert!(!tags_response.tags.iter().any(|t| t.name == "Test Tag"));
+}
+
+#[rocket::async_test]
+async fn dashboard_digest_route_returns_metrics_for_coach() {
+    use crate::test::test_utils::{create_standard_test_db, login_test_user, setup_test_client};
+    let db = create_standard_test_db().await;
+    let (client, _db) = setup_test_client(db).await;
+    let cookies = login_test_user(&client, "coach_user", "password123").await;
+
+    let resp = client
+        .get("/api/dashboard/activity_digest")
+        .cookies(cookies)
+        .dispatch()
+        .await;
+    assert_eq!(resp.status(), rocket::http::Status::Ok);
+    let body = resp.into_string().await.unwrap();
+    assert!(body.contains("attempts_logged"), "body missing attempts_logged: {}", body);
+    assert!(body.contains("active_students"), "body missing active_students: {}", body);
+}
+
+#[rocket::async_test]
+async fn dashboard_digest_route_returns_forbidden_for_student() {
+    use crate::test::test_utils::{create_standard_test_db, login_test_user, setup_test_client};
+    let db = create_standard_test_db().await;
+    let (client, _db) = setup_test_client(db).await;
+    let cookies = login_test_user(&client, "student_user", "password123").await;
+
+    let resp = client
+        .get("/api/dashboard/activity_digest")
+        .cookies(cookies)
+        .dispatch()
+        .await;
+    assert_eq!(resp.status(), rocket::http::Status::Forbidden);
+}
+
+#[rocket::async_test]
+async fn dashboard_feed_route_returns_array_for_coach() {
+    use crate::test::test_utils::{create_standard_test_db, login_test_user, setup_test_client};
+    let db = create_standard_test_db().await;
+    let (client, _db) = setup_test_client(db).await;
+    let cookies = login_test_user(&client, "coach_user", "password123").await;
+
+    let resp = client
+        .get("/api/dashboard/activity_feed?limit=10")
+        .cookies(cookies)
+        .dispatch()
+        .await;
+    assert_eq!(resp.status(), rocket::http::Status::Ok);
+    let body = resp.into_string().await.unwrap();
+    // Should be a JSON array (possibly empty in a fresh test DB).
+    assert!(body.starts_with('['), "expected JSON array, got: {}", body);
+}
+
+#[rocket::async_test]
+async fn dashboard_feed_route_returns_forbidden_for_student() {
+    use crate::test::test_utils::{create_standard_test_db, login_test_user, setup_test_client};
+    let db = create_standard_test_db().await;
+    let (client, _db) = setup_test_client(db).await;
+    let cookies = login_test_user(&client, "student_user", "password123").await;
+
+    let resp = client
+        .get("/api/dashboard/activity_feed")
+        .cookies(cookies)
+        .dispatch()
+        .await;
+    assert_eq!(resp.status(), rocket::http::Status::Forbidden);
 }

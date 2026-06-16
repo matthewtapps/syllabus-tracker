@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO syllabi (name, description, created_by_id)\n         VALUES (?, ?, ?)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": []
+  },
+  "hash": "b493835ef423346cdb940ced22cc5f88ce7dfe3b002d25f957cd177521fa63dc"
+}

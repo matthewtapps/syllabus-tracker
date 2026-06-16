@@ -11,11 +11,13 @@ pub enum Permission {
     EditOwnProfile,
     ViewOwnTechniques,
     EditOwnNotes,
+    ViewLibrary,
 
     ViewAllStudents,
     EditAllTechniques,
     AssignTechniques,
     CreateTechniques,
+    ManageSyllabi,
     RegisterUsers,
     ManageTags,
 
@@ -28,6 +30,9 @@ pub enum Permission {
     ManageVideoVisibility,
     ViewWatchStats,
     ViewStorageStats,
+
+    ManageThreads,
+    BroadcastLibraryComment,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -44,6 +49,7 @@ static STUDENT_PERMISSIONS: Lazy<HashSet<Permission>> = Lazy::new(|| {
     permissions.insert(Permission::EditOwnProfile);
     permissions.insert(Permission::ViewOwnTechniques);
     permissions.insert(Permission::EditOwnNotes);
+    permissions.insert(Permission::ViewLibrary);
 
     permissions
 });
@@ -57,6 +63,7 @@ static COACH_PERMISSIONS: Lazy<HashSet<Permission>> = Lazy::new(|| {
     permissions.insert(Permission::EditAllTechniques);
     permissions.insert(Permission::AssignTechniques);
     permissions.insert(Permission::CreateTechniques);
+    permissions.insert(Permission::ManageSyllabi);
     permissions.insert(Permission::RegisterUsers);
     permissions.insert(Permission::ManageTags);
 
@@ -64,6 +71,9 @@ static COACH_PERMISSIONS: Lazy<HashSet<Permission>> = Lazy::new(|| {
     permissions.insert(Permission::DeleteVideos);
     permissions.insert(Permission::ManageVideoVisibility);
     permissions.insert(Permission::ViewWatchStats);
+
+    permissions.insert(Permission::ManageThreads);
+    permissions.insert(Permission::BroadcastLibraryComment);
 
     permissions
 });
@@ -102,7 +112,6 @@ impl Role {
             Role::Admin => "admin",
         }
     }
-
 }
 
 impl FromStr for Role {
@@ -125,5 +134,20 @@ impl fmt::Display for Role {
             Role::Coach => write!(f, "coach"),
             Role::Admin => write!(f, "admin"),
         }
+    }
+}
+
+#[cfg(test)]
+mod thread_permission_tests {
+    use super::{Permission, Role};
+
+    #[test]
+    fn coach_and_admin_have_thread_permissions_student_does_not() {
+        assert!(Role::Coach.has_permission(Permission::ManageThreads));
+        assert!(Role::Coach.has_permission(Permission::BroadcastLibraryComment));
+        assert!(Role::Admin.has_permission(Permission::ManageThreads));
+        assert!(Role::Admin.has_permission(Permission::BroadcastLibraryComment));
+        assert!(!Role::Student.has_permission(Permission::ManageThreads));
+        assert!(!Role::Student.has_permission(Permission::BroadcastLibraryComment));
     }
 }

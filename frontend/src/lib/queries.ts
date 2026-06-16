@@ -1,30 +1,41 @@
 import { keepPreviousData, skipToken, useQuery } from "@tanstack/react-query";
 import {
-  getAdminStorage,
   getAllTags,
   getAllUsers,
-  getAttemptHeatmap,
-  getAttemptSparkline,
+  getActivityDigest,
+  getActivityFeed,
+  getDashboardActivityFeed,
+  getStudentActivityFeed,
+  getActivityUnreadCount,
   getAttemptSummary,
   getCapabilities,
   getCollection,
   getCollectionStudents,
   getCollections,
   getCurrentUser,
-  getDashboardVideoOverview,
   getLibraryStats,
   getLibraryTechniques,
-  getLibraryTechniqueStats,
-  getRecentAttemptsForStudent,
+  getRecentSyllabusAttemptsForStudent,
+  getStudentLibrary,
+  getStudentPinnedTechniques,
+  getStudentSyllabusTechniquesApi,
+  getStudentSyllabusTechniquesFlat,
+  getStudentSyllabiApi,
   getStudentTechniqueDetail,
   getStudentTechniques,
   getStudents,
+  getSyllabusDetail,
+  getSyllabi,
+  getSyllabusAttemptHeatmap,
+  listSyllabusStudentsApi,
   getTechniquesForAssignment,
+  listSyllabusAttemptsApi,
   getVideoStats,
-  getVideoStatus,
   listAttempts,
   listVideos,
+  listThreads,
 } from "./api";
+import type { AnchorKind } from "./api";
 import { qk } from "./query-keys";
 
 // ---- Auth / session ----
@@ -114,33 +125,6 @@ export function useAttemptSummary(studentId: number | undefined) {
   });
 }
 
-export function useAttemptHeatmap(studentId: number | undefined) {
-  return useQuery({
-    queryKey: qk.attemptHeatmap(studentId ?? 0),
-    queryFn: whenId(studentId, getAttemptHeatmap),
-  });
-}
-
-export function useAttemptSparkline(stId: number | undefined, weeks: number = 12) {
-  return useQuery({
-    queryKey: qk.attemptSparkline(stId ?? 0, weeks),
-    queryFn:
-      typeof stId === "number" && Number.isFinite(stId)
-        ? () => getAttemptSparkline(stId, weeks)
-        : skipToken,
-  });
-}
-
-export function useRecentAttempts(studentId: number | undefined, limit: number = 5) {
-  return useQuery({
-    queryKey: qk.recentAttempts(studentId ?? 0, limit),
-    queryFn:
-      typeof studentId === "number" && Number.isFinite(studentId)
-        ? () => getRecentAttemptsForStudent(studentId, limit)
-        : skipToken,
-  });
-}
-
 // ---- Tags ----
 
 // Tags change rarely; tolerate a 5-minute cache window before background
@@ -193,15 +177,22 @@ export function useLibraryTechniques() {
   });
 }
 
-export function useLibraryTechniqueStats(
-  techniqueId: number | undefined,
-  enabled: boolean = true,
-) {
+export function useStudentLibrary(studentId: number | undefined) {
   return useQuery({
-    queryKey: qk.libraryTechniqueStats(techniqueId ?? 0),
+    queryKey: qk.studentLibrary(studentId ?? 0),
     queryFn:
-      enabled && typeof techniqueId === "number" && Number.isFinite(techniqueId)
-        ? () => getLibraryTechniqueStats(techniqueId)
+      typeof studentId === "number" && Number.isFinite(studentId)
+        ? () => getStudentLibrary(studentId)
+        : skipToken,
+  });
+}
+
+export function useStudentPinnedTechniques(studentId: number | undefined) {
+  return useQuery({
+    queryKey: qk.pinnedTechniques(studentId ?? 0),
+    queryFn:
+      typeof studentId === "number" && Number.isFinite(studentId)
+        ? () => getStudentPinnedTechniques(studentId)
         : skipToken,
   });
 }
@@ -218,12 +209,22 @@ export function useLibraryTechniqueStats(
 export function useTechniqueVideos(
   techniqueId: number | undefined,
   forStudent?: number,
+  syllabus?: { studentId: number; syllabusId: number },
 ) {
+  // Syllabus context gets its own cache bucket so library-context and
+  // syllabus-context views of the same technique don't collide.
+  const queryKey = syllabus
+    ? qk.syllabusTechniqueVideos(
+        syllabus.studentId,
+        syllabus.syllabusId,
+        techniqueId ?? 0,
+      )
+    : qk.techniqueVideos(techniqueId ?? 0, forStudent ?? null);
   return useQuery({
-    queryKey: qk.techniqueVideos(techniqueId ?? 0, forStudent ?? null),
+    queryKey,
     queryFn:
       typeof techniqueId === "number" && Number.isFinite(techniqueId)
-        ? () => listVideos(techniqueId, { forStudent })
+        ? () => listVideos(techniqueId, { forStudent, syllabus })
         : skipToken,
     staleTime: 0,
     refetchOnWindowFocus: true,
@@ -236,19 +237,6 @@ export function useTechniqueVideos(
   });
 }
 
-// Status endpoint for a single video; polls while still processing.
-export function useVideoStatus(videoId: number | undefined, enabled: boolean = true) {
-  return useQuery({
-    queryKey: qk.videoStatus(videoId ?? 0),
-    queryFn:
-      enabled && typeof videoId === "number" && Number.isFinite(videoId)
-        ? () => getVideoStatus(videoId)
-        : skipToken,
-    refetchInterval: (query) =>
-      query.state.data?.processing_status === "processing" ? 2000 : false,
-  });
-}
-
 export function useVideoStats(videoId: number | undefined) {
   return useQuery({
     queryKey: qk.videoStats(videoId ?? 0),
@@ -256,16 +244,174 @@ export function useVideoStats(videoId: number | undefined) {
   });
 }
 
-export function useDashboardVideoOverview(enabled: boolean = true) {
+// ---- Syllabi ----
+
+export function useSyllabi() {
   return useQuery({
-    queryKey: qk.dashboardVideoOverview(),
-    queryFn: enabled ? getDashboardVideoOverview : skipToken,
+    queryKey: qk.syllabi(),
+    queryFn: getSyllabi,
   });
 }
 
-export function useAdminStorage(enabled: boolean = true) {
+export function useSyllabus(syllabusId: number | undefined) {
   return useQuery({
-    queryKey: qk.adminStorage(),
-    queryFn: enabled ? getAdminStorage : skipToken,
+    queryKey: qk.syllabus(syllabusId ?? 0),
+    queryFn:
+      typeof syllabusId === "number" && Number.isFinite(syllabusId)
+        ? () => getSyllabusDetail(syllabusId)
+        : skipToken,
+  });
+}
+
+export function useStudentSyllabi(studentId: number | undefined) {
+  return useQuery({
+    queryKey: qk.studentSyllabi(studentId ?? 0),
+    queryFn:
+      typeof studentId === "number" && Number.isFinite(studentId)
+        ? () => getStudentSyllabiApi(studentId)
+        : skipToken,
+  });
+}
+
+export function useStudentSyllabusTechniques(
+  studentId: number | undefined,
+  syllabusId: number | undefined,
+) {
+  return useQuery({
+    queryKey: qk.studentSyllabusTechniques(studentId ?? 0, syllabusId ?? 0),
+    queryFn:
+      typeof studentId === "number" &&
+      typeof syllabusId === "number" &&
+      Number.isFinite(studentId) &&
+      Number.isFinite(syllabusId)
+        ? () => getStudentSyllabusTechniquesApi(studentId, syllabusId)
+        : skipToken,
+  });
+}
+
+export function useSyllabusAttempts(sstId: number | undefined) {
+  return useQuery({
+    queryKey: qk.syllabusAttempts(sstId ?? 0),
+    queryFn:
+      typeof sstId === "number" && Number.isFinite(sstId)
+        ? () => listSyllabusAttemptsApi(sstId)
+        : skipToken,
+  });
+}
+
+export function useSyllabusStudents(syllabusId: number | undefined) {
+  return useQuery({
+    queryKey: qk.syllabusStudents(syllabusId ?? 0),
+    queryFn:
+      typeof syllabusId === "number" && Number.isFinite(syllabusId)
+        ? () => listSyllabusStudentsApi(syllabusId)
+        : skipToken,
+  });
+}
+
+import { getAssignmentDiffApi } from "./api";
+
+export function useAssignmentDiff(
+  studentId: number | undefined,
+  syllabusId: number | undefined,
+) {
+  return useQuery({
+    queryKey: qk.studentSyllabusDiff(studentId ?? 0, syllabusId ?? 0),
+    queryFn:
+      typeof studentId === "number" &&
+      typeof syllabusId === "number" &&
+      Number.isFinite(studentId) &&
+      Number.isFinite(syllabusId)
+        ? () => getAssignmentDiffApi(studentId, syllabusId)
+        : skipToken,
+  });
+}
+
+// ---- Activity feed (PR 2) ----
+
+// The viewer's own activity feed. For a student this returns rows where
+// they are the target; for a coach it returns all gym activity except their
+// own actions. `enabled` lets callers gate the query on auth state.
+export function useActivityFeed(enabled: boolean = true) {
+  return useQuery({
+    queryKey: qk.activityFeed(),
+    queryFn: enabled ? () => getActivityFeed({ limit: 20 }) : skipToken,
+  });
+}
+
+// Student-scoped activity feed. Returns rows where target_student_id = studentId.
+// Used by the student-profile page so a coach sees that student's activity
+// (not the gym-wide feed). The student can also call this for their own profile.
+export function useStudentActivityFeed(studentId: number | undefined, limit = 20) {
+  return useQuery({
+    queryKey: qk.studentActivityFeed(studentId ?? 0, limit),
+    queryFn:
+      typeof studentId === "number" && Number.isFinite(studentId)
+        ? () => getStudentActivityFeed(studentId, { limit })
+        : skipToken,
+  });
+}
+
+export function useActivityDigest(enabled: boolean = true) {
+  return useQuery({
+    queryKey: qk.activityDigest(),
+    queryFn: enabled ? getActivityDigest : skipToken,
+    staleTime: 60 * 1000,
+  });
+}
+
+export function useDashboardActivityFeed(enabled: boolean = true) {
+  return useQuery({
+    queryKey: qk.dashboardActivityFeed(),
+    queryFn: enabled ? () => getDashboardActivityFeed(30) : skipToken,
+  });
+}
+
+export function useActivityUnreadCount(enabled: boolean = true) {
+  return useQuery({
+    queryKey: qk.activityUnreadCount(),
+    queryFn: enabled ? getActivityUnreadCount : skipToken,
+    refetchOnWindowFocus: true,
+  });
+}
+
+// ---- Syllabus-backed student dashboard reads ----
+
+export function useStudentSyllabusTechniquesFlat(studentId: number | undefined) {
+  return useQuery({
+    queryKey: qk.studentSyllabusTechniquesFlat(studentId ?? 0),
+    queryFn: whenId(studentId, getStudentSyllabusTechniquesFlat),
+  });
+}
+
+export function useRecentSyllabusAttempts(
+  studentId: number | undefined,
+  limit: number = 5,
+) {
+  return useQuery({
+    queryKey: qk.studentRecentSyllabusAttempts(studentId ?? 0, limit),
+    queryFn:
+      typeof studentId === "number" && Number.isFinite(studentId)
+        ? () => getRecentSyllabusAttemptsForStudent(studentId, limit)
+        : skipToken,
+  });
+}
+
+export function useSyllabusAttemptHeatmap(studentId: number | undefined) {
+  return useQuery({
+    queryKey: qk.studentSyllabusAttemptHeatmap(studentId ?? 0),
+    queryFn: whenId(studentId, getSyllabusAttemptHeatmap),
+  });
+}
+
+// ---- Threads ----
+
+export function useThreadsForAnchor(
+  anchorKind: AnchorKind,
+  anchorId: number | undefined,
+) {
+  return useQuery({
+    queryKey: qk.threads(anchorKind, anchorId ?? 0),
+    queryFn: whenId(anchorId, (id) => listThreads(anchorKind, id)),
   });
 }

@@ -4,6 +4,7 @@ use chrono::Utc;
 use sqlx::{Pool, Sqlite};
 use tracing::instrument;
 
+use crate::db::activity::{NewActivity, Verb, emit, payload};
 use crate::error::AppError;
 use crate::models::WatchAggregateRow;
 
@@ -13,6 +14,16 @@ pub struct WatchEventInput {
     pub seconds_watched: Option<i64>,
 }
 
+/// Where the student was when they watched, captured by the client so the feed
+/// can deep-link back. `technique_id` is the video's technique (always known on
+/// the client). `syllabus_id` + `sst_id` are set only on the syllabus surface.
+#[derive(Debug, Clone, Default)]
+pub struct WatchContext {
+    pub technique_id: Option<i64>,
+    pub syllabus_id: Option<i64>,
+    pub sst_id: Option<i64>,
+}
+
 #[instrument(skip(pool, events))]
 pub async fn ingest_watch_events(
     pool: &Pool<Sqlite>,
@@ -20,6 +31,7 @@ pub async fn ingest_watch_events(
     user_id: i64,
     play_id: &str,
     events: &[WatchEventInput],
+    context: &WatchContext,
 ) -> Result<(), AppError> {
     if events.is_empty() {
         return Ok(());
@@ -64,8 +76,7 @@ pub async fn ingest_watch_events(
     .prior_max;
 
     let has_new_play = prior_started == 0 && events.iter().any(|e| e.event == "started");
-    let has_new_completed =
-        prior_completed == 0 && events.iter().any(|e| e.event == "completed");
+    let has_new_completed = prior_completed == 0 && events.iter().any(|e| e.event == "completed");
     let batch_max_seconds = events
         .iter()
         .filter_map(|e| e.seconds_watched)
@@ -76,6 +87,16 @@ pub async fn ingest_watch_events(
     } else {
         0
     };
+
+    let duration_seconds = sqlx::query_scalar!(
+        r#"SELECT COALESCE(duration_seconds, 0) AS "d!: i64" FROM videos WHERE id = ?"#,
+        video_id
+    )
+    .fetch_one(&mut *tx)
+    .await?;
+    let threshold = std::cmp::min(10, (duration_seconds as f64 * 0.2).ceil() as i64).max(1);
+    let new_cumulative = prior_max_seconds.max(batch_max_seconds);
+    let crossed_now = prior_max_seconds < threshold && new_cumulative >= threshold;
 
     // Persist raw event rows. Duplicates are allowed; the prior-state checks
     // above already deduped what matters for the aggregate.
@@ -118,6 +139,22 @@ pub async fn ingest_watch_events(
     )
     .execute(&mut *tx)
     .await?;
+
+    if crossed_now {
+        let mut ev = NewActivity::new(Verb::VideoWatched, user_id)
+            .target_student(user_id)
+            .video(video_id)
+            .payload(payload::video_watched(new_cumulative, duration_seconds));
+        if let Some(tech) = context.technique_id {
+            ev = ev.technique(tech);
+        }
+        if let (Some(syllabus), Some(sst)) = (context.syllabus_id, context.sst_id) {
+            ev = ev.syllabus(syllabus).sst(sst).context_kind("syllabus");
+        } else if context.technique_id.is_some() {
+            ev = ev.context_kind("library");
+        }
+        emit(&mut tx, ev).await?;
+    }
 
     tx.commit().await?;
     Ok(())

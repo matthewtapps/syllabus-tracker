@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT student_syllabus_technique_id AS \"id!: i64\"\n           FROM syllabus_attempts WHERE id = ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "id!: i64",
+        "ordinal": 0,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "cb900df7f1ca054cf159e437d942635d80d710a8a3f8e8819cca51afbe257169"
+}

@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO activity\n               (occurred_at, verb, actor_user_id, target_student_id, technique_id)\n           SELECT\n               spt.pinned_at,\n               'technique_pinned',\n               spt.student_id,\n               spt.student_id,\n               spt.technique_id\n           FROM student_pinned_techniques spt",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": []
+  },
+  "hash": "1f51beccc745f7cb3449a8acb096358748dc38f4f5f17d57aa875c2cc3829295"
+}

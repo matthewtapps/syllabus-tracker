@@ -2,17 +2,22 @@ name: Staging sibling
 
 # Deploys a parallel ("sibling") stack on sugar-glider for inspecting
 # WIP roadmap work BEFORE it merges to main. Triggered manually via
-# workflow_dispatch with a branch input — the workflow builds backend
-# and frontend images from that branch and deploys them to
-# https://staging.sillybus.app.
+# workflow_dispatch. Recommended form dispatches the feature branch as the
+# ref so staging runs that branch's OWN workflow file and builds its code:
+#   gh workflow run staging.yml --ref <branch>
+# (the `branch` input is an optional override for building a branch other
+# than the one the workflow file comes from; empty => the dispatch ref.)
+# Builds backend + frontend images and deploys to https://staging.sillybus.app.
 #
-# Differs from bootstrap-sibling.yaml in three ways:
+# Differs from bootstrap-sibling.yaml in two ways:
 #   1. Builds images from a named branch instead of using :latest.
 #   2. Hardcodes the staging hostname + cert resolver (HTTPS via
 #      Let's Encrypt) so it just works in any browser.
-#   3. Wipes the videos.* tables after restoring the DB fork from
-#      sillybus-db-backups-prod, so a staging viewer can't trigger
-#      playback against prod S3 objects.
+#
+# The DB fork from sillybus-db-backups-prod keeps its videos.* rows so the
+# activity feed renders video/comment context (titles, deep links). Prod
+# video objects have been wiped from S3, so the storage_key fields resolve
+# to nothing and a staging viewer can't pull real footage anyway.
 #
 # On first run, the staging.sillybus.app DNS A record (in infra/dns.tf)
 # must already exist — Let's Encrypt HTTP-01 challenge needs public
@@ -23,9 +28,13 @@ on:
   workflow_dispatch:
     inputs:
       branch:
-        description: "Branch to build and deploy"
-        required: true
-        default: main
+        # Leave empty and dispatch with `--ref <branch>` to build the dispatch
+        # ref itself (recommended: staging then runs that branch's own workflow
+        # file too). Set it explicitly only to build a branch other than the
+        # one the workflow file is taken from. Must have no default, or the
+        # `inputs.branch || github.ref_name` fallback below never fires.
+        description: "Branch to build/deploy. Empty + --ref <branch> builds the dispatch ref."
+        required: false
       refresh_db:
         description: "Wipe the staging DB and re-fork from prod backups"
         required: true
@@ -97,13 +106,13 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
-          ref: ${{ github.event.inputs.branch }}
+          ref: ${{ github.event.inputs.branch || github.ref_name }}
       - name: Resolve branch HEAD SHA
         id: sha
         run: |
           SHORT=$(git rev-parse --short HEAD)
           echo "short=$SHORT" >> "$GITHUB_OUTPUT"
-          echo "Building backend from ${{ github.event.inputs.branch }} @ $SHORT"
+          echo "Building backend from ${{ github.event.inputs.branch || github.ref_name }} @ $SHORT"
       - uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
       - uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
         with:
@@ -118,8 +127,13 @@ jobs:
           tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/app:staging-${{ steps.sha.outputs.short }}
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/app:staging-latest
-          cache-from: type=gha,scope=backend
-          cache-to: type=gha,scope=backend-staging,mode=max
+          # Registry-backed layer cache, shared ref with prod (deploy.yaml) so
+          # staging reuses prod's warm cargo-chef dependency layer and vice
+          # versa. Off the 10 GB GHA cache pool, no eviction. Previously staging
+          # read scope=backend but wrote scope=backend-staging, so it never
+          # reused its own cache and the duplicate write evicted prod's.
+          cache-from: type=registry,ref=ghcr.io/matthewtapps/syllabus-tracker/buildcache:backend
+          cache-to: type=registry,ref=ghcr.io/matthewtapps/syllabus-tracker/buildcache:backend,mode=max
 
   build_frontend:
     runs-on: ubuntu-latest
@@ -129,13 +143,13 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
-          ref: ${{ github.event.inputs.branch }}
+          ref: ${{ github.event.inputs.branch || github.ref_name }}
       - name: Resolve branch HEAD SHA
         id: sha
         run: |
           SHORT=$(git rev-parse --short HEAD)
           echo "short=$SHORT" >> "$GITHUB_OUTPUT"
-          echo "Building frontend from ${{ github.event.inputs.branch }} @ $SHORT"
+          echo "Building frontend from ${{ github.event.inputs.branch || github.ref_name }} @ $SHORT"
       - uses: cachix/install-nix-action@v27
         with:
           extra_nix_config: |
@@ -175,8 +189,10 @@ jobs:
             VITE_API_URL=/api
             VITE_ENVIRONMENT=staging
             VITE_HONEYCOMB_API_KEY=${{ steps.hc.outputs.vite_key }}
+          # Share the gha frontend scope with prod (was frontend-staging, which
+          # staging wrote but never read back). Small layer, gha is fine here.
           cache-from: type=gha,scope=frontend
-          cache-to: type=gha,scope=frontend-staging,mode=max
+          cache-to: type=gha,scope=frontend,mode=max
 
   deploy:
     needs: [read_platform, build_backend, build_frontend]
@@ -191,7 +207,7 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
-          ref: ${{ github.event.inputs.branch }}
+          ref: ${{ github.event.inputs.branch || github.ref_name }}
       - uses: cachix/install-nix-action@v27
         with:
           extra_nix_config: |
@@ -216,6 +232,23 @@ jobs:
           chmod 600 ~/.ssh/id_ed25519
           ssh-keyscan -H "$VM_IP" >> ~/.ssh/known_hosts
 
+      - name: Free disk on host (prune old docker images)
+        # The host is shared with prod and accumulates one image per deploy;
+        # without pruning it eventually fills the disk and blocks the next
+        # deploy (the secrets rsync below fails with "No space left on device").
+        # Runs BEFORE shipping so a near-full disk self-heals. Each deploy tags
+        # a unique image that is immediately superseded, so we keep NO time
+        # window: prune every image not used by a running container. Rollback,
+        # if ever needed, re-pulls from ghcr. Volumes are never touched.
+        run: |
+          ssh -i ~/.ssh/id_ed25519 "deploy@$VM_IP" '
+            echo "disk before:"; df -h / | tail -1
+            docker image prune -af || true
+            docker builder prune -f || true
+            docker container prune -f || true
+            echo "disk after:"; df -h / | tail -1
+          '
+
       - name: Build runtime-secrets for staging sibling
         env:
           AWS_ACCESS_KEY_ID:     ${{ secrets.PLATFORM_STATE_R2_ACCESS_KEY_ID }}
@@ -228,10 +261,19 @@ jobs:
           BROWSER_HC=$(tofu output -raw _platform_honeycomb_browser_ingest)
           echo "::add-mask::$BACKEND_HC"
           echo "::add-mask::$BROWSER_HC"
+          # Video processing secrets (remote transcode endpoint). Shipped in
+          # the same sops bundle; only consumed by the app when the staging
+          # override sets VIDEO_PROCESSOR=remote. Harmless in host mode.
+          VIDEO_ENQ_TOKEN=$(tofu output -raw _platform_video_enqueue_token)
+          VIDEO_CB_SECRET=$(tofu output -raw _platform_video_callback_secret)
+          echo "::add-mask::$VIDEO_ENQ_TOKEN"
+          echo "::add-mask::$VIDEO_CB_SECRET"
 
           install -m 0600 /dev/stdin /tmp/_hc.env <<EOF
           HONEYCOMB_API_KEY=$BACKEND_HC
           VITE_HONEYCOMB_API_KEY=$BROWSER_HC
+          VIDEO_ENQUEUE_TOKEN=$VIDEO_ENQ_TOKEN
+          VIDEO_CALLBACK_SECRET=$VIDEO_CB_SECRET
           EOF
           sops --config /dev/null -e --age "$HOST_AGE_RECIPIENT" \
             --input-type=dotenv --output-type=dotenv /tmp/_hc.env > /tmp/${SIBLING_NAME}-honeycomb.enc.env
@@ -253,6 +295,15 @@ jobs:
           shred -u /tmp/${SIBLING_NAME}-honeycomb.enc.env
 
       - name: Ship compose stack + config
+        env:
+          # Staging-only video-processing cutover. Both repo vars must be set
+          # to cut staging over to the Cloud Run path; otherwise staging
+          # stays on the default host transcoder. Prod (deploy.yaml /
+          # config/prod.env) is never affected by these.
+          #   VIDEO_PROCESSOR_STAGING = "remote" to cut over (else host)
+          #   VIDEO_ENQUEUE_URL       = Cloud Run transcode-server /jobs URL
+          VIDEO_PROCESSOR_STAGING: ${{ vars.VIDEO_PROCESSOR_STAGING }}
+          VIDEO_ENQUEUE_URL: ${{ vars.VIDEO_ENQUEUE_URL }}
         run: |
           ssh -i ~/.ssh/id_ed25519 "deploy@$VM_IP" "
             sudo install -d -o deploy -g users -m 0755 /srv/${SIBLING_NAME} &&
@@ -274,6 +325,10 @@ jobs:
           # litestream container to avoid collision with the primary.
           services:
             app:
+              environment:
+                VIDEO_PROCESSOR: ${VIDEO_PROCESSOR_STAGING:-host}
+                VIDEO_ENQUEUE_URL: ${VIDEO_ENQUEUE_URL}
+                VIDEO_CALLBACK_BASE_URL: https://staging.sillybus.app
               env_file:
                 - ./config/common.env
                 - ./config/prod.env
@@ -355,27 +410,6 @@ jobs:
             echo '[restore] fork from production complete'
           "
 
-      - name: Wipe videos.* rows so staging can't trigger prod S3 reads
-        # User asked to "ignore videos" on staging. The forked DB
-        # has the rows but the storage_key fields point at the prod
-        # bucket; with the shared S3 creds in runtime-secrets the
-        # sibling could fetch them. Easier to nuke the rows than to
-        # rotate creds for one sibling.
-        #
-        # The litestream restore step writes /data/sqlite.db as root.
-        # keinos/sqlite3 runs as a non-root user by default and can't
-        # open the file -- swap to alpine + apk-installed sqlite, which
-        # runs as root in its default config and reliably has read/write.
-        run: |
-          ssh -i ~/.ssh/id_ed25519 "root@$VM_IP" "
-            docker run --rm \
-              -v ${SIBLING_NAME}_app-data:/data \
-              --entrypoint /bin/sh \
-              alpine:3.20 \
-              -c 'apk add --no-cache sqlite >/dev/null && sqlite3 /data/sqlite.db \"DELETE FROM video_watch_events; DELETE FROM video_watch_aggregates; DELETE FROM video_student_visibility; DELETE FROM videos;\"'
-            echo '[wipe] videos tables emptied on staging DB'
-          "
-
       - name: Run migrations on staging DB
         run: |
           IMG="${REGISTRY}/${IMAGE_NAME}/app:${APP_TAG}"
@@ -443,7 +477,7 @@ jobs:
             if curl -fsSL --max-time 5 https://${HOSTNAME}/api/health; then
               echo ""
               echo "Staging deployed: https://${HOSTNAME}"
-              echo "  branch:   ${{ github.event.inputs.branch }}"
+              echo "  branch:   ${{ github.event.inputs.branch || github.ref_name }}"
               echo "  app:      ${REGISTRY}/${IMAGE_NAME}/app:${APP_TAG}"
               echo "  frontend: ${REGISTRY}/${IMAGE_NAME}/frontend:${FRONTEND_TAG}"
               exit 0

@@ -1,15 +1,13 @@
-use std::sync::Arc;
-
 use chrono::{DateTime, Utc};
-use rocket::data::{ByteUnit, ToByteUnit};
+use rocket::State;
+use rocket::data::{ByteUnit, Data, ToByteUnit};
 use rocket::form::{Errors as FormErrors, Form};
 use rocket::fs::TempFile;
 use rocket::http::Status;
-use rocket::serde::{json::Json, Deserialize, Serialize};
+use rocket::serde::{Deserialize, Serialize, json::Json};
 use rocket::tokio;
-use rocket::State;
 use sqlx::{Pool, Sqlite};
-use tracing::{error, instrument, warn};
+use tracing::{error, info, instrument, warn};
 use uuid::Uuid;
 
 use crate::auth::{Permission, User};
@@ -17,10 +15,12 @@ use crate::db;
 use crate::models::{ProcessingStatus, Video};
 use crate::videos::embeds;
 use crate::videos::metrics::{kv, video_metrics};
-use crate::videos::pipeline::{
-    self, max_video_bytes, signed_download_ttl, signed_playback_ttl, PipelineContext,
-};
+use crate::videos::pipeline::{self, apply_processing_result, max_video_bytes, signed_download_ttl, signed_playback_ttl};
+use crate::videos::processor::{DynVideoProcessor, HostJob};
 use crate::videos::storage::DynVideoStorage;
+
+/// Newtype wrapping the optional callback secret managed in Rocket state.
+pub struct CallbackSecret(pub Option<String>);
 
 #[derive(Serialize)]
 pub struct ListVideosResponse {
@@ -81,14 +81,14 @@ pub fn upload_byte_limit() -> ByteUnit {
     (max_video_bytes() as u64).bytes() + 16.mebibytes()
 }
 
-#[instrument(skip(form, pool, ctx))]
+#[instrument(skip(form, pool, processor))]
 #[post("/techniques/<tid>/videos/upload", data = "<form>")]
 pub async fn api_video_upload(
     tid: i64,
     user: User,
     form: Result<Form<UploadForm<'_>>, FormErrors<'_>>,
     pool: &State<Pool<Sqlite>>,
-    ctx: &State<Arc<PipelineContext>>,
+    processor: &State<DynVideoProcessor>,
 ) -> Result<Json<UploadResponse>, Status> {
     user.require_permission(Permission::UploadVideos)?;
 
@@ -103,16 +103,12 @@ pub async fn api_video_upload(
 
     let metrics = video_metrics();
     if !is_mp4(form.file.content_type()) {
-        metrics
-            .uploads_total
-            .add(1, &[kv("result", "fail_format")]);
+        metrics.uploads_total.add(1, &[kv("result", "fail_format")]);
         return Err(Status::UnsupportedMediaType);
     }
 
     if form.file.len() > max_video_bytes() as u64 {
-        metrics
-            .uploads_total
-            .add(1, &[kv("result", "fail_size")]);
+        metrics.uploads_total.add(1, &[kv("result", "fail_size")]);
         return Err(Status::PayloadTooLarge);
     }
 
@@ -130,22 +126,19 @@ pub async fn api_video_upload(
     let mut dest = pipeline::temp_dir();
     dest.push(format!("{}.mp4", Uuid::new_v4()));
 
-    form.file
-        .persist_to(&dest)
-        .await
-        .map_err(|e| {
-            error!(
-                technique_id = tid,
-                dest = ?dest,
-                error = %e,
-                "failed to persist uploaded video to disk"
-            );
-            Status::InternalServerError
-        })?;
+    form.file.persist_to(&dest).await.map_err(|e| {
+        error!(
+            technique_id = tid,
+            dest = ?dest,
+            error = %e,
+            "failed to persist uploaded video to disk"
+        );
+        Status::InternalServerError
+    })?;
 
     let video_id = db::create_processing_video(
         pool.inner(),
-        tid,
+        db::VideoParent::Technique(tid),
         form.title.trim(),
         form.description.as_deref(),
         user.id,
@@ -153,11 +146,13 @@ pub async fn api_video_upload(
     .await
     .map_err(Status::from)?;
 
-    let ctx_clone = ctx.inner().clone();
-    let dest_clone = dest.clone();
-    tokio::spawn(async move {
-        pipeline::process_uploaded_video(ctx_clone, video_id, tid, dest_clone).await;
-    });
+    processor
+        .start(HostJob {
+            video_id,
+            technique_id: tid,
+            original_temp_path: dest,
+        })
+        .await;
 
     Ok(Json(UploadResponse {
         video_id,
@@ -201,7 +196,7 @@ pub async fn api_video_link(
     let id = db::create_external_video(
         pool.inner(),
         db::NewExternalVideo {
-            technique_id: tid,
+            parent: db::VideoParent::Technique(tid),
             title: trimmed_title,
             description: req.description.as_deref(),
             uploaded_by_id: user.id,
@@ -239,6 +234,34 @@ pub struct VideoListItem {
     pub override_for_student: Option<String>,
 }
 
+/// Fills each video's `comment_count` with the number of threads on it the
+/// viewer can see. Shared by the library/technique and per-syllabus video
+/// list routes so the summary row shows the count on every surface.
+pub(crate) async fn annotate_comment_counts(
+    pool: &Pool<Sqlite>,
+    videos: &mut [Video],
+    is_coach: bool,
+    viewer_id: i64,
+) -> Result<(), crate::error::AppError> {
+    if videos.is_empty() {
+        return Ok(());
+    }
+    let video_ids: Vec<i64> = videos.iter().map(|v| v.id).collect();
+    let counts = db::count_video_comments_visible(
+        pool,
+        &video_ids,
+        db::Viewer {
+            user_id: viewer_id,
+            is_coach,
+        },
+    )
+    .await?;
+    for v in videos.iter_mut() {
+        v.comment_count = counts.get(&v.id).copied().unwrap_or(0);
+    }
+    Ok(())
+}
+
 #[instrument(skip(pool))]
 #[get("/techniques/<tid>/videos?<for_student>")]
 pub async fn api_list_technique_videos(
@@ -248,10 +271,14 @@ pub async fn api_list_technique_videos(
     pool: &State<Pool<Sqlite>>,
 ) -> Result<Json<ListVideosResponse>, Status> {
     let is_coach = user.has_permission(crate::auth::Permission::ViewAllStudents);
-    let videos = if !is_coach {
-        // Students always see only what's effectively visible to them,
-        // regardless of any for_student query param a client tries to pass.
-        db::list_videos_for_technique_visible_to(pool.inner(), tid, user.id)
+    let mut videos = if !is_coach {
+        // Library context: students see the globally-visible list only.
+        // Per-student video_student_visibility overrides are NOT applied
+        // here; they are a legacy concept (now replaced in PR 3+ by the
+        // per-(student, syllabus) override table for syllabus context).
+        // The `for_student` query param is intentionally ignored for
+        // student callers regardless of value.
+        db::list_videos_for_technique_global_visible(pool.inner(), tid)
             .await
             .map_err(Status::from)?
     } else {
@@ -259,6 +286,9 @@ pub async fn api_list_technique_videos(
             .await
             .map_err(Status::from)?
     };
+    annotate_comment_counts(pool.inner(), &mut videos, is_coach, user.id)
+        .await
+        .map_err(Status::from)?;
 
     let items: Vec<VideoListItem> = if is_coach && for_student.is_some() {
         let student_id = for_student.unwrap();
@@ -269,9 +299,13 @@ pub async fn api_list_technique_videos(
         videos
             .into_iter()
             .map(|v| {
-                let override_for_student = overrides
-                    .get(&v.id)
-                    .map(|b| if *b { "show".to_string() } else { "hide".to_string() });
+                let override_for_student = overrides.get(&v.id).map(|b| {
+                    if *b {
+                        "show".to_string()
+                    } else {
+                        "hide".to_string()
+                    }
+                });
                 VideoListItem {
                     video: v,
                     override_for_student,
@@ -305,7 +339,7 @@ pub async fn api_set_video_global_hidden(
     pool: &State<Pool<Sqlite>>,
 ) -> Result<Status, Status> {
     user.require_permission(crate::auth::Permission::ManageVideoVisibility)?;
-    db::set_video_hidden_globally(pool.inner(), vid, body.hidden)
+    db::set_video_hidden_globally(pool.inner(), vid, body.hidden, user.id)
         .await
         .map_err(Status::from)?;
     Ok(Status::NoContent)
@@ -347,7 +381,11 @@ pub async fn api_update_video(
     let title = req.title.as_deref().map(str::trim);
     let description: Option<Option<String>> = req.description.map(|s| {
         let trimmed = s.trim().to_string();
-        if trimmed.is_empty() { None } else { Some(trimmed) }
+        if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed)
+        }
     });
     db::update_video_metadata(
         pool.inner(),
@@ -377,14 +415,15 @@ pub async fn api_reorder_videos(
     Ok(Status::NoContent)
 }
 
-#[instrument(skip(form, pool, ctx))]
+#[instrument(skip(form, pool, processor, storage))]
 #[post("/videos/<vid>/replace", data = "<form>")]
 pub async fn api_replace_video(
     vid: i64,
     user: User,
     form: Result<Form<ReplaceForm<'_>>, FormErrors<'_>>,
     pool: &State<Pool<Sqlite>>,
-    ctx: &State<Arc<PipelineContext>>,
+    processor: &State<DynVideoProcessor>,
+    storage: &State<DynVideoStorage>,
 ) -> Result<Json<UploadResponse>, Status> {
     user.require_permission(Permission::UploadVideos)?;
 
@@ -430,18 +469,15 @@ pub async fn api_replace_video(
         })?;
     let mut dest = pipeline::temp_dir();
     dest.push(format!("{}.mp4", Uuid::new_v4()));
-    form.file
-        .persist_to(&dest)
-        .await
-        .map_err(|e| {
-            error!(
-                video_id = vid,
-                dest = ?dest,
-                error = %e,
-                "failed to persist replacement video to disk"
-            );
-            Status::InternalServerError
-        })?;
+    form.file.persist_to(&dest).await.map_err(|e| {
+        error!(
+            video_id = vid,
+            dest = ?dest,
+            error = %e,
+            "failed to persist replacement video to disk"
+        );
+        Status::InternalServerError
+    })?;
 
     db::reset_video_to_processing(pool.inner(), vid)
         .await
@@ -453,14 +489,16 @@ pub async fn api_replace_video(
             .map_err(Status::from)?;
     }
 
-    let ctx_clone = ctx.inner().clone();
-    let dest_clone = dest.clone();
-    tokio::spawn(async move {
-        pipeline::process_uploaded_video(ctx_clone, vid, technique_id, dest_clone).await;
-    });
+    processor
+        .start(HostJob {
+            video_id: vid,
+            technique_id,
+            original_temp_path: dest,
+        })
+        .await;
 
     if let Some(key) = existing_storage_key {
-        let storage = ctx.inner().storage.clone();
+        let storage = storage.inner().clone();
         tokio::spawn(async move {
             if let Err(e) = storage.delete(&key).await {
                 warn!("failed to delete previous storage object {}: {}", key, e);
@@ -515,26 +553,27 @@ pub async fn api_video_playback_url(
             return Err(Status::NotFound);
         }
     }
-    let status =
-        ProcessingStatus::from_db_str(db_video.processing_status.as_deref().unwrap_or("processing"));
+    let status = ProcessingStatus::from_db_str(
+        db_video
+            .processing_status
+            .as_deref()
+            .unwrap_or("processing"),
+    );
     if status != ProcessingStatus::Ready {
         return Err(Status::Conflict);
     }
     let key = db_video.storage_key.ok_or(Status::Conflict)?;
     let ttl = signed_playback_ttl();
     let started = std::time::Instant::now();
-    let url = storage
-        .presign_get(&key, ttl)
-        .await
-        .map_err(|e| {
-            error!(
-                video_id = vid,
-                storage_key = %key,
-                error = %e,
-                "failed to mint signed playback url"
-            );
-            Status::InternalServerError
-        })?;
+    let url = storage.presign_get(&key, ttl).await.map_err(|e| {
+        error!(
+            video_id = vid,
+            storage_key = %key,
+            error = %e,
+            "failed to mint signed playback url"
+        );
+        Status::InternalServerError
+    })?;
     video_metrics()
         .signed_url_mint_duration_ms
         .record(started.elapsed().as_millis() as u64, &[]);
@@ -563,8 +602,12 @@ pub async fn api_video_download_url(
             return Err(Status::NotFound);
         }
     }
-    let status =
-        ProcessingStatus::from_db_str(db_video.processing_status.as_deref().unwrap_or("processing"));
+    let status = ProcessingStatus::from_db_str(
+        db_video
+            .processing_status
+            .as_deref()
+            .unwrap_or("processing"),
+    );
     if status != ProcessingStatus::Ready {
         return Err(Status::Conflict);
     }
@@ -596,12 +639,21 @@ pub async fn api_video_download_url(
 pub struct WatchEventBatch {
     pub play_id: String,
     pub events: Vec<WatchEventItem>,
+    #[serde(default)]
+    pub context: Option<WatchContextBody>,
 }
 
 #[derive(Deserialize)]
 pub struct WatchEventItem {
     pub event: String,
     pub seconds_watched: Option<i64>,
+}
+
+#[derive(Deserialize, Default)]
+pub struct WatchContextBody {
+    pub technique_id: Option<i64>,
+    pub syllabus_id: Option<i64>,
+    pub sst_id: Option<i64>,
 }
 
 const ALLOWED_WATCH_EVENTS: &[&str] = &[
@@ -640,7 +692,13 @@ pub async fn api_video_watch_events(
             seconds_watched: seconds,
         });
     }
-    db::ingest_watch_events(pool.inner(), vid, user.id, play_id, &inputs)
+    let context = req.context.unwrap_or_default();
+    let watch_context = db::WatchContext {
+        technique_id: context.technique_id,
+        syllabus_id: context.syllabus_id,
+        sst_id: context.sst_id,
+    };
+    db::ingest_watch_events(pool.inner(), vid, user.id, play_id, &inputs, &watch_context)
         .await
         .map_err(Status::from)?;
     let metrics = video_metrics();
@@ -762,6 +820,121 @@ pub async fn api_admin_storage(
     Ok(Json(overview))
 }
 
+// A thin FromRequest guard that plucks the HMAC signature header from the
+// request. Using a guard here lets us access request headers inside a Rocket
+// handler alongside a `Data<'_>` body parameter.
+pub struct SigHeader(pub Option<String>);
+
+#[rocket::async_trait]
+impl<'r> rocket::request::FromRequest<'r> for SigHeader {
+    type Error = ();
+
+    async fn from_request(
+        req: &'r rocket::Request<'_>,
+    ) -> rocket::request::Outcome<Self, Self::Error> {
+        let val = req
+            .headers()
+            .get_one(video_job::SIGNATURE_HEADER)
+            .map(|s| s.to_owned());
+        rocket::request::Outcome::Success(SigHeader(val))
+    }
+}
+
+/// Webhook: `POST /api/videos/<id>/processing-result`
+///
+/// Called by the remote transcode worker after it finishes transcoding.  Auth is
+/// HMAC-only (no user session guard). The raw body bytes are verified against
+/// the `X-Signature-256` header before any DB writes are attempted.
+///
+/// Response codes:
+/// - 200 OK: result applied (or idempotently no-op'd if already ready).
+/// - 400 Bad Request: body exceeds 64 KiB or JSON parse failed.
+/// - 401 Unauthorized: missing or invalid HMAC signature.
+/// - 404 Not Found: `video_id` not in the database.
+/// - 503 Service Unavailable: no callback secret is configured.
+#[instrument(skip(body, sig_header, secret, pool))]
+#[post("/videos/<video_id>/processing-result", data = "<body>")]
+pub async fn api_processing_result(
+    video_id: i64,
+    body: Data<'_>,
+    sig_header: SigHeader,
+    secret: &State<CallbackSecret>,
+    pool: &State<Pool<Sqlite>>,
+) -> Result<Status, Status> {
+    const MAX_BODY: u64 = 64 * 1024; // 64 KiB
+
+    // 503 if no secret configured.
+    let secret_str = match secret.0.as_deref() {
+        Some(s) => s,
+        None => {
+            warn!("processing-result webhook called but VIDEO_CALLBACK_SECRET is not set");
+            return Err(Status::ServiceUnavailable);
+        }
+    };
+
+    // Read the raw body with a size cap.
+    let raw: Vec<u8> = match body.open(MAX_BODY.bytes()).into_bytes().await {
+        Ok(bytes) if bytes.is_complete() => bytes.into_inner(),
+        Ok(_) => {
+            warn!(video_id, "processing-result body exceeded 64 KiB limit");
+            return Err(Status::PayloadTooLarge);
+        }
+        Err(e) => {
+            error!(video_id, error = %e, "failed to read processing-result body");
+            return Err(Status::BadRequest);
+        }
+    };
+
+    // 401 if signature header is missing.
+    let sig_hex = match sig_header.0.as_deref() {
+        Some(s) => s,
+        None => {
+            warn!(video_id, "processing-result request missing X-Signature-256 header");
+            return Err(Status::Unauthorized);
+        }
+    };
+
+    // Constant-time HMAC verification.
+    if !video_job::verify(secret_str.as_bytes(), &raw, sig_hex) {
+        warn!(video_id, "processing-result HMAC verification failed");
+        return Err(Status::Unauthorized);
+    }
+
+    // Parse the JSON payload.
+    let result: video_job::ProcessingResult = match serde_json::from_slice(&raw) {
+        Ok(r) => r,
+        Err(e) => {
+            error!(video_id, error = %e, "processing-result body failed JSON parse");
+            return Err(Status::BadRequest);
+        }
+    };
+
+    // Verify the video exists before writing.
+    match db::get_db_video(pool.inner(), video_id).await {
+        Ok(Some(_)) => {}
+        Ok(None) => {
+            warn!(video_id, "processing-result callback for unknown video");
+            return Err(Status::NotFound);
+        }
+        Err(e) => {
+            error!(video_id, error = %e, "db lookup failed in processing-result webhook");
+            return Err(Status::InternalServerError);
+        }
+    }
+
+    // Apply idempotently.
+    match apply_processing_result(pool.inner(), video_id, result).await {
+        Ok(()) => {
+            info!(video_id, "processing-result applied successfully");
+            Ok(Status::Ok)
+        }
+        Err(e) => {
+            error!(video_id, error = %e, "failed to apply processing-result");
+            Err(Status::InternalServerError)
+        }
+    }
+}
+
 fn is_mp4(content_type: Option<&rocket::http::ContentType>) -> bool {
     match content_type {
         Some(ct) => {
@@ -791,4 +964,3 @@ fn sanitised_download_name(title: &str) -> String {
         format!("{}.mp4", base)
     }
 }
-

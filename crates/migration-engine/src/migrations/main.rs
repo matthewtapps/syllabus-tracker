@@ -171,22 +171,42 @@ impl DeclarativeMigrator {
             return Ok(false);
         }
 
+        // Snapshot pre-existing FK violations BEFORE applying changes, so we
+        // fail only on violations THIS migration introduces -- not historical
+        // dirt (e.g. rows orphaned by a past FK-off delete) the migration did
+        // not cause and should not be blamed for. Keyed by (child -> parent)
+        // counts rather than rowids, since a rebuilt table's rowids can shift.
+        let before = Self::fk_violation_counts(&mut tx).await?;
+
         let migration_result = self
             .apply_changes(&mut tx, pristine_pool, changes_needed)
             .await;
 
         match migration_result {
             Ok(()) => {
-                // Since FK enforcement is off, verify integrity ourselves before committing
-                let violations = sqlx::query("PRAGMA foreign_key_check")
-                    .fetch_all(&mut *tx)
-                    .await?;
-                if !violations.is_empty() {
+                // FK enforcement is off during the rebuild, so verify integrity
+                // ourselves -- but only fail on (child -> parent) pairs whose
+                // violation count grew. Pre-existing dirt passes through.
+                let after = Self::fk_violation_counts(&mut tx).await?;
+                let mut introduced: Vec<(String, String, usize)> = after
+                    .iter()
+                    .filter_map(|(pair, &n)| {
+                        let prev = before.get(pair).copied().unwrap_or(0);
+                        (n > prev).then(|| (pair.0.clone(), pair.1.clone(), n - prev))
+                    })
+                    .collect();
+                if !introduced.is_empty() {
+                    introduced.sort_by(|a, b| b.2.cmp(&a.2));
+                    let total: usize = introduced.iter().map(|(_, _, n)| n).sum();
+                    let breakdown = introduced
+                        .iter()
+                        .map(|(child, parent, n)| format!("{child}->{parent}: {n}"))
+                        .collect::<Vec<_>>()
+                        .join(", ");
                     tx.rollback().await?;
                     return Err(MigrationError {
                         message: format!(
-                            "Foreign key violations detected after migration: {} row(s)",
-                            violations.len()
+                            "Migration introduced {total} foreign key violation(s) [{breakdown}]"
                         ),
                     });
                 }
@@ -198,6 +218,25 @@ impl DeclarativeMigrator {
                 Err(e)
             }
         }
+    }
+
+    /// Count current FK violations grouped by (child table, parent table).
+    /// `PRAGMA foreign_key_check` columns: 0=child, 1=rowid, 2=parent, 3=fkid.
+    /// Diffed pre- vs post-migration so we fail only on violations the
+    /// migration introduces, tolerating pre-existing dirt.
+    async fn fk_violation_counts(
+        tx: &mut sqlx::Transaction<'_, Sqlite>,
+    ) -> Result<HashMap<(String, String), usize>, MigrationError> {
+        let rows = sqlx::query("PRAGMA foreign_key_check")
+            .fetch_all(&mut **tx)
+            .await?;
+        let mut counts: HashMap<(String, String), usize> = HashMap::new();
+        for row in &rows {
+            let child: String = row.try_get(0).unwrap_or_default();
+            let parent: String = row.try_get(2).unwrap_or_default();
+            *counts.entry((child, parent)).or_insert(0) += 1;
+        }
+        Ok(counts)
     }
 
     #[instrument(skip(self, tx, pristine_pool))]
@@ -741,8 +780,11 @@ pub fn planned_step_descriptions(changes: &ChangesNeeded) -> Vec<String> {
         steps.push(format!("Create new table {}", name));
     }
 
-    let mut modified_tables: Vec<&str> =
-        changes.modified_tables.iter().map(|t| t.name.as_str()).collect();
+    let mut modified_tables: Vec<&str> = changes
+        .modified_tables
+        .iter()
+        .map(|t| t.name.as_str())
+        .collect();
     modified_tables.sort();
     for name in modified_tables {
         steps.push(modified_table_description(name));

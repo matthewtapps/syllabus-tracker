@@ -52,7 +52,7 @@ export function AttemptsPanel({
 
   const previewed = attempts?.slice(0, HISTORY_PREVIEW_LIMIT) ?? [];
   const overflow = (attempts?.length ?? 0) - previewed.length;
-  const detailHref = `/student/${studentId}/technique/${studentTechniqueId}`;
+  const detailHref = `/student/${studentId}/legacy/technique/${studentTechniqueId}`;
 
   return (
     <section className="space-y-3">

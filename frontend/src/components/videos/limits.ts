@@ -1,5 +1,5 @@
 export const MAX_VIDEO_BYTES = 209_715_200; // 200 MiB
-export const MAX_VIDEO_DURATION_SECONDS = 180;
+export const MAX_VIDEO_DURATION_SECONDS = 300;
 
 export function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;

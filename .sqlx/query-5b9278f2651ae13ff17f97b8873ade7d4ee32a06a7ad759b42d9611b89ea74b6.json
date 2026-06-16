@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT payload_json FROM activity WHERE verb = 'sst_status_changed'",
+  "describe": {
+    "columns": [
+      {
+        "name": "payload_json",
+        "ordinal": 0,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "5b9278f2651ae13ff17f97b8873ade7d4ee32a06a7ad759b42d9611b89ea74b6"
+}

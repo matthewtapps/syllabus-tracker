@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO activity\n               (occurred_at, verb, actor_user_id, target_student_id,\n                technique_id, syllabus_id, sst_id)\n           SELECT\n               sst.last_coach_update_at,\n               'sst_coach_notes_edited',\n               sst.last_coach_update_by_id,\n               asn.student_id,\n               sst.technique_id,\n               asn.syllabus_id,\n               sst.id\n           FROM student_syllabus_techniques sst\n           JOIN syllabus_assignments asn ON asn.id = sst.assignment_id\n           WHERE sst.last_coach_update_at IS NOT NULL\n             AND sst.last_coach_update_by_id IS NOT NULL",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": []
+  },
+  "hash": "f60e55abcf3661540098aaae528ed7b7ff23364b36964f8153e7d0de0113f80e"
+}

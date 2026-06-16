@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT id AS \"id!: i64\" FROM activity\n                   WHERE actor_user_id = ? AND verb = ? AND occurred_at >= ?\n                     AND sst_id = ?\n                     AND target_student_id IS ?\n                   ORDER BY occurred_at DESC, id DESC LIMIT 1",
+  "describe": {
+    "columns": [
+      {
+        "name": "id!: i64",
+        "ordinal": 0,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 5
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "f3cce310586eb4662b60217dd4710502add411c8764227b4a59d895ece6a7023"
+}

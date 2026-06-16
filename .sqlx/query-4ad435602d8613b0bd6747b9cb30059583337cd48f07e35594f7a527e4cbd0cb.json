@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT EXISTS(SELECT 1 FROM student_syllabus_techniques WHERE id = ?) AS \"e!: i64\"",
+  "describe": {
+    "columns": [
+      {
+        "name": "e!: i64",
+        "ordinal": 0,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "4ad435602d8613b0bd6747b9cb30059583337cd48f07e35594f7a527e4cbd0cb"
+}

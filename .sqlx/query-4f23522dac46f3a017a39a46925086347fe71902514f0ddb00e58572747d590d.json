@@ -1,0 +1,44 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT t.id AS \"technique_id!: i64\",\n                  t.name AS \"name!: String\",\n                  t.description AS \"description!: String\",\n                  st.position AS \"position!: i64\",\n                  st.added_at AS \"added_at!: NaiveDateTime\"\n           FROM syllabus_techniques st\n           JOIN techniques t ON t.id = st.technique_id\n           WHERE st.syllabus_id = ?\n           ORDER BY st.position ASC, t.name ASC",
+  "describe": {
+    "columns": [
+      {
+        "name": "technique_id!: i64",
+        "ordinal": 0,
+        "type_info": "Integer"
+      },
+      {
+        "name": "name!: String",
+        "ordinal": 1,
+        "type_info": "Text"
+      },
+      {
+        "name": "description!: String",
+        "ordinal": 2,
+        "type_info": "Text"
+      },
+      {
+        "name": "position!: i64",
+        "ordinal": 3,
+        "type_info": "Integer"
+      },
+      {
+        "name": "added_at!: NaiveDateTime",
+        "ordinal": 4,
+        "type_info": "Datetime"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      true,
+      false,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "4f23522dac46f3a017a39a46925086347fe71902514f0ddb00e58572747d590d"
+}

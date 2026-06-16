@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT OR REPLACE INTO activity_seen_overrides (viewer_user_id, activity_id, seen)\n             VALUES (?, ?, 0)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "b8a49707d8304a0231fefe3cde1a3f50c5ee4f8bd7d7fadc3fb986357675f247"
+}

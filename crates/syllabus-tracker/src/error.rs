@@ -14,6 +14,9 @@ pub enum AppError {
     #[error("Authorization error: {0}")]
     Authorization(String),
 
+    #[error("Validation error: {0}")]
+    Validation(String),
+
     #[error("Not found: {0}")]
     NotFound(String),
 
@@ -43,6 +46,10 @@ impl AppError {
                 warn!(message = %msg, context = %ctx, "Authorization error");
                 "authorization_error"
             }
+            AppError::Validation(msg) => {
+                warn!(message = %msg, context = %ctx, "Validation error");
+                "validation_error"
+            }
             AppError::NotFound(msg) => {
                 warn!(message = %msg, context = %ctx, "Not found error");
                 "not_found_error"
@@ -70,6 +77,7 @@ impl AppError {
             AppError::Database(_) => Status::InternalServerError,
             AppError::Authentication(_) => Status::Unauthorized,
             AppError::Authorization(_) => Status::Forbidden,
+            AppError::Validation(_) => Status::BadRequest,
             AppError::NotFound(_) => Status::NotFound,
             AppError::ExternalService(_) => Status::ServiceUnavailable,
             AppError::Internal(_) => Status::InternalServerError,

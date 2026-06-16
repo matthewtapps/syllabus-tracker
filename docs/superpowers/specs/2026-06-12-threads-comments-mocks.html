@@ -1,0 +1,167 @@
+<h2>The thread component in its real contexts</h2>
+<p class="subtitle">One shared component (avatar · name · relative-time · body, replies under a <code>border-l-2</code> connector, composer), shown inside each real surface's chrome. Reuses StudentAvatar, Badge, Textarea, the muted context chip, Accordion/Card.</p>
+
+<style>
+  .tc{ --b:rgba(255,255,255,0.10); --b2:rgba(255,255,255,0.06); --mut:#98a2b3; --fg:#e6e9ef;
+       --coach:#c4b5fd; --priv:#7dd3fc; --bc:#fcd34d; --green:#86efac; color:var(--fg);font-size:13px; }
+  .tc *{ box-sizing:border-box; }
+  .av{ width:28px;height:28px;border-radius:7px;flex:0 0 auto;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:11px;color:#0b0f1a; }
+  .av.sm{ width:22px;height:22px;font-size:10px;border-radius:6px; }
+  .av.dave{ background:#c4b5fd; } .av.sam{ background:#7dd3fc; } .av.mia{ background:#86efac; }
+  .row{ display:flex;gap:10px; }
+  .nm{ font-weight:600; } .tm{ color:var(--mut);font-size:11px; }
+  .rl{ font-size:9px;text-transform:uppercase;letter-spacing:.04em;padding:1px 6px;border-radius:999px;border:1px solid var(--b);color:var(--mut); }
+  .rl.coach{ color:var(--coach);border-color:rgba(196,181,253,.4); }
+  .body{ margin-top:2px;line-height:1.5; }
+  .chip{ display:inline-flex;align-items:center;gap:4px;font-size:11px;color:var(--mut); }
+  .chip.box{ padding:2px 8px;border:1px solid var(--b);border-radius:999px; }
+  .chip.priv{ color:var(--priv); } .chip.bc{ color:var(--bc); }
+  .ta{ flex:1;background:rgba(255,255,255,0.04);border:1px solid var(--b);border-radius:8px;padding:7px 10px;color:var(--mut);min-height:32px; }
+  .btn{ background:#e2e8f0;color:#0b0f1a;border:none;border-radius:8px;padding:7px 12px;font-weight:600;font-size:12px; }
+  .btn.ghost{ background:transparent;color:var(--fg);border:1px solid var(--b); }
+  .btn.split span{ padding-left:7px;margin-left:7px;border-left:1px solid rgba(0,0,0,.25); }
+  .composer{ display:flex;gap:8px;align-items:flex-end;margin-top:10px; }
+  .replies{ margin-top:10px;padding-left:13px;border-left:2px solid var(--b2);display:flex;flex-direction:column;gap:11px; }
+  .label{ font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--mut);font-weight:600; }
+  .surface{ border:1px solid var(--b);border-radius:12px;overflow:hidden;background:rgba(255,255,255,0.015); }
+  .shead{ padding:8px 12px;font-size:11px;color:var(--mut);border-bottom:1px solid var(--b);background:rgba(255,255,255,0.025);display:flex;align-items:center;gap:7px; }
+  .crumb b{ color:#cbd5e1;font-weight:600; }
+  .ts{ color:var(--priv);font-variant-numeric:tabular-nums;cursor:pointer; }
+  .pill{ font-size:10px;padding:1px 7px;border-radius:999px;border:1px solid var(--b);color:var(--mut); }
+  .thread{ }
+  .threadhead{ display:flex;align-items:center;gap:8px;flex-wrap:wrap; }
+</style>
+
+<!-- shared thread snippet reused below -->
+<div class="cards" data-multiselect>
+
+<!-- ============ 1. TECHNIQUE ============ -->
+<div class="option" data-choice="technique" onclick="toggleSelect(this)" style="margin-bottom:18px">
+ <div class="letter">1</div>
+ <div class="content" style="width:100%">
+  <h3>On a technique — a "Discussion" block in the expanded TechniqueRow</h3>
+  <p class="tc" style="color:var(--mut);font-size:12px;margin:2px 0 10px">New block in <code>ExpandedPanel</code>, after Notes. Same accordion chrome, same block rhythm as description/videos/notes.</p>
+  <div class="tc">
+   <div class="surface">
+     <!-- accordion header (open) -->
+     <div style="display:flex;align-items:flex-start;gap:10px;padding:11px 14px;background:rgba(255,255,255,0.03)">
+       <div style="flex:1"><span style="font-weight:600">X-guard sweep</span>
+         <span class="pill" style="margin-left:6px">Sweep</span> <span class="pill">Open guard</span></div>
+       <span style="color:var(--mut)">▾</span>
+     </div>
+     <!-- expanded panel blocks -->
+     <div style="padding:8px 14px 14px;border-top:1px solid var(--b)">
+       <div class="label" style="margin:8px 0 4px">Description</div>
+       <div style="color:var(--mut)">Enter on the inside hook, off-balance to the weak side…</div>
+       <div class="label" style="margin:14px 0 6px">Discussion <span style="text-transform:none;font-weight:400">· 2</span></div>
+       <!-- THREAD -->
+       <div class="thread">
+         <div class="row"><div class="av sam">S</div><div style="flex:1">
+           <div class="threadhead"><span class="nm">Sam</span><span class="rl">Student</span><span class="tm">2h</span>
+             <span style="margin-left:auto" class="chip priv">🔒 You + coaches</span></div>
+           <div class="body">When he posts on my collar, do I switch to single-leg X first?</div></div></div>
+         <div class="replies">
+           <div class="row"><div class="av sm dave">D</div><div style="flex:1"><div class="threadhead"><span class="nm">Prof. Dave</span><span class="rl coach">Coach</span><span class="tm">1h</span></div><div class="body">Yes — shallow SLX, then re-pummel. Don't chase the sweep flat.</div></div></div>
+         </div>
+         <div class="composer"><div class="ta">Ask about this technique…</div><button class="btn ghost">Reply</button></div>
+       </div>
+     </div>
+   </div>
+  </div>
+ </div>
+</div>
+
+<!-- ============ 2. PROFILE (raw thread) ============ -->
+<div class="option" data-choice="profile" onclick="toggleSelect(this)" style="margin-bottom:18px">
+ <div class="letter">2</div>
+ <div class="content" style="width:100%">
+  <h3>On its own — raw thread on a student profile</h3>
+  <p class="tc" style="color:var(--mut);font-size:12px;margin:2px 0 10px">Profile Activity tab. A "Start a thread" composer, and threads appear as feed rows (<code>ActivityFeedList</code> grammar) that expand in place to replies.</p>
+  <div class="tc">
+   <div class="surface">
+     <div class="shead"><div class="av sm sam">S</div> <b style="color:var(--fg)">Sam Carter</b> · profile
+        <span style="margin-left:auto" class="pill">Activity</span><span class="pill">Syllabus</span><span class="pill">Pinned</span><span class="pill">Camps</span></div>
+     <!-- composer card -->
+     <div style="padding:12px 14px;border-bottom:1px solid var(--b)">
+       <div class="composer" style="margin:0"><div class="av sm dave">D</div><div class="ta">Start a thread with Sam…</div><button class="btn">Post</button></div>
+     </div>
+     <!-- feed list -->
+     <div>
+       <!-- thread row, expanded -->
+       <div style="padding:11px 14px;border-bottom:1px solid var(--b)">
+         <div class="row"><div class="av dave">D</div><div style="flex:1">
+            <div class="threadhead"><span class="nm">Prof. Dave</span><span class="tm">3h ago</span></div>
+            <div class="body" style="color:var(--mut)"><span style="color:var(--fg)">started a thread</span> — "Let's plan your next 6 weeks before the comp."</div>
+            <div class="replies" style="margin-top:9px">
+              <div class="row"><div class="av sm sam">S</div><div style="flex:1"><div class="threadhead"><span class="nm">Sam</span><span class="tm">2h</span></div><div class="body">Sounds good. I want to firm up my guard retention.</div></div></div>
+              <span style="color:var(--mut);font-size:12px;cursor:pointer">↳ 2 more replies</span>
+            </div>
+            <div class="composer"><div class="ta">Reply…</div><button class="btn ghost">Reply</button></div>
+         </div></div>
+       </div>
+       <!-- another feed row (a comment elsewhere bubbling up) -->
+       <div style="padding:11px 14px">
+         <div class="row"><div class="av sam">S</div><div style="flex:1">
+            <div class="threadhead"><span class="nm">Sam</span><span class="tm">5h ago</span></div>
+            <div class="body" style="color:var(--mut)">💬 commented on <span style="color:var(--fg)">X-guard sweep</span></div>
+            <div class="chip" style="margin-top:4px">🌐 Library</div>
+         </div></div>
+       </div>
+     </div>
+   </div>
+  </div>
+ </div>
+</div>
+
+<!-- ============ 3. VIDEO ============ -->
+<div class="option" data-choice="video" onclick="toggleSelect(this)" style="margin-bottom:18px">
+ <div class="letter">3</div>
+ <div class="content" style="width:100%">
+  <h3>On a video — timestamped comments rail under the player</h3>
+  <p class="tc" style="color:var(--mut);font-size:12px;margin:2px 0 10px">Player panel + a comments rail. Timestamp chips seek the player. Coach composer has the private/broadcast split-button.</p>
+  <div class="tc">
+   <div class="surface" style="max-width:440px">
+     <div style="background:#0b0f1a;height:120px;display:flex;align-items:center;justify-content:center;color:var(--mut)">▶ &nbsp;Round 3 — X-guard entry</div>
+     <div style="padding:11px 13px">
+       <div style="display:flex;align-items:center;justify-content:between;gap:8px;margin-bottom:9px"><span class="label">Comments · 3</span><span style="margin-left:auto" class="chip box bc">📣 1 broadcast</span></div>
+       <div class="thread" style="display:flex;flex-direction:column;gap:11px">
+         <div class="row"><div class="av sm dave">D</div><div style="flex:1"><div class="threadhead"><span class="nm" style="color:var(--coach)">Prof. Dave</span><span class="ts">0:30</span><span style="margin-left:auto" class="chip bc">📣 Everyone</span></div><div class="body">Notice the grip switch here before the sweep — applies to all of you.</div></div></div>
+         <div class="row"><div class="av sm sam">S</div><div style="flex:1"><div class="threadhead"><span class="nm">Sam</span><span class="ts">0:42</span><span style="margin-left:auto" class="chip priv">🔒</span></div><div class="body">My grip broke right here, what should I have done?</div>
+           <div class="replies"><div class="row"><div class="av sm dave">D</div><div style="flex:1"><span class="nm" style="color:var(--coach)">Dave</span> <span class="mut" style="color:var(--mut)">re-pummel the inside hook before he posts.</span></div></div></div>
+         </div></div>
+       </div>
+       <div class="composer"><div class="ta">Comment at <span style="color:var(--priv)">0:42</span>…</div><button class="btn split">Reply privately <span>▾</span></button></div>
+     </div>
+   </div>
+  </div>
+ </div>
+</div>
+
+<!-- ============ 4. CAMP (future) ============ -->
+<div class="option" data-choice="camp" onclick="toggleSelect(this)" style="margin-bottom:6px">
+ <div class="letter">4</div>
+ <div class="content" style="width:100%">
+  <h3>In a camp (future) — camp-level thread + a match-video thread with full ancestry</h3>
+  <p class="tc" style="color:var(--mut);font-size:12px;margin:2px 0 10px">Same component, new anchor kinds. The feed tile shows the resolved <code>parent_of</code> breadcrumb: camp › match › video · timestamp.</p>
+  <div class="tc">
+   <div class="surface">
+     <div class="shead crumb">🏕 <b>Worlds 2026 camp</b> <span class="pill" style="margin-left:6px">Competition · Jun 28</span></div>
+     <div style="padding:12px 14px;border-bottom:1px solid var(--b)">
+       <div class="label" style="margin-bottom:7px">Camp discussion</div>
+       <div class="thread"><div class="row"><div class="av dave">D</div><div style="flex:1"><div class="threadhead"><span class="nm">Prof. Dave</span><span class="rl coach">Coach</span><span class="tm">1d</span></div><div class="body">Game plan: lead with X-guard, no berimbolo this comp. Drill the SLX switch.</div>
+        <div class="replies"><div class="row"><div class="av sm sam">S</div><div style="flex:1"><span class="nm">Sam</span> <span style="color:var(--mut)">understood 👍</span></div></div></div></div></div></div>
+     </div>
+     <div style="padding:12px 14px">
+       <!-- match video thread tile with ancestry breadcrumb -->
+       <div class="chip" style="margin-bottom:8px">🎥 <span class="crumb"><b>Match 3</b> › <b>Round 3 video</b> · <span class="ts">0:42</span></span></div>
+       <div class="thread"><div class="row"><div class="av sam">S</div><div style="flex:1"><div class="threadhead"><span class="nm">Sam</span><span class="tm">4h</span><span style="margin-left:auto" class="chip priv">🔒 You + coaches</span></div><div class="body">Grip broke here in the actual match — same as drilling.</div>
+        <div class="replies"><div class="row"><div class="av sm dave">D</div><div style="flex:1"><span class="nm" style="color:var(--coach)">Dave</span> <span style="color:var(--mut)">exactly why we drilled the re-pummel. Next camp focus.</span></div></div></div>
+        <div class="composer"><div class="ta">Reply…</div><button class="btn ghost">Reply</button></div></div></div></div>
+     </div>
+   </div>
+  </div>
+ </div>
+</div>
+
+</div>
+<p class="subtitle">Same component throughout. Tell me per surface what to adjust; recommendation in terminal.</p>

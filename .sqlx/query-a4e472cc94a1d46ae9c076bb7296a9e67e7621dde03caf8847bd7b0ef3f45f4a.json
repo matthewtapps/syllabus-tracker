@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT COUNT(*) AS \"c!: i64\" FROM activity WHERE verb = 'video_watched'",
+  "describe": {
+    "columns": [
+      {
+        "name": "c!: i64",
+        "ordinal": 0,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "a4e472cc94a1d46ae9c076bb7296a9e67e7621dde03caf8847bd7b0ef3f45f4a"
+}

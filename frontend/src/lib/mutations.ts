@@ -17,6 +17,7 @@ import {
   inviteUser,
   linkVideo,
   markStudentTechniqueSeen,
+  pinTechniqueForStudent,
   removeTagFromTechnique,
   removeTechniqueFromCollection,
   reorderVideos,
@@ -24,6 +25,7 @@ import {
   setStudentGraduated,
   setVideoGlobalHidden,
   setVideoStudentVisibility,
+  unpinTechniqueForStudent,
   updateAttempt,
   updateCollection,
   updateLibraryTechnique,
@@ -34,6 +36,7 @@ import {
   updateVideo,
 } from "./api";
 import type {
+  LibraryTechniqueRow,
   SingleStudentTechnique,
   StudentTechniques,
   Technique,
@@ -726,3 +729,618 @@ export function useSetVideoStudentVisibility(techniqueId: number) {
 }
 
 // Predicate moved to qk.matches.anyStudentTechniqueScope in query-keys.ts.
+
+// ============================================================
+// Pinned techniques
+// ============================================================
+
+// Optimistically toggles the pinned state across the student's pinned list
+// and any open student-library cache for the same student. The plan calls
+// for pin/unpin to be optimistic; flash-before-refetch is more disruptive
+// than a rare rollback on backend failure.
+export function usePinTechnique(studentId: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (technique: LibraryTechniqueRow) => {
+      await pinTechniqueForStudent(studentId, technique.id);
+      return technique;
+    },
+    onMutate: async (technique) => {
+      await qc.cancelQueries({ queryKey: qk.pinnedTechniques(studentId) });
+      await qc.cancelQueries({ queryKey: qk.studentLibrary(studentId) });
+
+      const prevPinned = qc.getQueryData<LibraryTechniqueRow[]>(
+        qk.pinnedTechniques(studentId),
+      );
+      const prevLibrary = qc.getQueryData<LibraryTechniqueRow[]>(
+        qk.studentLibrary(studentId),
+      );
+
+      qc.setQueryData<LibraryTechniqueRow[]>(
+        qk.pinnedTechniques(studentId),
+        (prev) => {
+          const next = prev ? [...prev] : [];
+          if (!next.some((t) => t.id === technique.id)) {
+            next.unshift({ ...technique, is_pinned: true });
+          }
+          return next;
+        },
+      );
+      qc.setQueryData<LibraryTechniqueRow[]>(
+        qk.studentLibrary(studentId),
+        (prev) =>
+          prev?.map((t) =>
+            t.id === technique.id ? { ...t, is_pinned: true } : t,
+          ),
+      );
+
+      return { prevPinned, prevLibrary };
+    },
+    onError: (_err, _vars, ctx) => {
+      if (ctx?.prevPinned !== undefined) {
+        qc.setQueryData(qk.pinnedTechniques(studentId), ctx.prevPinned);
+      }
+      if (ctx?.prevLibrary !== undefined) {
+        qc.setQueryData(qk.studentLibrary(studentId), ctx.prevLibrary);
+      }
+    },
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: qk.pinnedTechniques(studentId) });
+      qc.invalidateQueries({ queryKey: qk.studentLibrary(studentId) });
+    },
+  });
+}
+
+export function useUnpinTechnique(studentId: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (techniqueId: number) => {
+      await unpinTechniqueForStudent(studentId, techniqueId);
+      return techniqueId;
+    },
+    onMutate: async (techniqueId) => {
+      await qc.cancelQueries({ queryKey: qk.pinnedTechniques(studentId) });
+      await qc.cancelQueries({ queryKey: qk.studentLibrary(studentId) });
+
+      const prevPinned = qc.getQueryData<LibraryTechniqueRow[]>(
+        qk.pinnedTechniques(studentId),
+      );
+      const prevLibrary = qc.getQueryData<LibraryTechniqueRow[]>(
+        qk.studentLibrary(studentId),
+      );
+
+      qc.setQueryData<LibraryTechniqueRow[]>(
+        qk.pinnedTechniques(studentId),
+        (prev) => prev?.filter((t) => t.id !== techniqueId),
+      );
+      qc.setQueryData<LibraryTechniqueRow[]>(
+        qk.studentLibrary(studentId),
+        (prev) =>
+          prev?.map((t) =>
+            t.id === techniqueId ? { ...t, is_pinned: false } : t,
+          ),
+      );
+
+      return { prevPinned, prevLibrary };
+    },
+    onError: (_err, _vars, ctx) => {
+      if (ctx?.prevPinned !== undefined) {
+        qc.setQueryData(qk.pinnedTechniques(studentId), ctx.prevPinned);
+      }
+      if (ctx?.prevLibrary !== undefined) {
+        qc.setQueryData(qk.studentLibrary(studentId), ctx.prevLibrary);
+      }
+    },
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: qk.pinnedTechniques(studentId) });
+      qc.invalidateQueries({ queryKey: qk.studentLibrary(studentId) });
+    },
+  });
+}
+
+// ============================================================
+// Syllabi (PR 3)
+// ============================================================
+
+import {
+  addTechniqueToSyllabusApi,
+  assignSyllabusApi,
+  createSyllabusApi,
+  createSyllabusAttemptApi,
+  deleteSyllabusApi,
+  deleteSyllabusAttemptApi,
+  removeTechniqueFromSyllabusApi,
+  unassignSyllabusApi,
+  updateSstApi,
+  updateSyllabusApi,
+  updateSyllabusAttemptApi,
+  type PropagationMode,
+} from "./api";
+
+export function useCreateSyllabus() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: { name: string; description?: string }) =>
+      createSyllabusApi(data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: qk.syllabi() }),
+  });
+}
+
+export function useUpdateSyllabus() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: {
+      syllabusId: number;
+      data: { name?: string; description?: string | null };
+    }) => updateSyllabusApi(vars.syllabusId, vars.data),
+    onSuccess: (_res, vars) => {
+      qc.invalidateQueries({ queryKey: qk.syllabi() });
+      qc.invalidateQueries({ queryKey: qk.syllabus(vars.syllabusId) });
+    },
+  });
+}
+
+export function useDeleteSyllabus() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (syllabusId: number) => deleteSyllabusApi(syllabusId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: qk.syllabi() });
+      qc.invalidateQueries({ predicate: qk.matches.anySyllabus });
+    },
+  });
+}
+
+export function useAddTechniqueToSyllabus() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: {
+      syllabusId: number;
+      techniqueId: number;
+      propagation: PropagationMode;
+    }) =>
+      addTechniqueToSyllabusApi(
+        vars.syllabusId,
+        vars.techniqueId,
+        vars.propagation,
+      ),
+    onSuccess: (_res, vars) => {
+      qc.invalidateQueries({ queryKey: qk.syllabus(vars.syllabusId) });
+      // A Cascade write may have mutated SST in every active assignment.
+      qc.invalidateQueries({
+        predicate: qk.matches.anyStudentSyllabusTechniques,
+      });
+    },
+  });
+}
+
+export function useRemoveTechniqueFromSyllabus() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: {
+      syllabusId: number;
+      techniqueId: number;
+      propagation: PropagationMode;
+    }) =>
+      removeTechniqueFromSyllabusApi(
+        vars.syllabusId,
+        vars.techniqueId,
+        vars.propagation,
+      ),
+    onSuccess: (_res, vars) => {
+      qc.invalidateQueries({ queryKey: qk.syllabus(vars.syllabusId) });
+      qc.invalidateQueries({
+        predicate: qk.matches.anyStudentSyllabusTechniques,
+      });
+    },
+  });
+}
+
+export function useAssignSyllabusToStudent() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: { studentId: number; syllabusId: number }) =>
+      assignSyllabusApi(vars.studentId, vars.syllabusId),
+    onSuccess: (_res, vars) => {
+      qc.invalidateQueries({ queryKey: qk.studentSyllabi(vars.studentId) });
+      qc.invalidateQueries({
+        queryKey: qk.studentSyllabusTechniques(vars.studentId, vars.syllabusId),
+      });
+      // Per-syllabus student list + the list page's active assignment count.
+      qc.invalidateQueries({ queryKey: qk.syllabusStudents(vars.syllabusId) });
+      qc.invalidateQueries({ queryKey: qk.syllabi() });
+    },
+  });
+}
+
+export function useUnassignSyllabusFromStudent() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: { studentId: number; syllabusId: number }) =>
+      unassignSyllabusApi(vars.studentId, vars.syllabusId),
+    onSuccess: (_res, vars) => {
+      qc.invalidateQueries({ queryKey: qk.studentSyllabi(vars.studentId) });
+      qc.invalidateQueries({ queryKey: qk.syllabusStudents(vars.syllabusId) });
+      qc.invalidateQueries({ queryKey: qk.syllabi() });
+    },
+  });
+}
+
+export function useUpdateStudentSyllabusTechnique() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: {
+      sstId: number;
+      studentId: number;
+      syllabusId: number;
+      data: { status?: string; student_notes?: string; coach_notes?: string };
+    }) => updateSstApi(vars.sstId, vars.data),
+    onSuccess: (_res, vars) => {
+      qc.invalidateQueries({
+        queryKey: qk.studentSyllabusTechniques(vars.studentId, vars.syllabusId),
+      });
+      qc.invalidateQueries({ queryKey: qk.studentSyllabi(vars.studentId) });
+    },
+  });
+}
+
+export function useCreateSyllabusAttempt() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: {
+      sstId: number;
+      data: { attempted_at: string; coach_note?: string; student_note?: string };
+    }) => createSyllabusAttemptApi(vars.sstId, vars.data),
+    onSuccess: (_res, vars) => {
+      qc.invalidateQueries({ queryKey: qk.syllabusAttempts(vars.sstId) });
+      qc.invalidateQueries({
+        predicate: qk.matches.anyStudentSyllabusTechniques,
+      });
+    },
+  });
+}
+
+export function useUpdateSyllabusAttempt() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: {
+      attemptId: number;
+      sstId: number;
+      data: {
+        attempted_at?: string;
+        coach_note?: string | null;
+        student_note?: string | null;
+      };
+    }) => updateSyllabusAttemptApi(vars.attemptId, vars.data),
+    onSuccess: (_res, vars) =>
+      qc.invalidateQueries({ queryKey: qk.syllabusAttempts(vars.sstId) }),
+  });
+}
+
+export function useDeleteSyllabusAttempt() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: { attemptId: number; sstId: number }) =>
+      deleteSyllabusAttemptApi(vars.attemptId),
+    onSuccess: (_res, vars) =>
+      qc.invalidateQueries({ queryKey: qk.syllabusAttempts(vars.sstId) }),
+  });
+}
+
+// ============================================================
+// PR 4: graduation, diff apply, per-student curation, video overrides
+// ============================================================
+
+import {
+  addTechniqueToStudentSyllabusApi,
+  applyAssignmentDiffApi,
+  postMarkAllActivityRead,
+  postMarkActivityRead,
+  postMarkActivityUnread,
+  setAssignmentGraduatedApi,
+  setSstHiddenApi,
+  setVideoSyllabusVisibilityApi,
+  createThread,
+  createComment,
+  deleteThread,
+  deleteComment,
+  type GhostActionEntry,
+  type MissingActionEntry,
+  type SyllabusAssignmentDiff,
+  type SstRow,
+  type StudentSyllabusDetailResponse,
+  type CreateThreadInput,
+} from "./api";
+
+export function useSetAssignmentGraduated() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: {
+      studentId: number;
+      syllabusId: number;
+      graduated: boolean;
+    }) =>
+      setAssignmentGraduatedApi(
+        vars.studentId,
+        vars.syllabusId,
+        vars.graduated ? new Date().toISOString() : null,
+      ),
+    onSuccess: (_res, vars) => {
+      qc.invalidateQueries({
+        queryKey: qk.studentSyllabusTechniques(vars.studentId, vars.syllabusId),
+      });
+      qc.invalidateQueries({ queryKey: qk.studentSyllabi(vars.studentId) });
+    },
+  });
+}
+
+export function useAddTechniqueToStudentSyllabus() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: {
+      studentId: number;
+      syllabusId: number;
+      techniqueId: number;
+    }) =>
+      addTechniqueToStudentSyllabusApi(
+        vars.studentId,
+        vars.syllabusId,
+        vars.techniqueId,
+      ),
+    onSuccess: (_res, vars) => {
+      qc.invalidateQueries({
+        queryKey: qk.studentSyllabusTechniques(vars.studentId, vars.syllabusId),
+      });
+      qc.invalidateQueries({
+        queryKey: qk.studentSyllabusDiff(vars.studentId, vars.syllabusId),
+      });
+    },
+  });
+}
+
+export function useSetSstHidden() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: {
+      sstId: number;
+      studentId: number;
+      syllabusId: number;
+      hidden: boolean;
+    }) => setSstHiddenApi(vars.sstId, vars.hidden),
+    onSuccess: (_res, vars) => {
+      qc.invalidateQueries({
+        queryKey: qk.studentSyllabusTechniques(vars.studentId, vars.syllabusId),
+      });
+      qc.invalidateQueries({
+        queryKey: qk.studentSyllabusDiff(vars.studentId, vars.syllabusId),
+      });
+    },
+  });
+}
+
+// ============================================================
+// Activity read-side mutations (PR 2)
+// ============================================================
+
+export function useMarkAllActivityRead() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => postMarkAllActivityRead(),
+    onSuccess: () =>
+      Promise.all([
+        qc.invalidateQueries({ queryKey: qk.activityUnreadCount() }),
+        qc.invalidateQueries({ queryKey: qk.activityFeed() }),
+      ]),
+  });
+}
+
+export function useMarkActivityRead() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) => postMarkActivityRead(id),
+    onSuccess: () =>
+      Promise.all([
+        qc.invalidateQueries({ queryKey: qk.activityUnreadCount() }),
+        qc.invalidateQueries({ queryKey: qk.activityFeed() }),
+      ]),
+  });
+}
+
+export function useMarkActivityUnread() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) => postMarkActivityUnread(id),
+    onSuccess: () =>
+      Promise.all([
+        qc.invalidateQueries({ queryKey: qk.activityUnreadCount() }),
+        qc.invalidateQueries({ queryKey: qk.activityFeed() }),
+      ]),
+  });
+}
+
+export function useSetVideoSyllabusVisibility() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: {
+      studentId: number;
+      syllabusId: number;
+      videoId: number;
+      visible: boolean | null;
+      techniqueId: number;
+    }) =>
+      setVideoSyllabusVisibilityApi(
+        vars.studentId,
+        vars.syllabusId,
+        vars.videoId,
+        vars.visible,
+      ),
+    onSuccess: (_res, vars) =>
+      qc.invalidateQueries({
+        queryKey: qk.syllabusTechniqueVideos(
+          vars.studentId,
+          vars.syllabusId,
+          vars.techniqueId,
+        ),
+      }),
+  });
+}
+
+// ============================================================
+// Threads (PR 2, Task 1)
+// ============================================================
+
+export function useCreateThread() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: CreateThreadInput) =>
+      unwrap(await createThread(input)),
+    onSuccess: (_d, input) => {
+      qc.invalidateQueries({
+        queryKey: qk.threads(input.anchor_kind, input.anchor_id),
+      });
+      // video_timestamp threads are read back through the "video" anchor query;
+      // invalidate that key too so the feed refreshes without a dialog reopen.
+      if (
+        input.anchor_kind === "video_timestamp" ||
+        input.anchor_kind === "video"
+      ) {
+        qc.invalidateQueries({
+          queryKey: qk.threads("video", input.anchor_id),
+        });
+      }
+    },
+  });
+}
+
+export function useCreateComment(anchorKind: string, anchorId: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (v: {
+      threadId: number;
+      body: string;
+      parentCommentId?: number | null;
+    }) => unwrap(await createComment(v.threadId, v.body, v.parentCommentId)),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: qk.threads(anchorKind, anchorId) });
+      if (anchorKind === "video_timestamp" || anchorKind === "video") {
+        qc.invalidateQueries({ queryKey: qk.threads("video", anchorId) });
+      }
+    },
+  });
+}
+
+export function useDeleteThread(anchorKind: string, anchorId: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (threadId: number) =>
+      unwrap(await deleteThread(threadId)),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: qk.threads(anchorKind, anchorId) });
+      if (anchorKind === "video_timestamp" || anchorKind === "video") {
+        qc.invalidateQueries({ queryKey: qk.threads("video", anchorId) });
+      }
+    },
+  });
+}
+
+export function useDeleteComment(anchorKind: string, anchorId: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (commentId: number) =>
+      unwrap(await deleteComment(commentId)),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: qk.threads(anchorKind, anchorId) });
+      if (anchorKind === "video_timestamp" || anchorKind === "video") {
+        qc.invalidateQueries({ queryKey: qk.threads("video", anchorId) });
+      }
+    },
+  });
+}
+
+// Bundled diff apply mutation. The plan calls this the second optimistic
+// patch in PR 4 (pin/unpin from PR 1 is the first). On mutate we patch
+// the studentSyllabusTechniques + studentSyllabusDiff caches; on error
+// we roll the patches back.
+export function useApplyAssignmentDiff() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: {
+      studentId: number;
+      syllabusId: number;
+      ghost_actions: GhostActionEntry[];
+      missing_actions: MissingActionEntry[];
+    }) =>
+      applyAssignmentDiffApi(vars.studentId, vars.syllabusId, {
+        ghost_actions: vars.ghost_actions,
+        missing_actions: vars.missing_actions,
+      }),
+    onMutate: async (vars) => {
+      const sstKey = qk.studentSyllabusTechniques(
+        vars.studentId,
+        vars.syllabusId,
+      );
+      const diffKey = qk.studentSyllabusDiff(vars.studentId, vars.syllabusId);
+      await qc.cancelQueries({ queryKey: sstKey });
+      await qc.cancelQueries({ queryKey: diffKey });
+      const prevSst =
+        qc.getQueryData<StudentSyllabusDetailResponse>(sstKey);
+      const prevDiff = qc.getQueryData<SyllabusAssignmentDiff>(diffKey);
+
+      // Optimistic patch on the SST list: hidden ghosts drop out of the
+      // student-visible set; nothing else changes structurally (we don't
+      // know the SST id for "add_to_student" until the server returns).
+      const hiddenIds = new Set(
+        vars.ghost_actions
+          .filter((g) => g.action === "hide_locally")
+          .map((g) => g.sst_id),
+      );
+      if (prevSst) {
+        qc.setQueryData<StudentSyllabusDetailResponse>(sstKey, {
+          ...prevSst,
+          techniques: prevSst.techniques.map((sst: SstRow) =>
+            hiddenIds.has(sst.id)
+              ? { ...sst, hidden_at: new Date().toISOString() }
+              : sst,
+          ),
+        });
+      }
+      // Optimistic patch on the diff: drop entries that were acted on.
+      if (prevDiff) {
+        const ghostSstIds = new Set(
+          vars.ghost_actions
+            .filter((g) => g.action !== "ignore")
+            .map((g) => g.sst_id),
+        );
+        const missingTechIds = new Set(
+          vars.missing_actions
+            .filter((m) => m.action !== "ignore")
+            .map((m) => m.technique_id),
+        );
+        qc.setQueryData<SyllabusAssignmentDiff>(diffKey, {
+          ghosts: prevDiff.ghosts.filter((g) => !ghostSstIds.has(g.sst_id)),
+          missing: prevDiff.missing.filter(
+            (m) => !missingTechIds.has(m.technique_id),
+          ),
+        });
+      }
+      return { prevSst, prevDiff, sstKey, diffKey };
+    },
+    onError: (_err, _vars, ctx) => {
+      if (ctx?.prevSst !== undefined && ctx.sstKey) {
+        qc.setQueryData(ctx.sstKey, ctx.prevSst);
+      }
+      if (ctx?.prevDiff !== undefined && ctx.diffKey) {
+        qc.setQueryData(ctx.diffKey, ctx.prevDiff);
+      }
+    },
+    onSettled: (_res, _err, vars) => {
+      qc.invalidateQueries({
+        queryKey: qk.studentSyllabusTechniques(vars.studentId, vars.syllabusId),
+      });
+      qc.invalidateQueries({
+        queryKey: qk.studentSyllabusDiff(vars.studentId, vars.syllabusId),
+      });
+      qc.invalidateQueries({ queryKey: qk.syllabus(vars.syllabusId) });
+    },
+  });
+}

@@ -1,0 +1,26 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT date(a.occurred_at)             AS \"day!: String\",\n                  COUNT(DISTINCT a.actor_user_id) AS \"n!: i64\"\n           FROM activity a\n           JOIN users u ON u.id = a.actor_user_id\n           WHERE u.role = 'student'\n             AND a.occurred_at >= datetime('now', '-13 days', 'start of day')\n           GROUP BY date(a.occurred_at)",
+  "describe": {
+    "columns": [
+      {
+        "name": "day!: String",
+        "ordinal": 0,
+        "type_info": "Text"
+      },
+      {
+        "name": "n!: i64",
+        "ordinal": 1,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      true,
+      false
+    ]
+  },
+  "hash": "c6ee24c6afccc15733f04068c432e90bc1e2abcb2f0e47bb1c44534625321d05"
+}

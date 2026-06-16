@@ -196,7 +196,10 @@ impl ProcessingStatus {
 #[derive(Debug, Serialize, Clone)]
 pub struct Video {
     pub id: i64,
-    pub technique_id: i64,
+    pub parent_kind: String,
+    pub technique_id: Option<i64>,
+    pub student_id: Option<i64>,
+    pub thread_id: Option<i64>,
     pub title: String,
     pub description: Option<String>,
     pub position: i64,
@@ -217,12 +220,20 @@ pub struct Video {
     /// from students (coaches still see, badged). Per-student overrides may
     /// flip the effective visibility either way.
     pub hidden_at: Option<DateTime<Utc>>,
+    /// Number of comment threads on this video that the requesting viewer can
+    /// see (coach: all; student: broadcast + their own private). Annotated by
+    /// the list routes after the DB fetch; `0` on a bare `From<DbVideo>`.
+    #[serde(default)]
+    pub comment_count: i64,
 }
 
 #[derive(sqlx::FromRow, Clone, Default)]
 pub struct DbVideo {
     pub id: Option<i64>,
+    pub parent_kind: String,
     pub technique_id: Option<i64>,
+    pub student_id: Option<i64>,
+    pub thread_id: Option<i64>,
     pub title: Option<String>,
     pub description: Option<String>,
     pub position: Option<i64>,
@@ -247,7 +258,10 @@ impl From<DbVideo> for Video {
     fn from(db: DbVideo) -> Self {
         Self {
             id: db.id.unwrap_or_default(),
-            technique_id: db.technique_id.unwrap_or_default(),
+            parent_kind: db.parent_kind,
+            technique_id: db.technique_id,
+            student_id: db.student_id,
+            thread_id: db.thread_id,
             title: db.title.unwrap_or_default(),
             description: db.description,
             position: db.position.unwrap_or_default(),
@@ -267,6 +281,7 @@ impl From<DbVideo> for Video {
             created_at: db.created_at.map(naive_to_utc).unwrap_or_else(Utc::now),
             updated_at: db.updated_at.map(naive_to_utc).unwrap_or_else(Utc::now),
             hidden_at: db.hidden_at.map(naive_to_utc),
+            comment_count: 0,
         }
     }
 }

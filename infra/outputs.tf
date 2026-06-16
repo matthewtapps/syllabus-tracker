@@ -49,3 +49,22 @@ output "_platform_honeycomb_browser_ingest" {
   value       = data.terraform_remote_state.platform.outputs.service_honeycomb_keys["sillybus"].browser_ingest
   sensitive   = true
 }
+
+# Video processing (Cloudflare Queue + Worker). The enqueue token is the
+# bearer the app sends to the Worker; the callback secret is the HMAC key
+# the container signs the processing-result webhook with and the app
+# verifies. Both minted in platform tofu; the deploy bakes them into the
+# app runtime env, and the same values are set as Worker secrets via
+# wrangler. The enqueue URL (Worker's workers.dev address) is NOT here:
+# it is created by wrangler and supplied per-env as CI config.
+output "_platform_video_enqueue_token" {
+  description = "Re-exported bearer for the Worker /jobs enqueue endpoint."
+  value       = data.terraform_remote_state.platform.outputs.video_enqueue_token
+  sensitive   = true
+}
+
+output "_platform_video_callback_secret" {
+  description = "Re-exported HMAC secret shared with the transcode container."
+  value       = data.terraform_remote_state.platform.outputs.video_callback_secret
+  sensitive   = true
+}

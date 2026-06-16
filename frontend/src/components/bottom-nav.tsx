@@ -6,6 +6,8 @@ import {
   LayoutDashboard,
   Library,
   LogOut,
+  NotebookPen,
+  Pin,
   Shield,
   UserPlus,
   UserRound,
@@ -44,29 +46,53 @@ function buildTabs(user: User): Tab[] {
     tabs.push({ to: '/students', label: 'Students', icon: Users });
     tabs.push({
       to: '/library',
-      label: 'Techniques',
+      label: 'Library',
       icon: Library,
-      alsoActiveOn: ['/collections'],
     });
+    tabs.push({ to: '/syllabi', label: 'Syllabi', icon: NotebookPen });
   } else {
-    tabs.push({ to: `/student/${user.id}`, label: 'My techniques', icon: Library });
+    tabs.push({
+      to: `/student/${user.id}/syllabi`,
+      label: 'Syllabi',
+      icon: NotebookPen,
+    });
+    tabs.push({ to: '/library', label: 'Library', icon: Library });
+    tabs.push({ to: `/student/${user.id}/pinned`, label: 'Pinned', icon: Pin });
+    tabs.push({
+      to: `/student/${user.id}`,
+      label: 'Profile',
+      icon: UserRound,
+    });
   }
   return tabs;
 }
 
-function isTabActive(pathname: string, tab: Tab): boolean {
-  if (pathname === tab.to) return true;
-  if (pathname.startsWith(`${tab.to}/`)) return true;
-  return (
-    tab.alsoActiveOn?.some(
-      (p) => pathname === p || pathname.startsWith(`${p}/`),
-    ) ?? false
-  );
+// Pick a single active tab: the one whose `to` (or alsoActiveOn entry) is the
+// longest prefix of `pathname`. Without this, sibling tabs like
+// /student/:id (My techniques) and /student/:id/pinned (Pinned) both
+// light up when the user is on the pinned page, since the shorter path
+// is also a startsWith match.
+function activeTabIndex(pathname: string, tabs: Tab[]): number {
+  let bestIdx = -1;
+  let bestLen = -1;
+  tabs.forEach((tab, i) => {
+    const candidates = [tab.to, ...(tab.alsoActiveOn ?? [])];
+    for (const candidate of candidates) {
+      const matches =
+        pathname === candidate || pathname.startsWith(`${candidate}/`);
+      if (matches && candidate.length > bestLen) {
+        bestIdx = i;
+        bestLen = candidate.length;
+      }
+    }
+  });
+  return bestIdx;
 }
 
 export function BottomNav({ user, onLogout }: BottomNavProps) {
   const tabs = buildTabs(user);
   const { pathname } = useLocation();
+  const activeIdx = activeTabIndex(pathname, tabs);
   // Grid columns match the actual tab count (+1 for the More slot) so a
   // student's 2-tab nav doesn't sit awkwardly left-aligned with empty
   // cells on the right.
@@ -81,8 +107,8 @@ export function BottomNav({ user, onLogout }: BottomNavProps) {
         className="grid h-14"
         style={{ gridTemplateColumns: `repeat(${cellCount}, minmax(0, 1fr))` }}
       >
-        {tabs.map((tab) => {
-          const active = isTabActive(pathname, tab);
+        {tabs.map((tab, idx) => {
+          const active = idx === activeIdx;
           return (
             <li key={tab.to} className="contents">
               <Link

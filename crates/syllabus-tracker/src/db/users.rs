@@ -150,6 +150,10 @@ pub async fn authenticate_user(
                     last_student_initiative_at: None,
                     last_watch_at: None,
                     last_watch_video_title: None,
+                    last_student_activity_at: None,
+                    last_coach_activity_at: None,
+                    pinned_count: None,
+                    recent_activity_count: None,
                 }))
             } else {
                 Ok(None)
@@ -403,10 +407,7 @@ pub async fn create_user_stub(
 /// username doesn't exist (we don't want to leak whether usernames are real
 /// to anonymous callers).
 #[instrument]
-pub async fn request_password_reset(
-    pool: &Pool<Sqlite>,
-    username: &str,
-) -> Result<(), AppError> {
+pub async fn request_password_reset(pool: &Pool<Sqlite>, username: &str) -> Result<(), AppError> {
     info!("Recording password reset request");
     let now = Utc::now().naive_utc();
     sqlx::query!(

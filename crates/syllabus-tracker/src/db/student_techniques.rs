@@ -1,3 +1,9 @@
+// Legacy assigned-techniques surface, dormant since PR 5. Backend
+// stays mounted so the /student/:id/legacy frontend route can still
+// load it side-by-side with the new syllabus stack while coaches
+// migrate prod students. TODO: remove after 2026-09-10 once cutover is
+// confirmed complete.
+
 use std::collections::{HashMap, hash_map::Entry};
 
 use chrono::{NaiveDateTime, Utc};
@@ -6,9 +12,7 @@ use tracing::{info, instrument};
 
 use crate::auth::{Role, User};
 use crate::error::AppError;
-use crate::models::{
-    DbStudentTechnique, DbTag, StudentTechnique, Tag, Technique, naive_to_utc,
-};
+use crate::models::{DbStudentTechnique, DbTag, StudentTechnique, Tag, Technique, naive_to_utc};
 
 #[instrument]
 pub async fn assign_technique_to_student(
@@ -446,4 +450,3 @@ pub async fn mark_student_technique_seen(
     .await?;
     Ok(())
 }
-

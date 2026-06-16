@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT id AS \"id!: i64\" FROM threads\n                   WHERE anchor_kind = 'student_profile' AND student_id = ? AND deleted_at IS NULL\n                   ORDER BY last_activity_at DESC",
+  "describe": {
+    "columns": [
+      {
+        "name": "id!: i64",
+        "ordinal": 0,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "fa0091cb1b209a0015f4f5c1909f395849491f368237af3a159a464c31b108a4"
+}

@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO activity_cursors (viewer_user_id, max_seen_id, updated_at)\n         VALUES (?, ?, CURRENT_TIMESTAMP)\n         ON CONFLICT (viewer_user_id) DO UPDATE SET\n            max_seen_id = MAX(max_seen_id, excluded.max_seen_id),\n            updated_at  = CURRENT_TIMESTAMP",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "40e5fd4425cc38106be1b296b6925ad146ba46989e5c849e362be818123444c3"
+}

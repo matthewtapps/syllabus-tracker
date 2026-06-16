@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT target_student_id AS \"t?: i64\" FROM activity WHERE verb = 'video_added'",
+  "describe": {
+    "columns": [
+      {
+        "name": "t?: i64",
+        "ordinal": 0,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "5e2acdf0dfc82bce17b987e3095490c387e07f3ca9c840870b6bce30b94e818a"
+}

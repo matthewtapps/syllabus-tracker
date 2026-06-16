@@ -1,10 +1,20 @@
-import { useMemo, useState } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useMemo } from 'react';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
-import { Archive, GraduationCap, MoreVertical, Search, UserPlus, Users, X } from 'lucide-react';
+import {
+  Archive,
+  MoreVertical,
+  NotebookPen,
+  Search,
+  UserPlus,
+  Users,
+  X,
+} from 'lucide-react';
 import { type User, isAdmin } from '@/lib/api';
+import { useUser } from '@/lib/current-user-context';
 import { useStudents } from '@/lib/queries';
-import { useSetStudentGraduated, useToggleUserArchived } from '@/lib/mutations';
+import { useToggleUserArchived } from '@/lib/mutations';
+import { categorizeStudent, isStudentLed } from '@/lib/student-triage';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -24,29 +34,55 @@ import {
 import { EmptyState } from '@/components/empty-state';
 import { SkeletonListRow } from '@/components/skeleton-row';
 import { StudentRow } from '@/components/student-row';
-import { GraduateConfirmDialog } from '@/components/graduate-confirm-dialog';
 
 type SortBy = 'recent_update' | 'alphabetical';
-type StatusTab = 'active' | 'graduated' | 'archived' | 'all';
 
-const STATUS_TABS: { value: StatusTab; label: string }[] = [
+// Top-level activity tabs. "Active" now gathers every student with recent
+// activity on either side (own or coach-led); the active/coach-led split lives
+// in the sub-tab pills below.
+type ActivityTab = 'active' | 'quiet';
+
+const ACTIVITY_TABS: { value: ActivityTab; label: string }[] = [
   { value: 'active', label: 'Active' },
-  { value: 'graduated', label: 'Graduated' },
-  { value: 'archived', label: 'Archived' },
-  { value: 'all', label: 'All' },
+  { value: 'quiet', label: 'Quiet' },
 ];
 
-const STATUS_TAB_VALUES = new Set<StatusTab>(['active', 'graduated', 'archived', 'all']);
+const ACTIVITY_TAB_VALUES = new Set<ActivityTab>(['active', 'quiet']);
 
-function isStatusTab(value: string | null): value is StatusTab {
-  return value !== null && STATUS_TAB_VALUES.has(value as StatusTab);
+function isActivityTab(v: string | null): v is ActivityTab {
+  return v !== null && ACTIVITY_TAB_VALUES.has(v as ActivityTab);
 }
 
-interface StudentsListProps {
-  user: User;
+// Sub-tab pills that refine the Active tab.
+type ActiveView = 'everyone' | 'student_led' | 'coach_led';
+
+const ACTIVE_VIEWS: { value: ActiveView; label: string }[] = [
+  { value: 'everyone', label: 'Everyone' },
+  { value: 'student_led', label: 'Student-led' },
+  { value: 'coach_led', label: 'Coach-led' },
+];
+
+const ACTIVE_VIEW_VALUES = new Set<ActiveView>([
+  'everyone',
+  'student_led',
+  'coach_led',
+]);
+
+function isActiveView(v: string | null): v is ActiveView {
+  return v !== null && ACTIVE_VIEW_VALUES.has(v as ActiveView);
 }
 
-export default function StudentsList({ user }: StudentsListProps) {
+function flavour(tab: ActivityTab, view: ActiveView): string {
+  if (tab === 'quiet') return 'No recent activity from either side.';
+  if (view === 'student_led')
+    return 'Active on their own, with no recent updates from you.';
+  if (view === 'coach_led')
+    return 'You\'ve updated them recently, with no recent activity from the student.';
+  return 'Students with activity lately, whether from them or from you.';
+}
+
+export default function StudentsList() {
+  const user = useUser();
   const navigate = useNavigate();
   const admin = isAdmin(user);
   const studentsQuery = useStudents('recent_update', true);
@@ -55,7 +91,6 @@ export default function StudentsList({ user }: StudentsListProps) {
   const error = studentsQuery.error
     ? 'Failed to load students. Please try again.'
     : null;
-  const graduateMutation = useSetStudentGraduated();
   const archiveMutation = useToggleUserArchived();
   const [searchParams, setSearchParams] = useSearchParams();
   const filter = searchParams.get('q') ?? '';
@@ -79,8 +114,12 @@ export default function StudentsList({ user }: StudentsListProps) {
     }, { replace: true });
   }
   const tabParam = searchParams.get('tab');
-  const statusTab: StatusTab = isStatusTab(tabParam) ? tabParam : 'active';
-  function setStatusTab(next: StatusTab) {
+  const activityTab: ActivityTab = isActivityTab(tabParam) ? tabParam : 'active';
+  // The sub-tab pill lives in its own param so it survives switching to the
+  // Quiet tab and back, and never blips through a reset on tab change.
+  const viewParam = searchParams.get('view');
+  const activeView: ActiveView = isActiveView(viewParam) ? viewParam : 'everyone';
+  function setActivityTab(next: ActivityTab) {
     setSearchParams(
       (prev) => {
         const params = new URLSearchParams(prev);
@@ -91,45 +130,51 @@ export default function StudentsList({ user }: StudentsListProps) {
       { replace: true },
     );
   }
-  const [graduateTarget, setGraduateTarget] = useState<User | null>(null);
+  function setActiveView(next: ActiveView) {
+    setSearchParams(
+      (prev) => {
+        const params = new URLSearchParams(prev);
+        if (next === 'everyone') params.delete('view');
+        else params.set('view', next);
+        return params;
+      },
+      { replace: true },
+    );
+  }
+
+  const now = useMemo(() => Date.now(), []);
+
+  const counts = useMemo(() => {
+    let active = 0, studentLed = 0, coach = 0, quiet = 0;
+    for (const s of students) {
+      const c = categorizeStudent(s, now);
+      if (c === 'active') { active++; if (isStudentLed(s, now)) studentLed++; }
+      else if (c === 'coach_led') coach++;
+      else quiet++;
+    }
+    return { active, studentLed, coach, quiet, activeTotal: active + coach };
+  }, [students, now]);
 
   const filteredStudents = useMemo(() => {
     const needle = filter.trim().toLowerCase();
-    let result = students.filter((student) => {
-      if (statusTab === 'active') {
-        if (student.archived || student.graduated_at) return false;
-      } else if (statusTab === 'graduated') {
-        if (!student.graduated_at) return false;
-      } else if (statusTab === 'archived') {
-        if (!student.archived) return false;
+    let result = students.filter((s) => {
+      if (needle) {
+        const name = s.display_name?.toLowerCase() || '';
+        return name.includes(needle) || s.username.toLowerCase().includes(needle);
       }
-
-      if (!needle) return true;
-      const name = student.display_name?.toLowerCase() || '';
-      const username = student.username.toLowerCase();
-      return name.includes(needle) || username.includes(needle);
+      const c = categorizeStudent(s, now);
+      if (activityTab === 'quiet') return c === 'quiet';
+      // Active tab: everyone with recent activity on either side, refined by pill.
+      if (c !== 'active' && c !== 'coach_led') return false;
+      if (activeView === 'student_led') return isStudentLed(s, now);
+      if (activeView === 'coach_led') return c === 'coach_led';
+      return true;
     });
-
     if (sortBy === 'alphabetical') {
-      result = [...result].sort((a, b) => {
-        const aName = a.display_name || a.username;
-        const bName = b.display_name || b.username;
-        return aName.localeCompare(bName);
-      });
+      result = [...result].sort((a, b) => (a.display_name || a.username).localeCompare(b.display_name || b.username));
     }
-
     return result;
-  }, [students, filter, sortBy, statusTab]);
-
-  function handleUnGraduate(student: User) {
-    graduateMutation.mutate(
-      { id: student.id, graduated: false },
-      {
-        onSuccess: () => toast.success('Un-graduated'),
-        onError: () => toast.error('Failed to un-graduate'),
-      },
-    );
-  }
+  }, [students, filter, sortBy, activityTab, activeView, now]);
 
   function handleUnArchive(student: User) {
     archiveMutation.mutate(
@@ -142,40 +187,46 @@ export default function StudentsList({ user }: StudentsListProps) {
   }
 
   function rowActions(student: User) {
-    const showUnGraduate = !!student.graduated_at;
     const showUnArchive = admin && student.archived;
-    if (!showUnGraduate && !showUnArchive) return undefined;
     return (
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-9 w-9"
-            aria-label={`Actions for ${student.display_name || student.username}`}
+      <div className="flex items-center gap-1">
+        <Button
+          asChild
+          variant="ghost"
+          size="icon"
+          className="h-9 w-9"
+          aria-label={`View ${student.display_name || student.username}'s syllabi`}
+        >
+          <Link
+            to={`/student/${student.id}/syllabi`}
+            onClick={(e) => e.stopPropagation()}
           >
-            <MoreVertical className="h-4 w-4" aria-hidden />
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end">
-          {showUnGraduate && (
-            <DropdownMenuItem
-              onSelect={() => setTimeout(() => setGraduateTarget(student), 0)}
-            >
-              <GraduationCap className="mr-2 h-4 w-4" aria-hidden />
-              Un-graduate
-            </DropdownMenuItem>
-          )}
-          {showUnArchive && (
-            <DropdownMenuItem
-              onSelect={() => setTimeout(() => handleUnArchive(student), 0)}
-            >
-              <Archive className="mr-2 h-4 w-4" aria-hidden />
-              Unarchive
-            </DropdownMenuItem>
-          )}
-        </DropdownMenuContent>
-      </DropdownMenu>
+            <NotebookPen className="h-4 w-4" aria-hidden />
+          </Link>
+        </Button>
+        {showUnArchive && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-9 w-9"
+                aria-label={`Actions for ${student.display_name || student.username}`}
+              >
+                <MoreVertical className="h-4 w-4" aria-hidden />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem
+                onSelect={() => setTimeout(() => handleUnArchive(student), 0)}
+              >
+                <Archive className="mr-2 h-4 w-4" aria-hidden />
+                Unarchive
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
+      </div>
     );
   }
 
@@ -188,10 +239,10 @@ export default function StudentsList({ user }: StudentsListProps) {
             aria-hidden
           />
           <Input
-            placeholder="Search students"
+            placeholder="Search for any student"
             value={filter}
             onChange={(e) => setFilter(e.target.value)}
-            aria-label="Search students"
+            aria-label="Search for any student"
             className="pl-9 pr-9"
           />
           {filter && (
@@ -214,20 +265,57 @@ export default function StudentsList({ user }: StudentsListProps) {
         </Button>
       </div>
 
-      <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <Tabs value={statusTab} onValueChange={(v) => setStatusTab(v as StatusTab)}>
-          <TabsList className="w-full sm:w-auto">
-            {STATUS_TABS.map(({ value, label }) => (
-              <TabsTrigger
-                key={value}
-                value={value}
-                className="flex-1 px-2 sm:flex-initial sm:px-3"
-              >
-                {label}
-              </TabsTrigger>
-            ))}
-          </TabsList>
-        </Tabs>
+      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="flex flex-col gap-2">
+          <Tabs value={activityTab} onValueChange={(v) => setActivityTab(v as ActivityTab)}>
+            <TabsList className="w-full sm:w-auto">
+              {ACTIVITY_TABS.map(({ value, label }) => (
+                <TabsTrigger
+                  key={value}
+                  value={value}
+                  className="flex-1 px-2 sm:flex-initial sm:px-3"
+                >
+                  {label}{' '}
+                  <span className="ml-1 rounded-full bg-muted px-1.5 py-0.5 text-xs font-medium text-muted-foreground tabular-nums">
+                    {value === 'active' ? counts.activeTotal : counts.quiet}
+                  </span>
+                </TabsTrigger>
+              ))}
+            </TabsList>
+          </Tabs>
+
+          {activityTab === 'active' && (
+            <Tabs value={activeView} onValueChange={(v) => setActiveView(v as ActiveView)}>
+              <TabsList className="h-8 w-full bg-muted/60 p-0.5 sm:w-auto">
+                {ACTIVE_VIEWS.map(({ value, label }) => (
+                  <TabsTrigger
+                    key={value}
+                    value={value}
+                    className="h-7 flex-1 gap-1 px-2.5 text-xs sm:flex-initial"
+                  >
+                    {label}
+                    <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground tabular-nums">
+                      {value === 'everyone'
+                        ? counts.activeTotal
+                        : value === 'student_led'
+                          ? counts.studentLed
+                          : counts.coach}
+                    </span>
+                  </TabsTrigger>
+                ))}
+              </TabsList>
+            </Tabs>
+          )}
+
+          {/* Reserve two lines only on narrow screens where the flavour text
+            * can wrap; at sm+ every string fits one line, so reserve one line
+            * and avoid an empty band under the copy. */}
+          <div className="mb-2 min-h-[2.5rem] sm:min-h-[1.25rem]">
+            <p className="text-xs leading-tight text-muted-foreground">
+              {flavour(activityTab, activeView)}
+            </p>
+          </div>
+        </div>
 
         <Select value={sortBy} onValueChange={(v) => setSortBy(v as SortBy)}>
           <SelectTrigger className="w-full sm:w-[180px]">
@@ -260,7 +348,7 @@ export default function StudentsList({ user }: StudentsListProps) {
               <StudentRow
                 key={student.id}
                 student={student}
-                href={`/student/${student.id}${statusTab !== 'active' ? `?from_tab=${statusTab}` : ''}`}
+                href={`/student/${student.id}`}
                 actions={rowActions(student)}
               />
             ))}
@@ -284,11 +372,7 @@ export default function StudentsList({ user }: StudentsListProps) {
             description={
               filter
                 ? 'Try a different search or clear the filter.'
-                : statusTab === 'graduated'
-                  ? 'No graduated students.'
-                  : statusTab === 'archived'
-                    ? 'No archived students.'
-                    : 'No students in this view.'
+                : 'No students in this view.'
             }
             action={
               filter && (
@@ -300,23 +384,6 @@ export default function StudentsList({ user }: StudentsListProps) {
           />
         )}
       </div>
-
-      <GraduateConfirmDialog
-        open={!!graduateTarget}
-        onOpenChange={(open) => {
-          if (!open) setGraduateTarget(null);
-        }}
-        mode="ungraduate"
-        studentName={
-          graduateTarget?.display_name || graduateTarget?.username || ''
-        }
-        onConfirm={() => {
-          if (graduateTarget) {
-            handleUnGraduate(graduateTarget);
-            setGraduateTarget(null);
-          }
-        }}
-      />
     </div>
   );
 }

@@ -1,0 +1,32 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT a.verb              AS \"verb!: String\",\n                  date(a.occurred_at) AS \"day!: String\",\n                  COUNT(*)            AS \"n!: i64\"\n           FROM activity a\n           JOIN users u ON u.id = a.actor_user_id\n           WHERE u.role = 'student'\n             AND a.occurred_at >= datetime('now', '-13 days', 'start of day')\n             AND a.verb IN ('attempt_logged', 'video_watched', 'technique_pinned')\n           GROUP BY a.verb, date(a.occurred_at)",
+  "describe": {
+    "columns": [
+      {
+        "name": "verb!: String",
+        "ordinal": 0,
+        "type_info": "Text"
+      },
+      {
+        "name": "day!: String",
+        "ordinal": 1,
+        "type_info": "Text"
+      },
+      {
+        "name": "n!: i64",
+        "ordinal": 2,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      false,
+      true,
+      false
+    ]
+  },
+  "hash": "54bcd55a80e14cd225632fba5ff1a62da9c95bb172c8aa825bae7be6f09fc1fc"
+}

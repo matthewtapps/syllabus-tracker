@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT target_student_id AS \"t?: i64\" FROM activity",
+  "describe": {
+    "columns": [
+      {
+        "name": "t?: i64",
+        "ordinal": 0,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "be6669f6015325c937728e97c2f93ebe8b50661abc372d9f7e81b3224b71c0af"
+}

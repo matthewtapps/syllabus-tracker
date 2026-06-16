@@ -1,0 +1,26 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT author_id AS \"author_id!: i64\", thread_id AS \"thread_id!: i64\"\n           FROM thread_comments WHERE id = ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "author_id!: i64",
+        "ordinal": 0,
+        "type_info": "Integer"
+      },
+      {
+        "name": "thread_id!: i64",
+        "ordinal": 1,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "3f143481f64de080b474583db22b12db5b5235d022cb5419bf2289c2a6b7dbbf"
+}

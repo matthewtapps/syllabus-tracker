@@ -14,8 +14,8 @@ import {
   type Tag,
   type Technique,
   type TechniqueUpdate,
-  type User,
 } from "@/lib/api";
+import { useUser } from "@/lib/current-user-context";
 import {
   useAllTags,
   useAttempts,
@@ -53,6 +53,7 @@ import { StatusToggle } from "@/components/status-toggle";
 import TechniqueEditForm from "@/components/technique-edit-form";
 import { AddVideoButton } from "@/components/videos/add-video-button";
 import { VideoList } from "@/components/videos/video-list";
+import type { VideoThreadSurface } from "@/lib/thread-visibility";
 import { useCapabilities } from "@/context/capabilities-context";
 import { WeeklyAttemptBars } from "@/components/weekly-attempt-bars";
 import { formatRelative } from "@/lib/dates";
@@ -60,17 +61,12 @@ import type { Status } from "@/lib/status";
 import { AttemptButton } from "../components/attempt-button";
 import { NotesEditor } from "../components/notes-editor";
 import { TagRemoveDialog } from "../components/tag-remove-dialog";
-import { TagsEditor } from "../components/tags-editor";
-
-interface StudentTechniqueDetailProps {
-  user: User;
-}
+import { TagsEditor } from "@/components/tags-editor";
 
 const RECENT_WINDOW_DAYS = 30;
 
-export default function StudentTechniqueDetail({
-  user,
-}: StudentTechniqueDetailProps) {
+export default function StudentTechniqueDetail() {
+  const user = useUser();
   const { id, techniqueId } = useParams<{ id: string; techniqueId: string }>();
   const [searchParams] = useSearchParams();
   const studentId = parseInt(id ?? "0", 10);
@@ -363,6 +359,7 @@ export default function StudentTechniqueDetail({
             <VideoList
               techniqueId={technique.technique_id}
               canManage={canEditAll}
+              surface={{ kind: "student", studentId } satisfies VideoThreadSurface}
               reloadKey={videoReloadKey}
             />
           </section>

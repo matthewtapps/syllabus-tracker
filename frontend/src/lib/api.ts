@@ -95,6 +95,10 @@ export interface User {
   last_student_initiative_at?: string | null;
   last_watch_at?: string | null;
   last_watch_video_title?: string | null;
+  last_student_activity_at?: string | null;
+  last_coach_activity_at?: string | null;
+  pinned_count?: number | null;
+  recent_activity_count?: number | null;
 }
 
 export async function getCurrentUser(): Promise<User | null> {
@@ -743,6 +747,12 @@ export interface LibraryTechniqueRow {
   student_count: number;
   video_count: number;
   last_activity_at: string | null;
+  /**
+   * Always present. Coach-facing endpoints return false; the student
+   * library endpoint sets true when the viewing student has the technique
+   * pinned.
+   */
+  is_pinned: boolean;
 }
 
 export async function getLibraryTechniques(): Promise<LibraryTechniqueRow[]> {
@@ -755,35 +765,61 @@ export async function getLibraryTechniques(): Promise<LibraryTechniqueRow[]> {
   return await response.json();
 }
 
-export interface LibraryTechniqueCollectionRef {
-  id: number;
-  name: string;
-}
-
-export interface AttemptWeekBucket {
-  date: string;
-  count: number;
-}
-
-export interface LibraryTechniqueStats {
-  collections: LibraryTechniqueCollectionRef[];
-  status_counts: { red: number; amber: number; green: number };
-  attempts_30d: number;
-  attempts_weekly_buckets: AttemptWeekBucket[];
-  video_plays: number;
-}
-
-export async function getLibraryTechniqueStats(
-  techniqueId: number,
-): Promise<LibraryTechniqueStats> {
-  const response = await fetch(`/api/techniques/${techniqueId}/stats`, {
+export async function getStudentLibrary(
+  studentId: number,
+): Promise<LibraryTechniqueRow[]> {
+  const response = await fetch(`/api/student/${studentId}/library`, {
     credentials: "include",
   });
   if (!response.ok) {
-    throw new Error("Failed to fetch technique stats");
+    throw new Error("Failed to fetch student library");
   }
   return await response.json();
 }
+
+export async function getStudentPinnedTechniques(
+  studentId: number,
+): Promise<LibraryTechniqueRow[]> {
+  const response = await fetch(`/api/student/${studentId}/pinned_techniques`, {
+    credentials: "include",
+  });
+  if (!response.ok) {
+    throw new Error("Failed to fetch pinned techniques");
+  }
+  return await response.json();
+}
+
+export async function pinTechniqueForStudent(
+  studentId: number,
+  techniqueId: number,
+): Promise<void> {
+  const response = await fetch(`/api/student/${studentId}/pinned_techniques`, {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ technique_id: techniqueId }),
+  });
+  if (!response.ok) {
+    throw new Error("Failed to pin technique");
+  }
+}
+
+export async function unpinTechniqueForStudent(
+  studentId: number,
+  techniqueId: number,
+): Promise<void> {
+  const response = await fetch(
+    `/api/student/${studentId}/pinned_techniques/${techniqueId}`,
+    {
+      method: "DELETE",
+      credentials: "include",
+    },
+  );
+  if (!response.ok) {
+    throw new Error("Failed to unpin technique");
+  }
+}
+
 
 // ---- Attempts ----
 
@@ -883,19 +919,6 @@ export async function deleteAttempt(attemptId: number): Promise<Response> {
   });
 }
 
-export async function getRecentAttemptsForStudent(
-  studentId: number,
-  limit: number = 5,
-): Promise<RecentAttemptItem[]> {
-  const response = await fetch(
-    `/api/student/${studentId}/attempts/recent?limit=${limit}`,
-    { credentials: "include" },
-  );
-  if (!response.ok) throw new Error("Failed to fetch recent attempts");
-  const body = await response.json();
-  return body.attempts as RecentAttemptItem[];
-}
-
 export async function getAttemptSummary(
   studentId: number,
 ): Promise<AttemptSummary> {
@@ -906,43 +929,15 @@ export async function getAttemptSummary(
   return await response.json();
 }
 
-export async function getAttemptHeatmap(
-  studentId: number,
-  from?: string,
-  to?: string,
-): Promise<AttemptBucket[]> {
-  const params = new URLSearchParams();
-  if (from) params.set("from", from);
-  if (to) params.set("to", to);
-  const qs = params.toString();
-  const url = qs
-    ? `/api/student/${studentId}/attempts/heatmap?${qs}`
-    : `/api/student/${studentId}/attempts/heatmap`;
-  const response = await fetch(url, { credentials: "include" });
-  if (!response.ok) throw new Error("Failed to fetch attempt heatmap");
-  const body = await response.json();
-  return body.buckets as AttemptBucket[];
-}
-
-export async function getAttemptSparkline(
-  studentTechniqueId: number,
-  weeks: number = 12,
-): Promise<AttemptBucket[]> {
-  const response = await fetch(
-    `/api/student_technique/${studentTechniqueId}/attempts/sparkline?weeks=${weeks}`,
-    { credentials: "include" },
-  );
-  if (!response.ok) throw new Error("Failed to fetch sparkline");
-  const body = await response.json();
-  return body.buckets as AttemptBucket[];
-}
-
 export type VideoKind = "native" | "youtube" | "vimeo" | "drive" | "link";
 export type ProcessingStatus = "processing" | "ready" | "failed";
 
 export interface Video {
   id: number;
-  technique_id: number;
+  parent_kind: "technique" | "student_profile" | "thread" | "loose";
+  technique_id: number | null;
+  student_id: number | null;
+  thread_id: number | null;
   title: string;
   description?: string | null;
   position: number;
@@ -965,6 +960,9 @@ export interface Video {
   /** Set only on coach views of a specific student's technique page when an
    * explicit per-student override exists for this video. Omitted otherwise. */
   override_for_student?: "show" | "hide";
+  /** Number of comment threads on this video the viewer can see. Defaults to
+   * 0 from list endpoints that don't annotate it. */
+  comment_count?: number;
 }
 
 export interface SignedUrl {
@@ -979,8 +977,25 @@ export interface UploadResponse {
 
 export async function listVideos(
   techniqueId: number,
-  opts?: { forStudent?: number },
+  opts?: {
+    forStudent?: number;
+    /** When set, fetches the per-syllabus video list via the syllabus
+     *  endpoint. Applies `student_syllabus_video_visibility` overrides
+     *  on top of global visibility. Overrides `forStudent` if both are
+     *  provided (the syllabus route already scopes to the student). */
+    syllabus?: { studentId: number; syllabusId: number };
+  },
 ): Promise<Video[]> {
+  if (opts?.syllabus) {
+    const { studentId, syllabusId } = opts.syllabus;
+    const response = await fetch(
+      `/api/student/${studentId}/syllabi/${syllabusId}/techniques/${techniqueId}/videos`,
+      { credentials: "include" },
+    );
+    if (!response.ok) throw new Error("Failed to load videos");
+    const body = await response.json();
+    return body.videos as Video[];
+  }
   const url = new URL(`/api/techniques/${techniqueId}/videos`, window.location.origin);
   if (typeof opts?.forStudent === "number") {
     url.searchParams.set("for_student", String(opts.forStudent));
@@ -1016,16 +1031,6 @@ export async function setVideoStudentVisibility(
     body: JSON.stringify({ visible }),
     credentials: "include",
   });
-}
-
-export async function getVideoStatus(
-  videoId: number,
-): Promise<{ processing_status: ProcessingStatus; processing_error?: string | null }> {
-  const response = await fetch(`/api/videos/${videoId}/status`, {
-    credentials: "include",
-  });
-  if (!response.ok) throw new Error("Failed to load video status");
-  return await response.json();
 }
 
 export async function uploadVideo(
@@ -1148,35 +1153,6 @@ export interface VideoStatsSnapshot {
   completion_rate: number;
 }
 
-export interface DashboardVideoRow {
-  video_id: number;
-  video_title: string;
-  technique_id: number;
-  technique_name: string;
-  plays_this_window: number;
-  unique_viewers: number;
-}
-
-export interface DashboardVideoOverview {
-  total_seconds_watched: number;
-  videos_processing: number;
-  top_videos: DashboardVideoRow[];
-}
-
-export interface StorageObjectRow {
-  video_id: number;
-  title: string;
-  technique_id: number;
-  technique_name: string;
-  bytes: number;
-}
-
-export interface StorageOverview {
-  total_bytes: number;
-  total_objects: number;
-  top_objects: StorageObjectRow[];
-}
-
 export async function getVideoStats(
   videoId: number,
 ): Promise<VideoStatsSnapshot> {
@@ -1187,18 +1163,705 @@ export async function getVideoStats(
   return (await response.json()) as VideoStatsSnapshot;
 }
 
-export async function getDashboardVideoOverview(): Promise<DashboardVideoOverview> {
-  const response = await fetch(`/api/dashboard/video-overview`, {
-    credentials: "include",
-  });
-  if (!response.ok) throw response;
-  return (await response.json()) as DashboardVideoOverview;
+// ============================================================
+// Syllabus stack (PR 3)
+// ============================================================
+
+export interface Syllabus {
+  id: number;
+  name: string;
+  description: string;
+  created_at: string;
+  created_by_id: number | null;
+  updated_at: string;
+  technique_count: number;
+  active_assignment_count: number;
 }
 
-export async function getAdminStorage(): Promise<StorageOverview> {
-  const response = await fetch(`/api/admin/storage`, {
+export interface SyllabusTechniqueRow {
+  technique_id: number;
+  name: string;
+  description: string;
+  position: number;
+  added_at: string;
+  tags: Tag[];
+}
+
+export interface SyllabusDetailResponse extends Syllabus {
+  techniques: SyllabusTechniqueRow[];
+}
+
+export interface SyllabusAssignment {
+  id: number;
+  student_id: number;
+  syllabus_id: number;
+  syllabus_name: string;
+  assigned_at: string;
+  assigned_by_id: number | null;
+  unassigned_at: string | null;
+  unassigned_by_id: number | null;
+  graduated_at: string | null;
+  graduated_by_id: number | null;
+  red_count: number;
+  amber_count: number;
+  green_count: number;
+  total_count: number;
+}
+
+export interface SstRow {
+  id: number;
+  assignment_id: number;
+  technique_id: number;
+  technique_name: string;
+  technique_description: string;
+  status: "red" | "amber" | "green";
+  student_notes: string;
+  coach_notes: string;
+  hidden_at: string | null;
+  created_at: string;
+  updated_at: string;
+  last_coach_update_at: string | null;
+  last_coach_update_by_id: number | null;
+  last_student_update_at: string | null;
+  last_student_update_by_id: number | null;
+  tags: Tag[];
+  attempt_count: number;
+  last_attempt_at: string | null;
+  /** Alive videos on the technique (global library; student-specific is future). */
+  video_count: number;
+}
+
+export interface StudentSyllabusDetailResponse {
+  assignment: SyllabusAssignment;
+  techniques: SstRow[];
+}
+
+export interface SyllabusAttempt {
+  id: number;
+  student_syllabus_technique_id: number;
+  recorded_by_id: number;
+  attempted_at: string;
+  coach_note: string | null;
+  coach_note_by_id: number | null;
+  coach_note_at: string | null;
+  student_note: string | null;
+  student_note_at: string | null;
+  created_at: string;
+}
+
+export type PropagationMode = "syllabus_only" | "cascade";
+
+export async function getSyllabi(): Promise<Syllabus[]> {
+  const response = await fetch("/api/syllabi", { credentials: "include" });
+  if (!response.ok) throw response;
+  return await response.json();
+}
+
+export async function getSyllabusDetail(
+  syllabusId: number,
+): Promise<SyllabusDetailResponse> {
+  const response = await fetch(`/api/syllabi/${syllabusId}`, {
     credentials: "include",
   });
   if (!response.ok) throw response;
-  return (await response.json()) as StorageOverview;
+  return await response.json();
+}
+
+export async function createSyllabusApi(data: {
+  name: string;
+  description?: string;
+}): Promise<{ id: number }> {
+  const response = await fetch("/api/syllabi", {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+  if (!response.ok) throw response;
+  return await response.json();
+}
+
+export async function updateSyllabusApi(
+  syllabusId: number,
+  data: { name?: string; description?: string | null },
+): Promise<void> {
+  const response = await fetch(`/api/syllabi/${syllabusId}`, {
+    method: "PATCH",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+  if (!response.ok) throw response;
+}
+
+export async function deleteSyllabusApi(syllabusId: number): Promise<void> {
+  const response = await fetch(`/api/syllabi/${syllabusId}`, {
+    method: "DELETE",
+    credentials: "include",
+  });
+  if (!response.ok) throw response;
+}
+
+export async function addTechniqueToSyllabusApi(
+  syllabusId: number,
+  techniqueId: number,
+  propagation: PropagationMode,
+): Promise<void> {
+  const response = await fetch(`/api/syllabi/${syllabusId}/techniques`, {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ technique_id: techniqueId, propagation }),
+  });
+  if (!response.ok) throw response;
+}
+
+export async function removeTechniqueFromSyllabusApi(
+  syllabusId: number,
+  techniqueId: number,
+  propagation: PropagationMode,
+): Promise<void> {
+  const url = `/api/syllabi/${syllabusId}/techniques/${techniqueId}?propagation=${propagation}`;
+  const response = await fetch(url, {
+    method: "DELETE",
+    credentials: "include",
+  });
+  if (!response.ok) throw response;
+}
+
+export async function assignSyllabusApi(
+  studentId: number,
+  syllabusId: number,
+): Promise<{ id: number }> {
+  const response = await fetch(
+    `/api/student/${studentId}/syllabi/${syllabusId}/assignment`,
+    { method: "POST", credentials: "include" },
+  );
+  if (!response.ok) throw response;
+  return await response.json();
+}
+
+export async function unassignSyllabusApi(
+  studentId: number,
+  syllabusId: number,
+): Promise<void> {
+  const response = await fetch(
+    `/api/student/${studentId}/syllabi/${syllabusId}/assignment`,
+    { method: "DELETE", credentials: "include" },
+  );
+  if (!response.ok) throw response;
+}
+
+export async function getStudentSyllabiApi(
+  studentId: number,
+): Promise<SyllabusAssignment[]> {
+  const response = await fetch(`/api/student/${studentId}/syllabi`, {
+    credentials: "include",
+  });
+  if (!response.ok) throw response;
+  return await response.json();
+}
+
+export async function getStudentSyllabusTechniquesApi(
+  studentId: number,
+  syllabusId: number,
+): Promise<StudentSyllabusDetailResponse> {
+  const response = await fetch(
+    `/api/student/${studentId}/syllabi/${syllabusId}/techniques`,
+    { credentials: "include" },
+  );
+  if (!response.ok) throw response;
+  return await response.json();
+}
+
+export async function updateSstApi(
+  sstId: number,
+  data: { status?: string; student_notes?: string; coach_notes?: string },
+): Promise<void> {
+  const response = await fetch(`/api/student_syllabus_techniques/${sstId}`, {
+    method: "PATCH",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+  if (!response.ok) throw response;
+}
+
+export async function listSyllabusAttemptsApi(
+  sstId: number,
+): Promise<SyllabusAttempt[]> {
+  const response = await fetch(
+    `/api/student_syllabus_techniques/${sstId}/attempts`,
+    { credentials: "include" },
+  );
+  if (!response.ok) throw response;
+  return await response.json();
+}
+
+export async function createSyllabusAttemptApi(
+  sstId: number,
+  data: { attempted_at: string; coach_note?: string; student_note?: string },
+): Promise<{ id: number }> {
+  const response = await fetch(
+    `/api/student_syllabus_techniques/${sstId}/attempts`,
+    {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    },
+  );
+  if (!response.ok) throw response;
+  return await response.json();
+}
+
+export async function updateSyllabusAttemptApi(
+  attemptId: number,
+  data: {
+    attempted_at?: string;
+    coach_note?: string | null;
+    student_note?: string | null;
+  },
+): Promise<void> {
+  const response = await fetch(`/api/syllabus_attempts/${attemptId}`, {
+    method: "PATCH",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+  if (!response.ok) throw response;
+}
+
+export async function deleteSyllabusAttemptApi(
+  attemptId: number,
+): Promise<void> {
+  const response = await fetch(`/api/syllabus_attempts/${attemptId}`, {
+    method: "DELETE",
+    credentials: "include",
+  });
+  if (!response.ok) throw response;
+}
+
+export async function listSyllabusStudentsApi(
+  syllabusId: number,
+): Promise<number[]> {
+  const response = await fetch(`/api/syllabi/${syllabusId}/students`, {
+    credentials: "include",
+  });
+  if (!response.ok) throw response;
+  return await response.json();
+}
+
+// ============================================================
+// PR 4: graduation, diff view, per-student curation, video overrides
+// ============================================================
+
+export interface DiffGhost {
+  sst_id: number;
+  technique_id: number;
+  technique_name: string;
+  hidden: boolean;
+}
+
+export interface DiffMissing {
+  technique_id: number;
+  technique_name: string;
+  sst_id: number | null;
+}
+
+export interface SyllabusAssignmentDiff {
+  ghosts: DiffGhost[];
+  missing: DiffMissing[];
+}
+
+export type GhostActionKind =
+  | "readd_globally"
+  | "hide_locally"
+  | "ignore";
+
+export type MissingActionKind = "add_to_student" | "ignore";
+
+export interface GhostActionEntry {
+  sst_id: number;
+  technique_id: number;
+  action: GhostActionKind;
+}
+
+export interface MissingActionEntry {
+  technique_id: number;
+  action: MissingActionKind;
+}
+
+export async function setAssignmentGraduatedApi(
+  studentId: number,
+  syllabusId: number,
+  graduatedAt: string | null,
+): Promise<void> {
+  const response = await fetch(
+    `/api/student/${studentId}/syllabi/${syllabusId}/assignment`,
+    {
+      method: "PATCH",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ graduated_at: graduatedAt }),
+    },
+  );
+  if (!response.ok) throw response;
+}
+
+export async function getAssignmentDiffApi(
+  studentId: number,
+  syllabusId: number,
+): Promise<SyllabusAssignmentDiff> {
+  const response = await fetch(
+    `/api/student/${studentId}/syllabi/${syllabusId}/assignment/diff`,
+    { credentials: "include" },
+  );
+  if (!response.ok) throw response;
+  return await response.json();
+}
+
+export async function applyAssignmentDiffApi(
+  studentId: number,
+  syllabusId: number,
+  body: {
+    ghost_actions: GhostActionEntry[];
+    missing_actions: MissingActionEntry[];
+  },
+): Promise<{ applied: number }> {
+  const response = await fetch(
+    `/api/student/${studentId}/syllabi/${syllabusId}/assignment/diff/apply`,
+    {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    },
+  );
+  if (!response.ok) throw response;
+  return await response.json();
+}
+
+export async function addTechniqueToStudentSyllabusApi(
+  studentId: number,
+  syllabusId: number,
+  techniqueId: number,
+): Promise<{ id: number }> {
+  const response = await fetch(
+    `/api/student/${studentId}/syllabi/${syllabusId}/techniques`,
+    {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ technique_id: techniqueId }),
+    },
+  );
+  if (!response.ok) throw response;
+  return await response.json();
+}
+
+export async function setSstHiddenApi(
+  sstId: number,
+  hidden: boolean,
+): Promise<void> {
+  const response = await fetch(
+    `/api/student_syllabus_techniques/${sstId}/hidden`,
+    {
+      method: "PATCH",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ hidden }),
+    },
+  );
+  if (!response.ok) throw response;
+}
+
+export async function setVideoSyllabusVisibilityApi(
+  studentId: number,
+  syllabusId: number,
+  videoId: number,
+  visible: boolean | null,
+): Promise<void> {
+  const response = await fetch(
+    `/api/student/${studentId}/syllabi/${syllabusId}/videos/${videoId}/visibility`,
+    {
+      method: "PUT",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ visible }),
+    },
+  );
+  if (!response.ok) throw response;
+}
+
+// ============================================================
+// Syllabus-backed student dashboard reads (dashboard-reporting migration)
+// ============================================================
+
+export interface StudentSyllabusTechniqueOverview {
+  sst_id: number;
+  technique_id: number;
+  technique_name: string;
+  syllabus_id: number;
+  syllabus_name: string;
+  status: "red" | "amber" | "green";
+  updated_at: string;
+  last_attempt_at: string | null;
+  last_coach_update_at: string | null;
+  last_student_update_at: string | null;
+}
+
+export async function getStudentSyllabusTechniquesFlat(
+  studentId: number,
+): Promise<StudentSyllabusTechniqueOverview[]> {
+  const response = await fetch(`/api/student/${studentId}/syllabus_techniques`, {
+    credentials: "include",
+  });
+  if (!response.ok) throw new Error("Failed to fetch syllabus techniques");
+  return await response.json();
+}
+
+export async function getRecentSyllabusAttemptsForStudent(
+  studentId: number,
+  limit: number = 5,
+): Promise<RecentAttemptItem[]> {
+  const response = await fetch(
+    `/api/student/${studentId}/syllabus_attempts/recent?limit=${limit}`,
+    { credentials: "include" },
+  );
+  if (!response.ok) throw new Error("Failed to fetch recent syllabus attempts");
+  return await response.json();
+}
+
+export async function getSyllabusAttemptHeatmap(
+  studentId: number,
+  from?: string,
+  to?: string,
+): Promise<AttemptBucket[]> {
+  const params = new URLSearchParams();
+  if (from) params.set("from", from);
+  if (to) params.set("to", to);
+  const qs = params.toString();
+  const url = qs
+    ? `/api/student/${studentId}/syllabus_attempts/heatmap?${qs}`
+    : `/api/student/${studentId}/syllabus_attempts/heatmap`;
+  const response = await fetch(url, { credentials: "include" });
+  if (!response.ok) throw new Error("Failed to fetch syllabus attempt heatmap");
+  return await response.json();
+}
+
+// ============================================================
+// Activity feed (PR 2)
+// ============================================================
+
+import type { ActivityRow } from "./activity-line";
+export type { ActivityRow };
+
+export interface ActivityUnreadCount {
+  count: number;
+}
+
+export async function getActivityFeed(params?: {
+  before_ts?: string;
+  before_id?: number;
+  limit?: number;
+}): Promise<ActivityRow[]> {
+  const url = new URL("/api/activity/feed", window.location.origin);
+  if (params?.before_ts) url.searchParams.set("before_ts", params.before_ts);
+  if (params?.before_id !== undefined)
+    url.searchParams.set("before_id", String(params.before_id));
+  if (params?.limit !== undefined)
+    url.searchParams.set("limit", String(params.limit));
+  const response = await fetch(url.toString(), { credentials: "include" });
+  if (!response.ok) throw response;
+  return (await response.json()) as ActivityRow[];
+}
+
+export async function getActivityUnreadCount(): Promise<ActivityUnreadCount> {
+  const response = await fetch("/api/activity/unread_count", {
+    credentials: "include",
+  });
+  if (!response.ok) throw response;
+  return (await response.json()) as ActivityUnreadCount;
+}
+
+/** Fetches activity rows scoped to a specific student.
+ *  Used by coaches (and the student themselves) on the student profile page
+ *  to show that student's activity rather than the gym-wide feed. */
+export async function getStudentActivityFeed(
+  studentId: number,
+  params?: {
+    before_ts?: string;
+    before_id?: number;
+    limit?: number;
+  },
+): Promise<ActivityRow[]> {
+  const url = new URL(
+    `/api/student/${studentId}/activity_feed`,
+    window.location.origin,
+  );
+  if (params?.before_ts) url.searchParams.set("before_ts", params.before_ts);
+  if (params?.before_id !== undefined)
+    url.searchParams.set("before_id", String(params.before_id));
+  if (params?.limit !== undefined)
+    url.searchParams.set("limit", String(params.limit));
+  const response = await fetch(url.toString(), { credentials: "include" });
+  if (!response.ok) throw response;
+  return (await response.json()) as ActivityRow[];
+}
+
+export async function postMarkAllActivityRead(): Promise<void> {
+  const response = await fetch("/api/activity/mark_all_read", {
+    method: "POST",
+    credentials: "include",
+  });
+  if (!response.ok) throw response;
+}
+
+export async function postMarkActivityRead(id: number): Promise<void> {
+  const response = await fetch(`/api/activity/${id}/read`, {
+    method: "POST",
+    credentials: "include",
+  });
+  if (!response.ok) throw response;
+}
+
+export async function postMarkActivityUnread(id: number): Promise<void> {
+  const response = await fetch(`/api/activity/${id}/unread`, {
+    method: "POST",
+    credentials: "include",
+  });
+  if (!response.ok) throw response;
+}
+
+// ============================================================
+// Dashboard digest + feed
+// ============================================================
+
+export interface DigestMetric {
+  key: string;
+  label: string;
+  count: number;
+  prev_count: number;
+  delta: number;
+  daily: number[];
+}
+
+export interface ActivityDigest {
+  window_days: number;
+  metrics: DigestMetric[];
+}
+
+export async function getActivityDigest(): Promise<ActivityDigest> {
+  const response = await fetch("/api/dashboard/activity_digest", {
+    credentials: "include",
+  });
+  if (!response.ok) throw response;
+  return (await response.json()) as ActivityDigest;
+}
+
+export async function getDashboardActivityFeed(limit = 30): Promise<ActivityRow[]> {
+  const response = await fetch(`/api/dashboard/activity_feed?limit=${limit}`, {
+    credentials: "include",
+  });
+  if (!response.ok) throw response;
+  return (await response.json()) as ActivityRow[];
+}
+
+// ============================================================
+// Threads (PR 2, Task 1)
+// ============================================================
+
+export type AnchorKind =
+  | "student_profile"
+  | "technique"
+  | "video"
+  | "video_timestamp"
+  | "sst"
+  | "pinned_technique";
+export type ThreadVisibility = "private" | "broadcast";
+
+export interface CommentView {
+  id: number;
+  thread_id: number;
+  parent_comment_id: number | null;
+  author_id: number;
+  author_name: string;
+  body: string | null;
+  created_at: string;
+  deleted_at: string | null;
+}
+
+export interface ThreadView {
+  id: number;
+  anchor_kind: string;
+  author_id: number;
+  author_name: string;
+  visibility: string;
+  scope_student_id: number | null;
+  /** Anchor seconds for video_timestamp threads; null otherwise. */
+  video_ts_seconds: number | null;
+  body: string | null;
+  created_at: string;
+  deleted_at: string | null;
+  comments: CommentView[];
+}
+
+export interface CreateThreadInput {
+  anchor_kind: AnchorKind;
+  anchor_id: number;
+  video_ts_seconds?: number | null;
+  pinned_student_id?: number | null;
+  visibility: ThreadVisibility;
+  scope_student_id?: number | null;
+  body: string;
+}
+
+export async function listThreads(
+  anchorKind: AnchorKind,
+  anchorId: number,
+): Promise<ThreadView[]> {
+  const res = await fetch(
+    `/api/threads?anchor_kind=${anchorKind}&anchor_id=${anchorId}`,
+    { credentials: "include" },
+  );
+  if (!res.ok) throw new Error(`Failed to load threads: ${res.statusText}`);
+  const data = (await res.json()) as { threads: ThreadView[] };
+  return data.threads;
+}
+
+export async function createThread(input: CreateThreadInput): Promise<Response> {
+  return fetch(`/api/threads`, {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+}
+
+export async function createComment(
+  threadId: number,
+  body: string,
+  parentCommentId?: number | null,
+): Promise<Response> {
+  return fetch(`/api/threads/${threadId}/comments`, {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ body, parent_comment_id: parentCommentId ?? null }),
+  });
+}
+
+export async function deleteThread(threadId: number): Promise<Response> {
+  return fetch(`/api/threads/${threadId}`, {
+    method: "DELETE",
+    credentials: "include",
+  });
+}
+
+export async function deleteComment(commentId: number): Promise<Response> {
+  return fetch(`/api/comments/${commentId}`, {
+    method: "DELETE",
+    credentials: "include",
+  });
 }

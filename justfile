@@ -194,6 +194,18 @@ seed: migrate
     SQLX_OFFLINE=true DATABASE_URL=sqlite://data/sqlite.db SCHEMA_PATH=./config/schema.sql \
         cargo run -p syllabus-tracker --bin seed
 
+# One-shot idempotent historical activity backfill. Run once at deploy.
+[group('db')]
+backfill-activity: migrate
+    SQLX_OFFLINE=true DATABASE_URL=sqlite://data/sqlite.db SCHEMA_PATH=./config/schema.sql \
+        cargo run -p syllabus-tracker --bin backfill_activity
+
+# One-shot idempotent cursor seeding at deploy. Run after backfill-activity.
+[group('db')]
+init-activity-cursors: migrate
+    SQLX_OFFLINE=true DATABASE_URL=sqlite://data/sqlite.db SCHEMA_PATH=./config/schema.sql \
+        cargo run -p syllabus-tracker --bin init_activity_cursors
+
 # Wipe just the attempts table then reseed (keeps users/techniques).
 [group('db')]
 reseed-attempts:

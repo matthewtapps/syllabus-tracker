@@ -9,7 +9,9 @@ pub mod db;
 pub mod env;
 pub mod error;
 pub mod models;
+pub mod syllabi;
 pub mod telemetry;
+pub mod threads;
 pub mod validation;
 pub mod videos;
 
