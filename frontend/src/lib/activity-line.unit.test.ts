@@ -150,6 +150,54 @@ describe("activityLine", () => {
     expect(() => activityLine(row({ verb: "sst_status_changed", payload_json: "bad" }))).not.toThrow();
   });
 
+  // --- scope-aware: coach assignment ---
+  test("syllabus_assigned by coach on gym scope names the student and deep-links to student syllabus", () => {
+    const result = activityLine(
+      row({
+        verb: "syllabus_assigned",
+        actor_user_id: 10,
+        target_student_id: 7,
+        target_student_name: "Dan Bennet",
+        syllabus_id: 3,
+        syllabus_name: "Blue Belt Syllabus",
+      }),
+      // default gym scope
+    );
+    expect(lineText(result)).toBe("assigned Blue Belt Syllabus to Dan Bennet");
+    expect(result.href).toBe("/student/7/syllabi/3");
+  });
+
+  test("syllabus_assigned by coach on student scope drops the student name and uses student-scoped href", () => {
+    const scope: ActivityScope = { kind: "student", studentId: 7 };
+    const result = activityLine(
+      row({
+        verb: "syllabus_assigned",
+        actor_user_id: 10,
+        target_student_id: 7,
+        target_student_name: "Dan Bennet",
+        syllabus_id: 3,
+        syllabus_name: "Blue Belt Syllabus",
+      }),
+      scope,
+    );
+    expect(lineText(result)).toBe("assigned to Blue Belt Syllabus");
+    expect(result.href).toBe("/student/7/syllabi/3");
+  });
+
+  test("syllabus_assigned with no syllabus name falls back to plain text", () => {
+    const result = activityLine(
+      row({
+        verb: "syllabus_assigned",
+        actor_user_id: 10,
+        target_student_id: 7,
+        target_student_name: "Dan Bennet",
+        syllabus_id: null,
+        syllabus_name: null,
+      }),
+    );
+    expect(lineText(result)).toBe("assigned to a syllabus");
+  });
+
   // --- scope-aware: coach graduation ---
   test("syllabus_graduated by coach on gym scope names the student possessively", () => {
     const result = activityLine(
@@ -580,9 +628,17 @@ describe("activityLine", () => {
     expect(result.href).toBe("/student/4/pinned?focus=technique:5");
   });
 
-  test("syllabus_assigned still routes to the coach syllabus view", () => {
+  test("syllabus_assigned routes to the student-scoped syllabus when target_student_id is set", () => {
     const result = activityLine(
       row({ verb: "syllabus_assigned", syllabus_id: 2, syllabus_name: "Blue Belt" }),
+    );
+    // default row has actor_user_id:2, target_student_id:3 so student-scoped href wins
+    expect(result.href).toBe("/student/3/syllabi/2");
+  });
+
+  test("syllabus_assigned routes to the bare syllabus view when no target student", () => {
+    const result = activityLine(
+      row({ verb: "syllabus_assigned", syllabus_id: 2, syllabus_name: "Blue Belt", target_student_id: null }),
     );
     expect(result.href).toBe("/syllabi/2");
   });

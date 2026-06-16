@@ -198,10 +198,16 @@ export function activityLine(row: ActivityRow, scope: ActivityScope = { kind: "g
         : { verb: "unpinned a technique" };
 
     // --- syllabus assignment verbs ---
-    case "syllabus_assigned":
+    case "syllabus_assigned": {
+      const href = studentSyllabusHref(row) ?? syllabusHref(row);
+      if (studentName && syll) {
+        // Coach assigned a syllabus to a student (gym-wide surface names them).
+        return { verb: `assigned ${syll} to`, subject: studentName, href };
+      }
       return syll
-        ? { verb: "assigned to", subject: syll, href: syllabusHref(row) }
+        ? { verb: "assigned to", subject: syll, href }
         : { verb: "assigned to a syllabus" };
+    }
     case "syllabus_unassigned":
       return syll
         ? { verb: "unassigned from", subject: syll, href: syllabusHref(row) }
