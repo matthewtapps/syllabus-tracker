@@ -235,3 +235,24 @@ The current `dashboard_activity_feed` filter is `(u.role = 'student' AND act.ver
 - Graduation href lives in `activity-line.ts` (not `view-context.ts`) so the `ViewContextRow` subset type stays untouched.
 - Coalescing is unaffected: `activity-coalesce.ts` keys on actor+verb+surface (scope-independent); `suppressSurface` is render-time only.
 - Status deep link already resolves correctly via the existing `sst_status_changed` view-context; only the copy and dashboard visibility were broken.
+
+---
+
+## Follow-up batch (staging feedback, 2026-06-16)
+
+Three further tweaks to the same surfaces, on the same branch/PR.
+
+### Task 6: Context-aware `syllabus_assigned` copy + deep link
+- `syllabus_assigned` reads "assigned to Blue Belt Syllabus" with no actor target and a bare-syllabus link.
+- Coach action (gym scope) -> "assigned {syll} to {studentName}" (verb `assigned ${syll} to`, subject `${studentName}`). Student-scope / self / no name -> keep "assigned to {syll}".
+- Deep link upgraded to `studentSyllabusHref(row) ?? syllabusHref(row)` (mirror graduated), so it lands on the student's syllabus.
+
+### Task 7: Status colour dots (New=grey, Doing=amber, Done=green)
+- `sst_status_changed` should show a colour dot adjacent to the status label.
+- Add `statusLabel?: string` + `statusColor?: Status` to `ActivityLine`; restructure the arm so verb ends at "set {tech} to" and the label/colour are separate (so the renderer can place the dot next to the label).
+- `activity-feed-list.tsx` renders, for status lines: `{verb} <dot statusToDotClass(color)/> {statusLabel}{subject ? " on " + subject : ""}`. aria-label includes the label. Reuse `statusToDotClass` from `lib/status.ts` (New/red token is grey via `oklch(0.65 0 0)`).
+
+### Task 8: `syllabus_technique_added` deep-links to the technique row
+- The "added {tech} to {syll}" row links to the bare syllabus; it should land on that technique's row on the coach syllabus page.
+- activity-line: href `/syllabi/${syllabus_id}?focus=technique:${technique_id}` (use `refToken`).
+- Teach `frontend/src/app/syllabi/[id]/page.tsx` to honor `?focus=technique:<id>`: expand + scroll to that row and clear any search/tag filter hiding it, then strip the param. Mirror the working pattern in `frontend/src/app/student-techniques/page.tsx`.
