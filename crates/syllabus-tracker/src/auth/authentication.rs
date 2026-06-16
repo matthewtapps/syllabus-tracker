@@ -70,6 +70,21 @@ impl<'r> FromRequest<'r> for User {
                     match get_user(db, session.user_id).await {
                         Ok(user) => {
                             tracing::info!(username = %user.username, role = %user.role.as_str(), "User authenticated via session token");
+                            // Stamp authoritative identity onto the request's
+                            // main wide-event span so every authenticated
+                            // request is queryable by user/role in Honeycomb.
+                            // `user.id` / `user.roles` are the modern OTel
+                            // semantic conventions (roles is an array).
+                            use opentelemetry::{Array, Value};
+                            use opentelemetry_semantic_conventions::attribute::{USER_ID, USER_ROLES};
+                            crate::telemetry::set_main_attr(request, USER_ID, user.id.to_string());
+                            crate::telemetry::set_main_attr(
+                                request,
+                                USER_ROLES,
+                                Value::Array(Array::String(vec![
+                                    user.role.as_str().to_string().into(),
+                                ])),
+                            );
                             return Outcome::Success(user);
                         }
                         Err(err) => {
