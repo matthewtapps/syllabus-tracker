@@ -392,13 +392,20 @@ jobs:
             docker volume rm ${SIBLING_NAME}_app-data || true
           "
 
-      - name: Restore DB from production litestream backup (if volume empty)
+      - name: Restore/refresh DB from production litestream backup
         run: |
           ssh -i ~/.ssh/id_ed25519 "root@$VM_IP" "
             set -e
             docker volume create ${SIBLING_NAME}_app-data >/dev/null
             VOL_DATA=/var/lib/docker/volumes/${SIBLING_NAME}_app-data/_data
-            if [ -f \"\$VOL_DATA/sqlite.db\" ] && [ -s \"\$VOL_DATA/sqlite.db\" ]; then
+            if [ \"$REFRESH_DB\" = 'true' ]; then
+              # Refresh from prod = wipe existing staging data, then re-fork.
+              # Guarantees a fresh copy even if the earlier volume rm was a
+              # no-op (e.g. volume busy); never reuses stale staging state.
+              echo '[restore] refresh_db=true: wiping staging DB, forking anew from prod'
+              rm -f \"\$VOL_DATA/sqlite.db\" \"\$VOL_DATA/sqlite.db-wal\" \"\$VOL_DATA/sqlite.db-shm\"
+              rm -rf \"\$VOL_DATA/.sqlite.db-litestream\"
+            elif [ -f \"\$VOL_DATA/sqlite.db\" ] && [ -s \"\$VOL_DATA/sqlite.db\" ]; then
               echo '[restore] sqlite.db already present in volume; skipping fork'
               exit 0
             fi
