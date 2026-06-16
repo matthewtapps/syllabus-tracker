@@ -18,6 +18,7 @@ const mockRow: ActivityRow = {
   actor_user_id: 42,
   actor_name: "Sam Khan",
   target_student_id: 42,
+  target_student_name: null,
   technique_id: 7,
   technique_name: "Triangle",
   syllabus_id: null,

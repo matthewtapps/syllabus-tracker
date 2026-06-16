@@ -20,6 +20,7 @@ function row(overrides: Partial<ActivityRow> = {}): ActivityRow {
     actor_user_id: 2,
     actor_name: "Alex Rivera",
     target_student_id: 4,
+    target_student_name: null,
     technique_id: 5,
     technique_name: "Knee Cut Pass",
     syllabus_id: 2,
@@ -254,5 +255,59 @@ describe("ActivityFeedList", () => {
       />,
     );
     expect(screen.queryByTestId("inline-avatar")).toBeNull();
+  });
+
+  // --- scope: suppressSurface hides the standalone chip ---
+  test("gym-scope sst_status_changed coach action shows inline copy and no surface chip", () => {
+    // Coach (actor_user_id=2) acted on target student (target_student_id=4).
+    // activityLine returns suppressSurface:true, so the chip must be absent.
+    renderWithProviders(
+      <ActivityFeedList
+        rows={[
+          row({
+            verb: "sst_status_changed",
+            actor_user_id: 2,
+            target_student_id: 4,
+            target_student_name: "Jordan Blake",
+            technique_name: "Knee Cut Pass",
+            syllabus_name: "Blue Belt",
+            payload_json: JSON.stringify({ to: "amber" }),
+          }),
+        ]}
+        isLoading={false}
+      />,
+    );
+    // Inline copy names the technique (in the verb), the status label, and the
+    // student+syllabus subject (joined with "on").
+    expect(screen.getByText(/set Knee Cut Pass to/)).toBeTruthy();
+    expect(screen.getByText(/Doing/)).toBeTruthy();
+    expect(screen.getByText(/on Jordan Blake's Blue Belt/)).toBeTruthy();
+    // A colour dot with the amber class should be rendered.
+    const dot = document.querySelector(".bg-status-amber");
+    expect(dot).not.toBeNull();
+    // The standalone surface chip must NOT appear (syllabus already named inline).
+    expect(screen.queryByText("Blue Belt")).toBeNull();
+  });
+
+  // --- scope: syllabus_graduated in gym scope names the target student ---
+  test("gym-scope syllabus_graduated coach action names the target student", () => {
+    renderWithProviders(
+      <ActivityFeedList
+        rows={[
+          row({
+            verb: "syllabus_graduated",
+            actor_user_id: 2,
+            target_student_id: 4,
+            target_student_name: "Jordan Blake",
+            syllabus_name: "Blue Belt",
+            technique_id: null,
+            sst_id: null,
+          }),
+        ]}
+        isLoading={false}
+      />,
+    );
+    expect(screen.getByText(/graduated/)).toBeTruthy();
+    expect(screen.getByText(/Jordan Blake's Blue Belt/)).toBeTruthy();
   });
 });

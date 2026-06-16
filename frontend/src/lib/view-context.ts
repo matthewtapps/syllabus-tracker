@@ -50,6 +50,7 @@ const SYLLABUS_SCOPED_VERBS = new Set([
   "attempt_logged",
   "attempt_edited",
   "attempt_deleted",
+  "sst_added",
   "sst_status_changed",
   "sst_student_notes_edited",
   "sst_coach_notes_edited",

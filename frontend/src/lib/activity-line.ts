@@ -14,6 +14,7 @@
 
 import { rowToViewContext, viewContextHref } from "./view-context";
 import { refToken } from "./entity-ref";
+import { STATUS_LABELS, type Status } from "./status";
 
 /** Canonical ActivityRow type. Exported so api.ts and callers can import it
  *  rather than re-declaring an identical shape. */
@@ -24,6 +25,7 @@ export interface ActivityRow {
   actor_user_id: number;
   actor_name: string | null;
   target_student_id: number | null;
+  target_student_name: string | null;
   technique_id: number | null;
   technique_name: string | null;
   syllabus_id: number | null;
@@ -46,7 +48,19 @@ export interface ActivityLine {
    *  to {technique}"). Rendered on its own line by the feed. */
   detail?: string;
   href?: string;
+  /** When true, the feed should not render the syllabus surface chip (the
+   *  syllabus is already named inline). */
+  suppressSurface?: boolean;
+  /** For status-change lines: the user-facing status label rendered after the
+   *  verb, preceded by a colour dot. */
+  statusLabel?: string;
+  /** The status value driving the dot colour (New=grey, Doing=amber, Done=green). */
+  statusColor?: Status;
 }
+
+export type ActivityScope =
+  | { kind: "gym" }
+  | { kind: "student"; studentId: number };
 
 // Payload shapes mirror the Rust payload constructors in db/activity.rs.
 interface SstStatusChangedPayload {
@@ -84,6 +98,22 @@ function syllabusHref(row: ActivityRow): string | undefined {
   return row.syllabus_id != null ? `/syllabi/${row.syllabus_id}` : undefined;
 }
 
+function syllabusTechniqueHref(row: ActivityRow): string | undefined {
+  if (row.syllabus_id == null || row.technique_id == null) return undefined;
+  return `/syllabi/${row.syllabus_id}?focus=${refToken({ type: "technique", id: row.technique_id })}`;
+}
+
+function studentSyllabusHref(row: ActivityRow): string | undefined {
+  if (row.target_student_id == null || row.syllabus_id == null) return undefined;
+  return `/student/${row.target_student_id}/syllabi/${row.syllabus_id}`;
+}
+
+/** Library deep-link to a technique row (no video context). */
+function libraryTechniqueHref(row: ActivityRow): string | undefined {
+  if (row.technique_id == null) return undefined;
+  return `/library?focus=${refToken({ type: "technique", id: row.technique_id })}`;
+}
+
 /** Library deep-link for a video that is not tied to a watch context (added /
  *  visibility changed). Mirrors the pre-existing behavior in the new token form. */
 function libraryVideoHref(row: ActivityRow): string | undefined {
@@ -99,11 +129,20 @@ function libraryVideoHref(row: ActivityRow): string | undefined {
  * deep-link href). Never throws; falls back to plain copy when payload is
  * missing or malformed.
  */
-export function activityLine(row: ActivityRow): ActivityLine {
+export function activityLine(row: ActivityRow, scope: ActivityScope = { kind: "gym" }): ActivityLine {
   const tech = row.technique_name ?? undefined;
   const syll = row.syllabus_name ?? undefined;
   const vid = row.video_title ?? undefined;
   const deep = contextHref(row);
+
+  const isCoachAction =
+    row.target_student_id != null && row.target_student_id !== row.actor_user_id;
+  const surfaceImplicit =
+    scope.kind === "student" && scope.studentId === row.target_student_id;
+  const studentName =
+    isCoachAction && row.target_student_name && !surfaceImplicit
+      ? row.target_student_name
+      : undefined;
 
   switch (row.verb) {
     // --- attempt verbs ---
@@ -142,8 +181,12 @@ export function activityLine(row: ActivityRow): ActivityLine {
     // --- sst status ---
     case "sst_status_changed": {
       const payload = parsePayload<SstStatusChangedPayload>(row.payload_json);
-      if (payload?.to && tech) {
-        return { verb: `went ${payload.to} on`, subject: tech, href: deep };
+      const label = payload?.to ? STATUS_LABELS[payload.to] : undefined;
+      if (label && tech && payload?.to) {
+        if (studentName && syll) {
+          return { verb: `set ${tech} to`, statusLabel: label, statusColor: payload.to, subject: `${studentName}'s ${syll}`, href: deep, suppressSurface: true };
+        }
+        return { verb: `set ${tech} to`, statusLabel: label, statusColor: payload.to, href: deep };
       }
       return tech
         ? { verb: "updated status on", subject: tech, href: deep }
@@ -171,23 +214,32 @@ export function activityLine(row: ActivityRow): ActivityLine {
         : { verb: "unpinned a technique" };
 
     // --- syllabus assignment verbs ---
-    case "syllabus_assigned":
+    case "syllabus_assigned": {
+      const href = studentSyllabusHref(row) ?? syllabusHref(row);
+      if (studentName && syll) {
+        // Coach assigned a syllabus to a student (gym-wide surface names them).
+        return { verb: `assigned ${syll} to`, subject: studentName, href };
+      }
       return syll
-        ? { verb: "assigned to", subject: syll, href: syllabusHref(row) }
+        ? { verb: "assigned to", subject: syll, href }
         : { verb: "assigned to a syllabus" };
+    }
     case "syllabus_unassigned":
       return syll
         ? { verb: "unassigned from", subject: syll, href: syllabusHref(row) }
         : { verb: "unassigned from a syllabus" };
-    case "syllabus_graduated":
+    case "syllabus_graduated": {
+      const href = studentSyllabusHref(row) ?? syllabusHref(row);
+      if (studentName && syll) return { verb: "graduated", subject: `${studentName}'s ${syll}`, href };
       return syll
-        ? { verb: "graduated", subject: syll, href: syllabusHref(row) }
+        ? { verb: "graduated", subject: syll, href }
         : { verb: "graduated a syllabus" };
+    }
 
     // --- sst curation verbs ---
     case "sst_added":
       return tech
-        ? { verb: `added ${tech} to syllabus`, href: syllabusHref(row) }
+        ? { verb: `added ${tech} to syllabus`, href: deep ?? syllabusHref(row) }
         : { verb: "added a technique to syllabus" };
     case "sst_hidden":
       return tech ? { verb: "hid", subject: tech } : { verb: "hid a technique" };
@@ -198,10 +250,10 @@ export function activityLine(row: ActivityRow): ActivityLine {
     case "syllabus_technique_added":
       if (tech && syll) {
         // both names are essential; neither alone is the trailing subject
-        return { verb: `added ${tech} to ${syll}`, href: syllabusHref(row) };
+        return { verb: `added ${tech} to ${syll}`, href: syllabusTechniqueHref(row) ?? syllabusHref(row) };
       }
       return tech
-        ? { verb: `added ${tech} to a syllabus`, href: syllabusHref(row) }
+        ? { verb: `added ${tech} to a syllabus`, href: syllabusTechniqueHref(row) ?? syllabusHref(row) }
         : { verb: "added a technique to a syllabus" };
     case "syllabus_technique_removed":
       if (tech && syll) {
@@ -214,7 +266,7 @@ export function activityLine(row: ActivityRow): ActivityLine {
 
     // --- technique edited fanout ---
     case "technique_edited":
-      return tech ? { verb: "edited", subject: tech } : { verb: "edited a technique" };
+      return tech ? { verb: "edited", subject: tech, href: libraryTechniqueHref(row) } : { verb: "edited a technique" };
 
     // --- thread verbs ---
     case "thread_comment_posted": {

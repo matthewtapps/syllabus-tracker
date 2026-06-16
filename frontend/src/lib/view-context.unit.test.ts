@@ -137,6 +137,37 @@ describe("rowToViewContext", () => {
       }),
     ).toBeNull();
   });
+  test("sst_added with full ids maps to the syllabus context", () => {
+    expect(
+      rowToViewContext({
+        verb: "sst_added",
+        context_kind: null,
+        target_student_id: 4,
+        syllabus_id: 2,
+        sst_id: 42,
+        technique_id: 9,
+        video_id: null,
+      }),
+    ).toEqual({
+      kind: "syllabus",
+      student: { type: "student", id: 4 },
+      syllabus: { type: "syllabus", id: 2 },
+      sst: { type: "sst", id: 42 },
+    });
+  });
+  test("sst_added without sst_id returns null", () => {
+    expect(
+      rowToViewContext({
+        verb: "sst_added",
+        context_kind: null,
+        target_student_id: 4,
+        syllabus_id: 2,
+        sst_id: null,
+        technique_id: 9,
+        video_id: null,
+      }),
+    ).toBeNull();
+  });
   test("thread_comment_posted with syllabus context maps to the sst", () => {
     expect(
       rowToViewContext({
@@ -204,6 +235,20 @@ describe("activitySurface", () => {
     expect(
       activitySurface({
         verb: "attempt_logged",
+        context_kind: null,
+        target_student_id: 4,
+        syllabus_id: 2,
+        sst_id: 42,
+        technique_id: 9,
+        video_id: null,
+        syllabus_name: "Blue Belt",
+      }),
+    ).toEqual({ kind: "syllabus", label: "Blue Belt" });
+  });
+  test("sst_added shows the syllabus name chip", () => {
+    expect(
+      activitySurface({
+        verb: "sst_added",
         context_kind: null,
         target_student_id: 4,
         syllabus_id: 2,

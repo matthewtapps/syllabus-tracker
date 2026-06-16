@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import { activityLine } from "./activity-line";
-import type { ActivityLine, ActivityRow } from "./activity-line";
+import type { ActivityLine, ActivityRow, ActivityScope } from "./activity-line";
 
 function lineText(line: ActivityLine): string {
   return line.subject ? `${line.verb} ${line.subject}` : line.verb;
@@ -14,6 +14,7 @@ function row(overrides: Partial<ActivityRow>): ActivityRow {
     actor_user_id: 2,
     actor_name: "Coach Matt",
     target_student_id: 3,
+    target_student_name: null,
     technique_id: null,
     technique_name: null,
     syllabus_id: null,
@@ -104,30 +105,41 @@ describe("activityLine", () => {
   });
 
   // --- sst_status_changed ---
-  test("sst_status_changed to green renders 'went green on {technique}'", () => {
+  test("sst_status_changed to green renders structured fields with statusLabel=Done", () => {
     const result = activityLine(
       row({
         verb: "sst_status_changed",
         technique_id: 5,
         technique_name: "Kimura",
         sst_id: 10,
+        // actor === target so isCoachAction is false, plain student self-action
+        actor_user_id: 3,
+        target_student_id: 3,
         payload_json: JSON.stringify({ from: "amber", to: "green" }),
       }),
     );
-    expect(lineText(result)).toBe("went green on Kimura");
+    expect(result.verb).toBe("set Kimura to");
+    expect(result.statusLabel).toBe("Done");
+    expect(result.statusColor).toBe("green");
+    expect(result.subject).toBeUndefined();
   });
 
-  test("sst_status_changed to amber renders 'went amber on {technique}'", () => {
+  test("sst_status_changed to amber renders structured fields with statusLabel=Doing", () => {
     const result = activityLine(
       row({
         verb: "sst_status_changed",
         technique_id: 5,
         technique_name: "Triangle",
         sst_id: 10,
+        actor_user_id: 3,
+        target_student_id: 3,
         payload_json: JSON.stringify({ from: "red", to: "amber" }),
       }),
     );
-    expect(lineText(result)).toBe("went amber on Triangle");
+    expect(result.verb).toBe("set Triangle to");
+    expect(result.statusLabel).toBe("Doing");
+    expect(result.statusColor).toBe("amber");
+    expect(result.subject).toBeUndefined();
   });
 
   test("sst_status_changed with malformed payload falls back gracefully", () => {
@@ -142,6 +154,161 @@ describe("activityLine", () => {
     );
     expect(lineText(result)).toBe("updated status on Kimura");
     expect(() => activityLine(row({ verb: "sst_status_changed", payload_json: "bad" }))).not.toThrow();
+  });
+
+  // --- scope-aware: coach assignment ---
+  test("syllabus_assigned by coach on gym scope names the student and deep-links to student syllabus", () => {
+    const result = activityLine(
+      row({
+        verb: "syllabus_assigned",
+        actor_user_id: 10,
+        target_student_id: 7,
+        target_student_name: "Dan Bennet",
+        syllabus_id: 3,
+        syllabus_name: "Blue Belt Syllabus",
+      }),
+      // default gym scope
+    );
+    expect(lineText(result)).toBe("assigned Blue Belt Syllabus to Dan Bennet");
+    expect(result.href).toBe("/student/7/syllabi/3");
+  });
+
+  test("syllabus_assigned by coach on student scope drops the student name and uses student-scoped href", () => {
+    const scope: ActivityScope = { kind: "student", studentId: 7 };
+    const result = activityLine(
+      row({
+        verb: "syllabus_assigned",
+        actor_user_id: 10,
+        target_student_id: 7,
+        target_student_name: "Dan Bennet",
+        syllabus_id: 3,
+        syllabus_name: "Blue Belt Syllabus",
+      }),
+      scope,
+    );
+    expect(lineText(result)).toBe("assigned to Blue Belt Syllabus");
+    expect(result.href).toBe("/student/7/syllabi/3");
+  });
+
+  test("syllabus_assigned with no syllabus name falls back to plain text", () => {
+    const result = activityLine(
+      row({
+        verb: "syllabus_assigned",
+        actor_user_id: 10,
+        target_student_id: 7,
+        target_student_name: "Dan Bennet",
+        syllabus_id: null,
+        syllabus_name: null,
+      }),
+    );
+    expect(lineText(result)).toBe("assigned to a syllabus");
+  });
+
+  // --- scope-aware: coach graduation ---
+  test("syllabus_graduated by coach on gym scope names the student possessively", () => {
+    const result = activityLine(
+      row({
+        verb: "syllabus_graduated",
+        actor_user_id: 10,
+        target_student_id: 7,
+        target_student_name: "Dan Bennet",
+        syllabus_id: 3,
+        syllabus_name: "Blue Belt Syllabus",
+      }),
+      // default gym scope
+    );
+    expect(lineText(result)).toBe("graduated Dan Bennet's Blue Belt Syllabus");
+    expect(result.href).toBe("/student/7/syllabi/3");
+  });
+
+  test("syllabus_graduated by coach on student scope drops the possessive", () => {
+    const scope: ActivityScope = { kind: "student", studentId: 7 };
+    const result = activityLine(
+      row({
+        verb: "syllabus_graduated",
+        actor_user_id: 10,
+        target_student_id: 7,
+        target_student_name: "Dan Bennet",
+        syllabus_id: 3,
+        syllabus_name: "Blue Belt Syllabus",
+      }),
+      scope,
+    );
+    expect(lineText(result)).toBe("graduated Blue Belt Syllabus");
+    expect(result.href).toBe("/student/7/syllabi/3");
+  });
+
+  // --- scope-aware: coach status change ---
+  test("sst_status_changed by coach on gym scope names student possessively and sets suppressSurface", () => {
+    const result = activityLine(
+      row({
+        verb: "sst_status_changed",
+        actor_user_id: 10,
+        target_student_id: 7,
+        target_student_name: "Charlotte",
+        technique_id: 5,
+        technique_name: "Armbar",
+        syllabus_id: 3,
+        syllabus_name: "Blue Belt Syllabus",
+        sst_id: 42,
+        payload_json: JSON.stringify({ from: "red", to: "amber" }),
+      }),
+      // default gym scope
+    );
+    expect(result.verb).toBe("set Armbar to");
+    expect(result.statusLabel).toBe("Doing");
+    expect(result.statusColor).toBe("amber");
+    expect(result.subject).toBe("Charlotte's Blue Belt Syllabus");
+    expect(result.suppressSurface).toBe(true);
+  });
+
+  test("sst_status_changed by coach on student scope drops the possessive and suppressSurface is falsy", () => {
+    const scope: ActivityScope = { kind: "student", studentId: 7 };
+    const result = activityLine(
+      row({
+        verb: "sst_status_changed",
+        actor_user_id: 10,
+        target_student_id: 7,
+        target_student_name: "Charlotte",
+        technique_id: 5,
+        technique_name: "Armbar",
+        syllabus_id: 3,
+        syllabus_name: "Blue Belt Syllabus",
+        sst_id: 42,
+        payload_json: JSON.stringify({ from: "red", to: "amber" }),
+      }),
+      scope,
+    );
+    expect(result.verb).toBe("set Armbar to");
+    expect(result.statusLabel).toBe("Doing");
+    expect(result.statusColor).toBe("amber");
+    expect(result.subject).toBeUndefined();
+    expect(result.suppressSurface).toBeFalsy();
+  });
+
+  test("sst_status_changed where actor equals target is treated as self-action regardless of scope", () => {
+    const gymScope: ActivityScope = { kind: "gym" };
+    const result = activityLine(
+      row({
+        verb: "sst_status_changed",
+        actor_user_id: 7,
+        target_student_id: 7,
+        target_student_name: "Charlotte",
+        technique_id: 5,
+        technique_name: "Armbar",
+        syllabus_id: 3,
+        syllabus_name: "Blue Belt Syllabus",
+        sst_id: 42,
+        payload_json: JSON.stringify({ from: "red", to: "amber" }),
+      }),
+      gymScope,
+    );
+    // actor === target so isCoachAction is false; no possessive even on gym scope
+    expect(result.verb).toBe("set Armbar to");
+    expect(result.statusLabel).toBe("Doing");
+    expect(result.statusColor).toBe("amber");
+    expect(result.subject).toBeUndefined();
+    expect(result.suppressSurface).toBeFalsy();
   });
 
   // --- technique_edited ---
@@ -167,6 +334,17 @@ describe("activityLine", () => {
       }),
     );
     expect(lineText(result)).toBe("edited Armbar");
+  });
+
+  test("technique_edited with technique_id deep-links to the library row", () => {
+    const result = activityLine(
+      row({
+        verb: "technique_edited",
+        technique_id: 5,
+        technique_name: "Armbar",
+      }),
+    );
+    expect(result.href).toBe("/library?focus=technique:5");
   });
 
   // --- null entity: no href, plain fallback text ---
@@ -237,6 +415,35 @@ describe("activityLine", () => {
       row({ verb: "sst_added", technique_id: 5, technique_name: "Armbar", sst_id: 10, syllabus_id: 2 }),
     );
     expect(lineText(result)).toBe("added Armbar to syllabus");
+    // default row has target_student_id:3, so deep resolves to the student syllabus focus link
+    expect(result.href).toBe("/student/3/syllabi/2?focus=sst:10");
+  });
+  test("sst_added with full ids deep-links to the student's syllabus sst row", () => {
+    const result = activityLine(
+      row({
+        verb: "sst_added",
+        technique_id: 5,
+        technique_name: "Armbar",
+        target_student_id: 4,
+        syllabus_id: 2,
+        sst_id: 42,
+      }),
+    );
+    expect(lineText(result)).toBe("added Armbar to syllabus");
+    expect(result.href).toBe("/student/4/syllabi/2?focus=sst:42");
+  });
+  test("sst_added without student/sst ids falls back to bare syllabus href", () => {
+    const result = activityLine(
+      row({
+        verb: "sst_added",
+        technique_id: 5,
+        technique_name: "Armbar",
+        target_student_id: null,
+        sst_id: null,
+        syllabus_id: 2,
+      }),
+    );
+    expect(lineText(result)).toBe("added Armbar to syllabus");
     expect(result.href).toBe("/syllabi/2");
   });
 
@@ -266,6 +473,45 @@ describe("activityLine", () => {
       }),
     );
     expect(lineText(result)).toBe("added Armbar to Blue Belt");
+  });
+
+  test("syllabus_technique_added deep-links to the technique row on the syllabus page", () => {
+    const result = activityLine(
+      row({
+        verb: "syllabus_technique_added",
+        technique_id: 5,
+        technique_name: "Armbar",
+        syllabus_id: 2,
+        syllabus_name: "Blue Belt",
+      }),
+    );
+    expect(result.href).toBe("/syllabi/2?focus=technique:5");
+  });
+
+  test("syllabus_technique_added with technique but no syllabus name still deep-links to the technique row", () => {
+    const result = activityLine(
+      row({
+        verb: "syllabus_technique_added",
+        technique_id: 5,
+        technique_name: "Armbar",
+        syllabus_id: 2,
+        syllabus_name: null,
+      }),
+    );
+    expect(result.href).toBe("/syllabi/2?focus=technique:5");
+  });
+
+  test("syllabus_technique_added with no syllabus_id has no href", () => {
+    const result = activityLine(
+      row({
+        verb: "syllabus_technique_added",
+        technique_id: 5,
+        technique_name: "Armbar",
+        syllabus_id: null,
+        syllabus_name: null,
+      }),
+    );
+    expect(result.href).toBeUndefined();
   });
 
   test("syllabus_technique_removed renders technique + syllabus", () => {
@@ -475,9 +721,17 @@ describe("activityLine", () => {
     expect(result.href).toBe("/student/4/pinned?focus=technique:5");
   });
 
-  test("syllabus_assigned still routes to the coach syllabus view", () => {
+  test("syllabus_assigned routes to the student-scoped syllabus when target_student_id is set", () => {
     const result = activityLine(
       row({ verb: "syllabus_assigned", syllabus_id: 2, syllabus_name: "Blue Belt" }),
+    );
+    // default row has actor_user_id:2, target_student_id:3 so student-scoped href wins
+    expect(result.href).toBe("/student/3/syllabi/2");
+  });
+
+  test("syllabus_assigned routes to the bare syllabus view when no target student", () => {
+    const result = activityLine(
+      row({ verb: "syllabus_assigned", syllabus_id: 2, syllabus_name: "Blue Belt", target_student_id: null }),
     );
     expect(result.href).toBe("/syllabi/2");
   });
