@@ -43,14 +43,14 @@ export default function LibraryPage() {
 
   return (
     <div className="container mx-auto px-4 py-6 sm:px-6 md:py-8">
-      <div className="mb-4 flex items-center justify-between gap-2">
+      <div className="mb-4 space-y-3">
         <h1 className="flex items-center gap-2 text-base font-semibold">
           <BookOpen className="h-4 w-4" aria-hidden />
           Global Technique Library
         </h1>
         {isCoach && (
-          <Button size="sm" onClick={() => setNewOpen(true)}>
-            <Plus className="h-4 w-4" aria-hidden />
+          <Button className="w-full" onClick={() => setNewOpen(true)}>
+            <Plus className="mr-2 h-4 w-4" aria-hidden />
             New technique
           </Button>
         )}
