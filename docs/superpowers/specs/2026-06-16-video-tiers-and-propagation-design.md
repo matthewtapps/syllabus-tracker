@@ -1,7 +1,7 @@
 # Syllabus customization: snapshot + reconcile, with minimal video inheritance — design
 
 **Date:** 2026-06-16 (rewritten after clean-room review + paradigm decision)
-**Status:** Approved-in-principle (pending written-spec review + optional second clean-room check)
+**Status:** Design approved; **decoupled into its own subsystem** — the technique/snapshot work (plan Chunks A–D) ships first and independently; this video-tiers + cross-tier-propagation subsystem gets its own `writing-plans` cycle once the pinned items below are turned into tasks. See the Second-Review Addendum at the bottom for the authoritative resolved decisions (they supersede any conflicting text above).
 **Supersedes:** the earlier live-inheritance draft of this file.
 **Related plan:** `docs/superpowers/plans/2026-06-16-student-syllabus-modification-uplift.md`.
 
@@ -113,3 +113,28 @@ Point-in-time filter on fan-out/propagation only (`graduated_at IS NULL`). Rever
 3. `add_technique_to_assignment` change to honour explicit "add hidden" instead of always clearing `hidden_at`.
 4. Diff `missing`-bucket split (absent vs added-hidden) + the new video diff rows/actions.
 5. Whether the scope selector also appears on the syllabus-template editing view (likely yes, default "This syllabus").
+
+---
+
+## Second-Review Addendum (2026-06-16) — authoritative resolved decisions
+
+A second clean-room review of the simplified design confirmed the technique/snapshot half is sound and flagged five video-side items. Resolutions:
+
+1. **Decouple.** The technique work (Chunks A–D in the implementation plan) ships first as its own deliverable. This video subsystem is planned and built separately. Chunk E is REMOVED from the technique plan.
+
+2. **Tier-2 video anchor = surrogate id.** Add `id INTEGER PRIMARY KEY` to `syllabus_techniques` (keep `(syllabus_id, technique_id)` as UNIQUE). T2 videos use a single-column parent (`parent_kind='syllabus_technique'`, `syllabus_technique_id`) — keeps `VideoParent`/`ParentColumns` uniform and gives a real FK so the orphan-on-removal case is enforceable by the DB (`ON DELETE` from the membership row), not by code convention. Accept the one-time table rebuild.
+
+3. **Hiding a technique cascades to its inherited videos.** If a technique is hidden for a student (SST `hidden_at`), its inherited T1/T2 videos are neither listed nor directly playable for that student. The resolver therefore takes **SST/technique-in-assignment context**, and the playback guard must consult the owning technique's SST-hidden state.
+
+4. **Visibility override table carries THREE scopes**, not two: `scope_kind ∈ {student, syllabus, assignment}`. `student` preserves the live per-student-global capability currently in `video_student_visibility` (used by library/pinned surfaces via `api_set_video_student_visibility` + `video-row.tsx`); `syllabus` and `assignment` replace `student_syllabus_video_visibility`. Both legacy tables migrate into this one. Migration must: map `(student,syllabus)→assignment_id` (total+unique via `syllabus_assignments`, but decide carry-vs-drop for soft-unassigned rows), and carry `video_student_visibility` rows as `student` scope (no fan-out, no loss).
+
+5. **One resolver core, two entry points.** A single precedence ladder — `deleted > owning-SST-hidden > assignment override > syllabus override > student override > (owned-in-scope ? video.hidden_at IS NULL : not-a-candidate)` — exposed as: (a) a context-scoped list/`(video, sst)` path, and (b) a guard `video_visible_to_student_anywhere(video, student)` that returns true iff visible under *any* of the student's assignments (a global video is reachable from multiple syllabi). Both call the same core so the list and the guard can no longer diverge.
+
+6. **Orphan enforcement point named:** `remove_technique_from_syllabus` (`db/syllabi.rs:325`) becomes video-aware — soft-handle or block when T2 videos exist on that `(syllabus, technique)`. The surrogate-id FK makes the DB-level guarantee possible.
+
+7. **Hide provenance (technique diff, H4):** accepted as provenance-blind for v1 — `hidden_at` does not distinguish coach-hid / cascade-hid / added-as-hidden. Revisit only if the reconcile UI needs to explain *why* a row is hidden.
+
+### Still to pin when this subsystem is planned
+- Audit every existing `WHERE technique_id = ?` video query for T2/T3 leakage once `technique_id` is no longer T1-exclusive (notably the SST `video_count` subquery, `student_syllabus_techniques.rs:80`).
+- Exact migration/backfill + cutover order for the two legacy visibility tables and the two read paths.
+- Whether the scope selector also drives the syllabus-template editing view.

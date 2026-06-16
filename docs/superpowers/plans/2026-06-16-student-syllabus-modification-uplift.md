@@ -1208,66 +1208,13 @@ git commit -m "feat(syllabus): add Move-to-global-library action on custom techn
 
 ---
 
-# Chunk E — Per-student-syllabus video visibility + upload (added 2026-06-16)
+# Chunk E — Video tiers & cross-tier propagation — DECOUPLED
 
-**Why:** A coach viewing a student's syllabus technique should be able to (1) toggle individual videos' visibility for that student (already possible) with a **ghost** transition, and (2) record/upload a brand-new video that is either added to the global technique (default) or kept to **just this student's syllabus**. Both must surface in the diff-to-global view.
-
-**Decisions (from the user):**
-- **Student-only video scope = a new SST-parented video kind.** Add `parent_kind = 'student_syllabus_technique'` to the polymorphic `videos` model (mirrors the `is_global` technique work). A student-only video is owned by the `student_syllabus_techniques` row; the per-syllabus video read unions technique-parented videos (respecting `student_syllabus_video_visibility` overrides) with SST-parented videos.
-- **Video diff = full stage-and-apply parity** with the technique diff (not display-only).
-- **Upload switch:** "Also add to global technique library" — default **ON** (ON ⇒ technique-parented/global; OFF ⇒ SST-parented/student-only). Support both record and upload (reuse the existing global add-video forms).
-- **Video visibility ghost:** ghostly on tap, **stays in place** on the technique (does NOT move to any tab), unlike hidden techniques.
-
-**Reference (existing infra, already built):**
-- `config/schema.sql`: `videos` table (polymorphic `parent_kind` ∈ technique/student_profile/thread/loose, with a CHECK enforcing the matching typed column); `student_syllabus_video_visibility(student_id, syllabus_id, video_id, visible)` per-syllabus override table; `videos.hidden_at` global hide.
-- `crates/syllabus-tracker/src/db/videos.rs`: `VideoParent` enum + `ParentColumns` + `validate_parent` + create/insert path.
-- Frontend: `components/videos/{add-video-button,upload-video-form,link-video-form,visibility-popover,video-row,video-list}.tsx`; `useSetVideoSyllabusVisibility` + `setVideoSyllabusVisibilityApi`; `videos-block.tsx` already fetches via the per-(student,syllabus,technique) endpoint in student-syllabus context.
-- `app/student-syllabi/[syllabusId]/components/diff-dialog.tsx` + `useAssignmentDiff` + `useApplyAssignmentDiff` + `GhostActionKind`/`MissingActionKind` (technique-level staging already implemented).
-
-> **NOTE:** Tasks E2–E8 touch the polymorphic video model and the diff endpoint, which were not re-read in full while writing this outline. The controller will read `db/videos.rs`, the video-create route, and the assignment-diff endpoint **immediately before dispatching each task** and hand the implementer concrete file:line targets + code. Treat the per-task bullets below as acceptance criteria, not final code.
-
-### Task E1: Ghost transition on per-syllabus video visibility toggle (frontend only)
-- When a coach toggles a video's per-syllabus visibility (the `visibility-popover` / control on a video row in `student-syllabus` context), the video row goes ghostly (`opacity-50`, optimistic) and **stays in place** — no reordering, no tab. On reload the server state (the visibility override) drives whether coaches see it badged "Hidden".
-- Pure frontend; reuse the `useSetVideoSyllabusVisibility` mutation. Mirror the technique ghost styling from Task D2 but without the per-visit set / tab logic (video ghost can simply reflect the optimistic mutation state + the override).
-- Commit: `feat(syllabus): ghost video rows when visibility is toggled for a student`.
-
-### Task E2: SST-parented video kind (backend model)
-- `config/schema.sql`: add `student_syllabus_technique_id INTEGER REFERENCES student_syllabus_techniques (id) ON DELETE CASCADE` to `videos`; add `'student_syllabus_technique'` to the `parent_kind` CHECK list and a new CHECK branch requiring that column set and the other three null.
-- `db/videos.rs`: add `VideoParent::StudentSyllabusTechnique(i64)`; update `ParentColumns`, `columns()`, `validate_parent` (verify the SST row exists), and every exhaustive `match` on `VideoParent`.
-- Migrate + `just sqlx-prepare` + Rust tests (parent round-trips, CHECK rejects malformed rows).
-- Commit: `feat(videos): add student-syllabus-technique as a video parent kind`.
-
-### Task E3: Union SST-parented videos into the per-syllabus video read (backend)
-- The endpoint/db fn that lists videos for `(student, syllabus, technique)` must return technique-parented videos (with `student_syllabus_video_visibility` overrides applied, as today) **plus** videos parented to that student's SST row.
-- Ordering/position semantics: define how SST videos order relative to technique videos (likely appended after, ordered by `position`/`created_at` — confirm against existing ordering when implementing).
-- Rust tests: SST video appears only for that student's syllabus, never in the global technique video list nor other students'.
-- Commit: `feat(videos): surface student-syllabus videos in the per-syllabus read`.
-
-### Task E4: Video-create endpoint accepts the SST parent (backend)
-- Extend the existing create-video route(s) (upload + external link) so the coach can create a video parented to either the technique (global) or the SST (student-only). Permission: coach/admin assigned to that student.
-- Rust tests for both parents + permission checks.
-- Commit: `feat(videos): allow creating a video scoped to a student's syllabus technique`.
-
-### Task E5: Frontend api + mutations for parent-scoped video create
-- Extend the create-video api fns + mutation hooks to pass the chosen parent (technique vs SST). Invalidate the per-syllabus video query.
-- Typecheck. Commit: `feat(videos): frontend api+mutations for syllabus-scoped video create`.
-
-### Task E6: Add-video UI from a student syllabus technique + global switch
-- Enable `AddVideoButton` in the `student-syllabus` context (coaches currently can't add videos there). In that context the upload/record + link forms show an **"Also add to global technique library"** switch, default ON. ON ⇒ technique parent; OFF ⇒ SST parent.
-- Reuse `upload-video-form` / `link-video-form`; thread the parent choice through.
-- Typecheck + lint + manual verify (record, upload, link; both switch states). Commit: `feat(syllabus): add/record videos on a student syllabus technique with global switch`.
-
-### Task E7: Assignment diff includes videos (backend, stage-and-apply)
-- Extend the assignment-diff endpoint so that, per technique, it reports: videos hidden for this syllabus (visibility override = hidden) and videos added only to this syllabus (SST-parented), versus the global technique's video set.
-- Add video diff action kinds mirroring the technique ones (e.g. promote SST video to global / restore hidden video / leave) and apply logic in `useApplyAssignmentDiff`'s endpoint.
-- Rust tests for compute + apply.
-- Commit: `feat(diff): include student-syllabus video adds/hides in the assignment diff`.
-
-### Task E8: Video diff in the diff dialog (frontend, stage-and-apply)
-- Extend `diff-dialog.tsx` to render per-technique video sub-rows for added/hidden videos with stage actions, and wire them into the apply mutation. Keep the existing technique-level staging intact.
-- Typecheck + lint + manual verify. Commit: `feat(diff): stage and apply video changes in the diff dialog`.
-
----
+Moved out of this plan. The per-student-syllabus video work (3 tiers, propagation,
+visibility resolver, diff extension) became a substantial subsystem of its own and
+is captured in `docs/superpowers/specs/2026-06-16-video-tiers-and-propagation-design.md`
+(see its Second-Review Addendum for the authoritative resolved decisions). It will get
+its own `writing-plans` cycle. This plan ships Chunks A–D (technique snapshot work) only.
 
 ## Final verification
 
