@@ -35,6 +35,8 @@ function buildActivityRow(overrides: Partial<ActivityRow> = {}): ActivityRow {
     context_kind: null,
     thread_id: null,
     camp_id: null,
+    competition_id: null,
+    match_id: null,
     ...overrides,
   };
 }

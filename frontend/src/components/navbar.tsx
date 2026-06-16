@@ -45,6 +45,7 @@ function buildNavLinks(user: User): NavLink[] {
   if (isStudent) links.push({ to: `/student/${user.id}/pinned`, label: "Pinned" });
   if (isStudent) links.push({ to: `/student/${user.id}`, label: "Profile" });
   if (coachOrAdmin) links.push({ to: "/syllabi", label: "Syllabus Library" }); // Coach surface: 'Syllabus Library' fits.
+  if (coachOrAdmin) links.push({ to: "/competitions", label: "Competitions" });
   if (coachOrAdmin) links.push({ to: "/students", label: "Students" });
   if (coachOrAdmin) links.push({ to: "/register-user", label: "New user" });
   if (isAdmin(user)) links.push({ to: "/admin", label: "Admin" });

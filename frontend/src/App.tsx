@@ -52,6 +52,9 @@ const StudentSyllabusDetailPage = lazy(
 const StudentActivityPage = lazy(() => import('./app/student-activity/page'));
 const StudentCampsPage = lazy(() => import('./app/student-camps/page'));
 const CampDetailPage = lazy(() => import('./app/camps/[id]/page'));
+const CompetitionsPage = lazy(() => import('./app/competitions/page'));
+const CompetitionDetailPage = lazy(() => import('./app/competitions/[id]/page'));
+const StudentMatchesPage = lazy(() => import('./app/student-matches/page'));
 const InvitePage = lazy(() => import('./app/invite/page'));
 const RegisterPage = lazy(() => import('./app/register/page'));
 const PendingApprovalPage = lazy(() => import('./app/pending/page'));
@@ -360,6 +363,30 @@ function AuthedRoutes() {
         element={
           <RequireAuth>
             <CampDetailPage />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/student/:id/matches"
+        element={
+          <RequireAuth>
+            <StudentMatchesPage />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/competitions"
+        element={
+          <RequireAuth>
+            <CompetitionsPage />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/competitions/:id"
+        element={
+          <RequireAuth>
+            <CompetitionDetailPage />
           </RequireAuth>
         }
       />

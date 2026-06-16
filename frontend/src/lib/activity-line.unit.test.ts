@@ -27,6 +27,8 @@ function row(overrides: Partial<ActivityRow>): ActivityRow {
     context_kind: null,
     thread_id: null,
     camp_id: null,
+    competition_id: null,
+    match_id: null,
     ...overrides,
   };
 }
@@ -763,5 +765,76 @@ describe("activityLine", () => {
       row({ verb: "camp_archived", context_kind: "camp", camp_id: 9 }),
     );
     expect(result.href).toBe("/camps/9?focus=camp:9");
+  });
+
+  // --- competition verbs ---
+  test("competition_created renders label with no href when competition_id missing", () => {
+    const result = activityLine(row({ verb: "competition_created", context_kind: "competition" }));
+    expect(result.verb).toBe("created a competition");
+    expect(result.href).toBeUndefined();
+  });
+
+  test("competition_created routes to the competition page", () => {
+    const result = activityLine(
+      row({ verb: "competition_created", context_kind: "competition", competition_id: 5 }),
+    );
+    expect(result.verb).toBe("created a competition");
+    expect(result.href).toBe("/competitions/5");
+  });
+
+  test("student_registered routes to the competition page", () => {
+    const result = activityLine(
+      row({
+        verb: "student_registered",
+        context_kind: "competition",
+        target_student_id: 3,
+        competition_id: 5,
+      }),
+    );
+    expect(result.verb).toBe("registered for a competition");
+    expect(result.href).toBe("/competitions/5");
+  });
+
+  test("camp_promoted_to_competition routes to the camp page", () => {
+    const result = activityLine(
+      row({
+        verb: "camp_promoted_to_competition",
+        context_kind: "competition",
+        target_student_id: 3,
+        camp_id: 7,
+        competition_id: 5,
+      }),
+    );
+    expect(result.verb).toBe("linked camp to competition");
+    expect(result.href).toBe("/camps/7?focus=camp:7");
+  });
+
+  // --- match verbs ---
+  test("match_logged routes to the student my-matches page", () => {
+    const result = activityLine(
+      row({
+        verb: "match_logged",
+        context_kind: "competition",
+        target_student_id: 3,
+        competition_id: 5,
+        match_id: 11,
+      }),
+    );
+    expect(result.verb).toBe("logged a match");
+    expect(result.href).toBe("/student/3/matches?focus=match:11");
+  });
+
+  test("match_technique_linked routes to the student my-matches page", () => {
+    const result = activityLine(
+      row({
+        verb: "match_technique_linked",
+        context_kind: "competition",
+        target_student_id: 3,
+        competition_id: 5,
+        match_id: 11,
+      }),
+    );
+    expect(result.verb).toBe("linked a technique to a match");
+    expect(result.href).toBe("/student/3/matches?focus=match:11");
   });
 });

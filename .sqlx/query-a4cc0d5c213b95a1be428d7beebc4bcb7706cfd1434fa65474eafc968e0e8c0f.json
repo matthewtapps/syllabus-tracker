@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT v.id, v.parent_kind, v.technique_id, v.student_id, v.thread_id,\n                v.camp_id AS \"camp_id?: i64\",\n                v.title, v.description, v.position, v.kind,\n                v.processing_status, v.processing_error, v.storage_key, v.bytes,\n                v.duration_seconds, v.width, v.height,\n                v.external_url, v.external_host, v.external_video_id, v.uploaded_by_id,\n                v.created_at, v.updated_at, v.hidden_at\n         FROM videos v\n         LEFT JOIN video_visibility_overrides vsv\n                ON vsv.video_id = v.id\n               AND vsv.scope_kind = 'student'\n               AND vsv.scope_id = ?\n         WHERE v.technique_id = ?\n           AND v.deleted_at IS NULL\n           AND COALESCE(vsv.visible, v.hidden_at IS NULL) = 1\n         ORDER BY v.position ASC, v.id ASC",
+  "query": "SELECT id, parent_kind, technique_id, student_id, thread_id,\n                camp_id AS \"camp_id?: i64\", match_id AS \"match_id?: i64\", title, description,\n                position, kind, processing_status, processing_error, storage_key, bytes,\n                duration_seconds, width, height,\n                external_url, external_host, external_video_id, uploaded_by_id,\n                created_at, updated_at, hidden_at\n         FROM videos\n         WHERE camp_id = ?\n           AND deleted_at IS NULL\n           AND hidden_at IS NULL\n         ORDER BY position ASC, id ASC",
   "describe": {
     "columns": [
       {
@@ -34,102 +34,108 @@
         "type_info": "Integer"
       },
       {
-        "name": "title",
+        "name": "match_id?: i64",
         "ordinal": 6,
-        "type_info": "Text"
+        "type_info": "Integer"
       },
       {
-        "name": "description",
+        "name": "title",
         "ordinal": 7,
         "type_info": "Text"
       },
       {
-        "name": "position",
+        "name": "description",
         "ordinal": 8,
+        "type_info": "Text"
+      },
+      {
+        "name": "position",
+        "ordinal": 9,
         "type_info": "Integer"
       },
       {
         "name": "kind",
-        "ordinal": 9,
-        "type_info": "Text"
-      },
-      {
-        "name": "processing_status",
         "ordinal": 10,
         "type_info": "Text"
       },
       {
-        "name": "processing_error",
+        "name": "processing_status",
         "ordinal": 11,
         "type_info": "Text"
       },
       {
-        "name": "storage_key",
+        "name": "processing_error",
         "ordinal": 12,
         "type_info": "Text"
       },
       {
-        "name": "bytes",
+        "name": "storage_key",
         "ordinal": 13,
-        "type_info": "Integer"
+        "type_info": "Text"
       },
       {
-        "name": "duration_seconds",
+        "name": "bytes",
         "ordinal": 14,
         "type_info": "Integer"
       },
       {
-        "name": "width",
+        "name": "duration_seconds",
         "ordinal": 15,
         "type_info": "Integer"
       },
       {
-        "name": "height",
+        "name": "width",
         "ordinal": 16,
         "type_info": "Integer"
       },
       {
-        "name": "external_url",
+        "name": "height",
         "ordinal": 17,
-        "type_info": "Text"
+        "type_info": "Integer"
       },
       {
-        "name": "external_host",
+        "name": "external_url",
         "ordinal": 18,
         "type_info": "Text"
       },
       {
-        "name": "external_video_id",
+        "name": "external_host",
         "ordinal": 19,
         "type_info": "Text"
       },
       {
-        "name": "uploaded_by_id",
+        "name": "external_video_id",
         "ordinal": 20,
+        "type_info": "Text"
+      },
+      {
+        "name": "uploaded_by_id",
+        "ordinal": 21,
         "type_info": "Integer"
       },
       {
         "name": "created_at",
-        "ordinal": 21,
-        "type_info": "Datetime"
-      },
-      {
-        "name": "updated_at",
         "ordinal": 22,
         "type_info": "Datetime"
       },
       {
-        "name": "hidden_at",
+        "name": "updated_at",
         "ordinal": 23,
+        "type_info": "Datetime"
+      },
+      {
+        "name": "hidden_at",
+        "ordinal": 24,
         "type_info": "Datetime"
       }
     ],
     "parameters": {
-      "Right": 2
+      "Right": 1
     },
     "nullable": [
       true,
       false,
+      true,
       true,
       true,
       true,
@@ -154,5 +160,5 @@
       true
     ]
   },
-  "hash": "611e4920686c8642fdd179063e39843f64f1676546057ecd4ee3de926001a9b1"
+  "hash": "a4cc0d5c213b95a1be428d7beebc4bcb7706cfd1434fa65474eafc968e0e8c0f"
 }

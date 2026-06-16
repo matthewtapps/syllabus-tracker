@@ -20,6 +20,7 @@ pub struct Camp {
     pub description: Option<String>,
     pub created_at: NaiveDateTime,
     pub archived_at: Option<NaiveDateTime>,
+    pub competition_id: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -70,7 +71,8 @@ pub async fn get_camp(pool: &Pool<Sqlite>, id: i64) -> Result<Option<Camp>, AppE
         r#"SELECT id AS "id!: i64", student_id AS "student_id!: i64",
                   coach_id AS "coach_id!: i64", name, description,
                   created_at AS "created_at!: NaiveDateTime",
-                  archived_at AS "archived_at?: NaiveDateTime"
+                  archived_at AS "archived_at?: NaiveDateTime",
+                  competition_id AS "competition_id?: i64"
            FROM camps WHERE id = ?"#,
         id
     )
@@ -84,6 +86,7 @@ pub async fn get_camp(pool: &Pool<Sqlite>, id: i64) -> Result<Option<Camp>, AppE
         description: r.description,
         created_at: r.created_at,
         archived_at: r.archived_at,
+        competition_id: r.competition_id,
     }))
 }
 
@@ -97,7 +100,8 @@ pub async fn list_camps_for_student(
         r#"SELECT id AS "id!: i64", student_id AS "student_id!: i64",
                   coach_id AS "coach_id!: i64", name, description,
                   created_at AS "created_at!: NaiveDateTime",
-                  archived_at AS "archived_at?: NaiveDateTime"
+                  archived_at AS "archived_at?: NaiveDateTime",
+                  competition_id AS "competition_id?: i64"
            FROM camps
            WHERE student_id = ? AND (? OR archived_at IS NULL)
            ORDER BY (archived_at IS NOT NULL), created_at DESC"#,
@@ -116,6 +120,7 @@ pub async fn list_camps_for_student(
             description: r.description,
             created_at: r.created_at,
             archived_at: r.archived_at,
+            competition_id: r.competition_id,
         })
         .collect())
 }

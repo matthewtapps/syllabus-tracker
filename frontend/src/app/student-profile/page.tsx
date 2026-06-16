@@ -5,6 +5,7 @@ import {
   ChevronRight,
   Dumbbell,
   History,
+  Medal,
   MessageSquare,
   NotebookPen,
   Pin,
@@ -213,6 +214,11 @@ function ProfileHub({
             to={`/student/${studentId}/camps`}
             icon={Dumbbell}
             title="Camps"
+          />
+          <HubLink
+            to={`/student/${studentId}/matches`}
+            icon={Medal}
+            title={isOwnView ? "My matches" : "Matches"}
             last
           />
         </div>

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import {
+  Award,
   Download,
   EllipsisVertical,
   LayoutDashboard,
@@ -50,6 +51,7 @@ function buildTabs(user: User): Tab[] {
       icon: Library,
     });
     tabs.push({ to: '/syllabi', label: 'Syllabi', icon: NotebookPen });
+    tabs.push({ to: '/competitions', label: 'Competitions', icon: Award });
   } else {
     tabs.push({
       to: `/student/${user.id}/syllabi`,

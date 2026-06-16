@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO competition_registrations\n               (student_id, competition_id, registered_by_id)\n           VALUES (?, ?, ?)\n           ON CONFLICT(student_id, competition_id)\n               DO UPDATE SET unregistered_at  = NULL,\n                             registered_by_id = excluded.registered_by_id,\n                             registered_at    = CURRENT_TIMESTAMP\n           RETURNING id AS \"id!: i64\"",
+  "describe": {
+    "columns": [
+      {
+        "name": "id!: i64",
+        "ordinal": 0,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "ac98fcc1324f008946874bc53e39f80d6e91b36256483ec4c85081934d400376"
+}

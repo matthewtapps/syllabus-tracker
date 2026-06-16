@@ -1320,6 +1320,21 @@ import {
   archiveCamp,
   createCamp,
   removeCampTechnique,
+  createCompetition,
+  updateCompetition,
+  registerSelf,
+  registerStudent,
+  unregisterStudent,
+  promoteCampToCompetition,
+  createMatch,
+  updateMatch,
+  deleteMatch,
+  linkMatchTechnique,
+  unlinkMatchTechnique,
+} from "./api";
+import type {
+  MatchResult,
+  MatchMethod,
 } from "./api";
 
 export function useCreateCamp(studentId: number) {
@@ -1460,3 +1475,156 @@ export function useApplyAssignmentDiff() {
     },
   });
 }
+
+// ============================================================
+// Competitions + Matches (C-Slice 2)
+// ============================================================
+
+export function useCreateCompetition() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: { name: string; date?: string | null }) =>
+      createCompetition(data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: qk.competitions() });
+    },
+  });
+}
+
+export function useUpdateCompetition() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: {
+      id: number;
+      data: { name: string; date?: string | null };
+    }) => updateCompetition(vars.id, vars.data),
+    onSuccess: (_res, vars) => {
+      qc.invalidateQueries({ queryKey: qk.competitions() });
+      qc.invalidateQueries({ queryKey: qk.competition(vars.id) });
+    },
+  });
+}
+
+export function useRegisterSelf(competitionId: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => registerSelf(competitionId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: qk.competition(competitionId) });
+    },
+  });
+}
+
+export function useRegisterStudent(competitionId: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (studentId: number) => registerStudent(competitionId, studentId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: qk.competition(competitionId) });
+    },
+  });
+}
+
+export function useUnregisterStudent(competitionId: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (studentId: number) => unregisterStudent(competitionId, studentId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: qk.competition(competitionId) });
+    },
+  });
+}
+
+export function usePromoteCampToCompetition(campId: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (competitionId: number) =>
+      promoteCampToCompetition(campId, competitionId),
+    onSuccess: (_res, competitionId) => {
+      qc.invalidateQueries({ queryKey: qk.camp(campId) });
+      qc.invalidateQueries({ queryKey: qk.competition(competitionId) });
+    },
+  });
+}
+
+export function useLogMatch(registrationId: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: {
+      result: MatchResult;
+      method?: MatchMethod | null;
+      method_detail?: string | null;
+      occurred_at?: string | null;
+    }) => createMatch(registrationId, data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: qk.registrationMatches(registrationId) });
+      // studentMatches is keyed per student; invalidate all student match buckets.
+      qc.invalidateQueries({ queryKey: ["student"] });
+    },
+  });
+}
+
+export function useUpdateMatch() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: {
+      matchId: number;
+      registrationId: number;
+      studentId?: number;
+      data: {
+        result: MatchResult;
+        method?: MatchMethod | null;
+        method_detail?: string | null;
+        occurred_at?: string | null;
+      };
+    }) => updateMatch(vars.matchId, vars.data),
+    onSuccess: (_res, vars) => {
+      qc.invalidateQueries({
+        queryKey: qk.registrationMatches(vars.registrationId),
+      });
+      if (vars.studentId !== undefined) {
+        qc.invalidateQueries({ queryKey: qk.studentMatches(vars.studentId) });
+      }
+    },
+  });
+}
+
+export function useDeleteMatch() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: {
+      matchId: number;
+      registrationId: number;
+      studentId?: number;
+    }) => deleteMatch(vars.matchId),
+    onSuccess: (_res, vars) => {
+      qc.invalidateQueries({
+        queryKey: qk.registrationMatches(vars.registrationId),
+      });
+      if (vars.studentId !== undefined) {
+        qc.invalidateQueries({ queryKey: qk.studentMatches(vars.studentId) });
+      }
+    },
+  });
+}
+
+export function useLinkMatchTechnique(matchId: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (techniqueId: number) => linkMatchTechnique(matchId, techniqueId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: qk.matchTechniques(matchId) });
+    },
+  });
+}
+
+export function useUnlinkMatchTechnique(matchId: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (techniqueId: number) => unlinkMatchTechnique(matchId, techniqueId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: qk.matchTechniques(matchId) });
+    },
+  });
+}
+

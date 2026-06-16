@@ -1,0 +1,26 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT cr.student_id AS \"student_id!: i64\",\n                  cr.competition_id AS \"competition_id!: i64\"\n           FROM matches m\n           JOIN competition_registrations cr ON cr.id = m.registration_id\n           WHERE m.id = ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "student_id!: i64",
+        "ordinal": 0,
+        "type_info": "Integer"
+      },
+      {
+        "name": "competition_id!: i64",
+        "ordinal": 1,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "c873531b7a88e8abc2e9ede27661879da5576b6425ba17920c97cebb4e8d935d"
+}

@@ -1,0 +1,62 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT\n               id AS \"id!: i64\",\n               registration_id AS \"registration_id!: i64\",\n               result AS \"result!: String\",\n               method AS \"method?: String\",\n               method_detail AS \"method_detail?: String\",\n               occurred_at AS \"occurred_at?: String\",\n               created_by_id AS \"created_by_id!: i64\",\n               created_at AS \"created_at!: NaiveDateTime\"\n           FROM matches\n           WHERE registration_id = ?\n           ORDER BY created_at DESC, id DESC",
+  "describe": {
+    "columns": [
+      {
+        "name": "id!: i64",
+        "ordinal": 0,
+        "type_info": "Integer"
+      },
+      {
+        "name": "registration_id!: i64",
+        "ordinal": 1,
+        "type_info": "Integer"
+      },
+      {
+        "name": "result!: String",
+        "ordinal": 2,
+        "type_info": "Text"
+      },
+      {
+        "name": "method?: String",
+        "ordinal": 3,
+        "type_info": "Text"
+      },
+      {
+        "name": "method_detail?: String",
+        "ordinal": 4,
+        "type_info": "Text"
+      },
+      {
+        "name": "occurred_at?: String",
+        "ordinal": 5,
+        "type_info": "Datetime"
+      },
+      {
+        "name": "created_by_id!: i64",
+        "ordinal": 6,
+        "type_info": "Integer"
+      },
+      {
+        "name": "created_at!: NaiveDateTime",
+        "ordinal": 7,
+        "type_info": "Datetime"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "267ff213028f837007526dfd1bb35731124cbc7e4a4df828aa006f8ed3cb2222"
+}

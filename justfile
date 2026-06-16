@@ -70,6 +70,12 @@ _sqlx mode:
     db="$tmp/prepare.db"
     SQLX_OFFLINE=true DATABASE_URL="sqlite://$db" SCHEMA_PATH=./config/schema.sql \
         cargo run -q -p migration-engine --bin migrate
+    # sqlx-macros-core calls dotenvy::dotenv_override() which overwrites DATABASE_URL
+    # from the nearest .env file even when the env var is already set. Placing a
+    # crate-level .env that points at our fresh temp DB wins over the root .env.
+    crate_env="crates/syllabus-tracker/.env"
+    printf 'DATABASE_URL=sqlite://%s\n' "$db" > "$crate_env"
+    trap 'rm -rf "$tmp"; rm -f "$crate_env"' EXIT
     DATABASE_URL="sqlite://$db" \
         cargo sqlx prepare {{mode}} --workspace -- -p syllabus-tracker --tests --all-features
 

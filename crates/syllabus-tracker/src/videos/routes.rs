@@ -12,6 +12,7 @@ use uuid::Uuid;
 
 use crate::auth::{Permission, User};
 use crate::db;
+use crate::db::matches::{can_manage_match, student_id_for_match};
 use crate::models::{ProcessingStatus, Video};
 use crate::videos::embeds;
 use crate::videos::metrics::{kv, video_metrics};
@@ -284,6 +285,94 @@ pub async fn api_camp_video_upload(
         .start(HostJob {
             video_id,
             parent_id: camp_id, // the video's parent is the camp
+            original_temp_path: dest,
+        })
+        .await;
+
+    Ok(Json(UploadResponse {
+        video_id,
+        processing_status: ProcessingStatus::Processing.as_str().to_string(),
+    }))
+}
+
+#[instrument(skip(form, pool, processor))]
+#[post("/matches/<match_id>/videos/upload", data = "<form>")]
+pub async fn api_match_video_upload(
+    match_id: i64,
+    user: User,
+    form: Result<Form<UploadForm<'_>>, FormErrors<'_>>,
+    pool: &State<Pool<Sqlite>>,
+    processor: &State<DynVideoProcessor>,
+) -> Result<Json<UploadResponse>, Status> {
+    // Gate: coach OR the match's own student may upload footage (CC-020/021).
+    let is_coach = user.has_permission(Permission::ViewAllStudents);
+    let match_student_id = student_id_for_match(pool.inner(), match_id)
+        .await
+        .map_err(Status::from)?
+        .ok_or(Status::NotFound)?;
+
+    if !can_manage_match(is_coach, user.id, match_student_id) {
+        return Err(Status::Forbidden);
+    }
+
+    let mut form = form.map_err(|errs| {
+        error!(
+            match_id,
+            errors = %errs,
+            "match video upload form failed to parse"
+        );
+        Status::BadRequest
+    })?;
+
+    let metrics = video_metrics();
+    if !is_mp4(form.file.content_type()) {
+        metrics.uploads_total.add(1, &[kv("result", "fail_format")]);
+        return Err(Status::UnsupportedMediaType);
+    }
+
+    if form.file.len() > max_video_bytes() as u64 {
+        metrics.uploads_total.add(1, &[kv("result", "fail_size")]);
+        return Err(Status::PayloadTooLarge);
+    }
+
+    tokio::fs::create_dir_all(pipeline::temp_dir())
+        .await
+        .map_err(|e| {
+            error!(
+                match_id,
+                temp_dir = ?pipeline::temp_dir(),
+                error = %e,
+                "failed to create video temp dir for match upload"
+            );
+            Status::InternalServerError
+        })?;
+    let mut dest = pipeline::temp_dir();
+    dest.push(format!("{}.mp4", Uuid::new_v4()));
+
+    form.file.persist_to(&dest).await.map_err(|e| {
+        error!(
+            match_id,
+            dest = ?dest,
+            error = %e,
+            "failed to persist match video upload to disk"
+        );
+        Status::InternalServerError
+    })?;
+
+    let video_id = db::create_processing_video(
+        pool.inner(),
+        db::VideoParent::Match(match_id),
+        form.title.trim(),
+        form.description.as_deref(),
+        user.id,
+    )
+    .await
+    .map_err(Status::from)?;
+
+    processor
+        .start(HostJob {
+            video_id,
+            parent_id: match_id,
             original_temp_path: dest,
         })
         .await;

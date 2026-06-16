@@ -7,6 +7,8 @@
 mod activity;
 mod activity_read;
 pub mod camps;
+pub mod competitions;
+pub mod matches;
 pub mod dashboard;
 mod attempts;
 mod collections;

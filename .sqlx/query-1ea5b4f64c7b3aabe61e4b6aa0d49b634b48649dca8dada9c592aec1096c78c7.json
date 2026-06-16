@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT id, parent_kind, technique_id, student_id, thread_id,\n                camp_id AS \"camp_id?: i64\", title, description,\n                position, kind, processing_status, processing_error, storage_key, bytes,\n                duration_seconds, width, height,\n                external_url, external_host, external_video_id, uploaded_by_id,\n                created_at, updated_at, hidden_at\n         FROM videos\n         WHERE technique_id = ?\n           AND parent_kind = 'technique'\n           AND deleted_at IS NULL\n           AND hidden_at IS NULL\n         ORDER BY position ASC, id ASC",
+  "query": "SELECT id, parent_kind, technique_id, student_id, thread_id,\n                camp_id AS \"camp_id?: i64\", match_id AS \"match_id?: i64\", title, description,\n                position, kind, processing_status, processing_error, storage_key, bytes,\n                duration_seconds, width, height,\n                external_url, external_host, external_video_id, uploaded_by_id,\n                created_at, updated_at, hidden_at\n         FROM videos\n         WHERE match_id = ?\n           AND deleted_at IS NULL\n           AND hidden_at IS NULL\n         ORDER BY position ASC, id ASC",
   "describe": {
     "columns": [
       {
@@ -34,93 +34,98 @@
         "type_info": "Integer"
       },
       {
-        "name": "title",
+        "name": "match_id?: i64",
         "ordinal": 6,
-        "type_info": "Text"
+        "type_info": "Integer"
       },
       {
-        "name": "description",
+        "name": "title",
         "ordinal": 7,
         "type_info": "Text"
       },
       {
-        "name": "position",
+        "name": "description",
         "ordinal": 8,
+        "type_info": "Text"
+      },
+      {
+        "name": "position",
+        "ordinal": 9,
         "type_info": "Integer"
       },
       {
         "name": "kind",
-        "ordinal": 9,
-        "type_info": "Text"
-      },
-      {
-        "name": "processing_status",
         "ordinal": 10,
         "type_info": "Text"
       },
       {
-        "name": "processing_error",
+        "name": "processing_status",
         "ordinal": 11,
         "type_info": "Text"
       },
       {
-        "name": "storage_key",
+        "name": "processing_error",
         "ordinal": 12,
         "type_info": "Text"
       },
       {
-        "name": "bytes",
+        "name": "storage_key",
         "ordinal": 13,
-        "type_info": "Integer"
+        "type_info": "Text"
       },
       {
-        "name": "duration_seconds",
+        "name": "bytes",
         "ordinal": 14,
         "type_info": "Integer"
       },
       {
-        "name": "width",
+        "name": "duration_seconds",
         "ordinal": 15,
         "type_info": "Integer"
       },
       {
-        "name": "height",
+        "name": "width",
         "ordinal": 16,
         "type_info": "Integer"
       },
       {
-        "name": "external_url",
+        "name": "height",
         "ordinal": 17,
-        "type_info": "Text"
+        "type_info": "Integer"
       },
       {
-        "name": "external_host",
+        "name": "external_url",
         "ordinal": 18,
         "type_info": "Text"
       },
       {
-        "name": "external_video_id",
+        "name": "external_host",
         "ordinal": 19,
         "type_info": "Text"
       },
       {
-        "name": "uploaded_by_id",
+        "name": "external_video_id",
         "ordinal": 20,
+        "type_info": "Text"
+      },
+      {
+        "name": "uploaded_by_id",
+        "ordinal": 21,
         "type_info": "Integer"
       },
       {
         "name": "created_at",
-        "ordinal": 21,
-        "type_info": "Datetime"
-      },
-      {
-        "name": "updated_at",
         "ordinal": 22,
         "type_info": "Datetime"
       },
       {
-        "name": "hidden_at",
+        "name": "updated_at",
         "ordinal": 23,
+        "type_info": "Datetime"
+      },
+      {
+        "name": "hidden_at",
+        "ordinal": 24,
         "type_info": "Datetime"
       }
     ],
@@ -130,6 +135,7 @@
     "nullable": [
       true,
       false,
+      true,
       true,
       true,
       true,
@@ -154,5 +160,5 @@
       true
     ]
   },
-  "hash": "351eff2f9dc9540d323cf3a9b262fcfb8e4cc006606783efee2838b274fc0b04"
+  "hash": "1ea5b4f64c7b3aabe61e4b6aa0d49b634b48649dca8dada9c592aec1096c78c7"
 }
