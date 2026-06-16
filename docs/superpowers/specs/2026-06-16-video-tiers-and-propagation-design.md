@@ -1,75 +1,115 @@
-# Video tiers & cross-tier propagation — design
+# Syllabus customization: snapshot + reconcile, with minimal video inheritance — design
 
-**Date:** 2026-06-16
-**Status:** Approved-in-principle (pending written-spec review)
-**Related plan:** `docs/superpowers/plans/2026-06-16-student-syllabus-modification-uplift.md` (Chunk E is superseded/expanded by this design; technique chunks C/D are partially affected — see "Unification" below).
+**Date:** 2026-06-16 (rewritten after clean-room review + paradigm decision)
+**Status:** Approved-in-principle (pending written-spec review + optional second clean-room check)
+**Supersedes:** the earlier live-inheritance draft of this file.
+**Related plan:** `docs/superpowers/plans/2026-06-16-student-syllabus-modification-uplift.md`.
 
-## Problem
+## Paradigm decision
 
-A coach assigns a syllabus to a student, then customizes heavily in one sitting: hiding/adding techniques and videos. The same content lives at up to three nested tiers, and a coach must be able to act at any tier and propagate up or down — without per-edit friction during high-volume work.
+After a clean-room review surfaced serious state-tangle risk, we rejected **live inheritance** (CSS/Figma-style override resolution at every tier) in favour of the paradigm the app already uses and the industry default for template→instance customization:
 
-## Tiers (nesting: T1 ⊃ T2 ⊃ T3)
+- **Techniques: snapshot + reconcile.** Assigning a syllabus *copies* its techniques into per-student rows (already true: `db/syllabi.rs:283`). A student's syllabus is an authoritative snapshot. Template changes reach students only via (a) an opt-in one-time **fan-out of adds** and (b) the explicit **diff/reconcile tool** (already exists). No live inheritance, no override resolution, no tri-state for techniques.
+- **Videos: minimal single-table inheritance.** Videos are shared heavy assets and cannot be snapshot-copied per student. A video is **owned at exactly one tier**; lower tiers inherit it; a viewer can **hide an inherited video locally**. This is the *only* inheritance in the system: one ownership column, one override table, one resolution function.
 
-- **T1 Global technique** — the library technique and its videos. Seen by everyone.
-- **T2 Syllabus technique** — a syllabus *template*'s copy of a technique (`syllabus_techniques`) and videos attached to it. Inherited by every assignment of that syllabus.
-- **T3 Student syllabus technique** — one student's assignment row (`student_syllabus_techniques`, "SST") and videos private to it.
+Rationale: snapshot is simpler, maintainable, extensible, and—critically—*more intuitive and safer* (a later template edit must not silently rewrite a student a coach already tailored). It also matches the existing schema and the existing diff tool.
 
-Inheritance is CSS-cascade-like: a lower tier inherits the higher tier's content and visibility unless it has an explicit local override. (Validated against Google/Apple Calendar recurring scope, Facebook audience selector, PatternFly/eBay bulk-action bars, Shopify sticky bulk defaults, and the Unity Editor Design System inheritance/override pattern.)
+## Tiers
 
-## Interaction model — "set scope once, edit quietly, reconcile in bulk"
+| Tier | Techniques | Videos |
+|---|---|---|
+| T1 Global / library | `techniques` (`is_global`) | video with `parent_kind='technique'` |
+| T2 Syllabus template | `syllabus_techniques` (membership) | video with `parent_kind='syllabus_technique'` (NEW) |
+| T3 Student assignment | `student_syllabus_techniques` (SST — authoritative snapshot) | video with `parent_kind='student_syllabus_technique'` (NEW) |
 
-### 1. Sticky scope selector
-At the top of the student-syllabus view: `Editing at: [ This student ▾ ]` with **This student** (default) / **This syllabus** / **Global technique**. Remembered for the session. It sets the tier that quiet one-click edits act on.
+All three technique-tier tables already exist. No new tier table is needed (the "new table" instinct is satisfied by the single video-override table below, not a new tier).
 
-### 2. Cascade switch(es) (shown only when scope is above the student)
-Directly beneath the selector:
-- **Scope = This syllabus:** one switch — **"Update other assignments of this syllabus"** (default **ON**).
-- **Scope = Global technique:** two switches — **"Also update syllabi"** (default ON) and **"Also update existing assignments"** (default ON). The assignments switch is enabled only when at least one syllabus containing the technique is assigned to a student; the syllabi switch only when the technique is in ≥1 syllabus.
+## Techniques — snapshot model (mostly status quo; we *remove* planned complexity)
 
-Cascade rules:
-- **Override-aware:** a cascade does **not** clobber a tier that has an explicit local override (a deliberate per-student/per-syllabus choice is preserved). Plain inheritance flows; explicit overrides win.
-- **Graduated assignments are excluded by default** from any downward cascade.
-- For **adds** with a cascade switch OFF, the item is still added at lower tiers but **hidden** (per the coach's earlier spec), rather than absent — so it can be revealed later. For **hides** with the switch OFF, lower tiers are left untouched (reconcile via diff).
+- A student's syllabus = its SST rows; the SST row is **authoritative** for that student.
+- **Hide** at T3 = `student_syllabus_techniques.hidden_at` boolean. This is *correct*, not smelly: there is no parent to inherit from at read time, so there is nothing to be "override-aware" about. (The clean-room H1 concern only applied to live inheritance, which we are not doing.)
+- **Add** at T3 = insert an SST row. "Add as hidden" = insert with `hidden_at` set. (Note: the current `add_technique_to_assignment` *clears* `hidden_at`; that must change to honour an explicit "add hidden".)
+- **Template edits (T2):**
+  - Add a technique to the template = insert `syllabus_techniques`. Optional **fan-out** switch (default ON, excludes graduated assignments): insert the missing SST rows into existing assignments. Fan-out **only adds missing rows; it never overwrites or un-hides an existing SST** — so it cannot clobber a coach's per-student customization.
+  - Remove/hide at the template = surfaced in the diff tool for per-student reconcile; not auto-applied to existing snapshots.
+- **Diff/reconcile tool** (exists, we extend it): compares each SST snapshot against the current template.
+  - *ghost* = technique on the student but not in the template (student-only / custom add).
+  - *missing* = technique in the template but absent or hidden on the student. **Required change:** split today's collapsed bucket (`sst.id IS NULL OR sst.hidden_at IS NOT NULL`, `student_syllabus_techniques.rs:585`) into **absent** vs **added-then-hidden**, so the two are distinguishable when reconciling.
 
-### 3. Quiet one-click edits
-The existing eye/hide control and the add control act at the selected scope with **no prompt and no modal**. A row shows only the **current context's** state (visible/hidden here) — no always-on cross-tier indicators (explicitly rejected as too busy). Hiding 20 items = 20 single clicks at the chosen tier. Hidden-in-this-context still uses the ghost transition (techniques move to the Hidden tab on reload; videos stay in place — see the implementation plan's D2/E1).
+No override tables, no resolution function, no cascade-timing problem for techniques.
 
-### 4. On-demand cross-context control
-Cross-tier status/control is revealed **only when sought** — in the expanded row, a "Visibility across tiers / Where does this live?" control that, when opened, shows the three tiers and lets the coach override or propagate a single item individually. Never shown inline by default.
+## Videos — single-owner tier + one override table + one resolver
 
-### 5. Add = scope-ladder popover
-The add action opens a small popover (Calendar-recurring style) with the per-tier switches pre-checked from the current scope; lower tiers can be set to land visible or hidden. Deliberate and lower-frequency, so a popover is acceptable here.
+### Ownership
+A video's `parent_kind` names its owning tier: `technique` (T1), `syllabus_technique` (T2), `student_syllabus_technique` (T3). T2/T3 are new `parent_kind` values with their typed columns + CHECK branches, mirroring the existing polymorphic pattern in `videos.rs`.
 
-### 6. Diff dialog = batch reconcile
-The existing diff-to-global dialog is the bulk surface: customize freely, then review everything that diverges from the global/template baseline and push selected changes up/down in one pass (stage-and-apply), for both techniques and videos.
+**Tier-2 anchor:** parent the T2 video by **(`syllabus_id`, `technique_id`)** columns on `videos` for the `syllabus_technique` kind (avoids adding a surrogate id to the composite-PK `syllabus_techniques` and the table rebuild that implies). Removing a technique from a syllabus must **soft-handle** any T2 videos (don't hard-cascade-delete them); reconcile/orphan policy defined in the plan. Per-syllabus duplication (same technique in two syllabi → a T2 video in only one) is *intended* — the coach added it to that syllabus.
 
-## Data model
+### Visibility override — ONE table
+Replace the ad-hoc set (`videos.hidden_at` for T1 global hide stays; **migrate** `student_syllabus_video_visibility` and fold in the legacy `video_student_visibility`) with one table:
 
-### Videos — three parent tiers
-The `videos` table is polymorphic (`parent_kind` typed-column pattern). Today: `technique` (T1), plus `student_profile`/`thread`/`loose`. Add:
-- **T3:** `parent_kind = 'student_syllabus_technique'`, new column `student_syllabus_technique_id` → `student_syllabus_techniques(id)`.
-- **T2:** `parent_kind = 'syllabus_technique'`. **Anchor decision required:** `syllabus_techniques` has a composite PK `(syllabus_id, technique_id)` and no surrogate id. The typed-column pattern wants a single id column. **Recommended:** add a surrogate `id INTEGER PRIMARY KEY` to `syllabus_techniques` (keep the existing pair as a UNIQUE constraint) and reference it from `videos.syllabus_technique_id`. (Alternative — two parent columns for this kind — breaks the one-column-per-kind invariant and is not recommended.)
+```
+video_visibility_overrides(
+  scope_kind  TEXT CHECK (scope_kind IN ('syllabus','assignment')),
+  scope_id    INTEGER NOT NULL,         -- syllabus_id  OR  syllabus_assignment_id
+  video_id    INTEGER NOT NULL REFERENCES videos(id) ON DELETE CASCADE,
+  visible     BOOLEAN NOT NULL,         -- explicit show (1) or hide (0)
+  set_by_id   INTEGER REFERENCES users(id),
+  set_at      TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (scope_kind, scope_id, video_id)
+)
+```
+Presence of a row = explicit choice; absence = inherit. `assignment` scope covers per-student (an assignment *is* a (student, syllabus) pair). `syllabus` scope covers "hide this for the whole syllabus."
 
-The per-(student, syllabus, technique) video read unions: T1 technique videos (respecting `student_syllabus_video_visibility` overrides) + T2 syllabus-technique videos (for that syllabus) + T3 SST videos (for that assignment).
+### One resolution function (used by BOTH list and playback guard)
+`effective_video_visible(video, assignment) ->` precedence ladder:
+1. `video.deleted_at` set → **hidden**
+2. assignment-scope override exists → its `visible`
+3. syllabus-scope override exists → its `visible`
+4. owned in this viewer's scope chain (T1 technique, OR T2 of this syllabus, OR T3 of this assignment) → `video.hidden_at IS NULL`
+5. otherwise → **not a candidate** (absent, different owner)
 
-### Visibility overrides
-Per-tier hide uses override rows. `student_syllabus_video_visibility(student_id, syllabus_id, video_id, visible)` already exists for T3. A T2 hide is represented on the syllabus-technique / via `videos.hidden_at` at the appropriate parent. Exact override tables for T2 hides to be finalized in the plan; the principle is one explicit override row per (tier, item) so cascades stay override-aware.
+This ends the current divergence where the list query (`videos.rs:418`) and the playback guard (`videos.rs:544`) consult *different* tables.
 
-### Techniques — unification
-Techniques have the same three tiers (`techniques` T1 / `syllabus_techniques` T2 / `student_syllabus_techniques` T3) and already have a global↔student scope flag (`is_global`, shipped in Chunk A). The scope selector + cascade switches govern **techniques and videos uniformly**.
+### Per-syllabus video read
+Candidate set = videos owned at T1(technique) ∪ T2(this syllabus, technique) ∪ T3(this assignment), then filtered by the resolver.
 
-## Unification with the in-flight plan
-- **Supersedes** the standalone "Add to global library too" switch in technique task C3: technique adds flow through the scope selector + scope-ladder popover instead. The student-only create path (Chunk A backend) stays; only the front-end control changes.
-- **Informs** technique hide (D1/D2): hiding respects the current scope and the cascade switches.
-- **Expands** Chunk E from a 2-tier (T1/T3) video model to the full 3-tier model with the propagation mechanism above.
-- Chunks A (done) and B (frontend plumbing) are unaffected.
+### Add a video, with scope switches
+- Add at T3 (student): switches "Also add to syllabus" + "Also add to global technique", default ON (your spec). ON = own at the higher tier; OFF at a higher tier just means it stays owned lower. "Add as hidden to existing assignments" when adding higher with the down-switch off = own high + insert `visible=0` assignment-scope overrides for existing (non-graduated) assignments.
+- Add at T2 / T1: the conditional up/down switches you specified; down-propagation that is "off" writes hide-overrides (so it's present-but-hidden, revealable), consistent with the technique fan-out's "adds only, never clobber" rule.
 
-## Out of scope (YAGNI for now)
-- No bulk multi-select checkboxes on rows (the sticky scope + quiet clicks + diff already cover bulk).
-- No per-edit toast control flow (rejected).
-- No undo stack beyond existing toasts.
+### Promote / re-parent / delete
+- Promote a video up a tier = **flip `parent_kind` in place** (preserve `video.id` → watch history/aggregates intact) **and delete now-meaningless lower-scope override rows in the same transaction**.
+- Soft-delete (`deleted_at`) unchanged; override rows `ON DELETE CASCADE` with the video.
 
-## Open items to resolve during planning
-1. Surrogate id on `syllabus_techniques` (recommended) vs alternative anchoring.
-2. The exact override-row representation for T2 (syllabus-template) video/technique hides.
-3. Whether the scope selector also appears on the syllabus-template editing view (likely yes, defaulting to "This syllabus").
+## UX (unchanged from what you approved)
+- **Sticky scope selector** (This student / This syllabus / Global), remembered per session, sets the tier quiet one-click edits act on.
+- **Cascade switch(es)** under the selector when scope is above the student (fan-out adds / update-existing), default ON, graduated excluded.
+- **Quiet one-click edits**; a row shows only the current context's state (no busy cross-tier pills).
+- **On-demand cross-context control** in the expanded row when specifically sought.
+- **Add = small scope-ladder popover** with the per-tier switches pre-set by scope.
+- **Diff dialog = the reconcile surface**, now covering techniques *and* videos (stage-and-apply).
+
+## Graduation
+Point-in-time filter on fan-out/propagation only (`graduated_at IS NULL`). Reversible un-graduation does **not** retro-apply skipped changes; a re-activated student is reconciled via the diff tool. (Acceptable because techniques are snapshots and videos resolve live — a re-activated student immediately sees current inherited videos; only fanned-out technique adds need a diff pass.)
+
+## Impact on the in-flight implementation plan
+- **Chunk A (is_global) — keep.** It's library-membership (ownership), orthogonal to all this.
+- **Chunk B (frontend plumbing, extract NewTechniqueForm, library button) — keep.**
+- **Chunk C — keep C1/C2/C4; revise C3.** C3's standalone "add to global" switch is replaced by the scope-aware add (scope selector + popover). The student-only create backend stays.
+- **Chunk D (technique tabs/ghost/sort/promote) — keep as planned.** Boolean `hidden_at` stays; no visibility refactor needed for techniques. 
+- **Chunk E — rework** around: new video `parent_kind`s (T2 by (syllabus_id,technique_id), T3 by sst id), the single `video_visibility_overrides` table + resolver (migrating `student_syllabus_video_visibility`, folding in legacy `video_student_visibility`), the scope selector, the add switches, and the diff extension (techniques bucket split + video diff).
+
+## Resolved decisions
+- Snapshot + reconcile for techniques; minimal single-table inheritance for videos.
+- Template edits: fan-out adds (opt-in, non-graduated, never overwrite); removals via diff.
+- T2 videos are real content, anchored by (syllabus_id, technique_id), soft-handled on technique removal.
+- Add-as-hidden kept — represented as `hidden_at` on a snapshot SST (techniques) or a `visible=0` override row (videos); both clean under this model.
+- One video resolver shared by list + playback guard; legacy per-student video table folded in.
+
+## Open items for planning
+1. Exact migration of `student_syllabus_video_visibility` → `video_visibility_overrides` (assignment scope) and fold-in of `video_student_visibility`; backfill + cutover of the two read paths.
+2. Orphan policy for T2 videos when a technique is removed from a syllabus (soft-delete vs reassign vs block).
+3. `add_technique_to_assignment` change to honour explicit "add hidden" instead of always clearing `hidden_at`.
+4. Diff `missing`-bucket split (absent vs added-hidden) + the new video diff rows/actions.
+5. Whether the scope selector also appears on the syllabus-template editing view (likely yes, default "This syllabus").
