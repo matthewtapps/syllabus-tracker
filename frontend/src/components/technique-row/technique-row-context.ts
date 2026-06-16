@@ -36,6 +36,10 @@ export type RowContext =
        *  sites can prompt for confirmation before writing to a
        *  graduated assignment. `null` when not graduated. */
       graduatedAt: string | null;
+      /** Fired after the hidden toggle mutation succeeds so the listing
+       *  page can keep a just-hidden row lingering (ghosted) in Main for
+       *  the rest of the visit. `nowHidden` is the new hidden state. */
+      onHiddenToggled?: (techniqueId: number, nowHidden: boolean) => void;
     }
   // Coach editing a technique inside a global syllabus. Same edit
   // affordances as global-library coach surface, minus the cross-system

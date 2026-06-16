@@ -29,6 +29,10 @@ interface TechniqueRowProps {
   isOpen: boolean;
   scrollToVideoId?: number | null;
   onVideoScrolled?: () => void;
+  /** Renders the row ghosted (reduced opacity). Used by the
+   *  student-syllabus surface to keep a just-hidden row lingering in the
+   *  Main tab for the rest of the visit. */
+  ghost?: boolean;
 }
 
 // Keeps the expanded panel mounted through the AccordionContent close
@@ -68,6 +72,7 @@ export function TechniqueRow({
   isOpen,
   scrollToVideoId,
   onVideoScrolled,
+  ghost,
 }: TechniqueRowProps) {
   const user = useUser();
   const renderContent = useDelayedFalse(isOpen);
@@ -130,6 +135,7 @@ export function TechniqueRow({
           "group border-b last:border-b-0",
           context.kind === "student-syllabus" && "border-l-4 transition-colors",
           context.kind === "student-syllabus" && accentClass,
+          ghost && "opacity-50 transition-opacity",
         )}
       >
         <AccordionPrimitive.Header asChild>

@@ -104,8 +104,24 @@ function Detail({
     [query.data?.techniques],
   );
   const [tab, setTab] = useState<'main' | 'custom' | 'hidden'>('main');
-  // Placeholder for D2 (techniques just hidden this session linger in Main).
-  const [ghostTechniqueIds] = useState<Set<number>>(new Set());
+  // Techniques just hidden this visit linger (ghosted) in Main until the
+  // coach leaves the tab. Per-visit only: cleared on tab change and on
+  // natural unmount (state dies with the component).
+  const [ghostTechniqueIds, setGhostTechniqueIds] = useState<Set<number>>(
+    () => new Set(),
+  );
+  function handleHiddenToggled(techniqueId: number, nowHidden: boolean) {
+    setGhostTechniqueIds((prev) => {
+      const next = new Set(prev);
+      if (nowHidden) next.add(techniqueId);
+      else next.delete(techniqueId);
+      return next;
+    });
+  }
+  function changeTab(next: 'main' | 'custom' | 'hidden') {
+    setGhostTechniqueIds(new Set()); // clear ghosts when leaving the current tab
+    setTab(next);
+  }
   const { main, custom, hidden } = useMemo(
     () => partitionSsts(allSsts, ghostTechniqueIds),
     [allSsts, ghostTechniqueIds],
@@ -282,7 +298,7 @@ function Detail({
       {!isOwnView && (
         <Tabs
           value={tab}
-          onValueChange={(v) => setTab(v as 'main' | 'custom' | 'hidden')}
+          onValueChange={(v) => changeTab(v as 'main' | 'custom' | 'hidden')}
         >
           <TabsList>
             <TabsTrigger value="main">Main</TabsTrigger>
@@ -349,11 +365,13 @@ function Detail({
                     assignmentId: assignment.id,
                     sst,
                     graduatedAt: assignment.graduated_at,
+                    onHiddenToggled: handleHiddenToggled,
                   }}
                   value={value}
                   isOpen={nav.expandedValue === value}
                   scrollToVideoId={nav.expandedValue === value ? nav.videoId : null}
                   onVideoScrolled={nav.consumeVideo}
+                  ghost={ghostTechniqueIds.has(sst.technique_id)}
                 />
               );
             })}

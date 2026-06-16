@@ -14,7 +14,7 @@ export function HiddenToggleButton() {
   const confirmGraduated = useGraduatedConfirm();
   if (context.kind !== "student-syllabus") return null;
   if (role !== "coach" && role !== "admin") return null;
-  const { sst, studentId, syllabusId } = context;
+  const { sst, studentId, syllabusId, onHiddenToggled } = context;
   const hidden = sst.hidden_at !== null;
 
   async function handleClick(e: React.MouseEvent) {
@@ -28,6 +28,7 @@ export function HiddenToggleButton() {
         syllabusId,
         hidden: !hidden,
       });
+      onHiddenToggled?.(sst.technique_id, !hidden);
       toast.success(
         hidden
           ? `Showing ${sst.technique_name} for this student`
