@@ -164,6 +164,7 @@ export function CampVideoList({
               canManage={canManage}
               onPlay={() => setPlaying(video)}
               onDeleted={handleDeleted}
+              campId={canManage ? campId : undefined}
             />
           ))}
         </ul>

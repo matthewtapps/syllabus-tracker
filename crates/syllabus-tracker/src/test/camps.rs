@@ -998,4 +998,258 @@ mod tests {
             .await;
         assert_eq!(resp.status(), Status::BadRequest);
     }
+
+    // -----------------------------------------------------------------------
+    // CC-015: per-camp video visibility override tests
+    // -----------------------------------------------------------------------
+
+    /// Camp-scope `visible=0` hides a video from `list_videos_for_camp`
+    /// but does NOT affect the same video in the library or technique list.
+    #[rocket::async_test]
+    async fn camp_visibility_override_hides_video_from_camp_list_only() {
+        use crate::db::{
+            create_processing_video, VideoParent,
+            list_videos_for_camp, list_videos_for_technique,
+            set_video_camp_visibility,
+        };
+
+        let db = TestDbBuilder::new()
+            .coach("coach_user", Some("Coach"))
+            .student("student_user", Some("Sam"))
+            .build()
+            .await
+            .unwrap();
+
+        let coach = db.user_id("coach_user").unwrap();
+        let student = db.user_id("student_user").unwrap();
+
+        // Create a technique and a camp.
+        let technique_id: i64 = sqlx::query_scalar(
+            "INSERT INTO techniques (name, description) VALUES ('Armbar', '') RETURNING id",
+        )
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+
+        let camp_id: i64 = sqlx::query_scalar(
+            "INSERT INTO camps (student_id, coach_id, name) VALUES (?, ?, 'Worlds prep') RETURNING id",
+        )
+        .bind(student)
+        .bind(coach)
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+
+        // Video owned by the camp.
+        let camp_video_id = create_processing_video(
+            &db.pool,
+            VideoParent::Camp(camp_id),
+            "No-gi variation",
+            None,
+            coach,
+        )
+        .await
+        .unwrap();
+
+        // Video owned by the technique (appears in library, not the camp list).
+        let _technique_video_id = create_processing_video(
+            &db.pool,
+            VideoParent::Technique(technique_id),
+            "Gi variation",
+            None,
+            coach,
+        )
+        .await
+        .unwrap();
+
+        // Before any override both lists are visible.
+        let camp_videos = list_videos_for_camp(&db.pool, camp_id).await.unwrap();
+        assert_eq!(camp_videos.len(), 1, "camp video visible before override");
+
+        let technique_videos = list_videos_for_technique(&db.pool, technique_id).await.unwrap();
+        assert_eq!(technique_videos.len(), 1, "technique video visible");
+
+        // Coach hides the camp video within this camp.
+        set_video_camp_visibility(&db.pool, camp_video_id, camp_id, false, coach)
+            .await
+            .unwrap();
+
+        // The camp list should now be empty for a student view.
+        let camp_videos_after = list_videos_for_camp(&db.pool, camp_id).await.unwrap();
+        assert_eq!(camp_videos_after.len(), 0, "camp video hidden from camp list after override");
+
+        // The technique video in the library is unaffected.
+        let technique_videos_after = list_videos_for_technique(&db.pool, technique_id).await.unwrap();
+        assert_eq!(technique_videos_after.len(), 1, "technique video unaffected by camp override");
+
+        // The override row must be scoped to 'camp', not 'student' / global.
+        let override_count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM video_visibility_overrides WHERE scope_kind = 'camp' AND camp_id = ? AND video_id = ? AND visible = 0",
+        )
+        .bind(camp_id)
+        .bind(camp_video_id)
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+        assert_eq!(override_count, 1, "exactly one camp-scope override row");
+
+        // Global student-scope overrides must NOT have been created.
+        let student_override_count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM video_visibility_overrides WHERE scope_kind = 'student' AND video_id = ?",
+        )
+        .bind(camp_video_id)
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+        assert_eq!(student_override_count, 0, "no student-scope override leaked");
+    }
+
+    /// A camp-scope `visible=1` override force-shows a globally-hidden video
+    /// in the camp list.
+    #[rocket::async_test]
+    async fn camp_visibility_override_force_shows_globally_hidden_video() {
+        use crate::db::{
+            create_processing_video, VideoParent,
+            list_videos_for_camp, set_video_hidden_globally,
+            set_video_camp_visibility,
+        };
+
+        let db = TestDbBuilder::new()
+            .coach("coach_user", Some("Coach"))
+            .student("student_user", Some("Sam"))
+            .build()
+            .await
+            .unwrap();
+
+        let coach = db.user_id("coach_user").unwrap();
+        let student = db.user_id("student_user").unwrap();
+
+        let camp_id: i64 = sqlx::query_scalar(
+            "INSERT INTO camps (student_id, coach_id, name) VALUES (?, ?, 'Force-show test') RETURNING id",
+        )
+        .bind(student)
+        .bind(coach)
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+
+        let video_id = create_processing_video(
+            &db.pool,
+            VideoParent::Camp(camp_id),
+            "Hidden clip",
+            None,
+            coach,
+        )
+        .await
+        .unwrap();
+
+        // Globally hide the video.
+        set_video_hidden_globally(&db.pool, video_id, true, coach).await.unwrap();
+
+        // Without override the camp list is empty.
+        let before = list_videos_for_camp(&db.pool, camp_id).await.unwrap();
+        assert_eq!(before.len(), 0, "globally hidden video absent from camp list");
+
+        // Coach adds a camp-scope force-show.
+        set_video_camp_visibility(&db.pool, video_id, camp_id, true, coach)
+            .await
+            .unwrap();
+
+        // Now it appears in the camp list.
+        let after = list_videos_for_camp(&db.pool, camp_id).await.unwrap();
+        assert_eq!(after.len(), 1, "force-shown video appears in camp list");
+    }
+
+    /// Non-coach (student) gets 403 on the visibility route.
+    #[rocket::async_test]
+    async fn camp_video_visibility_route_rejects_student() {
+        use crate::test::test_utils::{create_standard_test_db, setup_test_client};
+        use rocket::http::{ContentType, Status};
+
+        let test_db = create_standard_test_db().await;
+        let coach_id = test_db.user_id("coach_user").unwrap();
+        let student_id = test_db.user_id("student_user").unwrap();
+        let (client, db) = setup_test_client(test_db).await;
+
+        let camp_id: i64 = sqlx::query_scalar(
+            "INSERT INTO camps (student_id, coach_id, name) VALUES (?, ?, 'Auth test') RETURNING id",
+        )
+        .bind(student_id)
+        .bind(coach_id)
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+
+        let video_id: i64 = sqlx::query_scalar(
+            "INSERT INTO videos (parent_kind, camp_id, title, kind, processing_status, uploaded_by_id) \
+             VALUES ('camp', ?, 'test', 'external', 'ready', ?) RETURNING id",
+        )
+        .bind(camp_id)
+        .bind(coach_id)
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+
+        // Student cannot set camp video visibility.
+        login_as(&client, "student_user").await;
+        let resp = client
+            .put(format!("/api/camps/{}/videos/{}/visibility", camp_id, video_id))
+            .header(ContentType::JSON)
+            .body(r#"{"visible": false}"#)
+            .dispatch()
+            .await;
+        assert_eq!(resp.status(), Status::Forbidden);
+    }
+
+    /// Coach gets 204 on the visibility route.
+    #[rocket::async_test]
+    async fn camp_video_visibility_route_coach_gets_204() {
+        use crate::test::test_utils::{create_standard_test_db, setup_test_client};
+        use rocket::http::{ContentType, Status};
+
+        let test_db = create_standard_test_db().await;
+        let coach_id = test_db.user_id("coach_user").unwrap();
+        let student_id = test_db.user_id("student_user").unwrap();
+        let (client, db) = setup_test_client(test_db).await;
+
+        let camp_id: i64 = sqlx::query_scalar(
+            "INSERT INTO camps (student_id, coach_id, name) VALUES (?, ?, 'Coach test') RETURNING id",
+        )
+        .bind(student_id)
+        .bind(coach_id)
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+
+        let video_id: i64 = sqlx::query_scalar(
+            "INSERT INTO videos (parent_kind, camp_id, title, kind, processing_status, uploaded_by_id) \
+             VALUES ('camp', ?, 'clip', 'external', 'ready', ?) RETURNING id",
+        )
+        .bind(camp_id)
+        .bind(coach_id)
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+
+        login_as(&client, "coach_user").await;
+        let resp = client
+            .put(format!("/api/camps/{}/videos/{}/visibility", camp_id, video_id))
+            .header(ContentType::JSON)
+            .body(r#"{"visible": false}"#)
+            .dispatch()
+            .await;
+        assert_eq!(resp.status(), Status::NoContent);
+
+        // Verify the override row was created.
+        let count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM video_visibility_overrides \
+             WHERE scope_kind='camp' AND camp_id=? AND video_id=? AND visible=0",
+        )
+        .bind(camp_id)
+        .bind(video_id)
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+        assert_eq!(count, 1);
+    }
 }

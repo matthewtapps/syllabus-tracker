@@ -10,7 +10,7 @@ use crate::db::camps::{
     list_camps_for_student, remove_camp_technique, update_camp, Camp, CampTechnique, NewCamp,
 };
 use crate::db::competitions::{get_competition, registration_for};
-use crate::db::list_videos_for_camp;
+use crate::db::{list_videos_for_camp, set_video_camp_visibility};
 use crate::models::Video;
 
 /// Guard query: is the given technique pinned for the given student?
@@ -296,6 +296,36 @@ pub async fn api_list_camp_videos(
         .await
         .map_err(Status::from)?;
     Ok(Json(CampVideosResponse { videos }))
+}
+
+/// CC-015: Set a per-camp visibility override for a video.
+///
+/// `PUT /api/camps/<camp_id>/videos/<video_id>/visibility`
+/// Body: `{"visible": bool}`
+///
+/// `visible=false` hides the video from the camp list for students without
+/// affecting its visibility in any other context (library, technique list,
+/// other camps). `visible=true` force-shows a globally-hidden video in this
+/// camp's list. Requires `ManageCamps`.
+#[derive(Deserialize)]
+pub struct SetCampVideoVisibilityRequest {
+    pub visible: bool,
+}
+
+#[instrument(skip(pool, body, user))]
+#[put("/camps/<camp_id>/videos/<video_id>/visibility", data = "<body>")]
+pub async fn api_set_camp_video_visibility(
+    camp_id: i64,
+    video_id: i64,
+    body: Json<SetCampVideoVisibilityRequest>,
+    user: User,
+    pool: &State<Pool<Sqlite>>,
+) -> Result<Status, Status> {
+    require_camps(&user)?;
+    set_video_camp_visibility(pool.inner(), video_id, camp_id, body.visible, user.id)
+        .await
+        .map_err(Status::from)?;
+    Ok(Status::NoContent)
 }
 
 #[derive(Deserialize)]

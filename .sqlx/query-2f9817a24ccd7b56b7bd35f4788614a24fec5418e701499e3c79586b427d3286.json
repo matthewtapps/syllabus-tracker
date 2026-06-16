@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT id, parent_kind, technique_id, student_id, thread_id,\n                camp_id AS \"camp_id?: i64\", match_id AS \"match_id?: i64\", title, description,\n                position, kind, processing_status, processing_error, storage_key, bytes,\n                duration_seconds, width, height,\n                external_url, external_host, external_video_id, uploaded_by_id,\n                created_at, updated_at, hidden_at\n         FROM videos\n         WHERE camp_id = ?\n           AND deleted_at IS NULL\n           AND hidden_at IS NULL\n         ORDER BY position ASC, id ASC",
+  "query": "SELECT v.id, v.parent_kind, v.technique_id, v.student_id, v.thread_id,\n                v.camp_id AS \"camp_id?: i64\", v.match_id AS \"match_id?: i64\",\n                v.title, v.description, v.position, v.kind,\n                v.processing_status, v.processing_error, v.storage_key, v.bytes,\n                v.duration_seconds, v.width, v.height,\n                v.external_url, v.external_host, v.external_video_id, v.uploaded_by_id,\n                v.created_at, v.updated_at, v.hidden_at\n         FROM videos v\n         LEFT JOIN video_visibility_overrides ov\n                ON ov.video_id = v.id\n               AND ov.scope_kind = 'camp'\n               AND ov.scope_id = ?1\n         WHERE v.camp_id = ?1\n           AND v.deleted_at IS NULL\n           AND CASE\n                 WHEN ov.visible IS NOT NULL THEN ov.visible\n                 ELSE (v.hidden_at IS NULL)\n               END = 1\n         ORDER BY v.position ASC, v.id ASC",
   "describe": {
     "columns": [
       {
@@ -160,5 +160,5 @@
       true
     ]
   },
-  "hash": "a4cc0d5c213b95a1be428d7beebc4bcb7706cfd1434fa65474eafc968e0e8c0f"
+  "hash": "2f9817a24ccd7b56b7bd35f4788614a24fec5418e701499e3c79586b427d3286"
 }

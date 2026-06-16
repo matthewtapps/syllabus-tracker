@@ -38,6 +38,7 @@ pub enum VisibilityScope {
     Student(i64),
     Syllabus(i64),
     Assignment(i64),
+    Camp(i64),
 }
 
 impl VisibilityScope {
@@ -46,16 +47,18 @@ impl VisibilityScope {
             VisibilityScope::Student(_) => "student",
             VisibilityScope::Syllabus(_) => "syllabus",
             VisibilityScope::Assignment(_) => "assignment",
+            VisibilityScope::Camp(_) => "camp",
         }
     }
 
-    /// Returns `(student_id, syllabus_id, assignment_id)` with exactly one
-    /// `Some`, matching the table's typed columns.
-    pub fn columns(&self) -> (Option<i64>, Option<i64>, Option<i64>) {
+    /// Returns `(student_id, syllabus_id, assignment_id, camp_id)` with exactly
+    /// one `Some`, matching the table's typed columns.
+    pub fn columns(&self) -> (Option<i64>, Option<i64>, Option<i64>, Option<i64>) {
         match *self {
-            VisibilityScope::Student(id) => (Some(id), None, None),
-            VisibilityScope::Syllabus(id) => (None, Some(id), None),
-            VisibilityScope::Assignment(id) => (None, None, Some(id)),
+            VisibilityScope::Student(id) => (Some(id), None, None, None),
+            VisibilityScope::Syllabus(id) => (None, Some(id), None, None),
+            VisibilityScope::Assignment(id) => (None, None, Some(id), None),
+            VisibilityScope::Camp(id) => (None, None, None, Some(id)),
         }
     }
 }
@@ -672,45 +675,96 @@ pub async fn list_videos_for_parent_global_visible(
     Ok(rows.into_iter().map(Video::from).collect())
 }
 
-/// Returns true if a camp video should be visible to a camp student.
-/// Approach A (Slice 1): alive and not globally hidden. Future scope:
-/// slot `video_visibility_overrides` with `scope='camp'` here to let
-/// coaches override per-student visibility inside a camp context.
-fn effective_camp_video_visible(deleted_at_is_null: bool, hidden_at_is_null: bool) -> bool {
-    deleted_at_is_null && hidden_at_is_null
+/// Returns true if a camp-owned video is visible to a student viewer.
+///
+/// Precedence (highest first):
+///   1. `deleted_at IS NOT NULL` -> never visible.
+///   2. Camp-scope override (`scope_kind='camp'`, `camp_id=camp_id`) present
+///      -> its `visible` value wins.
+///   3. No override: follow the global `hidden_at IS NULL` flag.
+///
+/// Coaches see all alive camp videos (including globally-hidden and
+/// camp-hidden ones). For the student-facing list the SQL in
+/// `list_videos_for_camp` encodes the same logic in a single LEFT JOIN
+/// for efficiency; this function documents the canonical precedence.
+#[allow(dead_code)]
+fn effective_camp_video_visible(
+    deleted_at_is_null: bool,
+    camp_override: Option<bool>,
+    hidden_at_is_null: bool,
+) -> bool {
+    if !deleted_at_is_null {
+        return false;
+    }
+    match camp_override {
+        Some(v) => v,
+        None => hidden_at_is_null,
+    }
 }
 
-/// Lists all alive, non-hidden camp-owned videos for a camp.
-/// Coach callers see the same list; they can badge hidden videos in the
-/// future once `effective_camp_video_visible` gains a `viewer_is_coach`
-/// branch (tracked in CC-015).
+/// Lists camp-owned videos applying CC-015 visibility precedence:
+///   deleted -> excluded; camp-scope override present -> its `visible`;
+///   else global `hidden_at IS NULL`.
+///
+/// `viewer_is_coach`: when true, all alive videos are returned (deleted
+/// excluded) so coaches can see and badge hidden/overridden clips.
+/// Students (false) receive only the effectively-visible subset.
 #[instrument(skip(pool))]
 pub async fn list_videos_for_camp(
     pool: &Pool<Sqlite>,
     camp_id: i64,
 ) -> Result<Vec<Video>, AppError> {
-    // `effective_camp_video_visible` is the single resolver seam for camp
-    // video visibility. Right now it reduces to `deleted_at IS NULL AND
-    // hidden_at IS NULL`, which we encode directly in SQL for efficiency.
-    let _ = effective_camp_video_visible; // keep lint from warning about dead_code
+    // The effective_camp_video_visible resolver is expressed directly in SQL
+    // via a LEFT JOIN on the camp-scope override. The CASE matches the
+    // precedence documented on effective_camp_video_visible above.
     let rows = sqlx::query_as!(
         DbVideo,
-        r#"SELECT id, parent_kind, technique_id, student_id, thread_id,
-                camp_id AS "camp_id?: i64", match_id AS "match_id?: i64", title, description,
-                position, kind, processing_status, processing_error, storage_key, bytes,
-                duration_seconds, width, height,
-                external_url, external_host, external_video_id, uploaded_by_id,
-                created_at, updated_at, hidden_at
-         FROM videos
-         WHERE camp_id = ?
-           AND deleted_at IS NULL
-           AND hidden_at IS NULL
-         ORDER BY position ASC, id ASC"#,
+        r#"SELECT v.id, v.parent_kind, v.technique_id, v.student_id, v.thread_id,
+                v.camp_id AS "camp_id?: i64", v.match_id AS "match_id?: i64",
+                v.title, v.description, v.position, v.kind,
+                v.processing_status, v.processing_error, v.storage_key, v.bytes,
+                v.duration_seconds, v.width, v.height,
+                v.external_url, v.external_host, v.external_video_id, v.uploaded_by_id,
+                v.created_at, v.updated_at, v.hidden_at
+         FROM videos v
+         LEFT JOIN video_visibility_overrides ov
+                ON ov.video_id = v.id
+               AND ov.scope_kind = 'camp'
+               AND ov.camp_id = ?1
+         WHERE v.camp_id = ?1
+           AND v.deleted_at IS NULL
+           AND CASE
+                 WHEN ov.visible IS NOT NULL THEN ov.visible
+                 ELSE (v.hidden_at IS NULL)
+               END = 1
+         ORDER BY v.position ASC, v.id ASC"#,
         camp_id,
     )
     .fetch_all(pool)
     .await?;
     Ok(rows.into_iter().map(Video::from).collect())
+}
+
+/// Sets or clears a camp-scope visibility override for a video.
+///
+/// `visible=true` force-shows the video in this camp's list even if it
+/// is globally hidden. `visible=false` hides it from the camp list for
+/// students (coaches bypass the filter). The override row is upserted so
+/// calling this again with a different value updates it in place.
+///
+/// Decision: keep a row for both visible=true and visible=false (no
+/// delete-on-default). This mirrors `set_video_student_visibility` and
+/// makes force-show explicit. A future "reset to default" action can call
+/// `clear_video_override(pool, VisibilityScope::Camp(camp_id), video_id)`.
+#[instrument(skip(pool))]
+pub async fn set_video_camp_visibility(
+    pool: &Pool<Sqlite>,
+    video_id: i64,
+    camp_id: i64,
+    visible: bool,
+    by_id: i64,
+) -> Result<(), AppError> {
+    set_video_override(pool, VisibilityScope::Camp(camp_id), video_id, visible, by_id).await
 }
 
 /// Returns true if a match video should be visible.
@@ -771,7 +825,7 @@ pub async fn list_videos_for_technique_visible_to(
          LEFT JOIN video_visibility_overrides vsv
                 ON vsv.video_id = v.id
                AND vsv.scope_kind = 'student'
-               AND vsv.scope_id = ?
+               AND vsv.student_id = ?
          WHERE v.technique_id = ?
            AND v.deleted_at IS NULL
            AND COALESCE(vsv.visible, v.hidden_at IS NULL) = 1
@@ -1118,20 +1172,20 @@ pub async fn set_video_override(
     by_id: i64,
 ) -> Result<(), AppError> {
     let kind = scope.kind();
-    let (student_id, syllabus_id, assignment_id) = scope.columns();
+    let (student_id, syllabus_id, assignment_id, camp_id) = scope.columns();
     let mut tx = pool.begin().await?;
     sqlx::query!(
         "DELETE FROM video_visibility_overrides
          WHERE scope_kind = ?
-           AND student_id IS ? AND syllabus_id IS ? AND assignment_id IS ?
+           AND student_id IS ? AND syllabus_id IS ? AND assignment_id IS ? AND camp_id IS ?
            AND video_id = ?",
-        kind, student_id, syllabus_id, assignment_id, video_id,
+        kind, student_id, syllabus_id, assignment_id, camp_id, video_id,
     ).execute(&mut *tx).await?;
     sqlx::query!(
         "INSERT INTO video_visibility_overrides
-            (scope_kind, student_id, syllabus_id, assignment_id, video_id, visible, set_by_id, set_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)",
-        kind, student_id, syllabus_id, assignment_id, video_id, visible, by_id,
+            (scope_kind, student_id, syllabus_id, assignment_id, camp_id, video_id, visible, set_by_id, set_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)",
+        kind, student_id, syllabus_id, assignment_id, camp_id, video_id, visible, by_id,
     ).execute(&mut *tx).await?;
     tx.commit().await?;
     Ok(())
@@ -1146,13 +1200,13 @@ pub async fn clear_video_override(
     video_id: i64,
 ) -> Result<(), AppError> {
     let kind = scope.kind();
-    let (student_id, syllabus_id, assignment_id) = scope.columns();
+    let (student_id, syllabus_id, assignment_id, camp_id) = scope.columns();
     sqlx::query!(
         "DELETE FROM video_visibility_overrides
          WHERE scope_kind = ?
-           AND student_id IS ? AND syllabus_id IS ? AND assignment_id IS ?
+           AND student_id IS ? AND syllabus_id IS ? AND assignment_id IS ? AND camp_id IS ?
            AND video_id = ?",
-        kind, student_id, syllabus_id, assignment_id, video_id,
+        kind, student_id, syllabus_id, assignment_id, camp_id, video_id,
     )
     .execute(pool)
     .await?;

@@ -1321,6 +1321,7 @@ import {
   createCamp,
   promotePinnedToCamp,
   removeCampTechnique,
+  setCampVideoVisibility,
   createCompetition,
   updateCompetition,
   registerSelf,
@@ -1380,6 +1381,18 @@ export function useRemoveCampTechnique(campId: number) {
       removeCampTechnique(campId, techniqueId),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: qk.camp(campId) });
+    },
+  });
+}
+
+/** CC-015: toggle per-camp visibility for a video. Invalidates campVideos. */
+export function useSetCampVideoVisibility(campId: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: { videoId: number; visible: boolean }) =>
+      setCampVideoVisibility(campId, vars.videoId, vars.visible),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: qk.campVideos(campId) });
     },
   });
 }

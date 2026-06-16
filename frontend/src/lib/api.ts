@@ -1082,6 +1082,21 @@ export async function setVideoStudentVisibility(
   });
 }
 
+/** CC-015: set a per-camp visibility override for a video. */
+export async function setCampVideoVisibility(
+  campId: number,
+  videoId: number,
+  visible: boolean,
+): Promise<void> {
+  const response = await fetch(`/api/camps/${campId}/videos/${videoId}/visibility`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ visible }),
+    credentials: "include",
+  });
+  if (!response.ok) throw response;
+}
+
 export async function uploadVideo(
   techniqueId: number,
   file: File,
