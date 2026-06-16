@@ -781,11 +781,23 @@ export interface CreatedLibraryTechnique {
 export async function createLibraryTechnique(data: {
   name: string;
   description: string;
+  is_global?: boolean;
 }): Promise<Response> {
   return await fetch("/api/techniques", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(data),
+    body: JSON.stringify({
+      name: data.name,
+      description: data.description,
+      ...(data.is_global === undefined ? {} : { is_global: data.is_global }),
+    }),
+    credentials: "include",
+  });
+}
+
+export async function promoteTechniqueToGlobal(techniqueId: number): Promise<Response> {
+  return await fetch(`/api/techniques/${techniqueId}/global`, {
+    method: "PATCH",
     credentials: "include",
   });
 }
@@ -1239,6 +1251,7 @@ export interface SstRow {
   technique_id: number;
   technique_name: string;
   technique_description: string;
+  is_global: boolean;
   status: "red" | "amber" | "green";
   student_notes: string;
   coach_notes: string;

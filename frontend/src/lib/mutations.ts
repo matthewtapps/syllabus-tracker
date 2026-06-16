@@ -18,6 +18,7 @@ import {
   linkVideo,
   markStudentTechniqueSeen,
   pinTechniqueForStudent,
+  promoteTechniqueToGlobal,
   removeTagFromTechnique,
   removeTechniqueFromCollection,
   reorderVideos,
@@ -514,6 +515,16 @@ export function useUpdateLibraryTechnique() {
       qc.invalidateQueries({ queryKey: qk.libraryTechniques() });
       qc.invalidateQueries({ predicate: qk.matches.anyStudentTechniqueScope });
     },
+  });
+}
+
+export function usePromoteTechniqueToGlobal() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (vars: { techniqueId: number }) =>
+      unwrap(await promoteTechniqueToGlobal(vars.techniqueId)),
+    onSuccess: () =>
+      qc.invalidateQueries({ queryKey: qk.libraryTechniques() }),
   });
 }
 
