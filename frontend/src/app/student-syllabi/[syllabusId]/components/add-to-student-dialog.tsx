@@ -19,9 +19,10 @@ interface AddToStudentDialogProps {
   onOpenChange: (b: boolean) => void;
   studentId: number;
   syllabusId: number;
-  /** Technique ids already present on the assignment's SST set (visible or
-   *  hidden) so we can highlight them as already-there. */
-  presentTechniqueIds: Set<number>;
+  /** technique_ids on the syllabus and currently VISIBLE — excluded from the picker. */
+  visibleTechniqueIds: Set<number>;
+  /** technique_id -> sstId for rows on the syllabus but HIDDEN — kept (later: "make visible"). */
+  hiddenTechniqueSstByTid: Map<number, number>;
 }
 
 export function AddToStudentDialog({
@@ -29,7 +30,7 @@ export function AddToStudentDialog({
   onOpenChange,
   studentId,
   syllabusId,
-  presentTechniqueIds,
+  visibleTechniqueIds,
 }: AddToStudentDialogProps) {
   const libraryQuery = useLibraryTechniques();
   const techniques = useMemo(
@@ -66,9 +67,10 @@ export function AddToStudentDialog({
       const matchesTags =
         activeTags.length === 0 ||
         activeTags.every((tag) => t.tags.some((x) => x.name === tag));
-      return matchesText && matchesTags;
+      const notAlreadyVisible = !visibleTechniqueIds.has(t.id);
+      return matchesText && matchesTags && notAlreadyVisible;
     });
-  }, [techniques, search, activeTags]);
+  }, [techniques, search, activeTags, visibleTechniqueIds]);
 
   function toggle(id: number) {
     setSelected((prev) => {
@@ -156,7 +158,6 @@ export function AddToStudentDialog({
             <ul className="divide-y divide-border">
               {filtered.map((t) => {
                 const checked = selected.has(t.id);
-                const already = presentTechniqueIds.has(t.id);
                 return (
                   <li key={t.id}>
                     <label
@@ -172,11 +173,6 @@ export function AddToStudentDialog({
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-sm font-medium">
                           {t.name}
-                          {already && (
-                            <span className="ml-2 text-xs font-normal text-muted-foreground">
-                              (already in their list)
-                            </span>
-                          )}
                         </p>
                       </div>
                     </label>

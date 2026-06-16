@@ -412,8 +412,19 @@ function Detail({
         onOpenChange={setAddOpen}
         studentId={studentId}
         syllabusId={syllabusId}
-        presentTechniqueIds={
-          new Set(techniques.map((t) => t.technique_id))
+        visibleTechniqueIds={
+          new Set(
+            (query.data?.techniques ?? [])
+              .filter((s) => !s.hidden_at)
+              .map((s) => s.technique_id),
+          )
+        }
+        hiddenTechniqueSstByTid={
+          new Map(
+            (query.data?.techniques ?? [])
+              .filter((s) => s.hidden_at)
+              .map((s) => [s.technique_id, s.id]),
+          )
         }
       />
     </div>
