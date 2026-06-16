@@ -30,6 +30,7 @@ pub struct ActivityRow {
     pub actor_user_id: i64,
     pub actor_name: Option<String>,
     pub target_student_id: Option<i64>,
+    pub target_student_name: Option<String>,
     pub technique_id: Option<i64>,
     pub technique_name: Option<String>,
     pub syllabus_id: Option<i64>,
@@ -216,6 +217,7 @@ pub async fn feed(
                           act.actor_user_id    AS "actor_user_id!: i64",
                           u.display_name       AS "actor_name?: String",
                           act.target_student_id AS "target_student_id?: i64",
+                          tu.display_name      AS "target_student_name?: String",
                           act.technique_id     AS "technique_id?: i64",
                           t.name               AS "technique_name?: String",
                           act.syllabus_id      AS "syllabus_id?: i64",
@@ -234,6 +236,7 @@ pub async fn feed(
                           END AS "is_after_cursor!: i64"
                    FROM activity act
                    LEFT JOIN users u      ON u.id = act.actor_user_id
+                   LEFT JOIN users tu     ON tu.id = act.target_student_id
                    LEFT JOIN techniques t ON t.id = act.technique_id
                    LEFT JOIN syllabi s    ON s.id = act.syllabus_id
                    LEFT JOIN videos v     ON v.id = act.video_id
@@ -274,6 +277,7 @@ pub async fn feed(
                         actor_user_id: r.actor_user_id,
                         actor_name: r.actor_name,
                         target_student_id: r.target_student_id,
+                        target_student_name: r.target_student_name,
                         technique_id: r.technique_id,
                         technique_name: r.technique_name,
                         syllabus_id: r.syllabus_id,
@@ -297,6 +301,7 @@ pub async fn feed(
                           act.actor_user_id    AS "actor_user_id!: i64",
                           u.display_name       AS "actor_name?: String",
                           act.target_student_id AS "target_student_id?: i64",
+                          tu.display_name      AS "target_student_name?: String",
                           act.technique_id     AS "technique_id?: i64",
                           t.name               AS "technique_name?: String",
                           act.syllabus_id      AS "syllabus_id?: i64",
@@ -315,6 +320,7 @@ pub async fn feed(
                           END AS "is_after_cursor!: i64"
                    FROM activity act
                    LEFT JOIN users u      ON u.id = act.actor_user_id
+                   LEFT JOIN users tu     ON tu.id = act.target_student_id
                    LEFT JOIN techniques t ON t.id = act.technique_id
                    LEFT JOIN syllabi s    ON s.id = act.syllabus_id
                    LEFT JOIN videos v     ON v.id = act.video_id
@@ -355,6 +361,7 @@ pub async fn feed(
                         actor_user_id: r.actor_user_id,
                         actor_name: r.actor_name,
                         target_student_id: r.target_student_id,
+                        target_student_name: r.target_student_name,
                         technique_id: r.technique_id,
                         technique_name: r.technique_name,
                         syllabus_id: r.syllabus_id,
@@ -409,6 +416,7 @@ pub async fn dashboard_activity_feed(
                   act.actor_user_id     AS "actor_user_id!: i64",
                   u.display_name        AS "actor_name?: String",
                   act.target_student_id AS "target_student_id?: i64",
+                  tu.display_name       AS "target_student_name?: String",
                   act.technique_id      AS "technique_id?: i64",
                   t.name                AS "technique_name?: String",
                   act.syllabus_id       AS "syllabus_id?: i64",
@@ -420,6 +428,7 @@ pub async fn dashboard_activity_feed(
                   act.context_kind      AS "context_kind?: String"
            FROM activity act
            JOIN users u           ON u.id = act.actor_user_id
+           LEFT JOIN users tu     ON tu.id = act.target_student_id
            LEFT JOIN techniques t ON t.id = act.technique_id
            LEFT JOIN syllabi s    ON s.id = act.syllabus_id
            LEFT JOIN videos v     ON v.id = act.video_id
@@ -455,6 +464,7 @@ pub async fn dashboard_activity_feed(
             actor_user_id: r.actor_user_id,
             actor_name: r.actor_name,
             target_student_id: r.target_student_id,
+            target_student_name: r.target_student_name,
             technique_id: r.technique_id,
             technique_name: r.technique_name,
             syllabus_id: r.syllabus_id,
