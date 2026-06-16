@@ -706,9 +706,10 @@ fn effective_camp_video_visible(
 ///   deleted -> excluded; camp-scope override present -> its `visible`;
 ///   else global `hidden_at IS NULL`.
 ///
-/// `viewer_is_coach`: when true, all alive videos are returned (deleted
-/// excluded) so coaches can see and badge hidden/overridden clips.
-/// Students (false) receive only the effectively-visible subset.
+/// Returns the effectively-visible subset for everyone today (coaches and
+/// students alike). TODO(CC-015 follow-up): add a `viewer_is_coach` bypass so
+/// coaches also see camp-hidden clips, badged, the way the syllabus surface
+/// does for globally-hidden videos.
 #[instrument(skip(pool))]
 pub async fn list_videos_for_camp(
     pool: &Pool<Sqlite>,
