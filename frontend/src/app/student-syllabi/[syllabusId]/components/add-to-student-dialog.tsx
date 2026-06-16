@@ -167,7 +167,7 @@ export function AddToStudentDialog({
           <DialogTitle>Add to this student</DialogTitle>
         </DialogHeader>
         <Tabs defaultValue="existing" className="flex min-h-0 flex-1 flex-col">
-          <TabsList className="grid grid-cols-2">
+          <TabsList className="grid w-full grid-cols-2">
             <TabsTrigger value="existing">Add existing</TabsTrigger>
             <TabsTrigger value="create">Create new</TabsTrigger>
           </TabsList>
@@ -206,12 +206,14 @@ export function AddToStudentDialog({
                 )}
               </div>
             )}
-            <p className="text-xs text-muted-foreground">
-              <span className="font-medium text-foreground">
-                {selected.size}
-              </span>{" "}
-              selected · {filtered.length} of {techniques.length} shown
-            </p>
+            {selected.size > 0 && (
+              <p className="text-xs text-muted-foreground">
+                <span className="font-medium text-foreground">
+                  {selected.size}
+                </span>{" "}
+                selected
+              </p>
+            )}
             {hiddenMatch && (
               <div className="flex items-center justify-between gap-2 rounded border border-border bg-muted/40 px-3 py-2 text-sm">
                 <span>{hiddenMatch.technique_name} is on their list but hidden.</span>

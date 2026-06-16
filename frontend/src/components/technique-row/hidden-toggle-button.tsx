@@ -33,6 +33,24 @@ export function HiddenToggleButton() {
         hidden
           ? `Showing ${sst.technique_name} for this student`
           : `Hidden ${sst.technique_name} for this student`,
+        {
+          action: {
+            label: "Undo",
+            onClick: async () => {
+              try {
+                await mutation.mutateAsync({
+                  sstId: sst.id,
+                  studentId,
+                  syllabusId,
+                  hidden,
+                });
+                onHiddenToggled?.(sst.technique_id, hidden);
+              } catch {
+                toast.error("Failed to undo");
+              }
+            },
+          },
+        },
       );
     } catch {
       toast.error("Failed to update visibility");

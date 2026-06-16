@@ -250,76 +250,49 @@ function Detail({
           )}
         </p>
         {!isOwnView && (
-          <>
-            <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
-              <Button
-                variant="outline"
-                size="icon"
-                aria-label="Sync with current syllabus"
-                onClick={() => setDiffOpen(true)}
-              >
-                <GitCompare className="h-4 w-4" aria-hidden />
-              </Button>
-              <Button
-                variant="outline"
-                size="icon"
-                aria-label={
-                  assignment.graduated_at
-                    ? 'Ungraduate this syllabus'
-                    : 'Graduate this syllabus'
-                }
-                onClick={() => setGraduateOpen(true)}
-                className={cn(assignment.graduated_at && 'text-status-green')}
-              >
-                <GraduationCap className="h-4 w-4" aria-hidden />
-              </Button>
-              <Button
-                variant="outline"
-                size="icon"
-                aria-label="Unassign syllabus"
-                onClick={() => setUnassignOpen(true)}
-                className="text-destructive"
-              >
-                <Trash2 className="h-4 w-4" aria-hidden />
-              </Button>
-            </div>
-            <Button className="w-full" onClick={() => setAddOpen(true)}>
-              <Plus className="mr-2 h-4 w-4" aria-hidden />
-              Add technique
+          <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+            <Button
+              variant="outline"
+              size="icon"
+              aria-label="Sync with current syllabus"
+              onClick={() => setDiffOpen(true)}
+            >
+              <GitCompare className="h-4 w-4" aria-hidden />
             </Button>
-          </>
+            <Button
+              variant="outline"
+              size="icon"
+              aria-label={
+                assignment.graduated_at
+                  ? 'Ungraduate this syllabus'
+                  : 'Graduate this syllabus'
+              }
+              onClick={() => setGraduateOpen(true)}
+              className={cn(assignment.graduated_at && 'text-status-green')}
+            >
+              <GraduationCap className="h-4 w-4" aria-hidden />
+            </Button>
+            <Button
+              variant="outline"
+              size="icon"
+              aria-label="Unassign syllabus"
+              onClick={() => setUnassignOpen(true)}
+              className="text-destructive"
+            >
+              <Trash2 className="h-4 w-4" aria-hidden />
+            </Button>
+          </div>
         )}
       </div>
 
       {!isOwnView && (
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <Tabs
-            value={tab}
-            onValueChange={(v) => changeTab(v as 'main' | 'custom' | 'hidden')}
-          >
-            <TabsList>
-              <TabsTrigger value="main">Main</TabsTrigger>
-              <TabsTrigger value="custom">
-                Custom{custom.length ? ` (${custom.length})` : ''}
-              </TabsTrigger>
-              <TabsTrigger value="hidden">
-                Hidden{hidden.length ? ` (${hidden.length})` : ''}
-              </TabsTrigger>
-            </TabsList>
-          </Tabs>
-          <Select value={sort} onValueChange={(v) => setSort(v as SstSort)}>
-            <SelectTrigger className="w-full sm:w-[180px]">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="recent">Recently active</SelectItem>
-              <SelectItem value="alphabetical">Alphabetical</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
+        <Button className="w-full" onClick={() => setAddOpen(true)}>
+          <Plus className="mr-2 h-4 w-4" aria-hidden />
+          Add technique
+        </Button>
       )}
 
-      {techniques.length > 0 && (
+      {allSsts.length > 0 && (
         <>
           <TechniqueFilters
             search={nav.search}
@@ -329,13 +302,42 @@ function Detail({
             onToggleTag={nav.toggleTag}
             onClearTags={nav.clearTags}
           />
-          <p className="mb-2 text-xs text-muted-foreground">
+          <p className="text-xs text-muted-foreground">
             {filtered.length === techniques.length
               ? `${techniques.length} ${
                   techniques.length === 1 ? 'technique' : 'techniques'
                 }`
               : `${filtered.length} of ${techniques.length} techniques`}
           </p>
+          {!isOwnView && (
+            <Select value={sort} onValueChange={(v) => setSort(v as SstSort)}>
+              <SelectTrigger className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="recent">Recently active</SelectItem>
+                <SelectItem value="alphabetical">Alphabetical</SelectItem>
+              </SelectContent>
+            </Select>
+          )}
+          {!isOwnView && (
+            <Tabs
+              value={tab}
+              onValueChange={(v) =>
+                changeTab(v as 'main' | 'custom' | 'hidden')
+              }
+            >
+              <TabsList className="grid w-full grid-cols-3">
+                <TabsTrigger value="main">Main</TabsTrigger>
+                <TabsTrigger value="custom">
+                  Custom{custom.length ? ` (${custom.length})` : ''}
+                </TabsTrigger>
+                <TabsTrigger value="hidden">
+                  Hidden{hidden.length ? ` (${hidden.length})` : ''}
+                </TabsTrigger>
+              </TabsList>
+            </Tabs>
+          )}
         </>
       )}
 
