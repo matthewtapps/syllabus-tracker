@@ -26,9 +26,16 @@ import {
   TabsList,
   TabsTrigger,
 } from '@/components/ui/tabs';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { EmptyState } from '@/components/empty-state';
 import { TechniqueRow } from '@/components/technique-row';
-import { partitionSsts } from './sst-view';
+import { partitionSsts, sortSsts, type SstSort } from './sst-view';
 import { useAllUsers, useStudentSyllabusTechniques } from '@/lib/queries';
 import {
   useSetAssignmentGraduated,
@@ -135,22 +142,11 @@ function Detail({
       : tab === 'custom'
         ? custom
         : hidden;
-  const techniques = useMemo(() => {
-    return [...activeRows].sort((a, b) => {
-      const latestOf = (sst: SstRow): number => {
-        const candidates = [
-          sst.last_attempt_at,
-          sst.last_coach_update_at,
-          sst.last_student_update_at,
-        ];
-        const timestamps = candidates
-          .filter((t): t is string => t != null)
-          .map((t) => new Date(t).getTime());
-        return timestamps.length > 0 ? Math.max(...timestamps) : 0;
-      };
-      return latestOf(b) - latestOf(a);
-    });
-  }, [activeRows]);
+  const [sort, setSort] = useState<SstSort>('recent');
+  const techniques = useMemo(
+    () => sortSsts(activeRows, sort),
+    [activeRows, sort],
+  );
   const [unassignOpen, setUnassignOpen] = useState(false);
   const [graduateOpen, setGraduateOpen] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
@@ -296,20 +292,31 @@ function Detail({
       </div>
 
       {!isOwnView && (
-        <Tabs
-          value={tab}
-          onValueChange={(v) => changeTab(v as 'main' | 'custom' | 'hidden')}
-        >
-          <TabsList>
-            <TabsTrigger value="main">Main</TabsTrigger>
-            <TabsTrigger value="custom">
-              Custom{custom.length ? ` (${custom.length})` : ''}
-            </TabsTrigger>
-            <TabsTrigger value="hidden">
-              Hidden{hidden.length ? ` (${hidden.length})` : ''}
-            </TabsTrigger>
-          </TabsList>
-        </Tabs>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <Tabs
+            value={tab}
+            onValueChange={(v) => changeTab(v as 'main' | 'custom' | 'hidden')}
+          >
+            <TabsList>
+              <TabsTrigger value="main">Main</TabsTrigger>
+              <TabsTrigger value="custom">
+                Custom{custom.length ? ` (${custom.length})` : ''}
+              </TabsTrigger>
+              <TabsTrigger value="hidden">
+                Hidden{hidden.length ? ` (${hidden.length})` : ''}
+              </TabsTrigger>
+            </TabsList>
+          </Tabs>
+          <Select value={sort} onValueChange={(v) => setSort(v as SstSort)}>
+            <SelectTrigger className="w-full sm:w-[180px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="recent">Recently active</SelectItem>
+              <SelectItem value="alphabetical">Alphabetical</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
       )}
 
       {techniques.length > 0 && (

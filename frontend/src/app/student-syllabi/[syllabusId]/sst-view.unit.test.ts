@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { matchHiddenByName, partitionSsts } from './sst-view';
+import { matchHiddenByName, partitionSsts, sortSsts } from './sst-view';
 
 const row = (over: Partial<import('@/lib/api').SstRow>) =>
   ({
@@ -46,5 +46,28 @@ describe('matchHiddenByName', () => {
   });
   test('returns null when nothing matches', () => {
     expect(matchHiddenByName(hidden, 'mount')).toBeNull();
+  });
+});
+
+describe('sortSsts', () => {
+  const a = row({
+    id: 1,
+    technique_name: 'Zebra',
+    last_attempt_at: '2026-01-02T00:00:00Z',
+    last_coach_update_at: null,
+    last_student_update_at: null,
+  });
+  const b = row({
+    id: 2,
+    technique_name: 'Alpha',
+    last_attempt_at: '2026-01-01T00:00:00Z',
+    last_coach_update_at: null,
+    last_student_update_at: null,
+  });
+  test('recent puts most-recent activity first', () => {
+    expect(sortSsts([b, a], 'recent').map((r) => r.id)).toEqual([1, 2]);
+  });
+  test('alphabetical sorts by name', () => {
+    expect(sortSsts([a, b], 'alphabetical').map((r) => r.id)).toEqual([2, 1]);
   });
 });

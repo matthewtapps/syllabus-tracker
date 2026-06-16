@@ -34,3 +34,20 @@ export function matchHiddenByName(
     hidden.find((h) => h.technique_name.toLowerCase().includes(needle)) ?? null
   );
 }
+
+export type SstSort = 'recent' | 'alphabetical';
+
+function recencyScore(s: SstRow): number {
+  const ts = [s.last_attempt_at, s.last_coach_update_at, s.last_student_update_at]
+    .filter((t): t is string => t != null)
+    .map((t) => new Date(t).getTime());
+  return ts.length ? Math.max(...ts) : 0;
+}
+
+export function sortSsts(rows: SstRow[], sort: SstSort): SstRow[] {
+  const copy = [...rows];
+  if (sort === 'alphabetical') {
+    return copy.sort((a, b) => a.technique_name.localeCompare(b.technique_name));
+  }
+  return copy.sort((a, b) => recencyScore(b) - recencyScore(a));
+}
