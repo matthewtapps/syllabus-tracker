@@ -14,7 +14,7 @@
 
 import { rowToViewContext, viewContextHref } from "./view-context";
 import { refToken } from "./entity-ref";
-import { STATUS_LABELS } from "./status";
+import { STATUS_LABELS, type Status } from "./status";
 
 /** Canonical ActivityRow type. Exported so api.ts and callers can import it
  *  rather than re-declaring an identical shape. */
@@ -51,6 +51,11 @@ export interface ActivityLine {
   /** When true, the feed should not render the syllabus surface chip (the
    *  syllabus is already named inline). */
   suppressSurface?: boolean;
+  /** For status-change lines: the user-facing status label rendered after the
+   *  verb, preceded by a colour dot. */
+  statusLabel?: string;
+  /** The status value driving the dot colour (New=grey, Doing=amber, Done=green). */
+  statusColor?: Status;
 }
 
 export type ActivityScope =
@@ -166,11 +171,11 @@ export function activityLine(row: ActivityRow, scope: ActivityScope = { kind: "g
     case "sst_status_changed": {
       const payload = parsePayload<SstStatusChangedPayload>(row.payload_json);
       const label = payload?.to ? STATUS_LABELS[payload.to] : undefined;
-      if (label && tech) {
+      if (label && tech && payload?.to) {
         if (studentName && syll) {
-          return { verb: `set ${tech} to ${label} on`, subject: `${studentName}'s ${syll}`, href: deep, suppressSurface: true };
+          return { verb: `set ${tech} to`, statusLabel: label, statusColor: payload.to, subject: `${studentName}'s ${syll}`, href: deep, suppressSurface: true };
         }
-        return { verb: `set ${tech} to ${label}`, href: deep };
+        return { verb: `set ${tech} to`, statusLabel: label, statusColor: payload.to, href: deep };
       }
       return tech
         ? { verb: "updated status on", subject: tech, href: deep }

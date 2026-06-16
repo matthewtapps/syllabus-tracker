@@ -277,9 +277,14 @@ describe("ActivityFeedList", () => {
         isLoading={false}
       />,
     );
-    // Inline copy names the technique, status label, student, and syllabus.
-    expect(screen.getByText(/set Knee Cut Pass to Doing on/)).toBeTruthy();
-    expect(screen.getByText(/Jordan Blake's Blue Belt/)).toBeTruthy();
+    // Inline copy names the technique (in the verb), the status label, and the
+    // student+syllabus subject (joined with "on").
+    expect(screen.getByText(/set Knee Cut Pass to/)).toBeTruthy();
+    expect(screen.getByText(/Doing/)).toBeTruthy();
+    expect(screen.getByText(/on Jordan Blake's Blue Belt/)).toBeTruthy();
+    // A colour dot with the amber class should be rendered.
+    const dot = document.querySelector(".bg-status-amber");
+    expect(dot).not.toBeNull();
     // The standalone surface chip must NOT appear (syllabus already named inline).
     expect(screen.queryByText("Blue Belt")).toBeNull();
   });

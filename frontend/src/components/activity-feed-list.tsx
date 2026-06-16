@@ -22,6 +22,7 @@ import { StudentAvatar } from "@/components/student-avatar";
 import { useUser } from "@/lib/current-user-context";
 import { isCoachOrAdmin } from "@/lib/api";
 import { activityLine, type ActivityRow, type ActivityScope } from "@/lib/activity-line";
+import { statusToDotClass } from "@/lib/status";
 import { coalesceActivity } from "@/lib/activity-coalesce";
 import { activitySurface } from "@/lib/view-context";
 import { formatAbsolute, formatRelativeShort } from "@/lib/dates";
@@ -112,7 +113,7 @@ function ActivityRowItem({
   const viewer = useUser();
   const line = activityLine(activityRow, opts.scope);
   const surface = activitySurface(activityRow);
-  const ariaLabel = `${activityRow.actor_name ?? "A student"} ${line.verb}${line.subject ? ` ${line.subject}` : ""}`;
+  const ariaLabel = `${activityRow.actor_name ?? "A student"} ${line.verb}${line.statusLabel ? ` ${line.statusLabel}` : ""}${line.subject ? ` ${line.statusLabel ? "on " : ""}${line.subject}` : ""}`;
   const hideDup = line.href ? true : undefined;
   const { Icon: VerbIcon, colorClass } = verbIconMeta(activityRow.verb);
 
@@ -187,7 +188,20 @@ function ActivityRowItem({
             )}
             <span aria-hidden={hideDup}>
               {line.verb}
-              {line.subject ? ` ${line.subject}` : ""}
+              {line.statusLabel ? (
+                <>
+                  {" "}
+                  <span
+                    className={cn("inline-block h-2 w-2 rounded-full align-middle", line.statusColor ? statusToDotClass(line.statusColor) : "")}
+                    aria-hidden
+                  />
+                  {" "}
+                  {line.statusLabel}
+                  {line.subject ? ` on ${line.subject}` : ""}
+                </>
+              ) : (
+                line.subject ? ` ${line.subject}` : ""
+              )}
             </span>
             {trailing}
           </p>

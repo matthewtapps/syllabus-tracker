@@ -105,7 +105,7 @@ describe("activityLine", () => {
   });
 
   // --- sst_status_changed ---
-  test("sst_status_changed to green renders 'set {technique} to Done'", () => {
+  test("sst_status_changed to green renders structured fields with statusLabel=Done", () => {
     const result = activityLine(
       row({
         verb: "sst_status_changed",
@@ -118,10 +118,13 @@ describe("activityLine", () => {
         payload_json: JSON.stringify({ from: "amber", to: "green" }),
       }),
     );
-    expect(lineText(result)).toBe("set Kimura to Done");
+    expect(result.verb).toBe("set Kimura to");
+    expect(result.statusLabel).toBe("Done");
+    expect(result.statusColor).toBe("green");
+    expect(result.subject).toBeUndefined();
   });
 
-  test("sst_status_changed to amber renders 'set {technique} to Doing'", () => {
+  test("sst_status_changed to amber renders structured fields with statusLabel=Doing", () => {
     const result = activityLine(
       row({
         verb: "sst_status_changed",
@@ -133,7 +136,10 @@ describe("activityLine", () => {
         payload_json: JSON.stringify({ from: "red", to: "amber" }),
       }),
     );
-    expect(lineText(result)).toBe("set Triangle to Doing");
+    expect(result.verb).toBe("set Triangle to");
+    expect(result.statusLabel).toBe("Doing");
+    expect(result.statusColor).toBe("amber");
+    expect(result.subject).toBeUndefined();
   });
 
   test("sst_status_changed with malformed payload falls back gracefully", () => {
@@ -249,7 +255,9 @@ describe("activityLine", () => {
       }),
       // default gym scope
     );
-    expect(result.verb).toBe("set Armbar to Doing on");
+    expect(result.verb).toBe("set Armbar to");
+    expect(result.statusLabel).toBe("Doing");
+    expect(result.statusColor).toBe("amber");
     expect(result.subject).toBe("Charlotte's Blue Belt Syllabus");
     expect(result.suppressSurface).toBe(true);
   });
@@ -271,7 +279,10 @@ describe("activityLine", () => {
       }),
       scope,
     );
-    expect(lineText(result)).toBe("set Armbar to Doing");
+    expect(result.verb).toBe("set Armbar to");
+    expect(result.statusLabel).toBe("Doing");
+    expect(result.statusColor).toBe("amber");
+    expect(result.subject).toBeUndefined();
     expect(result.suppressSurface).toBeFalsy();
   });
 
@@ -293,7 +304,10 @@ describe("activityLine", () => {
       gymScope,
     );
     // actor === target so isCoachAction is false; no possessive even on gym scope
-    expect(lineText(result)).toBe("set Armbar to Doing");
+    expect(result.verb).toBe("set Armbar to");
+    expect(result.statusLabel).toBe("Doing");
+    expect(result.statusColor).toBe("amber");
+    expect(result.subject).toBeUndefined();
     expect(result.suppressSurface).toBeFalsy();
   });
 
