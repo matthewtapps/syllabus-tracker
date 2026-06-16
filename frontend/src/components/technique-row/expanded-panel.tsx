@@ -13,6 +13,7 @@ import {
   VideoVisibilityOverrideBlock,
 } from "./stub-blocks";
 import { DiscussionBlock } from "./discussion-block";
+import { PromoteToLibraryButton } from "./promote-to-library-button";
 
 interface ExpandedPanelProps {
   scrollToVideoId?: number | null;
@@ -40,6 +41,7 @@ export function ExpandedPanel({
           onVideoScrolled={onVideoScrolled}
         />
       ))}
+      <PromoteToLibraryButton />
     </div>
   );
 }

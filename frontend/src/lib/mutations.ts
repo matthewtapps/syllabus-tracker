@@ -521,10 +521,25 @@ export function useUpdateLibraryTechnique() {
 export function usePromoteTechniqueToGlobal() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (vars: { techniqueId: number }) =>
-      unwrap(await promoteTechniqueToGlobal(vars.techniqueId)),
-    onSuccess: () =>
-      qc.invalidateQueries({ queryKey: qk.libraryTechniques() }),
+    mutationFn: async (vars: {
+      techniqueId: number;
+      studentId?: number;
+      syllabusId?: number;
+    }) => unwrap(await promoteTechniqueToGlobal(vars.techniqueId)),
+    onSuccess: (_res, vars) =>
+      Promise.all([
+        qc.invalidateQueries({ queryKey: qk.libraryTechniques() }),
+        ...(vars.studentId != null && vars.syllabusId != null
+          ? [
+              qc.invalidateQueries({
+                queryKey: qk.studentSyllabusTechniques(
+                  vars.studentId,
+                  vars.syllabusId,
+                ),
+              }),
+            ]
+          : []),
+      ]),
   });
 }
 
