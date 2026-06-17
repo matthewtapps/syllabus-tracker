@@ -36,8 +36,12 @@ use axum::{
     routing::post,
 };
 use subtle::ConstantTimeEq;
-use tracing::{error, info, warn};
+use tracing::{Instrument, error, info, warn};
+use tracing_opentelemetry::OpenTelemetrySpanExt;
 use video_job::ProcessJob;
+
+#[path = "../telemetry.rs"]
+mod telemetry;
 
 // ---------------------------------------------------------------------------
 // Server state
@@ -143,26 +147,41 @@ async fn handle_job(
 
     let video_id_str = job.video_id.to_string();
 
-    if state.async_mode {
-        // Async dev mode: spawn detached, return 202 immediately.
-        tokio::spawn(async move {
-            run_worker_fire_and_forget(&video_id_str, &job, &pass_through_vars).await;
-        });
-        StatusCode::ACCEPTED.into_response()
-    } else {
-        // Sync mode (CF container): await the child, return real status.
-        match run_worker_sync(&video_id_str, &job, &pass_through_vars).await {
-            Ok(()) => StatusCode::OK.into_response(),
-            Err(stderr) => {
-                error!(
-                    video_id = job.video_id,
-                    stderr = %stderr,
-                    "transcode-server: video-worker exited with error"
-                );
-                (StatusCode::INTERNAL_SERVER_ERROR, stderr).into_response()
+    // One relay span per job, parented to the backend's enqueue span. Inside
+    // its context we mint the traceparent the child worker continues from, so
+    // the worker's transcode_job span nests under this one (no gap).
+    let span = tracing::info_span!("transcode_relay", video.id = job.video_id);
+    span.set_parent(telemetry::parent_context(job.traceparent.as_deref()));
+
+    async move {
+        let relay_tp = telemetry::current_traceparent();
+        if state.async_mode {
+            // Async dev mode: spawn detached, return 202 immediately.
+            tokio::spawn(async move {
+                run_worker_fire_and_forget(
+                    &video_id_str, &job, &pass_through_vars, relay_tp.as_deref(),
+                ).await;
+            });
+            StatusCode::ACCEPTED.into_response()
+        } else {
+            // Sync mode (CF container): await the child, return real status.
+            match run_worker_sync(
+                &video_id_str, &job, &pass_through_vars, relay_tp.as_deref(),
+            ).await {
+                Ok(()) => StatusCode::OK.into_response(),
+                Err(stderr) => {
+                    error!(
+                        video_id = job.video_id,
+                        stderr = %stderr,
+                        "transcode-server: video-worker exited with error"
+                    );
+                    (StatusCode::INTERNAL_SERVER_ERROR, stderr).into_response()
+                }
             }
         }
     }
+    .instrument(span)
+    .await
 }
 
 // ---------------------------------------------------------------------------
@@ -174,8 +193,9 @@ async fn run_worker_sync(
     video_id_str: &str,
     job: &ProcessJob,
     pass_through: &[(&'static str, Option<String>)],
+    traceparent: Option<&str>,
 ) -> Result<(), String> {
-    let mut cmd = build_command(video_id_str, job, pass_through);
+    let mut cmd = build_command(video_id_str, job, pass_through, traceparent);
     cmd.stdout(Stdio::piped());
     cmd.stderr(Stdio::piped());
 
@@ -216,8 +236,9 @@ async fn run_worker_fire_and_forget(
     video_id_str: &str,
     job: &ProcessJob,
     pass_through: &[(&'static str, Option<String>)],
+    traceparent: Option<&str>,
 ) {
-    let mut cmd = build_command(video_id_str, job, pass_through);
+    let mut cmd = build_command(video_id_str, job, pass_through, traceparent);
     cmd.stdout(Stdio::piped());
     cmd.stderr(Stdio::piped());
 
@@ -261,6 +282,7 @@ fn build_command(
     video_id_str: &str,
     job: &ProcessJob,
     pass_through: &[(&'static str, Option<String>)],
+    traceparent: Option<&str>,
 ) -> tokio::process::Command {
     let mut cmd = tokio::process::Command::new("/usr/local/bin/video-worker");
 
@@ -269,9 +291,9 @@ fn build_command(
     cmd.env("SOURCE_KEY",   &job.source_key);
     cmd.env("CALLBACK_URL", &job.callback_url);
 
-    // Forward the distributed-trace context so the child video-worker continues
-    // the same trace (and echoes it back on the result callback).
-    if let Some(tp) = &job.traceparent {
+    // Forward the relay span's trace context so the child video-worker nests
+    // under transcode-server's span (and the backend enqueue span above it).
+    if let Some(tp) = traceparent {
         cmd.env("TRACEPARENT", tp);
     }
 
@@ -299,12 +321,9 @@ async fn health() -> StatusCode {
 
 #[tokio::main]
 async fn main() {
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
-        )
-        .init();
+    // OTLP export enabled when OTEL_EXPORTER_OTLP_ENDPOINT is set (Cloud Run);
+    // fmt-only locally. Returns the provider so we can flush on shutdown.
+    let provider = telemetry::init();
 
     let async_mode = std::env::var("TRANSCODE_SERVER_ASYNC")
         .map(|v| v == "1")
@@ -338,6 +357,11 @@ async fn main() {
 
     if let Err(e) = axum::serve(listener, app).await {
         warn!(error = %e, "transcode-server: server exited");
+    }
+
+    if let Some(provider) = provider {
+        let _ = provider.force_flush();
+        let _ = provider.shutdown();
     }
 }
 
@@ -384,5 +408,32 @@ mod tests {
         // Must match exactly — no leniency.
         assert!(!check_bearer(Some("Bearer  secret123"), "secret123"));
         assert!(!check_bearer(Some("Bearer secret123 "), "secret123"));
+    }
+
+    #[tokio::test]
+    async fn build_command_sets_traceparent_env_from_arg() {
+        use video_job::ProcessJob;
+        let job = ProcessJob {
+            video_id: 7,
+            source_key: "originals/7/x.mp4".into(),
+            callback_url: "https://app.example/cb".into(),
+            traceparent: None, // ignored now; the arg wins
+        };
+        let cmd = super::build_command(
+            "7",
+            &job,
+            &[],
+            Some("00-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-bbbbbbbbbbbbbbbb-01"),
+        );
+        let tp = cmd
+            .as_std()
+            .get_envs()
+            .find(|(k, _)| *k == std::ffi::OsStr::new("TRACEPARENT"))
+            .and_then(|(_, v)| v)
+            .map(|v| v.to_string_lossy().into_owned());
+        assert_eq!(
+            tp.as_deref(),
+            Some("00-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-bbbbbbbbbbbbbbbb-01")
+        );
     }
 }
