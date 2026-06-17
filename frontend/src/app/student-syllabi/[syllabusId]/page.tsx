@@ -3,11 +3,11 @@ import { Navigate, useNavigate, useParams } from 'react-router-dom';
 import { useTechniqueListNav } from '@/components/technique-row/use-technique-list-nav';
 import { TechniqueFilters } from '@/components/technique-row/technique-filters';
 import {
-  EllipsisVertical,
   GitCompare,
   GraduationCap,
   NotebookPen,
   Plus,
+  Settings,
   Trash2,
 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -34,13 +34,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
+import { AccountDialog } from '@/components/account-dialog';
 import { EmptyState } from '@/components/empty-state';
 import { TechniqueRow } from '@/components/technique-row';
 import { partitionSsts, sortSsts, type SstSort } from './sst-view';
@@ -50,7 +44,7 @@ import {
   useUnassignSyllabusFromStudent,
 } from '@/lib/mutations';
 import { useUser } from '@/lib/current-user-context';
-import { isCoachOrAdmin } from '@/lib/api';
+import { isCoachOrAdmin, isAdmin } from '@/lib/api';
 import type { LibraryTechniqueRow, SstRow } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { DiffDialog } from './components/diff-dialog';
@@ -106,6 +100,7 @@ function Detail({
   isOwnView: boolean;
 }) {
   const navigate = useNavigate();
+  const user = useUser();
   const query = useStudentSyllabusTechniques(studentId, syllabusId);
   const usersQuery = useAllUsers();
   const assignment = query.data?.assignment;
@@ -114,6 +109,12 @@ function Detail({
     const u = (usersQuery.data ?? []).find((u) => u.id === studentId);
     return u ? u.display_name || u.username : null;
   }, [isOwnView, usersQuery.data, studentId]);
+  const viewerIsAdmin = isAdmin(user);
+  const managedStudent = useMemo(
+    () => (usersQuery.data ?? []).find((u) => u.id === studentId) ?? null,
+    [usersQuery.data, studentId],
+  );
+  const [accountOpen, setAccountOpen] = useState(false);
   const allSsts = useMemo(
     () => query.data?.techniques ?? [],
     [query.data?.techniques],
@@ -258,44 +259,25 @@ function Detail({
           )}
         </p>
         {!isOwnView && (
-          <div className="pt-0.5">
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  variant="outline"
-                  size="icon"
-                  aria-label="Syllabus actions"
-                >
-                  <EllipsisVertical className="h-4 w-4" aria-hidden />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="start" className="w-56">
-                <DropdownMenuItem onSelect={() => setDiffOpen(true)}>
-                  <GitCompare className="mr-2 h-4 w-4" aria-hidden />
-                  Sync with current syllabus
-                </DropdownMenuItem>
-                <DropdownMenuItem onSelect={() => setGraduateOpen(true)}>
-                  <GraduationCap
-                    className={cn(
-                      'mr-2 h-4 w-4',
-                      assignment.graduated_at && 'text-status-green',
-                    )}
-                    aria-hidden
-                  />
-                  {assignment.graduated_at
-                    ? 'Ungraduate syllabus'
-                    : 'Graduate syllabus'}
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem
-                  onSelect={() => setUnassignOpen(true)}
-                  className="text-destructive focus:text-destructive"
-                >
-                  <Trash2 className="mr-2 h-4 w-4" aria-hidden />
-                  Unassign syllabus
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+          <div className="flex flex-wrap gap-2 pt-1">
+            <Button variant="outline" size="sm" className="gap-1.5" onClick={() => setDiffOpen(true)}>
+              <GitCompare className="h-4 w-4" aria-hidden />
+              Sync with current syllabus
+            </Button>
+            <Button variant="outline" size="sm" className="gap-1.5" onClick={() => setGraduateOpen(true)}>
+              <GraduationCap className={cn("h-4 w-4", assignment.graduated_at && "text-status-green")} aria-hidden />
+              {assignment.graduated_at ? "Ungraduate syllabus" : "Graduate syllabus"}
+            </Button>
+            {viewerIsAdmin && managedStudent && (
+              <Button variant="outline" size="sm" className="gap-1.5" onClick={() => setAccountOpen(true)}>
+                <Settings className="h-4 w-4" aria-hidden />
+                Manage account
+              </Button>
+            )}
+            <Button variant="outline" size="sm" className="gap-1.5 text-destructive focus-visible:text-destructive" onClick={() => setUnassignOpen(true)}>
+              <Trash2 className="h-4 w-4" aria-hidden />
+              Unassign syllabus
+            </Button>
           </div>
         )}
       </div>
@@ -511,6 +493,15 @@ function Detail({
           )
         }
       />
+
+      {viewerIsAdmin && managedStudent && (
+        <AccountDialog
+          open={accountOpen}
+          onOpenChange={setAccountOpen}
+          user={managedStudent}
+          mode="admin"
+        />
+      )}
     </div>
   );
 }
