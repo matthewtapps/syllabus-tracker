@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT v.id, v.parent_kind, v.technique_id, v.student_id, v.thread_id,\n                v.camp_id AS \"camp_id?: i64\", v.match_id AS \"match_id?: i64\",\n                v.title, v.description, v.position, v.kind,\n                v.processing_status, v.processing_error, v.storage_key, v.bytes,\n                v.duration_seconds, v.width, v.height,\n                v.external_url, v.external_host, v.external_video_id, v.uploaded_by_id,\n                v.created_at, v.updated_at, v.hidden_at\n         FROM videos v\n         LEFT JOIN video_visibility_overrides vsv\n                ON vsv.video_id = v.id\n               AND vsv.scope_kind = 'student'\n               AND vsv.scope_id = ?\n         WHERE v.technique_id = ?\n           AND v.deleted_at IS NULL\n           AND COALESCE(vsv.visible, v.hidden_at IS NULL) = 1\n         ORDER BY v.position ASC, v.id ASC",
+  "query": "SELECT v.id, v.parent_kind, v.technique_id, v.student_id, v.thread_id,\n                v.camp_id AS \"camp_id?: i64\", v.match_id AS \"match_id?: i64\",\n                v.title, v.description, v.position, v.kind,\n                v.processing_status, v.processing_error, v.storage_key, v.bytes,\n                v.duration_seconds, v.width, v.height,\n                v.external_url, v.external_host, v.external_video_id, v.uploaded_by_id,\n                v.created_at, v.updated_at, v.hidden_at\n         FROM videos v\n         LEFT JOIN video_visibility_overrides vsv\n                ON vsv.video_id = v.id\n               AND vsv.scope_kind = 'student'\n               AND vsv.student_id = ?\n         WHERE v.technique_id = ?\n           AND v.deleted_at IS NULL\n           AND COALESCE(vsv.visible, v.hidden_at IS NULL) = 1\n         ORDER BY v.position ASC, v.id ASC",
   "describe": {
     "columns": [
       {
@@ -160,5 +160,5 @@
       true
     ]
   },
-  "hash": "c7c7feddeaba821521884b960da40717f505cc211d8a4e8f3962422c1a2382ea"
+  "hash": "3c6a2a1f0ce6cb90ba73d617283fe8820cfe4e08b82c92ca7485732dd3ae9e09"
 }

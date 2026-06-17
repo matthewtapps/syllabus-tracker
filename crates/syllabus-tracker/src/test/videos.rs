@@ -2127,9 +2127,11 @@ mod db_tests {
     fn visibility_scope_maps_to_kind_and_columns() {
         use crate::db::VisibilityScope::*;
         assert_eq!(Student(7).kind(), "student");
-        assert_eq!(Student(7).columns(), (Some(7), None, None));
-        assert_eq!(Syllabus(7).columns(), (None, Some(7), None));
-        assert_eq!(Assignment(7).columns(), (None, None, Some(7)));
+        assert_eq!(Camp(7).kind(), "camp");
+        assert_eq!(Student(7).columns(), (Some(7), None, None, None));
+        assert_eq!(Syllabus(7).columns(), (None, Some(7), None, None));
+        assert_eq!(Assignment(7).columns(), (None, None, Some(7), None));
+        assert_eq!(Camp(7).columns(), (None, None, None, Some(7)));
     }
 
     /// Gap 1 regression: a soft-deleted syllabus closes its assignments via
