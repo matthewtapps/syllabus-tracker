@@ -142,15 +142,20 @@ export function recordRouteChange(path: string, previousPath?: string): void {
 
 /**
  * Run a form's async submit handler *inside* a new span's active context, so
- * any fetch()/XHR the handler fires opens as a child span and propagates
+ * fetch()/XHR the handler fires opens as a child span and propagates
  * `traceparent` to the backend. This makes the form submission the root of the
  * trace (browser -> backend -> video worker), not an orphan.
+ *
+ * Caveat: under `ZoneContextManager` the active context is reliably present for
+ * the synchronous part of `fn` (including the first fetch, which submit
+ * handlers fire synchronously). A request started only after an internal
+ * `await` inside `fn` may not nest under this span.
  */
 export async function runInFormSpan<T>(
   meta: { formId: string; action: string; method: string },
   fn: () => Promise<T>,
 ): Promise<T> {
-  const tracer = getTracer("recordFormSubmission");
+  const tracer = getTracer("form-submit");
   const span = tracer.startSpan(`form_submit_${meta.formId}`);
   span.setAttribute("form.id", meta.formId);
   span.setAttribute("form.action", meta.action);

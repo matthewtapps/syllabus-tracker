@@ -42,11 +42,7 @@ describe("runInFormSpan", () => {
 
     expect(form).toBeDefined();
     expect(child).toBeDefined();
-    // parentSpanContext is the v2 shape; fall back to parentSpanId for safety.
-    const parentId =
-      child?.parentSpanContext?.spanId ??
-      (child as { parentSpanId?: string }).parentSpanId;
-    expect(parentId).toBe(form?.spanContext().spanId);
+    expect(child?.parentSpanContext?.spanId).toBe(form?.spanContext().spanId);
   });
 
   it("returns the callback's resolved value", async () => {
