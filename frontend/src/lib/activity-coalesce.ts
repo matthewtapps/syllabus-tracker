@@ -16,8 +16,9 @@ export interface CoalescedActivity {
  * Rows from different syllabi or different context kinds are not coalesced.
  */
 function surfaceKey(row: ActivityRow): string {
-  if (row.syllabus_id != null) return `syllabus:${row.syllabus_id}`;
-  return row.context_kind ?? "none";
+  const base = row.syllabus_id != null ? `syllabus:${row.syllabus_id}` : (row.context_kind ?? "none");
+  // Different students must never merge, even on the same syllabus template.
+  return row.target_student_id != null ? `student:${row.target_student_id}|${base}` : base;
 }
 
 /**
