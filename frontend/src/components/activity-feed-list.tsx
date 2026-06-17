@@ -7,6 +7,7 @@ import { isCoachOrAdmin } from "@/lib/api";
 import { activityLine, type ActivityRow, type ActivityScope } from "@/lib/activity-line";
 import { statusToDotClass } from "@/lib/status";
 import { coalesceActivity } from "@/lib/activity-coalesce";
+import { suppressHideUnhide } from "@/lib/activity-hide-unhide";
 import { activitySurface } from "@/lib/view-context";
 import { formatAbsolute, formatRelativeShort } from "@/lib/dates";
 import { cn } from "@/lib/utils";
@@ -210,11 +211,14 @@ export function ActivityFeedList({
     );
   }
 
+  // Drop hide/unhide curation noise (net-visibility rule) before gating.
+  const deNoised = suppressHideUnhide(rows);
+
   // Camps + competitions/matches are gated off on prod (campsUiEnabled). Drop
   // their activity rows so the feed doesn't surface links into hidden surfaces.
   const visibleRows = campsUiEnabled
-    ? rows
-    : rows.filter((row) => {
+    ? deNoised
+    : deNoised.filter((row) => {
         const kind = activitySurface(row)?.kind;
         return kind !== "camp" && kind !== "competition" && kind !== "match";
       });

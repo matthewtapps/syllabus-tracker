@@ -1,6 +1,7 @@
 import { ActivityTileHeader } from "./activity-tile-header";
 import { ActivityTile } from "./activity-tile";
 import { activitySurface } from "@/lib/view-context";
+import { suppressHideUnhide } from "@/lib/activity-hide-unhide";
 import { campsUiEnabled } from "@/lib/features";
 import type { ActivityRow, ActivityScope } from "@/lib/activity-line";
 
@@ -41,11 +42,14 @@ export function ActivityTileFeed({
     );
   }
 
+  // Drop hide/unhide curation noise (net-visibility rule) before gating.
+  const deNoised = suppressHideUnhide(rows);
+
   // Camps + competitions/matches are gated off on prod; drop their rows so the
   // feed never links into half-built surfaces (mirrors ActivityFeedList).
   const visible = campsUiEnabled
-    ? rows
-    : rows.filter((row) => {
+    ? deNoised
+    : deNoised.filter((row) => {
         const kind = activitySurface(row)?.kind;
         return kind !== "camp" && kind !== "competition" && kind !== "match";
       });
