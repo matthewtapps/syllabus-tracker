@@ -2,7 +2,7 @@ import { Link } from "react-router-dom";
 import { Dumbbell, Library, NotebookPen } from "lucide-react";
 import { StudentAvatar } from "@/components/student-avatar";
 import { activityLine, type ActivityRow, type ActivityScope } from "@/lib/activity-line";
-import { verbIconMeta } from "@/components/activity-feed-list";
+import { verbIconMeta } from "./verb-icon";
 import { activitySurface } from "@/lib/view-context";
 import { statusToDotClass } from "@/lib/status";
 import { formatRelativeShort } from "@/lib/dates";
