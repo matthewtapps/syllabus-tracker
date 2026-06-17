@@ -163,6 +163,13 @@ down:
 fe-dev:
     cd frontend && pnpm dev
 
+# Frontend dev server with VITE_ENVIRONMENT=production, so production feature
+# gates apply (e.g. the in-progress camps/competitions UI is hidden). Use to
+# preview the prod-gated UI locally without a full build.
+[group('frontend')]
+fe-dev-prod:
+    cd frontend && VITE_ENVIRONMENT=production pnpm dev
+
 # Build the frontend for production.
 [group('frontend')]
 fe-build:
