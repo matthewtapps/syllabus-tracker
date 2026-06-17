@@ -6,7 +6,6 @@ import { getDownloadUrl } from "@/lib/api";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { useSwipeDownDismiss } from "@/lib/use-swipe-down-dismiss";
-import { useHistoryDismiss } from "@/lib/use-history-dismiss";
 import { VideoReviewPanel } from "./review/video-review-panel";
 import { useWatchTracker, type WatchContext } from "./useWatchTracker";
 import type { VideoThreadSurface } from "@/lib/thread-visibility";
@@ -34,9 +33,6 @@ export function VideoPlayerDialog({
   context,
   composerAction,
 }: VideoPlayerDialogProps) {
-  // Let the phone Back button close the sheet instead of leaving the page.
-  useHistoryDismiss(!!video, onClose);
-
   return (
     <Dialog open={!!video} onOpenChange={(open) => !open && onClose()}>
       <DialogContent

@@ -3,9 +3,36 @@ import * as SheetPrimitive from "@radix-ui/react-dialog"
 import { XIcon } from "lucide-react"
 
 import { cn } from "@/lib/utils"
+import { useHistoryDismiss } from "@/lib/use-history-dismiss"
 
-function Sheet({ ...props }: React.ComponentProps<typeof SheetPrimitive.Root>) {
-  return <SheetPrimitive.Root data-slot="sheet" {...props} />
+function Sheet({
+  open,
+  defaultOpen,
+  onOpenChange,
+  ...props
+}: React.ComponentProps<typeof SheetPrimitive.Root>) {
+  const [uncontrolledOpen, setUncontrolledOpen] = React.useState(
+    defaultOpen ?? false,
+  )
+  const isControlled = open !== undefined
+  const actualOpen = isControlled ? open : uncontrolledOpen
+  const handleOpenChange = React.useCallback(
+    (next: boolean) => {
+      if (!isControlled) setUncontrolledOpen(next)
+      onOpenChange?.(next)
+    },
+    [isControlled, onOpenChange],
+  )
+  // Hardware/browser Back closes the sheet before navigating the route away.
+  useHistoryDismiss(actualOpen, () => handleOpenChange(false))
+  return (
+    <SheetPrimitive.Root
+      data-slot="sheet"
+      open={actualOpen}
+      onOpenChange={handleOpenChange}
+      {...props}
+    />
+  )
 }
 
 function SheetTrigger({
