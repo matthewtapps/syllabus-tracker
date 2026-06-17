@@ -259,24 +259,44 @@ function Detail({
           )}
         </p>
         {!isOwnView && (
-          <div className="flex flex-wrap gap-2 pt-1">
-            <Button variant="outline" size="sm" className="gap-1.5" onClick={() => setDiffOpen(true)}>
+          <div className="flex gap-2 pt-1">
+            <Button
+              variant="outline"
+              className="flex-1"
+              onClick={() => setDiffOpen(true)}
+              aria-label="Sync with current syllabus"
+              title="Sync with current syllabus"
+            >
               <GitCompare className="h-4 w-4" aria-hidden />
-              Sync with current syllabus
             </Button>
-            <Button variant="outline" size="sm" className="gap-1.5" onClick={() => setGraduateOpen(true)}>
+            <Button
+              variant="outline"
+              className="flex-1"
+              onClick={() => setGraduateOpen(true)}
+              aria-label={assignment.graduated_at ? "Ungraduate syllabus" : "Graduate syllabus"}
+              title={assignment.graduated_at ? "Ungraduate syllabus" : "Graduate syllabus"}
+            >
               <GraduationCap className={cn("h-4 w-4", assignment.graduated_at && "text-status-green")} aria-hidden />
-              {assignment.graduated_at ? "Ungraduate syllabus" : "Graduate syllabus"}
             </Button>
             {viewerIsAdmin && managedStudent && (
-              <Button variant="outline" size="sm" className="gap-1.5" onClick={() => setAccountOpen(true)}>
+              <Button
+                variant="outline"
+                className="flex-1"
+                onClick={() => setAccountOpen(true)}
+                aria-label="Manage account"
+                title="Manage account"
+              >
                 <Settings className="h-4 w-4" aria-hidden />
-                Manage account
               </Button>
             )}
-            <Button variant="outline" size="sm" className="gap-1.5 text-destructive focus-visible:text-destructive" onClick={() => setUnassignOpen(true)}>
+            <Button
+              variant="outline"
+              className="flex-1 text-destructive focus-visible:text-destructive"
+              onClick={() => setUnassignOpen(true)}
+              aria-label="Unassign syllabus"
+              title="Unassign syllabus"
+            >
               <Trash2 className="h-4 w-4" aria-hidden />
-              Unassign syllabus
             </Button>
           </div>
         )}
