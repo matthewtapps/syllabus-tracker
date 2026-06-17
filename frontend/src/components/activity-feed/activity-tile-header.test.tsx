@@ -52,9 +52,11 @@ describe("ActivityTileHeader", () => {
     expect(surface.getAttribute("href")).toContain("/student/4/syllabi/7");
 
     // Caption is the minimal verb plus the status label; the technique name is
-    // NOT repeated in the caption (the tile shows it).
-    expect(screen.getByText("Set to")).toBeInTheDocument();
-    expect(screen.getByText("Doing")).toBeInTheDocument();
+    // NOT repeated in the caption (the tile shows it). The caption text spans
+    // an icon + text + dot + label, so match the paragraph's text content.
+    const caption = screen.getByText(/Set to/);
+    expect(caption.textContent).toMatch(/Set to/);
+    expect(caption.textContent).toMatch(/Doing/);
     expect(screen.queryByText(/Top Turtle/)).toBeNull();
     expect(document.querySelector(".bg-status-amber")).not.toBeNull();
   });
