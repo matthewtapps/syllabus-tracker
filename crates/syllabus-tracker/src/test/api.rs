@@ -1179,6 +1179,74 @@ mod tests {
         assert!(s.graduated_at.is_none(), "graduated_at should be cleared");
     }
 
+    #[rocket::async_test]
+    async fn test_coach_can_archive_student() {
+        let test_db = TestDbBuilder::new()
+            .coach("coach_user", Some("Coach User"))
+            .student("student_user", Some("Student User"))
+            .build()
+            .await
+            .expect("Failed to build test DB");
+
+        let (client, test_db) = setup_test_client(test_db).await;
+        let student_id = test_db.user_id("student_user").expect("Student not found");
+        let coach_cookies = login_test_user(&client, "coach_user", "password123").await;
+
+        let resp = client
+            .post(format!("/api/student/{}/archive", student_id))
+            .cookies(coach_cookies.clone())
+            .header(ContentType::JSON)
+            .body(json!({ "archived": true }).to_string())
+            .dispatch()
+            .await;
+        assert_eq!(resp.status(), Status::Ok);
+
+        let listed = client
+            .get("/api/students?include_archived=true")
+            .cookies(coach_cookies.clone())
+            .dispatch()
+            .await;
+        let body = listed.into_string().await.unwrap();
+        let students: Vec<UserData> = serde_json::from_str(&body).unwrap();
+        let s = students
+            .iter()
+            .find(|s| s.id == student_id)
+            .expect("archived student missing from list");
+        assert!(s.archived, "archived flag should be set");
+
+        let resp = client
+            .post(format!("/api/student/{}/archive", student_id))
+            .cookies(coach_cookies)
+            .header(ContentType::JSON)
+            .body(json!({ "archived": false }).to_string())
+            .dispatch()
+            .await;
+        assert_eq!(resp.status(), Status::Ok);
+    }
+
+    #[rocket::async_test]
+    async fn test_coach_cannot_archive_non_student() {
+        let test_db = TestDbBuilder::new()
+            .coach("coach_user", Some("Coach User"))
+            .coach("other_coach", Some("Other Coach"))
+            .build()
+            .await
+            .expect("Failed to build test DB");
+
+        let (client, test_db) = setup_test_client(test_db).await;
+        let other_id = test_db.user_id("other_coach").expect("Coach not found");
+        let coach_cookies = login_test_user(&client, "coach_user", "password123").await;
+
+        let resp = client
+            .post(format!("/api/student/{}/archive", other_id))
+            .cookies(coach_cookies)
+            .header(ContentType::JSON)
+            .body(json!({ "archived": true }).to_string())
+            .dispatch()
+            .await;
+        assert_eq!(resp.status(), Status::BadRequest);
+    }
+
     // ---- Invite / claim flow ----
 
     #[rocket::async_test]

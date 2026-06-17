@@ -1012,6 +1012,31 @@ pub async fn api_set_student_graduated(
     Ok(Status::Ok)
 }
 
+#[derive(Deserialize, Clone)]
+pub struct ArchiveRequest {
+    archived: bool,
+}
+
+/// Coach-accessible endpoint to archive / un-archive a student.
+/// Distinct from `/admin/users/<id>` which is admin-only.
+#[post("/student/<id>/archive", data = "<body>")]
+pub async fn api_archive_student(
+    id: i64,
+    body: Json<ArchiveRequest>,
+    user: User,
+    db: &State<Pool<Sqlite>>,
+) -> ApiResult<Status> {
+    user.require_permission(Permission::ViewAllStudents)?;
+
+    let target = get_user(db, id).await?;
+    if !matches!(target.role, crate::auth::Role::Student) {
+        return Err(Status::BadRequest.into());
+    }
+
+    set_user_archived(db, id, body.archived).await?;
+    Ok(Status::Ok)
+}
+
 #[get("/health")]
 pub fn health() -> &'static str {
     "OK"
