@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { Link, Navigate, useNavigate, useParams } from "react-router-dom";
 import {
+  Archive,
   BookOpen,
   ChevronRight,
   Dumbbell,
@@ -10,12 +11,14 @@ import {
   NotebookPen,
   Pin,
   Plus,
+  Settings,
   UserRound,
 } from "lucide-react";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -26,6 +29,17 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { Accordion } from "@/components/ui/accordion";
 import {
   Form,
   FormControl,
@@ -48,20 +62,26 @@ import {
   handleApiFormError,
   useFormWithValidation,
 } from "@/components/hooks/useFormErrors";
+import { AccountDialog } from "@/components/account-dialog";
+import { EmptyState } from "@/components/empty-state";
+import { TechniqueRow } from "@/components/technique-row";
 import {
   useStudentActivityFeed,
   useAllUsers,
   useCampsForStudent,
   useThreadsForAnchor,
+  useStudentSyllabi,
+  useStudentPinnedTechniques,
 } from "@/lib/queries";
-import { useCreateCamp, useCreateThread } from "@/lib/mutations";
+import { useCreateCamp, useCreateThread, useArchiveStudent } from "@/lib/mutations";
 import { useUser } from "@/lib/current-user-context";
-import { isCoachOrAdmin } from "@/lib/api";
+import { isAdmin, isCoachOrAdmin } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { campsUiEnabled } from "@/lib/features";
 import { ActivityFeedList } from "@/components/activity-feed-list";
 import { ThreadView } from "@/components/threads/thread-view";
 import { ThreadComposer } from "@/components/threads/thread-composer";
+import { SyllabusAssignmentRow } from "@/app/student-syllabi/components/syllabus-assignment-row";
 import type { User } from "@/lib/api";
 
 const createCampSchema = z.object({
@@ -141,6 +161,17 @@ function ProfileHub({
 
   const loading = !isOwnView && usersQuery.isLoading;
 
+  const viewerIsAdmin = isAdmin(viewer);
+  const isCoach = isCoachOrAdmin(viewer);
+  const canManageAccount = isOwnView || (viewerIsAdmin && !isOwnView);
+  const canArchive = isCoach && !isOwnView;
+  const [accountOpen, setAccountOpen] = useState(false);
+  const [archiveConfirmOpen, setArchiveConfirmOpen] = useState(false);
+  const archiveMutation = useArchiveStudent();
+  const syllabiQuery = useStudentSyllabi(studentId);
+  const pinnedQuery = useStudentPinnedTechniques(studentId);
+  const [pinnedExpanded, setPinnedExpanded] = useState<string>("");
+
   if (loading || !student) {
     return (
       <div className="container mx-auto px-4 py-6 sm:px-6 md:py-8">
@@ -157,6 +188,9 @@ function ProfileHub({
 
   const displayName = student.display_name || student.username;
 
+  const previewSyllabi = (syllabiQuery.data ?? []).slice(0, 5);
+  const previewPinned = (pinnedQuery.data ?? []).slice(0, 5);
+
   return (
     <div className="container mx-auto space-y-6 px-4 py-6 sm:px-6 md:py-8">
       <section className="flex items-center gap-4">
@@ -166,6 +200,12 @@ function ProfileHub({
         <div className="min-w-0 flex-1">
           <h1 className="flex items-center gap-2 truncate text-base font-semibold">
             {displayName}
+            {student.archived && (
+              <Badge variant="outline" className="gap-1 text-muted-foreground">
+                <Archive className="h-3 w-3" aria-hidden />
+                Archived
+              </Badge>
+            )}
           </h1>
           {student.display_name &&
             student.display_name !== student.username && (
@@ -177,64 +217,129 @@ function ProfileHub({
             {student.role}
           </p>
         </div>
+        {(canManageAccount || canArchive) && (
+          <div className="flex shrink-0 items-center gap-2">
+            {canManageAccount && (
+              <Button variant="outline" size="sm" className="gap-1.5" onClick={() => setAccountOpen(true)}>
+                <Settings className="h-4 w-4" aria-hidden />
+                <span>Account</span>
+              </Button>
+            )}
+            {canArchive && (
+              <Button variant="outline" size="sm" className="gap-1.5" onClick={() => setArchiveConfirmOpen(true)}>
+                <Archive className="h-4 w-4" aria-hidden />
+                <span>{student.archived ? "Unarchive" : "Archive"}</span>
+              </Button>
+            )}
+          </div>
+        )}
+      </section>
+
+      {(isOwnView || campsUiEnabled) && (
+        <section className="space-y-2">
+          <div className="flex items-center justify-between gap-2">
+            <h2 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              {isOwnView ? "Your spaces" : `${displayName}'s spaces`}
+            </h2>
+            {canCreateCamp && campsUiEnabled && (
+              <Dialog open={createCampOpen} onOpenChange={setCreateCampOpen}>
+                <DialogTrigger asChild>
+                  <Button size="sm" variant="outline" className="gap-1.5">
+                    <Plus className="h-4 w-4" aria-hidden />
+                    <span>New camp</span>
+                  </Button>
+                </DialogTrigger>
+                <CreateCampDialog
+                  studentId={studentId}
+                  studentName={displayName}
+                  onCreated={(id) => {
+                    setCreateCampOpen(false);
+                    navigate(`/camps/${id}`);
+                  }}
+                />
+              </Dialog>
+            )}
+          </div>
+          <div className="overflow-hidden rounded-lg border border-border bg-card">
+            {/* The Library is a global gym-wide resource. Students see a link
+             * to their own library view; coaches don't need it here since
+             * the Library nav entry already takes them there. */}
+            {isOwnView && (
+              <HubLink to="/library" icon={BookOpen} title="Library" last={!campsUiEnabled} />
+            )}
+            {campsUiEnabled && (
+              <>
+                <HubLink
+                  to={`/student/${studentId}/camps`}
+                  icon={Dumbbell}
+                  title="Camps"
+                />
+                <HubLink
+                  to={`/student/${studentId}/matches`}
+                  icon={Medal}
+                  title={isOwnView ? "My matches" : "Matches"}
+                  last
+                />
+              </>
+            )}
+          </div>
+        </section>
+      )}
+
+      <section className="space-y-2">
+        <div className="flex items-center justify-between gap-2">
+          <h2 className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            <NotebookPen className="h-3.5 w-3.5" aria-hidden />
+            {isOwnView ? "My syllabi" : "Syllabi"}
+          </h2>
+          <Link to={`/student/${studentId}/syllabi`} className="text-xs text-muted-foreground hover:text-foreground">
+            See all
+          </Link>
+        </div>
+        <div className="overflow-hidden rounded-lg border border-border bg-card">
+          {syllabiQuery.isLoading ? (
+            <div className="px-4 py-4"><div className="h-4 w-1/3 animate-pulse rounded bg-muted" /></div>
+          ) : previewSyllabi.length === 0 ? (
+            <EmptyState icon={NotebookPen} title="No syllabi yet" description={isOwnView ? "A coach has not assigned you a syllabus yet." : "This student has no active syllabus assignments."} />
+          ) : (
+            <ul className="divide-y divide-border">
+              {previewSyllabi.map((a) => (
+                <li key={a.id}>
+                  <SyllabusAssignmentRow studentId={studentId} assignment={a} />
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
       </section>
 
       <section className="space-y-2">
         <div className="flex items-center justify-between gap-2">
-          <h2 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-            {isOwnView ? "Your spaces" : `${displayName}'s spaces`}
+          <h2 className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            <Pin className="h-3.5 w-3.5" aria-hidden />
+            {isOwnView ? "Pinned" : "Pinned techniques"}
           </h2>
-          {canCreateCamp && campsUiEnabled && (
-            <Dialog open={createCampOpen} onOpenChange={setCreateCampOpen}>
-              <DialogTrigger asChild>
-                <Button size="sm" variant="outline" className="gap-1.5">
-                  <Plus className="h-4 w-4" aria-hidden />
-                  <span>New camp</span>
-                </Button>
-              </DialogTrigger>
-              <CreateCampDialog
-                studentId={studentId}
-                studentName={displayName}
-                onCreated={(id) => {
-                  setCreateCampOpen(false);
-                  navigate(`/camps/${id}`);
-                }}
-              />
-            </Dialog>
-          )}
+          <Link to={`/student/${studentId}/pinned`} className="text-xs text-muted-foreground hover:text-foreground">
+            See all
+          </Link>
         </div>
         <div className="overflow-hidden rounded-lg border border-border bg-card">
-          {/* The Library is a global gym-wide resource. Students see a link
-           * to their own library view; coaches don't need it here since
-           * the Library nav entry already takes them there. */}
-          {isOwnView && (
-            <HubLink to="/library" icon={BookOpen} title="Library" />
-          )}
-          <HubLink
-            to={`/student/${studentId}/syllabi`}
-            icon={NotebookPen}
-            title={isOwnView ? "My syllabi" : "Syllabi"}
-          />
-          <HubLink
-            to={`/student/${studentId}/pinned`}
-            icon={Pin}
-            title={isOwnView ? "Pinned" : "Pinned techniques"}
-            last={!campsUiEnabled}
-          />
-          {campsUiEnabled && (
-            <>
-              <HubLink
-                to={`/student/${studentId}/camps`}
-                icon={Dumbbell}
-                title="Camps"
-              />
-              <HubLink
-                to={`/student/${studentId}/matches`}
-                icon={Medal}
-                title={isOwnView ? "My matches" : "Matches"}
-                last
-              />
-            </>
+          {pinnedQuery.isLoading ? (
+            <div className="px-4 py-4"><div className="h-4 w-1/3 animate-pulse rounded bg-muted" /></div>
+          ) : previewPinned.length === 0 ? (
+            <EmptyState icon={Pin} title="No pins yet" description={isOwnView ? "Pin techniques from the library to keep them within reach." : "This student has not pinned anything yet."} />
+          ) : (
+            <Accordion type="single" collapsible value={pinnedExpanded} onValueChange={setPinnedExpanded}>
+              {previewPinned.map((t) => (
+                <TechniqueRow
+                  key={t.id}
+                  technique={t}
+                  context={{ kind: "student-pinned", studentId, studentName: isOwnView ? null : displayName }}
+                  value={String(t.id)}
+                  isOpen={pinnedExpanded === String(t.id)}
+                />
+              ))}
+            </Accordion>
           )}
         </div>
       </section>
@@ -295,6 +400,44 @@ function ProfileHub({
           />
         </div>
       </section>
+
+      {canManageAccount && (
+        <AccountDialog
+          open={accountOpen}
+          onOpenChange={setAccountOpen}
+          user={student}
+          mode={isOwnView ? "self" : "admin"}
+        />
+      )}
+
+      <AlertDialog open={archiveConfirmOpen} onOpenChange={setArchiveConfirmOpen}>
+        <AlertDialogContent className="w-[calc(100vw-1rem)] max-w-sm p-4 sm:p-6">
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {student.archived ? `Unarchive ${displayName}?` : `Archive ${displayName}?`}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {student.archived ? "They return to the active roster." : "They drop off the active roster. Their data is preserved and you can unarchive any time."}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={async () => {
+                setArchiveConfirmOpen(false);
+                try {
+                  await archiveMutation.mutateAsync({ studentId, archived: !student.archived });
+                  toast.success(student.archived ? "Student unarchived" : "Student archived");
+                } catch {
+                  toast.error("Failed to update student");
+                }
+              }}
+            >
+              {student.archived ? "Unarchive" : "Archive"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
