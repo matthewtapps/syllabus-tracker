@@ -1383,6 +1383,8 @@ export function useCreateCampTechnique(campId: number) {
       createCampTechnique(campId, vars),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: qk.camp(campId) });
+      // A new global technique joins the library; refresh the pick-existing picker.
+      qc.invalidateQueries({ queryKey: qk.libraryTechniques() });
     },
   });
 }
