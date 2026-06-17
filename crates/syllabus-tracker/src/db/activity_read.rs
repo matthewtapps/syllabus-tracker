@@ -188,7 +188,8 @@ pub async fn mark_one_unread(
 ///
 /// Role predicate:
 /// - Student: `target_student_id = viewer`
-/// - Coach/Admin: `actor_user_id != viewer` (all gym activity except own rows)
+/// - Coach/Admin: all gym activity (a social feed, includes the viewer's own
+///   rows; own rows render already-read via notifies())
 ///
 /// Results are ordered `occurred_at DESC, id DESC`. Pass `before` to continue
 /// after a previous page (keyset on `(occurred_at, id) < before`).
@@ -341,16 +342,17 @@ pub async fn feed(
                           ON c.viewer_user_id = ?
                    LEFT JOIN activity_seen_overrides ov
                           ON ov.viewer_user_id = ? AND ov.activity_id = act.id
-                   WHERE act.actor_user_id != ?
+                   -- The gym feed is a social feed: every gym row, including the
+                   -- viewer's own actions (own rows just render already-read via
+                   -- notifies()). No actor filter here.
+                   WHERE (act.video_id IS NULL OR (v.id IS NOT NULL AND v.deleted_at IS NULL))
                      -- Hide rows whose referenced video/thread was deleted or
                      -- wiped (orphaned activity), so they don't render as dead
                      -- "watched a video" / "commented on" lines with no link.
-                     AND (act.video_id IS NULL OR (v.id IS NOT NULL AND v.deleted_at IS NULL))
                      AND (act.thread_id IS NULL OR (th.id IS NOT NULL AND th.deleted_at IS NULL))
                      AND (? IS NULL OR (act.occurred_at, act.id) < (?, ?))
                    ORDER BY act.occurred_at DESC, act.id DESC
                    LIMIT ?"#,
-                viewer,
                 viewer,
                 viewer,
                 before_ts,

@@ -429,6 +429,41 @@ mod tests {
         assert!(!own_row.unread, "own non-notifiable action is not unread");
     }
 
+    /// The gym (coach/admin) feed is a social feed: it lists the viewer's own
+    /// actions too (e.g. a coach setting up a camp), not just everyone else's.
+    /// The own rows render as already-read (notifies() excludes them).
+    #[rocket::async_test]
+    async fn gym_feed_includes_the_viewers_own_actions() {
+        let db = TestDbBuilder::new()
+            .coach("coach", None)
+            .student("alice", None)
+            .build()
+            .await
+            .unwrap();
+        let coach = db.user_id("coach").unwrap();
+        let alice = db.user_id("alice").unwrap();
+
+        // The coach performs a notifiable action themselves (actor == viewer).
+        let mut tx = db.pool.begin().await.unwrap();
+        emit(
+            &mut tx,
+            NewActivity::new(Verb::SyllabusAssigned, coach).target_student(alice),
+        )
+        .await
+        .unwrap();
+        tx.commit().await.unwrap();
+
+        let rows = feed(&db.pool, coach, Role::Coach, None, 50).await.unwrap();
+        let own = rows
+            .iter()
+            .find(|r| r.verb == "syllabus_assigned" && r.actor_user_id == coach);
+        assert!(own.is_some(), "the coach's own action appears in the gym feed");
+        assert!(
+            !own.unwrap().unread,
+            "the viewer's own action is not unread"
+        );
+    }
+
     /// Pages are stable and non-overlapping across keyset cursor boundaries.
     #[rocket::async_test]
     async fn keyset_pagination_returns_stable_non_overlapping_pages() {
@@ -506,9 +541,10 @@ mod tests {
         }
     }
 
-    /// Coach feed excludes the coach's own rows but includes rows by other actors.
+    /// The gym (coach) feed includes both the coach's own rows and other
+    /// actors' rows: it is a social feed of all gym activity.
     #[rocket::async_test]
-    async fn coach_feed_excludes_own_rows_includes_other_actors() {
+    async fn coach_feed_includes_own_rows_and_other_actors() {
         let db = TestDbBuilder::new()
             .coach("coach", None)
             .student("alice", None)
@@ -540,13 +576,16 @@ mod tests {
 
         let rows = feed(&db.pool, coach, Role::Coach, None, 50).await.unwrap();
 
-        // Only alice's row should appear in the coach feed.
-        assert_eq!(rows.len(), 1, "coach feed excludes own rows");
-        assert_eq!(
-            rows[0].actor_user_id, alice,
-            "the visible row is alice's action"
+        // Both rows appear: the coach's own and alice's.
+        assert_eq!(rows.len(), 2, "gym feed lists own and other-actor rows");
+        assert!(
+            rows.iter().any(|r| r.actor_user_id == coach && r.verb == "syllabus_assigned"),
+            "the coach's own action appears"
         );
-        assert_eq!(rows[0].verb, "technique_pinned");
+        assert!(
+            rows.iter().any(|r| r.actor_user_id == alice && r.verb == "technique_pinned"),
+            "the other actor's action appears"
+        );
     }
 
     // Task 22 tests
