@@ -1247,4 +1247,44 @@ mod pr4_tests {
         let body: Value = serde_json::from_str(&resp.into_string().await.unwrap()).unwrap();
         assert_eq!(body["applied"].as_i64(), Some(2));
     }
+
+    /// Gap 2 guard: `update_syllabus` must be a no-op when the syllabus has
+    /// been soft-deleted. Patching a dead row must not change its name.
+    #[rocket::async_test]
+    async fn update_syllabus_is_noop_on_soft_deleted() {
+        use crate::test::test_utils::TestDbBuilder;
+
+        let db = TestDbBuilder::new()
+            .coach("coach", None)
+            .build()
+            .await
+            .unwrap();
+        let coach_id = db.user_id("coach").unwrap();
+
+        let syllabus_id = db::create_syllabus(&db.pool, "Original Name", None, coach_id)
+            .await
+            .unwrap();
+
+        // Soft-delete the syllabus.
+        db::delete_syllabus(&db.pool, syllabus_id).await.unwrap();
+
+        // Attempt to update the name.
+        db::update_syllabus(&db.pool, syllabus_id, Some("Updated Name"), None)
+            .await
+            .unwrap();
+
+        // Query directly (bypassing get_syllabus which filters deleted rows).
+        let name: String = sqlx::query_scalar!(
+            r#"SELECT name AS "name!: String" FROM syllabi WHERE id = ?"#,
+            syllabus_id
+        )
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+
+        assert_eq!(
+            name, "Original Name",
+            "update_syllabus must be a no-op on a soft-deleted syllabus"
+        );
+    }
 }

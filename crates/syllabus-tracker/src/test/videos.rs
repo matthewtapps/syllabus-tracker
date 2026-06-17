@@ -2131,4 +2131,155 @@ mod db_tests {
         assert_eq!(Syllabus(7).columns(), (None, Some(7), None));
         assert_eq!(Assignment(7).columns(), (None, None, Some(7)));
     }
+
+    /// Gap 1 regression: a soft-deleted syllabus closes its assignments via
+    /// `unassigned_at`. The student must then see NO videos through that closed
+    /// assignment -- the lookup must gate on `unassigned_at IS NULL`.
+    #[rocket::async_test]
+    async fn student_sees_no_videos_for_soft_deleted_syllabus() {
+        use crate::db::{
+            create_processing_video, delete_syllabus,
+            list_videos_for_technique_in_syllabus_visible_to, VideoParent,
+        };
+        use crate::test::test_utils::TestDbBuilder;
+
+        let db = TestDbBuilder::new()
+            .coach("coach", None)
+            .student("alice", None)
+            .technique("Armbar", "arm lock", Some("coach"))
+            .build()
+            .await
+            .unwrap();
+        let coach = db.user_id("coach").unwrap();
+        let alice = db.user_id("alice").unwrap();
+        let tech = db.technique_id("Armbar").unwrap();
+
+        // Syllabus with alice assigned and an SST for the technique.
+        let syllabus_id: i64 = sqlx::query_scalar!(
+            "INSERT INTO syllabi (name, created_by_id) VALUES ('Blue Belt', ?) RETURNING id AS \"id!\"",
+            coach
+        )
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+        sqlx::query!(
+            "INSERT INTO syllabus_techniques (syllabus_id, technique_id, position, added_by_id)
+             VALUES (?, ?, 0, ?)",
+            syllabus_id,
+            tech,
+            coach
+        )
+        .execute(&db.pool)
+        .await
+        .unwrap();
+        let assignment_id: i64 = sqlx::query_scalar!(
+            "INSERT INTO syllabus_assignments (student_id, syllabus_id, assigned_by_id)
+             VALUES (?, ?, ?) RETURNING id AS \"id!\"",
+            alice,
+            syllabus_id,
+            coach
+        )
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+        sqlx::query!(
+            "INSERT INTO student_syllabus_techniques (assignment_id, technique_id)
+             VALUES (?, ?)",
+            assignment_id,
+            tech
+        )
+        .execute(&db.pool)
+        .await
+        .unwrap();
+
+        // A visible T1 video for the technique.
+        create_processing_video(&db.pool, VideoParent::Technique(tech), "t1", None, coach)
+            .await
+            .unwrap();
+
+        // Before delete: student should see the video.
+        let before =
+            list_videos_for_technique_in_syllabus_visible_to(&db.pool, tech, syllabus_id, alice)
+                .await
+                .unwrap();
+        assert!(!before.is_empty(), "student should see the T1 video before soft-delete");
+
+        // Soft-delete the syllabus -- closes alice's assignment.
+        delete_syllabus(&db.pool, syllabus_id).await.unwrap();
+
+        // After delete: student should see nothing (assignment is closed).
+        let after =
+            list_videos_for_technique_in_syllabus_visible_to(&db.pool, tech, syllabus_id, alice)
+                .await
+                .unwrap();
+        assert!(
+            after.is_empty(),
+            "student must see no videos once their assignment is closed by soft-delete"
+        );
+    }
+
+    /// Gap 3 guard: syllabus-scope overrides must cascade away when the syllabus
+    /// row is deleted. Even though the app soft-deletes, this verifies the FK
+    /// constraint at the schema level.
+    #[rocket::async_test]
+    async fn syllabus_scope_override_cascades_on_syllabus_delete() {
+        use crate::db::{create_processing_video, set_video_override, VideoParent, VisibilityScope};
+        use crate::test::test_utils::TestDbBuilder;
+
+        let db = TestDbBuilder::new()
+            .coach("coach", None)
+            .technique("Armbar", "arm lock", Some("coach"))
+            .build()
+            .await
+            .unwrap();
+        // FK enforcement must be on for ON DELETE CASCADE to fire.
+        sqlx::query("PRAGMA foreign_keys = ON")
+            .execute(&db.pool)
+            .await
+            .unwrap();
+        let coach = db.user_id("coach").unwrap();
+        let tech = db.technique_id("Armbar").unwrap();
+
+        let syllabus_id: i64 = sqlx::query_scalar!(
+            "INSERT INTO syllabi (name, created_by_id) VALUES ('Blue Belt', ?) RETURNING id AS \"id!\"",
+            coach
+        )
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+        let video_id =
+            create_processing_video(&db.pool, VideoParent::Technique(tech), "t1", None, coach)
+                .await
+                .unwrap();
+
+        set_video_override(&db.pool, VisibilityScope::Syllabus(syllabus_id), video_id, false, coach)
+            .await
+            .unwrap();
+
+        let before: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM video_visibility_overrides WHERE syllabus_id = ? AND video_id = ?",
+        )
+        .bind(syllabus_id)
+        .bind(video_id)
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+        assert_eq!(before, 1, "override must exist before syllabus delete");
+
+        // Hard-delete the syllabus to exercise the FK cascade.
+        sqlx::query("DELETE FROM syllabi WHERE id = ?")
+            .bind(syllabus_id)
+            .execute(&db.pool)
+            .await
+            .unwrap();
+
+        let after: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM video_visibility_overrides WHERE syllabus_id = ?",
+        )
+        .bind(syllabus_id)
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+        assert_eq!(after, 0, "syllabus-scope override must cascade on syllabus delete");
+    }
 }

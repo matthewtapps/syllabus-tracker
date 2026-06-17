@@ -473,7 +473,7 @@ pub async fn list_videos_for_technique(
 /// through [`effective_video_visible`] against the (student, syllabus)
 /// assignment, so the full override precedence (assignment > syllabus >
 /// student scope, SST-hidden cascade, global hide) applies. If the student
-/// has no assignment for this syllabus, nothing is visible.
+/// has no ACTIVE assignment for this syllabus, nothing is visible.
 ///
 /// Candidates are unioned across all three owning tiers: the technique's T1
 /// videos, this syllabus's T2 (`syllabus_technique`) videos for the technique,
@@ -488,7 +488,8 @@ pub async fn list_videos_for_technique_in_syllabus_visible_to(
     let assignment_id = sqlx::query_scalar!(
         r#"SELECT id AS "id!: i64"
            FROM syllabus_assignments
-           WHERE student_id = ? AND syllabus_id = ?"#,
+           WHERE student_id = ? AND syllabus_id = ?
+             AND unassigned_at IS NULL"#,
         student_id,
         syllabus_id,
     )
@@ -876,7 +877,7 @@ async fn table_exists(pool: &Pool<Sqlite>, name: &str) -> Result<bool, AppError>
 ///     `('student', student_id, video, visible)` (no fan-out).
 ///
 /// Idempotent via `INSERT OR IGNORE` against the partial unique indexes
-/// (`idx_vvo_student` / `idx_vvo_assignment`).
+/// (`idx_vvo_student` / `idx_vvo_syllabus` / `idx_vvo_assignment`).
 pub async fn run_video_visibility_backfill(
     pool: &Pool<Sqlite>,
 ) -> Result<VideoVisibilityBackfillCounts, AppError> {

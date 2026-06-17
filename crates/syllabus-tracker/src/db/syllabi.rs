@@ -140,6 +140,18 @@ pub async fn update_syllabus(
     name: Option<&str>,
     description: Option<Option<&str>>,
 ) -> Result<(), AppError> {
+    // Pre-flight: if the syllabus has been soft-deleted, treat it as gone and
+    // no-op (matching the old hard-delete behaviour where the row was simply
+    // absent).
+    let exists: Option<i64> = sqlx::query_scalar!(
+        r#"SELECT 1 AS "x!: i64" FROM syllabi WHERE id = ? AND deleted_at IS NULL"#,
+        id
+    )
+    .fetch_optional(pool)
+    .await?;
+    if exists.is_none() {
+        return Ok(());
+    }
     let now = chrono::Utc::now().naive_utc();
     match (name, description) {
         (Some(n), Some(d)) => {
