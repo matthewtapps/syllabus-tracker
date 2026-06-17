@@ -2013,12 +2013,29 @@ export interface CampDetail extends Camp {
   references_camp_name: string | null;
 }
 
-export async function getCampsForStudent(studentId: number): Promise<Camp[]> {
+/** Row from GET /api/camps (enriched list payload). */
+export interface CampSummary {
+  id: number;
+  student_id: number;
+  coach_id: number;
+  name: string;
+  description: string | null;
+  created_at: string;
+  archived_at: string | null;
+  competition_id: number | null;
+  references_camp_id: number | null;
+  competition_name: string | null;
+  technique_count: number;
+  video_count: number;
+  last_activity_at: string | null;
+}
+
+export async function getCampsForStudent(studentId: number): Promise<CampSummary[]> {
   const res = await fetch(`/api/camps?student_id=${studentId}`, {
     credentials: "include",
   });
   if (!res.ok) throw res;
-  return ((await res.json()) as { camps: Camp[] }).camps;
+  return ((await res.json()) as { camps: CampSummary[] }).camps;
 }
 
 export async function getCamp(id: number): Promise<CampDetail> {
