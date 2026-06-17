@@ -13,7 +13,7 @@ import {
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { StudentAvatar } from "@/components/student-avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -89,14 +89,6 @@ const createCampSchema = z.object({
   references_camp_id: z.string().optional(),
 });
 type CreateCampValues = z.infer<typeof createCampSchema>;
-
-function initials(u: Pick<User, "display_name" | "username">): string {
-  const source = u.display_name?.trim() || u.username || "";
-  const parts = source.split(/\s+/).filter(Boolean);
-  if (parts.length === 0) return "?";
-  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
-  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
-}
 
 export default function StudentProfilePage() {
   const params = useParams<{ id: string }>();
@@ -193,9 +185,7 @@ function ProfileHub({
     <div className="container mx-auto space-y-6 px-4 py-6 sm:px-6 md:py-8">
       <section className="space-y-3">
         <div className="flex items-center gap-4">
-          <Avatar size="lg" className="shrink-0">
-            <AvatarFallback>{initials(student)}</AvatarFallback>
-          </Avatar>
+          <StudentAvatar id={student.id} name={displayName} size="lg" />
           <div className="min-w-0 flex-1">
             <h1 className="flex items-center gap-2 truncate text-base font-semibold">
               {displayName}
