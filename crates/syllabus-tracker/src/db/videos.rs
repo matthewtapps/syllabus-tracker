@@ -32,8 +32,6 @@ pub enum VideoParent {
 /// A coach visibility-override scope. Mirrors the exclusive-arc parent pattern
 /// (`VideoParent`): exactly one entity is referenced, the DB enforces it via a
 /// CHECK + per-scope FK cascade on `video_visibility_overrides`.
-// consumed by override writers in a later task
-#[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum VisibilityScope {
     Student(i64),
@@ -654,7 +652,7 @@ pub async fn video_visible_to_student(
          LEFT JOIN video_visibility_overrides ov
                 ON ov.video_id = v.id
                AND ov.scope_kind = 'student'
-               AND ov.scope_id = ?
+               AND ov.student_id = ?
          WHERE v.id = ?",
         student_id,
         video_id,
@@ -737,9 +735,9 @@ pub async fn video_visible_to_student_anywhere(
 ///   1. soft-deleted (`videos.deleted_at`)          -> never visible
 ///   2. owning-technique SST hidden (`student_syllabus_techniques.hidden_at`
 ///      for this assignment + the video's owning technique) -> hidden
-///   3. assignment-scope override (`scope_kind='assignment'`, scope_id=assignment_id)
-///   4. syllabus-scope override   (`scope_kind='syllabus'`,   scope_id=assignment's syllabus_id)
-///   5. student-scope override    (`scope_kind='student'`,    scope_id=assignment's student_id)
+///   3. assignment-scope override (`scope_kind='assignment'`, assignment_id=assignment_id)
+///   4. syllabus-scope override   (`scope_kind='syllabus'`,   syllabus_id=assignment's syllabus_id)
+///   5. student-scope override    (`scope_kind='student'`,    student_id=assignment's student_id)
 ///   6. owned-in-scope ? global `videos.hidden_at` : absent (not a candidate -> hidden)
 ///
 /// "Owned-in-scope" means the video's parent tier resolves into this
@@ -816,15 +814,15 @@ pub async fn effective_video_visible(
         LEFT JOIN video_visibility_overrides ov_assignment
                ON ov_assignment.video_id = v.id
               AND ov_assignment.scope_kind = 'assignment'
-              AND ov_assignment.scope_id = sa.id
+              AND ov_assignment.assignment_id = sa.id
         LEFT JOIN video_visibility_overrides ov_syllabus
                ON ov_syllabus.video_id = v.id
               AND ov_syllabus.scope_kind = 'syllabus'
-              AND ov_syllabus.scope_id = sa.syllabus_id
+              AND ov_syllabus.syllabus_id = sa.syllabus_id
         LEFT JOIN video_visibility_overrides ov_student
                ON ov_student.video_id = v.id
               AND ov_student.scope_kind = 'student'
-              AND ov_student.scope_id = sa.student_id
+              AND ov_student.student_id = sa.student_id
         WHERE v.id = ?1
         "#,
         video_id,
@@ -877,8 +875,8 @@ async fn table_exists(pool: &Pool<Sqlite>, name: &str) -> Result<bool, AppError>
 ///   - `video_student_visibility(student,video)` ->
 ///     `('student', student_id, video, visible)` (no fan-out).
 ///
-/// Idempotent via `INSERT OR IGNORE` against the override PK
-/// `(scope_kind, scope_id, video_id)`.
+/// Idempotent via `INSERT OR IGNORE` against the partial unique indexes
+/// (`idx_vvo_student` / `idx_vvo_assignment`).
 pub async fn run_video_visibility_backfill(
     pool: &Pool<Sqlite>,
 ) -> Result<VideoVisibilityBackfillCounts, AppError> {
@@ -894,7 +892,7 @@ pub async fn run_video_visibility_backfill(
         // assignment scope: only rows that have a matching assignment.
         let assignment_res = sqlx::query(
             "INSERT OR IGNORE INTO video_visibility_overrides
-                (scope_kind, scope_id, video_id, visible, set_by_id, set_at)
+                (scope_kind, assignment_id, video_id, visible, set_by_id, set_at)
              SELECT 'assignment', sa.id, ssvv.video_id, ssvv.visible,
                     ssvv.updated_by_id, ssvv.updated_at
              FROM student_syllabus_video_visibility ssvv
@@ -926,7 +924,7 @@ pub async fn run_video_visibility_backfill(
         // student scope: straight copy, no fan-out.
         let student_res = sqlx::query(
             "INSERT OR IGNORE INTO video_visibility_overrides
-                (scope_kind, scope_id, video_id, visible, set_by_id, set_at)
+                (scope_kind, student_id, video_id, visible, set_by_id, set_at)
              SELECT 'student', vsv.student_id, vsv.video_id, vsv.visible,
                     vsv.set_by_id, vsv.set_at
              FROM video_student_visibility vsv",
@@ -961,28 +959,28 @@ pub async fn run_video_visibility_backfill(
 #[instrument(skip(pool))]
 pub async fn set_video_override(
     pool: &Pool<Sqlite>,
-    scope_kind: &str,
-    scope_id: i64,
+    scope: VisibilityScope,
     video_id: i64,
     visible: bool,
     by_id: i64,
 ) -> Result<(), AppError> {
+    let kind = scope.kind();
+    let (student_id, syllabus_id, assignment_id) = scope.columns();
+    let mut tx = pool.begin().await?;
+    sqlx::query!(
+        "DELETE FROM video_visibility_overrides
+         WHERE scope_kind = ?
+           AND student_id IS ? AND syllabus_id IS ? AND assignment_id IS ?
+           AND video_id = ?",
+        kind, student_id, syllabus_id, assignment_id, video_id,
+    ).execute(&mut *tx).await?;
     sqlx::query!(
         "INSERT INTO video_visibility_overrides
-            (scope_kind, scope_id, video_id, visible, set_by_id, set_at)
-         VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-         ON CONFLICT (scope_kind, scope_id, video_id)
-         DO UPDATE SET visible = excluded.visible,
-                       set_by_id = excluded.set_by_id,
-                       set_at = CURRENT_TIMESTAMP",
-        scope_kind,
-        scope_id,
-        video_id,
-        visible,
-        by_id,
-    )
-    .execute(pool)
-    .await?;
+            (scope_kind, student_id, syllabus_id, assignment_id, video_id, visible, set_by_id, set_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)",
+        kind, student_id, syllabus_id, assignment_id, video_id, visible, by_id,
+    ).execute(&mut *tx).await?;
+    tx.commit().await?;
     Ok(())
 }
 
@@ -991,16 +989,17 @@ pub async fn set_video_override(
 #[instrument(skip(pool))]
 pub async fn clear_video_override(
     pool: &Pool<Sqlite>,
-    scope_kind: &str,
-    scope_id: i64,
+    scope: VisibilityScope,
     video_id: i64,
 ) -> Result<(), AppError> {
+    let kind = scope.kind();
+    let (student_id, syllabus_id, assignment_id) = scope.columns();
     sqlx::query!(
         "DELETE FROM video_visibility_overrides
-         WHERE scope_kind = ? AND scope_id = ? AND video_id = ?",
-        scope_kind,
-        scope_id,
-        video_id,
+         WHERE scope_kind = ?
+           AND student_id IS ? AND syllabus_id IS ? AND assignment_id IS ?
+           AND video_id = ?",
+        kind, student_id, syllabus_id, assignment_id, video_id,
     )
     .execute(pool)
     .await?;
@@ -1180,8 +1179,13 @@ pub async fn set_video_student_visibility(
     actor_id: i64,
 ) -> Result<(), AppError> {
     match visible {
-        Some(b) => set_video_override(pool, "student", student_id, video_id, b, actor_id).await?,
-        None => clear_video_override(pool, "student", student_id, video_id).await?,
+        Some(b) => {
+            set_video_override(pool, VisibilityScope::Student(student_id), video_id, b, actor_id)
+                .await?
+        }
+        None => {
+            clear_video_override(pool, VisibilityScope::Student(student_id), video_id).await?
+        }
     }
     Ok(())
 }
@@ -1207,7 +1211,7 @@ pub async fn list_video_student_overrides(
         .join(",");
     let sql = format!(
         "SELECT video_id, visible FROM video_visibility_overrides
-         WHERE scope_kind = 'student' AND scope_id = ? AND video_id IN ({placeholders})"
+         WHERE scope_kind = 'student' AND student_id = ? AND video_id IN ({placeholders})"
     );
     let rows: Vec<(i64, bool)> = sqlx::query_as(&sql)
         .bind(student_id)
@@ -1402,8 +1406,20 @@ pub async fn set_video_syllabus_visibility(
     .ok_or_else(|| AppError::NotFound("no assignment for (student, syllabus)".into()))?;
 
     match visible {
-        Some(b) => set_video_override(pool, "assignment", assignment_id, video_id, b, by_user_id).await?,
-        None => clear_video_override(pool, "assignment", assignment_id, video_id).await?,
+        Some(b) => {
+            set_video_override(
+                pool,
+                VisibilityScope::Assignment(assignment_id),
+                video_id,
+                b,
+                by_user_id,
+            )
+            .await?
+        }
+        None => {
+            clear_video_override(pool, VisibilityScope::Assignment(assignment_id), video_id)
+                .await?
+        }
     }
 
     let mut tx = pool.begin().await?;
@@ -1456,7 +1472,7 @@ pub async fn list_video_syllabus_overrides(
     // shape that SQLx's compile-time macro doesn't handle.
     let mut qb = sqlx::QueryBuilder::<sqlx::Sqlite>::new(
         "SELECT video_id, visible FROM video_visibility_overrides \
-         WHERE scope_kind = 'assignment' AND scope_id = ",
+         WHERE scope_kind = 'assignment' AND assignment_id = ",
     );
     qb.push_bind(assignment_id);
     qb.push(" AND video_id IN (");

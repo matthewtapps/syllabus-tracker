@@ -324,19 +324,30 @@ CREATE INDEX IF NOT EXISTS idx_sat_sst
 CREATE INDEX IF NOT EXISTS idx_sat_recorder
     ON syllabus_attempts (recorded_by_id, attempted_at DESC);
 
--- Visibility override keyed by an arbitrary scope (student / syllabus /
--- assignment) for a single video. Replaced the two legacy per-(student,video)
--- and per-(student,syllabus,video) override tables, which were backfilled
--- into this table and dropped (V3b).
+-- Coach visibility override for a single video within a single scope
+-- (student / syllabus / assignment). Exclusive-arc design mirroring
+-- videos.parent_kind / threads.anchor_kind: `scope_kind` discriminates and
+-- exactly one typed FK column is set (CHECK-enforced). Each scope FK is
+-- ON DELETE CASCADE, so deleting a scope entity removes its overrides -- no
+-- dangling rows, no rowid-reuse mis-application. Absence of a row = inherit.
 CREATE TABLE IF NOT EXISTS video_visibility_overrides (
-    scope_kind  TEXT NOT NULL CHECK (scope_kind IN ('student','syllabus','assignment')),
-    scope_id    INTEGER NOT NULL,
-    video_id    INTEGER NOT NULL REFERENCES videos (id) ON DELETE CASCADE,
-    visible     BOOLEAN NOT NULL,
-    set_by_id   INTEGER REFERENCES users (id),
-    set_at      TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY (scope_kind, scope_id, video_id)
+    scope_kind    TEXT NOT NULL CHECK (scope_kind IN ('student','syllabus','assignment')),
+    student_id    INTEGER REFERENCES users (id)                ON DELETE CASCADE,
+    syllabus_id   INTEGER REFERENCES syllabi (id)              ON DELETE CASCADE,
+    assignment_id INTEGER REFERENCES syllabus_assignments (id) ON DELETE CASCADE,
+    video_id      INTEGER NOT NULL REFERENCES videos (id)      ON DELETE CASCADE,
+    visible       BOOLEAN NOT NULL,
+    set_by_id     INTEGER REFERENCES users (id),
+    set_at        TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CHECK (
+      (scope_kind='student'    AND student_id    IS NOT NULL AND syllabus_id IS NULL AND assignment_id IS NULL) OR
+      (scope_kind='syllabus'   AND syllabus_id   IS NOT NULL AND student_id  IS NULL AND assignment_id IS NULL) OR
+      (scope_kind='assignment' AND assignment_id IS NOT NULL AND student_id  IS NULL AND syllabus_id   IS NULL)
+    )
 );
+CREATE UNIQUE INDEX IF NOT EXISTS idx_vvo_student    ON video_visibility_overrides (student_id, video_id)    WHERE scope_kind='student';
+CREATE UNIQUE INDEX IF NOT EXISTS idx_vvo_syllabus   ON video_visibility_overrides (syllabus_id, video_id)   WHERE scope_kind='syllabus';
+CREATE UNIQUE INDEX IF NOT EXISTS idx_vvo_assignment ON video_visibility_overrides (assignment_id, video_id) WHERE scope_kind='assignment';
 
 CREATE TABLE IF NOT EXISTS activity (
     id                INTEGER PRIMARY KEY AUTOINCREMENT,

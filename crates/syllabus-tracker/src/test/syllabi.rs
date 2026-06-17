@@ -807,7 +807,7 @@ mod pr4_tests {
     #[rocket::async_test]
     async fn diff_lists_hidden_and_student_only_videos() {
         use crate::db::{
-            create_processing_video, DiffVideoKind, VideoParent,
+            create_processing_video, DiffVideoKind, VideoParent, VisibilityScope,
         };
         // Two students on the same syllabus so we can assert no cross-bleed.
         let test_db = create_standard_test_db().await;
@@ -843,8 +843,7 @@ mod pr4_tests {
                 .unwrap();
         db::set_video_override(
             &test_db.pool,
-            "assignment",
-            alice_asgn,
+            VisibilityScope::Assignment(alice_asgn),
             t1_video,
             false,
             coach_id,
@@ -896,7 +895,7 @@ mod pr4_tests {
 
     #[rocket::async_test]
     async fn apply_diff_restores_and_promotes_videos() {
-        use crate::db::{create_processing_video, VideoParent};
+        use crate::db::{create_processing_video, VideoParent, VisibilityScope};
         let (client, db, syllabus_id, student_id, coach_id, assignment_id, sst_id) =
             seed_active_assignment().await;
         let armbar_id = db.technique_id("Armbar").unwrap();
@@ -906,9 +905,15 @@ mod pr4_tests {
             create_processing_video(&db.pool, VideoParent::Technique(armbar_id), "t1", None, coach_id)
                 .await
                 .unwrap();
-        db::set_video_override(&db.pool, "assignment", assignment_id, t1_video, false, coach_id)
-            .await
-            .unwrap();
+        db::set_video_override(
+            &db.pool,
+            VisibilityScope::Assignment(assignment_id),
+            t1_video,
+            false,
+            coach_id,
+        )
+        .await
+        .unwrap();
         // Hidden BEFORE apply.
         assert!(
             !db::effective_video_visible(&db.pool, t1_video, assignment_id)
@@ -954,7 +959,7 @@ mod pr4_tests {
         // restore: the assignment-scope override is gone, video visible again.
         let override_count: i64 = sqlx::query_scalar(
             "SELECT COUNT(*) FROM video_visibility_overrides
-             WHERE scope_kind = 'assignment' AND scope_id = ? AND video_id = ?",
+             WHERE scope_kind = 'assignment' AND assignment_id = ? AND video_id = ?",
         )
         .bind(assignment_id)
         .bind(t1_video)

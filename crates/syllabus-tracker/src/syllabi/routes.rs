@@ -12,7 +12,7 @@ use validator::Validate;
 
 use crate::auth::{Permission, User};
 use crate::db;
-use crate::db::{PropagationMode, SstUpdate, SyllabusAttemptUpdate};
+use crate::db::{PropagationMode, SstUpdate, SyllabusAttemptUpdate, VisibilityScope};
 
 type ApiResult<T> = Result<T, crate::api::ApiError>;
 
@@ -366,7 +366,12 @@ pub async fn api_apply_assignment_diff(
     for entry in &body.video_actions {
         match entry.action {
             VideoAction::Restore => {
-                db::clear_video_override(db, "assignment", assignment.id, entry.video_id).await?;
+                db::clear_video_override(
+                    db,
+                    VisibilityScope::Assignment(assignment.id),
+                    entry.video_id,
+                )
+                .await?;
                 applied += 1;
             }
             VideoAction::PromoteToGlobal => {

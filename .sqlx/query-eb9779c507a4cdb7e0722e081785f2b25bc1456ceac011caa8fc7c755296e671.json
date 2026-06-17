@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO video_visibility_overrides\n            (scope_kind, student_id, syllabus_id, assignment_id, video_id, visible, set_by_id, set_at)\n         VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 7
+    },
+    "nullable": []
+  },
+  "hash": "eb9779c507a4cdb7e0722e081785f2b25bc1456ceac011caa8fc7c755296e671"
+}

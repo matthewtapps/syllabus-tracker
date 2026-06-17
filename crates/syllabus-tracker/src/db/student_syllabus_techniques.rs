@@ -631,7 +631,7 @@ pub async fn diff_for_assignment(
                               WHEN 'syllabus_technique' THEN st.technique_id
                             END
            WHERE ov.scope_kind = 'assignment'
-             AND ov.scope_id = ?
+             AND ov.assignment_id = ?
              AND ov.visible = 0
              AND v.deleted_at IS NULL
              AND v.parent_kind IN ('technique', 'syllabus_technique')

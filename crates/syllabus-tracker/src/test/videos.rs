@@ -1004,7 +1004,7 @@ mod tests {
     async fn effective_video_visible_precedence() {
         use crate::db::{
             clear_video_override, create_processing_video, effective_video_visible,
-            set_video_override, VideoParent,
+            set_video_override, VideoParent, VisibilityScope,
         };
         use crate::test::test_utils::TestDbBuilder;
 
@@ -1087,9 +1087,15 @@ mod tests {
 
         // Rung: global hide + assignment-scope override visible=1 -> visible
         // (explicit beats global).
-        set_video_override(&db.pool, "assignment", assignment_id, video_id, true, coach)
-            .await
-            .unwrap();
+        set_video_override(
+            &db.pool,
+            VisibilityScope::Assignment(assignment_id),
+            video_id,
+            true,
+            coach,
+        )
+        .await
+        .unwrap();
         assert!(
             effective_video_visible(&db.pool, video_id, assignment_id)
                 .await
@@ -1099,12 +1105,24 @@ mod tests {
 
         // Rung: assignment override visible=0 -> hidden, even if syllabus
         // override says visible=1.
-        set_video_override(&db.pool, "syllabus", syllabus_id, video_id, true, coach)
-            .await
-            .unwrap();
-        set_video_override(&db.pool, "assignment", assignment_id, video_id, false, coach)
-            .await
-            .unwrap();
+        set_video_override(
+            &db.pool,
+            VisibilityScope::Syllabus(syllabus_id),
+            video_id,
+            true,
+            coach,
+        )
+        .await
+        .unwrap();
+        set_video_override(
+            &db.pool,
+            VisibilityScope::Assignment(assignment_id),
+            video_id,
+            false,
+            coach,
+        )
+        .await
+        .unwrap();
         assert!(
             !effective_video_visible(&db.pool, video_id, assignment_id)
                 .await
@@ -1113,12 +1131,18 @@ mod tests {
         );
 
         // Rung: syllabus override visible=0, no assignment override -> hidden.
-        clear_video_override(&db.pool, "assignment", assignment_id, video_id)
+        clear_video_override(&db.pool, VisibilityScope::Assignment(assignment_id), video_id)
             .await
             .unwrap();
-        set_video_override(&db.pool, "syllabus", syllabus_id, video_id, false, coach)
-            .await
-            .unwrap();
+        set_video_override(
+            &db.pool,
+            VisibilityScope::Syllabus(syllabus_id),
+            video_id,
+            false,
+            coach,
+        )
+        .await
+        .unwrap();
         assert!(
             !effective_video_visible(&db.pool, video_id, assignment_id)
                 .await
@@ -1128,10 +1152,10 @@ mod tests {
 
         // Rung: student override visible=0, no syllabus/assignment override ->
         // hidden.
-        clear_video_override(&db.pool, "syllabus", syllabus_id, video_id)
+        clear_video_override(&db.pool, VisibilityScope::Syllabus(syllabus_id), video_id)
             .await
             .unwrap();
-        set_video_override(&db.pool, "student", alice, video_id, false, coach)
+        set_video_override(&db.pool, VisibilityScope::Student(alice), video_id, false, coach)
             .await
             .unwrap();
         assert!(
@@ -1143,16 +1167,22 @@ mod tests {
 
         // Rung: owning technique's SST hidden_at set -> hidden (cascade),
         // regardless of overrides showing the video.
-        clear_video_override(&db.pool, "student", alice, video_id)
+        clear_video_override(&db.pool, VisibilityScope::Student(alice), video_id)
             .await
             .unwrap();
         sqlx::query!("UPDATE videos SET hidden_at = NULL WHERE id = ?", video_id)
             .execute(&db.pool)
             .await
             .unwrap();
-        set_video_override(&db.pool, "assignment", assignment_id, video_id, true, coach)
-            .await
-            .unwrap();
+        set_video_override(
+            &db.pool,
+            VisibilityScope::Assignment(assignment_id),
+            video_id,
+            true,
+            coach,
+        )
+        .await
+        .unwrap();
         sqlx::query!(
             "UPDATE student_syllabus_techniques SET hidden_at = CURRENT_TIMESTAMP WHERE id = ?",
             sst_id
@@ -1187,11 +1217,105 @@ mod tests {
         );
     }
 
+    /// Regression: an override must cascade away when its scope entity is
+    /// deleted. The old polymorphic (scope_kind, scope_id) design left dangling
+    /// rows that could mis-apply after SQLite reused the rowid. The typed-FK
+    /// ON DELETE CASCADE removes the override with the entity. Also covers
+    /// upsert idempotency (set twice -> a single row).
+    #[rocket::async_test]
+    async fn override_cascades_when_scope_entity_deleted() {
+        use crate::db::{create_processing_video, set_video_override, VideoParent, VisibilityScope};
+        use crate::test::test_utils::TestDbBuilder;
+
+        let db = TestDbBuilder::new()
+            .coach("coach", None)
+            .student("alice", None)
+            .technique("Armbar", "arm lock", Some("coach"))
+            .build()
+            .await
+            .unwrap();
+        // The TestDb in-memory pool does not enable FK enforcement by default;
+        // ON DELETE CASCADE only fires with it on.
+        sqlx::query("PRAGMA foreign_keys = ON")
+            .execute(&db.pool)
+            .await
+            .unwrap();
+        let coach = db.user_id("coach").unwrap();
+        let alice = db.user_id("alice").unwrap();
+        let tech = db.technique_id("Armbar").unwrap();
+
+        let syllabus_id: i64 = sqlx::query_scalar!(
+            "INSERT INTO syllabi (name, created_by_id) VALUES ('Blue Belt', ?) RETURNING id AS \"id!\"",
+            coach
+        )
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+        let assignment_id: i64 = sqlx::query_scalar!(
+            "INSERT INTO syllabus_assignments (student_id, syllabus_id, assigned_by_id)
+             VALUES (?, ?, ?) RETURNING id AS \"id!\"",
+            alice,
+            syllabus_id,
+            coach
+        )
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+        let video_id =
+            create_processing_video(&db.pool, VideoParent::Technique(tech), "t1", None, coach)
+                .await
+                .unwrap();
+
+        set_video_override(
+            &db.pool,
+            VisibilityScope::Assignment(assignment_id),
+            video_id,
+            false,
+            coach,
+        )
+        .await
+        .unwrap();
+        // Upsert again -> still one row (delete-then-insert is idempotent).
+        set_video_override(
+            &db.pool,
+            VisibilityScope::Assignment(assignment_id),
+            video_id,
+            true,
+            coach,
+        )
+        .await
+        .unwrap();
+        let n: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM video_visibility_overrides WHERE assignment_id = ? AND video_id = ?",
+        )
+        .bind(assignment_id)
+        .bind(video_id)
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+        assert_eq!(n, 1);
+
+        // Delete the assignment -> override cascades away (no dangling row).
+        sqlx::query("DELETE FROM syllabus_assignments WHERE id = ?")
+            .bind(assignment_id)
+            .execute(&db.pool)
+            .await
+            .unwrap();
+        let after: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM video_visibility_overrides WHERE assignment_id = ?",
+        )
+        .bind(assignment_id)
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+        assert_eq!(after, 0, "override must cascade on scope-entity delete");
+    }
+
     #[rocket::async_test]
     async fn anywhere_guard_respects_assignment_scope_hide() {
         use crate::db::{
             create_processing_video, set_video_override, video_visible_to_student,
-            video_visible_to_student_anywhere, VideoParent,
+            video_visible_to_student_anywhere, VideoParent, VisibilityScope,
         };
         use crate::test::test_utils::TestDbBuilder;
 
@@ -1261,9 +1385,15 @@ mod tests {
         // Hide the video at the assignment's scope (override visible=0). The
         // OLD guard only checks student-scope + global hide, so it still
         // allows the video; the NEW anywhere guard must refuse it.
-        set_video_override(&db.pool, "assignment", assignment_id, video_id, false, coach)
-            .await
-            .unwrap();
+        set_video_override(
+            &db.pool,
+            VisibilityScope::Assignment(assignment_id),
+            video_id,
+            false,
+            coach,
+        )
+        .await
+        .unwrap();
 
         assert!(
             video_visible_to_student(&db.pool, video_id, alice)
@@ -1404,9 +1534,9 @@ mod tests {
         assert_eq!(counts.assignment_orphaned, 1, "one orphan ssvv row skipped");
         assert_eq!(counts.student_inserted, 1, "one vsv row");
 
-        // assignment-scope override exists with the mapped scope_id + visible.
+        // assignment-scope override exists with the mapped assignment_id + visible.
         let row = sqlx::query!(
-            r#"SELECT scope_id AS "scope_id!: i64", visible AS "visible!: bool"
+            r#"SELECT assignment_id AS "assignment_id!: i64", visible AS "visible!: bool"
                FROM video_visibility_overrides
                WHERE scope_kind = 'assignment' AND video_id = ?"#,
             video_id
@@ -1414,12 +1544,12 @@ mod tests {
         .fetch_one(&db.pool)
         .await
         .unwrap();
-        assert_eq!(row.scope_id, assignment_id);
+        assert_eq!(row.assignment_id, assignment_id);
         assert!(!row.visible, "ssvv visible=0 preserved");
 
-        // student-scope override exists with scope_id = student_id.
+        // student-scope override exists with student_id = student_id.
         let srow = sqlx::query!(
-            r#"SELECT scope_id AS "scope_id!: i64", visible AS "visible!: bool"
+            r#"SELECT student_id AS "student_id!: i64", visible AS "visible!: bool"
                FROM video_visibility_overrides
                WHERE scope_kind = 'student' AND video_id = ?"#,
             video_id
@@ -1427,7 +1557,7 @@ mod tests {
         .fetch_one(&db.pool)
         .await
         .unwrap();
-        assert_eq!(srow.scope_id, alice);
+        assert_eq!(srow.student_id, alice);
         assert!(!srow.visible);
 
         // The orphan produced no assignment-scope row beyond the mapped one.

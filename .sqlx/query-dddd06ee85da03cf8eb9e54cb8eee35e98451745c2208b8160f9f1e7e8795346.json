@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "DELETE FROM video_visibility_overrides\n         WHERE scope_kind = ?\n           AND student_id IS ? AND syllabus_id IS ? AND assignment_id IS ?\n           AND video_id = ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 5
+    },
+    "nullable": []
+  },
+  "hash": "dddd06ee85da03cf8eb9e54cb8eee35e98451745c2208b8160f9f1e7e8795346"
+}
