@@ -1,13 +1,13 @@
 import { useMemo, useState } from 'react';
-import { Link, Navigate, useParams } from 'react-router-dom';
+import { Navigate, useParams } from 'react-router-dom';
 import { NotebookPen, Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/empty-state';
 import { useAllUsers, useStudentSyllabi } from '@/lib/queries';
 import { useUser } from '@/lib/current-user-context';
 import { isCoachOrAdmin } from '@/lib/api';
-import { cn } from '@/lib/utils';
 import { AssignSyllabusDialog } from './components/assign-syllabus-dialog';
+import { SyllabusAssignmentRow } from './components/syllabus-assignment-row';
 
 export default function StudentSyllabiPage() {
   const params = useParams<{ id: string }>();
@@ -102,27 +102,7 @@ function StudentSyllabiList({
           <ul className="divide-y divide-border">
             {assignments.map((a) => (
               <li key={a.id}>
-                <Link
-                  to={`/student/${studentId}/syllabi/${a.syllabus_id}`}
-                  className="flex items-start justify-between gap-3 px-4 py-3 transition-colors hover:bg-muted/40"
-                >
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-semibold">
-                      {a.syllabus_name}
-                    </p>
-                    {a.total_count > 0 && (
-                      <p className="mt-0.5 text-xs text-muted-foreground">
-                        {a.total_count}{' '}
-                        {a.total_count === 1 ? 'technique' : 'techniques'}
-                      </p>
-                    )}
-                  </div>
-                  <ProgressChips
-                    red={a.red_count}
-                    amber={a.amber_count}
-                    green={a.green_count}
-                  />
-                </Link>
+                <SyllabusAssignmentRow studentId={studentId} assignment={a} />
               </li>
             ))}
           </ul>
@@ -139,46 +119,5 @@ function StudentSyllabiList({
         />
       )}
     </div>
-  );
-}
-
-function ProgressChips({
-  red,
-  amber,
-  green,
-}: {
-  red: number;
-  amber: number;
-  green: number;
-}) {
-  return (
-    <div className="flex shrink-0 items-center gap-1 text-xs">
-      <Chip color="bg-status-red/80" label="Red" value={red} />
-      <Chip color="bg-status-amber/80" label="Amber" value={amber} />
-      <Chip color="bg-status-green/80" label="Green" value={green} />
-    </div>
-  );
-}
-
-function Chip({
-  color,
-  label,
-  value,
-}: {
-  color: string;
-  label: string;
-  value: number;
-}) {
-  return (
-    <span
-      className={cn(
-        'flex h-6 min-w-6 items-center justify-center rounded-full px-1.5 text-[10px] font-semibold text-foreground/90',
-        color,
-        value === 0 && 'opacity-40',
-      )}
-      title={`${label}: ${value}`}
-    >
-      {value}
-    </span>
   );
 }

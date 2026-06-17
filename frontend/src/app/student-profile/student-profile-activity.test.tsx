@@ -84,6 +84,15 @@ function makeStubFetch(feedRows: ActivityRow[]) {
         }),
       );
     }
+    // Profile preview sections: syllabi + pinned both expect an array.
+    if (url.includes("/pinned_techniques") || url.includes("/syllabi")) {
+      return Promise.resolve(
+        new Response(JSON.stringify([]), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      );
+    }
     return Promise.resolve(
       new Response(JSON.stringify({}), { status: 200 }),
     );

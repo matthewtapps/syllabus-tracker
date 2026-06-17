@@ -81,4 +81,23 @@ describe("coalesceActivity", () => {
     expect(out[0].members[0]).toBe(r3);
     expect(out[0].row).toBe(r3);
   });
+
+  it("does not merge same syllabus_id across different students", () => {
+    const out = coalesceActivity([
+      row({ id: 2, syllabus_id: 10, target_student_id: 1 }),
+      row({ id: 1, syllabus_id: 10, target_student_id: 2 }),
+    ]);
+    expect(out).toHaveLength(2);
+    expect(out[0].members).toHaveLength(1);
+    expect(out[1].members).toHaveLength(1);
+  });
+
+  it("still merges same syllabus_id for the same student", () => {
+    const out = coalesceActivity([
+      row({ id: 2, syllabus_id: 10, target_student_id: 1, technique_name: "Armbar" }),
+      row({ id: 1, syllabus_id: 10, target_student_id: 1, technique_name: "Triangle" }),
+    ]);
+    expect(out).toHaveLength(1);
+    expect(out[0].count).toBe(2);
+  });
 });
