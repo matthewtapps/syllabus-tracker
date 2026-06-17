@@ -300,7 +300,7 @@ function ProfileHub({
           {syllabiQuery.isLoading ? (
             <div className="px-4 py-4"><div className="h-4 w-1/3 animate-pulse rounded bg-muted" /></div>
           ) : previewSyllabi.length === 0 ? (
-            <EmptyState icon={NotebookPen} title="No syllabi yet" description={isOwnView ? "A coach has not assigned you a syllabus yet." : "This student has no active syllabus assignments."} />
+            <EmptyState compact icon={NotebookPen} title="No syllabi yet" description={isOwnView ? "A coach has not assigned you a syllabus yet." : "This student has no active syllabus assignments."} />
           ) : (
             <ul className="divide-y divide-border">
               {previewSyllabi.map((a) => (
@@ -327,7 +327,7 @@ function ProfileHub({
           {pinnedQuery.isLoading ? (
             <div className="px-4 py-4"><div className="h-4 w-1/3 animate-pulse rounded bg-muted" /></div>
           ) : previewPinned.length === 0 ? (
-            <EmptyState icon={Pin} title="No pins yet" description={isOwnView ? "Pin techniques from the library to keep them within reach." : "This student has not pinned anything yet."} />
+            <EmptyState compact icon={Pin} title="No pins yet" description={isOwnView ? "Pin techniques from the library to keep them within reach." : "This student has not pinned anything yet."} />
           ) : (
             <Accordion type="single" collapsible value={pinnedExpanded} onValueChange={setPinnedExpanded}>
               {previewPinned.map((t) => (
