@@ -724,6 +724,18 @@ export async function setStudentGraduated(
   });
 }
 
+export async function archiveStudent(
+  studentId: number,
+  archived: boolean,
+): Promise<Response> {
+  return await fetch(`/api/student/${studentId}/archive`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ archived }),
+    credentials: "include",
+  });
+}
+
 export interface LibraryStats {
   total_techniques: number;
 }

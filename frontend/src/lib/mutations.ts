@@ -2,6 +2,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   addTagToTechnique,
   addTechniquesToCollection,
+  archiveStudent,
   assignCollectionToStudent,
   assignTechniquesToStudent,
   approveUser,
@@ -197,6 +198,32 @@ export function useSetStudentGraduated() {
         qc.invalidateQueries({ queryKey: ["students"] }),
         qc.invalidateQueries({ queryKey: qk.users() }),
         qc.invalidateQueries({ queryKey: qk.student(id) }),
+      ]),
+  });
+}
+
+// Optimistic archive toggle used on the student profile (coach + admin path).
+export function useArchiveStudent() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (vars: { studentId: number; archived: boolean }) =>
+      unwrap(await archiveStudent(vars.studentId, vars.archived)),
+    onMutate: async ({ studentId, archived }) => {
+      await qc.cancelQueries({ queryKey: qk.users() });
+      const previousUsers = qc.getQueryData<User[]>(qk.users());
+      qc.setQueryData<User[]>(qk.users(), (prev) =>
+        prev?.map((u) => (u.id === studentId ? { ...u, archived } : u)),
+      );
+      return { previousUsers };
+    },
+    onError: (_err, _vars, ctx) => {
+      if (ctx?.previousUsers) qc.setQueryData(qk.users(), ctx.previousUsers);
+    },
+    onSettled: (_res, _err, vars) =>
+      Promise.all([
+        qc.invalidateQueries({ queryKey: qk.users() }),
+        qc.invalidateQueries({ queryKey: ["students"] }),
+        qc.invalidateQueries({ queryKey: qk.student(vars.studentId) }),
       ]),
   });
 }
