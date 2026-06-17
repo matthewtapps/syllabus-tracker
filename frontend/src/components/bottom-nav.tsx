@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import {
+  Award,
   Download,
   EllipsisVertical,
   LayoutDashboard,
@@ -17,6 +18,7 @@ import {
 import type { User } from '@/lib/api';
 import { isCoachOrAdmin, isAdmin } from '@/lib/api';
 import { useInstallTrigger } from '@/lib/install';
+import { campsUiEnabled } from '@/lib/features';
 import { cn } from '@/lib/utils';
 import {
   Sheet,
@@ -50,6 +52,8 @@ function buildTabs(user: User): Tab[] {
       icon: Library,
     });
     tabs.push({ to: '/syllabi', label: 'Syllabi', icon: NotebookPen });
+    if (campsUiEnabled)
+      tabs.push({ to: '/competitions', label: 'Competitions', icon: Award });
   } else {
     tabs.push({
       to: `/student/${user.id}/syllabi`,

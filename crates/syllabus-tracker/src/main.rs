@@ -2,8 +2,8 @@
 extern crate rocket;
 
 pub use syllabus_tracker::{
-    api, auth, capabilities, catchers, db, env, error, models, syllabi, telemetry, threads,
-    validation, videos,
+    api, auth, camps, capabilities, catchers, competitions, db, env, error, models, suggestions,
+    syllabi, telemetry, threads, validation, videos,
 };
 
 #[cfg(test)]
@@ -17,14 +17,15 @@ use api::{
     api_add_techniques_to_collection, api_approve_user, api_assign_collection,
     api_assign_techniques, api_attempt_heatmap, api_attempt_sparkline, api_attempt_summary,
     api_change_password, api_claim_invite, api_create_and_assign_technique, api_create_attempt,
-    api_create_collection, api_create_tag, api_create_technique_in_collection, api_delete_attempt,
+    api_create_collection, api_create_library_technique, api_create_tag,
+    api_create_technique_in_collection, api_delete_attempt,
     api_delete_collection, api_delete_tag, api_get_all_tags, api_get_collection,
     api_get_collection_students, api_get_collections, api_get_invite, api_get_pinned_techniques,
     api_get_single_student_technique, api_get_student_library, api_get_student_techniques,
     api_get_students, api_get_technique_tags, api_get_unassigned_techniques, api_invite_user,
     api_library_stats, api_library_technique_stats, api_list_attempts, api_list_library_techniques,
     api_login, api_logout, api_mark_student_technique_seen, api_me, api_me_unauthorized,
-    api_pin_technique, api_recent_attempts, api_register_user,
+    api_pin_technique, api_promote_technique_to_global, api_recent_attempts, api_register_user,
     api_remove_tag_from_technique, api_remove_technique_from_collection,
     api_request_password_reset, api_reset_user_claim, api_self_register, api_set_student_graduated,
     api_student_activity_feed, api_student_recent_syllabus_attempts,
@@ -52,6 +53,24 @@ use syllabi::{
     api_set_assignment_graduated, api_set_sst_hidden, api_set_video_syllabus_visibility,
     api_unassign_syllabus, api_update_sst, api_update_syllabus, api_update_syllabus_attempt,
 };
+use camps::{
+    api_add_camp_technique, api_archive_camp, api_create_camp, api_create_camp_technique,
+    api_get_camp, api_list_camps, api_list_camp_videos, api_promote_pinned_to_camp,
+    api_remove_camp_technique, api_update_camp, api_set_camp_video_visibility,
+};
+use suggestions::{
+    api_create_suggestion, api_list_pending_suggestions, api_student_suggestions,
+    api_decide_suggestion,
+};
+use competitions::{
+    api_create_competition, api_list_competitions, api_get_competition, api_update_competition,
+    api_self_register_competition, api_coach_register_student, api_unregister_student,
+    api_promote_camp_to_competition,
+    api_create_match, api_list_registration_matches, api_update_match, api_delete_match,
+    api_link_match_technique, api_unlink_match_technique, api_list_match_techniques,
+    api_list_match_videos,
+    api_student_matches,
+};
 use threads::{
     api_create_thread, api_list_threads, api_create_comment, api_delete_thread, api_delete_comment,
 };
@@ -60,12 +79,13 @@ use telemetry::init_tracing;
 use thiserror::Error;
 use videos::{
     CallbackSecret, RemoteProcessor, DynVideoProcessor, HostFfmpegProcessor,
-    api_admin_storage, api_dashboard_video_overview, api_delete_video, api_list_technique_videos,
-    api_my_watch_state, api_processing_result, api_reorder_videos, api_replace_video,
-    api_set_video_global_hidden, api_set_video_student_visibility, api_student_watch_activity,
-    api_update_video, api_video_download_url, api_video_link, api_video_playback_url,
-    api_video_privacy_ack, api_video_privacy_ack_status, api_video_stats, api_video_status,
-    api_video_upload, api_video_watch_events,
+    api_admin_storage, api_camp_video_upload, api_dashboard_video_overview, api_delete_video,
+    api_list_technique_videos, api_match_video_upload, api_my_watch_state, api_processing_result,
+    api_reorder_videos, api_replace_video, api_set_video_global_hidden,
+    api_set_video_student_visibility, api_student_watch_activity, api_update_video,
+    api_video_download_url, api_video_link, api_video_playback_url, api_video_privacy_ack,
+    api_video_privacy_ack_status, api_video_stats, api_video_status, api_video_upload,
+    api_video_watch_events,
 };
 
 use sqlx::SqlitePool;
@@ -289,6 +309,8 @@ pub async fn init_rocket_with_callback_secret(
                 api_get_all_users,
                 api_library_stats,
                 api_list_library_techniques,
+                api_create_library_technique,
+                api_promote_technique_to_global,
                 api_library_technique_stats,
                 api_get_student_library,
                 api_get_pinned_techniques,
@@ -363,6 +385,40 @@ pub async fn init_rocket_with_callback_secret(
                 api_create_comment,
                 api_delete_thread,
                 api_delete_comment,
+                api_create_camp,
+                api_list_camps,
+                api_get_camp,
+                api_update_camp,
+                api_archive_camp,
+                api_add_camp_technique,
+                api_create_camp_technique,
+                api_remove_camp_technique,
+                api_list_camp_videos,
+                api_set_camp_video_visibility,
+                api_promote_pinned_to_camp,
+                // suggestions
+                api_create_suggestion,
+                api_list_pending_suggestions,
+                api_student_suggestions,
+                api_decide_suggestion,
+                // competitions + matches
+                api_create_competition,
+                api_list_competitions,
+                api_get_competition,
+                api_update_competition,
+                api_self_register_competition,
+                api_coach_register_student,
+                api_unregister_student,
+                api_promote_camp_to_competition,
+                api_create_match,
+                api_list_registration_matches,
+                api_update_match,
+                api_delete_match,
+                api_link_match_technique,
+                api_unlink_match_technique,
+                api_list_match_techniques,
+                api_list_match_videos,
+                api_student_matches,
             ],
         )
         .register(
@@ -475,6 +531,8 @@ pub async fn init_rocket_with_callback_secret(
                 "/api",
                 routes![
                     api_video_upload,
+                    api_camp_video_upload,
+                    api_match_video_upload,
                     api_video_status,
                     api_video_link,
                     api_list_technique_videos,

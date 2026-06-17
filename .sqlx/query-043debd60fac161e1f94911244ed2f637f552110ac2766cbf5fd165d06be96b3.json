@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT EXISTS(\n              SELECT 1 FROM techniques\n              WHERE id = ? AND is_global = 0 AND scoped_camp_id = ?\n           ) AS \"e!: i64\"",
+  "describe": {
+    "columns": [
+      {
+        "name": "e!: i64",
+        "ordinal": 0,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "043debd60fac161e1f94911244ed2f637f552110ac2766cbf5fd165d06be96b3"
+}

@@ -10,7 +10,10 @@ export type EntityRef =
   | { type: "video"; id: number }
   | { type: "sst"; id: number }
   | { type: "syllabus"; id: number }
-  | { type: "student"; id: number };
+  | { type: "student"; id: number }
+  | { type: "camp"; id: number }
+  | { type: "competition"; id: number }
+  | { type: "match"; id: number };
 
 export type EntityType = EntityRef["type"];
 
@@ -22,6 +25,9 @@ const ENTITY_TYPE_LOOKUP: Record<EntityType, true> = {
   sst: true,
   syllabus: true,
   student: true,
+  camp: true,
+  competition: true,
+  match: true,
 };
 
 function isEntityType(value: string): value is EntityType {

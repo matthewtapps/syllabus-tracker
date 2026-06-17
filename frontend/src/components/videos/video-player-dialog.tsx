@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { type ReactNode, useState } from "react";
 import { ChevronDown, DownloadIcon } from "lucide-react";
 import { toast } from "sonner";
 import type { Video } from "@/lib/api";
@@ -18,6 +18,12 @@ interface VideoPlayerDialogProps {
   watchContext?: WatchContext;
   /** Lineage shown in the viewer header (e.g. the technique this video lives on). */
   context?: { label: string };
+  /**
+   * Extra action(s) rendered inside the composer row alongside the built-in
+   * download button. Components here are rendered inside the
+   * PlayerControllerProvider, so they may call usePlayerController().
+   */
+  composerAction?: ReactNode;
 }
 
 export function VideoPlayerDialog({
@@ -26,6 +32,7 @@ export function VideoPlayerDialog({
   surface,
   watchContext,
   context,
+  composerAction,
 }: VideoPlayerDialogProps) {
   // Let the phone Back button close the sheet instead of leaving the page.
   useHistoryDismiss(!!video, onClose);
@@ -44,6 +51,7 @@ export function VideoPlayerDialog({
             watchContext={watchContext}
             context={context}
             onClose={onClose}
+            composerAction={composerAction}
           />
         )}
       </DialogContent>
@@ -57,12 +65,14 @@ function ViewerShell({
   watchContext,
   context,
   onClose,
+  composerAction,
 }: {
   video: Video;
   surface: VideoThreadSurface;
   watchContext?: WatchContext;
   context?: { label: string };
   onClose: () => void;
+  composerAction?: ReactNode;
 }) {
   const events = useWatchTracker(video.id, watchContext);
   const isNative = video.kind === "native";
@@ -123,18 +133,23 @@ function ViewerShell({
           surface={surface}
           watchEvents={events}
           composerAction={
-            canDownload ? (
-              <Button
-                type="button"
-                variant="outline"
-                size="icon"
-                onClick={handleDownload}
-                disabled={downloading}
-                aria-label="Download video"
-                title="Download video"
-              >
-                <DownloadIcon className="h-4 w-4" aria-hidden />
-              </Button>
+            canDownload || composerAction ? (
+              <>
+                {canDownload && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    onClick={handleDownload}
+                    disabled={downloading}
+                    aria-label="Download video"
+                    title="Download video"
+                  >
+                    <DownloadIcon className="h-4 w-4" aria-hidden />
+                  </Button>
+                )}
+                {composerAction}
+              </>
             ) : undefined
           }
         />

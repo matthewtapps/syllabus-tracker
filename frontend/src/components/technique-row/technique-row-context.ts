@@ -21,6 +21,8 @@ export type RowContext =
       /** Display name for the surface breadcrumb; null when the owner views their own. */
       studentName?: string | null;
       onUnpinIntent?: (technique: LibraryTechniqueRow) => void;
+      /** Coach-only: opens the camp picker for this technique. */
+      onAddToCampIntent?: (technique: LibraryTechniqueRow) => void;
     }
   | {
       kind: "student-syllabus";
@@ -36,6 +38,10 @@ export type RowContext =
        *  sites can prompt for confirmation before writing to a
        *  graduated assignment. `null` when not graduated. */
       graduatedAt: string | null;
+      /** Fired after the hidden toggle mutation succeeds so the listing
+       *  page can keep a just-hidden row lingering (ghosted) in Main for
+       *  the rest of the visit. `nowHidden` is the new hidden state. */
+      onHiddenToggled?: (techniqueId: number, nowHidden: boolean) => void;
     }
   // Coach editing a technique inside a global syllabus. Same edit
   // affordances as global-library coach surface, minus the cross-system
@@ -47,6 +53,15 @@ export type RowContext =
       /** Syllabus name for the surface breadcrumb. */
       syllabusName?: string;
       onRemove: (technique: LibraryTechniqueRow) => void;
+    }
+  | {
+      kind: "camp";
+      campId: number;
+      studentId: number;
+      /** Display name for the surface breadcrumb; null when the owner views their own. */
+      studentName?: string | null;
+      /** Coach-only: remove the technique from the camp. Absent for students. */
+      onRemove?: (technique: LibraryTechniqueRow) => void;
     };
 
 export interface TechniqueRowState {

@@ -3,6 +3,7 @@ import { Navigate, useNavigate, useParams } from 'react-router-dom';
 import { useTechniqueListNav } from '@/components/technique-row/use-technique-list-nav';
 import { TechniqueFilters } from '@/components/technique-row/technique-filters';
 import {
+  EllipsisVertical,
   GitCompare,
   GraduationCap,
   NotebookPen,
@@ -21,8 +22,28 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import {
+  Tabs,
+  TabsList,
+  TabsTrigger,
+} from '@/components/ui/tabs';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { EmptyState } from '@/components/empty-state';
 import { TechniqueRow } from '@/components/technique-row';
+import { partitionSsts, sortSsts, type SstSort } from './sst-view';
 import { useAllUsers, useStudentSyllabusTechniques } from '@/lib/queries';
 import {
   useSetAssignmentGraduated,
@@ -93,23 +114,47 @@ function Detail({
     const u = (usersQuery.data ?? []).find((u) => u.id === studentId);
     return u ? u.display_name || u.username : null;
   }, [isOwnView, usersQuery.data, studentId]);
-  const techniques = useMemo(() => {
-    const rows = query.data?.techniques ?? [];
-    return [...rows].sort((a, b) => {
-      const latestOf = (sst: SstRow): number => {
-        const candidates = [
-          sst.last_attempt_at,
-          sst.last_coach_update_at,
-          sst.last_student_update_at,
-        ];
-        const timestamps = candidates
-          .filter((t): t is string => t != null)
-          .map((t) => new Date(t).getTime());
-        return timestamps.length > 0 ? Math.max(...timestamps) : 0;
-      };
-      return latestOf(b) - latestOf(a);
+  const allSsts = useMemo(
+    () => query.data?.techniques ?? [],
+    [query.data?.techniques],
+  );
+  const [tab, setTab] = useState<'main' | 'custom' | 'hidden'>('main');
+  // Techniques just hidden this visit linger (ghosted) in Main until the
+  // coach leaves the tab. Per-visit only: cleared on tab change and on
+  // natural unmount (state dies with the component).
+  const [ghostTechniqueIds, setGhostTechniqueIds] = useState<Set<number>>(
+    () => new Set(),
+  );
+  function handleHiddenToggled(techniqueId: number, nowHidden: boolean) {
+    setGhostTechniqueIds((prev) => {
+      const next = new Set(prev);
+      if (nowHidden) next.add(techniqueId);
+      else next.delete(techniqueId);
+      return next;
     });
-  }, [query.data?.techniques]);
+  }
+  function changeTab(next: 'main' | 'custom' | 'hidden') {
+    setGhostTechniqueIds(new Set()); // clear ghosts when leaving the current tab
+    setTab(next);
+  }
+  const { main, custom, hidden } = useMemo(
+    () => partitionSsts(allSsts, ghostTechniqueIds),
+    [allSsts, ghostTechniqueIds],
+  );
+  // The student's own view always shows just their visible techniques; coaches
+  // drive the list off the selected tab.
+  const activeRows = isOwnView
+    ? allSsts.filter((r) => r.hidden_at == null)
+    : tab === 'main'
+      ? main
+      : tab === 'custom'
+        ? custom
+        : hidden;
+  const [sort, setSort] = useState<SstSort>('recent');
+  const techniques = useMemo(
+    () => sortSsts(activeRows, sort),
+    [activeRows, sort],
+  );
   const [unassignOpen, setUnassignOpen] = useState(false);
   const [graduateOpen, setGraduateOpen] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
@@ -213,50 +258,56 @@ function Detail({
           )}
         </p>
         {!isOwnView && (
-          <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
-            <Button
-              variant="outline"
-              size="icon"
-              aria-label="Sync with current syllabus"
-              onClick={() => setDiffOpen(true)}
-            >
-              <GitCompare className="h-4 w-4" aria-hidden />
-            </Button>
-            <Button
-              variant="outline"
-              size="icon"
-              aria-label="Add technique to this student"
-              onClick={() => setAddOpen(true)}
-            >
-              <Plus className="h-4 w-4" aria-hidden />
-            </Button>
-            <Button
-              variant="outline"
-              size="icon"
-              aria-label={
-                assignment.graduated_at
-                  ? 'Ungraduate this syllabus'
-                  : 'Graduate this syllabus'
-              }
-              onClick={() => setGraduateOpen(true)}
-              className={cn(assignment.graduated_at && 'text-status-green')}
-            >
-              <GraduationCap className="h-4 w-4" aria-hidden />
-            </Button>
-            <Button
-              variant="outline"
-              size="icon"
-              aria-label="Unassign syllabus"
-              onClick={() => setUnassignOpen(true)}
-              className="text-destructive"
-            >
-              <Trash2 className="h-4 w-4" aria-hidden />
-            </Button>
+          <div className="pt-0.5">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  aria-label="Syllabus actions"
+                >
+                  <EllipsisVertical className="h-4 w-4" aria-hidden />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="w-56">
+                <DropdownMenuItem onSelect={() => setDiffOpen(true)}>
+                  <GitCompare className="mr-2 h-4 w-4" aria-hidden />
+                  Sync with current syllabus
+                </DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => setGraduateOpen(true)}>
+                  <GraduationCap
+                    className={cn(
+                      'mr-2 h-4 w-4',
+                      assignment.graduated_at && 'text-status-green',
+                    )}
+                    aria-hidden
+                  />
+                  {assignment.graduated_at
+                    ? 'Ungraduate syllabus'
+                    : 'Graduate syllabus'}
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  onSelect={() => setUnassignOpen(true)}
+                  className="text-destructive focus:text-destructive"
+                >
+                  <Trash2 className="mr-2 h-4 w-4" aria-hidden />
+                  Unassign syllabus
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         )}
       </div>
 
-      {techniques.length > 0 && (
+      {!isOwnView && (
+        <Button className="w-full" onClick={() => setAddOpen(true)}>
+          <Plus className="mr-2 h-4 w-4" aria-hidden />
+          Add technique
+        </Button>
+      )}
+
+      {allSsts.length > 0 && (
         <>
           <TechniqueFilters
             search={nav.search}
@@ -266,13 +317,42 @@ function Detail({
             onToggleTag={nav.toggleTag}
             onClearTags={nav.clearTags}
           />
-          <p className="mb-2 text-xs text-muted-foreground">
+          <p className="text-xs text-muted-foreground">
             {filtered.length === techniques.length
               ? `${techniques.length} ${
                   techniques.length === 1 ? 'technique' : 'techniques'
                 }`
               : `${filtered.length} of ${techniques.length} techniques`}
           </p>
+          {!isOwnView && (
+            <Select value={sort} onValueChange={(v) => setSort(v as SstSort)}>
+              <SelectTrigger className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="recent">Recently active</SelectItem>
+                <SelectItem value="alphabetical">Alphabetical</SelectItem>
+              </SelectContent>
+            </Select>
+          )}
+          {!isOwnView && (
+            <Tabs
+              value={tab}
+              onValueChange={(v) =>
+                changeTab(v as 'main' | 'custom' | 'hidden')
+              }
+            >
+              <TabsList className="grid w-full grid-cols-3">
+                <TabsTrigger value="main">Main</TabsTrigger>
+                <TabsTrigger value="custom">
+                  Custom{custom.length ? ` (${custom.length})` : ''}
+                </TabsTrigger>
+                <TabsTrigger value="hidden">
+                  Hidden{hidden.length ? ` (${hidden.length})` : ''}
+                </TabsTrigger>
+              </TabsList>
+            </Tabs>
+          )}
         </>
       )}
 
@@ -309,11 +389,13 @@ function Detail({
                     assignmentId: assignment.id,
                     sst,
                     graduatedAt: assignment.graduated_at,
+                    onHiddenToggled: handleHiddenToggled,
                   }}
                   value={value}
                   isOpen={nav.expandedValue === value}
                   scrollToVideoId={nav.expandedValue === value ? nav.videoId : null}
                   onVideoScrolled={nav.consumeVideo}
+                  ghost={ghostTechniqueIds.has(sst.technique_id)}
                 />
               );
             })}
@@ -414,8 +496,19 @@ function Detail({
         onOpenChange={setAddOpen}
         studentId={studentId}
         syllabusId={syllabusId}
-        presentTechniqueIds={
-          new Set(techniques.map((t) => t.technique_id))
+        visibleTechniqueIds={
+          new Set(
+            (query.data?.techniques ?? [])
+              .filter((s) => !s.hidden_at)
+              .map((s) => s.technique_id),
+          )
+        }
+        hiddenTechniqueSstByTid={
+          new Map(
+            (query.data?.techniques ?? [])
+              .filter((s) => s.hidden_at)
+              .map((s) => [s.technique_id, s.id]),
+          )
         }
       />
     </div>

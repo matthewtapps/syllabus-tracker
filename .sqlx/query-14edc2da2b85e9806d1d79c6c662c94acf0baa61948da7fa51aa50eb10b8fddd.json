@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO techniques (name, description, coach_id, is_global, scoped_camp_id)\n                 VALUES (?, ?, ?, 0, ?)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 4
+    },
+    "nullable": []
+  },
+  "hash": "14edc2da2b85e9806d1d79c6c662c94acf0baa61948da7fa51aa50eb10b8fddd"
+}

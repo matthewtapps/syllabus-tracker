@@ -56,3 +56,10 @@ video-media = { path = "../video-media" }
 video-job = { path = "../video-job" }
 async-trait = "0.1.83"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+
+[package.metadata.cargo-machete]
+# tonic / opentelemetry-http: activated via feature flags on opentelemetry-otlp
+# (grpc-tonic, http-proto); machete can't see feature-gated re-exports.
+# tracing-core: re-exported by the tracing crate; direct pin keeps version stable.
+# either: indirect dep pinned for semver consistency with opentelemetry ecosystem.
+ignored = ["tonic", "opentelemetry-http", "tracing-core", "either"]

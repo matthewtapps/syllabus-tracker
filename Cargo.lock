@@ -4976,7 +4976,6 @@ version = "1.0.0"
 dependencies = [
  "hmac",
  "serde",
- "serde_json",
  "sha2",
  "subtle",
 ]

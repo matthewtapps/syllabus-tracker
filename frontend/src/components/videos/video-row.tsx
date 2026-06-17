@@ -52,7 +52,7 @@ import {
   SheetContent,
   SheetTitle,
 } from "@/components/ui/sheet";
-import { useSetVideoSyllabusVisibility } from "@/lib/mutations";
+import { useSetCampVideoVisibility, useSetVideoSyllabusVisibility } from "@/lib/mutations";
 import { useMediaQuery } from "@/lib/use-media-query";
 import { cn } from "@/lib/utils";
 import { VisibilityPopover } from "./visibility-popover";
@@ -76,6 +76,12 @@ interface VideoRowProps {
   syllabus?: { studentId: number; syllabusId: number };
   /** Render-prop for a drag handle when sortable. */
   dragHandle?: React.ReactNode;
+  /**
+   * CC-015: when set (coach-only, camp surface), the actions menu gains a
+   * "Hide in this camp" / "Restore in this camp" item that writes a
+   * camp-scope visibility override without touching other contexts.
+   */
+  campId?: number;
 }
 
 export function VideoRow({
@@ -89,6 +95,7 @@ export function VideoRow({
   studentDisplayName,
   syllabus,
   dragHandle,
+  campId,
 }: VideoRowProps) {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -214,6 +221,7 @@ export function VideoRow({
                 forStudent={forStudent}
                 studentDisplayName={studentDisplayName}
                 syllabus={syllabus}
+                campId={campId}
                 onEditStudent={() => setTimeout(() => setVisibilityOpen(true), 0)}
               />
               <DropdownMenuSeparator />
@@ -399,6 +407,9 @@ interface VisibilityMenuItemsProps {
   forStudent?: number;
   studentDisplayName?: string;
   syllabus?: { studentId: number; syllabusId: number };
+  /** CC-015: when set, render a camp-scope hide/restore item instead of
+   * the standard library or student-scope controls. */
+  campId?: number;
   /** Open the richer per-student editor (student context only). */
   onEditStudent: () => void;
 }
@@ -419,13 +430,44 @@ function VisibilityMenuItems({
   forStudent,
   studentDisplayName,
   syllabus,
+  campId,
   onEditStudent,
 }: VisibilityMenuItemsProps) {
   const qc = useQueryClient();
   const syllabusMutation = useSetVideoSyllabusVisibility();
+  const campVisibilityMutation = useSetCampVideoVisibility(campId ?? 0);
 
   function invalidateVideos() {
     qc.invalidateQueries({ queryKey: qk.techniqueVideosAll(techniqueId) });
+  }
+
+  // Camp context (CC-015): hide or restore this video within one camp only.
+  // The video is filtered out of the camp list once hidden, so the button
+  // effectively disappears after a hide. Use a toast-with-undo to recover.
+  if (campId != null) {
+    return (
+      <DropdownMenuItem
+        onSelect={async () => {
+          try {
+            await campVisibilityMutation.mutateAsync({ videoId: video.id, visible: false });
+            toast.success(`Hidden "${video.title}" in this camp`, {
+              duration: 6000,
+              action: {
+                label: "Undo",
+                onClick: () => {
+                  void campVisibilityMutation.mutateAsync({ videoId: video.id, visible: true });
+                },
+              },
+            });
+          } catch {
+            toast.error("Could not hide video in this camp");
+          }
+        }}
+      >
+        <EyeOff className="mr-2 h-4 w-4" aria-hidden />
+        Hide in this camp
+      </DropdownMenuItem>
+    );
   }
 
   // Syllabus context: toggle the per-(student, syllabus) override. Visible →

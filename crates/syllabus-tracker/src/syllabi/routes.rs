@@ -12,7 +12,7 @@ use validator::Validate;
 
 use crate::auth::{Permission, User};
 use crate::db;
-use crate::db::{PropagationMode, SstUpdate, SyllabusAttemptUpdate};
+use crate::db::{PropagationMode, SstUpdate, SyllabusAttemptUpdate, VisibilityScope};
 
 type ApiResult<T> = Result<T, crate::api::ApiError>;
 
@@ -289,9 +289,29 @@ pub struct MissingActionEntry {
 }
 
 #[derive(Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum VideoAction {
+    /// hidden_for_student: clear the assignment-scope override so the video is
+    /// visible to this student again.
+    Restore,
+    /// student_only (T3): re-parent the video to the global technique tier in
+    /// place, preserving its id/watch history.
+    PromoteToGlobal,
+    Ignore,
+}
+
+#[derive(Deserialize)]
+pub struct VideoActionEntry {
+    pub video_id: i64,
+    pub action: VideoAction,
+}
+
+#[derive(Deserialize)]
 pub struct DiffApplyRequest {
     pub ghost_actions: Vec<GhostActionEntry>,
     pub missing_actions: Vec<MissingActionEntry>,
+    #[serde(default)]
+    pub video_actions: Vec<VideoActionEntry>,
 }
 
 #[derive(Serialize)]
@@ -341,6 +361,25 @@ pub async fn api_apply_assignment_diff(
                 applied += 1;
             }
             MissingAction::Ignore => {}
+        }
+    }
+    for entry in &body.video_actions {
+        match entry.action {
+            VideoAction::Restore => {
+                db::clear_video_override(
+                    db,
+                    VisibilityScope::Assignment(assignment.id),
+                    entry.video_id,
+                )
+                .await?;
+                applied += 1;
+            }
+            VideoAction::PromoteToGlobal => {
+                if db::promote_video_to_global(db, entry.video_id).await? {
+                    applied += 1;
+                }
+            }
+            VideoAction::Ignore => {}
         }
     }
     Ok(Json(DiffApplyResponse { applied }))

@@ -769,6 +769,39 @@ export async function getLibraryTechniques(): Promise<LibraryTechniqueRow[]> {
   return await response.json();
 }
 
+/** Newly created library technique, as returned by `POST /api/techniques`. */
+export interface CreatedLibraryTechnique {
+  id: number;
+  name: string;
+  description: string;
+  coach_id: number;
+  coach_name: string;
+}
+
+export async function createLibraryTechnique(data: {
+  name: string;
+  description: string;
+  is_global?: boolean;
+}): Promise<Response> {
+  return await fetch("/api/techniques", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      name: data.name,
+      description: data.description,
+      ...(data.is_global === undefined ? {} : { is_global: data.is_global }),
+    }),
+    credentials: "include",
+  });
+}
+
+export async function promoteTechniqueToGlobal(techniqueId: number): Promise<Response> {
+  return await fetch(`/api/techniques/${techniqueId}/global`, {
+    method: "PATCH",
+    credentials: "include",
+  });
+}
+
 export async function getStudentLibrary(
   studentId: number,
 ): Promise<LibraryTechniqueRow[]> {
@@ -938,10 +971,12 @@ export type ProcessingStatus = "processing" | "ready" | "failed";
 
 export interface Video {
   id: number;
-  parent_kind: "technique" | "student_profile" | "thread" | "loose";
+  parent_kind: "technique" | "student_profile" | "thread" | "camp" | "loose" | "match";
   technique_id: number | null;
   student_id: number | null;
   thread_id: number | null;
+  camp_id: number | null;
+  match_id: number | null;
   title: string;
   description?: string | null;
   position: number;
@@ -978,6 +1013,16 @@ export interface UploadResponse {
   video_id: number;
   processing_status: ProcessingStatus;
 }
+
+/** Optional parent tier for a video-create call. When omitted, the backend
+ *  defaults to a `technique` parent equal to the `<tid>` in the route, which
+ *  preserves the existing library New-video behaviour. When provided, the
+ *  video is parented at the given tier (T1 technique / T2 syllabus_technique /
+ *  T3 student_syllabus_technique). */
+export type VideoParentInput =
+  | { kind: "technique"; id: number }
+  | { kind: "syllabus_technique"; id: number }
+  | { kind: "student_syllabus_technique"; id: number };
 
 export async function listVideos(
   techniqueId: number,
@@ -1037,11 +1082,27 @@ export async function setVideoStudentVisibility(
   });
 }
 
+/** CC-015: set a per-camp visibility override for a video. */
+export async function setCampVideoVisibility(
+  campId: number,
+  videoId: number,
+  visible: boolean,
+): Promise<void> {
+  const response = await fetch(`/api/camps/${campId}/videos/${videoId}/visibility`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ visible }),
+    credentials: "include",
+  });
+  if (!response.ok) throw response;
+}
+
 export async function uploadVideo(
   techniqueId: number,
   file: File,
   fields: { title: string; description?: string },
   onProgress?: (loaded: number, total: number) => void,
+  parent?: VideoParentInput,
 ): Promise<UploadResponse> {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
@@ -1079,6 +1140,10 @@ export async function uploadVideo(
     body.append("file", file);
     body.append("title", fields.title);
     if (fields.description) body.append("description", fields.description);
+    if (parent) {
+      body.append("parent_kind", parent.kind);
+      body.append("parent_id", String(parent.id));
+    }
 
     xhr.send(body);
   });
@@ -1087,12 +1152,17 @@ export async function uploadVideo(
 export async function linkVideo(
   techniqueId: number,
   payload: { title: string; description?: string; url: string },
+  parent?: VideoParentInput,
 ): Promise<Video> {
   const response = await fetch(`/api/techniques/${techniqueId}/videos/link`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     credentials: "include",
-    body: JSON.stringify(payload),
+    body: JSON.stringify(
+      parent
+        ? { ...payload, parent_kind: parent.kind, parent_id: parent.id }
+        : payload,
+    ),
   });
   if (!response.ok) throw response;
   return (await response.json()) as Video;
@@ -1218,6 +1288,7 @@ export interface SstRow {
   technique_id: number;
   technique_name: string;
   technique_description: string;
+  is_global: boolean;
   status: "red" | "amber" | "green";
   student_notes: string;
   coach_notes: string;
@@ -1473,9 +1544,20 @@ export interface DiffMissing {
   sst_id: number | null;
 }
 
+export type DiffVideoKind = "hidden_for_student" | "student_only";
+
+export interface DiffVideo {
+  technique_id: number;
+  technique_name: string;
+  video_id: number;
+  video_title: string;
+  kind: DiffVideoKind;
+}
+
 export interface SyllabusAssignmentDiff {
   ghosts: DiffGhost[];
   missing: DiffMissing[];
+  videos: DiffVideo[];
 }
 
 export type GhostActionKind =
@@ -1484,6 +1566,11 @@ export type GhostActionKind =
   | "ignore";
 
 export type MissingActionKind = "add_to_student" | "ignore";
+
+export type VideoActionKind =
+  | "restore"
+  | "promote_to_global"
+  | "ignore";
 
 export interface GhostActionEntry {
   sst_id: number;
@@ -1494,6 +1581,11 @@ export interface GhostActionEntry {
 export interface MissingActionEntry {
   technique_id: number;
   action: MissingActionKind;
+}
+
+export interface VideoActionEntry {
+  video_id: number;
+  action: VideoActionKind;
 }
 
 export async function setAssignmentGraduatedApi(
@@ -1531,6 +1623,7 @@ export async function applyAssignmentDiffApi(
   body: {
     ghost_actions: GhostActionEntry[];
     missing_actions: MissingActionEntry[];
+    video_actions?: VideoActionEntry[];
   },
 ): Promise<{ applied: number }> {
   const response = await fetch(
@@ -1782,7 +1875,8 @@ export type AnchorKind =
   | "video"
   | "video_timestamp"
   | "sst"
-  | "pinned_technique";
+  | "pinned_technique"
+  | "camp";
 export type ThreadVisibility = "private" | "broadcast";
 
 export interface CommentView {
@@ -1868,4 +1962,580 @@ export async function deleteComment(commentId: number): Promise<Response> {
     method: "DELETE",
     credentials: "include",
   });
+}
+
+// ============================================================
+// Camps
+// ============================================================
+
+export interface Camp {
+  id: number;
+  student_id: number;
+  coach_id: number;
+  name: string;
+  description: string | null;
+  created_at: string;
+  archived_at: string | null;
+  // The list endpoint (GET /api/camps) serializes the bare DB row, which only
+  // carries competition_id and references_camp_id. competition_name,
+  // registration_id, and references_camp_name are resolved and sent ONLY by
+  // the detail endpoint (CampDetail below).
+  competition_id: number | null;
+  references_camp_id: number | null;
+}
+
+export interface CampTechnique {
+  technique_id: number;
+  name: string;
+  description: string | null;
+  position: number;
+  tags: Tag[];
+  video_count: number;
+}
+
+export interface CampDetail extends Camp {
+  competition_name: string | null;
+  registration_id: number | null;
+  techniques: CampTechnique[];
+  /// Name of the camp this one builds on, resolved server-side.
+  references_camp_name: string | null;
+}
+
+export async function getCampsForStudent(studentId: number): Promise<Camp[]> {
+  const res = await fetch(`/api/camps?student_id=${studentId}`, {
+    credentials: "include",
+  });
+  if (!res.ok) throw res;
+  return ((await res.json()) as { camps: Camp[] }).camps;
+}
+
+export async function getCamp(id: number): Promise<CampDetail> {
+  const res = await fetch(`/api/camps/${id}`, { credentials: "include" });
+  if (!res.ok) throw res;
+  return (await res.json()) as CampDetail;
+}
+
+export async function createCamp(data: {
+  student_id: number;
+  name: string;
+  description: string | null;
+  references_camp_id?: number | null;
+}): Promise<{ id: number }> {
+  const res = await fetch("/api/camps", {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) throw res;
+  return (await res.json()) as { id: number };
+}
+
+export async function archiveCamp(id: number): Promise<void> {
+  const res = await fetch(`/api/camps/${id}/archive`, {
+    method: "POST",
+    credentials: "include",
+  });
+  if (!res.ok) throw res;
+}
+
+export async function addCampTechnique(
+  campId: number,
+  techniqueId: number,
+): Promise<void> {
+  const res = await fetch(`/api/camps/${campId}/techniques`, {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ technique_id: techniqueId }),
+  });
+  if (!res.ok) throw res;
+}
+
+export async function removeCampTechnique(
+  campId: number,
+  techniqueId: number,
+): Promise<void> {
+  const res = await fetch(`/api/camps/${campId}/techniques/${techniqueId}`, {
+    method: "DELETE",
+    credentials: "include",
+  });
+  if (!res.ok) throw res;
+}
+
+/** CC-009/010: Create a brand-new technique inside a camp and add it there. */
+export async function createCampTechnique(
+  campId: number,
+  data: { name: string; description: string; scope: "global" | "scoped" },
+): Promise<{ id: number }> {
+  const res = await fetch(`/api/camps/${campId}/techniques/create`, {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) throw res;
+  return res.json();
+}
+
+export async function promotePinnedToCamp(
+  studentId: number,
+  techniqueId: number,
+  campId: number,
+): Promise<void> {
+  const res = await fetch(
+    `/api/students/${studentId}/pinned/${techniqueId}/promote`,
+    {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ camp_id: campId }),
+    },
+  );
+  if (!res.ok) throw res;
+}
+
+export async function getCampVideos(campId: number): Promise<Video[]> {
+  const res = await fetch(`/api/camps/${campId}/videos`, {
+    credentials: "include",
+  });
+  if (!res.ok) throw res;
+  return ((await res.json()) as { videos: Video[] }).videos;
+}
+
+export async function uploadCampVideo(
+  campId: number,
+  file: File,
+  fields: { title: string; description?: string },
+  onProgress?: (loaded: number, total: number) => void,
+): Promise<UploadResponse> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", `/api/camps/${campId}/videos/upload`);
+    xhr.withCredentials = true;
+
+    if (onProgress) {
+      xhr.upload.addEventListener("progress", (e) => {
+        if (e.lengthComputable) onProgress(e.loaded, e.total);
+      });
+    }
+
+    xhr.addEventListener("load", () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try {
+          resolve(JSON.parse(xhr.responseText) as UploadResponse);
+        } catch {
+          reject(new Error("Invalid response from server"));
+        }
+      } else {
+        reject(
+          new Response(xhr.responseText || null, {
+            status: xhr.status,
+            statusText: xhr.statusText,
+          }),
+        );
+      }
+    });
+
+    xhr.addEventListener("error", () => reject(new Error("Network error during upload")));
+    xhr.addEventListener("abort", () => reject(new Error("Upload was cancelled")));
+
+    const body = new FormData();
+    body.append("file", file);
+    body.append("title", fields.title);
+    if (fields.description) body.append("description", fields.description);
+
+    xhr.send(body);
+  });
+}
+
+// ============================================================
+// Competitions + Matches (C-Slice 2)
+// ============================================================
+
+export interface Competition {
+  id: number;
+  name: string;
+  /** ISO-8601 date string or null when no date is set. */
+  date: string | null;
+  created_by_id: number;
+  created_at: string;
+}
+
+export interface RosterRow {
+  student_id: number;
+  student_name: string | null;
+  registered_at: string;
+  camp_id: number | null;
+}
+
+/** GET /api/competitions/<id> response */
+export interface CompetitionDetail {
+  id: number;
+  name: string;
+  date: string | null;
+  created_by_id: number;
+  created_at: string;
+  roster: RosterRow[];
+}
+
+export interface Registration {
+  id: number;
+  student_id: number;
+  competition_id: number;
+  registered_at: string;
+  registered_by_id: number | null;
+  unregistered_at: string | null;
+}
+
+export type MatchResult = "win" | "loss" | "draw";
+export type MatchMethod = "submission" | "points" | "decision" | "dq" | "other";
+
+export interface Match {
+  id: number;
+  registration_id: number;
+  result: MatchResult;
+  method: MatchMethod | null;
+  method_detail: string | null;
+  occurred_at: string | null;
+  created_by_id: number;
+  created_at: string;
+}
+
+/** Entry in GET /api/students/<id>/matches */
+export interface StudentMatch extends Match {
+  competition_id: number;
+  competition_name: string;
+  camp_id: number | null;
+}
+
+export interface MatchTechnique {
+  technique_id: number;
+  name: string;
+  description: string | null;
+}
+
+// --- Competition fetchers ---
+
+export async function getCompetitions(): Promise<Competition[]> {
+  const res = await fetch("/api/competitions", { credentials: "include" });
+  if (!res.ok) throw res;
+  return ((await res.json()) as { competitions: Competition[] }).competitions;
+}
+
+export async function getCompetition(id: number): Promise<CompetitionDetail> {
+  const res = await fetch(`/api/competitions/${id}`, { credentials: "include" });
+  if (!res.ok) throw res;
+  return (await res.json()) as CompetitionDetail;
+}
+
+export async function createCompetition(data: {
+  name: string;
+  date?: string | null;
+}): Promise<{ id: number }> {
+  const res = await fetch("/api/competitions", {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) throw res;
+  return (await res.json()) as { id: number };
+}
+
+export async function updateCompetition(
+  id: number,
+  data: { name: string; date?: string | null },
+): Promise<void> {
+  const res = await fetch(`/api/competitions/${id}`, {
+    method: "PUT",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) throw res;
+}
+
+// --- Registration fetchers ---
+
+/** Self-register the current user for a competition. */
+export async function registerSelf(competitionId: number): Promise<{ id: number }> {
+  const res = await fetch(`/api/competitions/${competitionId}/register`, {
+    method: "POST",
+    credentials: "include",
+  });
+  if (!res.ok) throw res;
+  return (await res.json()) as { id: number };
+}
+
+/** Coach registers a specific student for a competition. */
+export async function registerStudent(
+  competitionId: number,
+  studentId: number,
+): Promise<{ id: number }> {
+  const res = await fetch(
+    `/api/competitions/${competitionId}/register/${studentId}`,
+    { method: "POST", credentials: "include" },
+  );
+  if (!res.ok) throw res;
+  return (await res.json()) as { id: number };
+}
+
+/** Coach unregisters a student from a competition. */
+export async function unregisterStudent(
+  competitionId: number,
+  studentId: number,
+): Promise<void> {
+  const res = await fetch(
+    `/api/competitions/${competitionId}/register/${studentId}`,
+    { method: "DELETE", credentials: "include" },
+  );
+  if (!res.ok) throw res;
+}
+
+// --- Camp promotion ---
+
+export async function promoteCampToCompetition(
+  campId: number,
+  competitionId: number,
+): Promise<void> {
+  const res = await fetch(`/api/camps/${campId}/promote`, {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ competition_id: competitionId }),
+  });
+  if (!res.ok) throw res;
+}
+
+// --- Match fetchers ---
+
+export async function createMatch(
+  registrationId: number,
+  data: {
+    result: MatchResult;
+    method?: MatchMethod | null;
+    method_detail?: string | null;
+    occurred_at?: string | null;
+  },
+): Promise<{ id: number }> {
+  const res = await fetch(`/api/registrations/${registrationId}/matches`, {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) throw res;
+  return (await res.json()) as { id: number };
+}
+
+export async function getRegistrationMatches(registrationId: number): Promise<Match[]> {
+  const res = await fetch(`/api/registrations/${registrationId}/matches`, {
+    credentials: "include",
+  });
+  if (!res.ok) throw res;
+  return ((await res.json()) as { matches: Match[] }).matches;
+}
+
+export async function updateMatch(
+  matchId: number,
+  data: {
+    result: MatchResult;
+    method?: MatchMethod | null;
+    method_detail?: string | null;
+    occurred_at?: string | null;
+  },
+): Promise<void> {
+  const res = await fetch(`/api/matches/${matchId}`, {
+    method: "PUT",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) throw res;
+}
+
+export async function deleteMatch(matchId: number): Promise<void> {
+  const res = await fetch(`/api/matches/${matchId}`, {
+    method: "DELETE",
+    credentials: "include",
+  });
+  if (!res.ok) throw res;
+}
+
+export async function linkMatchTechnique(
+  matchId: number,
+  techniqueId: number,
+): Promise<void> {
+  const res = await fetch(`/api/matches/${matchId}/techniques`, {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ technique_id: techniqueId }),
+  });
+  if (!res.ok) throw res;
+}
+
+export async function unlinkMatchTechnique(
+  matchId: number,
+  techniqueId: number,
+): Promise<void> {
+  const res = await fetch(`/api/matches/${matchId}/techniques/${techniqueId}`, {
+    method: "DELETE",
+    credentials: "include",
+  });
+  if (!res.ok) throw res;
+}
+
+export async function getMatchTechniques(matchId: number): Promise<MatchTechnique[]> {
+  const res = await fetch(`/api/matches/${matchId}/techniques`, {
+    credentials: "include",
+  });
+  if (!res.ok) throw res;
+  return ((await res.json()) as { techniques: MatchTechnique[] }).techniques;
+}
+
+export async function getMatchVideos(matchId: number): Promise<Video[]> {
+  const res = await fetch(`/api/matches/${matchId}/videos`, {
+    credentials: "include",
+  });
+  if (!res.ok) throw res;
+  return ((await res.json()) as { videos: Video[] }).videos;
+}
+
+export async function getStudentMatches(studentId: number): Promise<StudentMatch[]> {
+  const res = await fetch(`/api/students/${studentId}/matches`, {
+    credentials: "include",
+  });
+  if (!res.ok) throw res;
+  return ((await res.json()) as { matches: StudentMatch[] }).matches;
+}
+
+export async function uploadMatchVideo(
+  matchId: number,
+  file: File,
+  fields: { title: string; description?: string },
+  onProgress?: (loaded: number, total: number) => void,
+): Promise<UploadResponse> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", `/api/matches/${matchId}/videos/upload`);
+    xhr.withCredentials = true;
+
+    if (onProgress) {
+      xhr.upload.addEventListener("progress", (e) => {
+        if (e.lengthComputable) onProgress(e.loaded, e.total);
+      });
+    }
+
+    xhr.addEventListener("load", () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try {
+          resolve(JSON.parse(xhr.responseText) as UploadResponse);
+        } catch {
+          reject(new Error("Invalid response from server"));
+        }
+      } else {
+        reject(
+          new Response(xhr.responseText || null, {
+            status: xhr.status,
+            statusText: xhr.statusText,
+          }),
+        );
+      }
+    });
+
+    xhr.addEventListener("error", () => reject(new Error("Network error during upload")));
+    xhr.addEventListener("abort", () => reject(new Error("Upload was cancelled")));
+
+    const body = new FormData();
+    body.append("file", file);
+    body.append("title", fields.title);
+    if (fields.description) body.append("description", fields.description);
+
+    xhr.send(body);
+  });
+}
+
+// ============================================================
+// Suggestions
+// ============================================================
+
+/** Mirrors db/suggestions.rs TechniqueSuggestion. */
+export interface TechniqueSuggestion {
+  id: number;
+  student_id: number;
+  technique_id: number;
+  anchor_video_id: number | null;
+  anchor_seconds: number | null;
+  status: "pending" | "approved" | "replaced" | "dismissed";
+  created_at: string;
+  decided_by_id: number | null;
+  decided_at: string | null;
+  replacement_technique_id: number | null;
+  decided_camp_id: number | null;
+}
+
+/** Mirrors db/suggestions.rs PendingSuggestion (enriched coach-queue row). */
+export interface PendingSuggestion {
+  id: number;
+  student_id: number;
+  student_name: string | null;
+  technique_id: number;
+  technique_name: string;
+  anchor_video_id: number | null;
+  anchor_video_title: string | null;
+  anchor_seconds: number | null;
+  created_at: string;
+}
+
+export async function createSuggestion(data: {
+  technique_id: number;
+  anchor_video_id?: number | null;
+  anchor_seconds?: number | null;
+}): Promise<{ id: number }> {
+  const res = await fetch("/api/suggestions", {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) throw res;
+  return (await res.json()) as { id: number };
+}
+
+export async function getPendingSuggestions(): Promise<PendingSuggestion[]> {
+  const res = await fetch("/api/suggestions/pending", { credentials: "include" });
+  if (!res.ok) throw res;
+  return ((await res.json()) as { suggestions: PendingSuggestion[] }).suggestions;
+}
+
+export async function getStudentSuggestions(
+  studentId: number,
+): Promise<TechniqueSuggestion[]> {
+  const res = await fetch(`/api/students/${studentId}/suggestions`, {
+    credentials: "include",
+  });
+  if (!res.ok) throw res;
+  return ((await res.json()) as { suggestions: TechniqueSuggestion[] }).suggestions;
+}
+
+export interface DecideSuggestionBody {
+  decision: "approve" | "replace" | "dismiss";
+  camp_id?: number | null;
+  replacement_technique_id?: number | null;
+}
+
+export async function decideSuggestion(
+  id: number,
+  body: DecideSuggestionBody,
+): Promise<Response> {
+  const res = await fetch(`/api/suggestions/${id}/decide`, {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw res;
+  return res;
 }

@@ -70,6 +70,12 @@ _sqlx mode:
     db="$tmp/prepare.db"
     SQLX_OFFLINE=true DATABASE_URL="sqlite://$db" SCHEMA_PATH=./config/schema.sql \
         cargo run -q -p migration-engine --bin migrate
+    # sqlx-macros-core calls dotenvy::dotenv_override() which overwrites DATABASE_URL
+    # from the nearest .env file even when the env var is already set. Placing a
+    # crate-level .env that points at our fresh temp DB wins over the root .env.
+    crate_env="crates/syllabus-tracker/.env"
+    printf 'DATABASE_URL=sqlite://%s\n' "$db" > "$crate_env"
+    trap 'rm -rf "$tmp"; rm -f "$crate_env"' EXIT
     DATABASE_URL="sqlite://$db" \
         cargo sqlx prepare {{mode}} --workspace -- -p syllabus-tracker --tests --all-features
 
@@ -105,8 +111,10 @@ up: migrate
 # Native dev loop. Brings up only the supporting infra in docker (minio,
 # minio-init, otel-collector) and runs the backend + frontend on the host so
 # we reuse the warm `target/` cache instead of recompiling inside a container.
+# `vite_env` sets the frontend's VITE_ENVIRONMENT (feature-gate key); leave the
+# default for normal dev, or use `dev-prod` to preview production-gated UI.
 [group('run')]
-dev: migrate
+dev vite_env="development": migrate
     #!/usr/bin/env bash
     set -uo pipefail
     docker compose up -d minio minio-init otel-collector
@@ -119,6 +127,10 @@ dev: migrate
     # The env files target the docker network; rewrite to localhost for native.
     export S3_ENDPOINT=http://localhost:9000
     export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317
+    # Override the dev.env VITE_ENVIRONMENT so `dev-prod` can run the full stack
+    # with production feature gates (e.g. the in-progress camps/competitions UI
+    # hidden). Defaults to development, so plain `just dev` is unchanged.
+    export VITE_ENVIRONMENT={{ vite_env }}
 
     (cd frontend && pnpm install && pnpm dev --host) &
     FRONTEND_PID=$!
@@ -140,6 +152,11 @@ dev: migrate
 
     wait -n
 
+# Native dev loop (backend + frontend + infra) with production feature gates,
+# so the in-progress camps/competitions UI is hidden. Same stack as `dev`.
+[group('run')]
+dev-prod: (dev "production")
+
 # Stop the docker compose stack.
 [group('run')]
 stop:
@@ -156,6 +173,13 @@ down:
 [group('frontend')]
 fe-dev:
     cd frontend && pnpm dev
+
+# Frontend dev server with VITE_ENVIRONMENT=production, so production feature
+# gates apply (e.g. the in-progress camps/competitions UI is hidden). Use to
+# preview the prod-gated UI locally without a full build.
+[group('frontend')]
+fe-dev-prod:
+    cd frontend && VITE_ENVIRONMENT=production pnpm dev
 
 # Build the frontend for production.
 [group('frontend')]
@@ -205,6 +229,14 @@ backfill-activity: migrate
 init-activity-cursors: migrate
     SQLX_OFFLINE=true DATABASE_URL=sqlite://data/sqlite.db SCHEMA_PATH=./config/schema.sql \
         cargo run -p syllabus-tracker --bin init_activity_cursors
+
+# One-shot idempotent backfill of the two legacy video-visibility tables into
+# video_visibility_overrides. MUST run BEFORE `just migrate` drops them (so it
+# deliberately does NOT depend on migrate). Safe to re-run.
+[group('db')]
+backfill-video-visibility:
+    SQLX_OFFLINE=true DATABASE_URL=sqlite://data/sqlite.db SCHEMA_PATH=./config/schema.sql \
+        cargo run -p syllabus-tracker --bin backfill_video_visibility
 
 # Wipe just the attempts table then reseed (keeps users/techniques).
 [group('db')]

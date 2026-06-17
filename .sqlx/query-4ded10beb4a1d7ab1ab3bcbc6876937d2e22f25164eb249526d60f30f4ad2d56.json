@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT COUNT(*) AS \"c!\" FROM syllabus_techniques WHERE id = ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "c!",
+        "ordinal": 0,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "4ded10beb4a1d7ab1ab3bcbc6876937d2e22f25164eb249526d60f30f4ad2d56"
+}

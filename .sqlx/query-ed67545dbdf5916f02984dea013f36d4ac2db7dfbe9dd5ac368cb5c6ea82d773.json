@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT sst.technique_id AS \"technique_id!: i64\"\n           FROM videos v\n           JOIN student_syllabus_techniques sst\n                  ON sst.id = v.student_syllabus_technique_id\n           WHERE v.id = ?\n             AND v.parent_kind = 'student_syllabus_technique'\n             AND v.deleted_at IS NULL",
+  "describe": {
+    "columns": [
+      {
+        "name": "technique_id!: i64",
+        "ordinal": 0,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "ed67545dbdf5916f02984dea013f36d4ac2db7dfbe9dd5ac368cb5c6ea82d773"
+}

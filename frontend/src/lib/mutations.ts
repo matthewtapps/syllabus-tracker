@@ -18,6 +18,7 @@ import {
   linkVideo,
   markStudentTechniqueSeen,
   pinTechniqueForStudent,
+  promoteTechniqueToGlobal,
   removeTagFromTechnique,
   removeTechniqueFromCollection,
   reorderVideos,
@@ -42,6 +43,7 @@ import type {
   Technique,
   TechniqueUpdate,
   User,
+  VideoParentInput,
 } from "./api";
 import { qk } from "./query-keys";
 
@@ -517,6 +519,31 @@ export function useUpdateLibraryTechnique() {
   });
 }
 
+export function usePromoteTechniqueToGlobal() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (vars: {
+      techniqueId: number;
+      studentId?: number;
+      syllabusId?: number;
+    }) => unwrap(await promoteTechniqueToGlobal(vars.techniqueId)),
+    onSuccess: (_res, vars) =>
+      Promise.all([
+        qc.invalidateQueries({ queryKey: qk.libraryTechniques() }),
+        ...(vars.studentId != null && vars.syllabusId != null
+          ? [
+              qc.invalidateQueries({
+                queryKey: qk.studentSyllabusTechniques(
+                  vars.studentId,
+                  vars.syllabusId,
+                ),
+              }),
+            ]
+          : []),
+      ]),
+  });
+}
+
 export function useRemoveTechniqueFromCollection() {
   const qc = useQueryClient();
   return useMutation({
@@ -637,16 +664,42 @@ export function useDeleteAttempt(studentTechniqueId?: number, studentId?: number
 // Videos
 // ============================================================
 
-export function useLinkVideo(techniqueId: number) {
+export function useLinkVideo(
+  techniqueId: number,
+  syllabus?: { studentId: number; syllabusId: number },
+) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (payload: {
+    mutationFn: async (vars: {
       title: string;
       description?: string;
       url: string;
-    }) => linkVideo(techniqueId, payload),
-    onSuccess: () =>
-      qc.invalidateQueries({ queryKey: qk.techniqueVideos(techniqueId) }),
+      parent?: VideoParentInput;
+    }) => {
+      const { parent, ...payload } = vars;
+      return linkVideo(techniqueId, payload, parent);
+    },
+    onSuccess: () => {
+      const tasks: Promise<unknown>[] = [
+        // Invalidate every per-viewer bucket: a T1 video appears for every
+        // student, and parenting at a tier still surfaces via cascade.
+        qc.invalidateQueries({ queryKey: qk.techniqueVideosAll(techniqueId) }),
+      ];
+      // Ensure a newly created T2/T3 video shows up in the student-syllabus
+      // video list the form was opened from.
+      if (syllabus) {
+        tasks.push(
+          qc.invalidateQueries({
+            queryKey: qk.syllabusTechniqueVideos(
+              syllabus.studentId,
+              syllabus.syllabusId,
+              techniqueId,
+            ),
+          }),
+        );
+      }
+      return Promise.all(tasks);
+    },
   });
 }
 
@@ -1046,6 +1099,7 @@ import {
   deleteComment,
   type GhostActionEntry,
   type MissingActionEntry,
+  type VideoActionEntry,
   type SyllabusAssignmentDiff,
   type SstRow,
   type StudentSyllabusDetailResponse,
@@ -1257,6 +1311,107 @@ export function useDeleteComment(anchorKind: string, anchorId: number) {
   });
 }
 
+// ============================================================
+// Camps
+// ============================================================
+
+import {
+  addCampTechnique,
+  archiveCamp,
+  createCamp,
+  createCampTechnique,
+  promotePinnedToCamp,
+  removeCampTechnique,
+  setCampVideoVisibility,
+  createCompetition,
+  updateCompetition,
+  registerSelf,
+  registerStudent,
+  unregisterStudent,
+  promoteCampToCompetition,
+  createMatch,
+  updateMatch,
+  deleteMatch,
+  linkMatchTechnique,
+  unlinkMatchTechnique,
+} from "./api";
+import type {
+  MatchResult,
+  MatchMethod,
+} from "./api";
+
+export function useCreateCamp(studentId: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: {
+      name: string;
+      description: string | null;
+      references_camp_id?: number | null;
+    }) => createCamp({ student_id: studentId, ...data }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: qk.campsForStudent(studentId) });
+    },
+  });
+}
+
+export function useArchiveCamp(studentId: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) => archiveCamp(id),
+    onSuccess: (_d, id) => {
+      qc.invalidateQueries({ queryKey: qk.campsForStudent(studentId) });
+      qc.invalidateQueries({ queryKey: qk.camp(id) });
+    },
+  });
+}
+
+export function useAddCampTechnique(campId: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (techniqueId: number) => addCampTechnique(campId, techniqueId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: qk.camp(campId) });
+    },
+  });
+}
+
+/** CC-009/010: Create a new technique inside a camp (global or scoped). */
+export function useCreateCampTechnique(campId: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: { name: string; description: string; scope: "global" | "scoped" }) =>
+      createCampTechnique(campId, vars),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: qk.camp(campId) });
+      // A new global technique joins the library; refresh the pick-existing picker.
+      qc.invalidateQueries({ queryKey: qk.libraryTechniques() });
+    },
+  });
+}
+
+export function useRemoveCampTechnique(campId: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (techniqueId: number) =>
+      removeCampTechnique(campId, techniqueId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: qk.camp(campId) });
+    },
+  });
+}
+
+/** CC-015: toggle per-camp visibility for a video. Invalidates campVideos. */
+export function useSetCampVideoVisibility(campId: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: { videoId: number; visible: boolean }) =>
+      setCampVideoVisibility(campId, vars.videoId, vars.visible),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: qk.campVideos(campId) });
+    },
+  });
+}
+
 // Bundled diff apply mutation. The plan calls this the second optimistic
 // patch in PR 4 (pin/unpin from PR 1 is the first). On mutate we patch
 // the studentSyllabusTechniques + studentSyllabusDiff caches; on error
@@ -1269,10 +1424,12 @@ export function useApplyAssignmentDiff() {
       syllabusId: number;
       ghost_actions: GhostActionEntry[];
       missing_actions: MissingActionEntry[];
+      video_actions?: VideoActionEntry[];
     }) =>
       applyAssignmentDiffApi(vars.studentId, vars.syllabusId, {
         ghost_actions: vars.ghost_actions,
         missing_actions: vars.missing_actions,
+        video_actions: vars.video_actions,
       }),
     onMutate: async (vars) => {
       const sstKey = qk.studentSyllabusTechniques(
@@ -1316,11 +1473,17 @@ export function useApplyAssignmentDiff() {
             .filter((m) => m.action !== "ignore")
             .map((m) => m.technique_id),
         );
+        const videoIds = new Set(
+          (vars.video_actions ?? [])
+            .filter((v) => v.action !== "ignore")
+            .map((v) => v.video_id),
+        );
         qc.setQueryData<SyllabusAssignmentDiff>(diffKey, {
           ghosts: prevDiff.ghosts.filter((g) => !ghostSstIds.has(g.sst_id)),
           missing: prevDiff.missing.filter(
             (m) => !missingTechIds.has(m.technique_id),
           ),
+          videos: prevDiff.videos.filter((v) => !videoIds.has(v.video_id)),
         });
       }
       return { prevSst, prevDiff, sstKey, diffKey };
@@ -1344,3 +1507,207 @@ export function useApplyAssignmentDiff() {
     },
   });
 }
+
+// ============================================================
+// Competitions + Matches (C-Slice 2)
+// ============================================================
+
+export function useCreateCompetition() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: { name: string; date?: string | null }) =>
+      createCompetition(data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: qk.competitions() });
+    },
+  });
+}
+
+export function useUpdateCompetition() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: {
+      id: number;
+      data: { name: string; date?: string | null };
+    }) => updateCompetition(vars.id, vars.data),
+    onSuccess: (_res, vars) => {
+      qc.invalidateQueries({ queryKey: qk.competitions() });
+      qc.invalidateQueries({ queryKey: qk.competition(vars.id) });
+    },
+  });
+}
+
+export function useRegisterSelf(competitionId: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => registerSelf(competitionId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: qk.competition(competitionId) });
+    },
+  });
+}
+
+export function useRegisterStudent(competitionId: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (studentId: number) => registerStudent(competitionId, studentId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: qk.competition(competitionId) });
+    },
+  });
+}
+
+export function useUnregisterStudent(competitionId: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (studentId: number) => unregisterStudent(competitionId, studentId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: qk.competition(competitionId) });
+    },
+  });
+}
+
+export function usePromotePinnedToCamp(studentId: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: { techniqueId: number; campId: number }) =>
+      promotePinnedToCamp(studentId, vars.techniqueId, vars.campId),
+    onSuccess: (_res, vars) => {
+      qc.invalidateQueries({ queryKey: qk.campsForStudent(studentId) });
+      qc.invalidateQueries({ queryKey: qk.camp(vars.campId) });
+    },
+  });
+}
+
+export function usePromoteCampToCompetition(campId: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (competitionId: number) =>
+      promoteCampToCompetition(campId, competitionId),
+    onSuccess: (_res, competitionId) => {
+      qc.invalidateQueries({ queryKey: qk.camp(campId) });
+      qc.invalidateQueries({ queryKey: qk.competition(competitionId) });
+    },
+  });
+}
+
+export function useLogMatch(registrationId: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: {
+      result: MatchResult;
+      method?: MatchMethod | null;
+      method_detail?: string | null;
+      occurred_at?: string | null;
+    }) => createMatch(registrationId, data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: qk.registrationMatches(registrationId) });
+      // studentMatches is keyed per student; invalidate all student match buckets.
+      qc.invalidateQueries({ queryKey: ["student"] });
+    },
+  });
+}
+
+export function useUpdateMatch() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: {
+      matchId: number;
+      registrationId: number;
+      studentId?: number;
+      data: {
+        result: MatchResult;
+        method?: MatchMethod | null;
+        method_detail?: string | null;
+        occurred_at?: string | null;
+      };
+    }) => updateMatch(vars.matchId, vars.data),
+    onSuccess: (_res, vars) => {
+      qc.invalidateQueries({
+        queryKey: qk.registrationMatches(vars.registrationId),
+      });
+      if (vars.studentId !== undefined) {
+        qc.invalidateQueries({ queryKey: qk.studentMatches(vars.studentId) });
+      }
+    },
+  });
+}
+
+export function useDeleteMatch() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: {
+      matchId: number;
+      registrationId: number;
+      studentId?: number;
+    }) => deleteMatch(vars.matchId),
+    onSuccess: (_res, vars) => {
+      qc.invalidateQueries({
+        queryKey: qk.registrationMatches(vars.registrationId),
+      });
+      if (vars.studentId !== undefined) {
+        qc.invalidateQueries({ queryKey: qk.studentMatches(vars.studentId) });
+      }
+    },
+  });
+}
+
+export function useLinkMatchTechnique(matchId: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (techniqueId: number) => linkMatchTechnique(matchId, techniqueId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: qk.matchTechniques(matchId) });
+    },
+  });
+}
+
+export function useUnlinkMatchTechnique(matchId: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (techniqueId: number) => unlinkMatchTechnique(matchId, techniqueId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: qk.matchTechniques(matchId) });
+    },
+  });
+}
+
+// ============================================================
+// Suggestions
+// ============================================================
+
+import {
+  createSuggestion,
+  decideSuggestion,
+} from "./api";
+import type { DecideSuggestionBody } from "./api";
+
+export function useCreateSuggestion() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: {
+      technique_id: number;
+      anchor_video_id?: number | null;
+      anchor_seconds?: number | null;
+    }) => createSuggestion(data),
+    onSuccess: () => {
+      // Invalidate the student's own suggestion list (all students, simple).
+      qc.invalidateQueries({ queryKey: ["student"] });
+    },
+  });
+}
+
+export function useDecideSuggestion() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: { id: number; body: DecideSuggestionBody; campId?: number }) =>
+      decideSuggestion(vars.id, vars.body),
+    onSuccess: (_res, vars) => {
+      qc.invalidateQueries({ queryKey: qk.pendingSuggestions() });
+      if (vars.campId !== undefined) {
+        qc.invalidateQueries({ queryKey: qk.camp(vars.campId) });
+      }
+    },
+  });
+}
+

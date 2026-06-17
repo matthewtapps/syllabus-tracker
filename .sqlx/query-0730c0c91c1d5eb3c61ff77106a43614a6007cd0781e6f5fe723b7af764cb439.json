@@ -1,0 +1,38 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT\n               reg.student_id AS \"student_id!: i64\",\n               u.display_name AS \"student_name?: String\",\n               reg.registered_at AS \"registered_at!: NaiveDateTime\",\n               c.id AS \"camp_id?: i64\"\n           FROM competition_registrations reg\n           JOIN users u ON u.id = reg.student_id\n           LEFT JOIN camps c\n               ON c.student_id = reg.student_id\n              AND c.competition_id = reg.competition_id\n           WHERE reg.competition_id = ?\n             AND reg.unregistered_at IS NULL\n           ORDER BY reg.registered_at",
+  "describe": {
+    "columns": [
+      {
+        "name": "student_id!: i64",
+        "ordinal": 0,
+        "type_info": "Integer"
+      },
+      {
+        "name": "student_name?: String",
+        "ordinal": 1,
+        "type_info": "Text"
+      },
+      {
+        "name": "registered_at!: NaiveDateTime",
+        "ordinal": 2,
+        "type_info": "Datetime"
+      },
+      {
+        "name": "camp_id?: i64",
+        "ordinal": 3,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      true,
+      false,
+      true
+    ]
+  },
+  "hash": "0730c0c91c1d5eb3c61ff77106a43614a6007cd0781e6f5fe723b7af764cb439"
+}

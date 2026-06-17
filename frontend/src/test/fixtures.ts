@@ -25,6 +25,7 @@ export function buildSst(overrides: Partial<SstRow> = {}): SstRow {
     technique_id: 101,
     technique_name: "Armbar",
     technique_description: "A simple armbar from guard.",
+    is_global: true,
     status: "red",
     student_notes: "",
     coach_notes: "",

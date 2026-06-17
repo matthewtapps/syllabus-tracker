@@ -34,7 +34,7 @@ export function DiscussionBlock() {
         : context.studentId
       : user.role === "student"
         ? user.id
-        : context.kind === "student-pinned"
+        : context.kind === "student-pinned" || context.kind === "camp"
           ? context.studentId
           : undefined;
 

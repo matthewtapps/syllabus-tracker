@@ -13,6 +13,7 @@ import {
   VideoVisibilityOverrideBlock,
 } from "./stub-blocks";
 import { DiscussionBlock } from "./discussion-block";
+import { PromoteToLibraryButton } from "./promote-to-library-button";
 
 interface ExpandedPanelProps {
   scrollToVideoId?: number | null;
@@ -40,6 +41,7 @@ export function ExpandedPanel({
           onVideoScrolled={onVideoScrolled}
         />
       ))}
+      <PromoteToLibraryButton />
     </div>
   );
 }
@@ -55,7 +57,12 @@ function BlockRenderer({
 }) {
   const { context, role } = useTechniqueRow();
   const isCoach = role === "coach" || role === "admin";
-  const canManageVideos = context.kind === "global-library" && isCoach;
+  // Coaches/admins manage videos from the global library and, now, directly
+  // on a student's syllabus technique (where they can choose whether the
+  // video also lands in the global library or stays scoped to this student).
+  const canManageVideos =
+    isCoach &&
+    (context.kind === "global-library" || context.kind === "student-syllabus");
 
   switch (id) {
     case "description":

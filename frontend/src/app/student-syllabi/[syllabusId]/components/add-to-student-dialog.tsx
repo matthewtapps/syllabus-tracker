@@ -1,27 +1,35 @@
-import { useEffect, useMemo, useState } from 'react';
-import { toast } from 'sonner';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Checkbox } from '@/components/ui/checkbox';
+import { useEffect, useMemo, useState } from "react";
+import { toast } from "sonner";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
-import { useLibraryTechniques } from '@/lib/queries';
-import { useAddTechniqueToStudentSyllabus } from '@/lib/mutations';
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { NewTechniqueForm } from "@/components/new-technique-form";
+import type { CreatedLibraryTechnique } from "@/lib/api";
+import { useLibraryTechniques } from "@/lib/queries";
+import {
+  useAddTechniqueToStudentSyllabus,
+  useSetSstHidden,
+} from "@/lib/mutations";
+import { matchHiddenByName, type HiddenMatchCandidate } from "../sst-view";
 
 interface AddToStudentDialogProps {
   open: boolean;
   onOpenChange: (b: boolean) => void;
   studentId: number;
   syllabusId: number;
-  /** Technique ids already present on the assignment's SST set (visible or
-   *  hidden) so we can highlight them as already-there. */
-  presentTechniqueIds: Set<number>;
+  /** technique_ids on the syllabus and currently VISIBLE — excluded from the picker. */
+  visibleTechniqueIds: Set<number>;
+  /** technique_id -> sstId for rows on the syllabus but HIDDEN — kept (later: "make visible"). */
+  hiddenTechniqueSstByTid: Map<number, number>;
 }
 
 export function AddToStudentDialog({
@@ -29,7 +37,8 @@ export function AddToStudentDialog({
   onOpenChange,
   studentId,
   syllabusId,
-  presentTechniqueIds,
+  visibleTechniqueIds,
+  hiddenTechniqueSstByTid,
 }: AddToStudentDialogProps) {
   const libraryQuery = useLibraryTechniques();
   const techniques = useMemo(
@@ -37,17 +46,43 @@ export function AddToStudentDialog({
     [libraryQuery.data],
   );
   const addMutation = useAddTechniqueToStudentSyllabus();
-  const [search, setSearch] = useState('');
+  const unhideMutation = useSetSstHidden();
+  const [search, setSearch] = useState("");
   const [activeTags, setActiveTags] = useState<string[]>([]);
   const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [addToGlobal, setAddToGlobal] = useState(true);
 
   useEffect(() => {
     if (!open) {
       setSelected(new Set());
-      setSearch('');
+      setSearch("");
       setActiveTags([]);
+      setAddToGlobal(true);
     }
   }, [open]);
+
+  const existingNamesForNudge = useMemo(
+    () => techniques.map((t) => t.name),
+    [techniques],
+  );
+
+  async function handleCreated(created: CreatedLibraryTechnique) {
+    try {
+      await addMutation.mutateAsync({
+        studentId,
+        syllabusId,
+        techniqueId: created.id,
+      });
+      toast.success(
+        addToGlobal
+          ? `Added "${created.name}" (also in library)`
+          : `Added "${created.name}" for this student`,
+      );
+      onOpenChange(false);
+    } catch {
+      toast.error("Created the technique but failed to add it to the syllabus");
+    }
+  }
 
   const availableTags = useMemo(() => {
     const set = new Set<string>();
@@ -66,9 +101,23 @@ export function AddToStudentDialog({
       const matchesTags =
         activeTags.length === 0 ||
         activeTags.every((tag) => t.tags.some((x) => x.name === tag));
-      return matchesText && matchesTags;
+      const notAlreadyVisible = !visibleTechniqueIds.has(t.id);
+      return matchesText && matchesTags && notAlreadyVisible;
     });
-  }, [techniques, search, activeTags]);
+  }, [techniques, search, activeTags, visibleTechniqueIds]);
+
+  const hiddenCandidates = useMemo<HiddenMatchCandidate[]>(() => {
+    const byId = new Map(techniques.map((t) => [t.id, t.name]));
+    const out: HiddenMatchCandidate[] = [];
+    for (const [techniqueId, sstId] of hiddenTechniqueSstByTid) {
+      const technique_name = byId.get(techniqueId);
+      if (technique_name === undefined) continue;
+      out.push({ technique_id: techniqueId, technique_name, sstId });
+    }
+    return out;
+  }, [techniques, hiddenTechniqueSstByTid]);
+
+  const hiddenMatch = matchHiddenByName(hiddenCandidates, search);
 
   function toggle(id: number) {
     setSelected((prev) => {
@@ -91,7 +140,11 @@ export function AddToStudentDialog({
     let added = 0;
     for (const id of ids) {
       try {
-        await addMutation.mutateAsync({ studentId, syllabusId, techniqueId: id });
+        await addMutation.mutateAsync({
+          studentId,
+          syllabusId,
+          techniqueId: id,
+        });
         added += 1;
       } catch {
         toast.error(`Failed after adding ${added} of ${ids.length}`);
@@ -99,7 +152,7 @@ export function AddToStudentDialog({
       }
     }
     toast.success(
-      added === 1 ? 'Added 1 technique' : `Added ${added} techniques`,
+      added === 1 ? "Added 1 technique" : `Added ${added} techniques`,
     );
     onOpenChange(false);
   }
@@ -113,102 +166,150 @@ export function AddToStudentDialog({
         <DialogHeader>
           <DialogTitle>Add to this student</DialogTitle>
         </DialogHeader>
-        <Input
-          placeholder="Search techniques"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-        />
-        {availableTags.length > 0 && (
-          <div className="flex flex-wrap gap-1.5">
-            {availableTags.map((tag) => (
-              <Badge
-                key={tag}
-                variant={activeTags.includes(tag) ? 'default' : 'outline'}
-                className="cursor-pointer select-none"
-                onClick={() => toggleTag(tag)}
-              >
-                {tag}
-              </Badge>
-            ))}
-            {activeTags.length > 0 && (
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className="h-6 px-2 text-xs"
-                onClick={() => setActiveTags([])}
-              >
-                Clear
-              </Button>
+        <Tabs defaultValue="existing" className="flex min-h-0 flex-1 flex-col">
+          <TabsList className="grid w-full grid-cols-2">
+            <TabsTrigger value="existing">Add existing</TabsTrigger>
+            <TabsTrigger value="create">Create new</TabsTrigger>
+          </TabsList>
+
+          <TabsContent
+            value="existing"
+            className="flex min-h-0 flex-1 flex-col gap-3"
+          >
+            <Input
+              placeholder="Search techniques"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+            {availableTags.length > 0 && (
+              <div className="flex flex-wrap gap-1.5">
+                {availableTags.map((tag) => (
+                  <Badge
+                    key={tag}
+                    variant={activeTags.includes(tag) ? "default" : "outline"}
+                    className="cursor-pointer select-none"
+                    onClick={() => toggleTag(tag)}
+                  >
+                    {tag}
+                  </Badge>
+                ))}
+                {activeTags.length > 0 && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-6 px-2 text-xs"
+                    onClick={() => setActiveTags([])}
+                  >
+                    Clear
+                  </Button>
+                )}
+              </div>
             )}
-          </div>
-        )}
-        <p className="text-xs text-muted-foreground">
-          <span className="font-medium text-foreground">{selected.size}</span>{' '}
-          selected · {filtered.length} of {techniques.length} shown
-        </p>
-        <div className="min-h-0 flex-1 overflow-y-auto rounded border border-border bg-card">
-          {filtered.length === 0 ? (
-            <p className="px-4 py-6 text-center text-xs text-muted-foreground">
-              No techniques match the current filters.
-            </p>
-          ) : (
-            <ul className="divide-y divide-border">
-              {filtered.map((t) => {
-                const checked = selected.has(t.id);
-                const already = presentTechniqueIds.has(t.id);
-                return (
-                  <li key={t.id}>
-                    <label
-                      htmlFor={`add-to-student-${t.id}`}
-                      className="flex cursor-pointer items-start gap-3 px-3 py-2 transition-colors hover:bg-muted/40"
-                    >
-                      <Checkbox
-                        id={`add-to-student-${t.id}`}
-                        checked={checked}
-                        onCheckedChange={() => toggle(t.id)}
-                        className="mt-0.5"
-                      />
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-sm font-medium">
-                          {t.name}
-                          {already && (
-                            <span className="ml-2 text-xs font-normal text-muted-foreground">
-                              (already in their list)
-                            </span>
-                          )}
-                        </p>
-                      </div>
-                    </label>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-        </div>
-        <DialogFooter className="grid grid-cols-2 gap-2 sm:flex-none sm:justify-stretch">
-          <Button
-            variant="outline"
-            onClick={() => onOpenChange(false)}
-            disabled={addMutation.isPending}
-            className="w-full"
+            {selected.size > 0 && (
+              <p className="text-xs text-muted-foreground">
+                <span className="font-medium text-foreground">
+                  {selected.size}
+                </span>{" "}
+                selected
+              </p>
+            )}
+            {hiddenMatch && (
+              <div className="flex items-center justify-between gap-2 rounded border border-border bg-muted/40 px-3 py-2 text-sm">
+                <span>{hiddenMatch.technique_name} is on their list but hidden.</span>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={unhideMutation.isPending}
+                  onClick={async () => {
+                    try {
+                      await unhideMutation.mutateAsync({
+                        sstId: hiddenMatch.sstId,
+                        studentId,
+                        syllabusId,
+                        hidden: false,
+                      });
+                      toast.success(`Showing ${hiddenMatch.technique_name}`);
+                    } catch {
+                      toast.error("Failed to update visibility");
+                    }
+                  }}
+                >
+                  Make visible
+                </Button>
+              </div>
+            )}
+            <div className="min-h-0 flex-1 overflow-y-auto rounded border border-border bg-card">
+              {filtered.length === 0 ? (
+                <p className="px-4 py-6 text-center text-xs text-muted-foreground">
+                  No techniques match the current filters.
+                </p>
+              ) : (
+                <ul className="divide-y divide-border">
+                  {filtered.map((t) => {
+                    const checked = selected.has(t.id);
+                    return (
+                      <li key={t.id}>
+                        <label
+                          htmlFor={`add-to-student-${t.id}`}
+                          className="flex cursor-pointer items-start gap-3 px-3 py-2 transition-colors hover:bg-muted/40"
+                        >
+                          <Checkbox
+                            id={`add-to-student-${t.id}`}
+                            checked={checked}
+                            onCheckedChange={() => toggle(t.id)}
+                            className="mt-0.5"
+                          />
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate text-sm font-medium">
+                              {t.name}
+                            </p>
+                          </div>
+                        </label>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </div>
+            <DialogFooter className="grid grid-cols-2 gap-2 sm:flex-none sm:justify-stretch">
+              <Button
+                variant="outline"
+                onClick={() => onOpenChange(false)}
+                disabled={addMutation.isPending}
+                className="w-full"
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={handleAdd}
+                disabled={selected.size === 0 || addMutation.isPending}
+                className="w-full"
+              >
+                {addMutation.isPending
+                  ? "Adding..."
+                  : selected.size === 0
+                    ? "Add"
+                    : selected.size === 1
+                      ? "Add 1"
+                      : `Add ${selected.size}`}
+              </Button>
+            </DialogFooter>
+          </TabsContent>
+
+          <TabsContent
+            value="create"
+            className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto"
           >
-            Cancel
-          </Button>
-          <Button
-            onClick={handleAdd}
-            disabled={selected.size === 0 || addMutation.isPending}
-            className="w-full"
-          >
-            {addMutation.isPending
-              ? 'Adding...'
-              : selected.size === 0
-                ? 'Add'
-                : selected.size === 1
-                  ? 'Add 1'
-                  : `Add ${selected.size}`}
-          </Button>
-        </DialogFooter>
+            <NewTechniqueForm
+              existingNames={existingNamesForNudge}
+              formId="sst-create"
+              addToGlobal={addToGlobal}
+              onAddToGlobalChange={setAddToGlobal}
+              onCreated={handleCreated}
+            />
+          </TabsContent>
+        </Tabs>
       </DialogContent>
     </Dialog>
   );

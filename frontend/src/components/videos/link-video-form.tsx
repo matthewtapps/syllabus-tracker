@@ -1,10 +1,14 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
 import { z } from "zod";
-import type { Video, VideoKind } from "@/lib/api";
+import { useState } from "react";
+import type { Video, VideoKind, VideoParentInput } from "@/lib/api";
 import { linkVideo } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
+import type { StudentSyllabusScope } from "./add-video-button";
 import {
   Form,
   FormControl,
@@ -20,6 +24,9 @@ import { TracedForm } from "@/components/traced-form";
 
 interface LinkVideoFormProps {
   techniqueId: number;
+  /** Present only in a student's syllabus context. Enables the "also add to
+   *  global library" switch and the T3 (student syllabus technique) parent. */
+  studentSyllabus?: StudentSyllabusScope;
   onCancel: () => void;
   onLinked: (video: Video) => void;
 }
@@ -37,9 +44,13 @@ type FormValues = z.infer<typeof schema>;
 
 export function LinkVideoForm({
   techniqueId,
+  studentSyllabus,
   onCancel,
   onLinked,
 }: LinkVideoFormProps) {
+  // Defaults ON: a coach linking a video usually wants it in the global
+  // library. Off scopes the video to just this student's syllabus technique.
+  const [alsoGlobal, setAlsoGlobal] = useState(true);
   const form = useFormWithValidation<FormValues>({
     resolver: zodResolver(schema),
     defaultValues: { title: "", description: "", url: "" },
@@ -49,13 +60,25 @@ export function LinkVideoForm({
   const detected = detectHost(watchedUrl);
 
   async function handleSubmit(values: FormValues) {
+    const parent: VideoParentInput | undefined =
+      studentSyllabus && !alsoGlobal
+        ? { kind: "student_syllabus_technique", id: studentSyllabus.sstId }
+        : undefined;
     try {
-      const video = await linkVideo(techniqueId, {
-        title: values.title.trim(),
-        description: values.description?.trim() || undefined,
-        url: values.url.trim(),
-      });
-      toast.success("Link added");
+      const video = await linkVideo(
+        techniqueId,
+        {
+          title: values.title.trim(),
+          description: values.description?.trim() || undefined,
+          url: values.url.trim(),
+        },
+        parent,
+      );
+      toast.success(
+        studentSyllabus && !alsoGlobal
+          ? "Video added for this student"
+          : "Video added to the library",
+      );
       onLinked(video);
     } catch (err) {
       const handled = await handleApiFormError(
@@ -123,6 +146,25 @@ export function LinkVideoForm({
         />
 
         {/* Description input intentionally hidden: see UploadVideoForm. */}
+
+        {studentSyllabus && (
+          <div className="flex items-start justify-between gap-3 rounded-md border p-3">
+            <div className="space-y-0.5">
+              <Label htmlFor="link-also-global">
+                Also add to global technique library
+              </Label>
+              <p className="text-xs text-muted-foreground">
+                Off keeps this video on this student&apos;s syllabus only.
+              </p>
+            </div>
+            <Switch
+              id="link-also-global"
+              checked={alsoGlobal}
+              onCheckedChange={setAlsoGlobal}
+              disabled={isSubmitting}
+            />
+          </div>
+        )}
 
         <div className="flex justify-end gap-2">
           <Button

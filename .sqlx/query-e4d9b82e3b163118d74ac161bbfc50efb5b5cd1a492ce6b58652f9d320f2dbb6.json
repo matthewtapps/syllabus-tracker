@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE techniques SET is_global = 1 WHERE id = ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": []
+  },
+  "hash": "e4d9b82e3b163118d74ac161bbfc50efb5b5cd1a492ce6b58652f9d320f2dbb6"
+}

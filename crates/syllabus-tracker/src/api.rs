@@ -23,7 +23,8 @@ use crate::db::{
     attempt_buckets_for_student, attempt_summary_for_student, attempt_weekly_buckets_for_technique,
     authenticate_user, claim_invite, count_techniques, create_and_assign_technique, create_attempt,
     create_collection, create_invite_token, create_self_registered_user, create_tag,
-    create_technique_in_collection, create_user, create_user_session, create_user_stub,
+    create_technique, create_technique_in_collection, create_user, create_user_session,
+    create_user_stub,
     dashboard_activity_feed, delete_attempt, delete_collection, delete_tag, feed, feed_max_id,
     find_user_by_username, find_valid_invite_token, get_all_collections, get_all_tags,
     get_all_users, get_collection, get_student_technique, get_student_techniques,
@@ -31,7 +32,8 @@ use crate::db::{
     get_unassigned_techniques, get_user, invalidate_session, list_attempts,
     list_recent_attempts_for_student, mark_all_read, mark_one_read, mark_one_unread,
     mark_student_technique_seen, remove_tag_from_technique,
-    remove_technique_from_collection, request_password_reset, reset_user_claim, set_user_archived,
+    remove_technique_from_collection, request_password_reset, reset_user_claim,
+    set_technique_global, set_user_archived,
     set_user_graduated, unread_count, update_attempt_note, update_attempt_timestamp,
     update_collection, update_student_notes, update_student_technique, update_technique,
     update_user_display_name, update_user_password, update_user_role, update_username,
@@ -618,6 +620,68 @@ pub async fn api_list_library_techniques(
     user.require_permission(Permission::ViewLibrary)?;
     let rows = crate::db::list_library_techniques(db).await?;
     Ok(Json(rows))
+}
+
+#[derive(Deserialize, Validate, Clone)]
+pub struct CreateLibraryTechniqueRequest {
+    #[validate(length(
+        min = 1,
+        max = 100,
+        message = "Technique name must be between 1 and 100 characters"
+    ))]
+    name: String,
+    // Description is optional for a quick library add; the coach can flesh it
+    // out later from the technique's edit form.
+    #[serde(default)]
+    description: String,
+    // Whether the technique joins the shared global library. Defaults to true
+    // so existing callers (and the standard "New technique" flow) keep creating
+    // library techniques; set false to create a student-only (non-global) one.
+    #[serde(default = "default_true")]
+    is_global: bool,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+/// Create a technique straight into the global library, unattached to any
+/// student or collection. Used by the coach library's "New technique" flow.
+#[post("/techniques", data = "<body>")]
+pub async fn api_create_library_technique(
+    body: Json<CreateLibraryTechniqueRequest>,
+    user: User,
+    db: &State<Pool<Sqlite>>,
+) -> ApiResult<Json<TechniqueLibraryResponse>> {
+    body.validate()?;
+    user.require_permission(Permission::CreateTechniques)?;
+    let technique_id =
+        create_technique(db, &body.name, &body.description, user.id, body.is_global).await?;
+    let coach_name = if user.display_name.is_empty() {
+        user.username.clone()
+    } else {
+        user.display_name.clone()
+    };
+    Ok(Json(TechniqueLibraryResponse {
+        id: technique_id,
+        name: body.name.clone(),
+        description: body.description.clone(),
+        coach_id: user.id,
+        coach_name,
+    }))
+}
+
+/// Promote a student-only technique into the global library by flipping its
+/// `is_global` flag. Mirrors the create-library permission gate.
+#[patch("/techniques/<id>/global")]
+pub async fn api_promote_technique_to_global(
+    id: i64,
+    user: User,
+    db: &State<Pool<Sqlite>>,
+) -> ApiResult<Status> {
+    user.require_permission(Permission::CreateTechniques)?;
+    set_technique_global(db, id).await?;
+    Ok(Status::Ok)
 }
 
 #[get("/student/<id>/library")]

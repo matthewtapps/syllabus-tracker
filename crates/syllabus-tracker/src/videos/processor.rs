@@ -33,9 +33,13 @@ fn current_traceparent() -> Option<String> {
 // ---------------------------------------------------------------------------
 
 /// Arguments for a single video processing job.
+///
+/// `parent_id` is the id of the video's parent entity (technique or camp).
+/// It is used to construct the storage key prefix (`videos/<parent_id>/<uuid>.mp4`)
+/// and is recorded as a tracing span field.
 pub struct HostJob {
     pub video_id: i64,
-    pub technique_id: i64,
+    pub parent_id: i64,
     pub original_temp_path: PathBuf,
 }
 
@@ -80,7 +84,7 @@ impl VideoProcessor for HostFfmpegProcessor {
             process_uploaded_video(
                 ctx,
                 job.video_id,
-                job.technique_id,
+                job.parent_id,
                 job.original_temp_path,
             )
             .await;

@@ -77,9 +77,28 @@ export const qk = {
     ["student", studentId, "activityFeed", limit] as const,
   activityUnreadCount: () => ["activity", "unreadCount"] as const,
 
+  campsForStudent: (studentId: number) =>
+    ["camps", "student", studentId] as const,
+  camp: (id: number) => ["camps", id] as const,
+  campVideos: (campId: number) => ["camps", campId, "videos"] as const,
+
   threads: (anchorKind: string, anchorId: number) =>
     ["threads", anchorKind, anchorId] as const,
   thread: (id: number) => ["thread", id] as const,
+
+  competitions: () => ["competitions"] as const,
+  competition: (id: number) => ["competitions", id] as const,
+  registrationMatches: (regId: number) =>
+    ["registrations", regId, "matches"] as const,
+  studentMatches: (studentId: number) =>
+    ["student", studentId, "matches"] as const,
+  matchVideos: (matchId: number) => ["matches", matchId, "videos"] as const,
+  matchTechniques: (matchId: number) =>
+    ["matches", matchId, "techniques"] as const,
+
+  pendingSuggestions: () => ["suggestions", "pending"] as const,
+  studentSuggestions: (studentId: number) =>
+    ["student", studentId, "suggestions"] as const,
 
   studentSyllabusTechniquesFlat: (studentId: number) =>
     ["student", studentId, "syllabusTechniquesFlat"] as const,

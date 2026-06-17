@@ -1,5 +1,6 @@
-import { describe, expect, test } from "vitest";
+import { describe, expect, it, test } from "vitest";
 import { viewContextHref, rowToViewContext, activitySurface } from "./view-context";
+import { parseFocusToken, refToken } from "./entity-ref";
 
 describe("viewContextHref", () => {
   test("library context without video", () => {
@@ -50,6 +51,9 @@ describe("rowToViewContext", () => {
         sst_id: 42,
         technique_id: 9,
         video_id: 7,
+        camp_id: null,
+        competition_id: null,
+        match_id: null,
       }),
     ).toEqual({
       kind: "syllabus",
@@ -69,6 +73,9 @@ describe("rowToViewContext", () => {
         sst_id: null,
         technique_id: 9,
         video_id: 7,
+        camp_id: null,
+        competition_id: null,
+        match_id: null,
       }),
     ).toEqual({
       kind: "library",
@@ -86,6 +93,9 @@ describe("rowToViewContext", () => {
         sst_id: null,
         technique_id: 9,
         video_id: 7,
+        camp_id: null,
+        competition_id: null,
+        match_id: null,
       }),
     ).toEqual({
       kind: "library",
@@ -103,6 +113,9 @@ describe("rowToViewContext", () => {
         sst_id: null,
         technique_id: null,
         video_id: 7,
+        camp_id: null,
+        competition_id: null,
+        match_id: null,
       }),
     ).toBeNull();
   });
@@ -116,6 +129,9 @@ describe("rowToViewContext", () => {
         sst_id: 42,
         technique_id: 9,
         video_id: null,
+        camp_id: null,
+        competition_id: null,
+        match_id: null,
       }),
     ).toEqual({
       kind: "syllabus",
@@ -134,6 +150,9 @@ describe("rowToViewContext", () => {
         sst_id: null,
         technique_id: 9,
         video_id: null,
+        camp_id: null,
+        competition_id: null,
+        match_id: null,
       }),
     ).toBeNull();
   });
@@ -147,6 +166,9 @@ describe("rowToViewContext", () => {
         sst_id: 42,
         technique_id: 9,
         video_id: null,
+        camp_id: null,
+        competition_id: null,
+        match_id: null,
       }),
     ).toEqual({
       kind: "syllabus",
@@ -165,6 +187,9 @@ describe("rowToViewContext", () => {
         sst_id: null,
         technique_id: 9,
         video_id: null,
+        camp_id: null,
+        competition_id: null,
+        match_id: null,
       }),
     ).toBeNull();
   });
@@ -178,6 +203,9 @@ describe("rowToViewContext", () => {
         sst_id: 42,
         technique_id: 9,
         video_id: null,
+        camp_id: null,
+        competition_id: null,
+        match_id: null,
       }),
     ).toEqual({
       kind: "syllabus",
@@ -196,6 +224,9 @@ describe("rowToViewContext", () => {
         sst_id: null,
         technique_id: 9,
         video_id: null,
+        camp_id: null,
+        competition_id: null,
+        match_id: null,
       }),
     ).toEqual({
       kind: "library",
@@ -212,6 +243,9 @@ describe("rowToViewContext", () => {
         sst_id: 42,
         technique_id: 9,
         video_id: null,
+        camp_id: null,
+        competition_id: null,
+        match_id: null,
       }),
     ).toBeNull();
   });
@@ -225,6 +259,9 @@ describe("rowToViewContext", () => {
         sst_id: null,
         technique_id: null,
         video_id: null,
+        camp_id: null,
+        competition_id: null,
+        match_id: null,
       }),
     ).toBeNull();
   });
@@ -241,6 +278,9 @@ describe("activitySurface", () => {
         sst_id: 42,
         technique_id: 9,
         video_id: null,
+        camp_id: null,
+        competition_id: null,
+        match_id: null,
         syllabus_name: "Blue Belt",
       }),
     ).toEqual({ kind: "syllabus", label: "Blue Belt" });
@@ -255,6 +295,9 @@ describe("activitySurface", () => {
         sst_id: 42,
         technique_id: 9,
         video_id: null,
+        camp_id: null,
+        competition_id: null,
+        match_id: null,
         syllabus_name: "Blue Belt",
       }),
     ).toEqual({ kind: "syllabus", label: "Blue Belt" });
@@ -269,6 +312,9 @@ describe("activitySurface", () => {
         sst_id: null,
         technique_id: 9,
         video_id: 7,
+        camp_id: null,
+        competition_id: null,
+        match_id: null,
         syllabus_name: null,
       }),
     ).toEqual({ kind: "library", label: "Global Technique Library" });
@@ -283,8 +329,148 @@ describe("activitySurface", () => {
         sst_id: null,
         technique_id: null,
         video_id: null,
+        camp_id: null,
+        competition_id: null,
+        match_id: null,
         syllabus_name: "Blue Belt",
       }),
     ).toBeNull();
+  });
+});
+
+describe("camp deep links", () => {
+  it("round-trips a camp EntityRef token", () => {
+    expect(refToken({ type: "camp", id: 7 })).toBe("camp:7");
+    expect(parseFocusToken("camp:7")).toEqual({ type: "camp", id: 7 });
+  });
+
+  it("routes a camp_created row to the camp page", () => {
+    const ctx = rowToViewContext({
+      verb: "camp_created",
+      context_kind: "camp",
+      target_student_id: 3,
+      syllabus_id: null,
+      sst_id: null,
+      technique_id: null,
+      video_id: null,
+      camp_id: 7,
+      competition_id: null,
+      match_id: null,
+    });
+    expect(ctx).not.toBeNull();
+    expect(viewContextHref(ctx!)).toBe("/camps/7?focus=camp:7");
+  });
+
+  it("routes a camp video_added row focused on the video", () => {
+    const ctx = rowToViewContext({
+      verb: "video_added",
+      context_kind: "camp",
+      target_student_id: 3,
+      syllabus_id: null,
+      sst_id: null,
+      technique_id: null,
+      video_id: 12,
+      camp_id: 7,
+      competition_id: null,
+      match_id: null,
+    });
+    expect(viewContextHref(ctx!)).toBe("/camps/7?focus=camp:7&video=12");
+  });
+});
+
+describe("competition and match deep links", () => {
+  it("round-trips a competition EntityRef token", () => {
+    expect(refToken({ type: "competition", id: 5 })).toBe("competition:5");
+    expect(parseFocusToken("competition:5")).toEqual({ type: "competition", id: 5 });
+  });
+
+  it("round-trips a match EntityRef token", () => {
+    expect(refToken({ type: "match", id: 11 })).toBe("match:11");
+    expect(parseFocusToken("match:11")).toEqual({ type: "match", id: 11 });
+  });
+
+  it("routes a competition_created row to the competition page", () => {
+    const ctx = rowToViewContext({
+      verb: "competition_created",
+      context_kind: "competition",
+      target_student_id: null,
+      syllabus_id: null,
+      sst_id: null,
+      technique_id: null,
+      video_id: null,
+      camp_id: null,
+      competition_id: 5,
+      match_id: null,
+    });
+    expect(ctx).not.toBeNull();
+    expect(viewContextHref(ctx!)).toBe("/competitions/5");
+  });
+
+  it("routes a student_registered row to the competition page", () => {
+    const ctx = rowToViewContext({
+      verb: "student_registered",
+      context_kind: "competition",
+      target_student_id: 3,
+      syllabus_id: null,
+      sst_id: null,
+      technique_id: null,
+      video_id: null,
+      camp_id: null,
+      competition_id: 5,
+      match_id: null,
+    });
+    expect(ctx).not.toBeNull();
+    expect(viewContextHref(ctx!)).toBe("/competitions/5");
+  });
+
+  it("routes a camp_promoted_to_competition row to the camp page", () => {
+    const ctx = rowToViewContext({
+      verb: "camp_promoted_to_competition",
+      context_kind: "competition",
+      target_student_id: 3,
+      syllabus_id: null,
+      sst_id: null,
+      technique_id: null,
+      video_id: null,
+      camp_id: 7,
+      competition_id: 5,
+      match_id: null,
+    });
+    expect(ctx).not.toBeNull();
+    expect(viewContextHref(ctx!)).toBe("/camps/7?focus=camp:7");
+  });
+
+  it("routes a match_logged row to the student my-matches page", () => {
+    const ctx = rowToViewContext({
+      verb: "match_logged",
+      context_kind: "competition",
+      target_student_id: 3,
+      syllabus_id: null,
+      sst_id: null,
+      technique_id: null,
+      video_id: null,
+      camp_id: null,
+      competition_id: 5,
+      match_id: 11,
+    });
+    expect(ctx).not.toBeNull();
+    expect(viewContextHref(ctx!)).toBe("/student/3/matches?focus=match:11");
+  });
+
+  it("routes a match_technique_linked row to the student my-matches page", () => {
+    const ctx = rowToViewContext({
+      verb: "match_technique_linked",
+      context_kind: "competition",
+      target_student_id: 3,
+      syllabus_id: null,
+      sst_id: null,
+      technique_id: null,
+      video_id: null,
+      camp_id: null,
+      competition_id: 5,
+      match_id: 11,
+    });
+    expect(ctx).not.toBeNull();
+    expect(viewContextHref(ctx!)).toBe("/student/3/matches?focus=match:11");
   });
 });

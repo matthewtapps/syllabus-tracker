@@ -20,6 +20,7 @@ pub enum AnchorKind {
     VideoTimestamp,
     Sst,
     PinnedTechnique,
+    Camp,
 }
 
 impl AnchorKind {
@@ -31,6 +32,7 @@ impl AnchorKind {
             AnchorKind::VideoTimestamp => "video_timestamp",
             AnchorKind::Sst => "sst",
             AnchorKind::PinnedTechnique => "pinned_technique",
+            AnchorKind::Camp => "camp",
         }
     }
 
@@ -42,6 +44,7 @@ impl AnchorKind {
             "video_timestamp" => Some(AnchorKind::VideoTimestamp),
             "sst" => Some(AnchorKind::Sst),
             "pinned_technique" => Some(AnchorKind::PinnedTechnique),
+            "camp" => Some(AnchorKind::Camp),
             _ => None,
         }
     }
@@ -97,19 +100,20 @@ pub struct NewThread {
     pub body: String,
 }
 
-/// Resolve an `Anchor` into the five typed columns the `threads` table stores.
-/// Returns (student_id, technique_id, video_id, video_ts_seconds, sst_id).
+/// Resolve an `Anchor` into the six typed columns the `threads` table stores.
+/// Returns (student_id, technique_id, video_id, video_ts_seconds, sst_id, camp_id).
 #[allow(clippy::type_complexity)]
 fn anchor_columns(
     anchor: &Anchor,
-) -> (Option<i64>, Option<i64>, Option<i64>, Option<i64>, Option<i64>) {
+) -> (Option<i64>, Option<i64>, Option<i64>, Option<i64>, Option<i64>, Option<i64>) {
     match anchor.kind {
-        AnchorKind::StudentProfile => (Some(anchor.id), None, None, None, None),
-        AnchorKind::Technique => (None, Some(anchor.id), None, None, None),
-        AnchorKind::Video => (None, None, Some(anchor.id), None, None),
-        AnchorKind::VideoTimestamp => (None, None, Some(anchor.id), anchor.video_ts_seconds, None),
-        AnchorKind::Sst => (None, None, None, None, Some(anchor.id)),
-        AnchorKind::PinnedTechnique => (anchor.pinned_student_id, Some(anchor.id), None, None, None),
+        AnchorKind::StudentProfile => (Some(anchor.id), None, None, None, None, None),
+        AnchorKind::Technique => (None, Some(anchor.id), None, None, None, None),
+        AnchorKind::Video => (None, None, Some(anchor.id), None, None, None),
+        AnchorKind::VideoTimestamp => (None, None, Some(anchor.id), anchor.video_ts_seconds, None, None),
+        AnchorKind::Sst => (None, None, None, None, Some(anchor.id), None),
+        AnchorKind::PinnedTechnique => (anchor.pinned_student_id, Some(anchor.id), None, None, None, None),
+        AnchorKind::Camp => (None, None, None, None, None, Some(anchor.id)),
     }
 }
 
@@ -175,6 +179,15 @@ async fn validate_anchor(pool: &Pool<Sqlite>, anchor: &Anchor) -> Result<(), App
             .fetch_one(pool)
             .await?
         }
+        // Existence only, no `archived_at` filter (unlike video upload, which
+        // blocks archived camps): archived camps stay referenceable, so
+        // post-camp discussion threads are intentionally still allowed.
+        AnchorKind::Camp => sqlx::query_scalar!(
+            r#"SELECT EXISTS(SELECT 1 FROM camps WHERE id = ?) AS "e!: i64""#,
+            anchor.id
+        )
+        .fetch_one(pool)
+        .await?,
     };
     if exists == 0 {
         return Err(AppError::Validation(format!(
@@ -205,7 +218,7 @@ pub async fn create_thread(pool: &Pool<Sqlite>, new: NewThread) -> Result<i64, A
     }
     validate_anchor(pool, &new.anchor).await?;
 
-    let (student_id, technique_id, video_id, video_ts, sst_id) = anchor_columns(&new.anchor);
+    let (student_id, technique_id, video_id, video_ts, sst_id, camp_id) = anchor_columns(&new.anchor);
     let kind = new.anchor.kind.as_str();
     let visibility = new.visibility.as_str();
 
@@ -216,8 +229,8 @@ pub async fn create_thread(pool: &Pool<Sqlite>, new: NewThread) -> Result<i64, A
     let thread_id = sqlx::query_scalar!(
         r#"INSERT INTO threads
               (created_by_id, body, anchor_kind, student_id, technique_id, video_id,
-               video_ts_seconds, sst_id, visibility, scope_student_id)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+               video_ts_seconds, sst_id, camp_id, visibility, scope_student_id)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
            RETURNING id AS "id!: i64""#,
         new.author_id,
         new.body,
@@ -227,6 +240,7 @@ pub async fn create_thread(pool: &Pool<Sqlite>, new: NewThread) -> Result<i64, A
         video_id,
         video_ts,
         sst_id,
+        camp_id,
         visibility,
         new.scope_student_id,
     )
@@ -250,8 +264,14 @@ pub async fn create_thread(pool: &Pool<Sqlite>, new: NewThread) -> Result<i64, A
         AnchorKind::Sst => (None, None, Some(new.anchor.id)),
         // target_student already identifies the subject for profile threads.
         AnchorKind::StudentProfile => (None, None, None),
+        // Camp threads carry no technique/video/sst id but do carry camp context
+        // for deep-linking back to the camp page.
+        AnchorKind::Camp => (None, None, None),
     };
-    let ev = apply_thread_anchor_context(&mut tx, ev, technique_id, video_id, sst_id).await?;
+    let mut ev = apply_thread_anchor_context(&mut tx, ev, technique_id, video_id, sst_id).await?;
+    if new.anchor.kind == AnchorKind::Camp {
+        ev = ev.camp(new.anchor.id).context_kind("camp");
+    }
     emit(&mut tx, ev).await?;
 
     tx.commit().await?;
@@ -364,7 +384,8 @@ pub async fn create_comment(
                   anchor_kind,
                   technique_id          AS "technique_id?: i64",
                   video_id              AS "video_id?: i64",
-                  sst_id                AS "sst_id?: i64"
+                  sst_id                AS "sst_id?: i64",
+                  camp_id               AS "camp_id?: i64"
            FROM threads WHERE id = ?"#,
         thread_id
     )
@@ -431,7 +452,7 @@ pub async fn create_comment(
         ev = ev.target_student(t);
     }
     // Denormalise the deep-link context from this thread's anchor columns.
-    let ev = apply_thread_anchor_context(
+    let mut ev = apply_thread_anchor_context(
         &mut tx,
         ev,
         thread_row.technique_id,
@@ -439,6 +460,11 @@ pub async fn create_comment(
         thread_row.sst_id,
     )
     .await?;
+    // Camp anchors carry no technique/video/sst id; tag the camp context here so
+    // a reply on a camp thread deep-links back to the camp (mirrors create_thread).
+    if let Some(camp_id) = thread_row.camp_id {
+        ev = ev.camp(camp_id).context_kind("camp");
+    }
     emit(&mut tx, ev).await?;
 
     tx.commit().await?;
@@ -583,7 +609,7 @@ pub async fn list_threads_for_anchor(
     anchor: Anchor,
     viewer: Viewer,
 ) -> Result<Vec<ThreadView>, AppError> {
-    let (student_id, technique_id, video_id, _video_ts, sst_id) = anchor_columns(&anchor);
+    let (student_id, technique_id, video_id, _video_ts, sst_id, camp_id) = anchor_columns(&anchor);
 
     let thread_ids: Vec<i64> = match anchor.kind {
         AnchorKind::StudentProfile => {
@@ -637,6 +663,16 @@ pub async fn list_threads_for_anchor(
                    ORDER BY last_activity_at DESC"#,
                 student_id,
                 technique_id
+            )
+            .fetch_all(pool)
+            .await?
+        }
+        AnchorKind::Camp => {
+            sqlx::query_scalar!(
+                r#"SELECT id AS "id!: i64" FROM threads
+                   WHERE anchor_kind = 'camp' AND camp_id = ? AND deleted_at IS NULL
+                   ORDER BY last_activity_at DESC"#,
+                camp_id
             )
             .fetch_all(pool)
             .await?
@@ -703,6 +739,7 @@ mod type_tests {
             AnchorKind::VideoTimestamp,
             AnchorKind::Sst,
             AnchorKind::PinnedTechnique,
+            AnchorKind::Camp,
         ] {
             assert_eq!(AnchorKind::from_str_kind(kind.as_str()), Some(kind));
         }
@@ -717,6 +754,7 @@ mod type_tests {
         assert!(!AnchorKind::StudentProfile.allows_broadcast());
         assert!(!AnchorKind::Sst.allows_broadcast());
         assert!(!AnchorKind::PinnedTechnique.allows_broadcast());
+        assert!(!AnchorKind::Camp.allows_broadcast());
     }
 
     #[test]

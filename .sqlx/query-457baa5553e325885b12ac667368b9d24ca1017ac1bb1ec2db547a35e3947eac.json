@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT COUNT(*) AS \"c!: i64\"\n               FROM syllabus_assignments\n               WHERE syllabus_id = ? AND unassigned_at IS NULL",
+  "describe": {
+    "columns": [
+      {
+        "name": "c!: i64",
+        "ordinal": 0,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "457baa5553e325885b12ac667368b9d24ca1017ac1bb1ec2db547a35e3947eac"
+}

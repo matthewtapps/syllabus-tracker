@@ -27,6 +27,7 @@ import { coalesceActivity } from "@/lib/activity-coalesce";
 import { activitySurface } from "@/lib/view-context";
 import { formatAbsolute, formatRelativeShort } from "@/lib/dates";
 import { cn } from "@/lib/utils";
+import { campsUiEnabled } from "@/lib/features";
 
 function verbIconMeta(verb: string): { Icon: LucideIcon; colorClass: string } {
   switch (verb) {
@@ -217,6 +218,8 @@ function ActivityRowItem({
             <span aria-hidden={hideDup} className="mt-1 inline-flex items-center gap-1 text-xs text-muted-foreground">
               {surface.kind === "syllabus" ? (
                 <NotebookPen className="h-3 w-3 shrink-0" aria-hidden />
+              ) : surface.kind === "camp" ? (
+                <Dumbbell className="h-3 w-3 shrink-0" aria-hidden />
               ) : (
                 <Library className="h-3 w-3 shrink-0" aria-hidden />
               )}
@@ -264,13 +267,22 @@ export function ActivityFeedList({
     );
   }
 
-  if (rows.length === 0) {
+  // Camps + competitions/matches are gated off on prod (campsUiEnabled). Drop
+  // their activity rows so the feed doesn't surface links into hidden surfaces.
+  const visibleRows = campsUiEnabled
+    ? rows
+    : rows.filter((row) => {
+        const kind = activitySurface(row)?.kind;
+        return kind !== "camp" && kind !== "competition" && kind !== "match";
+      });
+
+  if (visibleRows.length === 0) {
     return <p className="px-6 py-8 text-center text-sm text-muted-foreground">{emptyText}</p>;
   }
 
   const items = coalesce
-    ? coalesceActivity(rows)
-    : rows.map((row) => ({ row, count: 1, extraTechniques: [], members: [row] }));
+    ? coalesceActivity(visibleRows)
+    : visibleRows.map((row) => ({ row, count: 1, extraTechniques: [], members: [row] }));
   const shown = maxRows ? items.slice(0, maxRows) : items;
 
   function toggleKey(key: string) {

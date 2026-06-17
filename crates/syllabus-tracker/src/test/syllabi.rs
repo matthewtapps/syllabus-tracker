@@ -100,6 +100,57 @@ mod tests {
     }
 
     #[rocket::async_test]
+    async fn t3_video_does_not_inflate_technique_video_count() {
+        use crate::db::{create_processing_video, VideoParent};
+
+        let (_client, db, syllabus_id, student_id, coach_id, armbar_id, _triangle_id) =
+            assign_syllabus_and_seed_techniques().await;
+        let assignment_id = db::assign(&db.pool, coach_id, student_id, syllabus_id)
+            .await
+            .unwrap();
+        let user = crate::db::get_user(&db.pool, coach_id).await.unwrap();
+
+        // The Armbar SST for this assignment.
+        let armbar_sst_id: i64 = sqlx::query_scalar!(
+            r#"SELECT id AS "id!: i64"
+               FROM student_syllabus_techniques
+               WHERE assignment_id = ? AND technique_id = ?"#,
+            assignment_id,
+            armbar_id,
+        )
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+
+        // One T1 (technique-owned) video plus one T3 (per-SST) video on the
+        // same technique. Only the T1 video should count toward video_count.
+        create_processing_video(&db.pool, VideoParent::Technique(armbar_id), "t1", None, coach_id)
+            .await
+            .unwrap();
+        create_processing_video(
+            &db.pool,
+            VideoParent::StudentSyllabusTechnique(armbar_sst_id),
+            "t3",
+            None,
+            coach_id,
+        )
+        .await
+        .unwrap();
+
+        let rows = db::list_for_assignment(&db.pool, assignment_id, &user)
+            .await
+            .unwrap();
+        let armbar = rows
+            .iter()
+            .find(|r| r.technique_id == armbar_id)
+            .expect("armbar sst present");
+        assert_eq!(
+            armbar.video_count, 1,
+            "video_count must count only T1 (technique-owned) videos, not T3 per-SST videos"
+        );
+    }
+
+    #[rocket::async_test]
     async fn cascade_add_inserts_sst_for_active_assignments() {
         // Seed an assignment first, then add a new technique with Cascade
         // and confirm the SST appears in the existing assignment.
@@ -175,7 +226,7 @@ mod tests {
             .len();
 
         // Create a new technique not in any SST yet.
-        let new_tid = db::create_technique(&db.pool, "Side Control", "", coach_id)
+        let new_tid = db::create_technique(&db.pool, "Side Control", "", coach_id, true)
             .await
             .unwrap();
         db::add_technique_to_syllabus(
@@ -227,6 +278,76 @@ mod tests {
             .find(|r| r.technique_id == armbar_id)
             .expect("coach sees hidden SST rows");
         assert!(armbar_sst.hidden_at.is_some());
+    }
+
+    #[rocket::async_test]
+    async fn remove_technique_preserves_tier2_videos_as_soft_deleted() {
+        use crate::db::{create_processing_video, VideoParent};
+
+        let (_client, db, syllabus_id, _student_id, coach_id, armbar_id, _) =
+            assign_syllabus_and_seed_techniques().await;
+
+        // The syllabus_techniques membership row for armbar.
+        let st_id: i64 = sqlx::query_scalar!(
+            "SELECT id AS \"id!\" FROM syllabus_techniques
+             WHERE syllabus_id = ? AND technique_id = ?",
+            syllabus_id,
+            armbar_id,
+        )
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+
+        // Tier-2 video parented on that membership row.
+        let vid = create_processing_video(
+            &db.pool,
+            VideoParent::SyllabusTechnique(st_id),
+            "t2 video",
+            None,
+            coach_id,
+        )
+        .await
+        .unwrap();
+
+        db::remove_technique_from_syllabus(
+            &db.pool,
+            syllabus_id,
+            armbar_id,
+            coach_id,
+            PropagationMode::Cascade,
+        )
+        .await
+        .unwrap();
+
+        // Membership row is gone.
+        let st_gone = sqlx::query_scalar!(
+            "SELECT COUNT(*) AS \"c!\" FROM syllabus_techniques WHERE id = ?",
+            st_id,
+        )
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+        assert_eq!(st_gone, 0, "membership row should be removed");
+
+        // The T2 video row STILL EXISTS, soft-deleted and detached.
+        let row = sqlx::query!(
+            "SELECT deleted_at, parent_kind, syllabus_technique_id
+             FROM videos WHERE id = ?",
+            vid,
+        )
+        .fetch_optional(&db.pool)
+        .await
+        .unwrap()
+        .expect("T2 video row must survive removal (soft-delete, not cascade hard-delete)");
+        assert!(
+            row.deleted_at.is_some(),
+            "video must be soft-deleted (deleted_at set)"
+        );
+        assert_eq!(row.parent_kind, "loose", "video should be detached to loose");
+        assert_eq!(
+            row.syllabus_technique_id, None,
+            "syllabus_technique_id must be nulled so the cascade can't take it"
+        );
     }
 
     #[rocket::async_test]
@@ -383,6 +504,40 @@ mod tests {
     }
 
     #[rocket::async_test]
+    async fn library_excludes_student_only_techniques() {
+        let test_db = create_standard_test_db().await;
+        sqlx::query!("INSERT INTO techniques (name, description) VALUES ('Global Move', '')")
+            .execute(&test_db.pool)
+            .await
+            .unwrap();
+        sqlx::query!(
+            "INSERT INTO techniques (name, description, is_global) VALUES ('Private Move', '', 0)"
+        )
+        .execute(&test_db.pool)
+        .await
+        .unwrap();
+        let rows = db::list_library_techniques(&test_db.pool).await.unwrap();
+        let names: Vec<&str> = rows.iter().map(|r| r.name.as_str()).collect();
+        assert!(names.contains(&"Global Move"));
+        assert!(!names.contains(&"Private Move"));
+    }
+
+    #[rocket::async_test]
+    async fn list_for_assignment_exposes_is_global() {
+        let (_client, db, syllabus_id, student_id, coach_id, _, _) =
+            assign_syllabus_and_seed_techniques().await;
+        let assignment_id = db::assign(&db.pool, coach_id, student_id, syllabus_id)
+            .await
+            .unwrap();
+        let user = crate::db::get_user(&db.pool, coach_id).await.unwrap();
+        let rows = db::list_for_assignment(&db.pool, assignment_id, &user)
+            .await
+            .unwrap();
+        // The seeded techniques default to is_global = 1.
+        assert!(rows[0].is_global);
+    }
+
+    #[rocket::async_test]
     async fn syllabus_attempt_rejects_future_timestamp() {
         let (client, db, syllabus_id, student_id, coach_id, armbar_id, _) =
             assign_syllabus_and_seed_techniques().await;
@@ -405,6 +560,83 @@ mod tests {
             .dispatch()
             .await;
         assert_eq!(resp.status(), Status::BadRequest);
+    }
+}
+
+#[cfg(test)]
+mod soft_delete_tests {
+    use crate::db;
+    use crate::db::PropagationMode;
+    use crate::test::test_utils::TestDbBuilder;
+
+    #[rocket::async_test]
+    async fn soft_delete_syllabus_hides_it_and_closes_assignments() {
+        let test_db = TestDbBuilder::new()
+            .coach("coach", None)
+            .student("alice", None)
+            .technique("Armbar", "", Some("coach"))
+            .build()
+            .await
+            .unwrap();
+        let coach_id = test_db.user_id("coach").unwrap();
+        let alice = test_db.user_id("alice").unwrap();
+        let armbar_id = test_db.technique_id("Armbar").unwrap();
+
+        let syllabus_id = db::create_syllabus(&test_db.pool, "To Delete", None, coach_id)
+            .await
+            .unwrap();
+        db::add_technique_to_syllabus(
+            &test_db.pool,
+            syllabus_id,
+            armbar_id,
+            coach_id,
+            PropagationMode::SyllabusOnly,
+        )
+        .await
+        .unwrap();
+        db::assign(&test_db.pool, coach_id, alice, syllabus_id)
+            .await
+            .unwrap();
+
+        // Soft-delete.
+        db::delete_syllabus(&test_db.pool, syllabus_id)
+            .await
+            .unwrap();
+
+        // Row still exists but deleted_at is set.
+        let live: i64 = sqlx::query_scalar!(
+            r#"SELECT COUNT(*) AS "c!: i64" FROM syllabi WHERE id = ? AND deleted_at IS NULL"#,
+            syllabus_id,
+        )
+        .fetch_one(&test_db.pool)
+        .await
+        .unwrap();
+        assert_eq!(live, 0, "soft-deleted syllabus must have deleted_at set");
+
+        // list_syllabi must NOT include it.
+        let list = db::list_syllabi(&test_db.pool).await.unwrap();
+        assert!(
+            !list.iter().any(|s| s.id == syllabus_id),
+            "list_syllabi must exclude soft-deleted syllabus"
+        );
+
+        // get_syllabus must return None.
+        let got = db::get_syllabus(&test_db.pool, syllabus_id)
+            .await
+            .unwrap();
+        assert!(got.is_none(), "get_syllabus must return None for soft-deleted");
+
+        // Open assignment must be closed.
+        let open: i64 = sqlx::query_scalar!(
+            r#"SELECT COUNT(*) AS "c!: i64"
+               FROM syllabus_assignments
+               WHERE syllabus_id = ? AND unassigned_at IS NULL"#,
+            syllabus_id,
+        )
+        .fetch_one(&test_db.pool)
+        .await
+        .unwrap();
+        assert_eq!(open, 0, "soft-delete must close all open assignments");
     }
 }
 
@@ -650,6 +882,192 @@ mod pr4_tests {
     }
 
     #[rocket::async_test]
+    async fn diff_lists_hidden_and_student_only_videos() {
+        use crate::db::{
+            create_processing_video, DiffVideoKind, VideoParent, VisibilityScope,
+        };
+        // Two students on the same syllabus so we can assert no cross-bleed.
+        let test_db = create_standard_test_db().await;
+        let coach_id = test_db.user_id("coach_user").unwrap();
+        let alice = test_db.user_id("student_user").unwrap();
+        let bob = db::create_user(&test_db.pool, "bob", "password123", "student", None)
+            .await
+            .unwrap();
+        let armbar_id = test_db.technique_id("Armbar").unwrap();
+        let syllabus_id = db::create_syllabus(&test_db.pool, "S", None, coach_id)
+            .await
+            .unwrap();
+        db::add_technique_to_syllabus(
+            &test_db.pool,
+            syllabus_id,
+            armbar_id,
+            coach_id,
+            PropagationMode::SyllabusOnly,
+        )
+        .await
+        .unwrap();
+        let alice_asgn = db::assign(&test_db.pool, coach_id, alice, syllabus_id)
+            .await
+            .unwrap();
+        let bob_asgn = db::assign(&test_db.pool, coach_id, bob, syllabus_id)
+            .await
+            .unwrap();
+
+        // A T1 library video on Armbar, hidden for alice's assignment only.
+        let t1_video =
+            create_processing_video(&test_db.pool, VideoParent::Technique(armbar_id), "t1", None, coach_id)
+                .await
+                .unwrap();
+        db::set_video_override(
+            &test_db.pool,
+            VisibilityScope::Assignment(alice_asgn),
+            t1_video,
+            false,
+            coach_id,
+        )
+        .await
+        .unwrap();
+
+        // A T3 student-only video on alice's Armbar SST.
+        let alice_sst = db::get_sst_id(&test_db.pool, alice_asgn, armbar_id)
+            .await
+            .unwrap()
+            .unwrap();
+        let t3_video = create_processing_video(
+            &test_db.pool,
+            VideoParent::StudentSyllabusTechnique(alice_sst),
+            "t3",
+            None,
+            coach_id,
+        )
+        .await
+        .unwrap();
+
+        let alice_diff = db::diff_for_assignment(&test_db.pool, alice_asgn)
+            .await
+            .unwrap();
+        assert!(
+            alice_diff.videos.iter().any(|v| v.video_id == t1_video
+                && v.kind == DiffVideoKind::HiddenForStudent
+                && v.technique_id == armbar_id),
+            "alice's hidden T1 video should appear as hidden_for_student"
+        );
+        assert!(
+            alice_diff.videos.iter().any(|v| v.video_id == t3_video
+                && v.kind == DiffVideoKind::StudentOnly
+                && v.technique_id == armbar_id),
+            "alice's T3 video should appear as student_only"
+        );
+
+        // Bob's diff must not see either: no override + the T3 belongs to alice.
+        let bob_diff = db::diff_for_assignment(&test_db.pool, bob_asgn)
+            .await
+            .unwrap();
+        assert!(
+            bob_diff.videos.is_empty(),
+            "bob's diff must not bleed alice's video divergences, got {:?}",
+            bob_diff.videos
+        );
+    }
+
+    #[rocket::async_test]
+    async fn apply_diff_restores_and_promotes_videos() {
+        use crate::db::{create_processing_video, VideoParent, VisibilityScope};
+        let (client, db, syllabus_id, student_id, coach_id, assignment_id, sst_id) =
+            seed_active_assignment().await;
+        let armbar_id = db.technique_id("Armbar").unwrap();
+
+        // Hidden T1 video for this assignment.
+        let t1_video =
+            create_processing_video(&db.pool, VideoParent::Technique(armbar_id), "t1", None, coach_id)
+                .await
+                .unwrap();
+        db::set_video_override(
+            &db.pool,
+            VisibilityScope::Assignment(assignment_id),
+            t1_video,
+            false,
+            coach_id,
+        )
+        .await
+        .unwrap();
+        // Hidden BEFORE apply.
+        assert!(
+            !db::effective_video_visible(&db.pool, t1_video, assignment_id)
+                .await
+                .unwrap()
+        );
+
+        // T3 student-only video on the Armbar SST.
+        let t3_video = create_processing_video(
+            &db.pool,
+            VideoParent::StudentSyllabusTechnique(sst_id),
+            "t3",
+            None,
+            coach_id,
+        )
+        .await
+        .unwrap();
+
+        let _ = login_test_user(&client, "coach_user", "password123").await;
+        let resp = client
+            .post(format!(
+                "/api/student/{}/syllabi/{}/assignment/diff/apply",
+                student_id, syllabus_id
+            ))
+            .header(ContentType::JSON)
+            .body(
+                json!({
+                    "ghost_actions": [],
+                    "missing_actions": [],
+                    "video_actions": [
+                        { "video_id": t1_video, "action": "restore" },
+                        { "video_id": t3_video, "action": "promote_to_global" },
+                    ],
+                })
+                .to_string(),
+            )
+            .dispatch()
+            .await;
+        assert_eq!(resp.status(), Status::Ok);
+        let body: Value = serde_json::from_str(&resp.into_string().await.unwrap()).unwrap();
+        assert_eq!(body["applied"].as_i64(), Some(2));
+
+        // restore: the assignment-scope override is gone, video visible again.
+        let override_count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM video_visibility_overrides
+             WHERE scope_kind = 'assignment' AND assignment_id = ? AND video_id = ?",
+        )
+        .bind(assignment_id)
+        .bind(t1_video)
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+        assert_eq!(override_count, 0, "restore should clear the override");
+        assert!(
+            db::effective_video_visible(&db.pool, t1_video, assignment_id)
+                .await
+                .unwrap(),
+            "video should be visible again after restore"
+        );
+
+        // promote: the T3 video is now a T1 technique video, id preserved.
+        let promoted = sqlx::query!(
+            r#"SELECT parent_kind AS "parent_kind!: String",
+                      technique_id AS "technique_id?: i64",
+                      student_syllabus_technique_id AS "sst_id?: i64"
+               FROM videos WHERE id = ?"#,
+            t3_video,
+        )
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+        assert_eq!(promoted.parent_kind, "technique");
+        assert_eq!(promoted.technique_id, Some(armbar_id));
+        assert_eq!(promoted.sst_id, None);
+    }
+
+    #[rocket::async_test]
     async fn add_technique_to_assignment_unhides_existing() {
         let (_client, db, _, _, coach_id, assignment_id, sst_id) = seed_active_assignment().await;
         let armbar_id = db.technique_id("Armbar").unwrap();
@@ -828,5 +1246,45 @@ mod pr4_tests {
         assert_eq!(resp.status(), Status::Ok);
         let body: Value = serde_json::from_str(&resp.into_string().await.unwrap()).unwrap();
         assert_eq!(body["applied"].as_i64(), Some(2));
+    }
+
+    /// Gap 2 guard: `update_syllabus` must be a no-op when the syllabus has
+    /// been soft-deleted. Patching a dead row must not change its name.
+    #[rocket::async_test]
+    async fn update_syllabus_is_noop_on_soft_deleted() {
+        use crate::test::test_utils::TestDbBuilder;
+
+        let db = TestDbBuilder::new()
+            .coach("coach", None)
+            .build()
+            .await
+            .unwrap();
+        let coach_id = db.user_id("coach").unwrap();
+
+        let syllabus_id = db::create_syllabus(&db.pool, "Original Name", None, coach_id)
+            .await
+            .unwrap();
+
+        // Soft-delete the syllabus.
+        db::delete_syllabus(&db.pool, syllabus_id).await.unwrap();
+
+        // Attempt to update the name.
+        db::update_syllabus(&db.pool, syllabus_id, Some("Updated Name"), None)
+            .await
+            .unwrap();
+
+        // Query directly (bypassing get_syllabus which filters deleted rows).
+        let name: String = sqlx::query_scalar!(
+            r#"SELECT name AS "name!: String" FROM syllabi WHERE id = ?"#,
+            syllabus_id
+        )
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+
+        assert_eq!(
+            name, "Original Name",
+            "update_syllabus must be a no-op on a soft-deleted syllabus"
+        );
     }
 }

@@ -90,11 +90,11 @@ impl Drop for TempCleanup {
     }
 }
 
-#[instrument(skip(ctx, temp_input), fields(video_id = video_id, technique_id = technique_id))]
+#[instrument(skip(ctx, temp_input), fields(video_id = video_id, parent_id = parent_id))]
 pub async fn process_uploaded_video(
     ctx: Arc<PipelineContext>,
     video_id: i64,
-    technique_id: i64,
+    parent_id: i64,
     temp_input: PathBuf,
 ) {
     ctx.jobs.increment();
@@ -102,7 +102,7 @@ pub async fn process_uploaded_video(
     let mut cleanup = TempCleanup::new();
     cleanup.track(temp_input.clone());
 
-    let result = run_pipeline(&ctx, video_id, technique_id, &temp_input, &mut cleanup).await;
+    let result = run_pipeline(&ctx, video_id, parent_id, &temp_input, &mut cleanup).await;
     let elapsed = started.elapsed();
 
     let elapsed_ms = elapsed.as_millis() as u64;
@@ -179,7 +179,7 @@ pub async fn apply_processing_result(
 async fn run_pipeline(
     ctx: &PipelineContext,
     _video_id: i64,
-    technique_id: i64,
+    parent_id: i64,
     temp_input: &Path,
     cleanup: &mut TempCleanup,
 ) -> Result<ProcessingResult, PipelineError> {
@@ -244,7 +244,7 @@ async fn run_pipeline(
 
     let bytes = tokio::fs::metadata(&upload_path).await?.len() as i64;
     metrics.upload_bytes.record(bytes as u64, &[]);
-    let storage_key = format!("videos/{}/{}.mp4", technique_id, Uuid::new_v4());
+    let storage_key = format!("videos/{}/{}.mp4", parent_id, Uuid::new_v4());
 
     let put_started = Instant::now();
     if let Err(err) = ctx

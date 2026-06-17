@@ -39,6 +39,9 @@ pub struct ActivityRow {
     pub video_id: Option<i64>,
     pub video_title: Option<String>,
     pub thread_id: Option<i64>,
+    pub camp_id: Option<i64>,
+    pub competition_id: Option<i64>,
+    pub match_id: Option<i64>,
     pub payload_json: Option<String>,
     pub unread: bool,
     pub context_kind: Option<String>,
@@ -226,6 +229,9 @@ pub async fn feed(
                           act.video_id         AS "video_id?: i64",
                           v.title              AS "video_title?: String",
                           act.thread_id        AS "thread_id?: i64",
+                          act.camp_id          AS "camp_id?: i64",
+                          act.competition_id   AS "competition_id?: i64",
+                          act.match_id         AS "match_id?: i64",
                           act.payload_json     AS "payload_json?: String",
                           act.context_kind     AS "context_kind?: String",
                           CASE
@@ -286,6 +292,9 @@ pub async fn feed(
                         video_id: r.video_id,
                         video_title: r.video_title,
                         thread_id: r.thread_id,
+                        camp_id: r.camp_id,
+                        competition_id: r.competition_id,
+                        match_id: r.match_id,
                         payload_json: r.payload_json,
                         unread,
                         context_kind: r.context_kind,
@@ -310,6 +319,9 @@ pub async fn feed(
                           act.video_id         AS "video_id?: i64",
                           v.title              AS "video_title?: String",
                           act.thread_id        AS "thread_id?: i64",
+                          act.camp_id          AS "camp_id?: i64",
+                          act.competition_id   AS "competition_id?: i64",
+                          act.match_id         AS "match_id?: i64",
                           act.payload_json     AS "payload_json?: String",
                           act.context_kind     AS "context_kind?: String",
                           CASE
@@ -370,6 +382,9 @@ pub async fn feed(
                         video_id: r.video_id,
                         video_title: r.video_title,
                         thread_id: r.thread_id,
+                        camp_id: r.camp_id,
+                        competition_id: r.competition_id,
+                        match_id: r.match_id,
                         payload_json: r.payload_json,
                         unread,
                         context_kind: r.context_kind,
@@ -424,6 +439,9 @@ pub async fn dashboard_activity_feed(
                   act.sst_id            AS "sst_id?: i64",
                   act.video_id          AS "video_id?: i64",
                   v.title               AS "video_title?: String",
+                  act.camp_id           AS "camp_id?: i64",
+                  act.competition_id    AS "competition_id?: i64",
+                  act.match_id          AS "match_id?: i64",
                   act.payload_json      AS "payload_json?: String",
                   act.context_kind      AS "context_kind?: String"
            FROM activity act
@@ -449,7 +467,7 @@ pub async fn dashboard_activity_feed(
                    OR ( u.role != 'student' AND act.verb NOT IN (
                      'attempt_deleted', 'technique_unpinned', 'syllabus_unassigned',
                      'sst_hidden', 'sst_unhidden', 'syllabus_technique_removed',
-                     'video_visibility_set', 'thread_comment_posted'
+                     'video_visibility_set', 'thread_comment_posted', 'camp_archived'
                    ) )
                    -- Graduation milestone surfaces regardless of who fired it.
                    OR act.verb = 'syllabus_graduated'
@@ -479,6 +497,9 @@ pub async fn dashboard_activity_feed(
             video_id: r.video_id,
             video_title: r.video_title,
             thread_id: None,
+            camp_id: r.camp_id,
+            competition_id: r.competition_id,
+            match_id: r.match_id,
             payload_json: r.payload_json,
             unread: false,
             context_kind: r.context_kind,

@@ -45,6 +45,39 @@ mod tests {
         body
     }
 
+    /// Like [`multipart_upload_body`] but also appends `parent_kind` /
+    /// `parent_id` form fields so the upload route can scope the new video to a
+    /// non-technique tier.
+    fn multipart_upload_body_with_parent(
+        file_bytes: &[u8],
+        filename: &str,
+        title: &str,
+        description: Option<&str>,
+        parent: Option<(&str, i64)>,
+    ) -> Vec<u8> {
+        let mut body = multipart_upload_body(file_bytes, filename, title, description);
+        if let Some((kind, id)) = parent {
+            // The base helper closed the body with `--BOUNDARY--\r\n`; strip the
+            // trailing close marker, append the extra parts, then re-close.
+            let close = format!("--{}--\r\n", BOUNDARY);
+            let len = body.len() - close.len();
+            body.truncate(len);
+
+            body.extend_from_slice(format!("--{}\r\n", BOUNDARY).as_bytes());
+            body.extend_from_slice(b"Content-Disposition: form-data; name=\"parent_kind\"\r\n\r\n");
+            body.extend_from_slice(kind.as_bytes());
+            body.extend_from_slice(b"\r\n");
+
+            body.extend_from_slice(format!("--{}\r\n", BOUNDARY).as_bytes());
+            body.extend_from_slice(b"Content-Disposition: form-data; name=\"parent_id\"\r\n\r\n");
+            body.extend_from_slice(id.to_string().as_bytes());
+            body.extend_from_slice(b"\r\n");
+
+            body.extend_from_slice(close.as_bytes());
+        }
+        body
+    }
+
     fn multipart_content_type() -> ContentType {
         ContentType::parse_flexible(&format!("multipart/form-data; boundary={}", BOUNDARY))
             .expect("multipart content type")
@@ -198,6 +231,172 @@ mod tests {
         let body: serde_json::Value =
             serde_json::from_str(&response.into_string().await.unwrap()).unwrap();
         assert_eq!(body["kind"], "link");
+    }
+
+    /// Seeds a syllabus_technique (T2) membership row and a
+    /// student_syllabus_technique (T3) row for the Armbar technique, returning
+    /// `(syllabus_technique_id, sst_id)`. Mirrors the raw-SQL seeding used by
+    /// the db-level tiered tests.
+    async fn seed_syllabus_tiers(db: &TestDb) -> (i64, i64) {
+        let coach = db.user_id("coach_user").unwrap();
+        let alice = db.user_id("student_user").unwrap();
+        let tech = first_technique_id(db).await;
+
+        let syllabus_id: i64 = sqlx::query_scalar!(
+            "INSERT INTO syllabi (name, created_by_id) VALUES ('Blue Belt', ?) RETURNING id AS \"id!\"",
+            coach
+        )
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+        let st_id: i64 = sqlx::query_scalar!(
+            "INSERT INTO syllabus_techniques (syllabus_id, technique_id, position, added_by_id)
+             VALUES (?, ?, 0, ?) RETURNING id AS \"id!\"",
+            syllabus_id,
+            tech,
+            coach
+        )
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+        let assignment_id: i64 = sqlx::query_scalar!(
+            "INSERT INTO syllabus_assignments (student_id, syllabus_id, assigned_by_id)
+             VALUES (?, ?, ?) RETURNING id AS \"id!\"",
+            alice,
+            syllabus_id,
+            coach
+        )
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+        let sst_id: i64 = sqlx::query_scalar!(
+            "INSERT INTO student_syllabus_techniques (assignment_id, technique_id)
+             VALUES (?, ?) RETURNING id AS \"id!\"",
+            assignment_id,
+            tech
+        )
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+        (st_id, sst_id)
+    }
+
+    #[rocket::async_test]
+    async fn link_video_at_syllabus_technique_parent() {
+        let test_db = create_standard_test_db().await;
+        let (client, db) = setup_test_client(test_db).await;
+        let tid = first_technique_id(&db).await;
+        let (st_id, _sst_id) = seed_syllabus_tiers(&db).await;
+
+        login_as(&client, "coach_user").await;
+        let response = client
+            .post(format!("/api/techniques/{}/videos/link", tid))
+            .header(ContentType::JSON)
+            .body(
+                json!({
+                    "title": "T2 link",
+                    "url": "https://youtu.be/t2abc",
+                    "parent_kind": "syllabus_technique",
+                    "parent_id": st_id,
+                })
+                .to_string(),
+            )
+            .dispatch()
+            .await;
+        assert_eq!(response.status(), Status::Ok);
+        let body: serde_json::Value =
+            serde_json::from_str(&response.into_string().await.unwrap()).unwrap();
+        let vid = body["id"].as_i64().unwrap();
+
+        let row = sqlx::query!(
+            "SELECT parent_kind, syllabus_technique_id FROM videos WHERE id = ?",
+            vid
+        )
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+        assert_eq!(row.parent_kind, "syllabus_technique");
+        assert_eq!(row.syllabus_technique_id, Some(st_id));
+    }
+
+    #[rocket::async_test]
+    async fn upload_video_at_student_syllabus_technique_parent() {
+        let test_db = create_standard_test_db().await;
+        let (client, db) = setup_test_client(test_db).await;
+        let tid = first_technique_id(&db).await;
+        let (_st_id, sst_id) = seed_syllabus_tiers(&db).await;
+
+        login_as(&client, "coach_user").await;
+        let body = multipart_upload_body_with_parent(
+            b"fake-mp4-bytes",
+            "clip.mp4",
+            "T3 upload",
+            None,
+            Some(("student_syllabus_technique", sst_id)),
+        );
+        let response = client
+            .post(format!("/api/techniques/{}/videos/upload", tid))
+            .header(multipart_content_type())
+            .body(body)
+            .dispatch()
+            .await;
+        assert_eq!(response.status(), Status::Ok);
+        let body: serde_json::Value =
+            serde_json::from_str(&response.into_string().await.unwrap()).unwrap();
+        let vid = body["video_id"].as_i64().unwrap();
+
+        let row = sqlx::query!(
+            "SELECT parent_kind, student_syllabus_technique_id FROM videos WHERE id = ?",
+            vid
+        )
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+        assert_eq!(row.parent_kind, "student_syllabus_technique");
+        assert_eq!(row.student_syllabus_technique_id, Some(sst_id));
+    }
+
+    #[rocket::async_test]
+    async fn tiered_create_requires_coach_permission() {
+        let test_db = create_standard_test_db().await;
+        let (client, db) = setup_test_client(test_db).await;
+        let tid = first_technique_id(&db).await;
+        let (st_id, sst_id) = seed_syllabus_tiers(&db).await;
+
+        login_as(&client, "student_user").await;
+
+        // T2 link as a student -> forbidden.
+        let response = client
+            .post(format!("/api/techniques/{}/videos/link", tid))
+            .header(ContentType::JSON)
+            .body(
+                json!({
+                    "title": "nope",
+                    "url": "https://youtu.be/nope",
+                    "parent_kind": "syllabus_technique",
+                    "parent_id": st_id,
+                })
+                .to_string(),
+            )
+            .dispatch()
+            .await;
+        assert_eq!(response.status(), Status::Forbidden);
+
+        // T3 upload as a student -> forbidden.
+        let upload = multipart_upload_body_with_parent(
+            b"fake-mp4-bytes",
+            "clip.mp4",
+            "nope",
+            None,
+            Some(("student_syllabus_technique", sst_id)),
+        );
+        let response = client
+            .post(format!("/api/techniques/{}/videos/upload", tid))
+            .header(multipart_content_type())
+            .body(upload)
+            .dispatch()
+            .await;
+        assert_eq!(response.status(), Status::Forbidden);
     }
 
     #[rocket::async_test]
@@ -707,6 +906,856 @@ mod tests {
     }
 
     #[rocket::async_test]
+    async fn create_video_for_syllabus_tiers_round_trips() {
+        use crate::db::{create_processing_video, VideoParent};
+        use crate::test::test_utils::TestDbBuilder;
+
+        let db = TestDbBuilder::new()
+            .coach("coach", None)
+            .student("alice", None)
+            .technique("Armbar", "arm lock", Some("coach"))
+            .build()
+            .await
+            .unwrap();
+        let coach = db.user_id("coach").unwrap();
+        let alice = db.user_id("alice").unwrap();
+        let tech = db.technique_id("Armbar").unwrap();
+
+        // Seed a syllabus + syllabus_techniques membership row.
+        let syllabus_id: i64 = sqlx::query_scalar!(
+            "INSERT INTO syllabi (name, created_by_id) VALUES ('Blue Belt', ?) RETURNING id AS \"id!\"",
+            coach
+        )
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+        let st_id: i64 = sqlx::query_scalar!(
+            "INSERT INTO syllabus_techniques (syllabus_id, technique_id, position, added_by_id)
+             VALUES (?, ?, 0, ?) RETURNING id AS \"id!\"",
+            syllabus_id,
+            tech,
+            coach
+        )
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+
+        // Seed an assignment + a student_syllabus_techniques (SST) row.
+        let assignment_id: i64 = sqlx::query_scalar!(
+            "INSERT INTO syllabus_assignments (student_id, syllabus_id, assigned_by_id)
+             VALUES (?, ?, ?) RETURNING id AS \"id!\"",
+            alice,
+            syllabus_id,
+            coach
+        )
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+        let sst_id: i64 = sqlx::query_scalar!(
+            "INSERT INTO student_syllabus_techniques (assignment_id, technique_id)
+             VALUES (?, ?) RETURNING id AS \"id!\"",
+            assignment_id,
+            tech
+        )
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+
+        let st_vid =
+            create_processing_video(&db.pool, VideoParent::SyllabusTechnique(st_id), "st", None, coach)
+                .await
+                .unwrap();
+        let sst_vid = create_processing_video(
+            &db.pool,
+            VideoParent::StudentSyllabusTechnique(sst_id),
+            "sst",
+            None,
+            coach,
+        )
+        .await
+        .unwrap();
+
+        let st_row = sqlx::query!(
+            "SELECT parent_kind, syllabus_technique_id, student_syllabus_technique_id
+             FROM videos WHERE id = ?",
+            st_vid
+        )
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+        assert_eq!(st_row.parent_kind, "syllabus_technique");
+        assert_eq!(st_row.syllabus_technique_id, Some(st_id));
+        assert_eq!(st_row.student_syllabus_technique_id, None);
+
+        let sst_row = sqlx::query!(
+            "SELECT parent_kind, syllabus_technique_id, student_syllabus_technique_id
+             FROM videos WHERE id = ?",
+            sst_vid
+        )
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+        assert_eq!(sst_row.parent_kind, "student_syllabus_technique");
+        assert_eq!(sst_row.syllabus_technique_id, None);
+        assert_eq!(sst_row.student_syllabus_technique_id, Some(sst_id));
+    }
+
+    #[rocket::async_test]
+    async fn effective_video_visible_precedence() {
+        use crate::db::{
+            clear_video_override, create_processing_video, effective_video_visible,
+            set_video_override, VideoParent, VisibilityScope,
+        };
+        use crate::test::test_utils::TestDbBuilder;
+
+        let db = TestDbBuilder::new()
+            .coach("coach", None)
+            .student("alice", None)
+            .technique("Armbar", "arm lock", Some("coach"))
+            .build()
+            .await
+            .unwrap();
+        let coach = db.user_id("coach").unwrap();
+        let alice = db.user_id("alice").unwrap();
+        let tech = db.technique_id("Armbar").unwrap();
+
+        // Seed a syllabus + assignment (= a (student, syllabus) pair) + SST row
+        // on the owning technique, so the T1 video is owned-in-scope for it.
+        let syllabus_id: i64 = sqlx::query_scalar!(
+            "INSERT INTO syllabi (name, created_by_id) VALUES ('Blue Belt', ?) RETURNING id AS \"id!\"",
+            coach
+        )
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+        sqlx::query!(
+            "INSERT INTO syllabus_techniques (syllabus_id, technique_id, position, added_by_id)
+             VALUES (?, ?, 0, ?)",
+            syllabus_id,
+            tech,
+            coach
+        )
+        .execute(&db.pool)
+        .await
+        .unwrap();
+        let assignment_id: i64 = sqlx::query_scalar!(
+            "INSERT INTO syllabus_assignments (student_id, syllabus_id, assigned_by_id)
+             VALUES (?, ?, ?) RETURNING id AS \"id!\"",
+            alice,
+            syllabus_id,
+            coach
+        )
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+        let sst_id: i64 = sqlx::query_scalar!(
+            "INSERT INTO student_syllabus_techniques (assignment_id, technique_id)
+             VALUES (?, ?) RETURNING id AS \"id!\"",
+            assignment_id,
+            tech
+        )
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+
+        // A technique-owned (T1) video on the owning technique.
+        let video_id =
+            create_processing_video(&db.pool, VideoParent::Technique(tech), "t1", None, coach)
+                .await
+                .unwrap();
+
+        // Rung: no overrides, not globally hidden, technique present & not
+        // SST-hidden -> visible.
+        assert!(
+            effective_video_visible(&db.pool, video_id, assignment_id)
+                .await
+                .unwrap(),
+            "baseline owned-in-scope video should be visible"
+        );
+
+        // Rung: global hide, no overrides -> hidden.
+        sqlx::query!("UPDATE videos SET hidden_at = CURRENT_TIMESTAMP WHERE id = ?", video_id)
+            .execute(&db.pool)
+            .await
+            .unwrap();
+        assert!(
+            !effective_video_visible(&db.pool, video_id, assignment_id)
+                .await
+                .unwrap(),
+            "globally hidden video with no overrides should be hidden"
+        );
+
+        // Rung: global hide + assignment-scope override visible=1 -> visible
+        // (explicit beats global).
+        set_video_override(
+            &db.pool,
+            VisibilityScope::Assignment(assignment_id),
+            video_id,
+            true,
+            coach,
+        )
+        .await
+        .unwrap();
+        assert!(
+            effective_video_visible(&db.pool, video_id, assignment_id)
+                .await
+                .unwrap(),
+            "assignment override visible=1 should beat global hide"
+        );
+
+        // Rung: assignment override visible=0 -> hidden, even if syllabus
+        // override says visible=1.
+        set_video_override(
+            &db.pool,
+            VisibilityScope::Syllabus(syllabus_id),
+            video_id,
+            true,
+            coach,
+        )
+        .await
+        .unwrap();
+        set_video_override(
+            &db.pool,
+            VisibilityScope::Assignment(assignment_id),
+            video_id,
+            false,
+            coach,
+        )
+        .await
+        .unwrap();
+        assert!(
+            !effective_video_visible(&db.pool, video_id, assignment_id)
+                .await
+                .unwrap(),
+            "assignment override visible=0 should beat syllabus override visible=1"
+        );
+
+        // Rung: syllabus override visible=0, no assignment override -> hidden.
+        clear_video_override(&db.pool, VisibilityScope::Assignment(assignment_id), video_id)
+            .await
+            .unwrap();
+        set_video_override(
+            &db.pool,
+            VisibilityScope::Syllabus(syllabus_id),
+            video_id,
+            false,
+            coach,
+        )
+        .await
+        .unwrap();
+        assert!(
+            !effective_video_visible(&db.pool, video_id, assignment_id)
+                .await
+                .unwrap(),
+            "syllabus override visible=0 with no assignment override should hide"
+        );
+
+        // Rung: student override visible=0, no syllabus/assignment override ->
+        // hidden.
+        clear_video_override(&db.pool, VisibilityScope::Syllabus(syllabus_id), video_id)
+            .await
+            .unwrap();
+        set_video_override(&db.pool, VisibilityScope::Student(alice), video_id, false, coach)
+            .await
+            .unwrap();
+        assert!(
+            !effective_video_visible(&db.pool, video_id, assignment_id)
+                .await
+                .unwrap(),
+            "student override visible=0 with no higher override should hide"
+        );
+
+        // Rung: owning technique's SST hidden_at set -> hidden (cascade),
+        // regardless of overrides showing the video.
+        clear_video_override(&db.pool, VisibilityScope::Student(alice), video_id)
+            .await
+            .unwrap();
+        sqlx::query!("UPDATE videos SET hidden_at = NULL WHERE id = ?", video_id)
+            .execute(&db.pool)
+            .await
+            .unwrap();
+        set_video_override(
+            &db.pool,
+            VisibilityScope::Assignment(assignment_id),
+            video_id,
+            true,
+            coach,
+        )
+        .await
+        .unwrap();
+        sqlx::query!(
+            "UPDATE student_syllabus_techniques SET hidden_at = CURRENT_TIMESTAMP WHERE id = ?",
+            sst_id
+        )
+        .execute(&db.pool)
+        .await
+        .unwrap();
+        assert!(
+            !effective_video_visible(&db.pool, video_id, assignment_id)
+                .await
+                .unwrap(),
+            "SST hidden_at should cascade-hide the video even with an override showing it"
+        );
+
+        // Rung: soft-deleted video -> hidden, regardless of everything.
+        sqlx::query!(
+            "UPDATE student_syllabus_techniques SET hidden_at = NULL WHERE id = ?",
+            sst_id
+        )
+        .execute(&db.pool)
+        .await
+        .unwrap();
+        sqlx::query!("UPDATE videos SET deleted_at = CURRENT_TIMESTAMP WHERE id = ?", video_id)
+            .execute(&db.pool)
+            .await
+            .unwrap();
+        assert!(
+            !effective_video_visible(&db.pool, video_id, assignment_id)
+                .await
+                .unwrap(),
+            "soft-deleted video should never be visible"
+        );
+    }
+
+    /// Regression: an override must cascade away when its scope entity is
+    /// deleted. The old polymorphic (scope_kind, scope_id) design left dangling
+    /// rows that could mis-apply after SQLite reused the rowid. The typed-FK
+    /// ON DELETE CASCADE removes the override with the entity. Also covers
+    /// upsert idempotency (set twice -> a single row).
+    #[rocket::async_test]
+    async fn override_cascades_when_scope_entity_deleted() {
+        use crate::db::{create_processing_video, set_video_override, VideoParent, VisibilityScope};
+        use crate::test::test_utils::TestDbBuilder;
+
+        let db = TestDbBuilder::new()
+            .coach("coach", None)
+            .student("alice", None)
+            .technique("Armbar", "arm lock", Some("coach"))
+            .build()
+            .await
+            .unwrap();
+        // The TestDb in-memory pool does not enable FK enforcement by default;
+        // ON DELETE CASCADE only fires with it on.
+        sqlx::query("PRAGMA foreign_keys = ON")
+            .execute(&db.pool)
+            .await
+            .unwrap();
+        let coach = db.user_id("coach").unwrap();
+        let alice = db.user_id("alice").unwrap();
+        let tech = db.technique_id("Armbar").unwrap();
+
+        let syllabus_id: i64 = sqlx::query_scalar!(
+            "INSERT INTO syllabi (name, created_by_id) VALUES ('Blue Belt', ?) RETURNING id AS \"id!\"",
+            coach
+        )
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+        let assignment_id: i64 = sqlx::query_scalar!(
+            "INSERT INTO syllabus_assignments (student_id, syllabus_id, assigned_by_id)
+             VALUES (?, ?, ?) RETURNING id AS \"id!\"",
+            alice,
+            syllabus_id,
+            coach
+        )
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+        let video_id =
+            create_processing_video(&db.pool, VideoParent::Technique(tech), "t1", None, coach)
+                .await
+                .unwrap();
+
+        set_video_override(
+            &db.pool,
+            VisibilityScope::Assignment(assignment_id),
+            video_id,
+            false,
+            coach,
+        )
+        .await
+        .unwrap();
+        // Upsert again -> still one row (delete-then-insert is idempotent).
+        set_video_override(
+            &db.pool,
+            VisibilityScope::Assignment(assignment_id),
+            video_id,
+            true,
+            coach,
+        )
+        .await
+        .unwrap();
+        let n: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM video_visibility_overrides WHERE assignment_id = ? AND video_id = ?",
+        )
+        .bind(assignment_id)
+        .bind(video_id)
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+        assert_eq!(n, 1);
+
+        // Delete the assignment -> override cascades away (no dangling row).
+        sqlx::query("DELETE FROM syllabus_assignments WHERE id = ?")
+            .bind(assignment_id)
+            .execute(&db.pool)
+            .await
+            .unwrap();
+        let after: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM video_visibility_overrides WHERE assignment_id = ?",
+        )
+        .bind(assignment_id)
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+        assert_eq!(after, 0, "override must cascade on scope-entity delete");
+    }
+
+    #[rocket::async_test]
+    async fn anywhere_guard_respects_assignment_scope_hide() {
+        use crate::db::{
+            create_processing_video, set_video_override, video_visible_to_student,
+            video_visible_to_student_anywhere, VideoParent, VisibilityScope,
+        };
+        use crate::test::test_utils::TestDbBuilder;
+
+        let db = TestDbBuilder::new()
+            .coach("coach", None)
+            .student("alice", None)
+            .technique("Armbar", "arm lock", Some("coach"))
+            .build()
+            .await
+            .unwrap();
+        let coach = db.user_id("coach").unwrap();
+        let alice = db.user_id("alice").unwrap();
+        let tech = db.technique_id("Armbar").unwrap();
+
+        // Syllabus + assignment + SST on the owning technique so the T1 video
+        // is owned-in-scope for the assignment.
+        let syllabus_id: i64 = sqlx::query_scalar!(
+            "INSERT INTO syllabi (name, created_by_id) VALUES ('Blue Belt', ?) RETURNING id AS \"id!\"",
+            coach
+        )
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+        sqlx::query!(
+            "INSERT INTO syllabus_techniques (syllabus_id, technique_id, position, added_by_id)
+             VALUES (?, ?, 0, ?)",
+            syllabus_id,
+            tech,
+            coach
+        )
+        .execute(&db.pool)
+        .await
+        .unwrap();
+        let assignment_id: i64 = sqlx::query_scalar!(
+            "INSERT INTO syllabus_assignments (student_id, syllabus_id, assigned_by_id)
+             VALUES (?, ?, ?) RETURNING id AS \"id!\"",
+            alice,
+            syllabus_id,
+            coach
+        )
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+        sqlx::query!(
+            "INSERT INTO student_syllabus_techniques (assignment_id, technique_id)
+             VALUES (?, ?)",
+            assignment_id,
+            tech
+        )
+        .execute(&db.pool)
+        .await
+        .unwrap();
+
+        let video_id =
+            create_processing_video(&db.pool, VideoParent::Technique(tech), "t1", None, coach)
+                .await
+                .unwrap();
+
+        // Visible under the only assignment -> the anywhere guard allows it.
+        assert!(
+            video_visible_to_student_anywhere(&db.pool, video_id, alice)
+                .await
+                .unwrap(),
+            "video visible under at least one assignment should be allowed"
+        );
+
+        // Hide the video at the assignment's scope (override visible=0). The
+        // OLD guard only checks student-scope + global hide, so it still
+        // allows the video; the NEW anywhere guard must refuse it.
+        set_video_override(
+            &db.pool,
+            VisibilityScope::Assignment(assignment_id),
+            video_id,
+            false,
+            coach,
+        )
+        .await
+        .unwrap();
+
+        assert!(
+            video_visible_to_student(&db.pool, video_id, alice)
+                .await
+                .unwrap(),
+            "old guard misses assignment-scope hides (the gap we are closing)"
+        );
+        assert!(
+            !video_visible_to_student_anywhere(&db.pool, video_id, alice)
+                .await
+                .unwrap(),
+            "anywhere guard must honour an assignment-scope hide"
+        );
+    }
+
+    #[rocket::async_test]
+    async fn backfill_maps_legacy_visibility_and_skips_orphans() {
+        use crate::db::{create_processing_video, run_video_visibility_backfill, VideoParent};
+        use crate::test::test_utils::TestDbBuilder;
+
+        let db = TestDbBuilder::new()
+            .coach("coach", None)
+            .student("alice", None)
+            .technique("Armbar", "arm lock", Some("coach"))
+            .build()
+            .await
+            .unwrap();
+        let coach = db.user_id("coach").unwrap();
+        let alice = db.user_id("alice").unwrap();
+        let tech = db.technique_id("Armbar").unwrap();
+
+        // The legacy tables are dropped from schema.sql in this change, so the
+        // test DB does not have them. Re-create them locally so the backfill
+        // has something to read (mirrors a not-yet-migrated production DB).
+        sqlx::query(
+            "CREATE TABLE student_syllabus_video_visibility (
+                student_id INTEGER NOT NULL,
+                syllabus_id INTEGER NOT NULL,
+                video_id INTEGER NOT NULL,
+                visible BOOLEAN NOT NULL,
+                created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_by_id INTEGER,
+                PRIMARY KEY (student_id, syllabus_id, video_id)
+            )",
+        )
+        .execute(&db.pool)
+        .await
+        .unwrap();
+        sqlx::query(
+            "CREATE TABLE video_student_visibility (
+                video_id INTEGER NOT NULL,
+                student_id INTEGER NOT NULL,
+                visible BOOLEAN NOT NULL,
+                set_by_id INTEGER,
+                set_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (video_id, student_id)
+            )",
+        )
+        .execute(&db.pool)
+        .await
+        .unwrap();
+
+        // Syllabus + an assignment for alice (so her ssvv row maps).
+        let syllabus_id: i64 = sqlx::query_scalar!(
+            "INSERT INTO syllabi (name, created_by_id) VALUES ('Blue Belt', ?) RETURNING id AS \"id!\"",
+            coach
+        )
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+        let assignment_id: i64 = sqlx::query_scalar!(
+            "INSERT INTO syllabus_assignments (student_id, syllabus_id, assigned_by_id)
+             VALUES (?, ?, ?) RETURNING id AS \"id!\"",
+            alice,
+            syllabus_id,
+            coach
+        )
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+
+        let video_id =
+            create_processing_video(&db.pool, VideoParent::Technique(tech), "t1", None, coach)
+                .await
+                .unwrap();
+
+        // ssvv row for (alice, blue belt) -> maps to assignment scope.
+        sqlx::query(
+            "INSERT INTO student_syllabus_video_visibility
+                (student_id, syllabus_id, video_id, visible, updated_by_id)
+             VALUES (?, ?, ?, 0, ?)",
+        )
+        .bind(alice)
+        .bind(syllabus_id)
+        .bind(video_id)
+        .bind(coach)
+        .execute(&db.pool)
+        .await
+        .unwrap();
+
+        // Orphan ssvv row for a syllabus alice is NOT assigned to -> skipped.
+        let other_syllabus: i64 = sqlx::query_scalar!(
+            "INSERT INTO syllabi (name, created_by_id) VALUES ('Purple Belt', ?) RETURNING id AS \"id!\"",
+            coach
+        )
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO student_syllabus_video_visibility
+                (student_id, syllabus_id, video_id, visible, updated_by_id)
+             VALUES (?, ?, ?, 1, ?)",
+        )
+        .bind(alice)
+        .bind(other_syllabus)
+        .bind(video_id)
+        .bind(coach)
+        .execute(&db.pool)
+        .await
+        .unwrap();
+
+        // vsv row -> maps to student scope.
+        sqlx::query(
+            "INSERT INTO video_student_visibility
+                (video_id, student_id, visible, set_by_id)
+             VALUES (?, ?, 0, ?)",
+        )
+        .bind(video_id)
+        .bind(alice)
+        .bind(coach)
+        .execute(&db.pool)
+        .await
+        .unwrap();
+
+        let counts = run_video_visibility_backfill(&db.pool).await.unwrap();
+        assert_eq!(counts.assignment_inserted, 1, "one mapped ssvv row");
+        assert_eq!(counts.assignment_orphaned, 1, "one orphan ssvv row skipped");
+        assert_eq!(counts.student_inserted, 1, "one vsv row");
+
+        // assignment-scope override exists with the mapped assignment_id + visible.
+        let row = sqlx::query!(
+            r#"SELECT assignment_id AS "assignment_id!: i64", visible AS "visible!: bool"
+               FROM video_visibility_overrides
+               WHERE scope_kind = 'assignment' AND video_id = ?"#,
+            video_id
+        )
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+        assert_eq!(row.assignment_id, assignment_id);
+        assert!(!row.visible, "ssvv visible=0 preserved");
+
+        // student-scope override exists with student_id = student_id.
+        let srow = sqlx::query!(
+            r#"SELECT student_id AS "student_id!: i64", visible AS "visible!: bool"
+               FROM video_visibility_overrides
+               WHERE scope_kind = 'student' AND video_id = ?"#,
+            video_id
+        )
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+        assert_eq!(srow.student_id, alice);
+        assert!(!srow.visible);
+
+        // The orphan produced no assignment-scope row beyond the mapped one.
+        let assignment_rows: i64 = sqlx::query_scalar!(
+            r#"SELECT COUNT(*) AS "c!: i64" FROM video_visibility_overrides
+               WHERE scope_kind = 'assignment'"#
+        )
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+        assert_eq!(assignment_rows, 1, "orphan must not create an assignment row");
+
+        // Re-running is idempotent (no new rows, no error).
+        let again = run_video_visibility_backfill(&db.pool).await.unwrap();
+        assert_eq!(again.assignment_inserted, 0);
+        assert_eq!(again.student_inserted, 0);
+    }
+
+    #[rocket::async_test]
+    async fn per_syllabus_read_unions_all_three_tiers_and_cascades() {
+        use crate::db::{
+            create_processing_video, list_videos_for_technique_in_syllabus_visible_to, VideoParent,
+        };
+        use crate::test::test_utils::TestDbBuilder;
+
+        let db = TestDbBuilder::new()
+            .coach("coach", None)
+            .student("alice", None)
+            .student("bob", None)
+            .technique("Armbar", "arm lock", Some("coach"))
+            .build()
+            .await
+            .unwrap();
+        let coach = db.user_id("coach").unwrap();
+        let alice = db.user_id("alice").unwrap();
+        let bob = db.user_id("bob").unwrap();
+        let tech = db.technique_id("Armbar").unwrap();
+
+        // This syllabus + alice's assignment + her SST on the technique.
+        let syllabus_id: i64 = sqlx::query_scalar!(
+            "INSERT INTO syllabi (name, created_by_id) VALUES ('Blue Belt', ?) RETURNING id AS \"id!\"",
+            coach
+        )
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+        let st_id: i64 = sqlx::query_scalar!(
+            "INSERT INTO syllabus_techniques (syllabus_id, technique_id, position, added_by_id)
+             VALUES (?, ?, 0, ?) RETURNING id AS \"id!\"",
+            syllabus_id,
+            tech,
+            coach
+        )
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+        let assignment_id: i64 = sqlx::query_scalar!(
+            "INSERT INTO syllabus_assignments (student_id, syllabus_id, assigned_by_id)
+             VALUES (?, ?, ?) RETURNING id AS \"id!\"",
+            alice,
+            syllabus_id,
+            coach
+        )
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+        let sst_id: i64 = sqlx::query_scalar!(
+            "INSERT INTO student_syllabus_techniques (assignment_id, technique_id)
+             VALUES (?, ?) RETURNING id AS \"id!\"",
+            assignment_id,
+            tech
+        )
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+
+        // T1: technique-owned video.
+        let t1 = create_processing_video(&db.pool, VideoParent::Technique(tech), "t1", None, coach)
+            .await
+            .unwrap();
+        // T2: syllabus_technique-owned video on THIS syllabus's membership.
+        let t2 = create_processing_video(
+            &db.pool,
+            VideoParent::SyllabusTechnique(st_id),
+            "t2",
+            None,
+            coach,
+        )
+        .await
+        .unwrap();
+        // T3: student_syllabus_technique-owned video on alice's SST.
+        let t3 = create_processing_video(
+            &db.pool,
+            VideoParent::StudentSyllabusTechnique(sst_id),
+            "t3",
+            None,
+            coach,
+        )
+        .await
+        .unwrap();
+
+        // Control: a T2 video on the SAME technique but in a DIFFERENT syllabus.
+        let other_syllabus: i64 = sqlx::query_scalar!(
+            "INSERT INTO syllabi (name, created_by_id) VALUES ('Purple Belt', ?) RETURNING id AS \"id!\"",
+            coach
+        )
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+        let other_st_id: i64 = sqlx::query_scalar!(
+            "INSERT INTO syllabus_techniques (syllabus_id, technique_id, position, added_by_id)
+             VALUES (?, ?, 0, ?) RETURNING id AS \"id!\"",
+            other_syllabus,
+            tech,
+            coach
+        )
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+        let control_t2 = create_processing_video(
+            &db.pool,
+            VideoParent::SyllabusTechnique(other_st_id),
+            "control-t2",
+            None,
+            coach,
+        )
+        .await
+        .unwrap();
+
+        // Control: a T3 video on a DIFFERENT student's SST (bob, this syllabus).
+        let bob_assignment_id: i64 = sqlx::query_scalar!(
+            "INSERT INTO syllabus_assignments (student_id, syllabus_id, assigned_by_id)
+             VALUES (?, ?, ?) RETURNING id AS \"id!\"",
+            bob,
+            syllabus_id,
+            coach
+        )
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+        let bob_sst_id: i64 = sqlx::query_scalar!(
+            "INSERT INTO student_syllabus_techniques (assignment_id, technique_id)
+             VALUES (?, ?) RETURNING id AS \"id!\"",
+            bob_assignment_id,
+            tech
+        )
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+        let control_t3 = create_processing_video(
+            &db.pool,
+            VideoParent::StudentSyllabusTechnique(bob_sst_id),
+            "control-t3",
+            None,
+            coach,
+        )
+        .await
+        .unwrap();
+
+        // The read for (alice, this syllabus, technique) returns exactly T1+T2+T3.
+        let visible =
+            list_videos_for_technique_in_syllabus_visible_to(&db.pool, tech, syllabus_id, alice)
+                .await
+                .unwrap();
+        let ids: std::collections::HashSet<i64> = visible.iter().map(|v| v.id).collect();
+        assert_eq!(
+            ids,
+            std::collections::HashSet::from([t1, t2, t3]),
+            "should union T1+T2+T3 for this student/syllabus and exclude controls"
+        );
+        assert!(
+            !ids.contains(&control_t2),
+            "other-syllabus T2 must not appear"
+        );
+        assert!(
+            !ids.contains(&control_t3),
+            "other-student T3 must not appear"
+        );
+
+        // Hiding the technique for alice (SST hidden_at) cascades to empty.
+        sqlx::query!(
+            "UPDATE student_syllabus_techniques SET hidden_at = CURRENT_TIMESTAMP WHERE id = ?",
+            sst_id
+        )
+        .execute(&db.pool)
+        .await
+        .unwrap();
+        let visible_after =
+            list_videos_for_technique_in_syllabus_visible_to(&db.pool, tech, syllabus_id, alice)
+                .await
+                .unwrap();
+        assert!(
+            visible_after.is_empty(),
+            "SST hidden_at should cascade-hide every tier for this student"
+        );
+    }
+
+    #[rocket::async_test]
     async fn create_video_rejects_missing_parent() {
         use crate::db::{create_processing_video, VideoParent};
         use crate::test::test_utils::TestDbBuilder;
@@ -1072,5 +2121,167 @@ mod db_tests {
         .await
         .expect("fetch ready");
         assert_eq!(ready_row.processing_status, "ready");
+    }
+
+    #[test]
+    fn visibility_scope_maps_to_kind_and_columns() {
+        use crate::db::VisibilityScope::*;
+        assert_eq!(Student(7).kind(), "student");
+        assert_eq!(Camp(7).kind(), "camp");
+        assert_eq!(Student(7).columns(), (Some(7), None, None, None));
+        assert_eq!(Syllabus(7).columns(), (None, Some(7), None, None));
+        assert_eq!(Assignment(7).columns(), (None, None, Some(7), None));
+        assert_eq!(Camp(7).columns(), (None, None, None, Some(7)));
+    }
+
+    /// Gap 1 regression: a soft-deleted syllabus closes its assignments via
+    /// `unassigned_at`. The student must then see NO videos through that closed
+    /// assignment -- the lookup must gate on `unassigned_at IS NULL`.
+    #[rocket::async_test]
+    async fn student_sees_no_videos_for_soft_deleted_syllabus() {
+        use crate::db::{
+            create_processing_video, delete_syllabus,
+            list_videos_for_technique_in_syllabus_visible_to, VideoParent,
+        };
+        use crate::test::test_utils::TestDbBuilder;
+
+        let db = TestDbBuilder::new()
+            .coach("coach", None)
+            .student("alice", None)
+            .technique("Armbar", "arm lock", Some("coach"))
+            .build()
+            .await
+            .unwrap();
+        let coach = db.user_id("coach").unwrap();
+        let alice = db.user_id("alice").unwrap();
+        let tech = db.technique_id("Armbar").unwrap();
+
+        // Syllabus with alice assigned and an SST for the technique.
+        let syllabus_id: i64 = sqlx::query_scalar!(
+            "INSERT INTO syllabi (name, created_by_id) VALUES ('Blue Belt', ?) RETURNING id AS \"id!\"",
+            coach
+        )
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+        sqlx::query!(
+            "INSERT INTO syllabus_techniques (syllabus_id, technique_id, position, added_by_id)
+             VALUES (?, ?, 0, ?)",
+            syllabus_id,
+            tech,
+            coach
+        )
+        .execute(&db.pool)
+        .await
+        .unwrap();
+        let assignment_id: i64 = sqlx::query_scalar!(
+            "INSERT INTO syllabus_assignments (student_id, syllabus_id, assigned_by_id)
+             VALUES (?, ?, ?) RETURNING id AS \"id!\"",
+            alice,
+            syllabus_id,
+            coach
+        )
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+        sqlx::query!(
+            "INSERT INTO student_syllabus_techniques (assignment_id, technique_id)
+             VALUES (?, ?)",
+            assignment_id,
+            tech
+        )
+        .execute(&db.pool)
+        .await
+        .unwrap();
+
+        // A visible T1 video for the technique.
+        create_processing_video(&db.pool, VideoParent::Technique(tech), "t1", None, coach)
+            .await
+            .unwrap();
+
+        // Before delete: student should see the video.
+        let before =
+            list_videos_for_technique_in_syllabus_visible_to(&db.pool, tech, syllabus_id, alice)
+                .await
+                .unwrap();
+        assert!(!before.is_empty(), "student should see the T1 video before soft-delete");
+
+        // Soft-delete the syllabus -- closes alice's assignment.
+        delete_syllabus(&db.pool, syllabus_id).await.unwrap();
+
+        // After delete: student should see nothing (assignment is closed).
+        let after =
+            list_videos_for_technique_in_syllabus_visible_to(&db.pool, tech, syllabus_id, alice)
+                .await
+                .unwrap();
+        assert!(
+            after.is_empty(),
+            "student must see no videos once their assignment is closed by soft-delete"
+        );
+    }
+
+    /// Gap 3 guard: syllabus-scope overrides must cascade away when the syllabus
+    /// row is deleted. Even though the app soft-deletes, this verifies the FK
+    /// constraint at the schema level.
+    #[rocket::async_test]
+    async fn syllabus_scope_override_cascades_on_syllabus_delete() {
+        use crate::db::{create_processing_video, set_video_override, VideoParent, VisibilityScope};
+        use crate::test::test_utils::TestDbBuilder;
+
+        let db = TestDbBuilder::new()
+            .coach("coach", None)
+            .technique("Armbar", "arm lock", Some("coach"))
+            .build()
+            .await
+            .unwrap();
+        // FK enforcement must be on for ON DELETE CASCADE to fire.
+        sqlx::query("PRAGMA foreign_keys = ON")
+            .execute(&db.pool)
+            .await
+            .unwrap();
+        let coach = db.user_id("coach").unwrap();
+        let tech = db.technique_id("Armbar").unwrap();
+
+        let syllabus_id: i64 = sqlx::query_scalar!(
+            "INSERT INTO syllabi (name, created_by_id) VALUES ('Blue Belt', ?) RETURNING id AS \"id!\"",
+            coach
+        )
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+        let video_id =
+            create_processing_video(&db.pool, VideoParent::Technique(tech), "t1", None, coach)
+                .await
+                .unwrap();
+
+        set_video_override(&db.pool, VisibilityScope::Syllabus(syllabus_id), video_id, false, coach)
+            .await
+            .unwrap();
+
+        let before: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM video_visibility_overrides WHERE syllabus_id = ? AND video_id = ?",
+        )
+        .bind(syllabus_id)
+        .bind(video_id)
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+        assert_eq!(before, 1, "override must exist before syllabus delete");
+
+        // Hard-delete the syllabus to exercise the FK cascade.
+        sqlx::query("DELETE FROM syllabi WHERE id = ?")
+            .bind(syllabus_id)
+            .execute(&db.pool)
+            .await
+            .unwrap();
+
+        let after: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM video_visibility_overrides WHERE syllabus_id = ?",
+        )
+        .bind(syllabus_id)
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+        assert_eq!(after, 0, "syllabus-scope override must cascade on syllabus delete");
     }
 }

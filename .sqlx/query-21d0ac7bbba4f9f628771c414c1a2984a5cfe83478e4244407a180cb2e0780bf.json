@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT (hidden_at IS NULL) AS \"visible!: bool\"\n               FROM videos\n               WHERE id = ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "visible!: bool",
+        "ordinal": 0,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "21d0ac7bbba4f9f628771c414c1a2984a5cfe83478e4244407a180cb2e0780bf"
+}

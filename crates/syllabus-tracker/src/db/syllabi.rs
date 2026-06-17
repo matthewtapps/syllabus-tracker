@@ -65,6 +65,7 @@ pub async fn list_syllabi(pool: &Pool<Sqlite>) -> Result<Vec<Syllabus>, AppError
                   COALESCE((SELECT COUNT(*) FROM syllabus_techniques st WHERE st.syllabus_id = s.id), 0) AS "technique_count!: i64",
                   COALESCE((SELECT COUNT(*) FROM syllabus_assignments sa WHERE sa.syllabus_id = s.id AND sa.unassigned_at IS NULL), 0) AS "active_assignment_count!: i64"
            FROM syllabi s
+           WHERE s.deleted_at IS NULL
            ORDER BY s.name"#
     )
     .fetch_all(pool)
@@ -96,7 +97,7 @@ pub async fn get_syllabus(pool: &Pool<Sqlite>, id: i64) -> Result<Option<Syllabu
                   COALESCE((SELECT COUNT(*) FROM syllabus_techniques st WHERE st.syllabus_id = s.id), 0) AS "technique_count!: i64",
                   COALESCE((SELECT COUNT(*) FROM syllabus_assignments sa WHERE sa.syllabus_id = s.id AND sa.unassigned_at IS NULL), 0) AS "active_assignment_count!: i64"
            FROM syllabi s
-           WHERE s.id = ?"#,
+           WHERE s.id = ? AND s.deleted_at IS NULL"#,
         id,
     )
     .fetch_optional(pool)
@@ -139,6 +140,18 @@ pub async fn update_syllabus(
     name: Option<&str>,
     description: Option<Option<&str>>,
 ) -> Result<(), AppError> {
+    // Pre-flight: if the syllabus has been soft-deleted, treat it as gone and
+    // no-op (matching the old hard-delete behaviour where the row was simply
+    // absent).
+    let exists: Option<i64> = sqlx::query_scalar!(
+        r#"SELECT 1 AS "x!: i64" FROM syllabi WHERE id = ? AND deleted_at IS NULL"#,
+        id
+    )
+    .fetch_optional(pool)
+    .await?;
+    if exists.is_none() {
+        return Ok(());
+    }
     let now = chrono::Utc::now().naive_utc();
     match (name, description) {
         (Some(n), Some(d)) => {
@@ -179,9 +192,20 @@ pub async fn update_syllabus(
 
 #[instrument]
 pub async fn delete_syllabus(pool: &Pool<Sqlite>, id: i64) -> Result<(), AppError> {
-    sqlx::query!("DELETE FROM syllabi WHERE id = ?", id)
-        .execute(pool)
+    let mut tx = pool.begin().await?;
+    sqlx::query!("UPDATE syllabi SET deleted_at = CURRENT_TIMESTAMP WHERE id = ?", id)
+        .execute(&mut *tx)
         .await?;
+    // Close open assignments so the syllabus disappears for students, matching
+    // the prior hard-delete user-visible effect.
+    sqlx::query!(
+        "UPDATE syllabus_assignments SET unassigned_at = CURRENT_TIMESTAMP
+         WHERE syllabus_id = ? AND unassigned_at IS NULL",
+        id,
+    )
+    .execute(&mut *tx)
+    .await?;
+    tx.commit().await?;
     Ok(())
 }
 
@@ -322,6 +346,34 @@ pub async fn remove_technique_from_syllabus(
 ) -> Result<(), AppError> {
     let mut tx = pool.begin().await?;
 
+    // Tier-2 videos hang off the `syllabus_techniques` membership row via a
+    // `videos.syllabus_technique_id` FK with `ON DELETE CASCADE`. Deleting the
+    // membership row below would HARD-delete those videos (and their override
+    // rows), losing the storage_key + watch history that the soft-delete
+    // (`deleted_at`) discipline exists to preserve. So before removing the
+    // membership row, soft-delete the live T2 videos AND detach them to the
+    // `loose` parent kind (nulling `syllabus_technique_id`) so the cascade has
+    // nothing to take. The CHECK constraint's `loose` branch requires every
+    // parent FK NULL, which a T2 video already satisfies for all columns
+    // except `syllabus_technique_id`, nulled here.
+    let now = chrono::Utc::now().naive_utc();
+    sqlx::query!(
+        "UPDATE videos
+         SET deleted_at = ?, updated_at = ?, parent_kind = 'loose', syllabus_technique_id = NULL
+         WHERE deleted_at IS NULL
+           AND parent_kind = 'syllabus_technique'
+           AND syllabus_technique_id IN (
+               SELECT id FROM syllabus_techniques
+               WHERE syllabus_id = ? AND technique_id = ?
+           )",
+        now,
+        now,
+        syllabus_id,
+        technique_id,
+    )
+    .execute(&mut *tx)
+    .await?;
+
     sqlx::query!(
         "DELETE FROM syllabus_techniques
          WHERE syllabus_id = ? AND technique_id = ?",
@@ -332,7 +384,6 @@ pub async fn remove_technique_from_syllabus(
     .await?;
 
     if matches!(mode, PropagationMode::Cascade) {
-        let now = chrono::Utc::now().naive_utc();
         sqlx::query!(
             "UPDATE student_syllabus_techniques
              SET hidden_at = ?, hidden_by_id = ?, updated_at = ?

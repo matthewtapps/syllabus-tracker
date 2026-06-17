@@ -1,0 +1,32 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT parent_kind, syllabus_technique_id, student_syllabus_technique_id\n             FROM videos WHERE id = ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "parent_kind",
+        "ordinal": 0,
+        "type_info": "Text"
+      },
+      {
+        "name": "syllabus_technique_id",
+        "ordinal": 1,
+        "type_info": "Integer"
+      },
+      {
+        "name": "student_syllabus_technique_id",
+        "ordinal": 2,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      true,
+      true
+    ]
+  },
+  "hash": "1dec2d3545acb75a5eb47ec206ed971888a211b831bcb81e68f1ab3288067c59"
+}

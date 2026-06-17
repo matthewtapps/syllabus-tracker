@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO student_syllabus_techniques (assignment_id, technique_id)\n             VALUES (?, ?)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "07f7f5ecb98a89324666efbeac763d69c347d283e7af3171970dfaf996981f21"
+}

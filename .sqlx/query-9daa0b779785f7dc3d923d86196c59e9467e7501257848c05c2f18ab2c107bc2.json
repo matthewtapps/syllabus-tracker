@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE videos\n             SET position = ?, updated_at = ?\n             WHERE id = ? AND technique_id = ? AND parent_kind = 'technique' AND deleted_at IS NULL",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 4
+    },
+    "nullable": []
+  },
+  "hash": "9daa0b779785f7dc3d923d86196c59e9467e7501257848c05c2f18ab2c107bc2"
+}

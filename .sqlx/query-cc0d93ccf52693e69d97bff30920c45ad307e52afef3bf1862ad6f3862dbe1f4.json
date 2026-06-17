@@ -1,0 +1,26 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT student_id AS \"student_id!: i64\", visible AS \"visible!: bool\"\n               FROM video_visibility_overrides\n               WHERE scope_kind = 'student' AND video_id = ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "student_id!: i64",
+        "ordinal": 0,
+        "type_info": "Integer"
+      },
+      {
+        "name": "visible!: bool",
+        "ordinal": 1,
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      true,
+      false
+    ]
+  },
+  "hash": "cc0d93ccf52693e69d97bff30920c45ad307e52afef3bf1862ad6f3862dbe1f4"
+}

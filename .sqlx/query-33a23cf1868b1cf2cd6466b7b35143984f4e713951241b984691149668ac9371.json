@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE videos\n         SET deleted_at = ?, updated_at = ?, parent_kind = 'loose', syllabus_technique_id = NULL\n         WHERE deleted_at IS NULL\n           AND parent_kind = 'syllabus_technique'\n           AND syllabus_technique_id IN (\n               SELECT id FROM syllabus_techniques\n               WHERE syllabus_id = ? AND technique_id = ?\n           )",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 4
+    },
+    "nullable": []
+  },
+  "hash": "33a23cf1868b1cf2cd6466b7b35143984f4e713951241b984691149668ac9371"
+}

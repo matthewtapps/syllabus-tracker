@@ -3,6 +3,7 @@ import { Bell, Download, LogOut, UserRound } from "lucide-react";
 import type { User } from "@/lib/api";
 import { isCoachOrAdmin, isAdmin } from "@/lib/api";
 import { useInstallTrigger } from "@/lib/install";
+import { campsUiEnabled } from "@/lib/features";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -45,6 +46,8 @@ function buildNavLinks(user: User): NavLink[] {
   if (isStudent) links.push({ to: `/student/${user.id}/pinned`, label: "Pinned" });
   if (isStudent) links.push({ to: `/student/${user.id}`, label: "Profile" });
   if (coachOrAdmin) links.push({ to: "/syllabi", label: "Syllabus Library" }); // Coach surface: 'Syllabus Library' fits.
+  if (coachOrAdmin && campsUiEnabled)
+    links.push({ to: "/competitions", label: "Competitions" });
   if (coachOrAdmin) links.push({ to: "/students", label: "Students" });
   if (coachOrAdmin) links.push({ to: "/register-user", label: "New user" });
   if (isAdmin(user)) links.push({ to: "/admin", label: "Admin" });

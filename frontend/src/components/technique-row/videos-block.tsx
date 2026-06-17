@@ -1,4 +1,6 @@
 import { useMemo, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { qk } from "@/lib/query-keys";
 import { AddVideoButton } from "@/components/videos/add-video-button";
 import { VideoList } from "@/components/videos/video-list";
 import type { WatchContext } from "@/components/videos/useWatchTracker";
@@ -19,6 +21,21 @@ export function VideosBlock({
   const { context, technique, role } = useTechniqueRow();
   const isCoach = role === "coach" || role === "admin";
   const [reloadKey, setReloadKey] = useState(0);
+  const qc = useQueryClient();
+
+  // In a student's syllabus context, the add-video flow offers a "also add to
+  // global library" switch and, when off, scopes the new video to this
+  // student's syllabus technique (T3). Passing this down also lets us refresh
+  // the per-syllabus video list (a different cache bucket than the library
+  // list that the reloadKey bump invalidates).
+  const studentSyllabus =
+    context.kind === "student-syllabus"
+      ? {
+          studentId: context.studentId,
+          syllabusId: context.syllabusId,
+          sstId: context.sst.id,
+        }
+      : undefined;
 
   // student-syllabus context: fetch via the per-(student, syllabus,
   // technique) endpoint so per-syllabus visibility overrides apply, and
@@ -29,8 +46,13 @@ export function VideosBlock({
       ? { studentId: context.studentId, syllabusId: context.syllabusId }
       : undefined;
 
+  // A camp is a private coach-student space, like the pinned/syllabus
+  // surfaces: a coach's video thread here must be scoped to the camp's
+  // student, not broadcast to everyone (see deriveThreadVisibility).
   const surface: VideoThreadSurface =
-    context.kind === "student-pinned" || context.kind === "student-syllabus"
+    context.kind === "student-pinned" ||
+    context.kind === "student-syllabus" ||
+    context.kind === "camp"
       ? { kind: "student", studentId: context.studentId }
       : { kind: "library" };
 
@@ -50,6 +72,8 @@ export function VideosBlock({
           : (context.syllabusName ?? "Syllabus");
       case "syllabus-management":
         return context.syllabusName ? `${context.syllabusName} syllabus` : "Syllabus";
+      case "camp":
+        return context.studentName ? `${context.studentName}'s camp` : "Camp";
     }
   })();
   const contextLabel = `${surfaceLabel} · ${technique.name}`;
@@ -81,7 +105,19 @@ export function VideosBlock({
         {canManage && (
           <AddVideoButton
             techniqueId={technique.id}
-            onAdded={() => setReloadKey((k) => k + 1)}
+            studentSyllabus={studentSyllabus}
+            onAdded={() => {
+              setReloadKey((k) => k + 1);
+              if (studentSyllabus) {
+                qc.invalidateQueries({
+                  queryKey: qk.syllabusTechniqueVideos(
+                    studentSyllabus.studentId,
+                    studentSyllabus.syllabusId,
+                    technique.id,
+                  ),
+                });
+              }
+            }}
           />
         )}
       </div>

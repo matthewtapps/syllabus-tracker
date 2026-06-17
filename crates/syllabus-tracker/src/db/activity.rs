@@ -20,6 +20,9 @@ pub enum EntityKind {
     Sst,
     Video,
     Thread,
+    Camp,
+    Competition,
+    Match,
 }
 
 /// The activity verbs. Named `<target>_<past_tense>`. Each carries static
@@ -48,10 +51,23 @@ pub enum Verb {
     VideoVisibilitySet,
     TechniqueEdited,
     ThreadCommentPosted,
+    CampCreated,
+    CampTechniqueAdded,
+    CampArchived,
+    // S2-3: competition verbs (match verbs + read-side added in S2-6)
+    CompetitionCreated,
+    StudentRegistered,
+    CampPromotedToCompetition,
+    // S2-4: match verbs
+    MatchLogged,
+    MatchTechniqueLinked,
+    // S3-1: suggestion queue verbs
+    TechniqueSuggested,
+    SuggestionDecided,
 }
 
 impl Verb {
-    pub const ALL: [Verb; 21] = [
+    pub const ALL: [Verb; 31] = [
         Verb::VideoWatched,
         Verb::AttemptLogged,
         Verb::AttemptEdited,
@@ -73,6 +89,16 @@ impl Verb {
         Verb::VideoVisibilitySet,
         Verb::TechniqueEdited,
         Verb::ThreadCommentPosted,
+        Verb::CampCreated,
+        Verb::CampTechniqueAdded,
+        Verb::CampArchived,
+        Verb::CompetitionCreated,
+        Verb::StudentRegistered,
+        Verb::CampPromotedToCompetition,
+        Verb::MatchLogged,
+        Verb::MatchTechniqueLinked,
+        Verb::TechniqueSuggested,
+        Verb::SuggestionDecided,
     ];
 
     pub fn as_str(self) -> &'static str {
@@ -98,6 +124,16 @@ impl Verb {
             Verb::VideoVisibilitySet => "video_visibility_set",
             Verb::TechniqueEdited => "technique_edited",
             Verb::ThreadCommentPosted => "thread_comment_posted",
+            Verb::CampCreated => "camp_created",
+            Verb::CampTechniqueAdded => "camp_technique_added",
+            Verb::CampArchived => "camp_archived",
+            Verb::CompetitionCreated => "competition_created",
+            Verb::StudentRegistered => "student_registered",
+            Verb::CampPromotedToCompetition => "camp_promoted_to_competition",
+            Verb::MatchLogged => "match_logged",
+            Verb::MatchTechniqueLinked => "match_technique_linked",
+            Verb::TechniqueSuggested => "technique_suggested",
+            Verb::SuggestionDecided => "suggestion_decided",
         }
     }
 
@@ -118,6 +154,8 @@ impl Verb {
                 | Verb::SstUnhidden
                 | Verb::SyllabusTechniqueRemoved
                 | Verb::VideoVisibilitySet
+                | Verb::CampArchived
+                | Verb::CompetitionCreated
         )
     }
 
@@ -125,7 +163,20 @@ impl Verb {
     /// window. `ThreadCommentPosted` is non-coalescing: every comment is a
     /// discrete event and collapsing two comments into one would lose a message.
     pub fn coalesces(self) -> bool {
-        !matches!(self, Verb::ThreadCommentPosted)
+        !matches!(
+            self,
+            Verb::ThreadCommentPosted
+                | Verb::CampCreated
+                | Verb::CampTechniqueAdded
+                | Verb::CampArchived
+                | Verb::CompetitionCreated
+                | Verb::StudentRegistered
+                | Verb::CampPromotedToCompetition
+                | Verb::MatchLogged
+                | Verb::MatchTechniqueLinked
+                | Verb::TechniqueSuggested
+                | Verb::SuggestionDecided
+        )
     }
 
     /// The column the coalesce key uses to identify "the same thing happening
@@ -152,6 +203,12 @@ impl Verb {
             | Verb::SyllabusTechniqueAdded
             | Verb::SyllabusTechniqueRemoved => EntityKind::Syllabus,
             Verb::ThreadCommentPosted => EntityKind::Thread,
+            Verb::CampCreated | Verb::CampTechniqueAdded | Verb::CampArchived => EntityKind::Camp,
+            Verb::CompetitionCreated
+            | Verb::StudentRegistered
+            | Verb::CampPromotedToCompetition => EntityKind::Competition,
+            Verb::MatchLogged | Verb::MatchTechniqueLinked => EntityKind::Match,
+            Verb::TechniqueSuggested | Verb::SuggestionDecided => EntityKind::Technique,
         }
     }
 }
@@ -168,6 +225,9 @@ pub struct NewActivity {
     pub sst_id: Option<i64>,
     pub video_id: Option<i64>,
     pub thread_id: Option<i64>,
+    pub camp_id: Option<i64>,
+    pub competition_id: Option<i64>,
+    pub match_id: Option<i64>,
     pub payload_json: Option<String>,
     pub context_kind: Option<&'static str>,
 }
@@ -183,6 +243,9 @@ impl NewActivity {
             sst_id: None,
             video_id: None,
             thread_id: None,
+            camp_id: None,
+            competition_id: None,
+            match_id: None,
             payload_json: None,
             context_kind: None,
         }
@@ -212,6 +275,20 @@ impl NewActivity {
         self.thread_id = Some(id);
         self
     }
+    pub fn camp(mut self, id: i64) -> Self {
+        self.camp_id = Some(id);
+        self
+    }
+    pub fn competition(mut self, id: i64) -> Self {
+        self.competition_id = Some(id);
+        self
+    }
+    /// Set the `match_id` reference on this activity row. Named `match_ref`
+    /// to avoid collision with the `match` keyword at call sites.
+    pub fn match_ref(mut self, id: i64) -> Self {
+        self.match_id = Some(id);
+        self
+    }
     pub fn payload(mut self, json: String) -> Self {
         self.payload_json = Some(json);
         self
@@ -232,6 +309,9 @@ impl NewActivity {
             EntityKind::Sst => self.sst_id,
             EntityKind::Video => self.video_id,
             EntityKind::Thread => self.thread_id,
+            EntityKind::Camp => self.camp_id,
+            EntityKind::Competition => self.competition_id,
+            EntityKind::Match => self.match_id,
         }
     }
 }
@@ -259,6 +339,13 @@ pub mod payload {
 
     pub fn attempt_pointer(attempt_id: i64) -> String {
         json!({ "attempt_id": attempt_id }).to_string()
+    }
+
+    /// Suggestion decision payload. Carries the suggestion id and its outcome
+    /// status so the feed can describe what happened without a separate DB
+    /// lookup.
+    pub fn suggestion(suggestion_id: i64, status: &str) -> String {
+        json!({ "suggestion_id": suggestion_id, "status": status }).to_string()
     }
 
     /// `technique_edited` delta. Pass which fields changed; tags carry the
@@ -324,8 +411,9 @@ pub async fn emit(tx: &mut Transaction<'_, Sqlite>, ev: NewActivity) -> Result<(
     sqlx::query!(
         "INSERT INTO activity
             (occurred_at, verb, actor_user_id, target_student_id,
-             technique_id, syllabus_id, sst_id, video_id, thread_id, payload_json, context_kind)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+             technique_id, syllabus_id, sst_id, video_id, thread_id, camp_id,
+             competition_id, match_id, payload_json, context_kind)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         now,
         verb,
         ev.actor_user_id,
@@ -335,6 +423,9 @@ pub async fn emit(tx: &mut Transaction<'_, Sqlite>, ev: NewActivity) -> Result<(
         ev.sst_id,
         ev.video_id,
         ev.thread_id,
+        ev.camp_id,
+        ev.competition_id,
+        ev.match_id,
         ev.payload_json,
         ev.context_kind,
     )
@@ -428,6 +519,15 @@ async fn find_coalesce_target(
         // Thread verbs are non-coalescing; this branch is unreachable in
         // practice because emit() skips find_coalesce_target for them.
         EntityKind::Thread => None,
+        // Camp verbs are non-coalescing; this branch is unreachable in
+        // practice because emit() skips find_coalesce_target for them.
+        EntityKind::Camp => None,
+        // Competition verbs are non-coalescing; this branch is unreachable in
+        // practice because emit() skips find_coalesce_target for them.
+        EntityKind::Competition => None,
+        // Match verbs are non-coalescing; this branch is unreachable in
+        // practice because emit() skips find_coalesce_target for them.
+        EntityKind::Match => None,
     };
     Ok(id)
 }
@@ -828,6 +928,8 @@ mod registry_tests {
             "sst_unhidden",
             "syllabus_technique_removed",
             "video_visibility_set",
+            "camp_archived",
+            "competition_created",
         ];
         want.sort_unstable();
         assert_eq!(got, want);

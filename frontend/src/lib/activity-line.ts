@@ -37,6 +37,9 @@ export interface ActivityRow {
   unread: boolean;
   context_kind: string | null;
   thread_id: number | null;
+  camp_id: number | null;
+  competition_id: number | null;
+  match_id: number | null;
 }
 
 export interface ActivityLine {
@@ -286,6 +289,28 @@ export function activityLine(row: ActivityRow, scope: ActivityScope = { kind: "g
         href,
       };
     }
+
+    // --- camp verbs ---
+    case "camp_created":
+      return { verb: "started a camp", href: deep };
+    case "camp_technique_added":
+      return { verb: "added a technique to a camp", href: deep };
+    case "camp_archived":
+      return { verb: "archived a camp", href: deep };
+
+    // --- competition verbs ---
+    case "competition_created":
+      return { verb: "created a competition", href: deep };
+    case "student_registered":
+      return { verb: "registered for a competition", href: deep };
+    case "camp_promoted_to_competition":
+      return { verb: "linked camp to competition", href: deep };
+
+    // --- match verbs ---
+    case "match_logged":
+      return { verb: "logged a match", href: deep };
+    case "match_technique_linked":
+      return { verb: "linked a technique to a match", href: deep };
 
     default:
       return { verb: "performed an action" };

@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT student_id FROM camps WHERE id = ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "student_id",
+        "ordinal": 0,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "51707e2e40251fe711594a998b585ebab6a9418acf801faf458d976140602abc"
+}

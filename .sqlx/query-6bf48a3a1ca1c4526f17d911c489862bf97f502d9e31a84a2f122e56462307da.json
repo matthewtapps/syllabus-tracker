@@ -1,0 +1,62 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT (deleted_at IS NULL)  AS \"alive!: i64\",\n                  visibility,\n                  scope_student_id      AS \"scope_student_id?: i64\",\n                  anchor_kind,\n                  technique_id          AS \"technique_id?: i64\",\n                  video_id              AS \"video_id?: i64\",\n                  sst_id                AS \"sst_id?: i64\",\n                  camp_id               AS \"camp_id?: i64\"\n           FROM threads WHERE id = ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "alive!: i64",
+        "ordinal": 0,
+        "type_info": "Integer"
+      },
+      {
+        "name": "visibility",
+        "ordinal": 1,
+        "type_info": "Text"
+      },
+      {
+        "name": "scope_student_id?: i64",
+        "ordinal": 2,
+        "type_info": "Integer"
+      },
+      {
+        "name": "anchor_kind",
+        "ordinal": 3,
+        "type_info": "Text"
+      },
+      {
+        "name": "technique_id?: i64",
+        "ordinal": 4,
+        "type_info": "Integer"
+      },
+      {
+        "name": "video_id?: i64",
+        "ordinal": 5,
+        "type_info": "Integer"
+      },
+      {
+        "name": "sst_id?: i64",
+        "ordinal": 6,
+        "type_info": "Integer"
+      },
+      {
+        "name": "camp_id?: i64",
+        "ordinal": 7,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      false,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "6bf48a3a1ca1c4526f17d911c489862bf97f502d9e31a84a2f122e56462307da"
+}

@@ -53,6 +53,7 @@ pub async fn list_library_techniques(
             COALESCE((SELECT COUNT(*) FROM videos v WHERE v.technique_id = t.id AND v.deleted_at IS NULL), 0) AS "video_count!: i64",
             (SELECT MAX(st.updated_at) FROM student_techniques st WHERE st.technique_id = t.id) AS "last_activity_at?: NaiveDateTime"
         FROM techniques t
+        WHERE t.is_global = 1
         ORDER BY t.name
         "#
     )
@@ -278,7 +279,7 @@ pub async fn library_technique_stats(
         r#"SELECT COALESCE(SUM(a.play_count), 0) AS "plays!: i64"
            FROM video_watch_aggregates a
            JOIN videos v ON v.id = a.video_id
-           WHERE v.technique_id = ? AND v.deleted_at IS NULL"#,
+           WHERE v.technique_id = ? AND v.parent_kind = 'technique' AND v.deleted_at IS NULL"#,
         technique_id
     )
     .fetch_one(pool)
@@ -362,14 +363,16 @@ pub async fn create_technique(
     name: &str,
     description: &str,
     coach_id: i64,
+    is_global: bool,
 ) -> Result<i64, AppError> {
     info!("Creating technique");
     let res = sqlx::query!(
-        "INSERT INTO techniques (name, description, coach_id)
-         VALUES (?, ?, ?)",
+        "INSERT INTO techniques (name, description, coach_id, is_global)
+         VALUES (?, ?, ?, ?)",
         name,
         description,
-        coach_id
+        coach_id,
+        is_global
     )
     .execute(pool)
     .await?;
@@ -387,11 +390,20 @@ pub async fn create_and_assign_technique(
 ) -> Result<(), AppError> {
     info!("Creating and assigning technique to student");
     let technique_id =
-        create_technique(pool, technique_name, technique_description, coach_id).await?;
+        create_technique(pool, technique_name, technique_description, coach_id, true).await?;
 
     super::assign_technique_to_student(pool, technique_id, student_id, collection_id, coach_id)
         .await?;
 
+    Ok(())
+}
+
+#[instrument]
+pub async fn set_technique_global(pool: &Pool<Sqlite>, technique_id: i64) -> Result<(), AppError> {
+    info!("Promoting technique to global library");
+    sqlx::query!("UPDATE techniques SET is_global = 1 WHERE id = ?", technique_id)
+        .execute(pool)
+        .await?;
     Ok(())
 }
 

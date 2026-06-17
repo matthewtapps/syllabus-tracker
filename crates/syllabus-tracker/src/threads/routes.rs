@@ -63,10 +63,24 @@ pub async fn api_create_thread(
         user.require_permission(Permission::BroadcastLibraryComment).map_err(|_| Status::Forbidden)?;
     }
 
+    // Camp threads are inherently scoped to the camp's student; never trust a
+    // client-supplied scope for them. Coaches only (Slice 1).
+    let (visibility, scope_student_id) = if kind == AnchorKind::Camp {
+        user.require_permission(Permission::ManageCamps).map_err(|_| Status::Forbidden)?;
+        let camp_student = sqlx::query_scalar!(
+            "SELECT student_id FROM camps WHERE id = ?", req.anchor_id
+        )
+        .fetch_optional(pool).await.map_err(|_| Status::InternalServerError)?
+        .ok_or(Status::NotFound)?;
+        (ThreadVisibility::Private, Some(camp_student))
+    } else {
+        (visibility, req.scope_student_id)
+    };
+
     let is_coach = user.has_permission(Permission::ViewAllStudents);
-    if !is_coach {
+    if !is_coach && kind != AnchorKind::Camp {
         let own_profile = kind == AnchorKind::StudentProfile && req.anchor_id == user.id;
-        let own_scope = visibility == ThreadVisibility::Private && req.scope_student_id == Some(user.id);
+        let own_scope = visibility == ThreadVisibility::Private && scope_student_id == Some(user.id);
         let global_anchor = kind.allows_broadcast();
         if !(own_profile || (global_anchor && own_scope)) {
             return Err(Status::Forbidden);
@@ -77,7 +91,7 @@ pub async fn api_create_thread(
         author_id: user.id,
         anchor: Anchor { kind, id: req.anchor_id, video_ts_seconds: req.video_ts_seconds, pinned_student_id: req.pinned_student_id },
         visibility,
-        scope_student_id: req.scope_student_id,
+        scope_student_id,
         body: req.body.clone(),
     }).await.map_err(|_| Status::BadRequest)?;
     Ok(Json(CreatedResponse { id }))

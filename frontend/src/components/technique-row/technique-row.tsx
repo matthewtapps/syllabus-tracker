@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import * as AccordionPrimitive from "@radix-ui/react-accordion";
-import { ChevronDownIcon } from "lucide-react";
+import { ChevronDownIcon, FolderPlus } from "lucide-react";
 import type { LibraryTechniqueRow } from "@/lib/api";
 import { useUser } from "@/lib/current-user-context";
 import {
   AccordionContent,
   AccordionItem,
 } from "@/components/ui/accordion";
+import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { ExpandedPanel } from "./expanded-panel";
 import { Header } from "./header";
@@ -29,6 +30,10 @@ interface TechniqueRowProps {
   isOpen: boolean;
   scrollToVideoId?: number | null;
   onVideoScrolled?: () => void;
+  /** Renders the row ghosted (reduced opacity). Used by the
+   *  student-syllabus surface to keep a just-hidden row lingering in the
+   *  Main tab for the rest of the visit. */
+  ghost?: boolean;
 }
 
 // Keeps the expanded panel mounted through the AccordionContent close
@@ -68,6 +73,7 @@ export function TechniqueRow({
   isOpen,
   scrollToVideoId,
   onVideoScrolled,
+  ghost,
 }: TechniqueRowProps) {
   const user = useUser();
   const renderContent = useDelayedFalse(isOpen);
@@ -82,6 +88,8 @@ export function TechniqueRow({
       case "syllabus-management":
         // Coach surface; no "owning student" concept applies.
         return false;
+      case "camp":
+        return user.id === context.studentId;
     }
   }, [context, user.id, user.role]);
 
@@ -102,7 +110,17 @@ export function TechniqueRow({
   const showPinButton =
     viewerIsOwner &&
     (context.kind === "global-library" || context.kind === "student-pinned");
-  const showRemoveButton = context.kind === "syllabus-management";
+
+  // Coach-only "Add to camp" button on the student-pinned surface.
+  const showAddToCampButton =
+    context.kind === "student-pinned" &&
+    !viewerIsOwner &&
+    (user.role === "coach" || user.role === "admin") &&
+    !!context.onAddToCampIntent;
+
+  const showRemoveButton =
+    context.kind === "syllabus-management" ||
+    (context.kind === "camp" && context.onRemove != null);
   const showHiddenToggle =
     context.kind === "student-syllabus" &&
     (user.role === "coach" || user.role === "admin");
@@ -130,6 +148,7 @@ export function TechniqueRow({
           "group border-b last:border-b-0",
           context.kind === "student-syllabus" && "border-l-4 transition-colors",
           context.kind === "student-syllabus" && accentClass,
+          ghost && "opacity-50 transition-opacity",
         )}
       >
         <AccordionPrimitive.Header asChild>
@@ -150,6 +169,23 @@ export function TechniqueRow({
             {showPinButton && (
               <div className="flex shrink-0 items-center pl-1">
                 <PinButton />
+              </div>
+            )}
+            {showAddToCampButton && context.kind === "student-pinned" && (
+              <div className="flex shrink-0 items-center pl-1">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                  aria-label="Add to camp"
+                  title="Add to camp"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    context.onAddToCampIntent?.(technique);
+                  }}
+                >
+                  <FolderPlus className="h-4 w-4" aria-hidden />
+                </Button>
               </div>
             )}
             {showHiddenToggle && (

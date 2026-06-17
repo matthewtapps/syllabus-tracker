@@ -154,7 +154,7 @@ pub async fn get_techniques_by_tag(
     info!("Getting techniques by tag");
     let rows = sqlx::query_as!(
         DbTechnique,
-        "SELECT t.*
+        "SELECT t.id, t.name, t.description, t.coach_id, t.coach_name
          FROM techniques t
          JOIN technique_tags tt ON t.id = tt.technique_id
          WHERE tt.tag_id = ?

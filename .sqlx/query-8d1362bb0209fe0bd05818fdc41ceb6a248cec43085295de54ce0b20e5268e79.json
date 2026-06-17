@@ -1,0 +1,50 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT id AS \"id!: i64\",\n                  student_id AS \"student_id!: i64\",\n                  competition_id AS \"competition_id!: i64\",\n                  registered_at AS \"registered_at!: NaiveDateTime\",\n                  registered_by_id AS \"registered_by_id?: i64\",\n                  unregistered_at AS \"unregistered_at?: NaiveDateTime\"\n           FROM competition_registrations WHERE id = ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "id!: i64",
+        "ordinal": 0,
+        "type_info": "Integer"
+      },
+      {
+        "name": "student_id!: i64",
+        "ordinal": 1,
+        "type_info": "Integer"
+      },
+      {
+        "name": "competition_id!: i64",
+        "ordinal": 2,
+        "type_info": "Integer"
+      },
+      {
+        "name": "registered_at!: NaiveDateTime",
+        "ordinal": 3,
+        "type_info": "Datetime"
+      },
+      {
+        "name": "registered_by_id?: i64",
+        "ordinal": 4,
+        "type_info": "Integer"
+      },
+      {
+        "name": "unregistered_at?: NaiveDateTime",
+        "ordinal": 5,
+        "type_info": "Datetime"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      true
+    ]
+  },
+  "hash": "8d1362bb0209fe0bd05818fdc41ceb6a248cec43085295de54ce0b20e5268e79"
+}

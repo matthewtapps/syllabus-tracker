@@ -4,16 +4,24 @@ import { Pin } from 'lucide-react';
 import { toast } from 'sonner';
 import { Accordion } from '@/components/ui/accordion';
 import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from '@/components/ui/dialog';
 import { EmptyState } from '@/components/empty-state';
 import { TechniqueRow } from '@/components/technique-row';
 import { TechniqueFilters } from '@/components/technique-row/technique-filters';
 import { useTechniqueListNav } from '@/components/technique-row/use-technique-list-nav';
-import { useAllUsers, useStudentPinnedTechniques } from '@/lib/queries';
-import { usePinTechnique, useUnpinTechnique } from '@/lib/mutations';
+import { useAllUsers, useStudentPinnedTechniques, useCampsForStudent } from '@/lib/queries';
+import { usePinTechnique, useUnpinTechnique, usePromotePinnedToCamp } from '@/lib/mutations';
 import { useUser } from '@/lib/current-user-context';
 import { isCoachOrAdmin } from '@/lib/api';
-import type { LibraryTechniqueRow } from '@/lib/api';
+import type { LibraryTechniqueRow, Camp } from '@/lib/api';
 import { cn } from '@/lib/utils';
+import { campsUiEnabled } from '@/lib/features';
 
 const EXIT_MS = 220;
 
@@ -43,10 +51,15 @@ function PinnedListing({
   isOwnView: boolean;
 }) {
   const [exitingIds, setExitingIds] = useState<Set<number>>(new Set());
+  const [pendingTechnique, setPendingTechnique] = useState<LibraryTechniqueRow | null>(null);
+  const [selectedCampId, setSelectedCampId] = useState<number | ''>('');
+
   const query = useStudentPinnedTechniques(studentId);
   const usersQuery = useAllUsers();
+  const campsQuery = useCampsForStudent(pendingTechnique !== null ? studentId : undefined);
   const pinMutation = usePinTechnique(studentId);
   const unpinMutation = useUnpinTechnique(studentId);
+  const promoteMutation = usePromotePinnedToCamp(studentId);
   const techniques = useMemo(() => query.data ?? [], [query.data]);
   const studentName = useMemo(() => {
     if (isOwnView) return null;
@@ -55,6 +68,11 @@ function PinnedListing({
   }, [isOwnView, usersQuery.data, studentId]);
   const loading = query.isLoading;
   const error = query.error ? 'Failed to load pinned techniques.' : null;
+
+  const activeCamps = useMemo(
+    () => (campsQuery.data ?? []).filter((c: Camp) => c.archived_at === null),
+    [campsQuery.data],
+  );
 
   const nav = useTechniqueListNav({
     items: techniques,
@@ -114,6 +132,31 @@ function PinnedListing({
     },
     [pinMutation, unpinMutation],
   );
+
+  const handleAddToCampIntent = useCallback((technique: LibraryTechniqueRow) => {
+    setPendingTechnique(technique);
+    setSelectedCampId('');
+  }, []);
+
+  const handlePromoteConfirm = useCallback(async () => {
+    if (!pendingTechnique || !selectedCampId) return;
+    try {
+      await promoteMutation.mutateAsync({
+        techniqueId: pendingTechnique.id,
+        campId: Number(selectedCampId),
+      });
+      toast.success(`Added "${pendingTechnique.name}" to camp`);
+      setPendingTechnique(null);
+      setSelectedCampId('');
+    } catch {
+      toast.error('Failed to add technique to camp');
+    }
+  }, [pendingTechnique, selectedCampId, promoteMutation]);
+
+  const handleDialogClose = useCallback(() => {
+    setPendingTechnique(null);
+    setSelectedCampId('');
+  }, []);
 
   return (
     <div className="container mx-auto px-4 py-6 sm:px-6 md:py-8">
@@ -212,6 +255,8 @@ function PinnedListing({
                         studentId,
                         studentName,
                         onUnpinIntent: isOwnView ? handleUnpinIntent : undefined,
+                        onAddToCampIntent:
+                          !isOwnView && campsUiEnabled ? handleAddToCampIntent : undefined,
                       }}
                       value={value}
                       isOpen={nav.expandedValue === value}
@@ -223,6 +268,56 @@ function PinnedListing({
           </Accordion>
         )}
       </div>
+
+      {/* Camp picker dialog, coach-only */}
+      <Dialog open={pendingTechnique !== null} onOpenChange={(open) => { if (!open) handleDialogClose(); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Add to camp</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            Choose a camp to add{' '}
+            <span className="font-medium text-foreground">
+              {pendingTechnique?.name}
+            </span>{' '}
+            to.
+          </p>
+          {activeCamps.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              This student has no active camps. Create a camp first.
+            </p>
+          ) : (
+            <select
+              className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring"
+              value={selectedCampId}
+              onChange={(e) =>
+                setSelectedCampId(e.target.value === '' ? '' : Number(e.target.value))
+              }
+              aria-label="Select camp"
+            >
+              <option value="">Select a camp...</option>
+              {activeCamps.map((c: Camp) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={handleDialogClose}>
+              Cancel
+            </Button>
+            {activeCamps.length > 0 && (
+              <Button
+                onClick={handlePromoteConfirm}
+                disabled={!selectedCampId || promoteMutation.isPending}
+              >
+                {promoteMutation.isPending ? 'Adding...' : 'Add to camp'}
+              </Button>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
