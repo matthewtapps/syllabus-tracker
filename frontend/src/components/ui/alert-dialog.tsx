@@ -3,36 +3,14 @@ import { AlertDialog as AlertDialogPrimitive } from "radix-ui"
 
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
-import { useHistoryDismiss } from "@/lib/use-history-dismiss"
 
+// Centered alerts do NOT hijack Back (see the note in dialog.tsx): on a
+// standalone PWA the history pop triggers a page-slide that looks wrong for a
+// centered modal. They close via Esc / tap-outside / the action buttons.
 function AlertDialog({
-  open,
-  defaultOpen,
-  onOpenChange,
   ...props
 }: React.ComponentProps<typeof AlertDialogPrimitive.Root>) {
-  const [uncontrolledOpen, setUncontrolledOpen] = React.useState(
-    defaultOpen ?? false,
-  )
-  const isControlled = open !== undefined
-  const actualOpen = isControlled ? open : uncontrolledOpen
-  const handleOpenChange = React.useCallback(
-    (next: boolean) => {
-      if (!isControlled) setUncontrolledOpen(next)
-      onOpenChange?.(next)
-    },
-    [isControlled, onOpenChange],
-  )
-  // Hardware/browser Back closes the alert before navigating the route away.
-  useHistoryDismiss(actualOpen, () => handleOpenChange(false))
-  return (
-    <AlertDialogPrimitive.Root
-      data-slot="alert-dialog"
-      open={actualOpen}
-      onOpenChange={handleOpenChange}
-      {...props}
-    />
-  )
+  return <AlertDialogPrimitive.Root data-slot="alert-dialog" {...props} />
 }
 
 function AlertDialogTrigger({

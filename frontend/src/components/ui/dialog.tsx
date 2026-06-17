@@ -3,36 +3,16 @@ import * as DialogPrimitive from "@radix-ui/react-dialog"
 import { XIcon } from "lucide-react"
 
 import { cn } from "@/lib/utils"
-import { useHistoryDismiss } from "@/lib/use-history-dismiss"
 
+// Centered dialogs do NOT hijack the browser/phone Back button: on a standalone
+// PWA, popping a history entry triggers the OS page-slide animation, which looks
+// wrong for a centered modal. Back-to-close is reserved for full-screen,
+// view-like overlays (Sheets, and the full-screen video player) where the slide
+// reads as navigation. Centered dialogs close via Esc / X / tap-outside.
 function Dialog({
-  open,
-  defaultOpen,
-  onOpenChange,
   ...props
 }: React.ComponentProps<typeof DialogPrimitive.Root>) {
-  const [uncontrolledOpen, setUncontrolledOpen] = React.useState(
-    defaultOpen ?? false,
-  )
-  const isControlled = open !== undefined
-  const actualOpen = isControlled ? open : uncontrolledOpen
-  const handleOpenChange = React.useCallback(
-    (next: boolean) => {
-      if (!isControlled) setUncontrolledOpen(next)
-      onOpenChange?.(next)
-    },
-    [isControlled, onOpenChange],
-  )
-  // Hardware/browser Back closes the dialog before navigating the route away.
-  useHistoryDismiss(actualOpen, () => handleOpenChange(false))
-  return (
-    <DialogPrimitive.Root
-      data-slot="dialog"
-      open={actualOpen}
-      onOpenChange={handleOpenChange}
-      {...props}
-    />
-  )
+  return <DialogPrimitive.Root data-slot="dialog" {...props} />
 }
 
 function DialogTrigger({
