@@ -1012,7 +1012,7 @@ pub async fn api_set_student_graduated(
     Ok(Status::Ok)
 }
 
-#[derive(Deserialize, Clone)]
+#[derive(Deserialize)]
 pub struct ArchiveRequest {
     archived: bool,
 }

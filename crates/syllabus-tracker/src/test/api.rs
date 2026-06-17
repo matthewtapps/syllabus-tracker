@@ -1216,12 +1216,25 @@ mod tests {
 
         let resp = client
             .post(format!("/api/student/{}/archive", student_id))
-            .cookies(coach_cookies)
+            .cookies(coach_cookies.clone())
             .header(ContentType::JSON)
             .body(json!({ "archived": false }).to_string())
             .dispatch()
             .await;
         assert_eq!(resp.status(), Status::Ok);
+
+        let listed = client
+            .get("/api/students?include_archived=true")
+            .cookies(coach_cookies)
+            .dispatch()
+            .await;
+        let body = listed.into_string().await.unwrap();
+        let students: Vec<UserData> = serde_json::from_str(&body).unwrap();
+        let s = students
+            .iter()
+            .find(|s| s.id == student_id)
+            .expect("student missing from list");
+        assert!(!s.archived, "archived flag should be cleared");
     }
 
     #[rocket::async_test]
