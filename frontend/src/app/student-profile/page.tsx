@@ -266,19 +266,7 @@ function ProfileHub({
             <div className="rounded-lg border border-border bg-card px-4 py-4">
               <div className="h-4 w-1/3 animate-pulse rounded bg-muted" />
             </div>
-          ) : previewCamps.length === 0 ? (
-            <div className="overflow-hidden rounded-lg border border-border bg-card">
-              <EmptyState
-                icon={Dumbbell}
-                title="No camps yet"
-                description={
-                  isOwnView
-                    ? "Your coach can set up a training camp for you."
-                    : "Set up a camp to plan this student's training block."
-                }
-              />
-            </div>
-          ) : (
+          ) : previewCamps.length === 0 ? null : (
             <div className="space-y-2">
               {previewCamps.map((c) => (
                 <CampSummaryCard key={c.id} camp={c} />
