@@ -69,7 +69,6 @@ use competitions::{
     api_create_match, api_list_registration_matches, api_update_match, api_delete_match,
     api_link_match_technique, api_unlink_match_technique, api_list_match_techniques,
     api_list_match_videos,
-    api_student_matches,
 };
 use threads::{
     api_create_thread, api_list_threads, api_create_comment, api_delete_thread, api_delete_comment,
@@ -419,7 +418,6 @@ pub async fn init_rocket_with_callback_secret(
                 api_unlink_match_technique,
                 api_list_match_techniques,
                 api_list_match_videos,
-                api_student_matches,
             ],
         )
         .register(

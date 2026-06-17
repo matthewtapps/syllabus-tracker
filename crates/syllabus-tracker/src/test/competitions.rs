@@ -840,66 +840,6 @@ mod tests {
     }
 
     #[rocket::async_test]
-    async fn student_matches_route_own_and_coach_allowed_other_403() {
-        use crate::test::test_utils::{create_standard_test_db, setup_test_client};
-        use rocket::http::Status;
-
-        let test_db = create_standard_test_db().await;
-        let student_id = test_db.user_id("student_user").unwrap();
-        let (client, db) = setup_test_client(test_db).await;
-
-        let coach_id = db.user_id("coach_user").unwrap();
-        let comp_id = create_competition(&db.pool, "My Matches Test", None, coach_id)
-            .await
-            .unwrap();
-        let reg_id = register_student(&db.pool, comp_id, student_id, coach_id)
-            .await
-            .unwrap();
-
-        use crate::db::matches::{create_match as db_create_match, MatchResult};
-        db_create_match(&db.pool, reg_id, MatchResult::Win, None, None, None, coach_id)
-            .await
-            .unwrap();
-
-        // Insert another student.
-        sqlx::query(
-            "INSERT INTO users (username, role, password, display_name, approved_at, claimed_at)
-             SELECT 'other_student', 'student', password, 'Other', approved_at, claimed_at
-             FROM users WHERE username = 'student_user'",
-        )
-        .execute(&db.pool)
-        .await
-        .unwrap();
-
-        // The student can read their own matches.
-        login_as(&client, "student_user").await;
-        let resp = client
-            .get(format!("/api/students/{}/matches", student_id))
-            .dispatch()
-            .await;
-        assert_eq!(resp.status(), Status::Ok);
-        let body: serde_json::Value =
-            serde_json::from_str(&resp.into_string().await.unwrap()).unwrap();
-        assert_eq!(body["matches"].as_array().unwrap().len(), 1);
-
-        // Coach can read student matches.
-        login_as(&client, "coach_user").await;
-        let resp = client
-            .get(format!("/api/students/{}/matches", student_id))
-            .dispatch()
-            .await;
-        assert_eq!(resp.status(), Status::Ok);
-
-        // Another student gets 403.
-        login_as(&client, "other_student").await;
-        let resp = client
-            .get(format!("/api/students/{}/matches", student_id))
-            .dispatch()
-            .await;
-        assert_eq!(resp.status(), Status::Forbidden);
-    }
-
-    #[rocket::async_test]
     async fn occurred_at_future_is_rejected() {
         use crate::test::test_utils::{create_standard_test_db, setup_test_client};
         use rocket::http::{ContentType, Status};

@@ -96,25 +96,6 @@ pub struct Match {
     pub created_at: NaiveDateTime,
 }
 
-/// Aggregate view of a match with competition context, used for the
-/// student's cross-registration match history (CC-031).
-#[derive(Debug, Clone, Serialize)]
-pub struct StudentMatch {
-    pub id: i64,
-    pub registration_id: i64,
-    pub result: MatchResult,
-    pub method: Option<MatchMethod>,
-    pub method_detail: Option<String>,
-    pub occurred_at: Option<String>,
-    pub created_by_id: i64,
-    pub created_at: NaiveDateTime,
-    /// The competition this match belongs to (via registration).
-    pub competition_id: i64,
-    pub competition_name: String,
-    /// The student's camp linked to that competition, if any.
-    pub camp_id: Option<i64>,
-}
-
 /// A technique row as returned from `list_match_techniques`.
 #[derive(Debug, Clone, Serialize)]
 pub struct MatchTechniqueRow {
@@ -471,62 +452,3 @@ pub async fn list_match_techniques(
         .collect())
 }
 
-// ---------------------------------------------------------------------------
-// Student aggregate
-// ---------------------------------------------------------------------------
-
-/// All matches across a student's registrations (active or not; historical
-/// footage persists). Joins competition name and the student's camp linked to
-/// that competition, if any. Sorted reverse-chronologically by `occurred_at`
-/// (NULLs last) then `created_at`. Implements CC-031.
-#[instrument(skip(pool))]
-pub async fn list_matches_for_student(
-    pool: &Pool<Sqlite>,
-    student_id: i64,
-) -> Result<Vec<StudentMatch>, AppError> {
-    let rows = sqlx::query!(
-        r#"SELECT
-               m.id AS "id!: i64",
-               m.registration_id AS "registration_id!: i64",
-               m.result AS "result!: String",
-               m.method AS "method?: String",
-               m.method_detail AS "method_detail?: String",
-               m.occurred_at AS "occurred_at?: String",
-               m.created_by_id AS "created_by_id!: i64",
-               m.created_at AS "created_at!: NaiveDateTime",
-               cr.competition_id AS "competition_id!: i64",
-               c.name AS "competition_name!: String",
-               camp.id AS "camp_id?: i64"
-           FROM matches m
-           JOIN competition_registrations cr ON cr.id = m.registration_id
-           JOIN competitions c ON c.id = cr.competition_id
-           LEFT JOIN camps camp
-               ON camp.student_id = cr.student_id
-              AND camp.competition_id = cr.competition_id
-           WHERE cr.student_id = ?
-           ORDER BY
-               CASE WHEN m.occurred_at IS NULL THEN 1 ELSE 0 END,
-               m.occurred_at DESC,
-               m.created_at DESC"#,
-        student_id
-    )
-    .fetch_all(pool)
-    .await?;
-
-    Ok(rows
-        .into_iter()
-        .map(|r| StudentMatch {
-            id: r.id,
-            registration_id: r.registration_id,
-            result: MatchResult::from_str_result(&r.result).unwrap_or(MatchResult::Draw),
-            method: r.method.as_deref().and_then(MatchMethod::from_str_method),
-            method_detail: r.method_detail,
-            occurred_at: r.occurred_at,
-            created_by_id: r.created_by_id,
-            created_at: r.created_at,
-            competition_id: r.competition_id,
-            competition_name: r.competition_name,
-            camp_id: r.camp_id,
-        })
-        .collect())
-}
