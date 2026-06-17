@@ -141,19 +141,39 @@ export function recordRouteChange(path: string, previousPath?: string): void {
 }
 
 /**
- * Record a form submission event
+ * Run a form's async submit handler *inside* a new span's active context, so
+ * any fetch()/XHR the handler fires opens as a child span and propagates
+ * `traceparent` to the backend. This makes the form submission the root of the
+ * trace (browser -> backend -> video worker), not an orphan.
  */
-export function recordFormSubmission(
-  formId: string,
-  action: string,
-  method: string,
-): Span {
-  const currentTracer = getTracer("recordFormSubmission");
-  const span = currentTracer.startSpan(`form_submit_${formId}`);
+export async function runInFormSpan<T>(
+  meta: { formId: string; action: string; method: string },
+  fn: () => Promise<T>,
+): Promise<T> {
+  const tracer = getTracer("recordFormSubmission");
+  const span = tracer.startSpan(`form_submit_${meta.formId}`);
+  span.setAttribute("form.id", meta.formId);
+  span.setAttribute("form.action", meta.action);
+  span.setAttribute("form.method", meta.method);
+  span.setAttribute("session.id", getOrCreateSessionId());
 
-  span.setAttribute("form.action", action);
-  span.setAttribute("form.method", method);
-  span.setAttribute("form.id", formId);
-
-  return span;
+  const ctx = trace.setSpan(context.active(), span);
+  try {
+    const result = await context.with(ctx, fn);
+    span.addEvent("form_submit_success");
+    span.setStatus({ code: SpanStatusCode.OK });
+    return result;
+  } catch (err) {
+    span.addEvent("form_submit_error", {
+      "error.message": err instanceof Error ? err.message : String(err),
+    });
+    span.setStatus({
+      code: SpanStatusCode.ERROR,
+      message: err instanceof Error ? err.message : String(err),
+    });
+    span.recordException(err as Error);
+    throw err;
+  } finally {
+    span.end();
+  }
 }
