@@ -4,7 +4,7 @@ import {
   Award,
   Download,
   EllipsisVertical,
-  LayoutDashboard,
+  Activity,
   Library,
   LogOut,
   NotebookPen,
@@ -42,7 +42,7 @@ interface Tab {
 
 function buildTabs(user: User): Tab[] {
   const tabs: Tab[] = [
-    { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
+    { to: '/dashboard', label: 'Feed', icon: Activity },
   ];
   if (isCoachOrAdmin(user)) {
     tabs.push({ to: '/students', label: 'Students', icon: Users });

@@ -40,6 +40,7 @@ const LegacyCollectionDetailPage = lazy(
 );
 const StudentsList = lazy(() => import('./app/students-list/page'));
 const Dashboard = lazy(() => import('./app/dashboard/page'));
+const SocialFeedPage = lazy(() => import('./app/feed/page'));
 const ProfilePage = lazy(() => import('./app/profile/page'));
 const RegisterUserPage = lazy(() => import('./app/registration/page'));
 const AdminPage = lazy(() => import('./app/admin/page'));
@@ -267,6 +268,14 @@ function AuthedRoutes() {
       />
       <Route
         path="/dashboard"
+        element={
+          <RequireAuth>
+            <SocialFeedPage />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/dashboard/classic"
         element={
           <RequireAuth>
             <Dashboard />
