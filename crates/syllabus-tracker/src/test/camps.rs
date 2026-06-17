@@ -1329,6 +1329,66 @@ mod tests {
         assert_eq!(scoped_camp_id, camp_id, "scoped_camp_id must equal the camp");
     }
 
+    #[rocket::async_test]
+    async fn removing_scoped_technique_deletes_it_global_technique_only_unlinks() {
+        use crate::db::camps::{
+            create_camp_technique_new, list_camp_techniques, remove_camp_technique, TechniqueScope,
+        };
+
+        let db = TestDbBuilder::new()
+            .coach("coach_user", Some("Coach"))
+            .student("student_user", Some("Sam"))
+            .build()
+            .await
+            .unwrap();
+        let coach = db.user_id("coach_user").unwrap();
+        let student = db.user_id("student_user").unwrap();
+        let camp_id: i64 = sqlx::query_scalar(
+            "INSERT INTO camps (student_id, coach_id, name) VALUES (?, ?, 'Remove test') RETURNING id",
+        )
+        .bind(student)
+        .bind(coach)
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+
+        // Scoped: removing it from the camp must DELETE the technique (no strand).
+        let scoped_id =
+            create_camp_technique_new(&db.pool, camp_id, "scoped", "x", TechniqueScope::Scoped, coach)
+                .await
+                .unwrap();
+        remove_camp_technique(&db.pool, camp_id, scoped_id).await.unwrap();
+        let still_exists: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM techniques WHERE id = ?")
+                .bind(scoped_id)
+                .fetch_one(&db.pool)
+                .await
+                .unwrap();
+        assert_eq!(still_exists, 0, "scoped technique row must be deleted, not stranded");
+
+        // Global: removing it only unlinks; the technique survives in the library.
+        let global_id =
+            create_camp_technique_new(&db.pool, camp_id, "global", "x", TechniqueScope::Global, coach)
+                .await
+                .unwrap();
+        remove_camp_technique(&db.pool, camp_id, global_id).await.unwrap();
+        let global_survives: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM techniques WHERE id = ?")
+                .bind(global_id)
+                .fetch_one(&db.pool)
+                .await
+                .unwrap();
+        assert_eq!(global_survives, 1, "global technique must survive removal from the camp");
+        assert!(
+            !list_camp_techniques(&db.pool, camp_id)
+                .await
+                .unwrap()
+                .iter()
+                .any(|t| t.technique_id == global_id),
+            "global technique should be unlinked from the camp",
+        );
+    }
+
     /// A global technique created inside a camp appears BOTH in the camp list
     /// AND in the global library (because is_global=1).
     #[rocket::async_test]

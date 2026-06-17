@@ -272,13 +272,39 @@ pub async fn remove_camp_technique(
     camp_id: i64,
     technique_id: i64,
 ) -> Result<(), AppError> {
-    sqlx::query!(
-        "DELETE FROM camp_techniques WHERE camp_id = ? AND technique_id = ?",
-        camp_id,
+    // A scoped technique (is_global=0, scoped_camp_id = this camp) has no life
+    // outside the camp: it's hidden from the global library and reachable only
+    // through its camp. Plain-unlinking it would strand it (invisible in the
+    // library AND absent from any camp). So "removing" a scoped technique
+    // deletes the technique outright -- the FK cascade reaps its camp_techniques
+    // link, its videos (parent_kind='technique'), tags and notes with it. A
+    // global technique is merely unlinked (it lives on in the library). This
+    // keeps the invariant: a scoped technique exists iff it is in its owning
+    // camp, so no scoped orphans can accumulate.
+    let scoped = sqlx::query_scalar!(
+        r#"SELECT EXISTS(
+              SELECT 1 FROM techniques
+              WHERE id = ? AND is_global = 0 AND scoped_camp_id = ?
+           ) AS "e!: i64""#,
         technique_id,
+        camp_id,
     )
-    .execute(pool)
+    .fetch_one(pool)
     .await?;
+
+    if scoped == 1 {
+        sqlx::query!("DELETE FROM techniques WHERE id = ?", technique_id)
+            .execute(pool)
+            .await?;
+    } else {
+        sqlx::query!(
+            "DELETE FROM camp_techniques WHERE camp_id = ? AND technique_id = ?",
+            camp_id,
+            technique_id,
+        )
+        .execute(pool)
+        .await?;
+    }
     Ok(())
 }
 
