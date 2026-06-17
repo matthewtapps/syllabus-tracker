@@ -217,15 +217,26 @@ pub async fn create_match(
     .fetch_one(&mut *tx)
     .await?;
 
-    emit(
-        &mut tx,
-        NewActivity::new(Verb::MatchLogged, created_by_id)
-            .target_student(reg.student_id)
-            .match_ref(id)
-            .competition(reg.competition_id)
-            .context_kind("competition"),
+    // Resolve the student's camp for this competition (if any) so the match's
+    // activity deep-links to the owning camp.
+    let camp_id = sqlx::query_scalar!(
+        r#"SELECT id AS "id!: i64" FROM camps
+           WHERE student_id = ? AND competition_id = ? LIMIT 1"#,
+        reg.student_id,
+        reg.competition_id,
     )
+    .fetch_optional(&mut *tx)
     .await?;
+
+    let mut activity = NewActivity::new(Verb::MatchLogged, created_by_id)
+        .target_student(reg.student_id)
+        .match_ref(id)
+        .competition(reg.competition_id)
+        .context_kind("competition");
+    if let Some(cid) = camp_id {
+        activity = activity.camp(cid);
+    }
+    emit(&mut tx, activity).await?;
 
     tx.commit().await?;
     Ok(id)
@@ -389,16 +400,27 @@ pub async fn link_match_technique(
     .rows_affected();
 
     if affected > 0 {
-        emit(
-            &mut tx,
-            NewActivity::new(Verb::MatchTechniqueLinked, by_id)
-                .target_student(reg.student_id)
-                .match_ref(match_id)
-                .technique(technique_id)
-                .competition(reg.competition_id)
-                .context_kind("competition"),
+        // Resolve the student's camp for this competition (if any) so the
+        // match-technique activity deep-links to the owning camp.
+        let camp_id = sqlx::query_scalar!(
+            r#"SELECT id AS "id!: i64" FROM camps
+               WHERE student_id = ? AND competition_id = ? LIMIT 1"#,
+            reg.student_id,
+            reg.competition_id,
         )
+        .fetch_optional(&mut *tx)
         .await?;
+
+        let mut activity = NewActivity::new(Verb::MatchTechniqueLinked, by_id)
+            .target_student(reg.student_id)
+            .match_ref(match_id)
+            .technique(technique_id)
+            .competition(reg.competition_id)
+            .context_kind("competition");
+        if let Some(cid) = camp_id {
+            activity = activity.camp(cid);
+        }
+        emit(&mut tx, activity).await?;
     }
 
     tx.commit().await?;

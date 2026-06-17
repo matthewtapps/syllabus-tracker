@@ -442,6 +442,65 @@ mod tests {
     }
 
     // -----------------------------------------------------------------------
+    // Activity row carries owning camp_id
+    // -----------------------------------------------------------------------
+
+    #[rocket::async_test]
+    async fn match_logged_activity_carries_camp_id() {
+        let db = TestDbBuilder::new()
+            .coach("coach_user", Some("Coach"))
+            .student("student_user", Some("Sam"))
+            .build()
+            .await
+            .unwrap();
+
+        let coach = db.user_id("coach_user").unwrap();
+        let student = db.user_id("student_user").unwrap();
+
+        let comp_id = create_competition(&db.pool, "Camp Deep-link Test", None, coach)
+            .await
+            .unwrap();
+        let reg_id = register_student(&db.pool, comp_id, student, coach)
+            .await
+            .unwrap();
+
+        // Create a camp linked to this competition for the student.
+        let expected_camp_id: i64 = sqlx::query_scalar!(
+            r#"INSERT INTO camps (student_id, coach_id, name, competition_id)
+               VALUES (?, ?, 'Pre-comp Camp', ?) RETURNING id AS "id!: i64""#,
+            student,
+            coach,
+            comp_id,
+        )
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+
+        let match_id = create_match(
+            &db.pool,
+            reg_id,
+            MatchResult::Win,
+            None,
+            None,
+            None,
+            coach,
+        )
+        .await
+        .unwrap();
+
+        let camp_id_on_activity: Option<i64> = sqlx::query_scalar!(
+            r#"SELECT camp_id AS "camp_id?: i64" FROM activity
+               WHERE verb = 'match_logged' AND match_id = ?"#,
+            match_id
+        )
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+
+        assert_eq!(camp_id_on_activity, Some(expected_camp_id));
+    }
+
+    // -----------------------------------------------------------------------
     // Activity row for create_match
     // -----------------------------------------------------------------------
 
