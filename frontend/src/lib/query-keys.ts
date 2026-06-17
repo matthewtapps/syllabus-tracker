@@ -70,7 +70,12 @@ export const qk = {
     ["technique", techniqueId, "videos"] as const,
   videoStats: (videoId: number) => ["video", videoId, "stats"] as const,
 
-  activityFeed: () => ["activity", "feed"] as const,
+  // Limit omitted -> the ["activity", "feed"] prefix, which invalidateQueries
+  // matches against every per-limit variant.
+  activityFeed: (limit?: number) =>
+    limit === undefined
+      ? (["activity", "feed"] as const)
+      : (["activity", "feed", limit] as const),
   activityDigest: () => ["activity", "digest"] as const,
   dashboardActivityFeed: () => ["activity", "dashboard-feed"] as const,
   studentActivityFeed: (studentId: number, limit: number) =>

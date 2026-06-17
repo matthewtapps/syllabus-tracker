@@ -342,10 +342,10 @@ export function useAssignmentDiff(
 // The viewer's own activity feed. For a student this returns rows where
 // they are the target; for a coach it returns all gym activity except their
 // own actions. `enabled` lets callers gate the query on auth state.
-export function useActivityFeed(enabled: boolean = true) {
+export function useActivityFeed(enabled: boolean = true, limit = 20) {
   return useQuery({
-    queryKey: qk.activityFeed(),
-    queryFn: enabled ? () => getActivityFeed({ limit: 20 }) : skipToken,
+    queryKey: qk.activityFeed(limit),
+    queryFn: enabled ? () => getActivityFeed({ limit }) : skipToken,
   });
 }
 
