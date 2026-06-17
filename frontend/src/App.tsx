@@ -19,6 +19,7 @@ import { CurrentUserProvider } from './lib/current-user';
 import { campsUiEnabled } from './lib/features';
 import { ConfirmProvider } from './components/confirm-dialog';
 import { useCapabilities, useCurrentUser } from './lib/queries';
+import { usePointerEventsWatchdog } from './lib/use-pointer-events-watchdog';
 import { qk } from './lib/query-keys';
 import type { User } from './lib/api';
 
@@ -87,6 +88,8 @@ const queryClient = new QueryClient({
 });
 
 function App() {
+  // App-wide recovery from the Radix stuck-pointer-events freeze.
+  usePointerEventsWatchdog();
   return (
     <QueryClientProvider client={queryClient}>
       <AppShell />
