@@ -29,7 +29,7 @@ import { formatAbsolute, formatRelativeShort } from "@/lib/dates";
 import { cn } from "@/lib/utils";
 import { campsUiEnabled } from "@/lib/features";
 
-function verbIconMeta(verb: string): { Icon: LucideIcon; colorClass: string } {
+export function verbIconMeta(verb: string): { Icon: LucideIcon; colorClass: string } {
   switch (verb) {
     case "attempt_logged":
     case "attempt_edited":
