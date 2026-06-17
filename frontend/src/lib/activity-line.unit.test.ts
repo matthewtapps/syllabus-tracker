@@ -607,13 +607,28 @@ describe("activityLine", () => {
     expect(result.subject).toBe("Triangle setup");
   });
 
-  test("thread_comment_posted with no entity renders 'commented on' with no subject", () => {
+  test("thread_comment_posted with no entity renders 'left a comment' so the verb never dangles", () => {
     const result = activityLine(
       row({ verb: "thread_comment_posted", thread_id: 9 }),
     );
-    expect(result.verb).toBe("commented on");
+    expect(result.verb).toBe("left a comment");
     expect(result.subject).toBeUndefined();
     expect(result.href).toBeUndefined();
+  });
+
+  test("thread_comment_posted on a student's profile from a mixed feed names the profile", () => {
+    const result = activityLine(
+      row({
+        verb: "thread_comment_posted",
+        thread_id: 9,
+        actor_user_id: 1,
+        target_student_id: 2,
+        target_student_name: "Charlotte Chew",
+      }),
+      { kind: "gym" },
+    );
+    expect(result.verb).toBe("commented on");
+    expect(result.subject).toBe("Charlotte Chew's profile");
   });
 
   test("thread_comment_posted on a syllabus sst deep-links to the sst with the thread", () => {

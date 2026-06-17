@@ -281,13 +281,18 @@ export function activityLine(row: ActivityRow, scope: ActivityScope = { kind: "g
       if (href && row.thread_id != null) {
         href += `&thread=${row.thread_id}`;
       }
-      return {
-        verb: "commented on",
-        // Prefer the video title for video comments (the comment names the
-        // video, not its technique); fall back to the technique otherwise.
-        subject: row.video_title ?? row.technique_name ?? undefined,
-        href,
-      };
+      // Prefer the video title for video comments (the comment names the
+      // video, not its technique); fall back to the technique otherwise.
+      const anchor = row.video_title ?? row.technique_name ?? undefined;
+      if (anchor) {
+        return { verb: "commented on", subject: anchor, href };
+      }
+      // Profile/broadcast comment: no technique or video anchor. Name the
+      // student's profile when a coach acts from a mixed feed, otherwise just
+      // say "left a comment" so the verb never dangles with a trailing "on".
+      return studentName
+        ? { verb: "commented on", subject: `${studentName}'s profile`, href }
+        : { verb: "left a comment", href };
     }
 
     // --- camp verbs ---
