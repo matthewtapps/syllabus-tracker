@@ -45,6 +45,10 @@ function stubFetch() {
       );
     }
     if (url.includes("/activity_feed")) return Promise.resolve(jsonResponse([]));
+    // Profile preview sections: syllabi + pinned both expect an array.
+    if (url.includes("/pinned_techniques") || url.includes("/syllabi")) {
+      return Promise.resolve(jsonResponse([]));
+    }
     return Promise.resolve(jsonResponse({}));
   });
 }
