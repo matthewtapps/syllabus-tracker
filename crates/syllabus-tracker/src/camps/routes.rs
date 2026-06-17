@@ -7,8 +7,8 @@ use tracing::instrument;
 use crate::auth::{Permission, User};
 use crate::db::camps::{
     add_camp_technique, archive_camp, create_camp, create_camp_technique_new, get_camp,
-    list_camp_techniques, list_camps_for_student, remove_camp_technique, update_camp, Camp,
-    CampTechnique, NewCamp, TechniqueScope,
+    list_camp_summaries_for_student, list_camp_techniques, remove_camp_technique, update_camp,
+    Camp, CampSummary, CampTechnique, NewCamp, TechniqueScope,
 };
 use crate::db::competitions::{get_competition, registration_for};
 use crate::db::{list_videos_for_camp, set_video_camp_visibility};
@@ -80,7 +80,7 @@ pub struct CreatedResponse {
 
 #[derive(Serialize)]
 pub struct CampListResponse {
-    pub camps: Vec<Camp>,
+    pub camps: Vec<CampSummary>,
 }
 
 #[derive(Serialize)]
@@ -143,7 +143,7 @@ pub async fn api_list_camps(
     if !is_coach && student_id != user.id {
         return Err(Status::Forbidden);
     }
-    let camps = list_camps_for_student(pool.inner(), student_id, true)
+    let camps = list_camp_summaries_for_student(pool.inner(), student_id, true)
         .await
         .map_err(Status::from)?;
     Ok(Json(CampListResponse { camps }))
