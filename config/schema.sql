@@ -236,7 +236,8 @@ CREATE TABLE IF NOT EXISTS syllabi (
     description   TEXT,
     created_at    TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     created_by_id INTEGER REFERENCES users (id),
-    updated_at    TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    updated_at    TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    deleted_at    TIMESTAMP
 );
 
 -- Membership of techniques in a syllabus, with display ordering.

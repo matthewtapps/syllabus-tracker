@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT COUNT(*) AS \"c!: i64\" FROM syllabi WHERE id = ? AND deleted_at IS NULL",
+  "describe": {
+    "columns": [
+      {
+        "name": "c!: i64",
+        "ordinal": 0,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "b97c87714bca2bd18c6682dcf3bdbfbfe6a3a6362106b049e7b2bb3705b022f6"
+}

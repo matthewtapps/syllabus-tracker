@@ -65,6 +65,7 @@ pub async fn list_syllabi(pool: &Pool<Sqlite>) -> Result<Vec<Syllabus>, AppError
                   COALESCE((SELECT COUNT(*) FROM syllabus_techniques st WHERE st.syllabus_id = s.id), 0) AS "technique_count!: i64",
                   COALESCE((SELECT COUNT(*) FROM syllabus_assignments sa WHERE sa.syllabus_id = s.id AND sa.unassigned_at IS NULL), 0) AS "active_assignment_count!: i64"
            FROM syllabi s
+           WHERE s.deleted_at IS NULL
            ORDER BY s.name"#
     )
     .fetch_all(pool)
@@ -96,7 +97,7 @@ pub async fn get_syllabus(pool: &Pool<Sqlite>, id: i64) -> Result<Option<Syllabu
                   COALESCE((SELECT COUNT(*) FROM syllabus_techniques st WHERE st.syllabus_id = s.id), 0) AS "technique_count!: i64",
                   COALESCE((SELECT COUNT(*) FROM syllabus_assignments sa WHERE sa.syllabus_id = s.id AND sa.unassigned_at IS NULL), 0) AS "active_assignment_count!: i64"
            FROM syllabi s
-           WHERE s.id = ?"#,
+           WHERE s.id = ? AND s.deleted_at IS NULL"#,
         id,
     )
     .fetch_optional(pool)
@@ -179,9 +180,20 @@ pub async fn update_syllabus(
 
 #[instrument]
 pub async fn delete_syllabus(pool: &Pool<Sqlite>, id: i64) -> Result<(), AppError> {
-    sqlx::query!("DELETE FROM syllabi WHERE id = ?", id)
-        .execute(pool)
+    let mut tx = pool.begin().await?;
+    sqlx::query!("UPDATE syllabi SET deleted_at = CURRENT_TIMESTAMP WHERE id = ?", id)
+        .execute(&mut *tx)
         .await?;
+    // Close open assignments so the syllabus disappears for students, matching
+    // the prior hard-delete user-visible effect.
+    sqlx::query!(
+        "UPDATE syllabus_assignments SET unassigned_at = CURRENT_TIMESTAMP
+         WHERE syllabus_id = ? AND unassigned_at IS NULL",
+        id,
+    )
+    .execute(&mut *tx)
+    .await?;
+    tx.commit().await?;
     Ok(())
 }
 

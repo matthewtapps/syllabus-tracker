@@ -564,6 +564,83 @@ mod tests {
 }
 
 #[cfg(test)]
+mod soft_delete_tests {
+    use crate::db;
+    use crate::db::PropagationMode;
+    use crate::test::test_utils::TestDbBuilder;
+
+    #[rocket::async_test]
+    async fn soft_delete_syllabus_hides_it_and_closes_assignments() {
+        let test_db = TestDbBuilder::new()
+            .coach("coach", None)
+            .student("alice", None)
+            .technique("Armbar", "", Some("coach"))
+            .build()
+            .await
+            .unwrap();
+        let coach_id = test_db.user_id("coach").unwrap();
+        let alice = test_db.user_id("alice").unwrap();
+        let armbar_id = test_db.technique_id("Armbar").unwrap();
+
+        let syllabus_id = db::create_syllabus(&test_db.pool, "To Delete", None, coach_id)
+            .await
+            .unwrap();
+        db::add_technique_to_syllabus(
+            &test_db.pool,
+            syllabus_id,
+            armbar_id,
+            coach_id,
+            PropagationMode::SyllabusOnly,
+        )
+        .await
+        .unwrap();
+        db::assign(&test_db.pool, coach_id, alice, syllabus_id)
+            .await
+            .unwrap();
+
+        // Soft-delete.
+        db::delete_syllabus(&test_db.pool, syllabus_id)
+            .await
+            .unwrap();
+
+        // Row still exists but deleted_at is set.
+        let live: i64 = sqlx::query_scalar!(
+            r#"SELECT COUNT(*) AS "c!: i64" FROM syllabi WHERE id = ? AND deleted_at IS NULL"#,
+            syllabus_id,
+        )
+        .fetch_one(&test_db.pool)
+        .await
+        .unwrap();
+        assert_eq!(live, 0, "soft-deleted syllabus must have deleted_at set");
+
+        // list_syllabi must NOT include it.
+        let list = db::list_syllabi(&test_db.pool).await.unwrap();
+        assert!(
+            !list.iter().any(|s| s.id == syllabus_id),
+            "list_syllabi must exclude soft-deleted syllabus"
+        );
+
+        // get_syllabus must return None.
+        let got = db::get_syllabus(&test_db.pool, syllabus_id)
+            .await
+            .unwrap();
+        assert!(got.is_none(), "get_syllabus must return None for soft-deleted");
+
+        // Open assignment must be closed.
+        let open: i64 = sqlx::query_scalar!(
+            r#"SELECT COUNT(*) AS "c!: i64"
+               FROM syllabus_assignments
+               WHERE syllabus_id = ? AND unassigned_at IS NULL"#,
+            syllabus_id,
+        )
+        .fetch_one(&test_db.pool)
+        .await
+        .unwrap();
+        assert_eq!(open, 0, "soft-delete must close all open assignments");
+    }
+}
+
+#[cfg(test)]
 mod pr4_tests {
     use rocket::http::{ContentType, Status};
     use serde_json::{Value, json};
