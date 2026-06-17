@@ -191,32 +191,34 @@ function ProfileHub({
 
   return (
     <div className="container mx-auto space-y-6 px-4 py-6 sm:px-6 md:py-8">
-      <section className="flex items-center gap-4">
-        <Avatar size="lg" className="shrink-0">
-          <AvatarFallback>{initials(student)}</AvatarFallback>
-        </Avatar>
-        <div className="min-w-0 flex-1">
-          <h1 className="flex items-center gap-2 truncate text-base font-semibold">
-            {displayName}
-            {student.archived && (
-              <Badge variant="outline" className="gap-1 text-muted-foreground">
-                <Archive className="h-3 w-3" aria-hidden />
-                Archived
-              </Badge>
-            )}
-          </h1>
-          {student.display_name &&
-            student.display_name !== student.username && (
-              <p className="truncate text-xs text-muted-foreground">
-                {student.username}
-              </p>
-            )}
-          <p className="mt-1 text-xs capitalize text-muted-foreground">
-            {student.role}
-          </p>
+      <section className="space-y-3">
+        <div className="flex items-center gap-4">
+          <Avatar size="lg" className="shrink-0">
+            <AvatarFallback>{initials(student)}</AvatarFallback>
+          </Avatar>
+          <div className="min-w-0 flex-1">
+            <h1 className="flex items-center gap-2 truncate text-base font-semibold">
+              {displayName}
+              {student.archived && (
+                <Badge variant="outline" className="gap-1 text-muted-foreground">
+                  <Archive className="h-3 w-3" aria-hidden />
+                  Archived
+                </Badge>
+              )}
+            </h1>
+            {student.display_name &&
+              student.display_name !== student.username && (
+                <p className="truncate text-xs text-muted-foreground">
+                  {student.username}
+                </p>
+              )}
+            <p className="mt-1 text-xs capitalize text-muted-foreground">
+              {student.role}
+            </p>
+          </div>
         </div>
         {(canManageAccount || canArchive) && (
-          <div className="flex shrink-0 items-center gap-2">
+          <div className="flex items-center gap-2">
             {canManageAccount && (
               <Button variant="outline" size="sm" className="gap-1.5" onClick={() => setAccountOpen(true)}>
                 <Settings className="h-4 w-4" aria-hidden />
