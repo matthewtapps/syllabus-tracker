@@ -137,7 +137,7 @@ export function AccountDialog({ open, onOpenChange, user, mode }: AccountDialogP
       try {
         await updateUserMutation.mutateAsync({
           userId: user.id,
-          data: { username: data.username, display_name: data.display_name },
+          data: { username: data.username.trim(), display_name: data.display_name },
         });
         toast.success('User updated');
       } catch (err) {
@@ -230,9 +230,11 @@ export function AccountDialog({ open, onOpenChange, user, mode }: AccountDialogP
         <DialogContent className="w-[calc(100vw-1rem)] max-w-md p-4 sm:p-6">
           <DialogHeader>
             <DialogTitle>{title}</DialogTitle>
-            {mode === 'admin' && (
-              <DialogDescription>Update account information.</DialogDescription>
-            )}
+            <DialogDescription>
+              {mode === 'self'
+                ? 'Update your account details and password.'
+                : 'Update account information.'}
+            </DialogDescription>
           </DialogHeader>
 
           {/* Details form */}
