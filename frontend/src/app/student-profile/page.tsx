@@ -2,17 +2,13 @@ import { useMemo, useState } from "react";
 import { Link, Navigate, useNavigate, useParams } from "react-router-dom";
 import {
   Archive,
-  BookOpen,
-  ChevronRight,
   Dumbbell,
   History,
-  Medal,
   MessageSquare,
   NotebookPen,
   Pin,
   Plus,
   Settings,
-  UserRound,
 } from "lucide-react";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -76,8 +72,8 @@ import {
 import { useCreateCamp, useCreateThread, useArchiveStudent } from "@/lib/mutations";
 import { useUser } from "@/lib/current-user-context";
 import { isAdmin, isCoachOrAdmin } from "@/lib/api";
-import { cn } from "@/lib/utils";
 import { campsUiEnabled } from "@/lib/features";
+import { CampSummaryCard } from "@/components/camp-summary-card";
 import { ActivityFeedList } from "@/components/activity-feed-list";
 import { ThreadView } from "@/components/threads/thread-view";
 import { ThreadComposer } from "@/components/threads/thread-composer";
@@ -170,6 +166,7 @@ function ProfileHub({
   const archiveMutation = useArchiveStudent();
   const syllabiQuery = useStudentSyllabi(studentId);
   const pinnedQuery = useStudentPinnedTechniques(studentId);
+  const campsQuery = useCampsForStudent(campsUiEnabled ? studentId : undefined);
   const [pinnedExpanded, setPinnedExpanded] = useState<string>("");
 
   if (loading || !student) {
@@ -190,6 +187,7 @@ function ProfileHub({
 
   const previewSyllabi = (syllabiQuery.data ?? []).slice(0, 5);
   const previewPinned = (pinnedQuery.data ?? []).slice(0, 5);
+  const previewCamps = (campsQuery.data ?? []).filter((c) => !c.archived_at).slice(0, 5);
 
   return (
     <div className="container mx-auto space-y-6 px-4 py-6 sm:px-6 md:py-8">
@@ -235,18 +233,22 @@ function ProfileHub({
         )}
       </section>
 
-      {(isOwnView || campsUiEnabled) && (
+      {campsUiEnabled && (
         <section className="space-y-2">
           <div className="flex items-center justify-between gap-2">
-            <h2 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-              {isOwnView ? "Your spaces" : `${displayName}'s spaces`}
-            </h2>
-            {canCreateCamp && campsUiEnabled && (
+            <Link
+              to={`/student/${studentId}/camps`}
+              className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-muted-foreground hover:text-foreground"
+            >
+              <Dumbbell className="h-3.5 w-3.5" aria-hidden />
+              Camps
+            </Link>
+            {canCreateCamp && (
               <Dialog open={createCampOpen} onOpenChange={setCreateCampOpen}>
                 <DialogTrigger asChild>
                   <Button size="sm" variant="outline" className="gap-1.5">
                     <Plus className="h-4 w-4" aria-hidden />
-                    <span>New camp</span>
+                    <span>Add camp</span>
                   </Button>
                 </DialogTrigger>
                 <CreateCampDialog
@@ -260,29 +262,29 @@ function ProfileHub({
               </Dialog>
             )}
           </div>
-          <div className="overflow-hidden rounded-lg border border-border bg-card">
-            {/* The Library is a global gym-wide resource. Students see a link
-             * to their own library view; coaches don't need it here since
-             * the Library nav entry already takes them there. */}
-            {isOwnView && (
-              <HubLink to="/library" icon={BookOpen} title="Library" last={!campsUiEnabled} />
-            )}
-            {campsUiEnabled && (
-              <>
-                <HubLink
-                  to={`/student/${studentId}/camps`}
-                  icon={Dumbbell}
-                  title="Camps"
-                />
-                <HubLink
-                  to={`/student/${studentId}/matches`}
-                  icon={Medal}
-                  title={isOwnView ? "My matches" : "Matches"}
-                  last
-                />
-              </>
-            )}
-          </div>
+          {campsQuery.isLoading ? (
+            <div className="rounded-lg border border-border bg-card px-4 py-4">
+              <div className="h-4 w-1/3 animate-pulse rounded bg-muted" />
+            </div>
+          ) : previewCamps.length === 0 ? (
+            <div className="overflow-hidden rounded-lg border border-border bg-card">
+              <EmptyState
+                icon={Dumbbell}
+                title="No camps yet"
+                description={
+                  isOwnView
+                    ? "Your coach can set up a training camp for you."
+                    : "Set up a camp to plan this student's training block."
+                }
+              />
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {previewCamps.map((c) => (
+                <CampSummaryCard key={c.id} camp={c} />
+              ))}
+            </div>
+          )}
         </section>
       )}
 
@@ -439,35 +441,6 @@ function ProfileHub({
         </AlertDialogContent>
       </AlertDialog>
     </div>
-  );
-}
-
-function HubLink({
-  to,
-  icon: Icon,
-  title,
-  last,
-}: {
-  to: string;
-  icon: typeof UserRound;
-  title: string;
-  last?: boolean;
-}) {
-  return (
-    <Link
-      to={to}
-      className={cn(
-        "flex items-center gap-3 px-4 py-3 transition-colors hover:bg-muted/40",
-        !last && "border-b border-border",
-      )}
-    >
-      <Icon className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
-      <p className="min-w-0 flex-1 truncate text-sm font-medium">{title}</p>
-      <ChevronRight
-        className="h-4 w-4 shrink-0 text-muted-foreground"
-        aria-hidden
-      />
-    </Link>
   );
 }
 
