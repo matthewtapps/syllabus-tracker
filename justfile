@@ -111,8 +111,10 @@ up: migrate
 # Native dev loop. Brings up only the supporting infra in docker (minio,
 # minio-init, otel-collector) and runs the backend + frontend on the host so
 # we reuse the warm `target/` cache instead of recompiling inside a container.
+# `vite_env` sets the frontend's VITE_ENVIRONMENT (feature-gate key); leave the
+# default for normal dev, or use `dev-prod` to preview production-gated UI.
 [group('run')]
-dev: migrate
+dev vite_env="development": migrate
     #!/usr/bin/env bash
     set -uo pipefail
     docker compose up -d minio minio-init otel-collector
@@ -125,6 +127,10 @@ dev: migrate
     # The env files target the docker network; rewrite to localhost for native.
     export S3_ENDPOINT=http://localhost:9000
     export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317
+    # Override the dev.env VITE_ENVIRONMENT so `dev-prod` can run the full stack
+    # with production feature gates (e.g. the in-progress camps/competitions UI
+    # hidden). Defaults to development, so plain `just dev` is unchanged.
+    export VITE_ENVIRONMENT={{ vite_env }}
 
     (cd frontend && pnpm install && pnpm dev --host) &
     FRONTEND_PID=$!
@@ -145,6 +151,11 @@ dev: migrate
     trap cleanup INT TERM EXIT
 
     wait -n
+
+# Native dev loop (backend + frontend + infra) with production feature gates,
+# so the in-progress camps/competitions UI is hidden. Same stack as `dev`.
+[group('run')]
+dev-prod: (dev "production")
 
 # Stop the docker compose stack.
 [group('run')]
