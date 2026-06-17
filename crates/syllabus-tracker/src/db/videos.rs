@@ -29,6 +29,38 @@ pub enum VideoParent {
     Loose,
 }
 
+/// A coach visibility-override scope. Mirrors the exclusive-arc parent pattern
+/// (`VideoParent`): exactly one entity is referenced, the DB enforces it via a
+/// CHECK + per-scope FK cascade on `video_visibility_overrides`.
+// consumed by override writers in a later task
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum VisibilityScope {
+    Student(i64),
+    Syllabus(i64),
+    Assignment(i64),
+}
+
+impl VisibilityScope {
+    pub fn kind(&self) -> &'static str {
+        match self {
+            VisibilityScope::Student(_) => "student",
+            VisibilityScope::Syllabus(_) => "syllabus",
+            VisibilityScope::Assignment(_) => "assignment",
+        }
+    }
+
+    /// Returns `(student_id, syllabus_id, assignment_id)` with exactly one
+    /// `Some`, matching the table's typed columns.
+    pub fn columns(&self) -> (Option<i64>, Option<i64>, Option<i64>) {
+        match *self {
+            VisibilityScope::Student(id) => (Some(id), None, None),
+            VisibilityScope::Syllabus(id) => (None, Some(id), None),
+            VisibilityScope::Assignment(id) => (None, None, Some(id)),
+        }
+    }
+}
+
 /// The four typed columns a `VideoParent` resolves to in the `videos` table.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ParentColumns {

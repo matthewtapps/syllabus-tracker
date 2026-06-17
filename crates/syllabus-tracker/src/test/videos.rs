@@ -1992,4 +1992,13 @@ mod db_tests {
         .expect("fetch ready");
         assert_eq!(ready_row.processing_status, "ready");
     }
+
+    #[test]
+    fn visibility_scope_maps_to_kind_and_columns() {
+        use crate::db::VisibilityScope::*;
+        assert_eq!(Student(7).kind(), "student");
+        assert_eq!(Student(7).columns(), (Some(7), None, None));
+        assert_eq!(Syllabus(7).columns(), (None, Some(7), None));
+        assert_eq!(Assignment(7).columns(), (None, None, Some(7)));
+    }
 }
