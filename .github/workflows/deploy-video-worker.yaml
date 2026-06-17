@@ -163,6 +163,7 @@ jobs:
           @S3_FORCE_PATH_STYLE=true\
           @S3_PUBLIC_ENDPOINT=https://ea9e8573831e597fc41f865267b8fd35.r2.cloudflarestorage.com\
           @OTEL_EXPORTER_OTLP_ENDPOINT=https://api.honeycomb.io\
+          @OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=https://api.honeycomb.io/v1/traces\
           @OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf\
           @OTEL_EXPORTER_OTLP_HEADERS=x-honeycomb-team=${{ steps.secrets.outputs.honeycomb_key }}\
           @OTEL_RESOURCE_ATTRIBUTES=deployment.environment.name=production"
