@@ -16,6 +16,7 @@ import { RequireAdmin, RequireAuth, RequireCoach } from './components/route-guar
 import { TelemetryProvider } from './context/telemetry';
 import { CapabilitiesProvider } from './context/capabilities';
 import { CurrentUserProvider } from './lib/current-user';
+import { campsUiEnabled } from './lib/features';
 import { ConfirmProvider } from './components/confirm-dialog';
 import { useCapabilities, useCurrentUser } from './lib/queries';
 import { qk } from './lib/query-keys';
@@ -350,44 +351,67 @@ function AuthedRoutes() {
           </RequireAuth>
         }
       />
+      {/* Camps + competitions/matches: in-progress epic, gated off on prod
+          (campsUiEnabled). When disabled the routes redirect to the dashboard
+          so direct navigation can't reach the half-built surfaces. */}
       <Route
         path="/student/:id/camps"
         element={
-          <RequireAuth>
-            <StudentCampsPage />
-          </RequireAuth>
+          campsUiEnabled ? (
+            <RequireAuth>
+              <StudentCampsPage />
+            </RequireAuth>
+          ) : (
+            <Navigate to="/dashboard" replace />
+          )
         }
       />
       <Route
         path="/camps/:id"
         element={
-          <RequireAuth>
-            <CampDetailPage />
-          </RequireAuth>
+          campsUiEnabled ? (
+            <RequireAuth>
+              <CampDetailPage />
+            </RequireAuth>
+          ) : (
+            <Navigate to="/dashboard" replace />
+          )
         }
       />
       <Route
         path="/student/:id/matches"
         element={
-          <RequireAuth>
-            <StudentMatchesPage />
-          </RequireAuth>
+          campsUiEnabled ? (
+            <RequireAuth>
+              <StudentMatchesPage />
+            </RequireAuth>
+          ) : (
+            <Navigate to="/dashboard" replace />
+          )
         }
       />
       <Route
         path="/competitions"
         element={
-          <RequireAuth>
-            <CompetitionsPage />
-          </RequireAuth>
+          campsUiEnabled ? (
+            <RequireAuth>
+              <CompetitionsPage />
+            </RequireAuth>
+          ) : (
+            <Navigate to="/dashboard" replace />
+          )
         }
       />
       <Route
         path="/competitions/:id"
         element={
-          <RequireAuth>
-            <CompetitionDetailPage />
-          </RequireAuth>
+          campsUiEnabled ? (
+            <RequireAuth>
+              <CompetitionDetailPage />
+            </RequireAuth>
+          ) : (
+            <Navigate to="/dashboard" replace />
+          )
         }
       />
       <Route path="/" element={<Navigate to="/dashboard" replace />} />

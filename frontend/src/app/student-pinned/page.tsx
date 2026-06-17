@@ -21,6 +21,7 @@ import { useUser } from '@/lib/current-user-context';
 import { isCoachOrAdmin } from '@/lib/api';
 import type { LibraryTechniqueRow, Camp } from '@/lib/api';
 import { cn } from '@/lib/utils';
+import { campsUiEnabled } from '@/lib/features';
 
 const EXIT_MS = 220;
 
@@ -254,7 +255,8 @@ function PinnedListing({
                         studentId,
                         studentName,
                         onUnpinIntent: isOwnView ? handleUnpinIntent : undefined,
-                        onAddToCampIntent: !isOwnView ? handleAddToCampIntent : undefined,
+                        onAddToCampIntent:
+                          !isOwnView && campsUiEnabled ? handleAddToCampIntent : undefined,
                       }}
                       value={value}
                       isOpen={nav.expandedValue === value}

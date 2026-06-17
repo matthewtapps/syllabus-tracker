@@ -58,6 +58,7 @@ import { useCreateCamp, useCreateThread } from "@/lib/mutations";
 import { useUser } from "@/lib/current-user-context";
 import { isCoachOrAdmin } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { campsUiEnabled } from "@/lib/features";
 import { ActivityFeedList } from "@/components/activity-feed-list";
 import { ThreadView } from "@/components/threads/thread-view";
 import { ThreadComposer } from "@/components/threads/thread-composer";
@@ -183,7 +184,7 @@ function ProfileHub({
           <h2 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
             {isOwnView ? "Your spaces" : `${displayName}'s spaces`}
           </h2>
-          {canCreateCamp && (
+          {canCreateCamp && campsUiEnabled && (
             <Dialog open={createCampOpen} onOpenChange={setCreateCampOpen}>
               <DialogTrigger asChild>
                 <Button size="sm" variant="outline" className="gap-1.5">
@@ -218,18 +219,23 @@ function ProfileHub({
             to={`/student/${studentId}/pinned`}
             icon={Pin}
             title={isOwnView ? "Pinned" : "Pinned techniques"}
+            last={!campsUiEnabled}
           />
-          <HubLink
-            to={`/student/${studentId}/camps`}
-            icon={Dumbbell}
-            title="Camps"
-          />
-          <HubLink
-            to={`/student/${studentId}/matches`}
-            icon={Medal}
-            title={isOwnView ? "My matches" : "Matches"}
-            last
-          />
+          {campsUiEnabled && (
+            <>
+              <HubLink
+                to={`/student/${studentId}/camps`}
+                icon={Dumbbell}
+                title="Camps"
+              />
+              <HubLink
+                to={`/student/${studentId}/matches`}
+                icon={Medal}
+                title={isOwnView ? "My matches" : "Matches"}
+                last
+              />
+            </>
+          )}
         </div>
       </section>
 
