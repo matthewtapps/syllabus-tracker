@@ -2231,13 +2231,6 @@ export interface Match {
   created_at: string;
 }
 
-/** Entry in GET /api/students/<id>/matches */
-export interface StudentMatch extends Match {
-  competition_id: number;
-  competition_name: string;
-  camp_id: number | null;
-}
-
 export interface MatchTechnique {
   technique_id: number;
   name: string;
@@ -2430,14 +2423,6 @@ export async function getMatchVideos(matchId: number): Promise<Video[]> {
   });
   if (!res.ok) throw res;
   return ((await res.json()) as { videos: Video[] }).videos;
-}
-
-export async function getStudentMatches(studentId: number): Promise<StudentMatch[]> {
-  const res = await fetch(`/api/students/${studentId}/matches`, {
-    credentials: "include",
-  });
-  if (!res.ok) throw res;
-  return ((await res.json()) as { matches: StudentMatch[] }).matches;
 }
 
 export async function uploadMatchVideo(
