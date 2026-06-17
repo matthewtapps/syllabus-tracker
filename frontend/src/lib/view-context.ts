@@ -19,7 +19,8 @@ export type ViewContext =
     }
   | { kind: "camp"; camp: EntityRef; video?: EntityRef }
   | { kind: "competition"; competition: EntityRef }
-  | { kind: "match"; student: EntityRef; match: EntityRef };
+  // `match` is carried for a deferred scroll-to-match anchor on the camp page (Chunk B); not read yet.
+  | { kind: "match"; camp: EntityRef; match: EntityRef };
 
 /** The one place deep-link routing lives. Pure. */
 export function viewContextHref(ctx: ViewContext): string {
@@ -42,7 +43,7 @@ export function viewContextHref(ctx: ViewContext): string {
       return `/competitions/${ctx.competition.id}`;
     }
     case "match": {
-      return `/student/${ctx.student.id}/matches?focus=match:${ctx.match.id}`;
+      return `/camps/${ctx.camp.id}`;
     }
   }
 }
@@ -105,17 +106,17 @@ export function rowToViewContext(row: ViewContextRow): ViewContext | null {
     };
   }
   // Competition-scoped verbs: all 5 new verbs set context_kind="competition".
-  // Dispatch by verb: match verbs -> my-matches surface; camp_promoted -> camp
+  // Dispatch by verb: match verbs -> owning camp page; camp_promoted -> camp
   // page (the camp_id column is populated); else -> competition page.
   if (row.context_kind === "competition") {
     if (
       (row.verb === "match_logged" || row.verb === "match_technique_linked") &&
       row.match_id != null &&
-      row.target_student_id != null
+      row.camp_id != null
     ) {
       return {
         kind: "match",
-        student: { type: "student", id: row.target_student_id },
+        camp: { type: "camp", id: row.camp_id },
         match: { type: "match", id: row.match_id },
       };
     }

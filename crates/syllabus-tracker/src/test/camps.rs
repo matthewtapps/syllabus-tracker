@@ -1498,6 +1498,88 @@ mod tests {
         assert!(body["id"].as_i64().unwrap() > 0, "route must return an id");
     }
 
+    // -----------------------------------------------------------------------
+    // Task 1: enriched camp-summary list query
+    // -----------------------------------------------------------------------
+
+    #[rocket::async_test]
+    async fn camp_summary_carries_counts_and_competition_name() {
+        use crate::db::camps::{create_camp, list_camp_summaries_for_student, NewCamp};
+        use crate::db::competitions::create_competition;
+        use crate::db::{create_processing_video, VideoParent};
+
+        let db = TestDbBuilder::new()
+            .coach("coach_user", Some("Coach"))
+            .student("student_user", Some("Sam"))
+            .build()
+            .await
+            .unwrap();
+
+        let coach = db.user_id("coach_user").unwrap();
+        let student = db.user_id("student_user").unwrap();
+
+        // Create a competition named "IBJJF Worlds".
+        let competition_id = create_competition(&db.pool, "IBJJF Worlds", None, coach)
+            .await
+            .unwrap();
+
+        // Create a camp linked to that competition.
+        let camp_id = create_camp(
+            &db.pool,
+            NewCamp {
+                student_id: student,
+                coach_id: coach,
+                name: "Worlds prep".into(),
+                description: None,
+                references_camp_id: None,
+            },
+        )
+        .await
+        .unwrap();
+
+        // Link the camp to the competition.
+        sqlx::query!("UPDATE camps SET competition_id = ? WHERE id = ?", competition_id, camp_id)
+            .execute(&db.pool)
+            .await
+            .unwrap();
+
+        // Add one camp technique.
+        let tech_id: i64 = sqlx::query_scalar(
+            "INSERT INTO techniques (name, description, coach_id) VALUES ('Guard drill', '', ?) RETURNING id",
+        )
+        .bind(coach)
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+
+        add_camp_technique(&db.pool, camp_id, tech_id, coach).await.unwrap();
+
+        // Add one camp-owned video.
+        create_processing_video(
+            &db.pool,
+            VideoParent::Camp(camp_id),
+            "Worlds prep clip",
+            None,
+            coach,
+        )
+        .await
+        .unwrap();
+
+        // create_camp already emitted a CampCreated activity row (camp_id is set),
+        // so last_activity_at will be Some.
+
+        let summaries = list_camp_summaries_for_student(&db.pool, student, true)
+            .await
+            .unwrap();
+        assert_eq!(summaries.len(), 1);
+        let s = &summaries[0];
+
+        assert_eq!(s.competition_name, Some("IBJJF Worlds".to_string()));
+        assert_eq!(s.technique_count, 1);
+        assert_eq!(s.video_count, 1);
+        assert!(s.last_activity_at.is_some());
+    }
+
     /// `POST /api/camps/<id>/techniques/create` with `scope=scoped` creates a
     /// camp-only technique that is absent from the library route.
     #[rocket::async_test]

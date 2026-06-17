@@ -4,7 +4,7 @@ mod tests {
     use crate::db::create_technique;
     use crate::db::matches::{
         can_manage_match, create_match, delete_match, get_match, link_match_technique,
-        list_match_techniques, list_matches_for_registration, list_matches_for_student,
+        list_match_techniques, list_matches_for_registration,
         unlink_match_technique, update_match, MatchMethod, MatchResult,
     };
     use crate::test::test_utils::TestDbBuilder;
@@ -350,11 +350,11 @@ mod tests {
     }
 
     // -----------------------------------------------------------------------
-    // list_matches_for_student aggregate (CC-031)
+    // Activity row carries owning camp_id
     // -----------------------------------------------------------------------
 
     #[rocket::async_test]
-    async fn list_matches_for_student_aggregate() {
+    async fn match_logged_activity_carries_camp_id() {
         let db = TestDbBuilder::new()
             .coach("coach_user", Some("Coach"))
             .student("student_user", Some("Sam"))
@@ -365,80 +365,47 @@ mod tests {
         let coach = db.user_id("coach_user").unwrap();
         let student = db.user_id("student_user").unwrap();
 
-        // Two competitions, two registrations.
-        let comp1_id = create_competition(&db.pool, "Euro Open 2026", Some("2026-03-15"), coach)
+        let comp_id = create_competition(&db.pool, "Camp Deep-link Test", None, coach)
             .await
             .unwrap();
-        let comp2_id = create_competition(&db.pool, "Pan Ams 2026", Some("2026-05-01"), coach)
-            .await
-            .unwrap();
-
-        let reg1_id = register_student(&db.pool, comp1_id, student, coach)
-            .await
-            .unwrap();
-        let reg2_id = register_student(&db.pool, comp2_id, student, coach)
+        let reg_id = register_student(&db.pool, comp_id, student, coach)
             .await
             .unwrap();
 
-        // Create a camp for comp1 (linked to the competition).
-        let camp_id: i64 = sqlx::query_scalar(
-            "INSERT INTO camps (student_id, coach_id, name, competition_id)
-             VALUES (?, ?, 'Euro prep', ?) RETURNING id",
+        // Create a camp linked to this competition for the student.
+        let expected_camp_id: i64 = sqlx::query_scalar!(
+            r#"INSERT INTO camps (student_id, coach_id, name, competition_id)
+               VALUES (?, ?, 'Pre-comp Camp', ?) RETURNING id AS "id!: i64""#,
+            student,
+            coach,
+            comp_id,
         )
-        .bind(student)
-        .bind(coach)
-        .bind(comp1_id)
         .fetch_one(&db.pool)
         .await
         .unwrap();
 
-        // Log matches: comp1 has one match with a date; comp2 has one without.
-        let match1_id = create_match(
+        let match_id = create_match(
             &db.pool,
-            reg1_id,
+            reg_id,
             MatchResult::Win,
-            Some(MatchMethod::Submission),
             None,
-            Some("2026-03-15T10:00:00"),
+            None,
+            None,
             coach,
         )
         .await
         .unwrap();
 
-        let match2_id = create_match(
-            &db.pool,
-            reg2_id,
-            MatchResult::Loss,
-            None,
-            None,
-            None, // no date
-            coach,
+        let camp_id_on_activity: Option<i64> = sqlx::query_scalar!(
+            r#"SELECT camp_id AS "camp_id?: i64" FROM activity
+               WHERE verb = 'match_logged' AND match_id = ?"#,
+            match_id
         )
+        .fetch_one(&db.pool)
         .await
         .unwrap();
 
-        let all = list_matches_for_student(&db.pool, student)
-            .await
-            .unwrap();
-
-        assert_eq!(all.len(), 2);
-
-        // Dated match (match1) sorts before undated (match2).
-        assert_eq!(all[0].id, match1_id);
-        assert_eq!(all[0].competition_id, comp1_id);
-        assert_eq!(all[0].competition_name, "Euro Open 2026");
-        assert_eq!(all[0].camp_id, Some(camp_id));
-
-        assert_eq!(all[1].id, match2_id);
-        assert_eq!(all[1].competition_id, comp2_id);
-        assert_eq!(all[1].competition_name, "Pan Ams 2026");
-        assert!(all[1].camp_id.is_none());
-
-        // Another student's match should not appear.
-        let other_matches = list_matches_for_student(&db.pool, coach)
-            .await
-            .unwrap();
-        assert!(other_matches.is_empty());
+        assert_eq!(camp_id_on_activity, Some(expected_camp_id));
     }
 
     // -----------------------------------------------------------------------

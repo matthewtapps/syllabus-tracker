@@ -3,11 +3,36 @@ import * as DialogPrimitive from "@radix-ui/react-dialog"
 import { XIcon } from "lucide-react"
 
 import { cn } from "@/lib/utils"
+import { useHistoryDismiss } from "@/lib/use-history-dismiss"
 
 function Dialog({
+  open,
+  defaultOpen,
+  onOpenChange,
   ...props
 }: React.ComponentProps<typeof DialogPrimitive.Root>) {
-  return <DialogPrimitive.Root data-slot="dialog" {...props} />
+  const [uncontrolledOpen, setUncontrolledOpen] = React.useState(
+    defaultOpen ?? false,
+  )
+  const isControlled = open !== undefined
+  const actualOpen = isControlled ? open : uncontrolledOpen
+  const handleOpenChange = React.useCallback(
+    (next: boolean) => {
+      if (!isControlled) setUncontrolledOpen(next)
+      onOpenChange?.(next)
+    },
+    [isControlled, onOpenChange],
+  )
+  // Hardware/browser Back closes the dialog before navigating the route away.
+  useHistoryDismiss(actualOpen, () => handleOpenChange(false))
+  return (
+    <DialogPrimitive.Root
+      data-slot="dialog"
+      open={actualOpen}
+      onOpenChange={handleOpenChange}
+      {...props}
+    />
+  )
 }
 
 function DialogTrigger({

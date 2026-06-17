@@ -40,7 +40,6 @@ import {
   getCompetitions,
   getCompetition,
   getRegistrationMatches,
-  getStudentMatches,
   getMatchVideos,
   getMatchTechniques,
   getPendingSuggestions,
@@ -470,13 +469,6 @@ export function useRegistrationMatches(regId: number | undefined) {
   return useQuery({
     queryKey: qk.registrationMatches(regId ?? 0),
     queryFn: whenId(regId, getRegistrationMatches),
-  });
-}
-
-export function useStudentMatches(studentId: number | undefined) {
-  return useQuery({
-    queryKey: qk.studentMatches(studentId ?? 0),
-    queryFn: whenId(studentId, getStudentMatches),
   });
 }
 

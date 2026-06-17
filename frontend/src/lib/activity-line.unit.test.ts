@@ -825,31 +825,33 @@ describe("activityLine", () => {
   });
 
   // --- match verbs ---
-  test("match_logged routes to the student my-matches page", () => {
+  test("match_logged routes to the owning camp page", () => {
     const result = activityLine(
       row({
         verb: "match_logged",
         context_kind: "competition",
         target_student_id: 3,
+        camp_id: 7,
         competition_id: 5,
         match_id: 11,
       }),
     );
     expect(result.verb).toBe("logged a match");
-    expect(result.href).toBe("/student/3/matches?focus=match:11");
+    expect(result.href).toBe("/camps/7");
   });
 
-  test("match_technique_linked routes to the student my-matches page", () => {
+  test("match_technique_linked routes to the owning camp page", () => {
     const result = activityLine(
       row({
         verb: "match_technique_linked",
         context_kind: "competition",
         target_student_id: 3,
+        camp_id: 7,
         competition_id: 5,
         match_id: 11,
       }),
     );
     expect(result.verb).toBe("linked a technique to a match");
-    expect(result.href).toBe("/student/3/matches?focus=match:11");
+    expect(result.href).toBe("/camps/7");
   });
 });

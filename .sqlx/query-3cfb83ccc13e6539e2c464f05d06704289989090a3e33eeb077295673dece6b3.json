@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT camp_id AS \"camp_id?: i64\" FROM activity\n               WHERE verb = 'match_logged' AND match_id = ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "camp_id?: i64",
+        "ordinal": 0,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "3cfb83ccc13e6539e2c464f05d06704289989090a3e33eeb077295673dece6b3"
+}

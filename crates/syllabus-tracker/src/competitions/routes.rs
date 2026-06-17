@@ -9,7 +9,6 @@
 //! - Match create/read/update/delete: coach OR the registration's own student
 //!   (checked via `can_manage_match`).
 //! - Match technique link/unlink: ManageCamps (coach analysis, CC-022).
-//! - My-matches (student aggregate): the student themselves or a coach.
 
 use chrono::Utc;
 use rocket::State;
@@ -26,10 +25,10 @@ use crate::db::competitions::{
     promote_camp_to_competition,
 };
 use crate::db::matches::{
-    Match, MatchMethod, MatchResult, MatchTechniqueRow, StudentMatch,
+    Match, MatchMethod, MatchResult, MatchTechniqueRow,
     can_manage_match, create_match, delete_match,
     link_match_technique, list_match_techniques, list_matches_for_registration,
-    list_matches_for_student, student_id_for_match, student_id_for_registration,
+    student_id_for_match, student_id_for_registration,
     unlink_match_technique, update_match,
 };
 use crate::db::list_videos_for_match;
@@ -115,11 +114,6 @@ pub struct LinkTechniqueRequest {
 #[derive(Serialize)]
 pub struct MatchVideosResponse {
     pub videos: Vec<Video>,
-}
-
-#[derive(Serialize)]
-pub struct StudentMatchesResponse {
-    pub matches: Vec<StudentMatch>,
 }
 
 // ---------------------------------------------------------------------------
@@ -559,26 +553,3 @@ pub async fn api_list_match_videos(
     Ok(Json(MatchVideosResponse { videos }))
 }
 
-// ---------------------------------------------------------------------------
-// Student aggregate (my-matches, CC-031)
-// ---------------------------------------------------------------------------
-
-/// All matches across a student's registrations. Accessible to the student
-/// themselves or any coach.
-#[instrument(skip(pool, user))]
-#[get("/students/<student_id>/matches")]
-pub async fn api_student_matches(
-    student_id: i64,
-    user: User,
-    pool: &State<Pool<Sqlite>>,
-) -> Result<Json<StudentMatchesResponse>, Status> {
-    if !is_coach(&user) && user.id != student_id {
-        return Err(Status::Forbidden);
-    }
-
-    let matches = list_matches_for_student(pool.inner(), student_id)
-        .await
-        .map_err(Status::from)?;
-
-    Ok(Json(StudentMatchesResponse { matches }))
-}

@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO camps (student_id, coach_id, name, competition_id)\n               VALUES (?, ?, 'Pre-comp Camp', ?) RETURNING id AS \"id!: i64\"",
+  "describe": {
+    "columns": [
+      {
+        "name": "id!: i64",
+        "ordinal": 0,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "c4f0b4b2df999116704a393a3e12ea9e11e31200130788fa822ef127d3c72cff"
+}

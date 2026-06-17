@@ -2013,12 +2013,29 @@ export interface CampDetail extends Camp {
   references_camp_name: string | null;
 }
 
-export async function getCampsForStudent(studentId: number): Promise<Camp[]> {
+/** Row from GET /api/camps (enriched list payload). */
+export interface CampSummary {
+  id: number;
+  student_id: number;
+  coach_id: number;
+  name: string;
+  description: string | null;
+  created_at: string;
+  archived_at: string | null;
+  competition_id: number | null;
+  references_camp_id: number | null;
+  competition_name: string | null;
+  technique_count: number;
+  video_count: number;
+  last_activity_at: string | null;
+}
+
+export async function getCampsForStudent(studentId: number): Promise<CampSummary[]> {
   const res = await fetch(`/api/camps?student_id=${studentId}`, {
     credentials: "include",
   });
   if (!res.ok) throw res;
-  return ((await res.json()) as { camps: Camp[] }).camps;
+  return ((await res.json()) as { camps: CampSummary[] }).camps;
 }
 
 export async function getCamp(id: number): Promise<CampDetail> {
@@ -2214,13 +2231,6 @@ export interface Match {
   created_at: string;
 }
 
-/** Entry in GET /api/students/<id>/matches */
-export interface StudentMatch extends Match {
-  competition_id: number;
-  competition_name: string;
-  camp_id: number | null;
-}
-
 export interface MatchTechnique {
   technique_id: number;
   name: string;
@@ -2413,14 +2423,6 @@ export async function getMatchVideos(matchId: number): Promise<Video[]> {
   });
   if (!res.ok) throw res;
   return ((await res.json()) as { videos: Video[] }).videos;
-}
-
-export async function getStudentMatches(studentId: number): Promise<StudentMatch[]> {
-  const res = await fetch(`/api/students/${studentId}/matches`, {
-    credentials: "include",
-  });
-  if (!res.ok) throw res;
-  return ((await res.json()) as { matches: StudentMatch[] }).matches;
 }
 
 export async function uploadMatchVideo(

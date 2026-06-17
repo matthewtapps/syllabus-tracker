@@ -1629,7 +1629,6 @@ export function useLogMatch(registrationId: number) {
     }) => createMatch(registrationId, data),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: qk.registrationMatches(registrationId) });
-      // studentMatches is keyed per student; invalidate all student match buckets.
       qc.invalidateQueries({ queryKey: ["student"] });
     },
   });
@@ -1653,9 +1652,6 @@ export function useUpdateMatch() {
       qc.invalidateQueries({
         queryKey: qk.registrationMatches(vars.registrationId),
       });
-      if (vars.studentId !== undefined) {
-        qc.invalidateQueries({ queryKey: qk.studentMatches(vars.studentId) });
-      }
     },
   });
 }
@@ -1672,9 +1668,6 @@ export function useDeleteMatch() {
       qc.invalidateQueries({
         queryKey: qk.registrationMatches(vars.registrationId),
       });
-      if (vars.studentId !== undefined) {
-        qc.invalidateQueries({ queryKey: qk.studentMatches(vars.studentId) });
-      }
     },
   });
 }

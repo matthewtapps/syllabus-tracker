@@ -35,7 +35,6 @@ import { Separator } from '@/components/ui/separator';
 import { TracedForm } from '@/components/traced-form';
 import { handleApiFormError, useFormWithValidation } from '@/components/hooks/useFormErrors';
 import { ClaimLinkPanel } from '@/components/claim-link-panel';
-import { useHistoryDismiss } from '@/lib/use-history-dismiss';
 import { type InviteResponse, type User } from '@/lib/api';
 import {
   useUpdateUserProfile,
@@ -97,10 +96,6 @@ export function AccountDialog({ open, onOpenChange, user, mode }: AccountDialogP
 
   const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
   const [issuedClaimUrl, setIssuedClaimUrl] = useState<string | null>(null);
-
-  // Hardware/browser Back closes the dialog instead of navigating the route
-  // away. Also restores Radix's body cleanup so the page never freezes.
-  useHistoryDismiss(open, () => onOpenChange(false));
 
   const updateProfileMutation = useUpdateUserProfile();
   const updatePasswordMutation = useUpdatePassword();
