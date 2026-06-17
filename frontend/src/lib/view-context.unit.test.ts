@@ -440,7 +440,7 @@ describe("competition and match deep links", () => {
     expect(viewContextHref(ctx!)).toBe("/camps/7?focus=camp:7");
   });
 
-  it("routes a match_logged row to the student my-matches page", () => {
+  it("routes a match_logged row to the owning camp page", () => {
     const ctx = rowToViewContext({
       verb: "match_logged",
       context_kind: "competition",
@@ -449,15 +449,15 @@ describe("competition and match deep links", () => {
       sst_id: null,
       technique_id: null,
       video_id: null,
-      camp_id: null,
+      camp_id: 7,
       competition_id: 5,
       match_id: 11,
     });
     expect(ctx).not.toBeNull();
-    expect(viewContextHref(ctx!)).toBe("/student/3/matches?focus=match:11");
+    expect(viewContextHref(ctx!)).toBe("/camps/7");
   });
 
-  it("routes a match_technique_linked row to the student my-matches page", () => {
+  it("routes a match_technique_linked row to the owning camp page", () => {
     const ctx = rowToViewContext({
       verb: "match_technique_linked",
       context_kind: "competition",
@@ -466,11 +466,11 @@ describe("competition and match deep links", () => {
       sst_id: null,
       technique_id: null,
       video_id: null,
-      camp_id: null,
+      camp_id: 7,
       competition_id: 5,
       match_id: 11,
     });
     expect(ctx).not.toBeNull();
-    expect(viewContextHref(ctx!)).toBe("/student/3/matches?focus=match:11");
+    expect(viewContextHref(ctx!)).toBe("/camps/7");
   });
 });
