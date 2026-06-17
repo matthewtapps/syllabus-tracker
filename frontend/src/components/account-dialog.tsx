@@ -109,13 +109,18 @@ export function AccountDialog({ open, onOpenChange, user, mode }: AccountDialogP
     defaultValues: { display_name: '', username: '' },
   });
 
+  // Re-seed when the managed user changes, and whenever the dialog (re)opens so
+  // a dismissed-without-saving edit never lingers on the next open.
   useEffect(() => {
+    if (!open) return;
     detailsForm.reset({
       display_name: user.display_name ?? '',
       username: user.username ?? '',
     });
+    selfPasswordForm.reset();
+    adminPasswordForm.reset();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user.id]);
+  }, [open, user.id]);
 
   async function handleDetailsSubmit(data: DetailsValues) {
     if (mode === 'self') {
