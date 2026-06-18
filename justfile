@@ -374,7 +374,7 @@ _db-sql vol sql:
     #!/usr/bin/env bash
     set -euo pipefail
     printf '%s\n' {{quote(sql)}} | ssh {{ssh_user}}@{{ssh_host}} \
-      "docker run --rm -i -v {{vol}}:/data --entrypoint sqlite3 {{sqlite_image}} /data/sqlite.db"
+      "docker run --rm -i --user 0 -v {{vol}}:/data --entrypoint sqlite3 {{sqlite_image}} /data/sqlite.db"
 
 # Run SQL against the STAGING database.
 [group('remote')]
@@ -383,7 +383,7 @@ db-sql-staging sql: _require-host (_db-sql "sillybus-staging_app-data" sql)
 # Interactive sqlite shell on STAGING.
 [group('remote')]
 db-shell-staging: _require-host
-    ssh -t {{ssh_user}}@{{ssh_host}} "docker run --rm -it -v sillybus-staging_app-data:/data --entrypoint sqlite3 {{sqlite_image}} /data/sqlite.db"
+    ssh -t {{ssh_user}}@{{ssh_host}} "docker run --rm -it --user 0 -v sillybus-staging_app-data:/data --entrypoint sqlite3 {{sqlite_image}} /data/sqlite.db"
 
 # Run SQL against the PROD database. Prompts for confirmation first.
 [group('remote')]
@@ -395,12 +395,12 @@ db-sql-prod sql: _require-host
     read -r -p "Type 'prod' to continue: " ok
     [ "$ok" = "prod" ] || { echo "aborted"; exit 1; }
     printf '%s\n' {{quote(sql)}} | ssh {{ssh_user}}@{{ssh_host}} \
-      "docker run --rm -i -v sillybus_app-data:/data --entrypoint sqlite3 {{sqlite_image}} /data/sqlite.db"
+      "docker run --rm -i --user 0 -v sillybus_app-data:/data --entrypoint sqlite3 {{sqlite_image}} /data/sqlite.db"
 
 # Interactive sqlite shell on PROD.
 [group('remote')]
 db-shell-prod: _require-host
-    ssh -t {{ssh_user}}@{{ssh_host}} "docker run --rm -it -v sillybus_app-data:/data --entrypoint sqlite3 {{sqlite_image}} /data/sqlite.db"
+    ssh -t {{ssh_user}}@{{ssh_host}} "docker run --rm -it --user 0 -v sillybus_app-data:/data --entrypoint sqlite3 {{sqlite_image}} /data/sqlite.db"
 
 # ---- housekeeping ---------------------------------------------------------
 
