@@ -59,10 +59,22 @@ jobs:
       backend: ${{ steps.filter.outputs.backend }}
       frontend: ${{ steps.filter.outputs.frontend }}
     steps:
+      # fetch-depth: 0 so paths-filter can diff before..after on PUSH events
+      # (shallow clones miss the base commit). On PRs it uses the API. Note: on
+      # push the test jobs force-run regardless of these outputs, so this job
+      # only needs to succeed there — but a wrong/failed diff would still skip
+      # the deploy (fail-safe), so we give it full history.
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
       - uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36 # v3.0.2
         id: filter
         with:
+          # `backend` must list EVERYTHING the `checks` job (clippy + nextest via
+          # `just ... ` in the `.#ci` nix shell) depends on, or a PR touching an
+          # unlisted-but-relevant file would skip backend tests. Backstop: the
+          # push-to-main deploy force-runs `checks` regardless, so a filter gap
+          # can only let a red PR merge — it can never deploy untested code.
           filters: |
             backend:
               - 'crates/**'
@@ -70,6 +82,8 @@ jobs:
               - 'Cargo.lock'
               - 'flake.nix'
               - 'flake.lock'
+              - '.cargo/**'
+              - 'justfile'
               - '.sqlx/**'
             frontend:
               - 'frontend/**'
