@@ -8,13 +8,6 @@ receivers:
   docker_stats:
     endpoint: unix:///var/run/docker.sock
     collection_interval: 60s
-  host_metrics:
-    collection_interval: 60s
-    scrapers:
-      cpu:
-      memory:
-      load:
-      disk:
   # Scrapes stub_status on the docker nginx (see nginx/default.conf, the
   # :8081/status server block). Reachable on the internal compose network.
   nginx/app:
@@ -40,8 +33,9 @@ processors:
         key: deployment.environment.name
         value: "${OTEL_ENVIRONMENT}"
   # The nginx receiver emits resourceless metrics; stamp service.name so
-  # Honeycomb routes them to the right dataset (it auto-routes metrics
-  # without an explicit dataset header by service.name).
+  # the nginx-metrics dataset has a distinguishing column per scrape target.
+  # Routing to the dataset is done via the x-honeycomb-dataset header on
+  # the otlp_http/metrics-nginx exporter, not by service.name.
   resource/nginx-app:
     attributes:
       - action: insert
@@ -116,19 +110,23 @@ exporters:
     endpoint: "https://api.honeycomb.io:443"
     headers:
       "x-honeycomb-team": "${HONEYCOMB_API_KEY}"
-  # Metrics still need explicit dataset routing because the app's metrics
-  # don't share a service.name with the metrics dataset name. Nginx
-  # metrics use service.name routing (no header) so they land alongside
-  # their traces.
+  # Metrics need explicit dataset routing; unlike traces, Honeycomb does NOT
+  # auto-route metrics by service.name. Both app metrics and nginx metrics
+  # require an x-honeycomb-dataset header.
   otlp_http/metrics:
     endpoint: "https://api.honeycomb.io:443"
     headers:
       "x-honeycomb-team": "${HONEYCOMB_API_KEY}"
       "x-honeycomb-dataset": "syllabus-tracker-metrics"
+  # Metrics do NOT route by service.name (only traces do); without an explicit
+  # dataset header these land in `unknown_metrics`. Route both nginx scrapes
+  # (app + host) to one `nginx-metrics` dataset; the service.name column
+  # distinguishes nginx-syllabus-tracker from nginx-do-host.
   otlp_http/metrics-nginx:
     endpoint: "https://api.honeycomb.io:443"
     headers:
       "x-honeycomb-team": "${HONEYCOMB_API_KEY}"
+      "x-honeycomb-dataset": "nginx-metrics"
   debug:
     verbosity: normal
 
@@ -139,7 +137,7 @@ service:
       processors: [batch, resource, tail_sampling]
       exporters: [otlp_http/traces]
     metrics:
-      receivers: [docker_stats, host_metrics, otlp]
+      receivers: [docker_stats, otlp]
       processors: [batch, resource]
       exporters: [otlp_http/metrics]
     metrics/nginx-app:

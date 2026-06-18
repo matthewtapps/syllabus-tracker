@@ -1,5 +1,5 @@
 import React, { type FormEvent, type ReactNode, useState } from 'react';
-import { recordFormSubmission } from '@/lib/telemetry';
+import { runInFormSpan } from '@/lib/telemetry';
 
 interface TracedFormProps extends React.FormHTMLAttributes<HTMLFormElement> {
   children: ReactNode;
@@ -20,22 +20,16 @@ export function TracedForm({ children, onSubmit, ...props }: TracedFormProps) {
     setIsSubmitting(true);
 
     const form = event.currentTarget;
-    const span = recordFormSubmission(
-      form.id || 'unnamed-form',
-      form.action || window.location.href,
-      form.method || 'get',
-    );
-
     try {
-      await onSubmit(event);
-      span?.addEvent('form_submit_success');
-    } catch (err) {
-      span?.addEvent('form_submit_error', {
-        'error.message': err instanceof Error ? err.message : String(err),
-      });
-      throw err;
+      await runInFormSpan(
+        {
+          formId: form.id || 'unnamed-form',
+          action: form.action || window.location.href,
+          method: form.method || 'get',
+        },
+        () => Promise.resolve(onSubmit(event)),
+      );
     } finally {
-      span?.end();
       setIsSubmitting(false);
     }
   };
