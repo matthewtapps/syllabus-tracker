@@ -12,11 +12,11 @@
 #   bootstrap credentials used to read runtime values from tofu state
 #   (same pattern as staging.yml / deploy.yaml).
 #
-# Trigger: workflow_dispatch ONLY for now.
-# Re-enable the push trigger (commented out below) once the first manual
-# deploy has succeeded and VIDEO_ENQUEUE_URL is set as a repo variable.
+# Trigger: push to main, path-filtered to the worker crates + this workflow
+# file, plus manual workflow_dispatch. The path filter keeps unrelated main
+# merges from rebuilding/redeploying the Cloud Run service.
 #
-# Post-first-deploy manual steps:
+# Post-first-deploy manual steps (already done; kept for reference):
 #   1. Note the Cloud Run service URL printed to the step summary.
 #   2. gh variable set VIDEO_ENQUEUE_URL -b "<url>/jobs" -R matthewtapps/syllabus-tracker
 #   3. gh variable set VIDEO_PROCESSOR_STAGING -b "remote" -R matthewtapps/syllabus-tracker
@@ -32,15 +32,15 @@
 name: Deploy video-worker
 
 on:
-  # Disabled until the first manual deploy has run and VIDEO_ENQUEUE_URL is set.
-  # Re-enable by uncommenting the push block below:
-  # push:
-  #   branches: [main]
-  #   paths:
-  #     - 'crates/video-worker/**'
-  #     - 'crates/video-media/**'
-  #     - 'crates/video-job/**'
-  #     - '.github/workflows/deploy-video-worker.yaml'
+  # Path-filtered: only redeploy when the worker's own code (or this workflow)
+  # changes, so unrelated merges to main don't rebuild/redeploy Cloud Run.
+  push:
+    branches: [main]
+    paths:
+      - 'crates/video-worker/**'
+      - 'crates/video-media/**'
+      - 'crates/video-job/**'
+      - '.github/workflows/deploy-video-worker.yaml'
   workflow_dispatch:
 
 permissions:

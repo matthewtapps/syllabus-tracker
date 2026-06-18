@@ -47,6 +47,47 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Detect which areas a PR touches so we only run the relevant test jobs.
+  # On push (deploy) and manual dispatch the test jobs force-run regardless
+  # (see their `if`), so this gating only narrows PR runs.
+  changes:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      backend: ${{ steps.filter.outputs.backend }}
+      frontend: ${{ steps.filter.outputs.frontend }}
+    steps:
+      # fetch-depth: 0 so paths-filter can diff before..after on PUSH events
+      # (shallow clones miss the base commit). On PRs it uses the API. Note: on
+      # push the test jobs force-run regardless of these outputs, so this job
+      # only needs to succeed there — but a wrong/failed diff would still skip
+      # the deploy (fail-safe), so we give it full history.
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+      - uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36 # v3.0.2
+        id: filter
+        with:
+          # `backend` must list EVERYTHING the `checks` job (clippy + nextest via
+          # `just ... ` in the `.#ci` nix shell) depends on, or a PR touching an
+          # unlisted-but-relevant file would skip backend tests. Backstop: the
+          # push-to-main deploy force-runs `checks` regardless, so a filter gap
+          # can only let a red PR merge — it can never deploy untested code.
+          filters: |
+            backend:
+              - 'crates/**'
+              - 'Cargo.toml'
+              - 'Cargo.lock'
+              - 'flake.nix'
+              - 'flake.lock'
+              - '.cargo/**'
+              - 'justfile'
+              - '.sqlx/**'
+            frontend:
+              - 'frontend/**'
+
   # Read platform state, expose VM_IP + host_age_ready flag.
   # host_age_ready=false means sugar-glider hasn't been bootstrapped via
   # nixos-anywhere yet, so the deploy job no-ops.
@@ -114,6 +155,10 @@ jobs:
   # runtime. Regenerate the cache locally with `just sqlx-prepare` when you
   # change a query.
   checks:
+    needs: changes
+    # Force-run on push/dispatch (deploy must always test); on PRs run only
+    # when backend-relevant files changed.
+    if: ${{ github.event_name != 'pull_request' || needs.changes.outputs.backend == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -157,6 +202,9 @@ jobs:
   # Chromium). Runs on every push and PR. Kept separate from the build
   # job so a test failure fails fast without spinning up docker buildx.
   frontend_test:
+    needs: changes
+    # Force-run on push/dispatch; on PRs run only when frontend files changed.
+    if: ${{ github.event_name != 'pull_request' || needs.changes.outputs.frontend == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -678,3 +726,25 @@ jobs:
           done
           echo "health check timed out"
           exit 1
+
+  # Single stable gate for branch protection. Always runs (so a required status
+  # check always reports), and passes when the conditional test jobs above
+  # PASSED or were SKIPPED, failing only if one actually failed/was cancelled.
+  #
+  # Make THIS the only required check on main. Do NOT require `checks` or
+  # `frontend_test` directly: they are path-filtered and a skipped job never
+  # reports its check, which would strand a required check and block merges.
+  ci-required:
+    if: always()
+    needs: [changes, checks, frontend_test]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify gating jobs passed (skipped is OK)
+        run: |
+          for r in '${{ needs.changes.result }}' '${{ needs.checks.result }}' '${{ needs.frontend_test.result }}'; do
+            case "$r" in
+              success|skipped) ;;
+              *) echo "::error::a gating job result was '$r'"; exit 1 ;;
+            esac
+          done
+          echo "All gating jobs passed or were skipped."
