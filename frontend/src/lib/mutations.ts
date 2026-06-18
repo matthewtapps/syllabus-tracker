@@ -1365,6 +1365,7 @@ import {
 import type {
   MatchResult,
   MatchMethod,
+  CampChoiceArg,
 } from "./api";
 
 export function useCreateCamp(studentId: number) {
@@ -1570,6 +1571,7 @@ export function useRegisterSelf(competitionId: number) {
     mutationFn: () => registerSelf(competitionId),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: qk.competition(competitionId) });
+      qc.invalidateQueries({ queryKey: ["camps"] });
     },
   });
 }
@@ -1577,9 +1579,11 @@ export function useRegisterSelf(competitionId: number) {
 export function useRegisterStudent(competitionId: number) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (studentId: number) => registerStudent(competitionId, studentId),
-    onSuccess: () => {
+    mutationFn: (vars: { studentId: number; choice?: CampChoiceArg }) =>
+      registerStudent(competitionId, vars.studentId, vars.choice),
+    onSuccess: (_res, vars) => {
       qc.invalidateQueries({ queryKey: qk.competition(competitionId) });
+      qc.invalidateQueries({ queryKey: qk.campsForStudent(vars.studentId) });
     },
   });
 }

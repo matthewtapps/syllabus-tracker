@@ -1,6 +1,6 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Navigate, Link, useParams } from 'react-router-dom';
-import { Award, Calendar, ExternalLink, UserPlus, UserMinus, Users } from 'lucide-react';
+import { Award, Calendar, Check, ExternalLink, UserPlus, UserMinus, Users } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -14,7 +14,18 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog';
 import { EmptyState } from '@/components/empty-state';
-import { useCompetition, useStudents } from '@/lib/queries';
+import {
+  Command,
+  CommandEmpty,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from '@/components/ui/command';
+import {
+  CampChoiceList,
+  type CampChoiceValue,
+} from '@/components/camps/camp-choice-list';
+import { useCompetition, useStudents, useCampsForStudent } from '@/lib/queries';
 import {
   useRegisterSelf,
   useRegisterStudent,
@@ -145,6 +156,7 @@ function CompetitionDetail({ competitionId }: { competitionId: number }) {
               <RegisterStudentDialog
                 competitionId={competitionId}
                 roster={roster}
+                open={registerOpen}
                 onDone={() => setRegisterOpen(false)}
               />
             </Dialog>
@@ -220,10 +232,12 @@ function CompetitionDetail({ competitionId }: { competitionId: number }) {
 function RegisterStudentDialog({
   competitionId,
   roster,
+  open,
   onDone,
 }: {
   competitionId: number;
   roster: RosterRow[];
+  open: boolean;
   onDone: () => void;
 }) {
   const studentsQuery = useStudents();
@@ -241,14 +255,43 @@ function RegisterStudentDialog({
   );
 
   const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [campChoice, setCampChoice] = useState<CampChoiceValue>({
+    kind: 'create_new',
+  });
+
+  const selectedStudent = available.find((s) => s.id === selectedId);
+
+  const campsQuery = useCampsForStudent(selectedId ?? undefined);
+  const camps = useMemo(() => campsQuery.data ?? [], [campsQuery.data]);
+
+  // Reset the whole flow when the dialog closes.
+  useEffect(() => {
+    if (!open) {
+      setSelectedId(null);
+      setCampChoice({ kind: 'create_new' });
+    }
+  }, [open]);
+
+  // Reset the camp choice whenever the selected student changes.
+  useEffect(() => {
+    setCampChoice({ kind: 'create_new' });
+  }, [selectedId]);
 
   async function handleSubmit() {
     if (selectedId == null) return;
-    const student = available.find((s) => s.id === selectedId);
     try {
-      await registerMutation.mutateAsync(selectedId);
+      await registerMutation.mutateAsync({
+        studentId: selectedId,
+        choice:
+          campChoice.kind === 'existing'
+            ? { kind: 'existing', campId: campChoice.campId }
+            : { kind: 'create_new' },
+      });
       toast.success(
-        `Registered ${(student?.display_name || student?.username) ?? 'student'}`,
+        `Registered ${
+          (selectedStudent?.display_name || selectedStudent?.username) ??
+          'student'
+        }`,
       );
       onDone();
     } catch {
@@ -276,25 +319,58 @@ function RegisterStudentDialog({
           All students are already registered.
         </p>
       ) : (
-        <div className="max-h-64 overflow-y-auto rounded border border-border">
-          <ul className="divide-y divide-border">
-            {available.map((s) => {
-              const isSelected = selectedId === s.id;
-              return (
-                <li key={s.id}>
-                  <button
-                    type="button"
-                    className={`w-full px-3 py-2.5 text-left text-sm transition-colors hover:bg-muted/40 ${
-                      isSelected ? 'bg-muted font-medium' : ''
-                    }`}
-                    onClick={() => setSelectedId(isSelected ? null : s.id)}
+        <div className="space-y-4">
+          <Command className="rounded-lg border border-border">
+            <CommandInput placeholder="Search students..." />
+            <CommandList className="max-h-48">
+              <CommandEmpty>No students found.</CommandEmpty>
+              {available.map((s) => {
+                const name = s.display_name || s.username;
+                const isSelected = selectedId === s.id;
+                return (
+                  <CommandItem
+                    key={s.id}
+                    value={name}
+                    onSelect={() =>
+                      setSelectedId(isSelected ? null : s.id)
+                    }
                   >
-                    {s.display_name || s.username}
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
+                    <Check
+                      className={`h-4 w-4 ${
+                        isSelected ? 'opacity-100' : 'opacity-0'
+                      }`}
+                      aria-hidden
+                    />
+                    {name}
+                  </CommandItem>
+                );
+              })}
+            </CommandList>
+          </Command>
+
+          {selectedId != null && (
+            <div className="space-y-2">
+              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                Camp
+              </p>
+              {campsQuery.isLoading ? (
+                <div className="space-y-2">
+                  {Array.from({ length: 2 }).map((_, i) => (
+                    <div
+                      key={i}
+                      className="h-14 animate-pulse rounded-lg bg-muted"
+                    />
+                  ))}
+                </div>
+              ) : (
+                <CampChoiceList
+                  camps={camps}
+                  value={campChoice}
+                  onChange={setCampChoice}
+                />
+              )}
+            </div>
+          )}
         </div>
       )}
 

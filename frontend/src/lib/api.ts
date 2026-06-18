@@ -2303,14 +2303,28 @@ export async function registerSelf(competitionId: number): Promise<{ id: number 
   return (await res.json()) as { id: number };
 }
 
+export type CampChoiceArg =
+  | { kind: "create_new" }
+  | { kind: "existing"; campId: number };
+
 /** Coach registers a specific student for a competition. */
 export async function registerStudent(
   competitionId: number,
   studentId: number,
+  choice: CampChoiceArg = { kind: "create_new" },
 ): Promise<{ id: number }> {
+  const body =
+    choice.kind === "existing"
+      ? { camp: { existing: choice.campId } }
+      : { camp: "create_new" };
   const res = await fetch(
     `/api/competitions/${competitionId}/register/${studentId}`,
-    { method: "POST", credentials: "include" },
+    {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    },
   );
   if (!res.ok) throw res;
   return (await res.json()) as { id: number };
