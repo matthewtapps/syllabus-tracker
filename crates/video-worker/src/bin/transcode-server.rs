@@ -80,8 +80,7 @@ pub fn check_bearer(header: Option<&str>, token: &str) -> bool {
 }
 
 // ---------------------------------------------------------------------------
-// HTTP handler — accepts /jobs explicitly; a catch-all wildcard route also
-// handles whatever path the CF runtime fetches into.
+// HTTP handler — jobs are POSTed to /jobs (see the router in `main`).
 // ---------------------------------------------------------------------------
 
 async fn handle_job(
