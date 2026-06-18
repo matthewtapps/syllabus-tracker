@@ -48,7 +48,7 @@ processors:
         value: nginx-do-host
   tail_sampling:
     decision_wait: 10s
-    num_traces: 1
+    num_traces: 50000
     policies:
       [
         {
