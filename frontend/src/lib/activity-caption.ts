@@ -63,21 +63,52 @@ export function activityCaption(row: ActivityRow): ActivityCaption {
       return { text: "Unpinned" };
     case "sst_unhidden":
       return { text: "Made visible" };
+    case "sst_hidden":
+      return { text: "Hidden" };
+    // Technique-into-container verbs: the container (syllabus) is named + linked
+    // by the breadcrumb and the technique sits in the embedded row, so the
+    // caption is just the bare verb.
     case "sst_added":
-      return { text: "Added to syllabus" };
+      return { text: "Added" };
     case "syllabus_technique_added":
-      return { text: "Added to syllabus" };
+      return { text: "Added" };
+    case "syllabus_technique_removed":
+      return { text: "Removed" };
     case "technique_edited":
       return { text: "Edited" };
+    // Syllabus-wide events: the syllabus is named + linked by the breadcrumb,
+    // so the caption is just the bare verb.
+    case "syllabus_assigned":
+      return { text: "Assigned" };
+    case "syllabus_unassigned":
+      return { text: "Unassigned" };
+    case "syllabus_graduated":
+      return { text: "Graduated" };
     case "camp_technique_added":
       // The technique is shown in the embedded row; the camp is named in the
       // breadcrumb. Caption is just the bare verb.
       return { text: "Added" };
     case "thread_comment_posted":
       return { text: "Commented" };
+    // Camp / competition / match epic: the camp or competition is named + linked
+    // by the breadcrumb, so the caption is a clean past-tense verb (the narrative
+    // activityLine verbs dangle a preposition once their trailing noun is dropped).
+    case "camp_created":
+      return { text: "Started" };
+    case "camp_archived":
+      return { text: "Archived" };
+    case "competition_created":
+      return { text: "Created" };
+    case "student_registered":
+      return { text: "Registered" };
+    case "camp_promoted_to_competition":
+      return { text: "Promoted a camp" };
+    case "match_logged":
+      return { text: "Logged a match" };
+    case "match_technique_linked":
+      return { text: "Linked to a match" };
     default:
-      // Plain narrative verb (covers syllabus assign/graduate, camp/competition,
-      // etc. where there is no tile to lean on).
+      // Plain narrative verb fallback for any verb without a tailored caption.
       return { text: activityLine(row).verb };
   }
 }

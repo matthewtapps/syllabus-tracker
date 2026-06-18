@@ -252,7 +252,7 @@ describe("rowToViewContext", () => {
   test("unrelated verb returns null", () => {
     expect(
       rowToViewContext({
-        verb: "syllabus_assigned",
+        verb: "technique_pinned",
         context_kind: null,
         target_student_id: 4,
         syllabus_id: 2,
@@ -264,6 +264,29 @@ describe("rowToViewContext", () => {
         match_id: null,
       }),
     ).toBeNull();
+  });
+  test("syllabus-wide events resolve to the student's syllabus surface", () => {
+    for (const verb of ["syllabus_assigned", "syllabus_unassigned", "syllabus_graduated"]) {
+      const ctx = rowToViewContext({
+        verb,
+        context_kind: null,
+        target_student_id: 4,
+        syllabus_id: 2,
+        sst_id: null,
+        technique_id: null,
+        video_id: null,
+        camp_id: null,
+        competition_id: null,
+        match_id: null,
+      });
+      expect(ctx).toEqual({
+        kind: "syllabus",
+        student: { type: "student", id: 4 },
+        syllabus: { type: "syllabus", id: 2 },
+      });
+      // No sst to focus: the deep link degrades to the bare surface page.
+      expect(viewContextHref(ctx!)).toBe("/student/4/syllabi/2");
+    }
   });
 });
 
@@ -319,10 +342,27 @@ describe("activitySurface", () => {
       }),
     ).toEqual({ kind: "library", label: "Global Technique Library" });
   });
+  test("syllabus-wide event shows the syllabus name chip", () => {
+    expect(
+      activitySurface({
+        verb: "syllabus_graduated",
+        context_kind: null,
+        target_student_id: 4,
+        syllabus_id: 2,
+        sst_id: null,
+        technique_id: null,
+        video_id: null,
+        camp_id: null,
+        competition_id: null,
+        match_id: null,
+        syllabus_name: "Blue Belt",
+      }),
+    ).toEqual({ kind: "syllabus", label: "Blue Belt" });
+  });
   test("no resolvable surface returns null", () => {
     expect(
       activitySurface({
-        verb: "syllabus_assigned",
+        verb: "technique_pinned",
         context_kind: null,
         target_student_id: 4,
         syllabus_id: 2,
@@ -423,7 +463,7 @@ describe("competition and match deep links", () => {
     expect(viewContextHref(ctx!)).toBe("/competitions/5");
   });
 
-  it("routes a camp_promoted_to_competition row to the camp page", () => {
+  it("routes a camp_promoted_to_competition row to the competition page", () => {
     const ctx = rowToViewContext({
       verb: "camp_promoted_to_competition",
       context_kind: "competition",
@@ -437,7 +477,8 @@ describe("competition and match deep links", () => {
       match_id: null,
     });
     expect(ctx).not.toBeNull();
-    expect(viewContextHref(ctx!)).toBe("/camps/7?focus=camp:7");
+    // The event is "promoted TO competition": surface names + links the competition.
+    expect(viewContextHref(ctx!)).toBe("/competitions/5");
   });
 
   it("routes a match_logged row to the owning camp page", () => {

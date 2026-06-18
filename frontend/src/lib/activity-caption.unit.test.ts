@@ -55,9 +55,16 @@ describe("activityCaption", () => {
     expect(activityCaption(row({ verb: "thread_comment_posted" })).text).toBe("Commented");
   });
 
+  it("gives bare verbs for syllabus-wide events (the syllabus is in the breadcrumb)", () => {
+    const base = { technique_id: null, sst_id: null };
+    expect(activityCaption(row({ verb: "syllabus_assigned", ...base })).text).toBe("Assigned");
+    expect(activityCaption(row({ verb: "syllabus_unassigned", ...base })).text).toBe("Unassigned");
+    expect(activityCaption(row({ verb: "syllabus_graduated", ...base })).text).toBe("Graduated");
+  });
+
   it("falls back to the narrative verb for untailored verbs", () => {
     const cap = activityCaption(
-      row({ verb: "syllabus_graduated", technique_id: null, sst_id: null }),
+      row({ verb: "syllabus_technique_removed", technique_id: null, sst_id: null }),
     );
     expect(cap.text.length).toBeGreaterThan(0);
     expect(cap.statusLabel).toBeUndefined();
