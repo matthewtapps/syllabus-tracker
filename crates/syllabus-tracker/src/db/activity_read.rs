@@ -40,11 +40,17 @@ pub struct ActivityRow {
     pub video_title: Option<String>,
     pub thread_id: Option<i64>,
     pub camp_id: Option<i64>,
+    pub camp_name: Option<String>,
     pub competition_id: Option<i64>,
+    pub competition_name: Option<String>,
     pub match_id: Option<i64>,
     pub payload_json: Option<String>,
     pub unread: bool,
     pub context_kind: Option<String>,
+    /// For a coalesced `thread_comment_posted` row: how many comment events
+    /// (the thread opener plus replies) the thread carries. 1 for a lone
+    /// thread; 0 for every non-thread verb.
+    pub comment_count: i64,
 }
 
 /// Return the current `max_seen_id` for `viewer`, or 0 if no cursor row exists.
@@ -215,7 +221,18 @@ pub async fn feed(
     match role {
         Role::Student => {
             let rows = sqlx::query!(
-                r#"SELECT act.id               AS "id!: i64",
+                r#"WITH thread_ranked AS (
+                       -- Rank a thread's comment events newest-first and count
+                       -- them, so the feed can keep one row per thread (rn = 1)
+                       -- and show how many comments it carries. Scoped to comment
+                       -- rows only; every other verb is absent from the CTE.
+                       SELECT id,
+                              ROW_NUMBER() OVER (PARTITION BY thread_id ORDER BY id DESC) AS rn,
+                              COUNT(*)     OVER (PARTITION BY thread_id)                  AS comment_count
+                       FROM activity
+                       WHERE verb = 'thread_comment_posted' AND thread_id IS NOT NULL
+                   )
+                   SELECT act.id               AS "id!: i64",
                           act.occurred_at      AS "occurred_at!: String",
                           act.verb             AS "verb!: String",
                           act.actor_user_id    AS "actor_user_id!: i64",
@@ -231,8 +248,11 @@ pub async fn feed(
                           v.title              AS "video_title?: String",
                           act.thread_id        AS "thread_id?: i64",
                           act.camp_id          AS "camp_id?: i64",
+                          cp.name              AS "camp_name?: String",
                           act.competition_id   AS "competition_id?: i64",
+                          co.name              AS "competition_name?: String",
                           act.match_id         AS "match_id?: i64",
+                          COALESCE(tr.comment_count, 0) AS "comment_count!: i64",
                           act.payload_json     AS "payload_json?: String",
                           act.context_kind     AS "context_kind?: String",
                           CASE
@@ -248,6 +268,9 @@ pub async fn feed(
                    LEFT JOIN syllabi s    ON s.id = act.syllabus_id
                    LEFT JOIN videos v     ON v.id = act.video_id
                    LEFT JOIN threads th   ON th.id = act.thread_id
+                   LEFT JOIN camps cp     ON cp.id = act.camp_id
+                   LEFT JOIN competitions co ON co.id = act.competition_id
+                   LEFT JOIN thread_ranked tr ON tr.id = act.id
                    LEFT JOIN activity_cursors c
                           ON c.viewer_user_id = ?
                    LEFT JOIN activity_seen_overrides ov
@@ -289,6 +312,12 @@ pub async fn feed(
                      -- "watched a video" / "commented on" lines with no link.
                      AND (act.video_id IS NULL OR (v.id IS NOT NULL AND v.deleted_at IS NULL))
                      AND (act.thread_id IS NULL OR (th.id IS NOT NULL AND th.deleted_at IS NULL))
+                     -- Coalesce a thread's comment events into one feed row: keep
+                     -- only the newest (rn = 1, per the thread_ranked CTE) comment
+                     -- row per thread. Every row in a thread shares the same anchor
+                     -- and target, so the viewer-relevance predicate above holds
+                     -- for the kept row just as it did for the dropped ones.
+                     AND (act.verb != 'thread_comment_posted' OR tr.rn = 1)
                      AND (? IS NULL OR (act.occurred_at, act.id) < (?, ?))
                    ORDER BY act.occurred_at DESC, act.id DESC
                    LIMIT ?"#,
@@ -328,18 +357,32 @@ pub async fn feed(
                         video_title: r.video_title,
                         thread_id: r.thread_id,
                         camp_id: r.camp_id,
+                        camp_name: r.camp_name,
                         competition_id: r.competition_id,
+                        competition_name: r.competition_name,
                         match_id: r.match_id,
                         payload_json: r.payload_json,
                         unread,
                         context_kind: r.context_kind,
+                        comment_count: r.comment_count,
                     }
                 })
                 .collect())
         }
         Role::Coach | Role::Admin => {
             let rows = sqlx::query!(
-                r#"SELECT act.id               AS "id!: i64",
+                r#"WITH thread_ranked AS (
+                       -- Rank a thread's comment events newest-first and count
+                       -- them, so the feed can keep one row per thread (rn = 1)
+                       -- and show how many comments it carries. Scoped to comment
+                       -- rows only; every other verb is absent from the CTE.
+                       SELECT id,
+                              ROW_NUMBER() OVER (PARTITION BY thread_id ORDER BY id DESC) AS rn,
+                              COUNT(*)     OVER (PARTITION BY thread_id)                  AS comment_count
+                       FROM activity
+                       WHERE verb = 'thread_comment_posted' AND thread_id IS NOT NULL
+                   )
+                   SELECT act.id               AS "id!: i64",
                           act.occurred_at      AS "occurred_at!: String",
                           act.verb             AS "verb!: String",
                           act.actor_user_id    AS "actor_user_id!: i64",
@@ -355,8 +398,11 @@ pub async fn feed(
                           v.title              AS "video_title?: String",
                           act.thread_id        AS "thread_id?: i64",
                           act.camp_id          AS "camp_id?: i64",
+                          cp.name              AS "camp_name?: String",
                           act.competition_id   AS "competition_id?: i64",
+                          co.name              AS "competition_name?: String",
                           act.match_id         AS "match_id?: i64",
+                          COALESCE(tr.comment_count, 0) AS "comment_count!: i64",
                           act.payload_json     AS "payload_json?: String",
                           act.context_kind     AS "context_kind?: String",
                           CASE
@@ -372,6 +418,9 @@ pub async fn feed(
                    LEFT JOIN syllabi s    ON s.id = act.syllabus_id
                    LEFT JOIN videos v     ON v.id = act.video_id
                    LEFT JOIN threads th   ON th.id = act.thread_id
+                   LEFT JOIN camps cp     ON cp.id = act.camp_id
+                   LEFT JOIN competitions co ON co.id = act.competition_id
+                   LEFT JOIN thread_ranked tr ON tr.id = act.id
                    LEFT JOIN activity_cursors c
                           ON c.viewer_user_id = ?
                    LEFT JOIN activity_seen_overrides ov
@@ -384,6 +433,12 @@ pub async fn feed(
                      -- wiped (orphaned activity), so they don't render as dead
                      -- "watched a video" / "commented on" lines with no link.
                      AND (act.thread_id IS NULL OR (th.id IS NOT NULL AND th.deleted_at IS NULL))
+                     -- Coalesce a thread's comment events into one feed row: keep
+                     -- only the newest (rn = 1, per the thread_ranked CTE) comment
+                     -- row per thread. Every row in a thread shares the same anchor
+                     -- and target, so the viewer-relevance predicate above holds
+                     -- for the kept row just as it did for the dropped ones.
+                     AND (act.verb != 'thread_comment_posted' OR tr.rn = 1)
                      AND (? IS NULL OR (act.occurred_at, act.id) < (?, ?))
                    ORDER BY act.occurred_at DESC, act.id DESC
                    LIMIT ?"#,
@@ -419,11 +474,14 @@ pub async fn feed(
                         video_title: r.video_title,
                         thread_id: r.thread_id,
                         camp_id: r.camp_id,
+                        camp_name: r.camp_name,
                         competition_id: r.competition_id,
+                        competition_name: r.competition_name,
                         match_id: r.match_id,
                         payload_json: r.payload_json,
                         unread,
                         context_kind: r.context_kind,
+                        comment_count: r.comment_count,
                     }
                 })
                 .collect())
@@ -534,11 +592,16 @@ pub async fn dashboard_activity_feed(
             video_title: r.video_title,
             thread_id: None,
             camp_id: r.camp_id,
+            // The dashboard glance does not join camps/competitions (it never
+            // deep-links into those gated surfaces), so names stay None here.
+            camp_name: None,
             competition_id: r.competition_id,
+            competition_name: None,
             match_id: r.match_id,
             payload_json: r.payload_json,
             unread: false,
             context_kind: r.context_kind,
+            comment_count: 0,
         })
         .collect())
 }

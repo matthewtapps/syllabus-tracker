@@ -587,29 +587,6 @@ CREATE TABLE IF NOT EXISTS thread_comments (
 );
 CREATE INDEX IF NOT EXISTS idx_thread_comments_thread ON thread_comments(thread_id, created_at);
 
--- Student-initiated technique suggestions, created from footage review.
--- A student flags a technique they want added to a camp; a coach approves,
--- replaces with a related technique, or dismisses. On approve/replace the
--- chosen technique is automatically added to the given camp.
-CREATE TABLE IF NOT EXISTS technique_suggestions (
-    id                       INTEGER PRIMARY KEY AUTOINCREMENT,
-    student_id               INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    technique_id             INTEGER NOT NULL REFERENCES techniques(id) ON DELETE CASCADE,
-    anchor_video_id          INTEGER REFERENCES videos(id) ON DELETE SET NULL,
-    anchor_seconds           INTEGER,
-    status                   TEXT NOT NULL DEFAULT 'pending'
-                                   CHECK (status IN ('pending','approved','replaced','dismissed')),
-    created_at               TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    decided_by_id            INTEGER REFERENCES users(id) ON DELETE SET NULL,
-    decided_at               TIMESTAMP,
-    replacement_technique_id INTEGER REFERENCES techniques(id) ON DELETE SET NULL,
-    decided_camp_id          INTEGER REFERENCES camps(id) ON DELETE SET NULL
-);
-CREATE INDEX IF NOT EXISTS idx_ts_status_created
-    ON technique_suggestions (status, created_at);
-CREATE INDEX IF NOT EXISTS idx_ts_student
-    ON technique_suggestions (student_id);
-
 -- Litestream-owned bookkeeping tables. Declared here only so the migration
 -- engine recognises them as expected and doesn't try to drop them. Litestream
 -- creates and maintains the rows; the app never reads or writes them.

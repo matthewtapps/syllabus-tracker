@@ -1,0 +1,158 @@
+{
+  "db_name": "SQLite",
+  "query": "WITH thread_ranked AS (\n                       -- Rank a thread's comment events newest-first and count\n                       -- them, so the feed can keep one row per thread (rn = 1)\n                       -- and show how many comments it carries. Scoped to comment\n                       -- rows only; every other verb is absent from the CTE.\n                       SELECT id,\n                              ROW_NUMBER() OVER (PARTITION BY thread_id ORDER BY id DESC) AS rn,\n                              COUNT(*)     OVER (PARTITION BY thread_id)                  AS comment_count\n                       FROM activity\n                       WHERE verb = 'thread_comment_posted' AND thread_id IS NOT NULL\n                   )\n                   SELECT act.id               AS \"id!: i64\",\n                          act.occurred_at      AS \"occurred_at!: String\",\n                          act.verb             AS \"verb!: String\",\n                          act.actor_user_id    AS \"actor_user_id!: i64\",\n                          u.display_name       AS \"actor_name?: String\",\n                          act.target_student_id AS \"target_student_id?: i64\",\n                          tu.display_name      AS \"target_student_name?: String\",\n                          act.technique_id     AS \"technique_id?: i64\",\n                          t.name               AS \"technique_name?: String\",\n                          act.syllabus_id      AS \"syllabus_id?: i64\",\n                          s.name               AS \"syllabus_name?: String\",\n                          act.sst_id           AS \"sst_id?: i64\",\n                          act.video_id         AS \"video_id?: i64\",\n                          v.title              AS \"video_title?: String\",\n                          act.thread_id        AS \"thread_id?: i64\",\n                          act.camp_id          AS \"camp_id?: i64\",\n                          cp.name              AS \"camp_name?: String\",\n                          act.competition_id   AS \"competition_id?: i64\",\n                          co.name              AS \"competition_name?: String\",\n                          act.match_id         AS \"match_id?: i64\",\n                          COALESCE(tr.comment_count, 0) AS \"comment_count!: i64\",\n                          act.payload_json     AS \"payload_json?: String\",\n                          act.context_kind     AS \"context_kind?: String\",\n                          CASE\n                            WHEN ov.seen = 1 THEN 0\n                            WHEN ov.seen = 0 THEN 1\n                            WHEN act.id <= COALESCE(c.max_seen_id, 0) THEN 0\n                            ELSE 1\n                          END AS \"is_after_cursor!: i64\"\n                   FROM activity act\n                   LEFT JOIN users u      ON u.id = act.actor_user_id\n                   LEFT JOIN users tu     ON tu.id = act.target_student_id\n                   LEFT JOIN techniques t ON t.id = act.technique_id\n                   LEFT JOIN syllabi s    ON s.id = act.syllabus_id\n                   LEFT JOIN videos v     ON v.id = act.video_id\n                   LEFT JOIN threads th   ON th.id = act.thread_id\n                   LEFT JOIN camps cp     ON cp.id = act.camp_id\n                   LEFT JOIN competitions co ON co.id = act.competition_id\n                   LEFT JOIN thread_ranked tr ON tr.id = act.id\n                   LEFT JOIN activity_cursors c\n                          ON c.viewer_user_id = ?\n                   LEFT JOIN activity_seen_overrides ov\n                          ON ov.viewer_user_id = ? AND ov.activity_id = act.id\n                   -- The gym feed is a social feed: every gym row, including the\n                   -- viewer's own actions (own rows just render already-read via\n                   -- notifies()). No actor filter here.\n                   WHERE (act.video_id IS NULL OR (v.id IS NOT NULL AND v.deleted_at IS NULL))\n                     -- Hide rows whose referenced video/thread was deleted or\n                     -- wiped (orphaned activity), so they don't render as dead\n                     -- \"watched a video\" / \"commented on\" lines with no link.\n                     AND (act.thread_id IS NULL OR (th.id IS NOT NULL AND th.deleted_at IS NULL))\n                     -- Coalesce a thread's comment events into one feed row: keep\n                     -- only the newest (rn = 1, per the thread_ranked CTE) comment\n                     -- row per thread. Every row in a thread shares the same anchor\n                     -- and target, so the viewer-relevance predicate above holds\n                     -- for the kept row just as it did for the dropped ones.\n                     AND (act.verb != 'thread_comment_posted' OR tr.rn = 1)\n                     AND (? IS NULL OR (act.occurred_at, act.id) < (?, ?))\n                   ORDER BY act.occurred_at DESC, act.id DESC\n                   LIMIT ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "id!: i64",
+        "ordinal": 0,
+        "type_info": "Integer"
+      },
+      {
+        "name": "occurred_at!: String",
+        "ordinal": 1,
+        "type_info": "Datetime"
+      },
+      {
+        "name": "verb!: String",
+        "ordinal": 2,
+        "type_info": "Text"
+      },
+      {
+        "name": "actor_user_id!: i64",
+        "ordinal": 3,
+        "type_info": "Integer"
+      },
+      {
+        "name": "actor_name?: String",
+        "ordinal": 4,
+        "type_info": "Text"
+      },
+      {
+        "name": "target_student_id?: i64",
+        "ordinal": 5,
+        "type_info": "Integer"
+      },
+      {
+        "name": "target_student_name?: String",
+        "ordinal": 6,
+        "type_info": "Text"
+      },
+      {
+        "name": "technique_id?: i64",
+        "ordinal": 7,
+        "type_info": "Integer"
+      },
+      {
+        "name": "technique_name?: String",
+        "ordinal": 8,
+        "type_info": "Text"
+      },
+      {
+        "name": "syllabus_id?: i64",
+        "ordinal": 9,
+        "type_info": "Integer"
+      },
+      {
+        "name": "syllabus_name?: String",
+        "ordinal": 10,
+        "type_info": "Text"
+      },
+      {
+        "name": "sst_id?: i64",
+        "ordinal": 11,
+        "type_info": "Integer"
+      },
+      {
+        "name": "video_id?: i64",
+        "ordinal": 12,
+        "type_info": "Integer"
+      },
+      {
+        "name": "video_title?: String",
+        "ordinal": 13,
+        "type_info": "Text"
+      },
+      {
+        "name": "thread_id?: i64",
+        "ordinal": 14,
+        "type_info": "Integer"
+      },
+      {
+        "name": "camp_id?: i64",
+        "ordinal": 15,
+        "type_info": "Integer"
+      },
+      {
+        "name": "camp_name?: String",
+        "ordinal": 16,
+        "type_info": "Text"
+      },
+      {
+        "name": "competition_id?: i64",
+        "ordinal": 17,
+        "type_info": "Integer"
+      },
+      {
+        "name": "competition_name?: String",
+        "ordinal": 18,
+        "type_info": "Text"
+      },
+      {
+        "name": "match_id?: i64",
+        "ordinal": 19,
+        "type_info": "Integer"
+      },
+      {
+        "name": "comment_count!: i64",
+        "ordinal": 20,
+        "type_info": "Integer"
+      },
+      {
+        "name": "payload_json?: String",
+        "ordinal": 21,
+        "type_info": "Text"
+      },
+      {
+        "name": "context_kind?: String",
+        "ordinal": 22,
+        "type_info": "Text"
+      },
+      {
+        "name": "is_after_cursor!: i64",
+        "ordinal": 23,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 6
+    },
+    "nullable": [
+      true,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      false,
+      true,
+      false,
+      true,
+      true,
+      false,
+      true,
+      true,
+      false,
+      true,
+      false,
+      true,
+      false,
+      true,
+      true,
+      false
+    ]
+  },
+  "hash": "cf5cd8eaf609c43590033c15fcd017c9793815375c727e2051ab7c27127f9b83"
+}

@@ -11,7 +11,6 @@ pub mod db;
 pub mod env;
 pub mod error;
 pub mod models;
-pub mod suggestions;
 pub mod syllabi;
 pub mod telemetry;
 pub mod threads;

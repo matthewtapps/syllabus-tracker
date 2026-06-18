@@ -2049,6 +2049,33 @@ pub async fn api_activity_feed(
 }
 
 #[derive(Serialize)]
+pub struct FeedHeadIdResponse {
+    /// The id of the row that currently sits at the TOP of the viewer's feed
+    /// under the real ordering (occurred_at DESC, id DESC), post-coalescing and
+    /// relevance. NOT `MAX(id)`: with backdated rows the newest-by-time head can
+    /// have a lower id than a later-inserted-but-backdated row, which would make
+    /// a `MAX(id) > head` pill stick forever.
+    pub head_id: i64,
+}
+
+/// `GET /api/activity/feed/head_id`
+///
+/// The id at the top of the viewer's feed, WITHOUT advancing the read cursor
+/// (unlike `/activity/feed`). The client polls this and shows the "new activity"
+/// pill when it differs from the id at the top of its loaded feed. Reuses
+/// `feed(.., limit 1)` so the ordering/coalescing/relevance exactly match the
+/// real feed. (The unread count can't drive this: loading the feed clears it.)
+#[get("/activity/feed/head_id")]
+pub async fn api_activity_feed_head_id(
+    user: User,
+    db: &State<Pool<Sqlite>>,
+) -> ApiResult<Json<FeedHeadIdResponse>> {
+    let head = feed(db, user.id, user.role.clone(), None, 1).await?;
+    let head_id = head.first().map(|r| r.id).unwrap_or(0);
+    Ok(Json(FeedHeadIdResponse { head_id }))
+}
+
+#[derive(Serialize)]
 pub struct UnreadCountResponse {
     pub count: i64,
 }
