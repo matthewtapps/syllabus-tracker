@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT target_student_id AS \"t?: i64\"\n               FROM activity WHERE verb = 'video_added'\n               ORDER BY target_student_id NULLS LAST",
+  "query": "SELECT target_student_id AS \"t?: i64\"\n               FROM activity WHERE verb = 'video_added'",
   "describe": {
     "columns": [
       {
@@ -16,5 +16,5 @@
       true
     ]
   },
-  "hash": "cc53835141a541863ca852d8b146cca9e1c80e4f71fcfcf49073fb23484136d2"
+  "hash": "61ab01dff2f2d6b14ef04d868833d6e7f178e0c6ae9f803879e10145017607d8"
 }

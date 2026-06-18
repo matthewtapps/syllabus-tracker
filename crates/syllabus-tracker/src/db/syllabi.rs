@@ -10,7 +10,7 @@ use serde::Serialize;
 use sqlx::{Pool, Sqlite};
 use tracing::instrument;
 
-use crate::db::activity::{NewActivity, Verb, affected_students_for_syllabus, emit_fanout};
+use crate::db::activity::{NewActivity, Verb, emit_broadcast};
 use crate::error::AppError;
 use crate::models::Tag;
 
@@ -317,15 +317,13 @@ pub async fn add_technique_to_syllabus(
         }
     }
 
-    // Fan-out is unconditional on propagation mode: record the coach action
-    // for every active student even when SyllabusOnly skips SST materialisation.
-    let affected = affected_students_for_syllabus(&mut tx, syllabus_id).await?;
-    emit_fanout(
+    // One broadcast row records the coach action regardless of propagation mode;
+    // student feeds resolve who sees it at read time.
+    emit_broadcast(
         &mut tx,
         NewActivity::new(Verb::SyllabusTechniqueAdded, coach_id)
             .syllabus(syllabus_id)
             .technique(technique_id),
-        &affected,
     )
     .await?;
 
@@ -405,14 +403,12 @@ pub async fn remove_technique_from_syllabus(
         .await?;
     }
 
-    // Fan-out is unconditional on propagation mode.
-    let affected = affected_students_for_syllabus(&mut tx, syllabus_id).await?;
-    emit_fanout(
+    // One broadcast row; student feeds resolve who sees it at read time.
+    emit_broadcast(
         &mut tx,
         NewActivity::new(Verb::SyllabusTechniqueRemoved, coach_id)
             .syllabus(syllabus_id)
             .technique(technique_id),
-        &affected,
     )
     .await?;
 

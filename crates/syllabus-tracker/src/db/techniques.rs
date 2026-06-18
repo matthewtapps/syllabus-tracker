@@ -6,7 +6,7 @@ use sqlx::{Pool, Sqlite};
 use tracing::{info, instrument};
 
 use crate::db::activity::{
-    NewActivity, Verb, affected_students_for_technique, emit_fanout, payload,
+    NewActivity, Verb, emit_broadcast, payload,
 };
 use crate::error::AppError;
 use crate::models::{AttemptBucket, Tag, Technique};
@@ -337,8 +337,7 @@ pub async fn update_technique(
     .await?;
 
     if name_changed || description_changed {
-        let affected = affected_students_for_technique(&mut tx, technique_id).await?;
-        emit_fanout(
+        emit_broadcast(
             &mut tx,
             NewActivity::new(Verb::TechniqueEdited, actor_id)
                 .technique(technique_id)
@@ -348,7 +347,6 @@ pub async fn update_technique(
                     &[],
                     &[],
                 )),
-            &affected,
         )
         .await?;
     }

@@ -5,7 +5,7 @@ use sqlx::{Pool, Sqlite};
 use tracing::{info, instrument};
 
 use crate::db::activity::{
-    NewActivity, Verb, affected_students_for_technique, emit, emit_fanout, payload,
+    NewActivity, Verb, emit, emit_broadcast, payload,
 };
 use crate::error::AppError;
 use crate::models::{DbVideo, ProcessingStatus, Video, VideoKind};
@@ -246,13 +246,11 @@ pub async fn create_processing_video(
     .await?;
     let video_id = res.last_insert_rowid();
     if let VideoParent::Technique(technique_id) = parent {
-        let affected = affected_students_for_technique(&mut tx, technique_id).await?;
-        emit_fanout(
+        emit_broadcast(
             &mut tx,
             NewActivity::new(Verb::VideoAdded, uploaded_by_id)
                 .video(video_id)
                 .technique(technique_id),
-            &affected,
         )
         .await?;
     }
@@ -313,13 +311,11 @@ pub async fn create_external_video(
     .await?;
     let video_id = res.last_insert_rowid();
     if let VideoParent::Technique(technique_id) = input.parent {
-        let affected = affected_students_for_technique(&mut tx, technique_id).await?;
-        emit_fanout(
+        emit_broadcast(
             &mut tx,
             NewActivity::new(Verb::VideoAdded, uploaded_by_id)
                 .video(video_id)
                 .technique(technique_id),
-            &affected,
         )
         .await?;
     }
@@ -1360,14 +1356,12 @@ pub async fn set_video_hidden_globally(
     // Only technique-parented videos have syllabus students to fan out to.
     // Profile/thread/loose videos have no such audience, so skip the emit.
     if let Some(technique_id) = technique_id {
-        let affected = affected_students_for_technique(&mut tx, technique_id).await?;
-        emit_fanout(
+        emit_broadcast(
             &mut tx,
             NewActivity::new(Verb::VideoVisibilitySet, actor_id)
                 .video(video_id)
                 .technique(technique_id)
                 .payload(payload::video_visibility_set("global", !hidden)),
-            &affected,
         )
         .await?;
     }
