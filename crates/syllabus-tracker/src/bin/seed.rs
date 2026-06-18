@@ -2,11 +2,21 @@
 //! admin, ~25 techniques, ~14 students, five named syllabi with curated
 //! membership, per-student syllabus assignments with backdated SST progress,
 //! syllabus attempts, pinned techniques, external YouTube videos, video watch
-//! aggregates, and a backdated activity log. All seed entities use `demo_`
-//! username/tag prefixes so they're easy to spot and remove. Safe to re-run:
-//! existing rows are detected and left alone (INSERT OR IGNORE + explicit
-//! existence checks). Pure new stack: no writes to the legacy
-//! `student_techniques`, `attempts`, or `collections` tables.
+//! aggregates, and a backdated activity log. On top of that it seeds the
+//! social layer so every feature surface has something to look at: discussion
+//! threads with replies (technique / video / video-timestamp / sst / profile
+//! anchors), camps with referenced footage, and competitions with registrations
+//! and logged matches.
+//!
+//! The core stack (users .. activity backfill) is idempotent: existing rows are
+//! detected and left alone (INSERT OR IGNORE + explicit existence checks). The
+//! social/camp/competition phases run AFTER the activity backfill (so their
+//! live-emitted activity rows survive the rebuild) and are made re-run safe by
+//! clearing their own feature tables before recreating them. Those tables hold
+//! only demo data on a seeded dev DB, so the wipe is local to the demo.
+//! All seed entities use `demo_` username/tag prefixes so they're easy to spot.
+//! Pure new stack: no writes to the legacy `student_techniques`, `attempts`,
+//! or `collections` tables.
 //!
 //! Run with `just seed` (which runs `just migrate` first to ensure the schema
 //! is in place).
@@ -19,9 +29,13 @@ use chrono::{Duration, NaiveDateTime, Utc};
 use sqlx::SqlitePool;
 use sqlx::sqlite::SqliteConnectOptions;
 use syllabus_tracker::auth::Role;
+use syllabus_tracker::db;
+use syllabus_tracker::db::camps::NewCamp;
+use syllabus_tracker::db::matches::{MatchMethod, MatchResult};
 use syllabus_tracker::db::{
-    NewExternalVideo, VideoParent, add_tag_to_technique, create_external_video, create_syllabus,
-    create_tag, create_technique, create_user, find_user_by_username, get_tag_by_name,
+    Anchor, AnchorKind, NewExternalVideo, NewThread, ThreadVisibility, VideoParent,
+    add_tag_to_technique, create_comment, create_external_video, create_syllabus, create_tag,
+    create_technique, create_thread, create_user, find_user_by_username, get_tag_by_name,
     run_backfill, run_cursor_init,
 };
 use syllabus_tracker::env;
@@ -407,6 +421,79 @@ async fn ensure_syllabus(
     Ok((id, ItemOutcome::Created))
 }
 
+/// Backdate the most-recently emitted activity row to `ts`. The live thread /
+/// camp / match / competition / suggestion helpers stamp `now()` on the row
+/// they emit; the demo wants historical spread so the feed orders believably.
+/// Call immediately after the helper, before any other emit, so `MAX(id)` is
+/// still the row we just wrote.
+async fn backdate_last_activity(pool: &SqlitePool, ts: NaiveDateTime) -> Result<()> {
+    sqlx::query("UPDATE activity SET occurred_at = ? WHERE id = (SELECT MAX(id) FROM activity)")
+        .bind(ts)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+/// Create one thread plus its (top-level) replies via the live helpers, then
+/// backdate the thread row, every comment row, and each emitted activity row so
+/// the conversation sits at `started` and steps forward by the per-reply hour
+/// offsets. Returns the new thread id (cameos in camp references). `replies` is
+/// `(author_id, body, hours_after_start)`.
+#[allow(clippy::too_many_arguments)]
+async fn seed_thread_with_replies(
+    pool: &SqlitePool,
+    reporter: &TerminalSeedReporter,
+    author_id: i64,
+    anchor: Anchor,
+    visibility: ThreadVisibility,
+    scope_student_id: Option<i64>,
+    body: &str,
+    started: NaiveDateTime,
+    replies: &[(i64, &str, i64)],
+) -> Result<i64> {
+    let thread_id = create_thread(
+        pool,
+        NewThread {
+            author_id,
+            anchor,
+            visibility,
+            scope_student_id,
+            body: body.to_string(),
+        },
+    )
+    .await?;
+    sqlx::query("UPDATE threads SET created_at = ?, last_activity_at = ? WHERE id = ?")
+        .bind(started)
+        .bind(started)
+        .bind(thread_id)
+        .execute(pool)
+        .await?;
+    backdate_last_activity(pool, started).await?;
+    reporter.phase_item(ItemOutcome::Created);
+
+    let mut last = started;
+    for (reply_author, reply_body, hours_after) in replies {
+        let comment_id = create_comment(pool, thread_id, None, *reply_author, reply_body).await?;
+        let comment_time = started + Duration::hours(*hours_after);
+        sqlx::query("UPDATE thread_comments SET created_at = ? WHERE id = ?")
+            .bind(comment_time)
+            .bind(comment_id)
+            .execute(pool)
+            .await?;
+        backdate_last_activity(pool, comment_time).await?;
+        last = comment_time;
+        reporter.phase_item(ItemOutcome::Created);
+    }
+    // Bump the thread's last-activity to the final reply so the read side orders
+    // it by genuine recency rather than the now() each comment stamped.
+    sqlx::query("UPDATE threads SET last_activity_at = ? WHERE id = ?")
+        .bind(last)
+        .bind(thread_id)
+        .execute(pool)
+        .await?;
+    Ok(thread_id)
+}
+
 #[tokio::main]
 async fn main() -> ExitCode {
     if let Err(e) = run().await {
@@ -439,6 +526,10 @@ async fn run() -> Result<()> {
         "Attaching external videos",    // 12
         "Seeding video watch data",     // 13
         "Rebuilding activity log",      // 14
+        "Seeding discussion threads",   // 15
+        "Seeding competitions + matches", // 16
+        "Seeding camps",                // 17
+        "Refreshing activity cursors",  // 18
     ];
     reporter.seed_started(&phases);
 
@@ -1142,6 +1233,506 @@ async fn run() -> Result<()> {
         counts.graduations,
         counts.pins,
     );
+
+    // ------------------------------------------------------------------
+    // Social / camp / competition layer.
+    //
+    // These run AFTER the activity rebuild (phase 14) so their live-emitted
+    // activity rows are not wiped by the backfill's DELETE. Each phase clears
+    // its own feature tables first, so re-running the seed replaces rather than
+    // duplicates. The live helpers stamp `now()` on the activity they emit;
+    // `backdate_last_activity` / `seed_thread_with_replies` push those back to a
+    // realistic spread so the feed orders believably.
+    // ------------------------------------------------------------------
+
+    // Resolve a few ids the social content hangs off. `.get(..).copied()` keeps
+    // the seed resilient if a technique/video is renamed out from under it.
+    let tid_of = |name: &str| technique_by_name.get(name).copied();
+    let first_video = |name: &str| {
+        video_ids_by_technique
+            .get(name)
+            .and_then(|v| v.first())
+            .copied()
+    };
+
+    // 15. Discussion threads (with replies). Broadcast threads on shared library
+    //     nouns drive the gym-wide comment tiles; private threads scoped to a
+    //     student show on that student's feed.
+    reporter.phase_started(phases[15], None);
+    sqlx::query("DELETE FROM thread_comments")
+        .execute(&pool)
+        .await?;
+    sqlx::query("DELETE FROM threads").execute(&pool).await?;
+
+    // Broadcast: video-timestamp thread on the Armbar from Mount footage.
+    if let Some(vid) = first_video("Armbar from Mount") {
+        seed_thread_with_replies(
+            &pool,
+            &reporter,
+            coach_id,
+            Anchor {
+                kind: AnchorKind::VideoTimestamp,
+                id: vid,
+                video_ts_seconds: Some(45),
+                pinned_student_id: None,
+            },
+            ThreadVisibility::Broadcast,
+            None,
+            "Right here the hips drive up into the armbar before the leg swings over. \
+             Watch the timing, most people reach for the leg too early.",
+            now - Duration::days(9) + Duration::hours(19),
+            &[
+                (student_ids[2], "Oh, that's the bit I keep missing.", 2),
+                (student_ids[3], "Drilled it tonight, felt way tighter.", 14),
+            ],
+        )
+        .await?;
+    }
+
+    // Broadcast: whole-video thread on the Rear Naked Choke footage.
+    let rnc_thread = if let Some(vid) = first_video("Rear Naked Choke") {
+        Some(
+            seed_thread_with_replies(
+                &pool,
+                &reporter,
+                coach_id,
+                Anchor {
+                    kind: AnchorKind::Video,
+                    id: vid,
+                    video_ts_seconds: None,
+                    pinned_student_id: None,
+                },
+                ThreadVisibility::Broadcast,
+                None,
+                "Classic finish. Get the chin strap locked before you feed the second hand \
+                 or they will tuck and defend.",
+                now - Duration::days(6) + Duration::hours(20),
+                &[(student_ids[4], "Hand position makes all the difference.", 3)],
+            )
+            .await?,
+        )
+    } else {
+        None
+    };
+
+    // Broadcast: technique-anchored thread (no video) on the triangle.
+    if let Some(tid) = tid_of("Triangle Choke from Closed Guard") {
+        seed_thread_with_replies(
+            &pool,
+            &reporter,
+            coach_id,
+            Anchor {
+                kind: AnchorKind::Technique,
+                id: tid,
+                video_ts_seconds: None,
+                pinned_student_id: None,
+            },
+            ThreadVisibility::Broadcast,
+            None,
+            "Common question in class: cut the angle off before you finish the triangle. \
+             Square on and it stalls every time.",
+            now - Duration::days(4) + Duration::hours(18),
+            &[
+                (student_ids[1], "This finally clicked for me last week.", 5),
+                (student_ids[0], "Cutting the angle is everything.", 26),
+            ],
+        )
+        .await?;
+    }
+
+    // Broadcast: another video-timestamp thread on the scissor sweep.
+    if let Some(vid) = first_video("Scissor Sweep") {
+        seed_thread_with_replies(
+            &pool,
+            &reporter,
+            coach_id,
+            Anchor {
+                kind: AnchorKind::VideoTimestamp,
+                id: vid,
+                video_ts_seconds: Some(70),
+                pinned_student_id: None,
+            },
+            ThreadVisibility::Broadcast,
+            None,
+            "The off-balance comes from the collar pull, not the legs. Notice how the lean \
+             happens before the scissor.",
+            now - Duration::days(2) + Duration::hours(21),
+            &[],
+        )
+        .await?;
+    }
+
+    // Private: SST-anchored coaching thread scoped to Alex on his armbar.
+    if let Some(armbar_tid) = tid_of("Armbar from Closed Guard") {
+        let alex_armbar_sst: Option<i64> = sqlx::query_as::<_, (i64,)>(
+            "SELECT sst.id
+             FROM student_syllabus_techniques sst
+             JOIN syllabus_assignments a ON a.id = sst.assignment_id
+             WHERE a.student_id = ? AND sst.technique_id = ?
+             LIMIT 1",
+        )
+        .bind(student_ids[0])
+        .bind(armbar_tid)
+        .fetch_optional(&pool)
+        .await?
+        .map(|r| r.0);
+
+        if let Some(sst_id) = alex_armbar_sst {
+            seed_thread_with_replies(
+                &pool,
+                &reporter,
+                coach_id,
+                Anchor {
+                    kind: AnchorKind::Sst,
+                    id: sst_id,
+                    video_ts_seconds: None,
+                    pinned_student_id: None,
+                },
+                ThreadVisibility::Private,
+                Some(student_ids[0]),
+                "Saw your reps tonight Alex. Pinch the knees on the finish and you have got it.",
+                now - Duration::days(3) + Duration::hours(20),
+                &[(
+                    student_ids[0],
+                    "Thanks coach, the knee pinch was the missing piece.",
+                    15,
+                )],
+            )
+            .await?;
+        }
+    }
+
+    // Private: student-profile thread scoped to Bianca (broadcast is not allowed
+    // on profile anchors, so this stays private to her feed).
+    seed_thread_with_replies(
+        &pool,
+        &reporter,
+        coach_id,
+        Anchor {
+            kind: AnchorKind::StudentProfile,
+            id: student_ids[1],
+            video_ts_seconds: None,
+            pinned_student_id: None,
+        },
+        ThreadVisibility::Private,
+        Some(student_ids[1]),
+        "Great month of consistency Bianca. Let's start layering combinations onto the basics.",
+        now - Duration::days(5) + Duration::hours(17),
+        &[(
+            student_ids[1],
+            "Appreciate it, feeling much more confident on top.",
+            20,
+        )],
+    )
+    .await?;
+    reporter.phase_finished();
+
+    // 16. Competitions, registrations, and logged matches.
+    reporter.phase_started(phases[16], None);
+    sqlx::query("DELETE FROM match_techniques")
+        .execute(&pool)
+        .await?;
+    sqlx::query("DELETE FROM matches").execute(&pool).await?;
+    sqlx::query("DELETE FROM competition_registrations")
+        .execute(&pool)
+        .await?;
+    sqlx::query("DELETE FROM competitions")
+        .execute(&pool)
+        .await?;
+
+    // A past comp (has matches) and an upcoming comp (registrations only).
+    let sundown = db::competitions::create_competition(
+        &pool,
+        "Sundown Open",
+        Some("2026-05-24"),
+        coach_id,
+    )
+    .await?;
+    backdate_last_activity(&pool, now - Duration::days(40)).await?;
+    reporter.phase_item(ItemOutcome::Created);
+
+    let winter = db::competitions::create_competition(
+        &pool,
+        "Winter Classic",
+        Some("2026-07-18"),
+        coach_id,
+    )
+    .await?;
+    backdate_last_activity(&pool, now - Duration::days(8)).await?;
+    reporter.phase_item(ItemOutcome::Created);
+
+    // Past-comp registrations (Alex, Bianca, Diego), backdated near the event.
+    let mut past_regs: Vec<(usize, i64)> = Vec::new();
+    for (offset, &student_idx) in [0usize, 1, 4].iter().enumerate() {
+        let reg = db::competitions::register_student(
+            &pool,
+            sundown,
+            student_ids[student_idx],
+            coach_id,
+        )
+        .await?;
+        backdate_last_activity(&pool, now - Duration::days(38) + Duration::hours(offset as i64))
+            .await?;
+        past_regs.push((student_idx, reg));
+        reporter.phase_item(ItemOutcome::Created);
+    }
+
+    // Upcoming-comp registrations (Alex, Marcus): no matches yet.
+    for (offset, &student_idx) in [0usize, 2].iter().enumerate() {
+        db::competitions::register_student(&pool, winter, student_ids[student_idx], coach_id)
+            .await?;
+        backdate_last_activity(&pool, now - Duration::days(7) + Duration::hours(offset as i64))
+            .await?;
+        reporter.phase_item(ItemOutcome::Created);
+    }
+
+    // Log matches against the past-comp registrations and link techniques.
+    // (student_idx, result, method, detail, [linked technique names])
+    type MatchPlan = (
+        usize,
+        MatchResult,
+        Option<MatchMethod>,
+        Option<&'static str>,
+        &'static [&'static str],
+    );
+    let match_plan: &[MatchPlan] = &[
+        (
+            0,
+            MatchResult::Win,
+            Some(MatchMethod::Submission),
+            Some("armbar from closed guard"),
+            &["Armbar from Closed Guard"],
+        ),
+        (
+            0,
+            MatchResult::Loss,
+            Some(MatchMethod::Points),
+            Some("swept late in the round"),
+            &["Scissor Sweep"],
+        ),
+        (
+            1,
+            MatchResult::Win,
+            Some(MatchMethod::Points),
+            Some("pressure passing"),
+            &["Knee Slice Pass"],
+        ),
+        (
+            4,
+            MatchResult::Draw,
+            Some(MatchMethod::Decision),
+            None,
+            &["Rear Naked Choke"],
+        ),
+    ];
+    // Keep one match per student for camp referencing later.
+    let mut match_by_student: std::collections::HashMap<usize, i64> =
+        std::collections::HashMap::new();
+    for (match_idx, (student_idx, result, method, detail, technique_names)) in
+        match_plan.iter().enumerate()
+    {
+        let Some((_, reg_id)) = past_regs.iter().find(|(si, _)| si == student_idx) else {
+            continue;
+        };
+        let occurred = format!(
+            "2026-05-24 {:02}:00:00",
+            10 + match_idx % 6 // spread across the comp day
+        );
+        let match_id = db::matches::create_match(
+            &pool,
+            *reg_id,
+            *result,
+            *method,
+            *detail,
+            Some(&occurred),
+            coach_id,
+        )
+        .await?;
+        backdate_last_activity(&pool, now - Duration::days(38) + Duration::hours(match_idx as i64))
+            .await?;
+        match_by_student.entry(*student_idx).or_insert(match_id);
+        reporter.phase_item(ItemOutcome::Created);
+
+        for tech_name in *technique_names {
+            if let Some(tech_id) = tid_of(tech_name) {
+                db::matches::link_match_technique(&pool, match_id, tech_id, coach_id).await?;
+                backdate_last_activity(
+                    &pool,
+                    now - Duration::days(37) + Duration::hours(match_idx as i64),
+                )
+                .await?;
+                reporter.phase_item(ItemOutcome::Created);
+            }
+        }
+    }
+    reporter.phase_finished();
+
+    // 17. Camps: per-student technique blocks with referenced footage.
+    reporter.phase_started(phases[17], None);
+    sqlx::query("DELETE FROM camp_referenced_matches")
+        .execute(&pool)
+        .await?;
+    sqlx::query("DELETE FROM camp_referenced_threads")
+        .execute(&pool)
+        .await?;
+    sqlx::query("DELETE FROM camp_technique_referenced_videos")
+        .execute(&pool)
+        .await?;
+    sqlx::query("DELETE FROM camp_techniques")
+        .execute(&pool)
+        .await?;
+    sqlx::query("DELETE FROM camps").execute(&pool).await?;
+
+    // (student_idx, name, description, technique names, days_ago)
+    type CampPlan = (usize, &'static str, &'static str, &'static [&'static str], i64);
+    let camp_plan: &[CampPlan] = &[
+        (
+            0,
+            "Winter Classic Prep",
+            "Eight week block sharpening takedowns and the armbar series for the Winter Classic.",
+            &[
+                "Single Leg Takedown",
+                "Double Leg Takedown",
+                "Knee Slice Pass",
+                "Armbar from Closed Guard",
+            ],
+            21,
+        ),
+        (
+            1,
+            "Top Pressure Block",
+            "Passing and pinning camp built around heavy top pressure.",
+            &[
+                "Knee Slice Pass",
+                "Knee on Belly Transition",
+                "Americana from Side Control",
+            ],
+            14,
+        ),
+        (
+            4,
+            "Back Attack Camp",
+            "Taking the back and finishing the choke, plus the escape when it goes the other way.",
+            &["Rear Naked Choke", "Bow and Arrow Choke", "Back Escape"],
+            10,
+        ),
+    ];
+
+    let mut camp_by_student: std::collections::HashMap<usize, i64> =
+        std::collections::HashMap::new();
+    for (student_idx, name, description, technique_names, days_ago) in camp_plan {
+        let created = now - Duration::days(*days_ago);
+        let camp_id = db::camps::create_camp(
+            &pool,
+            NewCamp {
+                student_id: student_ids[*student_idx],
+                coach_id,
+                name: name.to_string(),
+                description: Some(description.to_string()),
+                references_camp_id: None,
+            },
+        )
+        .await?;
+        sqlx::query("UPDATE camps SET created_at = ? WHERE id = ?")
+            .bind(created)
+            .bind(camp_id)
+            .execute(&pool)
+            .await?;
+        backdate_last_activity(&pool, created).await?;
+        camp_by_student.insert(*student_idx, camp_id);
+        reporter.phase_item(ItemOutcome::Created);
+
+        for (pos, tech_name) in technique_names.iter().enumerate() {
+            if let Some(tech_id) = tid_of(tech_name) {
+                db::camps::add_camp_technique(&pool, camp_id, tech_id, coach_id).await?;
+                backdate_last_activity(&pool, created + Duration::minutes(pos as i64 + 1)).await?;
+                reporter.phase_item(ItemOutcome::Created);
+            }
+        }
+
+        // Private camp-anchored discussion thread.
+        seed_thread_with_replies(
+            &pool,
+            &reporter,
+            coach_id,
+            Anchor {
+                kind: AnchorKind::Camp,
+                id: camp_id,
+                video_ts_seconds: None,
+                pinned_student_id: None,
+            },
+            ThreadVisibility::Private,
+            Some(student_ids[*student_idx]),
+            "Kicking off the camp. Footage review Thursday, come with questions on the gaps \
+             you have spotted.",
+            created + Duration::hours(2),
+            &[(
+                student_ids[*student_idx],
+                "On it, reviewing my last comp footage now.",
+                26,
+            )],
+        )
+        .await?;
+    }
+
+    // Referenced footage links (pure join rows; no helper, so raw INSERT).
+    // Alex's camp references the RNC discussion thread and his Sundown match.
+    if let Some(&alex_camp) = camp_by_student.get(&0) {
+        if let Some(thread_id) = rnc_thread {
+            sqlx::query(
+                "INSERT OR IGNORE INTO camp_referenced_threads (camp_id, thread_id) VALUES (?, ?)",
+            )
+            .bind(alex_camp)
+            .bind(thread_id)
+            .execute(&pool)
+            .await?;
+            reporter.phase_item(ItemOutcome::Created);
+        }
+        if let Some(&match_id) = match_by_student.get(&0) {
+            sqlx::query(
+                "INSERT OR IGNORE INTO camp_referenced_matches (camp_id, match_id) VALUES (?, ?)",
+            )
+            .bind(alex_camp)
+            .bind(match_id)
+            .execute(&pool)
+            .await?;
+            reporter.phase_item(ItemOutcome::Created);
+        }
+        // Pin the armbar footage as reference video on that camp technique.
+        if let (Some(tech_id), Some(vid)) =
+            (tid_of("Armbar from Closed Guard"), first_video("Armbar from Closed Guard"))
+        {
+            sqlx::query(
+                "INSERT OR IGNORE INTO camp_technique_referenced_videos
+                     (camp_id, technique_id, video_id) VALUES (?, ?, ?)",
+            )
+            .bind(alex_camp)
+            .bind(tech_id)
+            .bind(vid)
+            .execute(&pool)
+            .await?;
+            reporter.phase_item(ItemOutcome::Created);
+        }
+    }
+    reporter.phase_finished();
+
+    // 18. Refresh cursors so the new social activity is accounted for: mark all
+    //     viewers caught up, then hand the coach ~15 unread for the badge.
+    reporter.phase_started(phases[18], Some(1));
+    run_cursor_init(&pool).await?;
+    sqlx::query("UPDATE activity_cursors SET max_seen_id = (SELECT COALESCE(MAX(id), 0) FROM activity)")
+        .execute(&pool)
+        .await?;
+    sqlx::query(
+        "UPDATE activity_cursors
+         SET max_seen_id = MAX(0, (SELECT COALESCE(MAX(id), 0) FROM activity) - 15)
+         WHERE viewer_user_id = ?",
+    )
+    .bind(coach_id)
+    .execute(&pool)
+    .await?;
+    reporter.phase_item(ItemOutcome::Created);
+    reporter.phase_finished();
 
     reporter.seed_finished();
     Ok(())
