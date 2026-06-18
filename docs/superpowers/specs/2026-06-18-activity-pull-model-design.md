@@ -113,24 +113,26 @@ broadcast event seen via an override on its single id; the cursor advances past
 it. `unread_count` reuses the relevance predicate so a broadcast event counts as
 unread only for relevant students, and `notifies()` still excludes own actions.
 
-### 4. Historical data migration (one-off)
+### 4. Historical data: wipe, don't migrate
 
-Existing fan-out rows (many per event) must collapse to one broadcast row. A new
-one-off binary `src/bin/collapse_fanout_activity.rs`:
+A backfill binary is not worth the effort (user call). Legacy fan-out rows just
+get wiped; only new emissions (broadcast) matter. At deploy:
 
-- For the five fanout verbs, group legacy rows by
-  `(verb, actor_user_id, COALESCE(technique_id,0), COALESCE(video_id,0),
-   COALESCE(syllabus_id,0), strftime('%Y-%m-%d %H:%M:%S', occurred_at))`
-  (fanout rows in a group were emitted in one transaction, same second).
-- Keep `MIN(id)` per group, set its `target_student_id = NULL`; delete the rest.
-- Preserve `activity_seen_overrides` / cursors referencing kept ids; delete
-  overrides referencing removed ids (they were per-recipient duplicates).
-- Idempotent: re-running finds nothing to collapse (all groups already size 1
-  with NULL target).
+```sql
+DELETE FROM activity_seen_overrides;
+DELETE FROM activity;
+DELETE FROM activity_cursors;   -- everyone starts with a clean unread slate
+```
 
-Destructive (DELETE). Run on staging first (or `refresh_db` then collapse). Prod
-run is a later runbook step (the social feed is not on prod yet, so prod urgency
-is low). See [[reference-prod-destructive-migration-deploy]].
+- Staging: `refresh_db` already re-forks from prod and wipes `videos.*`; add the
+  activity wipe (or run the three DELETEs manually after deploy). Simplest: run
+  the DELETEs once against staging.
+- Prod: a one-line manual `DELETE` at deploy time (the social feed is not on prod
+  yet, so there is no user-visible history to preserve). No destructive *schema*
+  migration, so no `allow_destructive_migrations` flag needed.
+
+New `activity.id` values continue above the old high-water mark (AUTOINCREMENT),
+so cleared cursors simply read everything-new as unread, which is fine.
 
 ### 5. Frontend (small, mostly automatic)
 
@@ -155,7 +157,6 @@ is low). See [[reference-prod-destructive-migration-deploy]].
 - `db/activity.rs` - add `emit_broadcast`; remove `affected_students_for_technique` / `_for_syllabus` if they become unused after the call sites swap (clippy `-D warnings` enforces), else keep whatever a remaining caller needs. Relevance now lives in read SQL.
 - `db/videos.rs`, `db/techniques.rs`, `db/tags.rs`, `db/syllabi.rs` - swap the 8 `emit_fanout` calls to `emit_broadcast`; drop the `affected_students_*` precompute lines there.
 - `db/activity_read.rs` - relevance predicate in `feed()` student branch and `unread_count()`; helper fn to build it (shared string) to avoid divergence.
-- `src/bin/collapse_fanout_activity.rs` - new one-off migration.
 - `test/activity_read.rs`, `test/activity.rs` - relevance + emission tests.
 - `.sqlx/` - regenerated.
 
@@ -173,8 +174,6 @@ is low). See [[reference-prod-destructive-migration-deploy]].
 - **Gym feed:** the broadcast event appears exactly once (no dupes).
 - **Unread:** the broadcast counts as unread only for relevant students; own
   actions never unread; marking-seen via override works on the single id.
-- **Migration:** collapsing a seeded legacy fanout group leaves one NULL-target
-  row and removes its duplicate overrides; idempotent on re-run.
 - **Caption (node):** `video_watched`/`video_added` include the title.
 
 ## Verification gate
@@ -189,8 +188,8 @@ is low). See [[reference-prod-destructive-migration-deploy]].
 
 - **Relevance SQL complexity / sqlx offline cache.** Mitigated by a single shared
   predicate string and thorough tests.
-- **Destructive migration.** Mitigated by idempotency, second-precision grouping,
-  staging-first, and prod-low-urgency (feed not yet on prod).
+- **Activity wipe.** Loses history, but the feed is not on prod yet and the user
+  accepted it. No schema change, so no destructive-migration flag.
 - **Behavior change:** a student who later loses access to a technique no longer
   sees its past broadcast events. Judged correct (the feed reflects current
   relevance), but worth noting.
