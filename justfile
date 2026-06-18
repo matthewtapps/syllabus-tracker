@@ -267,18 +267,40 @@ unlock:
 lock:
     @rm -f /dev/shm/sops-age-key-$(id -u) 2>/dev/null && echo "locked" || echo "already locked"
 
-# State + outputs read the R2 backend, so AWS_ACCESS_KEY_ID /
-# AWS_SECRET_ACCESS_KEY (the platform-state R2 token) must be in your env;
-# initialise once with `just tofu-init`.
+# Path to the platform IaC repo, which mints this service's R2 state creds
+# (service_bootstrap_tokens.sillybus). Override if your checkout differs.
+platform_infra := env_var_or_default("PLATFORM_INFRA_DIR", "../infra")
+
+# Print `export AWS_*` lines for this repo's R2 tofu state, sourced from the
+# platform IaC bootstrap token. The platform `just tf` self-sources its own
+# (sops) creds, so this works as long as that repo is set up. Private.
+[group('infra')]
+[private]
+_r2-env:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    ( cd "{{platform_infra}}" && just tf output -json service_bootstrap_tokens ) \
+      | jq -r '.sillybus | "export AWS_ACCESS_KEY_ID=\(.access_key_id)\nexport AWS_SECRET_ACCESS_KEY=\(.secret_access_key)"'
+
+# R2 state creds auto-load from the platform IaC (PLATFORM_INFRA_DIR); needs the
+# age key unlocked (`just unlock`).
 # Run an arbitrary tofu command against infra/ (e.g. `just tofu plan`).
 [group('infra')]
 tofu *args:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    creds="$(just _r2-env)" || { echo "Could not load R2 creds. Run 'just unlock' first."; exit 1; }
+    eval "$creds"
     tofu -chdir=infra {{args}}
 
-# Needs the R2 state creds in env. Pass extra flags, e.g. `-reconfigure`.
+# R2 state creds auto-load from the platform IaC. Pass flags, e.g. `-reconfigure`.
 # Initialise the infra tofu backend (R2).
 [group('infra')]
 tofu-init *args:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    creds="$(just _r2-env)" || { echo "Could not load R2 creds. Run 'just unlock' first."; exit 1; }
+    eval "$creds"
     tofu -chdir=infra init {{args}}
 
 # ---- remote ops (shared prod/staging host) --------------------------------
@@ -306,10 +328,12 @@ sqlite_image := "keinos/sqlite3:latest"
 update-ssh-host:
     #!/usr/bin/env bash
     set -euo pipefail
-    # Source of truth is infra tofu (needs it initialised, R2 creds in env).
-    # Re-enter `nix develop` afterward to pick up the new value.
+    # Creds auto-load from the platform IaC; re-enter `nix develop` afterward to
+    # pick up the new value.
+    creds="$(just _r2-env)" || { echo "Could not load R2 creds. Run 'just unlock' first."; exit 1; }
+    eval "$creds"
     ip="$(tofu -chdir=infra output -raw _platform_vm_ip)" || {
-        echo "tofu failed. If this is a backend-init error, run 'just tofu-init' first (with the R2 state creds in your env)."
+        echo "tofu failed. If this is a backend-init error, run 'just tofu-init' first."
         exit 1
     }
     [ -n "$ip" ] || { echo "tofu returned an empty _platform_vm_ip"; exit 1; }

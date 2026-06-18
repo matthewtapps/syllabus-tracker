@@ -104,6 +104,7 @@
             postgresql_16
             opentofu
             terraform-ls
+            jq
             age
             ssh-to-age
             htmx-lsp
