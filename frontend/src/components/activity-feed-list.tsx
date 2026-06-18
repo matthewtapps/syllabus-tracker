@@ -1,74 +1,18 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import {
-  Activity,
-  ClipboardList,
-  CircleDot,
-  Dumbbell,
-  Eye,
-  Library,
-  GraduationCap,
-  MessageSquare,
-  Minus,
-  NotebookPen,
-  Pencil,
-  Pin,
-  PlayCircle,
-  Plus,
-  Video,
-  type LucideIcon,
-} from "lucide-react";
+import { Dumbbell, Library, NotebookPen } from "lucide-react";
 import { StudentAvatar } from "@/components/student-avatar";
 import { useUser } from "@/lib/current-user-context";
 import { isCoachOrAdmin } from "@/lib/api";
 import { activityLine, type ActivityRow, type ActivityScope } from "@/lib/activity-line";
 import { statusToDotClass } from "@/lib/status";
 import { coalesceActivity } from "@/lib/activity-coalesce";
-import { activitySurface } from "@/lib/view-context";
+import { suppressHideUnhide } from "@/lib/activity-hide-unhide";
+import { activitySurface, isGatedEpicRow } from "@/lib/view-context";
 import { formatAbsolute, formatRelativeShort } from "@/lib/dates";
 import { cn } from "@/lib/utils";
 import { campsUiEnabled } from "@/lib/features";
-
-function verbIconMeta(verb: string): { Icon: LucideIcon; colorClass: string } {
-  switch (verb) {
-    case "attempt_logged":
-    case "attempt_edited":
-    case "attempt_deleted":
-      return { Icon: Dumbbell, colorClass: "text-amber-500" };
-    case "video_watched":
-      return { Icon: PlayCircle, colorClass: "text-sky-500" };
-    case "video_added":
-    case "video_visibility_set":
-      return { Icon: Video, colorClass: "text-sky-500" };
-    case "sst_status_changed":
-      return { Icon: CircleDot, colorClass: "text-emerald-500" };
-    case "sst_student_notes_edited":
-    case "sst_coach_notes_edited":
-      return { Icon: NotebookPen, colorClass: "text-violet-500" };
-    case "technique_pinned":
-    case "technique_unpinned":
-      return { Icon: Pin, colorClass: "text-rose-500" };
-    case "syllabus_assigned":
-    case "syllabus_unassigned":
-      return { Icon: ClipboardList, colorClass: "text-indigo-500" };
-    case "syllabus_graduated":
-      return { Icon: GraduationCap, colorClass: "text-emerald-600" };
-    case "syllabus_technique_added":
-    case "sst_added":
-      return { Icon: Plus, colorClass: "text-indigo-500" };
-    case "syllabus_technique_removed":
-    case "sst_hidden":
-      return { Icon: Minus, colorClass: "text-indigo-500" };
-    case "sst_unhidden":
-      return { Icon: Eye, colorClass: "text-indigo-500" };
-    case "technique_edited":
-      return { Icon: Pencil, colorClass: "text-muted-foreground" };
-    case "thread_comment_posted":
-      return { Icon: MessageSquare, colorClass: "text-violet-500" };
-    default:
-      return { Icon: Activity, colorClass: "text-muted-foreground" };
-  }
-}
+import { verbIconMeta } from "@/components/activity-feed/verb-icon";
 
 interface ActivityFeedListProps {
   rows: ActivityRow[];
@@ -125,7 +69,9 @@ function ActivityRowItem({
     isCoachOrAdmin(viewer) && activityRow.actor_user_id !== viewer.id
       ? `/student/${activityRow.actor_user_id}`
       : undefined;
-  const actorName = activityRow.actor_name ?? "A student";
+  // Social-feed convention: a viewer's own actions read as "You", not their name.
+  const isOwnAction = activityRow.actor_user_id === viewer.id;
+  const actorName = isOwnAction ? "You" : (activityRow.actor_name ?? "A student");
 
   return (
     <>
@@ -267,14 +213,15 @@ export function ActivityFeedList({
     );
   }
 
-  // Camps + competitions/matches are gated off on prod (campsUiEnabled). Drop
-  // their activity rows so the feed doesn't surface links into hidden surfaces.
+  // Drop hide/unhide curation noise (net-visibility rule) before gating.
+  const deNoised = suppressHideUnhide(rows);
+
+  // Camps + competitions/matches/suggestions are gated off on prod
+  // (campsUiEnabled). Drop their activity rows so the feed doesn't surface links
+  // into hidden surfaces.
   const visibleRows = campsUiEnabled
-    ? rows
-    : rows.filter((row) => {
-        const kind = activitySurface(row)?.kind;
-        return kind !== "camp" && kind !== "competition" && kind !== "match";
-      });
+    ? deNoised
+    : deNoised.filter((row) => !isGatedEpicRow(row));
 
   if (visibleRows.length === 0) {
     return <p className="px-6 py-8 text-center text-sm text-muted-foreground">{emptyText}</p>;

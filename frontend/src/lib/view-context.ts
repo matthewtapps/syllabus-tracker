@@ -48,6 +48,25 @@ export function viewContextHref(ctx: ViewContext): string {
   }
 }
 
+/** The bare surface a context lives on, WITHOUT the focus token that scrolls to
+ *  a specific technique. Used by the feed's breadcrumb chip: clicking "White
+ *  Belt Fundamentals" should land on the syllabus, not deep-link to the one
+ *  technique the row acted on (the embedded tile already carries that). */
+export function viewContextSurfaceHref(ctx: ViewContext): string {
+  switch (ctx.kind) {
+    case "library":
+      return "/library";
+    case "syllabus":
+      return `/student/${ctx.student.id}/syllabi/${ctx.syllabus.id}`;
+    case "camp":
+      return `/camps/${ctx.camp.id}`;
+    case "competition":
+      return `/competitions/${ctx.competition.id}`;
+    case "match":
+      return `/camps/${ctx.camp.id}`;
+  }
+}
+
 /** Minimal structural view of an ActivityRow, so this module does not depend
  *  on the full row type (avoids a cycle with activity-line.ts). */
 export interface ViewContextRow {
@@ -184,7 +203,7 @@ export interface ActivitySurface {
  * null when there is no resolvable surface (no chip shown).
  */
 export function activitySurface(
-  row: ViewContextRow & { syllabus_name: string | null },
+  row: ViewContextRow & { syllabus_name: string | null; camp_name?: string | null },
 ): ActivitySurface | null {
   const ctx = rowToViewContext(row);
   if (!ctx) return null;
@@ -192,7 +211,7 @@ export function activitySurface(
     return { kind: "syllabus", label: row.syllabus_name ?? "Syllabus" };
   }
   if (ctx.kind === "camp") {
-    return { kind: "camp", label: "Camp" };
+    return { kind: "camp", label: row.camp_name ?? "Camp" };
   }
   if (ctx.kind === "competition") {
     return { kind: "competition", label: "Competition" };
@@ -201,4 +220,16 @@ export function activitySurface(
     return { kind: "match", label: "Match" };
   }
   return { kind: "library", label: "Global Technique Library" };
+}
+
+/**
+ * Whether a row belongs to the camp/competition/match epic that is hidden on
+ * production until the epic ships. The single predicate both feeds use, so the
+ * gate can never drift between them.
+ */
+export function isGatedEpicRow(
+  row: ViewContextRow & { syllabus_name: string | null; camp_name?: string | null },
+): boolean {
+  const kind = activitySurface(row)?.kind;
+  return kind === "camp" || kind === "competition" || kind === "match";
 }

@@ -1,4 +1,4 @@
-import { keepPreviousData, skipToken, useQuery } from "@tanstack/react-query";
+import { keepPreviousData, skipToken, useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import {
   getAllTags,
   getAllUsers,
@@ -9,6 +9,7 @@ import {
   getCampVideos,
   getCampsForStudent,
   getStudentActivityFeed,
+  getActivityFeedHeadId,
   getActivityUnreadCount,
   getAttemptSummary,
   getCapabilities,
@@ -42,10 +43,9 @@ import {
   getRegistrationMatches,
   getMatchVideos,
   getMatchTechniques,
-  getPendingSuggestions,
-  getStudentSuggestions,
 } from "./api";
 import type { AnchorKind } from "./api";
+import type { ActivityRow } from "./activity-line";
 import { qk } from "./query-keys";
 
 // ---- Auth / session ----
@@ -342,10 +342,10 @@ export function useAssignmentDiff(
 // The viewer's own activity feed. For a student this returns rows where
 // they are the target; for a coach it returns all gym activity except their
 // own actions. `enabled` lets callers gate the query on auth state.
-export function useActivityFeed(enabled: boolean = true) {
+export function useActivityFeed(enabled: boolean = true, limit = 20) {
   return useQuery({
-    queryKey: qk.activityFeed(),
-    queryFn: enabled ? () => getActivityFeed({ limit: 20 }) : skipToken,
+    queryKey: qk.activityFeed(limit),
+    queryFn: enabled ? () => getActivityFeed({ limit }) : skipToken,
   });
 }
 
@@ -359,6 +359,53 @@ export function useStudentActivityFeed(studentId: number | undefined, limit = 20
       typeof studentId === "number" && Number.isFinite(studentId)
         ? () => getStudentActivityFeed(studentId, { limit })
         : skipToken,
+  });
+}
+
+// Keyset cursor for the next older page: the last row's (occurred_at, id).
+type FeedCursor = { before_ts: string; before_id: number } | undefined;
+
+function nextFeedCursor(lastPage: ActivityRow[], limit: number): FeedCursor {
+  // A short page means we reached the end; stop paginating.
+  if (lastPage.length < limit) return undefined;
+  const last = lastPage[lastPage.length - 1];
+  return { before_ts: last.occurred_at, before_id: last.id };
+}
+
+// Infinite (keyset-paginated) gym feed for the social-feed surface. Each page is
+// `limit` rows; `getNextPageParam` walks the (occurred_at, id) cursor backwards.
+export function useInfiniteActivityFeed(enabled = true, limit = 20) {
+  return useInfiniteQuery({
+    queryKey: qk.activityFeedInfinite(limit),
+    enabled,
+    initialPageParam: undefined as FeedCursor,
+    queryFn: ({ pageParam }) => getActivityFeed({ limit, ...(pageParam ?? {}) }),
+    getNextPageParam: (lastPage) => nextFeedCursor(lastPage, limit),
+  });
+}
+
+// Infinite student-scoped feed (the student's own social feed surface).
+export function useInfiniteStudentActivityFeed(studentId: number | undefined, limit = 20) {
+  const valid = typeof studentId === "number" && Number.isFinite(studentId);
+  return useInfiniteQuery({
+    queryKey: qk.studentActivityFeedInfinite(studentId ?? 0, limit),
+    enabled: valid,
+    initialPageParam: undefined as FeedCursor,
+    queryFn: ({ pageParam }) =>
+      getStudentActivityFeed(studentId as number, { limit, ...(pageParam ?? {}) }),
+    getNextPageParam: (lastPage) => nextFeedCursor(lastPage, limit),
+  });
+}
+
+// Polls the id at the top of the viewer's feed (no cursor advance) so the feed
+// can show a "new activity" pill when the server head differs from the loaded
+// head. 30s interval; pauses when the tab is hidden.
+export function useActivityFeedHeadId(enabled = true) {
+  return useQuery({
+    queryKey: qk.activityFeedHeadId(),
+    queryFn: enabled ? getActivityFeedHeadId : skipToken,
+    refetchInterval: 30_000,
+    refetchIntervalInBackground: false,
   });
 }
 
@@ -491,21 +538,5 @@ export function useMatchTechniques(matchId: number | undefined) {
   return useQuery({
     queryKey: qk.matchTechniques(matchId ?? 0),
     queryFn: whenId(matchId, getMatchTechniques),
-  });
-}
-
-// ---- Suggestions ----
-
-export function usePendingSuggestions() {
-  return useQuery({
-    queryKey: qk.pendingSuggestions(),
-    queryFn: getPendingSuggestions,
-  });
-}
-
-export function useStudentSuggestions(studentId: number | undefined) {
-  return useQuery({
-    queryKey: qk.studentSuggestions(studentId ?? 0),
-    queryFn: whenId(studentId, getStudentSuggestions),
   });
 }

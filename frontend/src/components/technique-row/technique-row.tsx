@@ -34,6 +34,11 @@ interface TechniqueRowProps {
    *  student-syllabus surface to keep a just-hidden row lingering in the
    *  Main tab for the rest of the visit. */
   ghost?: boolean;
+  /** Feed/preview mode: suppress the row-chrome action buttons (pin, remove,
+   *  hidden toggle, add-to-camp). The expand panel and its per-role blocks are
+   *  unchanged, so the embedded row stays a viewing surface, not a curation
+   *  control panel. */
+  embedded?: boolean;
 }
 
 // Keeps the expanded panel mounted through the AccordionContent close
@@ -74,6 +79,7 @@ export function TechniqueRow({
   scrollToVideoId,
   onVideoScrolled,
   ghost,
+  embedded,
 }: TechniqueRowProps) {
   const user = useUser();
   const renderContent = useDelayedFalse(isOpen);
@@ -108,20 +114,24 @@ export function TechniqueRow({
   // surfaces. Coaches viewing either surface, and any student-syllabus
   // surface, don't render it.
   const showPinButton =
+    !embedded &&
     viewerIsOwner &&
     (context.kind === "global-library" || context.kind === "student-pinned");
 
   // Coach-only "Add to camp" button on the student-pinned surface.
   const showAddToCampButton =
+    !embedded &&
     context.kind === "student-pinned" &&
     !viewerIsOwner &&
     (user.role === "coach" || user.role === "admin") &&
     !!context.onAddToCampIntent;
 
   const showRemoveButton =
-    context.kind === "syllabus-management" ||
-    (context.kind === "camp" && context.onRemove != null);
+    !embedded &&
+    (context.kind === "syllabus-management" ||
+      (context.kind === "camp" && context.onRemove != null));
   const showHiddenToggle =
+    !embedded &&
     context.kind === "student-syllabus" &&
     (user.role === "coach" || user.role === "admin");
 

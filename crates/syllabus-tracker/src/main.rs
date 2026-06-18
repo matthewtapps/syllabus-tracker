@@ -2,7 +2,7 @@
 extern crate rocket;
 
 pub use syllabus_tracker::{
-    api, auth, camps, capabilities, catchers, competitions, db, env, error, models, suggestions,
+    api, auth, camps, capabilities, catchers, competitions, db, env, error, models,
     syllabi, telemetry, threads, validation, videos,
 };
 
@@ -11,7 +11,7 @@ mod test;
 
 use api::api_get_all_users;
 use api::{
-    api_activity_digest, api_activity_feed, api_activity_mark_all_read,
+    api_activity_digest, api_activity_feed, api_activity_feed_head_id, api_activity_mark_all_read,
     api_activity_mark_one_read, api_activity_mark_one_unread, api_activity_unread_count,
     api_add_tag_to_technique, api_dashboard_activity_feed,
     api_add_techniques_to_collection, api_approve_user, api_assign_collection,
@@ -57,10 +57,6 @@ use camps::{
     api_add_camp_technique, api_archive_camp, api_create_camp, api_create_camp_technique,
     api_get_camp, api_list_camps, api_list_camp_videos, api_promote_pinned_to_camp,
     api_remove_camp_technique, api_update_camp, api_set_camp_video_visibility,
-};
-use suggestions::{
-    api_create_suggestion, api_list_pending_suggestions, api_student_suggestions,
-    api_decide_suggestion,
 };
 use competitions::{
     api_create_competition, api_list_competitions, api_get_competition, api_update_competition,
@@ -370,6 +366,7 @@ pub async fn init_rocket_with_callback_secret(
                 api_list_syllabus_attempts,
                 api_list_syllabus_technique_videos,
                 api_activity_feed,
+                api_activity_feed_head_id,
                 api_student_activity_feed,
                 api_activity_unread_count,
                 api_activity_mark_all_read,
@@ -396,11 +393,6 @@ pub async fn init_rocket_with_callback_secret(
                 api_list_camp_videos,
                 api_set_camp_video_visibility,
                 api_promote_pinned_to_camp,
-                // suggestions
-                api_create_suggestion,
-                api_list_pending_suggestions,
-                api_student_suggestions,
-                api_decide_suggestion,
                 // competitions + matches
                 api_create_competition,
                 api_list_competitions,

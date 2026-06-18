@@ -267,6 +267,141 @@ unlock:
 lock:
     @rm -f /dev/shm/sops-age-key-$(id -u) 2>/dev/null && echo "locked" || echo "already locked"
 
+# The tofu recipes below (tofu, tofu-init, update-ssh-host) need R2 state creds.
+# They take them from your env (AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY) if
+# set, else from the sibling platform IaC repo that mints them
+# (service_bootstrap_tokens.sillybus). Without either, they fail with a clear
+# message. The `remote` / `db-sql-*` recipes do NOT need this; they only read
+# SILLYBUS_SSH_HOST. Override the platform repo path with PLATFORM_INFRA_DIR.
+platform_infra := env_var_or_default("PLATFORM_INFRA_DIR", "../infra")
+
+# Print `export AWS_*` lines for this repo's R2 tofu state. Order of resolution:
+# (1) if AWS creds are already in your env, print nothing (the caller keeps
+# them); (2) else source them from the platform IaC bootstrap token. Prints a
+# clear hint and fails if the platform repo is absent or its creds can't be
+# read. Private.
+[group('infra')]
+[private]
+_r2-env:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if [ -n "${AWS_ACCESS_KEY_ID:-}" ] && [ -n "${AWS_SECRET_ACCESS_KEY:-}" ]; then
+        exit 0
+    fi
+    dir="{{platform_infra}}"
+    if [ ! -f "$dir/justfile" ]; then
+        echo "No platform IaC repo at '$dir' (set PLATFORM_INFRA_DIR), and no AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY in your env. Set one of those to use the tofu recipes." >&2
+        exit 1
+    fi
+    raw="$( cd "$dir" && just tf output -json service_bootstrap_tokens )" || {
+        echo "Could not read platform state creds from '$dir'. Is the age key unlocked? Run 'just unlock'." >&2
+        exit 1
+    }
+    echo "$raw" | jq -r '.sillybus | "export AWS_ACCESS_KEY_ID=\(.access_key_id)\nexport AWS_SECRET_ACCESS_KEY=\(.secret_access_key)"'
+
+# R2 state creds auto-load from the platform IaC (PLATFORM_INFRA_DIR); needs the
+# age key unlocked (`just unlock`).
+# Run an arbitrary tofu command against infra/ (e.g. `just tofu plan`).
+[group('infra')]
+tofu *args:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    creds="$(just _r2-env)" || exit 1
+    eval "$creds"
+    tofu -chdir=infra {{args}}
+
+# R2 state creds auto-load from the platform IaC. Pass flags, e.g. `-reconfigure`.
+# Initialise the infra tofu backend (R2).
+[group('infra')]
+tofu-init *args:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    creds="$(just _r2-env)" || exit 1
+    eval "$creds"
+    tofu -chdir=infra init {{args}}
+
+# ---- remote ops (shared prod/staging host) --------------------------------
+#
+# One-off SSH + docker/sqlite against the shared VM that runs both stacks.
+# Requires your deploy SSH key loaded locally. The host (SILLYBUS_SSH_HOST) is
+# exported by the flake dev shell; its value comes from the IaC (infra tofu
+# output `_platform_vm_ip`). Refresh it with `just update-ssh-host`, then
+# re-enter the dev shell. The `deploy` user runs docker without sudo, so these
+# need no root. The DB is the `*_app-data` named volume, holding `sqlite.db` at
+# its root; we reach it with a throwaway sqlite3 container mounting that volume
+# (no sqlite3 needed on the host).
+#
+#   just update-ssh-host                          # one-time / when the IP changes
+#   just db-sql-staging 'SELECT count(*) FROM activity;'
+#   just db-sql-prod    'DELETE FROM activity;'   # prompts to confirm
+#   just remote 'docker ps'
+
+ssh_host := env_var_or_default("SILLYBUS_SSH_HOST", "")
+ssh_user := env_var_or_default("SILLYBUS_SSH_USER", "deploy")
+sqlite_image := "keinos/sqlite3:latest"
+
+# Refresh SILLYBUS_SSH_HOST in flake.nix from the IaC (tofu _platform_vm_ip).
+[group('remote')]
+update-ssh-host:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    # Creds auto-load from the platform IaC; re-enter `nix develop` afterward to
+    # pick up the new value.
+    creds="$(just _r2-env)" || exit 1
+    eval "$creds"
+    ip="$(tofu -chdir=infra output -raw _platform_vm_ip)" || {
+        echo "tofu failed. If this is a backend-init error, run 'just tofu-init' first."
+        exit 1
+    }
+    [ -n "$ip" ] || { echo "tofu returned an empty _platform_vm_ip"; exit 1; }
+    sed -i -E 's|SILLYBUS_SSH_HOST = "[^"]*";|SILLYBUS_SSH_HOST = "'"$ip"'";|' flake.nix
+    echo "flake.nix SILLYBUS_SSH_HOST = $ip  (re-enter the dev shell to apply)"
+
+[group('remote')]
+[private]
+_require-host:
+    @test -n "{{ssh_host}}" || { echo "Host unset. Run 'just update-ssh-host' then re-enter the dev shell (or export SILLYBUS_SSH_HOST)."; exit 1; }
+
+# Run an arbitrary command on the shared host, e.g. `just remote 'docker ps'`.
+[group('remote')]
+remote *cmd: _require-host
+    ssh {{ssh_user}}@{{ssh_host}} {{quote(cmd)}}
+
+# Internal: pipe SQL (stdin) to a stack's sqlite DB volume.
+[group('remote')]
+[private]
+_db-sql vol sql:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    printf '%s\n' {{quote(sql)}} | ssh {{ssh_user}}@{{ssh_host}} \
+      "docker run --rm -i --user 0 -v {{vol}}:/data --entrypoint sqlite3 {{sqlite_image}} /data/sqlite.db"
+
+# Run SQL against the STAGING database.
+[group('remote')]
+db-sql-staging sql: _require-host (_db-sql "sillybus-staging_app-data" sql)
+
+# Interactive sqlite shell on STAGING.
+[group('remote')]
+db-shell-staging: _require-host
+    ssh -t {{ssh_user}}@{{ssh_host}} "docker run --rm -it --user 0 -v sillybus-staging_app-data:/data --entrypoint sqlite3 {{sqlite_image}} /data/sqlite.db"
+
+# Run SQL against the PROD database. Prompts for confirmation first.
+[group('remote')]
+db-sql-prod sql: _require-host
+    #!/usr/bin/env bash
+    set -euo pipefail
+    echo "About to run against PROD:"
+    printf '  %s\n' {{quote(sql)}}
+    read -r -p "Type 'prod' to continue: " ok
+    [ "$ok" = "prod" ] || { echo "aborted"; exit 1; }
+    printf '%s\n' {{quote(sql)}} | ssh {{ssh_user}}@{{ssh_host}} \
+      "docker run --rm -i --user 0 -v sillybus_app-data:/data --entrypoint sqlite3 {{sqlite_image}} /data/sqlite.db"
+
+# Interactive sqlite shell on PROD.
+[group('remote')]
+db-shell-prod: _require-host
+    ssh -t {{ssh_user}}@{{ssh_host}} "docker run --rm -it --user 0 -v sillybus_app-data:/data --entrypoint sqlite3 {{sqlite_image}} /data/sqlite.db"
+
 # ---- housekeeping ---------------------------------------------------------
 
 # Delete local sqlite files and build artifacts (cargo target/, frontend

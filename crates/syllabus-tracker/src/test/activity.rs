@@ -153,53 +153,33 @@ mod tests {
         assert_eq!(v["to"], "green", "takes latest to");
     }
 
+    /// Broadcast events write a single row with no target student (pull model):
+    /// feeds resolve who sees it at read time.
     #[rocket::async_test]
-    async fn fanout_writes_one_row_per_active_assignment_for_syllabus() {
-        use crate::db::{affected_students_for_syllabus, emit_fanout};
+    async fn emit_broadcast_writes_one_null_target_row() {
+        use crate::db::emit_broadcast;
         let db = TestDbBuilder::new()
             .coach("coach", None)
             .student("alice", None)
             .student("bob", None)
-            .technique("Armbar", "", Some("coach"))
             .build()
             .await
             .unwrap();
         let coach = db.user_id("coach").unwrap();
-        let alice = db.user_id("alice").unwrap();
-        let bob = db.user_id("bob").unwrap();
-        let armbar = db.technique_id("Armbar").unwrap();
-
         let sid = crate::db::create_syllabus(&db.pool, "S", None, coach)
             .await
             .unwrap();
-        crate::db::add_technique_to_syllabus(
-            &db.pool,
-            sid,
-            armbar,
-            coach,
-            crate::db::PropagationMode::SyllabusOnly,
-        )
-        .await
-        .unwrap();
-        crate::db::assign(&db.pool, coach, alice, sid)
-            .await
-            .unwrap();
-        crate::db::assign(&db.pool, coach, bob, sid).await.unwrap();
 
-        // Clear rows from setup (add_technique_to_syllabus and assigns now
-        // emit activity rows themselves) so we can assert just the manual
-        // emit_fanout call below.
+        // Clear setup rows so we assert just the broadcast emit below.
         sqlx::query!("DELETE FROM activity")
             .execute(&db.pool)
             .await
             .unwrap();
 
         let mut tx = db.pool.begin().await.unwrap();
-        let affected = affected_students_for_syllabus(&mut tx, sid).await.unwrap();
-        emit_fanout(
+        emit_broadcast(
             &mut tx,
             NewActivity::new(Verb::SyllabusTechniqueAdded, coach).syllabus(sid),
-            &affected,
         )
         .await
         .unwrap();
@@ -207,43 +187,13 @@ mod tests {
 
         let rows = sqlx::query!(
             r#"SELECT target_student_id AS "t?: i64" FROM activity
-               WHERE verb = 'syllabus_technique_added' ORDER BY target_student_id"#
+               WHERE verb = 'syllabus_technique_added'"#
         )
         .fetch_all(&db.pool)
         .await
         .unwrap();
         let targets: Vec<Option<i64>> = rows.into_iter().map(|r| r.t).collect();
-        assert_eq!(targets, vec![Some(alice), Some(bob)]);
-    }
-
-    #[rocket::async_test]
-    async fn fanout_empty_set_writes_one_coach_only_null_row() {
-        use crate::db::emit_fanout;
-        let db = TestDbBuilder::new()
-            .coach("coach", None)
-            .build()
-            .await
-            .unwrap();
-        let coach = db.user_id("coach").unwrap();
-        let sid = crate::db::create_syllabus(&db.pool, "Empty", None, coach)
-            .await
-            .unwrap();
-
-        let mut tx = db.pool.begin().await.unwrap();
-        emit_fanout(
-            &mut tx,
-            NewActivity::new(Verb::SyllabusTechniqueAdded, coach).syllabus(sid),
-            &[],
-        )
-        .await
-        .unwrap();
-        tx.commit().await.unwrap();
-
-        let row = sqlx::query!(r#"SELECT target_student_id AS "t?: i64" FROM activity"#)
-            .fetch_one(&db.pool)
-            .await
-            .unwrap();
-        assert_eq!(row.t, None, "empty fan-out writes a single coach-only row");
+        assert_eq!(targets, vec![None], "one broadcast row, no target student");
     }
 
     #[rocket::async_test]
@@ -429,15 +379,12 @@ mod tests {
         .fetch_all(&db.pool)
         .await
         .unwrap();
-        assert_eq!(rows.len(), 2, "one row per affected student");
-        for row in &rows {
-            let payload: serde_json::Value =
-                serde_json::from_str(row.p.as_deref().unwrap()).unwrap();
-            assert_eq!(payload["scope"], "global");
-            assert_eq!(payload["visible"], false);
-        }
-        let targets: Vec<Option<i64>> = rows.into_iter().map(|r| r.t).collect();
-        assert_eq!(targets, vec![Some(alice), Some(bob)]);
+        assert_eq!(rows.len(), 1, "one broadcast row, not per-student");
+        let payload: serde_json::Value =
+            serde_json::from_str(rows[0].p.as_deref().unwrap()).unwrap();
+        assert_eq!(payload["scope"], "global");
+        assert_eq!(payload["visible"], false);
+        assert_eq!(rows[0].t, None, "broadcast row has no target student");
     }
 
     #[rocket::async_test]
@@ -572,7 +519,7 @@ mod tests {
     }
 
     #[rocket::async_test]
-    async fn syllabus_technique_added_fans_out_to_active_assignments() {
+    async fn syllabus_technique_added_emits_one_broadcast_row() {
         let db = TestDbBuilder::new()
             .coach("coach", None)
             .student("alice", None)
@@ -612,17 +559,17 @@ mod tests {
 
         let rows = sqlx::query!(
             r#"SELECT target_student_id AS "t?: i64" FROM activity
-               WHERE verb = 'syllabus_technique_added' ORDER BY target_student_id"#
+               WHERE verb = 'syllabus_technique_added'"#
         )
         .fetch_all(&db.pool)
         .await
         .unwrap();
         let targets: Vec<Option<i64>> = rows.into_iter().map(|r| r.t).collect();
-        assert_eq!(targets, vec![Some(alice), Some(bob)]);
+        assert_eq!(targets, vec![None], "one broadcast row, no target student");
     }
 
     #[rocket::async_test]
-    async fn video_added_fans_out_to_union_of_assigned_and_pinned() {
+    async fn video_added_emits_one_broadcast_row() {
         let db = TestDbBuilder::new()
             .coach("coach", None)
             .student("alice", None)
@@ -670,14 +617,13 @@ mod tests {
 
         let rows = sqlx::query!(
             r#"SELECT target_student_id AS "t?: i64"
-               FROM activity WHERE verb = 'video_added'
-               ORDER BY target_student_id NULLS LAST"#
+               FROM activity WHERE verb = 'video_added'"#
         )
         .fetch_all(&db.pool)
         .await
         .unwrap();
         let targets: Vec<Option<i64>> = rows.into_iter().map(|r| r.t).collect();
-        assert_eq!(targets, vec![Some(alice), Some(bob)]);
+        assert_eq!(targets, vec![None], "one broadcast row, no target student");
     }
 
     #[rocket::async_test]
@@ -760,7 +706,7 @@ mod tests {
         .fetch_one(&db.pool)
         .await
         .unwrap();
-        assert_eq!(row.t, Some(alice), "row targets the pinned student");
+        assert_eq!(row.t, None, "broadcast row has no target student");
         assert_eq!(row.a, coach);
         let payload: serde_json::Value = serde_json::from_str(&row.p.unwrap()).unwrap();
         assert_eq!(

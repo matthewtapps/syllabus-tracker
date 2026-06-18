@@ -35,6 +35,9 @@ function row(overrides: Partial<ActivityRow> = {}): ActivityRow {
     camp_id: null,
     competition_id: null,
     match_id: null,
+    camp_name: null,
+    competition_name: null,
+    comment_count: 0,
     ...overrides,
   };
 }
@@ -153,10 +156,11 @@ describe("ActivityFeedList", () => {
 
   // --- no-href coalesced row: toggle button present, no overlay link ---
   test("coalesced no-href rows: no overlay link but toggle button is present", () => {
+    // A verb with no deep-link href, not touched by hide/unhide suppression.
     const noHrefRow = (id: number) =>
       row({
         id,
-        verb: "sst_hidden",
+        verb: "performed_unknown",
         technique_id: null,
         technique_name: null,
         sst_id: null,

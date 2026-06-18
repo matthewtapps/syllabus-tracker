@@ -2,7 +2,7 @@ use sqlx::{Pool, Sqlite};
 use tracing::{info, instrument};
 
 use crate::db::activity::{
-    NewActivity, Verb, affected_students_for_technique, emit_fanout, payload,
+    NewActivity, Verb, emit_broadcast, payload,
 };
 use crate::error::AppError;
 use crate::models::{DbTag, DbTechnique, Tag, Technique};
@@ -72,13 +72,11 @@ pub async fn add_tag_to_technique(
     .execute(&mut *tx)
     .await?;
 
-    let affected = affected_students_for_technique(&mut tx, technique_id).await?;
-    emit_fanout(
+    emit_broadcast(
         &mut tx,
         NewActivity::new(Verb::TechniqueEdited, actor_id)
             .technique(technique_id)
             .payload(payload::technique_edited(false, false, &[tag_name], &[])),
-        &affected,
     )
     .await?;
 
@@ -111,13 +109,11 @@ pub async fn remove_tag_from_technique(
     .execute(&mut *tx)
     .await?;
 
-    let affected = affected_students_for_technique(&mut tx, technique_id).await?;
-    emit_fanout(
+    emit_broadcast(
         &mut tx,
         NewActivity::new(Verb::TechniqueEdited, actor_id)
             .technique(technique_id)
             .payload(payload::technique_edited(false, false, &[], &[tag_name])),
-        &affected,
     )
     .await?;
 

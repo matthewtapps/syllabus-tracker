@@ -5,8 +5,6 @@ pub mod attempts;
 pub mod camps;
 pub mod competitions;
 pub mod matches;
-pub mod suggestions;
-pub mod suggestion_routes;
 pub mod dashboard_digest;
 pub mod dashboard_reporting;
 pub mod db;

@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT target_student_id AS \"t?: i64\" FROM activity",
+  "query": "SELECT target_student_id AS \"t?: i64\" FROM activity\n               WHERE verb = 'syllabus_technique_added'",
   "describe": {
     "columns": [
       {
@@ -16,5 +16,5 @@
       true
     ]
   },
-  "hash": "be6669f6015325c937728e97c2f93ebe8b50661abc372d9f7e81b3224b71c0af"
+  "hash": "5572a29ea9fde95c3347d3b4206cf5ef50b282ba6f992ef4148b0b04da9742cd"
 }

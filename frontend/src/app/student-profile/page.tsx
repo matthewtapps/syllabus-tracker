@@ -326,6 +326,12 @@ function ProfileHub({
         </div>
       </section>
 
+      {/* Discussion + recent activity are a coach's per-student view. A student
+          viewing their own profile gets these from their feed instead (the feed
+          replaces the recent-activity list, and the feed carries the discussion
+          composer). */}
+      {!isOwnView && (
+        <>
       {/* Discussion */}
       <section className="space-y-2">
         <h2 className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
@@ -382,6 +388,8 @@ function ProfileHub({
           />
         </div>
       </section>
+        </>
+      )}
 
       {canManageAccount && (
         <AccountDialog

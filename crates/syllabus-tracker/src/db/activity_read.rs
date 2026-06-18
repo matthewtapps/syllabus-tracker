@@ -40,11 +40,17 @@ pub struct ActivityRow {
     pub video_title: Option<String>,
     pub thread_id: Option<i64>,
     pub camp_id: Option<i64>,
+    pub camp_name: Option<String>,
     pub competition_id: Option<i64>,
+    pub competition_name: Option<String>,
     pub match_id: Option<i64>,
     pub payload_json: Option<String>,
     pub unread: bool,
     pub context_kind: Option<String>,
+    /// For a coalesced `thread_comment_posted` row: how many comment events
+    /// (the thread opener plus replies) the thread carries. 1 for a lone
+    /// thread; 0 for every non-thread verb.
+    pub comment_count: i64,
 }
 
 /// Return the current `max_seen_id` for `viewer`, or 0 if no cursor row exists.
@@ -188,7 +194,8 @@ pub async fn mark_one_unread(
 ///
 /// Role predicate:
 /// - Student: `target_student_id = viewer`
-/// - Coach/Admin: `actor_user_id != viewer` (all gym activity except own rows)
+/// - Coach/Admin: all gym activity (a social feed, includes the viewer's own
+///   rows; own rows render already-read via notifies())
 ///
 /// Results are ordered `occurred_at DESC, id DESC`. Pass `before` to continue
 /// after a previous page (keyset on `(occurred_at, id) < before`).
@@ -214,7 +221,18 @@ pub async fn feed(
     match role {
         Role::Student => {
             let rows = sqlx::query!(
-                r#"SELECT act.id               AS "id!: i64",
+                r#"WITH thread_ranked AS (
+                       -- Rank a thread's comment events newest-first and count
+                       -- them, so the feed can keep one row per thread (rn = 1)
+                       -- and show how many comments it carries. Scoped to comment
+                       -- rows only; every other verb is absent from the CTE.
+                       SELECT id,
+                              ROW_NUMBER() OVER (PARTITION BY thread_id ORDER BY id DESC) AS rn,
+                              COUNT(*)     OVER (PARTITION BY thread_id)                  AS comment_count
+                       FROM activity
+                       WHERE verb = 'thread_comment_posted' AND thread_id IS NOT NULL
+                   )
+                   SELECT act.id               AS "id!: i64",
                           act.occurred_at      AS "occurred_at!: String",
                           act.verb             AS "verb!: String",
                           act.actor_user_id    AS "actor_user_id!: i64",
@@ -230,8 +248,11 @@ pub async fn feed(
                           v.title              AS "video_title?: String",
                           act.thread_id        AS "thread_id?: i64",
                           act.camp_id          AS "camp_id?: i64",
+                          cp.name              AS "camp_name?: String",
                           act.competition_id   AS "competition_id?: i64",
+                          co.name              AS "competition_name?: String",
                           act.match_id         AS "match_id?: i64",
+                          COALESCE(tr.comment_count, 0) AS "comment_count!: i64",
                           act.payload_json     AS "payload_json?: String",
                           act.context_kind     AS "context_kind?: String",
                           CASE
@@ -247,19 +268,62 @@ pub async fn feed(
                    LEFT JOIN syllabi s    ON s.id = act.syllabus_id
                    LEFT JOIN videos v     ON v.id = act.video_id
                    LEFT JOIN threads th   ON th.id = act.thread_id
+                   LEFT JOIN camps cp     ON cp.id = act.camp_id
+                   LEFT JOIN competitions co ON co.id = act.competition_id
+                   LEFT JOIN thread_ranked tr ON tr.id = act.id
                    LEFT JOIN activity_cursors c
                           ON c.viewer_user_id = ?
                    LEFT JOIN activity_seen_overrides ov
                           ON ov.viewer_user_id = ? AND ov.activity_id = act.id
-                   WHERE act.target_student_id = ?
+                   -- Pull model: a student sees a row when it targets them, OR
+                   -- when it is a broadcast event (NULL target) on a technique
+                   -- they have assigned/pinned, or a syllabus they are assigned
+                   -- to. Relevance is computed live, mirroring the old fan-out
+                   -- audience.
+                   WHERE (
+                       act.target_student_id = ?
+                       OR (
+                         act.target_student_id IS NULL
+                         AND (
+                           ( act.verb IN ('video_added','video_visibility_set','technique_edited')
+                             AND act.technique_id IS NOT NULL
+                             AND EXISTS (
+                               SELECT 1 FROM syllabus_assignments a
+                                 JOIN student_syllabus_techniques sst ON sst.assignment_id = a.id
+                                 WHERE a.student_id = ? AND a.unassigned_at IS NULL
+                                   AND sst.technique_id = act.technique_id AND sst.hidden_at IS NULL
+                               UNION
+                               SELECT 1 FROM student_pinned_techniques p
+                                 WHERE p.student_id = ? AND p.technique_id = act.technique_id
+                             ) )
+                           OR
+                           ( act.verb IN ('syllabus_technique_added','syllabus_technique_removed')
+                             AND act.syllabus_id IS NOT NULL
+                             AND EXISTS (
+                               SELECT 1 FROM syllabus_assignments a
+                                 WHERE a.student_id = ? AND a.unassigned_at IS NULL
+                                   AND a.syllabus_id = act.syllabus_id
+                             ) )
+                         )
+                       )
+                     )
                      -- Hide rows whose referenced video/thread was deleted or
                      -- wiped (orphaned activity), so they don't render as dead
                      -- "watched a video" / "commented on" lines with no link.
                      AND (act.video_id IS NULL OR (v.id IS NOT NULL AND v.deleted_at IS NULL))
                      AND (act.thread_id IS NULL OR (th.id IS NOT NULL AND th.deleted_at IS NULL))
+                     -- Coalesce a thread's comment events into one feed row: keep
+                     -- only the newest (rn = 1, per the thread_ranked CTE) comment
+                     -- row per thread. Every row in a thread shares the same anchor
+                     -- and target, so the viewer-relevance predicate above holds
+                     -- for the kept row just as it did for the dropped ones.
+                     AND (act.verb != 'thread_comment_posted' OR tr.rn = 1)
                      AND (? IS NULL OR (act.occurred_at, act.id) < (?, ?))
                    ORDER BY act.occurred_at DESC, act.id DESC
                    LIMIT ?"#,
+                viewer,
+                viewer,
+                viewer,
                 viewer,
                 viewer,
                 viewer,
@@ -293,18 +357,32 @@ pub async fn feed(
                         video_title: r.video_title,
                         thread_id: r.thread_id,
                         camp_id: r.camp_id,
+                        camp_name: r.camp_name,
                         competition_id: r.competition_id,
+                        competition_name: r.competition_name,
                         match_id: r.match_id,
                         payload_json: r.payload_json,
                         unread,
                         context_kind: r.context_kind,
+                        comment_count: r.comment_count,
                     }
                 })
                 .collect())
         }
         Role::Coach | Role::Admin => {
             let rows = sqlx::query!(
-                r#"SELECT act.id               AS "id!: i64",
+                r#"WITH thread_ranked AS (
+                       -- Rank a thread's comment events newest-first and count
+                       -- them, so the feed can keep one row per thread (rn = 1)
+                       -- and show how many comments it carries. Scoped to comment
+                       -- rows only; every other verb is absent from the CTE.
+                       SELECT id,
+                              ROW_NUMBER() OVER (PARTITION BY thread_id ORDER BY id DESC) AS rn,
+                              COUNT(*)     OVER (PARTITION BY thread_id)                  AS comment_count
+                       FROM activity
+                       WHERE verb = 'thread_comment_posted' AND thread_id IS NOT NULL
+                   )
+                   SELECT act.id               AS "id!: i64",
                           act.occurred_at      AS "occurred_at!: String",
                           act.verb             AS "verb!: String",
                           act.actor_user_id    AS "actor_user_id!: i64",
@@ -320,8 +398,11 @@ pub async fn feed(
                           v.title              AS "video_title?: String",
                           act.thread_id        AS "thread_id?: i64",
                           act.camp_id          AS "camp_id?: i64",
+                          cp.name              AS "camp_name?: String",
                           act.competition_id   AS "competition_id?: i64",
+                          co.name              AS "competition_name?: String",
                           act.match_id         AS "match_id?: i64",
+                          COALESCE(tr.comment_count, 0) AS "comment_count!: i64",
                           act.payload_json     AS "payload_json?: String",
                           act.context_kind     AS "context_kind?: String",
                           CASE
@@ -337,20 +418,30 @@ pub async fn feed(
                    LEFT JOIN syllabi s    ON s.id = act.syllabus_id
                    LEFT JOIN videos v     ON v.id = act.video_id
                    LEFT JOIN threads th   ON th.id = act.thread_id
+                   LEFT JOIN camps cp     ON cp.id = act.camp_id
+                   LEFT JOIN competitions co ON co.id = act.competition_id
+                   LEFT JOIN thread_ranked tr ON tr.id = act.id
                    LEFT JOIN activity_cursors c
                           ON c.viewer_user_id = ?
                    LEFT JOIN activity_seen_overrides ov
                           ON ov.viewer_user_id = ? AND ov.activity_id = act.id
-                   WHERE act.actor_user_id != ?
+                   -- The gym feed is a social feed: every gym row, including the
+                   -- viewer's own actions (own rows just render already-read via
+                   -- notifies()). No actor filter here.
+                   WHERE (act.video_id IS NULL OR (v.id IS NOT NULL AND v.deleted_at IS NULL))
                      -- Hide rows whose referenced video/thread was deleted or
                      -- wiped (orphaned activity), so they don't render as dead
                      -- "watched a video" / "commented on" lines with no link.
-                     AND (act.video_id IS NULL OR (v.id IS NOT NULL AND v.deleted_at IS NULL))
                      AND (act.thread_id IS NULL OR (th.id IS NOT NULL AND th.deleted_at IS NULL))
+                     -- Coalesce a thread's comment events into one feed row: keep
+                     -- only the newest (rn = 1, per the thread_ranked CTE) comment
+                     -- row per thread. Every row in a thread shares the same anchor
+                     -- and target, so the viewer-relevance predicate above holds
+                     -- for the kept row just as it did for the dropped ones.
+                     AND (act.verb != 'thread_comment_posted' OR tr.rn = 1)
                      AND (? IS NULL OR (act.occurred_at, act.id) < (?, ?))
                    ORDER BY act.occurred_at DESC, act.id DESC
                    LIMIT ?"#,
-                viewer,
                 viewer,
                 viewer,
                 before_ts,
@@ -383,11 +474,14 @@ pub async fn feed(
                         video_title: r.video_title,
                         thread_id: r.thread_id,
                         camp_id: r.camp_id,
+                        camp_name: r.camp_name,
                         competition_id: r.competition_id,
+                        competition_name: r.competition_name,
                         match_id: r.match_id,
                         payload_json: r.payload_json,
                         unread,
                         context_kind: r.context_kind,
+                        comment_count: r.comment_count,
                     }
                 })
                 .collect())
@@ -498,11 +592,16 @@ pub async fn dashboard_activity_feed(
             video_title: r.video_title,
             thread_id: None,
             camp_id: r.camp_id,
+            // The dashboard glance does not join camps/competitions (it never
+            // deep-links into those gated surfaces), so names stay None here.
+            camp_name: None,
             competition_id: r.competition_id,
+            competition_name: None,
             match_id: r.match_id,
             payload_json: r.payload_json,
             unread: false,
             context_kind: r.context_kind,
+            comment_count: 0,
         })
         .collect())
 }
@@ -528,9 +627,39 @@ pub async fn unread_count(pool: &Pool<Sqlite>, viewer: i64, role: Role) -> Resul
 
     let placeholders = vec!["?"; notifiable_verbs.len()].join(", ");
 
-    let feed_predicate = match role {
-        Role::Student => "act.target_student_id = ?",
-        Role::Coach | Role::Admin => "act.actor_user_id != ?",
+    // Student relevance mirrors the feed() student branch (pull model): targeted
+    // to me, or a broadcast event on a technique/syllabus I have. Keep this in
+    // sync with feed(). `predicate_viewer_binds` is how many `?` it consumes.
+    const STUDENT_RELEVANCE: &str = r#"(
+        act.target_student_id = ?
+        OR (
+          act.target_student_id IS NULL
+          AND (
+            ( act.verb IN ('video_added','video_visibility_set','technique_edited')
+              AND act.technique_id IS NOT NULL
+              AND EXISTS (
+                SELECT 1 FROM syllabus_assignments a
+                  JOIN student_syllabus_techniques sst ON sst.assignment_id = a.id
+                  WHERE a.student_id = ? AND a.unassigned_at IS NULL
+                    AND sst.technique_id = act.technique_id AND sst.hidden_at IS NULL
+                UNION
+                SELECT 1 FROM student_pinned_techniques p
+                  WHERE p.student_id = ? AND p.technique_id = act.technique_id
+              ) )
+            OR
+            ( act.verb IN ('syllabus_technique_added','syllabus_technique_removed')
+              AND act.syllabus_id IS NOT NULL
+              AND EXISTS (
+                SELECT 1 FROM syllabus_assignments a
+                  WHERE a.student_id = ? AND a.unassigned_at IS NULL
+                    AND a.syllabus_id = act.syllabus_id
+              ) )
+          )
+        )
+      )"#;
+    let (feed_predicate, predicate_viewer_binds): (&str, usize) = match role {
+        Role::Student => (STUDENT_RELEVANCE, 4),
+        Role::Coach | Role::Admin => ("act.actor_user_id != ?", 1),
     };
 
     let query = format!(
@@ -557,13 +686,13 @@ pub async fn unread_count(pool: &Pool<Sqlite>, viewer: i64, role: Role) -> Resul
     );
 
     // Bind order: cursor join (viewer), override join (viewer),
-    // feed predicate (viewer), actor != viewer (viewer),
+    // feed predicate (viewer x predicate_viewer_binds), actor != viewer (viewer),
     // then one bind per notifiable verb.
-    let mut q = sqlx::query_scalar::<_, i64>(&query)
-        .bind(viewer)
-        .bind(viewer)
-        .bind(viewer)
-        .bind(viewer);
+    let mut q = sqlx::query_scalar::<_, i64>(&query).bind(viewer).bind(viewer);
+    for _ in 0..predicate_viewer_binds {
+        q = q.bind(viewer);
+    }
+    q = q.bind(viewer);
     for verb in &notifiable_verbs {
         q = q.bind(*verb);
     }
