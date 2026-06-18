@@ -147,7 +147,7 @@ jobs:
             --service-account=${{ env.RUNTIME_SA }} \
             --allow-unauthenticated \
             --port=8080 \
-            --cpu=1 \
+            --cpu=4 \
             --memory=2Gi \
             --timeout=600 \
             --max-instances=3 \
