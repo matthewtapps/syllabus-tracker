@@ -156,7 +156,9 @@ async fn handle_job(
     async move {
         let relay_tp = telemetry::current_traceparent();
         if state.async_mode {
-            // Async dev mode: spawn detached, return 202 immediately.
+            // Async dev mode: spawn detached, return 202 immediately. The relay
+            // span ends as soon as we return 202, so its duration is meaningless
+            // here (the child outlives it). Dev-only; sync mode is the real path.
             tokio::spawn(async move {
                 run_worker_fire_and_forget(
                     &video_id_str, &job, &pass_through_vars, relay_tp.as_deref(),
@@ -170,6 +172,9 @@ async fn handle_job(
             ).await {
                 Ok(()) => StatusCode::OK.into_response(),
                 Err(stderr) => {
+                    // Mark the relay span failed so "failed relays" are queryable
+                    // even though the child's own span also records the failure.
+                    tracing::Span::current().set_attribute("error", true);
                     error!(
                         video_id = job.video_id,
                         stderr = %stderr,
@@ -355,7 +360,13 @@ async fn main() {
 
     info!(port, "transcode-server listening");
 
-    if let Err(e) = axum::serve(listener, app).await {
+    // Graceful shutdown on SIGTERM (Cloud Run sends it before SIGKILL) / Ctrl-C
+    // so `serve` returns and we reach the flush below — otherwise buffered relay
+    // spans would be dropped on every redeploy/scale-to-zero.
+    if let Err(e) = axum::serve(listener, app)
+        .with_graceful_shutdown(shutdown_signal())
+        .await
+    {
         warn!(error = %e, "transcode-server: server exited");
     }
 
@@ -363,6 +374,34 @@ async fn main() {
         let _ = provider.force_flush();
         let _ = provider.shutdown();
     }
+}
+
+/// Resolves when the process receives SIGTERM (Cloud Run) or Ctrl-C, letting
+/// axum drain in-flight requests before we flush telemetry and exit.
+async fn shutdown_signal() {
+    let ctrl_c = async {
+        let _ = tokio::signal::ctrl_c().await;
+    };
+
+    #[cfg(unix)]
+    let terminate = async {
+        match tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()) {
+            Ok(mut sig) => {
+                sig.recv().await;
+            }
+            Err(_) => std::future::pending::<()>().await,
+        }
+    };
+
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
+
+    tokio::select! {
+        _ = ctrl_c => {},
+        _ = terminate => {},
+    }
+
+    info!("transcode-server: shutdown signal received, draining");
 }
 
 // ---------------------------------------------------------------------------
