@@ -37,7 +37,11 @@ tracing-subscriber = { workspace = true }
 # HTTP exporter (reqwest) keeps Cloud Run egress on plain HTTPS, no gRPC.
 opentelemetry = { version = "0.29.1", features = ["trace"] }
 opentelemetry_sdk = { version = "0.29.0", features = ["trace", "rt-tokio"] }
-opentelemetry-otlp = { version = "0.29.0", default-features = false, features = ["trace", "http-proto", "reqwest-client", "reqwest-rustls"] }
+# Blocking reqwest client (not async): the SDK's BatchSpanProcessor exports from
+# a dedicated OS thread with no tokio reactor, so the async reqwest client panics
+# there ("no reactor running") and silently drops every span. The blocking client
+# works without an ambient runtime. See deploy logs 2026-06-17.
+opentelemetry-otlp = { version = "0.29.0", default-features = false, features = ["trace", "http-proto", "reqwest-blocking-client", "reqwest-rustls"] }
 opentelemetry-semantic-conventions = { version = "0.29.0" }
 tracing-opentelemetry = "0.30.0"
 
