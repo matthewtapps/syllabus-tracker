@@ -86,6 +86,7 @@ import { FileVideoIcon, VideoIcon } from "lucide-react";
 import { MAX_VIDEO_BYTES, MAX_VIDEO_DURATION_SECONDS, formatBytes } from "@/components/videos/limits";
 import { useListUrlState } from "@/lib/use-list-url-state";
 import { cn } from "@/lib/utils";
+import { PullFromPrevious } from "@/components/camps/pull-from-previous";
 
 /**
  * Adapt a CampTechnique into the LibraryTechniqueRow shape that TechniqueRow
@@ -1537,15 +1538,22 @@ function CampDetail({
             Techniques
           </h2>
           {isCoach && (
-            <Button
-              size="sm"
-              variant="outline"
-              className="h-7 gap-1.5 text-xs"
-              onClick={() => setAddPickerOpen(true)}
-            >
-              <Plus className="h-3.5 w-3.5" />
-              Add techniques
-            </Button>
+            <div className="flex items-center gap-2">
+              <PullFromPrevious
+                currentCampId={campId}
+                studentId={camp.student_id}
+                referencesCampId={camp.references_camp_id}
+              />
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7 gap-1.5 text-xs"
+                onClick={() => setAddPickerOpen(true)}
+              >
+                <Plus className="h-3.5 w-3.5" />
+                Add techniques
+              </Button>
+            </div>
           )}
         </div>
         {isCoach && (
