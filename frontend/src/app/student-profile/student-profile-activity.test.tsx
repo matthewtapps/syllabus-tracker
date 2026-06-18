@@ -71,8 +71,11 @@ function makeStubFetch(feedRows: ActivityRow[]) {
         }),
       );
     }
-    if (url.includes("/api/users")) {
-      // Coaches resolve the profiled student from the users list.
+    // Coaches resolve the profiled student from the students list
+    // (getAllUsers -> /api/students?...). The list endpoint carries a query
+    // string, so this won't shadow the /api/students/:id/... sub-resources
+    // handled below.
+    if (url.includes("/api/students?")) {
       return Promise.resolve(
         new Response(
           JSON.stringify([
