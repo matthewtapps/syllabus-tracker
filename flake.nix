@@ -136,7 +136,7 @@
             # `db-sql-*` recipes. Source of truth is the IaC (infra tofu output
             # `_platform_vm_ip`); refresh this value with `just update-ssh-host`,
             # then re-enter the dev shell. Empty until first set.
-            SILLYBUS_SSH_HOST = "";
+            SILLYBUS_SSH_HOST = "170.64.172.214";
           };
 
           # Lean shell for CI correctness gates. See `ciInputs` above.

@@ -267,20 +267,37 @@ unlock:
 lock:
     @rm -f /dev/shm/sops-age-key-$(id -u) 2>/dev/null && echo "locked" || echo "already locked"
 
-# Path to the platform IaC repo, which mints this service's R2 state creds
-# (service_bootstrap_tokens.sillybus). Override if your checkout differs.
+# The tofu recipes below (tofu, tofu-init, update-ssh-host) need R2 state creds.
+# They take them from your env (AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY) if
+# set, else from the sibling platform IaC repo that mints them
+# (service_bootstrap_tokens.sillybus). Without either, they fail with a clear
+# message. The `remote` / `db-sql-*` recipes do NOT need this; they only read
+# SILLYBUS_SSH_HOST. Override the platform repo path with PLATFORM_INFRA_DIR.
 platform_infra := env_var_or_default("PLATFORM_INFRA_DIR", "../infra")
 
-# Print `export AWS_*` lines for this repo's R2 tofu state, sourced from the
-# platform IaC bootstrap token. The platform `just tf` self-sources its own
-# (sops) creds, so this works as long as that repo is set up. Private.
+# Print `export AWS_*` lines for this repo's R2 tofu state. Order of resolution:
+# (1) if AWS creds are already in your env, print nothing (the caller keeps
+# them); (2) else source them from the platform IaC bootstrap token. Prints a
+# clear hint and fails if the platform repo is absent or its creds can't be
+# read. Private.
 [group('infra')]
 [private]
 _r2-env:
     #!/usr/bin/env bash
     set -euo pipefail
-    ( cd "{{platform_infra}}" && just tf output -json service_bootstrap_tokens ) \
-      | jq -r '.sillybus | "export AWS_ACCESS_KEY_ID=\(.access_key_id)\nexport AWS_SECRET_ACCESS_KEY=\(.secret_access_key)"'
+    if [ -n "${AWS_ACCESS_KEY_ID:-}" ] && [ -n "${AWS_SECRET_ACCESS_KEY:-}" ]; then
+        exit 0
+    fi
+    dir="{{platform_infra}}"
+    if [ ! -f "$dir/justfile" ]; then
+        echo "No platform IaC repo at '$dir' (set PLATFORM_INFRA_DIR), and no AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY in your env. Set one of those to use the tofu recipes." >&2
+        exit 1
+    fi
+    raw="$( cd "$dir" && just tf output -json service_bootstrap_tokens )" || {
+        echo "Could not read platform state creds from '$dir'. Is the age key unlocked? Run 'just unlock'." >&2
+        exit 1
+    }
+    echo "$raw" | jq -r '.sillybus | "export AWS_ACCESS_KEY_ID=\(.access_key_id)\nexport AWS_SECRET_ACCESS_KEY=\(.secret_access_key)"'
 
 # R2 state creds auto-load from the platform IaC (PLATFORM_INFRA_DIR); needs the
 # age key unlocked (`just unlock`).
@@ -289,7 +306,7 @@ _r2-env:
 tofu *args:
     #!/usr/bin/env bash
     set -euo pipefail
-    creds="$(just _r2-env)" || { echo "Could not load R2 creds. Run 'just unlock' first."; exit 1; }
+    creds="$(just _r2-env)" || exit 1
     eval "$creds"
     tofu -chdir=infra {{args}}
 
@@ -299,7 +316,7 @@ tofu *args:
 tofu-init *args:
     #!/usr/bin/env bash
     set -euo pipefail
-    creds="$(just _r2-env)" || { echo "Could not load R2 creds. Run 'just unlock' first."; exit 1; }
+    creds="$(just _r2-env)" || exit 1
     eval "$creds"
     tofu -chdir=infra init {{args}}
 
@@ -330,7 +347,7 @@ update-ssh-host:
     set -euo pipefail
     # Creds auto-load from the platform IaC; re-enter `nix develop` afterward to
     # pick up the new value.
-    creds="$(just _r2-env)" || { echo "Could not load R2 creds. Run 'just unlock' first."; exit 1; }
+    creds="$(just _r2-env)" || exit 1
     eval "$creds"
     ip="$(tofu -chdir=infra output -raw _platform_vm_ip)" || {
         echo "tofu failed. If this is a backend-init error, run 'just tofu-init' first."
