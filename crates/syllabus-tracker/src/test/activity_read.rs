@@ -1163,4 +1163,163 @@ mod tests {
         );
     }
 
+    // ---- Pull-model relevance ----
+
+    /// A broadcast `video_added` (NULL target) appears in the feed of a student
+    /// who has the technique assigned, and one who has it pinned, but not an
+    /// unrelated student. The coach gym feed shows it exactly once.
+    #[rocket::async_test]
+    async fn broadcast_video_added_resolves_relevance_at_read_time() {
+        use crate::db::emit_broadcast;
+        let db = TestDbBuilder::new()
+            .coach("coach", None)
+            .student("alice", None)
+            .student("bob", None)
+            .student("carol", None)
+            .technique("Armbar", "", Some("coach"))
+            .build()
+            .await
+            .unwrap();
+        let coach = db.user_id("coach").unwrap();
+        let alice = db.user_id("alice").unwrap();
+        let bob = db.user_id("bob").unwrap();
+        let carol = db.user_id("carol").unwrap();
+        let armbar = db.technique_id("Armbar").unwrap();
+
+        // alice: technique via an assigned syllabus. bob: pinned. carol: nothing.
+        let sid = crate::db::create_syllabus(&db.pool, "S", None, coach)
+            .await
+            .unwrap();
+        let aid = crate::db::assign(&db.pool, coach, alice, sid).await.unwrap();
+        crate::db::add_technique_to_assignment(&db.pool, aid, armbar, coach)
+            .await
+            .unwrap();
+        crate::db::pin_technique(&db.pool, bob, armbar).await.unwrap();
+
+        sqlx::query!("DELETE FROM activity")
+            .execute(&db.pool)
+            .await
+            .unwrap();
+
+        let mut tx = db.pool.begin().await.unwrap();
+        emit_broadcast(
+            &mut tx,
+            NewActivity::new(Verb::TechniqueEdited, coach).technique(armbar),
+        )
+        .await
+        .unwrap();
+        tx.commit().await.unwrap();
+
+        let has_edit = |rows: &[crate::db::ActivityRow]| {
+            rows.iter().any(|r| r.verb == "technique_edited")
+        };
+        assert!(has_edit(&feed(&db.pool, alice, Role::Student, None, 50).await.unwrap()), "assigned student sees it");
+        assert!(has_edit(&feed(&db.pool, bob, Role::Student, None, 50).await.unwrap()), "pinned student sees it");
+        assert!(!has_edit(&feed(&db.pool, carol, Role::Student, None, 50).await.unwrap()), "unrelated student does not");
+
+        let coach_rows = feed(&db.pool, coach, Role::Coach, None, 50).await.unwrap();
+        assert_eq!(
+            coach_rows.iter().filter(|r| r.verb == "technique_edited").count(),
+            1,
+            "gym feed shows the broadcast exactly once"
+        );
+    }
+
+    /// Unassigning the syllabus removes the broadcast from that student's feed
+    /// (relevance is live, not a frozen snapshot), and a broadcast
+    /// `syllabus_technique_added` only reaches students assigned to that syllabus.
+    #[rocket::async_test]
+    async fn broadcast_relevance_is_live_and_syllabus_scoped() {
+        use crate::db::emit_broadcast;
+        let db = TestDbBuilder::new()
+            .coach("coach", None)
+            .student("alice", None)
+            .student("carol", None)
+            .technique("Armbar", "", Some("coach"))
+            .build()
+            .await
+            .unwrap();
+        let coach = db.user_id("coach").unwrap();
+        let alice = db.user_id("alice").unwrap();
+        let carol = db.user_id("carol").unwrap();
+        let armbar = db.technique_id("Armbar").unwrap();
+
+        let sid = crate::db::create_syllabus(&db.pool, "S", None, coach)
+            .await
+            .unwrap();
+        let aid = crate::db::assign(&db.pool, coach, alice, sid).await.unwrap();
+
+        sqlx::query!("DELETE FROM activity")
+            .execute(&db.pool)
+            .await
+            .unwrap();
+
+        let mut tx = db.pool.begin().await.unwrap();
+        emit_broadcast(
+            &mut tx,
+            NewActivity::new(Verb::SyllabusTechniqueAdded, coach)
+                .syllabus(sid)
+                .technique(armbar),
+        )
+        .await
+        .unwrap();
+        tx.commit().await.unwrap();
+
+        let sees = |rows: &[crate::db::ActivityRow]| {
+            rows.iter().any(|r| r.verb == "syllabus_technique_added")
+        };
+        assert!(sees(&feed(&db.pool, alice, Role::Student, None, 50).await.unwrap()), "assigned student sees it");
+        assert!(!sees(&feed(&db.pool, carol, Role::Student, None, 50).await.unwrap()), "unassigned student does not");
+
+        // Unassign alice; the broadcast drops off her live feed.
+        crate::db::unassign(&db.pool, coach, aid).await.unwrap();
+        assert!(
+            !sees(&feed(&db.pool, alice, Role::Student, None, 50).await.unwrap()),
+            "after unassign the broadcast is no longer relevant"
+        );
+    }
+
+    /// A broadcast event counts as unread only for a relevant student.
+    #[rocket::async_test]
+    async fn broadcast_unread_count_is_relevance_scoped() {
+        use crate::db::emit_broadcast;
+        let db = TestDbBuilder::new()
+            .coach("coach", None)
+            .student("alice", None)
+            .student("carol", None)
+            .technique("Armbar", "", Some("coach"))
+            .build()
+            .await
+            .unwrap();
+        let coach = db.user_id("coach").unwrap();
+        let alice = db.user_id("alice").unwrap();
+        let carol = db.user_id("carol").unwrap();
+        let armbar = db.technique_id("Armbar").unwrap();
+
+        crate::db::pin_technique(&db.pool, alice, armbar).await.unwrap();
+
+        sqlx::query!("DELETE FROM activity")
+            .execute(&db.pool)
+            .await
+            .unwrap();
+
+        let mut tx = db.pool.begin().await.unwrap();
+        emit_broadcast(
+            &mut tx,
+            NewActivity::new(Verb::TechniqueEdited, coach).technique(armbar),
+        )
+        .await
+        .unwrap();
+        tx.commit().await.unwrap();
+
+        assert!(
+            unread_count(&db.pool, alice, Role::Student).await.unwrap() >= 1,
+            "relevant student has the broadcast unread"
+        );
+        assert_eq!(
+            unread_count(&db.pool, carol, Role::Student).await.unwrap(),
+            0,
+            "unrelated student has nothing unread"
+        );
+    }
 }

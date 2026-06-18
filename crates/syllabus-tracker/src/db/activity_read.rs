@@ -252,7 +252,38 @@ pub async fn feed(
                           ON c.viewer_user_id = ?
                    LEFT JOIN activity_seen_overrides ov
                           ON ov.viewer_user_id = ? AND ov.activity_id = act.id
-                   WHERE act.target_student_id = ?
+                   -- Pull model: a student sees a row when it targets them, OR
+                   -- when it is a broadcast event (NULL target) on a technique
+                   -- they have assigned/pinned, or a syllabus they are assigned
+                   -- to. Relevance is computed live, mirroring the old fan-out
+                   -- audience.
+                   WHERE (
+                       act.target_student_id = ?
+                       OR (
+                         act.target_student_id IS NULL
+                         AND (
+                           ( act.verb IN ('video_added','video_visibility_set','technique_edited')
+                             AND act.technique_id IS NOT NULL
+                             AND EXISTS (
+                               SELECT 1 FROM syllabus_assignments a
+                                 JOIN student_syllabus_techniques sst ON sst.assignment_id = a.id
+                                 WHERE a.student_id = ? AND a.unassigned_at IS NULL
+                                   AND sst.technique_id = act.technique_id AND sst.hidden_at IS NULL
+                               UNION
+                               SELECT 1 FROM student_pinned_techniques p
+                                 WHERE p.student_id = ? AND p.technique_id = act.technique_id
+                             ) )
+                           OR
+                           ( act.verb IN ('syllabus_technique_added','syllabus_technique_removed')
+                             AND act.syllabus_id IS NOT NULL
+                             AND EXISTS (
+                               SELECT 1 FROM syllabus_assignments a
+                                 WHERE a.student_id = ? AND a.unassigned_at IS NULL
+                                   AND a.syllabus_id = act.syllabus_id
+                             ) )
+                         )
+                       )
+                     )
                      -- Hide rows whose referenced video/thread was deleted or
                      -- wiped (orphaned activity), so they don't render as dead
                      -- "watched a video" / "commented on" lines with no link.
@@ -261,6 +292,9 @@ pub async fn feed(
                      AND (? IS NULL OR (act.occurred_at, act.id) < (?, ?))
                    ORDER BY act.occurred_at DESC, act.id DESC
                    LIMIT ?"#,
+                viewer,
+                viewer,
+                viewer,
                 viewer,
                 viewer,
                 viewer,
@@ -530,9 +564,39 @@ pub async fn unread_count(pool: &Pool<Sqlite>, viewer: i64, role: Role) -> Resul
 
     let placeholders = vec!["?"; notifiable_verbs.len()].join(", ");
 
-    let feed_predicate = match role {
-        Role::Student => "act.target_student_id = ?",
-        Role::Coach | Role::Admin => "act.actor_user_id != ?",
+    // Student relevance mirrors the feed() student branch (pull model): targeted
+    // to me, or a broadcast event on a technique/syllabus I have. Keep this in
+    // sync with feed(). `predicate_viewer_binds` is how many `?` it consumes.
+    const STUDENT_RELEVANCE: &str = r#"(
+        act.target_student_id = ?
+        OR (
+          act.target_student_id IS NULL
+          AND (
+            ( act.verb IN ('video_added','video_visibility_set','technique_edited')
+              AND act.technique_id IS NOT NULL
+              AND EXISTS (
+                SELECT 1 FROM syllabus_assignments a
+                  JOIN student_syllabus_techniques sst ON sst.assignment_id = a.id
+                  WHERE a.student_id = ? AND a.unassigned_at IS NULL
+                    AND sst.technique_id = act.technique_id AND sst.hidden_at IS NULL
+                UNION
+                SELECT 1 FROM student_pinned_techniques p
+                  WHERE p.student_id = ? AND p.technique_id = act.technique_id
+              ) )
+            OR
+            ( act.verb IN ('syllabus_technique_added','syllabus_technique_removed')
+              AND act.syllabus_id IS NOT NULL
+              AND EXISTS (
+                SELECT 1 FROM syllabus_assignments a
+                  WHERE a.student_id = ? AND a.unassigned_at IS NULL
+                    AND a.syllabus_id = act.syllabus_id
+              ) )
+          )
+        )
+      )"#;
+    let (feed_predicate, predicate_viewer_binds): (&str, usize) = match role {
+        Role::Student => (STUDENT_RELEVANCE, 4),
+        Role::Coach | Role::Admin => ("act.actor_user_id != ?", 1),
     };
 
     let query = format!(
@@ -559,13 +623,13 @@ pub async fn unread_count(pool: &Pool<Sqlite>, viewer: i64, role: Role) -> Resul
     );
 
     // Bind order: cursor join (viewer), override join (viewer),
-    // feed predicate (viewer), actor != viewer (viewer),
+    // feed predicate (viewer x predicate_viewer_binds), actor != viewer (viewer),
     // then one bind per notifiable verb.
-    let mut q = sqlx::query_scalar::<_, i64>(&query)
-        .bind(viewer)
-        .bind(viewer)
-        .bind(viewer)
-        .bind(viewer);
+    let mut q = sqlx::query_scalar::<_, i64>(&query).bind(viewer).bind(viewer);
+    for _ in 0..predicate_viewer_binds {
+        q = q.bind(viewer);
+    }
+    q = q.bind(viewer);
     for verb in &notifiable_verbs {
         q = q.bind(*verb);
     }
