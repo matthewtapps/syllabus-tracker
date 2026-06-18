@@ -270,13 +270,15 @@ lock:
 # ---- remote ops (shared prod/staging host) --------------------------------
 #
 # One-off SSH + docker/sqlite against the shared VM that runs both stacks.
-# Requires your deploy SSH key loaded locally and SILLYBUS_SSH_HOST set to the
-# host (IP, or a Host alias in ~/.ssh/config). The `deploy` user runs docker
-# without sudo, so these need no root. The DB is the `*_app-data` named volume,
-# holding `sqlite.db` at its root; we reach it with a throwaway sqlite3
-# container mounting that volume (no sqlite3 needed on the host).
+# Requires your deploy SSH key loaded locally. The host (SILLYBUS_SSH_HOST) is
+# exported by the flake dev shell; its value comes from the IaC (infra tofu
+# output `_platform_vm_ip`). Refresh it with `just update-ssh-host`, then
+# re-enter the dev shell. The `deploy` user runs docker without sudo, so these
+# need no root. The DB is the `*_app-data` named volume, holding `sqlite.db` at
+# its root; we reach it with a throwaway sqlite3 container mounting that volume
+# (no sqlite3 needed on the host).
 #
-#   export SILLYBUS_SSH_HOST=1.2.3.4   # or an ssh-config alias
+#   just update-ssh-host                          # one-time / when the IP changes
 #   just db-sql-staging 'SELECT count(*) FROM activity;'
 #   just db-sql-prod    'DELETE FROM activity;'   # prompts to confirm
 #   just remote 'docker ps'
@@ -285,10 +287,22 @@ ssh_host := env_var_or_default("SILLYBUS_SSH_HOST", "")
 ssh_user := env_var_or_default("SILLYBUS_SSH_USER", "deploy")
 sqlite_image := "keinos/sqlite3:latest"
 
+# Refresh SILLYBUS_SSH_HOST in flake.nix from the IaC (tofu _platform_vm_ip).
+[group('remote')]
+update-ssh-host:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    # Source of truth is infra tofu (needs it initialised, R2 creds in env).
+    # Re-enter `nix develop` afterward to pick up the new value.
+    ip="$(tofu -chdir=infra output -raw _platform_vm_ip)"
+    [ -n "$ip" ] || { echo "tofu returned an empty _platform_vm_ip"; exit 1; }
+    sed -i -E 's|SILLYBUS_SSH_HOST = "[^"]*";|SILLYBUS_SSH_HOST = "'"$ip"'";|' flake.nix
+    echo "flake.nix SILLYBUS_SSH_HOST = $ip  (re-enter the dev shell to apply)"
+
 [group('remote')]
 [private]
 _require-host:
-    @test -n "{{ssh_host}}" || { echo "Set SILLYBUS_SSH_HOST (host IP or ssh-config alias)"; exit 1; }
+    @test -n "{{ssh_host}}" || { echo "Host unset. Run 'just update-ssh-host' then re-enter the dev shell (or export SILLYBUS_SSH_HOST)."; exit 1; }
 
 # Run an arbitrary command on the shared host, e.g. `just remote 'docker ps'`.
 [group('remote')]

@@ -130,6 +130,12 @@
             # dev shell sets it: the `ci` shell has no sccache, so leaving it
             # unset there keeps cargo from looking for a missing wrapper.
             RUSTC_WRAPPER = "sccache";
+
+            # Shared prod/staging VM IP, consumed by the justfile `remote` /
+            # `db-sql-*` recipes. Source of truth is the IaC (infra tofu output
+            # `_platform_vm_ip`); refresh this value with `just update-ssh-host`,
+            # then re-enter the dev shell. Empty until first set.
+            SILLYBUS_SSH_HOST = "";
           };
 
           # Lean shell for CI correctness gates. See `ciInputs` above.
