@@ -12,9 +12,13 @@ export type ViewContext =
   | { kind: "library"; technique: EntityRef; video?: EntityRef }
   | {
       kind: "syllabus";
-      student: EntityRef;
+      /** The student whose assignment this is. Omitted for gym-template edits
+       *  (syllabus_technique_added/removed) that act on the syllabus itself. */
+      student?: EntityRef;
       syllabus: EntityRef;
-      sst: EntityRef;
+      /** The technique row to scroll to. Omitted for syllabus-level events
+       *  (assignment/graduation) that target the surface, not one technique. */
+      sst?: EntityRef;
       video?: EntityRef;
     }
   | { kind: "camp"; camp: EntityRef; video?: EntityRef }
@@ -30,10 +34,14 @@ export function viewContextHref(ctx: ViewContext): string {
       return `/library?focus=${refToken(ctx.technique)}${video}`;
     }
     case "syllabus": {
+      // Gym-template edits carry no student: link to the syllabus template page.
+      const base = ctx.student
+        ? `/student/${ctx.student.id}/syllabi/${ctx.syllabus.id}`
+        : `/syllabi/${ctx.syllabus.id}`;
+      // Syllabus-level events (assignment/graduation) carry no sst to focus.
+      if (!ctx.sst) return base;
       const video = ctx.video ? `&video=${ctx.video.id}` : "";
-      return `/student/${ctx.student.id}/syllabi/${ctx.syllabus.id}?focus=${refToken(
-        ctx.sst,
-      )}${video}`;
+      return `${base}?focus=${refToken(ctx.sst)}${video}`;
     }
     case "camp": {
       const video = ctx.video ? `&video=${ctx.video.id}` : "";
@@ -57,7 +65,9 @@ export function viewContextSurfaceHref(ctx: ViewContext): string {
     case "library":
       return "/library";
     case "syllabus":
-      return `/student/${ctx.student.id}/syllabi/${ctx.syllabus.id}`;
+      return ctx.student
+        ? `/student/${ctx.student.id}/syllabi/${ctx.syllabus.id}`
+        : `/syllabi/${ctx.syllabus.id}`;
     case "camp":
       return `/camps/${ctx.camp.id}`;
     case "competition":
@@ -87,10 +97,30 @@ const SYLLABUS_SCOPED_VERBS = new Set([
   "attempt_edited",
   "attempt_deleted",
   "sst_added",
+  "sst_hidden",
+  "sst_unhidden",
   "sst_status_changed",
   "sst_student_notes_edited",
   "sst_coach_notes_edited",
 ]);
+
+/** Gym-template syllabus context for fanout edits (technique added to / removed
+ *  from a syllabus template) that act on the syllabus itself, no student. */
+function gymSyllabusContext(row: ViewContextRow): ViewContext | null {
+  if (row.syllabus_id == null) return null;
+  return { kind: "syllabus", syllabus: { type: "syllabus", id: row.syllabus_id } };
+}
+
+/** Surface-level syllabus context for syllabus-wide events (assignment,
+ *  graduation) that target the student's syllabus, not one technique row. */
+function syllabusSurfaceContext(row: ViewContextRow): ViewContext | null {
+  if (row.target_student_id == null || row.syllabus_id == null) return null;
+  return {
+    kind: "syllabus",
+    student: { type: "student", id: row.target_student_id },
+    syllabus: { type: "syllabus", id: row.syllabus_id },
+  };
+}
 
 function syllabusContext(row: ViewContextRow): ViewContext | null {
   if (
@@ -125,8 +155,8 @@ export function rowToViewContext(row: ViewContextRow): ViewContext | null {
     };
   }
   // Competition-scoped verbs: all 5 new verbs set context_kind="competition".
-  // Dispatch by verb: match verbs -> owning camp page; camp_promoted -> camp
-  // page (the camp_id column is populated); else -> competition page.
+  // Dispatch by verb: match verbs with a known camp -> the owning camp page
+  // (deferred scroll-to-match); everything else -> the competition page.
   if (row.context_kind === "competition") {
     if (
       (row.verb === "match_logged" || row.verb === "match_technique_linked") &&
@@ -139,12 +169,6 @@ export function rowToViewContext(row: ViewContextRow): ViewContext | null {
         match: { type: "match", id: row.match_id },
       };
     }
-    if (row.verb === "camp_promoted_to_competition" && row.camp_id != null) {
-      return {
-        kind: "camp",
-        camp: { type: "camp", id: row.camp_id },
-      };
-    }
     if (row.competition_id != null) {
       return {
         kind: "competition",
@@ -153,7 +177,11 @@ export function rowToViewContext(row: ViewContextRow): ViewContext | null {
     }
     return null;
   }
-  if (row.verb === "video_watched" || row.verb === "video_added") {
+  if (
+    row.verb === "video_watched" ||
+    row.verb === "video_added" ||
+    row.verb === "video_visibility_set"
+  ) {
     if (row.context_kind === "syllabus") {
       return syllabusContext(row);
     }
@@ -163,6 +191,13 @@ export function rowToViewContext(row: ViewContextRow): ViewContext | null {
       kind: "library",
       technique: { type: "technique", id: row.technique_id },
       video: row.video_id != null ? { type: "video", id: row.video_id } : undefined,
+    };
+  }
+  // A library technique edit surfaces the global library technique row.
+  if (row.verb === "technique_edited" && row.technique_id != null) {
+    return {
+      kind: "library",
+      technique: { type: "technique", id: row.technique_id },
     };
   }
   // A thread comment routes to the surface its anchor lives on, tagged by the
@@ -187,6 +222,22 @@ export function rowToViewContext(row: ViewContextRow): ViewContext | null {
   if (SYLLABUS_SCOPED_VERBS.has(row.verb)) {
     return syllabusContext(row);
   }
+  // Syllabus-wide events carry no sst; deep-link to the student's syllabus page
+  // so the feed breadcrumb names and links the syllabus.
+  if (
+    row.verb === "syllabus_assigned" ||
+    row.verb === "syllabus_unassigned" ||
+    row.verb === "syllabus_graduated"
+  ) {
+    return syllabusSurfaceContext(row);
+  }
+  // Gym-template curation: name + link the syllabus the technique moved in/out of.
+  if (
+    row.verb === "syllabus_technique_added" ||
+    row.verb === "syllabus_technique_removed"
+  ) {
+    return gymSyllabusContext(row);
+  }
   return null;
 }
 
@@ -203,7 +254,11 @@ export interface ActivitySurface {
  * null when there is no resolvable surface (no chip shown).
  */
 export function activitySurface(
-  row: ViewContextRow & { syllabus_name: string | null; camp_name?: string | null },
+  row: ViewContextRow & {
+    syllabus_name: string | null;
+    camp_name?: string | null;
+    competition_name?: string | null;
+  },
 ): ActivitySurface | null {
   const ctx = rowToViewContext(row);
   if (!ctx) return null;
@@ -214,10 +269,11 @@ export function activitySurface(
     return { kind: "camp", label: row.camp_name ?? "Camp" };
   }
   if (ctx.kind === "competition") {
-    return { kind: "competition", label: "Competition" };
+    return { kind: "competition", label: row.competition_name ?? "Competition" };
   }
   if (ctx.kind === "match") {
-    return { kind: "match", label: "Match" };
+    // A match has no name of its own; surface the competition it was logged in.
+    return { kind: "match", label: row.competition_name ?? "Match" };
   }
   return { kind: "library", label: "Global Technique Library" };
 }

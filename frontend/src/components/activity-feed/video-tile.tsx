@@ -26,7 +26,9 @@ export function VideoTile({
   const coach = isCoachOrAdmin(user);
   const ctx = subject.context;
   const syllabus =
-    ctx?.kind === "syllabus" ? { studentId: ctx.student.id, syllabusId: ctx.syllabus.id } : undefined;
+    ctx?.kind === "syllabus" && ctx.student
+      ? { studentId: ctx.student.id, syllabusId: ctx.syllabus.id }
+      : undefined;
   const videos = useTechniqueVideos(
     subject.techniqueId ?? undefined,
     coach ? undefined : user.id,
@@ -39,7 +41,7 @@ export function VideoTile({
     subject.techniqueId != null
       ? {
           technique_id: subject.techniqueId,
-          ...(ctx?.kind === "syllabus"
+          ...(ctx?.kind === "syllabus" && ctx.sst
             ? { syllabus_id: ctx.syllabus.id, sst_id: ctx.sst.id }
             : {}),
         }
@@ -56,7 +58,9 @@ export function VideoTile({
   // Thread visibility for new comments follows the surface the video is shown
   // on: a syllabus-context video is the student's; a library video is global.
   const surface: VideoThreadSurface =
-    ctx?.kind === "syllabus" ? { kind: "student", studentId: ctx.student.id } : { kind: "library" };
+    ctx?.kind === "syllabus" && ctx.student
+      ? { kind: "student", studentId: ctx.student.id }
+      : { kind: "library" };
 
   return (
     <div className="mx-3 mb-3 overflow-hidden rounded-md border border-border bg-card">

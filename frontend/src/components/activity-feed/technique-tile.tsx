@@ -29,7 +29,10 @@ export function TechniqueTile({
   onExpandedChange?: (expanded: boolean) => void;
 }) {
   const ctx = rowToViewContext(row);
-  if (ctx?.kind === "syllabus") {
+  // Only a per-student syllabus context (with an sst row) renders the student's
+  // technique row. Gym-template edits carry a syllabus context without a
+  // student/sst, so they fall through to the library row below.
+  if (ctx?.kind === "syllabus" && ctx.student && ctx.sst) {
     return (
       <SyllabusTile
         row={row}
