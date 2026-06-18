@@ -38,7 +38,15 @@ describe("activityCaption", () => {
 
   it("gives minimal captions for the common verbs", () => {
     expect(activityCaption(row({ verb: "attempt_logged" })).text).toBe("Logged an attempt");
-    expect(activityCaption(row({ verb: "video_watched" })).text).toBe("Watched a video");
+    expect(
+      activityCaption(row({ verb: "video_watched", video_title: "Drill" })).text,
+    ).toBe("Watched Drill");
+    expect(activityCaption(row({ verb: "video_watched", video_title: null })).text).toBe(
+      "Watched a video",
+    );
+    expect(
+      activityCaption(row({ verb: "video_added", video_title: "Setup" })).text,
+    ).toBe("Added Setup");
     expect(activityCaption(row({ verb: "technique_pinned" })).text).toBe("Pinned");
     expect(activityCaption(row({ verb: "sst_unhidden" })).text).toBe("Made visible");
     expect(activityCaption(row({ verb: "thread_comment_posted" })).text).toBe("Commented");

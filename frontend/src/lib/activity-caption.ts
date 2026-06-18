@@ -48,9 +48,9 @@ export function activityCaption(row: ActivityRow): ActivityCaption {
     case "attempt_deleted":
       return { text: "Deleted an attempt" };
     case "video_watched":
-      return { text: "Watched a video" };
+      return { text: row.video_title ? `Watched ${row.video_title}` : "Watched a video" };
     case "video_added":
-      return { text: "Added a video" };
+      return { text: row.video_title ? `Added ${row.video_title}` : "Added a video" };
     case "video_visibility_set":
       return { text: "Changed video visibility" };
     case "sst_student_notes_edited":
