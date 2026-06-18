@@ -1,15 +1,22 @@
+import { Fragment } from "react";
 import { Link } from "react-router-dom";
 import { ChevronRight, Dumbbell, Library, NotebookPen } from "lucide-react";
 import { StudentAvatar } from "@/components/student-avatar";
 import { useUser } from "@/lib/current-user-context";
 import { isCoachOrAdmin } from "@/lib/api";
-import { activityLine, type ActivityRow, type ActivityScope } from "@/lib/activity-line";
-import { activityCaption } from "@/lib/activity-caption";
+import type { ActivityRow, ActivityScope } from "@/lib/activity-line";
+import { resolveFeedItem, type Crumb } from "@/lib/feed-item";
 import { verbIconMeta } from "./verb-icon";
-import { activitySurface } from "@/lib/view-context";
 import { statusToDotClass } from "@/lib/status";
 import { formatRelativeShort } from "@/lib/dates";
 import { cn } from "@/lib/utils";
+
+function CrumbIcon({ kind }: { kind: Crumb["surfaceKind"] }) {
+  if (kind === "syllabus") return <NotebookPen className="h-3 w-3 shrink-0" aria-hidden />;
+  if (kind === "camp") return <Dumbbell className="h-3 w-3 shrink-0" aria-hidden />;
+  if (kind) return <Library className="h-3 w-3 shrink-0" aria-hidden />;
+  return null;
+}
 
 /**
  * The header above a feed tile: a tappable breadcrumb of who acted, on whom, and
@@ -27,15 +34,19 @@ export function ActivityTileHeader({
   showAvatar?: boolean;
 }) {
   const viewer = useUser();
-  const line = activityLine(row, scope);
-  const surface = activitySurface(row);
-  const caption = activityCaption(row);
+  // Single source of truth: the breadcrumb path (surface root → technique noun,
+  // each a deep link) and the caption both come from the one resolver, so the
+  // header can never disagree with the embedded tile about what this is.
+  const item = resolveFeedItem(row);
+  const caption = item.caption;
   const { Icon: VerbIcon, colorClass } = verbIconMeta(row.verb);
 
   // Coaches/admins can open a profile from the actor/target name; students
   // cannot view other profiles, so they get plain text.
   const viewerIsCoach = isCoachOrAdmin(viewer);
-  const actorName = row.actor_name ?? "A student";
+  // Social-feed convention: a viewer's own actions read as "You", not their name.
+  const isOwnAction = row.actor_user_id === viewer.id;
+  const actorName = isOwnAction ? "You" : (row.actor_name ?? "A student");
   const actorHref =
     viewerIsCoach && row.actor_user_id !== viewer.id
       ? `/student/${row.actor_user_id}`
@@ -79,27 +90,21 @@ export function ActivityTileHeader({
                   )}
                 </>
               )}
-              {surface && (
-                <>
+              {item.path.map((crumb, i) => (
+                <Fragment key={i}>
                   <ChevronRight className="h-3 w-3 shrink-0 text-muted-foreground" aria-hidden />
                   <span className="flex min-w-0 items-center gap-1 font-normal text-muted-foreground">
-                    {surface.kind === "syllabus" ? (
-                      <NotebookPen className="h-3 w-3 shrink-0" aria-hidden />
-                    ) : surface.kind === "camp" ? (
-                      <Dumbbell className="h-3 w-3 shrink-0" aria-hidden />
-                    ) : (
-                      <Library className="h-3 w-3 shrink-0" aria-hidden />
-                    )}
-                    {line.href ? (
-                      <Link to={line.href} className={segmentClass}>
-                        {surface.label}
+                    <CrumbIcon kind={crumb.surfaceKind} />
+                    {crumb.href ? (
+                      <Link to={crumb.href} className={segmentClass}>
+                        {crumb.label}
                       </Link>
                     ) : (
-                      <span className="truncate">{surface.label}</span>
+                      <span className="truncate">{crumb.label}</span>
                     )}
                   </span>
-                </>
-              )}
+                </Fragment>
+              ))}
             </div>
             <span className="shrink-0 text-xs text-muted-foreground">
               {formatRelativeShort(row.occurred_at)}

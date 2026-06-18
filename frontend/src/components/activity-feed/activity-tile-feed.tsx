@@ -1,6 +1,7 @@
+import { Fragment } from "react";
 import { ActivityTileHeader } from "./activity-tile-header";
 import { ActivityTile } from "./activity-tile";
-import { activitySurface } from "@/lib/view-context";
+import { isGatedEpicRow } from "@/lib/view-context";
 import { suppressHideUnhide } from "@/lib/activity-hide-unhide";
 import { campsUiEnabled } from "@/lib/features";
 import type { ActivityRow, ActivityScope } from "@/lib/activity-line";
@@ -45,14 +46,10 @@ export function ActivityTileFeed({
   // Drop hide/unhide curation noise (net-visibility rule) before gating.
   const deNoised = suppressHideUnhide(rows);
 
-  // Camps + competitions/matches are gated off on prod; drop their rows so the
-  // feed never links into half-built surfaces (mirrors ActivityFeedList).
-  const visible = campsUiEnabled
-    ? deNoised
-    : deNoised.filter((row) => {
-        const kind = activitySurface(row)?.kind;
-        return kind !== "camp" && kind !== "competition" && kind !== "match";
-      });
+  // Camps + competitions/matches/suggestions are gated off on prod; drop their
+  // rows so the feed never links into half-built surfaces (mirrors
+  // ActivityFeedList).
+  const visible = campsUiEnabled ? deNoised : deNoised.filter((row) => !isGatedEpicRow(row));
 
   if (visible.length === 0) {
     return (
@@ -62,16 +59,27 @@ export function ActivityTileFeed({
     );
   }
 
+  // Mark where the viewer's unread (new-since-last-visit) rows end: a divider
+  // after the last unread row, so everything below it is known-seen. `unread`
+  // comes from the activity cursor (computed server-side in feed()).
+  const lastUnreadIdx = visible.reduce((acc, row, i) => (row.unread ? i : acc), -1);
+
   return (
     <ul className="space-y-4">
-      {visible.map((row) => (
-        <li
-          key={`${row.id}-${row.occurred_at}`}
-          className="overflow-hidden rounded-lg border border-border bg-card"
-        >
-          <ActivityTileHeader row={row} scope={scope} showAvatar={showAvatar} />
-          <ActivityTile row={row} />
-        </li>
+      {visible.map((row, i) => (
+        <Fragment key={`${row.id}-${row.occurred_at}`}>
+          <li className="overflow-hidden rounded-lg border border-border bg-card">
+            <ActivityTileHeader row={row} scope={scope} showAvatar={showAvatar} />
+            <ActivityTile row={row} />
+          </li>
+          {i === lastUnreadIdx && i < visible.length - 1 && (
+            <li className="flex items-center gap-3 px-1 text-xs font-medium text-primary">
+              <span className="h-px flex-1 bg-primary/40" />
+              Up to date
+              <span className="h-px flex-1 bg-primary/40" />
+            </li>
+          )}
+        </Fragment>
       ))}
     </ul>
   );

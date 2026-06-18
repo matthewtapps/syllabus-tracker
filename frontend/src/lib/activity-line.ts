@@ -38,8 +38,13 @@ export interface ActivityRow {
   context_kind: string | null;
   thread_id: number | null;
   camp_id: number | null;
+  camp_name: string | null;
   competition_id: number | null;
+  competition_name: string | null;
   match_id: number | null;
+  /** Coalesced thread_comment_posted rows: comment events on the thread (opener
+   *  + replies). 1 for a lone thread, 0 for non-thread verbs. */
+  comment_count: number;
 }
 
 export interface ActivityLine {
@@ -295,27 +300,58 @@ export function activityLine(row: ActivityRow, scope: ActivityScope = { kind: "g
         : { verb: "left a comment", href };
     }
 
-    // --- camp verbs ---
-    case "camp_created":
-      return { verb: "started a camp", href: deep };
-    case "camp_technique_added":
-      return { verb: "added a technique to a camp", href: deep };
-    case "camp_archived":
-      return { verb: "archived a camp", href: deep };
+    // --- camp verbs --- (camp_name comes from the read-layer join)
+    case "camp_created": {
+      const camp = row.camp_name ?? undefined;
+      return camp
+        ? { verb: "started", subject: camp, href: deep }
+        : { verb: "started a camp", href: deep };
+    }
+    case "camp_technique_added": {
+      const camp = row.camp_name ?? undefined;
+      if (tech && camp) return { verb: `added ${tech} to`, subject: camp, href: deep };
+      return camp
+        ? { verb: "added a technique to", subject: camp, href: deep }
+        : { verb: "added a technique to a camp", href: deep };
+    }
+    case "camp_archived": {
+      const camp = row.camp_name ?? undefined;
+      return camp
+        ? { verb: "archived", subject: camp, href: deep }
+        : { verb: "archived a camp", href: deep };
+    }
 
-    // --- competition verbs ---
-    case "competition_created":
-      return { verb: "created a competition", href: deep };
-    case "student_registered":
-      return { verb: "registered for a competition", href: deep };
-    case "camp_promoted_to_competition":
-      return { verb: "linked camp to competition", href: deep };
+    // --- competition verbs --- (competition_name comes from the read-layer join)
+    case "competition_created": {
+      const comp = row.competition_name ?? undefined;
+      return comp
+        ? { verb: "created", subject: comp, href: deep }
+        : { verb: "created a competition", href: deep };
+    }
+    case "student_registered": {
+      const comp = row.competition_name ?? undefined;
+      return comp
+        ? { verb: "registered for", subject: comp, href: deep }
+        : { verb: "registered for a competition", href: deep };
+    }
+    case "camp_promoted_to_competition": {
+      const comp = row.competition_name ?? undefined;
+      return comp
+        ? { verb: "linked a camp to", subject: comp, href: deep }
+        : { verb: "linked camp to competition", href: deep };
+    }
 
     // --- match verbs ---
-    case "match_logged":
-      return { verb: "logged a match", href: deep };
+    case "match_logged": {
+      const comp = row.competition_name ?? undefined;
+      return comp
+        ? { verb: "logged a match at", subject: comp, href: deep }
+        : { verb: "logged a match", href: deep };
+    }
     case "match_technique_linked":
-      return { verb: "linked a technique to a match", href: deep };
+      return tech
+        ? { verb: "linked", subject: tech, detail: "to a match", href: deep }
+        : { verb: "linked a technique to a match", href: deep };
 
     default:
       return { verb: "performed an action" };

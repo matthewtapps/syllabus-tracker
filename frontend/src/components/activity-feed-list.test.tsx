@@ -35,6 +35,9 @@ function row(overrides: Partial<ActivityRow> = {}): ActivityRow {
     camp_id: null,
     competition_id: null,
     match_id: null,
+    camp_name: null,
+    competition_name: null,
+    comment_count: 0,
     ...overrides,
   };
 }

@@ -69,6 +69,10 @@ export function activityCaption(row: ActivityRow): ActivityCaption {
       return { text: "Added to syllabus" };
     case "technique_edited":
       return { text: "Edited" };
+    case "camp_technique_added":
+      // The technique is shown in the embedded row; the camp is named in the
+      // breadcrumb. Caption is just the bare verb.
+      return { text: "Added" };
     case "thread_comment_posted":
       return { text: "Commented" };
     default:

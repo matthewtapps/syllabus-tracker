@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
 import {
   Award,
   Download,
@@ -97,6 +98,24 @@ export function BottomNav({ user, onLogout }: BottomNavProps) {
   const tabs = buildTabs(user);
   const { pathname } = useLocation();
   const activeIdx = activeTabIndex(pathname, tabs);
+  const queryClient = useQueryClient();
+
+  // Re-tapping the already-active tab returns to the top of the page; the feed
+  // tab also refreshes its data (newest rows back to the top), matching the
+  // native "tap the active tab again" convention.
+  function handleActiveReTap(tab: Tab, e: React.MouseEvent) {
+    e.preventDefault();
+    window.scrollTo({ top: 0, behavior: "smooth" });
+    if (tab.to === "/dashboard") {
+      // Reset (not just invalidate) the infinite feed so it drops the pages
+      // loaded by endless scroll and refetches from page 1 — the scrollbar
+      // returns to normal instead of keeping the prior depth. The gym feed
+      // (coach) lives under ["activity","feed",...]; a student's own feed under
+      // ["student",id,"activityFeed",...]; the non-matching one is a no-op.
+      queryClient.resetQueries({ queryKey: ["activity", "feed"] });
+      queryClient.resetQueries({ queryKey: ["student", user.id, "activityFeed"] });
+    }
+  }
   // Grid columns match the actual tab count (+1 for the More slot) so a
   // student's 2-tab nav doesn't sit awkwardly left-aligned with empty
   // cells on the right.
@@ -118,6 +137,7 @@ export function BottomNav({ user, onLogout }: BottomNavProps) {
               <Link
                 to={tab.to}
                 aria-current={active ? 'page' : undefined}
+                onClick={active ? (e) => handleActiveReTap(tab, e) : undefined}
                 className={cn(
                   'flex flex-col items-center justify-center gap-0.5 text-[10px] font-medium',
                   active

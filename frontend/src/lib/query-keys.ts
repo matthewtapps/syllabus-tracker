@@ -80,6 +80,13 @@ export const qk = {
   dashboardActivityFeed: () => ["activity", "dashboard-feed"] as const,
   studentActivityFeed: (studentId: number, limit: number) =>
     ["student", studentId, "activityFeed", limit] as const,
+  // Infinite (paginated) feeds for the social feed surface.
+  activityFeedInfinite: (limit: number) =>
+    ["activity", "feed", "infinite", limit] as const,
+  studentActivityFeedInfinite: (studentId: number, limit: number) =>
+    ["student", studentId, "activityFeed", "infinite", limit] as const,
+  // Feed head id, polled to drive the "new activity" pill.
+  activityFeedHeadId: () => ["activity", "feed", "headId"] as const,
   activityUnreadCount: () => ["activity", "unreadCount"] as const,
 
   campsForStudent: (studentId: number) =>
@@ -98,10 +105,6 @@ export const qk = {
   matchVideos: (matchId: number) => ["matches", matchId, "videos"] as const,
   matchTechniques: (matchId: number) =>
     ["matches", matchId, "techniques"] as const,
-
-  pendingSuggestions: () => ["suggestions", "pending"] as const,
-  studentSuggestions: (studentId: number) =>
-    ["student", studentId, "suggestions"] as const,
 
   studentSyllabusTechniquesFlat: (studentId: number) =>
     ["student", studentId, "syllabusTechniquesFlat"] as const,

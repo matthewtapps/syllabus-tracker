@@ -18,23 +18,33 @@ export function CommentTile({
   anchorKind,
   anchorId,
   threadId,
+  hideAnchorChip = false,
 }: {
   row: ActivityRow;
   anchorKind: AnchorKind;
   anchorId: number;
   threadId: number;
+  /** Hide the "on {noun}" chip when the noun is already shown above (a comment
+   *  rendered beneath its collapsed technique row). */
+  hideAnchorChip?: boolean;
 }) {
   const query = useThreadsForAnchor(anchorKind, anchorId);
   if (query.isLoading) return <TileSkeleton />;
   const thread = (query.data ?? []).find((t) => t.id === threadId);
   if (!thread) return null;
   const anchorLabel = row.video_title ?? row.technique_name ?? null;
+  // The feed coalesces a thread's comment events into one row; comment_count is
+  // the opener plus replies, so show it once the conversation has more than one.
+  const countLabel = row.comment_count > 1 ? `${row.comment_count} comments` : null;
   return (
     <div className="mx-3 mb-3 overflow-hidden rounded-md border border-border bg-card">
-      {anchorLabel && (
+      {!hideAnchorChip && (anchorLabel || countLabel) && (
         <div className="flex items-center gap-1.5 border-b border-border px-4 py-2 text-xs text-muted-foreground">
           <MessageSquare className="h-3 w-3 shrink-0" aria-hidden />
-          <span className="truncate">on {anchorLabel}</span>
+          <span className="truncate">
+            {anchorLabel ? `on ${anchorLabel}` : "Discussion"}
+            {countLabel ? ` · ${countLabel}` : ""}
+          </span>
         </div>
       )}
       <div className="px-4 py-3">

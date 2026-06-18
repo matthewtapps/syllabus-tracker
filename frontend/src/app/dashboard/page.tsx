@@ -49,8 +49,6 @@ import { StatusDonut } from '@/components/status-donut';
 import type { Status } from '@/lib/status';
 import { DashboardTotals } from './components/dashboard-totals';
 import { QueuePanel } from './components/queue-panel';
-import { SuggestionQueue } from './components/suggestion-queue';
-import { campsUiEnabled } from '@/lib/features';
 import { ActivityDigest } from './components/activity-digest';
 import { RecentActivityFeed } from './components/recent-activity-feed';
 
@@ -217,7 +215,6 @@ function CoachDashboard() {
           onSendResetLink={handleSendResetLink}
           onApprove={handleApprove}
         />
-        {campsUiEnabled && <SuggestionQueue />}
       </div>
 
       <RecentActivityFeed />

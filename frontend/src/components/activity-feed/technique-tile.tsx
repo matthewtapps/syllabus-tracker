@@ -19,7 +19,15 @@ import { toLibraryShape } from "./to-library-shape";
  * and a tile never drifts from its real surface. Returns null while no entity
  * resolves, so the entry falls back to a header-only line.
  */
-export function TechniqueTile({ row }: { row: ActivityRow }) {
+export function TechniqueTile({
+  row,
+  onExpandedChange,
+}: {
+  row: ActivityRow;
+  /** Notifies the parent when the row expands/collapses, so a sibling focus
+   *  thread can hide once the row's own discussion is visible. */
+  onExpandedChange?: (expanded: boolean) => void;
+}) {
   const ctx = rowToViewContext(row);
   if (ctx?.kind === "syllabus") {
     return (
@@ -28,11 +36,30 @@ export function TechniqueTile({ row }: { row: ActivityRow }) {
         studentId={ctx.student.id}
         syllabusId={ctx.syllabus.id}
         sstId={ctx.sst.id}
+        onExpandedChange={onExpandedChange}
       />
     );
   }
   if (ctx?.kind === "library" && row.technique_id != null) {
-    return <LibraryTile techniqueId={row.technique_id} videoId={row.video_id} />;
+    return (
+      <LibraryTile
+        techniqueId={row.technique_id}
+        videoId={row.video_id}
+        onExpandedChange={onExpandedChange}
+      />
+    );
+  }
+  // Fallback for technique-anchored verbs the deep-link resolver doesn't model a
+  // surface for (pins, technique edits, syllabus add/remove, visibility, a camp
+  // technique-add): honor the technique tile with the library row.
+  if (row.technique_id != null) {
+    return (
+      <LibraryTile
+        techniqueId={row.technique_id}
+        videoId={row.video_id}
+        onExpandedChange={onExpandedChange}
+      />
+    );
   }
   return null;
 }
@@ -50,11 +77,13 @@ function SyllabusTile({
   studentId,
   syllabusId,
   sstId,
+  onExpandedChange,
 }: {
   row: ActivityRow;
   studentId: number;
   syllabusId: number;
   sstId: number;
+  onExpandedChange?: (expanded: boolean) => void;
 }) {
   const query = useStudentSyllabusTechniques(studentId, syllabusId);
   const [open, setOpen] = useState<string>("");
@@ -65,7 +94,15 @@ function SyllabusTile({
   const value = `sst-${sst.id}`;
   return (
     <TileShell>
-      <Accordion type="single" collapsible value={open} onValueChange={setOpen}>
+      <Accordion
+        type="single"
+        collapsible
+        value={open}
+        onValueChange={(v) => {
+          setOpen(v);
+          onExpandedChange?.(v !== "");
+        }}
+      >
         <TechniqueRow
           embedded
           technique={toLibraryShape(sst)}
@@ -90,9 +127,11 @@ function SyllabusTile({
 function LibraryTile({
   techniqueId,
   videoId,
+  onExpandedChange,
 }: {
   techniqueId: number;
   videoId: number | null;
+  onExpandedChange?: (expanded: boolean) => void;
 }) {
   const user = useUser();
   const coach = isCoachOrAdmin(user);
@@ -108,7 +147,15 @@ function LibraryTile({
   const value = `tech-${technique.id}`;
   return (
     <TileShell>
-      <Accordion type="single" collapsible value={open} onValueChange={setOpen}>
+      <Accordion
+        type="single"
+        collapsible
+        value={open}
+        onValueChange={(v) => {
+          setOpen(v);
+          onExpandedChange?.(v !== "");
+        }}
+      >
         <TechniqueRow
           embedded
           technique={technique}

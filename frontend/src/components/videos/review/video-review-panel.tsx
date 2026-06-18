@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { MessageSquare } from "lucide-react";
 import { toast } from "sonner";
 import type { Video, ThreadView } from "@/lib/api";
 import { useUser } from "@/lib/current-user-context";
@@ -26,6 +27,13 @@ interface VideoReviewPanelProps {
   watchEvents?: PlayerEvents;
   /** Trailing action shown inline in the composer row (e.g. download). */
   composerAction?: ReactNode;
+  /**
+   * Feed mode: collapse the discussion under the player so a feed tile isn't
+   * dominated by it. `focusThreadId` (the thread the feed entry is about) shows
+   * above the fold; the composer and the remaining threads collapse behind a
+   * toggle. Absent = the full dialog/page layout.
+   */
+  feedPresentation?: { focusThreadId: number | null };
 }
 
 export function VideoReviewPanel(props: VideoReviewPanelProps) {
@@ -36,7 +44,13 @@ export function VideoReviewPanel(props: VideoReviewPanelProps) {
   );
 }
 
-function ReviewInner({ video, surface, watchEvents, composerAction }: VideoReviewPanelProps) {
+function ReviewInner({
+  video,
+  surface,
+  watchEvents,
+  composerAction,
+  feedPresentation,
+}: VideoReviewPanelProps) {
   const user = useUser();
   const controller = usePlayerController();
   const registration = usePlayerRegistration();
@@ -84,6 +98,9 @@ function ReviewInner({ video, surface, watchEvents, composerAction }: VideoRevie
 
   const [pinnedThread, setPinnedThread] = useState<ThreadView | null>(null);
   const [highlightThreadId, setHighlightThreadId] = useState<number | null>(null);
+  // Feed mode only: whether the collapsed discussion (composer + non-focus
+  // threads) is expanded.
+  const [feedDiscussionOpen, setFeedDiscussionOpen] = useState(false);
   const listRef = useRef<HTMLDivElement>(null);
   const pinTimerRef = useRef<number | null>(null);
   const highlightTimerRef = useRef<number | null>(null);
@@ -207,6 +224,63 @@ function ReviewInner({ video, surface, watchEvents, composerAction }: VideoRevie
       />
     </div>
   );
+
+  if (feedPresentation) {
+    const focusId = feedPresentation.focusThreadId;
+    const focusThread = focusId != null ? threads.find((t) => t.id === focusId) ?? null : null;
+    const rest = threads.filter((t) => t.id !== focusId);
+    const toggleLabel = focusThread
+      ? rest.length > 0
+        ? `${rest.length} more comment${rest.length > 1 ? "s" : ""}`
+        : "Add a comment"
+      : threads.length > 0
+        ? `Show discussion (${threads.length})`
+        : "Comment on video";
+
+    return (
+      <div>
+        <div className="relative">{player}</div>
+        <div className="space-y-3 px-3 pb-4 sm:px-4">
+          {focusThread && (
+            <div ref={listRef}>
+              <MomentFeed
+                videoId={video.id}
+                threads={[focusThread]}
+                onSeek={(s) => controller.seekTo(s)}
+                highlightThreadId={highlightThreadId}
+              />
+            </div>
+          )}
+          {/* The toggle stays in one predictable spot; its label flips and the
+              discussion expands BELOW it. */}
+          {(threads.length > 0 || !isReplyVideo) && (
+            <button
+              type="button"
+              onClick={() => setFeedDiscussionOpen((open) => !open)}
+              aria-expanded={feedDiscussionOpen}
+              className="flex w-full items-center justify-center gap-1.5 rounded-md border border-border px-3 py-2 text-xs text-muted-foreground hover:bg-muted/40 hover:text-foreground"
+            >
+              <MessageSquare className="h-3.5 w-3.5" aria-hidden />
+              {feedDiscussionOpen ? "Hide discussion" : toggleLabel}
+            </button>
+          )}
+          {feedDiscussionOpen && (
+            <div className="space-y-3">
+              {!isReplyVideo && composer}
+              {rest.length > 0 && (
+                <MomentFeed
+                  videoId={video.id}
+                  threads={rest}
+                  onSeek={(s) => controller.seekTo(s)}
+                  highlightThreadId={highlightThreadId}
+                />
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div>

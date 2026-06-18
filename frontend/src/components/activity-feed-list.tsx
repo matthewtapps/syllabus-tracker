@@ -8,7 +8,7 @@ import { activityLine, type ActivityRow, type ActivityScope } from "@/lib/activi
 import { statusToDotClass } from "@/lib/status";
 import { coalesceActivity } from "@/lib/activity-coalesce";
 import { suppressHideUnhide } from "@/lib/activity-hide-unhide";
-import { activitySurface } from "@/lib/view-context";
+import { activitySurface, isGatedEpicRow } from "@/lib/view-context";
 import { formatAbsolute, formatRelativeShort } from "@/lib/dates";
 import { cn } from "@/lib/utils";
 import { campsUiEnabled } from "@/lib/features";
@@ -69,7 +69,9 @@ function ActivityRowItem({
     isCoachOrAdmin(viewer) && activityRow.actor_user_id !== viewer.id
       ? `/student/${activityRow.actor_user_id}`
       : undefined;
-  const actorName = activityRow.actor_name ?? "A student";
+  // Social-feed convention: a viewer's own actions read as "You", not their name.
+  const isOwnAction = activityRow.actor_user_id === viewer.id;
+  const actorName = isOwnAction ? "You" : (activityRow.actor_name ?? "A student");
 
   return (
     <>
@@ -214,14 +216,12 @@ export function ActivityFeedList({
   // Drop hide/unhide curation noise (net-visibility rule) before gating.
   const deNoised = suppressHideUnhide(rows);
 
-  // Camps + competitions/matches are gated off on prod (campsUiEnabled). Drop
-  // their activity rows so the feed doesn't surface links into hidden surfaces.
+  // Camps + competitions/matches/suggestions are gated off on prod
+  // (campsUiEnabled). Drop their activity rows so the feed doesn't surface links
+  // into hidden surfaces.
   const visibleRows = campsUiEnabled
     ? deNoised
-    : deNoised.filter((row) => {
-        const kind = activitySurface(row)?.kind;
-        return kind !== "camp" && kind !== "competition" && kind !== "match";
-      });
+    : deNoised.filter((row) => !isGatedEpicRow(row));
 
   if (visibleRows.length === 0) {
     return <p className="px-6 py-8 text-center text-sm text-muted-foreground">{emptyText}</p>;

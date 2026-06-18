@@ -1786,6 +1786,19 @@ export async function getActivityFeed(params?: {
   return (await response.json()) as ActivityRow[];
 }
 
+/** The id at the top of the viewer's feed (real ordering, no cursor advance).
+ *  Polled so the feed can show a "new activity" pill when the server head no
+ *  longer matches the loaded head. Not MAX(id): backdated rows can sort below a
+ *  higher id, which would make a max-based pill stick. */
+export async function getActivityFeedHeadId(): Promise<number> {
+  const response = await fetch("/api/activity/feed/head_id", {
+    credentials: "include",
+  });
+  if (!response.ok) throw response;
+  const json = (await response.json()) as { head_id: number };
+  return json.head_id;
+}
+
 export async function getActivityUnreadCount(): Promise<ActivityUnreadCount> {
   const response = await fetch("/api/activity/unread_count", {
     credentials: "include",
@@ -2471,85 +2484,3 @@ export async function uploadMatchVideo(
   });
 }
 
-// ============================================================
-// Suggestions
-// ============================================================
-
-/** Mirrors db/suggestions.rs TechniqueSuggestion. */
-export interface TechniqueSuggestion {
-  id: number;
-  student_id: number;
-  technique_id: number;
-  anchor_video_id: number | null;
-  anchor_seconds: number | null;
-  status: "pending" | "approved" | "replaced" | "dismissed";
-  created_at: string;
-  decided_by_id: number | null;
-  decided_at: string | null;
-  replacement_technique_id: number | null;
-  decided_camp_id: number | null;
-}
-
-/** Mirrors db/suggestions.rs PendingSuggestion (enriched coach-queue row). */
-export interface PendingSuggestion {
-  id: number;
-  student_id: number;
-  student_name: string | null;
-  technique_id: number;
-  technique_name: string;
-  anchor_video_id: number | null;
-  anchor_video_title: string | null;
-  anchor_seconds: number | null;
-  created_at: string;
-}
-
-export async function createSuggestion(data: {
-  technique_id: number;
-  anchor_video_id?: number | null;
-  anchor_seconds?: number | null;
-}): Promise<{ id: number }> {
-  const res = await fetch("/api/suggestions", {
-    method: "POST",
-    credentials: "include",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(data),
-  });
-  if (!res.ok) throw res;
-  return (await res.json()) as { id: number };
-}
-
-export async function getPendingSuggestions(): Promise<PendingSuggestion[]> {
-  const res = await fetch("/api/suggestions/pending", { credentials: "include" });
-  if (!res.ok) throw res;
-  return ((await res.json()) as { suggestions: PendingSuggestion[] }).suggestions;
-}
-
-export async function getStudentSuggestions(
-  studentId: number,
-): Promise<TechniqueSuggestion[]> {
-  const res = await fetch(`/api/students/${studentId}/suggestions`, {
-    credentials: "include",
-  });
-  if (!res.ok) throw res;
-  return ((await res.json()) as { suggestions: TechniqueSuggestion[] }).suggestions;
-}
-
-export interface DecideSuggestionBody {
-  decision: "approve" | "replace" | "dismiss";
-  camp_id?: number | null;
-  replacement_technique_id?: number | null;
-}
-
-export async function decideSuggestion(
-  id: number,
-  body: DecideSuggestionBody,
-): Promise<Response> {
-  const res = await fetch(`/api/suggestions/${id}/decide`, {
-    method: "POST",
-    credentials: "include",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) throw res;
-  return res;
-}

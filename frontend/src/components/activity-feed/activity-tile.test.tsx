@@ -41,6 +41,9 @@ function row(overrides: Partial<ActivityRow> = {}): ActivityRow {
     camp_id: null,
     competition_id: null,
     match_id: null,
+    camp_name: null,
+    competition_name: null,
+    comment_count: 0,
     ...overrides,
   };
 }
@@ -145,14 +148,25 @@ describe("ActivityTile", () => {
     expect(screen.queryByRole("button", { name: /remove/i })).toBeNull();
   });
 
-  test("embeds the thread for a comment activity", async () => {
+  test("embeds the thread for a profile comment (no technique noun)", async () => {
     fetchSpy = vi.spyOn(window, "fetch").mockImplementation(
-      stubFetch([{ match: "/api/threads", json: { threads: [thread()] } }]),
+      stubFetch([
+        { match: "/api/threads", json: { threads: [thread({ anchor_kind: "student_profile" })] } },
+      ]),
     );
 
+    // A profile-anchored comment has no technique/video noun, so it renders the
+    // thread directly (technique/video comments surface the noun instead).
     renderWithProviders(
       <ActivityTile
-        row={row({ verb: "thread_comment_posted", thread_id: 7 })}
+        row={row({
+          verb: "thread_comment_posted",
+          thread_id: 7,
+          technique_id: null,
+          sst_id: null,
+          context_kind: null,
+          target_student_id: 4,
+        })}
       />,
       { user: buildUser({ id: 2, role: "coach" }) },
     );
@@ -160,8 +174,6 @@ describe("ActivityTile", () => {
     await waitFor(() => {
       expect(screen.getByText(/Nice work on this one/)).toBeInTheDocument();
     });
-    // Anchor chip names the technique the conversation lives on.
-    expect(screen.getByText(/on Armbar/)).toBeInTheDocument();
   });
 
   test("renders nothing for a non-noun activity (header-only fallback)", () => {

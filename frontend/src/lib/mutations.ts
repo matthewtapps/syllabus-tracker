@@ -1692,42 +1692,4 @@ export function useUnlinkMatchTechnique(matchId: number) {
   });
 }
 
-// ============================================================
-// Suggestions
-// ============================================================
-
-import {
-  createSuggestion,
-  decideSuggestion,
-} from "./api";
-import type { DecideSuggestionBody } from "./api";
-
-export function useCreateSuggestion() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (data: {
-      technique_id: number;
-      anchor_video_id?: number | null;
-      anchor_seconds?: number | null;
-    }) => createSuggestion(data),
-    onSuccess: () => {
-      // Invalidate the student's own suggestion list (all students, simple).
-      qc.invalidateQueries({ queryKey: ["student"] });
-    },
-  });
-}
-
-export function useDecideSuggestion() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (vars: { id: number; body: DecideSuggestionBody; campId?: number }) =>
-      decideSuggestion(vars.id, vars.body),
-    onSuccess: (_res, vars) => {
-      qc.invalidateQueries({ queryKey: qk.pendingSuggestions() });
-      if (vars.campId !== undefined) {
-        qc.invalidateQueries({ queryKey: qk.camp(vars.campId) });
-      }
-    },
-  });
-}
 
