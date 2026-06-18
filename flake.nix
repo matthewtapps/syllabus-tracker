@@ -120,6 +120,47 @@
             cargo-watch
             sccache
           ]);
+
+        # Shared libraries the Playwright-downloaded chrome-headless-shell needs
+        # to launch (it is a non-Nix binary, so it dlopens these by soname).
+        # Exposed on LD_LIBRARY_PATH so `vitest --project browser` (the .test.tsx
+        # suite) can run locally, matching the frontend_test CI job.
+        playwrightDeps = with pkgs; [
+          glib
+          nss
+          nspr
+          dbus
+          atk
+          at-spi2-atk
+          at-spi2-core
+          cups
+          libdrm
+          gtk3
+          pango
+          cairo
+          gdk-pixbuf
+          libxkbcommon
+          mesa
+          libgbm
+          expat
+          alsa-lib
+          fontconfig
+          freetype
+          systemd
+          xorg.libX11
+          xorg.libXcomposite
+          xorg.libXdamage
+          xorg.libXext
+          xorg.libXfixes
+          xorg.libXrandr
+          xorg.libXrender
+          xorg.libXtst
+          xorg.libXcursor
+          xorg.libXi
+          xorg.libXScrnSaver
+          xorg.libxcb
+          xorg.libxshmfence
+        ];
       in
       {
         devShells = {
@@ -137,6 +178,12 @@
             # `_platform_vm_ip`); refresh this value with `just update-ssh-host`,
             # then re-enter the dev shell. Empty until first set.
             SILLYBUS_SSH_HOST = "170.64.172.214";
+
+            # Put the Chromium runtime libs on LD_LIBRARY_PATH so the browser
+            # test project can launch chrome-headless-shell locally.
+            shellHook = ''
+              export LD_LIBRARY_PATH="${lib.makeLibraryPath playwrightDeps}''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+            '';
           };
 
           # Lean shell for CI correctness gates. See `ciInputs` above.
