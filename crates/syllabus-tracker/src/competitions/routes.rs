@@ -19,7 +19,7 @@ use tracing::instrument;
 
 use crate::auth::{Permission, User};
 use crate::db::competitions::{
-    Competition, Registration, RegistrationRosterRow,
+    CampChoice, Competition, Registration, RegistrationRosterRow,
     create_competition, get_competition, list_competitions, update_competition,
     register_student, unregister_student, list_registrations_for_competition,
     promote_camp_to_competition,
@@ -78,6 +78,27 @@ pub struct PromoteCampRequest {
 #[derive(Serialize)]
 pub struct RegistrationResponse {
     pub registration: Registration,
+}
+
+/// How the caller wants the student's competition camp handled. Either a bare
+/// tag string ("create_new") or `{"existing": <camp_id>}`.
+#[derive(Deserialize)]
+#[serde(untagged)]
+pub enum CampChoiceRequest {
+    Tag(String),                // "create_new"
+    Existing { existing: i64 }, // {"existing": 5}
+}
+
+#[derive(Deserialize, Default)]
+pub struct RegisterStudentBody {
+    pub camp: Option<CampChoiceRequest>,
+}
+
+fn to_choice(body: Option<CampChoiceRequest>) -> CampChoice {
+    match body {
+        Some(CampChoiceRequest::Existing { existing }) => CampChoice::Existing(existing),
+        _ => CampChoice::CreateNew, // explicit "create_new" or absent
+    }
 }
 
 #[derive(Deserialize)]
@@ -248,23 +269,27 @@ pub async fn api_self_register_competition(
     user: User,
     pool: &State<Pool<Sqlite>>,
 ) -> Result<Json<CreatedResponse>, Status> {
-    let reg_id = register_student(pool.inner(), id, user.id, user.id)
+    let reg_id = register_student(pool.inner(), id, user.id, user.id, CampChoice::CreateNew)
         .await
         .map_err(Status::from)?;
     Ok(Json(CreatedResponse { id: reg_id }))
 }
 
-/// Coach registers another student for a competition.
-#[instrument(skip(pool, user))]
-#[post("/competitions/<id>/register/<student_id>")]
+/// Coach registers another student for a competition. The optional JSON body
+/// chooses the competition camp: absent or `{"camp":"create_new"}` creates a
+/// fresh camp; `{"camp":{"existing":<id>}}` promotes an existing camp.
+#[instrument(skip(pool, user, body))]
+#[post("/competitions/<id>/register/<student_id>", data = "<body>")]
 pub async fn api_coach_register_student(
     id: i64,
     student_id: i64,
     user: User,
+    body: Option<Json<RegisterStudentBody>>,
     pool: &State<Pool<Sqlite>>,
 ) -> Result<Json<CreatedResponse>, Status> {
     require_manage_competitions(&user)?;
-    let reg_id = register_student(pool.inner(), id, student_id, user.id)
+    let choice = to_choice(body.and_then(|b| b.into_inner().camp));
+    let reg_id = register_student(pool.inner(), id, student_id, user.id, choice)
         .await
         .map_err(Status::from)?;
     Ok(Json(CreatedResponse { id: reg_id }))

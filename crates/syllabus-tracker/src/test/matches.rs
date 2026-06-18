@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod tests {
-    use crate::db::competitions::{create_competition, register_student};
+    use crate::db::competitions::{CampChoice, create_competition, register_student};
     use crate::db::create_technique;
     use crate::db::matches::{
         can_manage_match, create_match, delete_match, get_match, link_match_technique,
@@ -83,7 +83,7 @@ mod tests {
         let comp_id = create_competition(&db.pool, "Pan Ams 2026", None, coach)
             .await
             .unwrap();
-        let reg_id = register_student(&db.pool, comp_id, student, coach)
+        let reg_id = register_student(&db.pool, comp_id, student, coach, CampChoice::None)
             .await
             .unwrap();
 
@@ -160,7 +160,7 @@ mod tests {
         let comp_id = create_competition(&db.pool, "Worlds 2026", None, coach)
             .await
             .unwrap();
-        let reg_id = register_student(&db.pool, comp_id, student, coach)
+        let reg_id = register_student(&db.pool, comp_id, student, coach, CampChoice::None)
             .await
             .unwrap();
 
@@ -230,7 +230,7 @@ mod tests {
         let comp_id = create_competition(&db.pool, "Euro Open 2026", None, coach)
             .await
             .unwrap();
-        let reg_id = register_student(&db.pool, comp_id, student, coach)
+        let reg_id = register_student(&db.pool, comp_id, student, coach, CampChoice::None)
             .await
             .unwrap();
 
@@ -270,7 +270,7 @@ mod tests {
         let comp_id = create_competition(&db.pool, "Gi Nats 2026", None, coach)
             .await
             .unwrap();
-        let reg_id = register_student(&db.pool, comp_id, student, coach)
+        let reg_id = register_student(&db.pool, comp_id, student, coach, CampChoice::None)
             .await
             .unwrap();
 
@@ -368,7 +368,7 @@ mod tests {
         let comp_id = create_competition(&db.pool, "Camp Deep-link Test", None, coach)
             .await
             .unwrap();
-        let reg_id = register_student(&db.pool, comp_id, student, coach)
+        let reg_id = register_student(&db.pool, comp_id, student, coach, CampChoice::None)
             .await
             .unwrap();
 
@@ -427,7 +427,7 @@ mod tests {
         let comp_id = create_competition(&db.pool, "Activity Test", None, coach)
             .await
             .unwrap();
-        let reg_id = register_student(&db.pool, comp_id, student, coach)
+        let reg_id = register_student(&db.pool, comp_id, student, coach, CampChoice::None)
             .await
             .unwrap();
 

@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod tests {
     use crate::db::competitions::{
-        create_competition, get_competition, list_competitions, update_competition,
+        CampChoice, create_competition, get_competition, list_competitions, update_competition,
         register_student, unregister_student, get_registration, registration_for,
         list_registrations_for_competition, promote_camp_to_competition,
     };
@@ -339,7 +339,7 @@ mod tests {
             .unwrap();
 
         // Register the student.
-        let reg_id = register_student(&db.pool, comp_id, student, student)
+        let reg_id = register_student(&db.pool, comp_id, student, student, CampChoice::None)
             .await
             .unwrap();
         let reg = get_registration(&db.pool, reg_id).await.unwrap().unwrap();
@@ -352,7 +352,7 @@ mod tests {
         assert!(reg.unregistered_at.is_some(), "should be unregistered");
 
         // Re-register clears unregistered_at.
-        let reg_id2 = register_student(&db.pool, comp_id, student, coach)
+        let reg_id2 = register_student(&db.pool, comp_id, student, coach, CampChoice::None)
             .await
             .unwrap();
         // Upsert: same row id.
@@ -381,7 +381,7 @@ mod tests {
             .await
             .unwrap();
 
-        register_student(&db.pool, comp_id, student, coach)
+        register_student(&db.pool, comp_id, student, coach, CampChoice::None)
             .await
             .unwrap();
         unregister_student(&db.pool, comp_id, student).await.unwrap();
@@ -420,7 +420,7 @@ mod tests {
             .await
             .unwrap();
 
-        register_student(&db.pool, comp_id, student, coach)
+        register_student(&db.pool, comp_id, student, coach, CampChoice::None)
             .await
             .unwrap();
 
@@ -670,7 +670,7 @@ mod tests {
         let comp_id = create_competition(&db.pool, "Euro Open 2026", None, coach_id)
             .await
             .unwrap();
-        let reg_id = register_student(&db.pool, comp_id, student_id, coach_id)
+        let reg_id = register_student(&db.pool, comp_id, student_id, coach_id, CampChoice::None)
             .await
             .unwrap();
 
@@ -778,7 +778,7 @@ mod tests {
         let comp_id = create_competition(&db.pool, "Video Upload Test Comp", None, coach_id)
             .await
             .unwrap();
-        let reg_id = register_student(&db.pool, comp_id, student_id, coach_id)
+        let reg_id = register_student(&db.pool, comp_id, student_id, coach_id, CampChoice::None)
             .await
             .unwrap();
 
@@ -852,7 +852,7 @@ mod tests {
         let comp_id = create_competition(&db.pool, "Future Date Test", None, coach_id)
             .await
             .unwrap();
-        let reg_id = register_student(&db.pool, comp_id, student_id, coach_id)
+        let reg_id = register_student(&db.pool, comp_id, student_id, coach_id, CampChoice::None)
             .await
             .unwrap();
 
@@ -879,7 +879,7 @@ mod tests {
         let comp_id = create_competition(&db.pool, "Bad Result Test", None, coach_id)
             .await
             .unwrap();
-        let reg_id = register_student(&db.pool, comp_id, student_id, coach_id)
+        let reg_id = register_student(&db.pool, comp_id, student_id, coach_id, CampChoice::None)
             .await
             .unwrap();
 
@@ -891,5 +891,237 @@ mod tests {
             .dispatch()
             .await;
         assert_eq!(resp.status(), Status::BadRequest);
+    }
+
+    // -----------------------------------------------------------------------
+    // Competition camp on registration
+    // -----------------------------------------------------------------------
+
+    /// Count camps belonging to (student, competition).
+    async fn camp_count_for(pool: &sqlx::Pool<sqlx::Sqlite>, student: i64, comp: i64) -> i64 {
+        sqlx::query_scalar(
+            "SELECT COUNT(*) FROM camps WHERE student_id = ? AND competition_id = ?",
+        )
+        .bind(student)
+        .bind(comp)
+        .fetch_one(pool)
+        .await
+        .unwrap()
+    }
+
+    #[rocket::async_test]
+    async fn register_create_new_makes_named_camp() {
+        let db = TestDbBuilder::new()
+            .coach("coach_user", Some("Coach"))
+            .student("student_user", Some("Sam"))
+            .build()
+            .await
+            .unwrap();
+
+        let coach = db.user_id("coach_user").unwrap();
+        let student = db.user_id("student_user").unwrap();
+
+        let comp_id = create_competition(&db.pool, "Worlds 2026", None, coach)
+            .await
+            .unwrap();
+
+        register_student(&db.pool, comp_id, student, coach, CampChoice::CreateNew)
+            .await
+            .unwrap();
+
+        let (name, coach_id): (String, i64) = sqlx::query_as(
+            "SELECT name, coach_id FROM camps WHERE student_id = ? AND competition_id = ?",
+        )
+        .bind(student)
+        .bind(comp_id)
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+
+        assert_eq!(name, "Worlds 2026 Camp");
+        assert_eq!(coach_id, coach);
+        assert_eq!(camp_count_for(&db.pool, student, comp_id).await, 1);
+    }
+
+    #[rocket::async_test]
+    async fn register_existing_promotes_unlinked_camp() {
+        let db = TestDbBuilder::new()
+            .coach("coach_user", Some("Coach"))
+            .student("student_user", Some("Sam"))
+            .build()
+            .await
+            .unwrap();
+
+        let coach = db.user_id("coach_user").unwrap();
+        let student = db.user_id("student_user").unwrap();
+
+        let comp_id = create_competition(&db.pool, "Pan Ams 2026", None, coach)
+            .await
+            .unwrap();
+
+        // A generic, unlinked camp for this student.
+        let camp_id: i64 = sqlx::query_scalar(
+            "INSERT INTO camps (student_id, coach_id, name) VALUES (?, ?, 'Generic prep') RETURNING id",
+        )
+        .bind(student)
+        .bind(coach)
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+
+        register_student(&db.pool, comp_id, student, coach, CampChoice::Existing(camp_id))
+            .await
+            .unwrap();
+
+        let stored: i64 = sqlx::query_scalar("SELECT competition_id FROM camps WHERE id = ?")
+            .bind(camp_id)
+            .fetch_one(&db.pool)
+            .await
+            .unwrap();
+        assert_eq!(stored, comp_id);
+
+        // No extra camp was created.
+        assert_eq!(camp_count_for(&db.pool, student, comp_id).await, 1);
+        let total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM camps WHERE student_id = ?")
+            .bind(student)
+            .fetch_one(&db.pool)
+            .await
+            .unwrap();
+        assert_eq!(total, 1);
+    }
+
+    #[rocket::async_test]
+    async fn re_register_does_not_duplicate_camp() {
+        let db = TestDbBuilder::new()
+            .coach("coach_user", Some("Coach"))
+            .student("student_user", Some("Sam"))
+            .build()
+            .await
+            .unwrap();
+
+        let coach = db.user_id("coach_user").unwrap();
+        let student = db.user_id("student_user").unwrap();
+
+        let comp_id = create_competition(&db.pool, "Euro Open 2026", None, coach)
+            .await
+            .unwrap();
+
+        register_student(&db.pool, comp_id, student, coach, CampChoice::CreateNew)
+            .await
+            .unwrap();
+        register_student(&db.pool, comp_id, student, coach, CampChoice::CreateNew)
+            .await
+            .unwrap();
+
+        assert_eq!(camp_count_for(&db.pool, student, comp_id).await, 1);
+    }
+
+    #[rocket::async_test]
+    async fn register_none_creates_no_camp() {
+        let db = TestDbBuilder::new()
+            .coach("coach_user", Some("Coach"))
+            .student("student_user", Some("Sam"))
+            .build()
+            .await
+            .unwrap();
+
+        let coach = db.user_id("coach_user").unwrap();
+        let student = db.user_id("student_user").unwrap();
+
+        let comp_id = create_competition(&db.pool, "No Camp Open", None, coach)
+            .await
+            .unwrap();
+
+        register_student(&db.pool, comp_id, student, coach, CampChoice::None)
+            .await
+            .unwrap();
+
+        let total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM camps WHERE student_id = ?")
+            .bind(student)
+            .fetch_one(&db.pool)
+            .await
+            .unwrap();
+        assert_eq!(total, 0);
+    }
+
+    #[rocket::async_test]
+    async fn route_coach_register_camp_choices() {
+        use crate::test::test_utils::{create_standard_test_db, setup_test_client};
+        use rocket::http::{ContentType, Status};
+
+        let test_db = create_standard_test_db().await;
+        let student_id = test_db.user_id("student_user").unwrap();
+        let (client, db) = setup_test_client(test_db).await;
+        let coach_id = db.user_id("coach_user").unwrap();
+
+        // --- create_new via explicit body ---
+        let comp_create = create_competition(&db.pool, "Body Create Open", None, coach_id)
+            .await
+            .unwrap();
+        login_as(&client, "coach_user").await;
+        let resp = client
+            .post(format!("/api/competitions/{}/register/{}", comp_create, student_id))
+            .header(ContentType::JSON)
+            .body(r#"{"camp":"create_new"}"#)
+            .dispatch()
+            .await;
+        assert_eq!(resp.status(), Status::Ok);
+        let (name,): (String,) = sqlx::query_as(
+            "SELECT name FROM camps WHERE student_id = ? AND competition_id = ?",
+        )
+        .bind(student_id)
+        .bind(comp_create)
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+        assert_eq!(name, "Body Create Open Camp");
+        assert_eq!(camp_count_for(&db.pool, student_id, comp_create).await, 1);
+
+        // --- existing via body ---
+        let comp_existing = create_competition(&db.pool, "Body Existing Open", None, coach_id)
+            .await
+            .unwrap();
+        let camp_id: i64 = sqlx::query_scalar(
+            "INSERT INTO camps (student_id, coach_id, name) VALUES (?, ?, 'Existing prep') RETURNING id",
+        )
+        .bind(student_id)
+        .bind(coach_id)
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+        let resp = client
+            .post(format!("/api/competitions/{}/register/{}", comp_existing, student_id))
+            .header(ContentType::JSON)
+            .body(format!(r#"{{"camp":{{"existing":{}}}}}"#, camp_id))
+            .dispatch()
+            .await;
+        assert_eq!(resp.status(), Status::Ok);
+        let linked: i64 = sqlx::query_scalar("SELECT competition_id FROM camps WHERE id = ?")
+            .bind(camp_id)
+            .fetch_one(&db.pool)
+            .await
+            .unwrap();
+        assert_eq!(linked, comp_existing);
+        assert_eq!(camp_count_for(&db.pool, student_id, comp_existing).await, 1);
+
+        // --- empty body defaults to create_new ---
+        let comp_empty = create_competition(&db.pool, "Body Empty Open", None, coach_id)
+            .await
+            .unwrap();
+        let resp = client
+            .post(format!("/api/competitions/{}/register/{}", comp_empty, student_id))
+            .dispatch()
+            .await;
+        assert_eq!(resp.status(), Status::Ok);
+        let (name,): (String,) = sqlx::query_as(
+            "SELECT name FROM camps WHERE student_id = ? AND competition_id = ?",
+        )
+        .bind(student_id)
+        .bind(comp_empty)
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+        assert_eq!(name, "Body Empty Open Camp");
+        assert_eq!(camp_count_for(&db.pool, student_id, comp_empty).await, 1);
     }
 }

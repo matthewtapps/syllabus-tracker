@@ -4,7 +4,7 @@
 
 use chrono::NaiveDateTime;
 use serde::Serialize;
-use sqlx::{Pool, Sqlite};
+use sqlx::{Pool, Sqlite, Transaction};
 use tracing::instrument;
 
 use crate::db::activity::{emit, NewActivity, Verb};
@@ -32,6 +32,17 @@ pub struct Registration {
     pub registered_at: NaiveDateTime,
     pub registered_by_id: Option<i64>,
     pub unregistered_at: Option<NaiveDateTime>,
+}
+
+/// What to do about the student's competition camp when they register.
+#[derive(Debug, Clone, Copy)]
+pub enum CampChoice {
+    /// Do not touch camps (seed / back-compat).
+    None,
+    /// Create a fresh camp named "<competition> Camp".
+    CreateNew,
+    /// Promote an existing unlinked camp belonging to the student.
+    Existing(i64),
 }
 
 /// Roster row for a competition. Includes the student's display name and, if
@@ -164,6 +175,7 @@ pub async fn register_student(
     competition_id: i64,
     student_id: i64,
     registered_by_id: i64,
+    choice: CampChoice,
 ) -> Result<i64, AppError> {
     let mut tx = pool.begin().await?;
     let id = sqlx::query_scalar!(
@@ -189,8 +201,121 @@ pub async fn register_student(
             .context_kind("competition"),
     )
     .await?;
+    ensure_competition_camp(&mut tx, student_id, competition_id, registered_by_id, choice)
+        .await?;
     tx.commit().await?;
     Ok(id)
+}
+
+/// Ensure the student has a camp linked to this competition, per `choice`.
+/// Idempotent: if a camp already links (student, competition), this is a no-op.
+///
+/// - `CampChoice::None`        -> do nothing.
+/// - `CampChoice::CreateNew`   -> create a fresh "<comp name> Camp".
+/// - `CampChoice::Existing(id)`-> promote an existing unlinked camp of this student.
+async fn ensure_competition_camp(
+    tx: &mut Transaction<'_, Sqlite>,
+    student_id: i64,
+    competition_id: i64,
+    actor_id: i64,
+    choice: CampChoice,
+) -> Result<(), AppError> {
+    if matches!(choice, CampChoice::None) {
+        return Ok(());
+    }
+
+    // Idempotency: a camp already links this (student, competition).
+    let existing = sqlx::query_scalar!(
+        r#"SELECT id AS "id!: i64" FROM camps
+           WHERE student_id = ? AND competition_id = ?
+           LIMIT 1"#,
+        student_id,
+        competition_id,
+    )
+    .fetch_optional(&mut **tx)
+    .await?;
+    if existing.is_some() {
+        return Ok(());
+    }
+
+    match choice {
+        CampChoice::None => Ok(()),
+        CampChoice::Existing(camp_id) => {
+            let camp = sqlx::query!(
+                r#"SELECT student_id AS "student_id!: i64",
+                          competition_id AS "competition_id?: i64"
+                   FROM camps WHERE id = ?"#,
+                camp_id
+            )
+            .fetch_optional(&mut **tx)
+            .await?
+            .ok_or_else(|| AppError::NotFound(format!("camp #{camp_id} not found")))?;
+
+            if camp.student_id != student_id {
+                return Err(AppError::Validation(
+                    "camp belongs to a different student".to_string(),
+                ));
+            }
+            if camp.competition_id.is_some() {
+                return Err(AppError::Validation(
+                    "camp is already linked to a competition".to_string(),
+                ));
+            }
+
+            sqlx::query!(
+                "UPDATE camps SET competition_id = ? WHERE id = ?",
+                competition_id,
+                camp_id,
+            )
+            .execute(&mut **tx)
+            .await?;
+
+            emit(
+                tx,
+                NewActivity::new(Verb::CampPromotedToCompetition, actor_id)
+                    .target_student(student_id)
+                    .camp(camp_id)
+                    .competition(competition_id)
+                    .context_kind("competition"),
+            )
+            .await?;
+            Ok(())
+        }
+        CampChoice::CreateNew => {
+            let comp = sqlx::query!(
+                r#"SELECT name, created_by_id AS "created_by_id!: i64"
+                   FROM competitions WHERE id = ?"#,
+                competition_id
+            )
+            .fetch_optional(&mut **tx)
+            .await?
+            .ok_or_else(|| {
+                AppError::NotFound(format!("competition #{competition_id} not found"))
+            })?;
+
+            let camp_name = format!("{} Camp", comp.name);
+            let new_id = sqlx::query_scalar!(
+                r#"INSERT INTO camps (student_id, coach_id, name, competition_id)
+                   VALUES (?, ?, ?, ?) RETURNING id AS "id!: i64""#,
+                student_id,
+                comp.created_by_id,
+                camp_name,
+                competition_id,
+            )
+            .fetch_one(&mut **tx)
+            .await?;
+
+            emit(
+                tx,
+                NewActivity::new(Verb::CampCreated, actor_id)
+                    .target_student(student_id)
+                    .camp(new_id)
+                    .context_kind("camp"),
+            )
+            .await?;
+            Ok(())
+        }
+    }
 }
 
 /// Soft-unregister: set `unregistered_at = CURRENT_TIMESTAMP` only when the

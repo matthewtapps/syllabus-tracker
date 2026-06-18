@@ -1469,6 +1469,7 @@ async fn run() -> Result<()> {
             sundown,
             student_ids[student_idx],
             coach_id,
+            db::competitions::CampChoice::None,
         )
         .await?;
         backdate_last_activity(&pool, now - Duration::days(38) + Duration::hours(offset as i64))
@@ -1479,8 +1480,14 @@ async fn run() -> Result<()> {
 
     // Upcoming-comp registrations (Alex, Marcus): no matches yet.
     for (offset, &student_idx) in [0usize, 2].iter().enumerate() {
-        db::competitions::register_student(&pool, winter, student_ids[student_idx], coach_id)
-            .await?;
+        db::competitions::register_student(
+            &pool,
+            winter,
+            student_ids[student_idx],
+            coach_id,
+            db::competitions::CampChoice::None,
+        )
+        .await?;
         backdate_last_activity(&pool, now - Duration::days(7) + Duration::hours(offset as i64))
             .await?;
         reporter.phase_item(ItemOutcome::Created);
