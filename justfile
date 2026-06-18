@@ -267,6 +267,20 @@ unlock:
 lock:
     @rm -f /dev/shm/sops-age-key-$(id -u) 2>/dev/null && echo "locked" || echo "already locked"
 
+# State + outputs read the R2 backend, so AWS_ACCESS_KEY_ID /
+# AWS_SECRET_ACCESS_KEY (the platform-state R2 token) must be in your env;
+# initialise once with `just tofu-init`.
+# Run an arbitrary tofu command against infra/ (e.g. `just tofu plan`).
+[group('infra')]
+tofu *args:
+    tofu -chdir=infra {{args}}
+
+# Needs the R2 state creds in env. Pass extra flags, e.g. `-reconfigure`.
+# Initialise the infra tofu backend (R2).
+[group('infra')]
+tofu-init *args:
+    tofu -chdir=infra init {{args}}
+
 # ---- remote ops (shared prod/staging host) --------------------------------
 #
 # One-off SSH + docker/sqlite against the shared VM that runs both stacks.
@@ -294,7 +308,10 @@ update-ssh-host:
     set -euo pipefail
     # Source of truth is infra tofu (needs it initialised, R2 creds in env).
     # Re-enter `nix develop` afterward to pick up the new value.
-    ip="$(tofu -chdir=infra output -raw _platform_vm_ip)"
+    ip="$(tofu -chdir=infra output -raw _platform_vm_ip)" || {
+        echo "tofu failed. If this is a backend-init error, run 'just tofu-init' first (with the R2 state creds in your env)."
+        exit 1
+    }
     [ -n "$ip" ] || { echo "tofu returned an empty _platform_vm_ip"; exit 1; }
     sed -i -E 's|SILLYBUS_SSH_HOST = "[^"]*";|SILLYBUS_SSH_HOST = "'"$ip"'";|' flake.nix
     echo "flake.nix SILLYBUS_SSH_HOST = $ip  (re-enter the dev shell to apply)"
