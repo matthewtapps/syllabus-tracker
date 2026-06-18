@@ -267,6 +267,69 @@ unlock:
 lock:
     @rm -f /dev/shm/sops-age-key-$(id -u) 2>/dev/null && echo "locked" || echo "already locked"
 
+# ---- remote ops (shared prod/staging host) --------------------------------
+#
+# One-off SSH + docker/sqlite against the shared VM that runs both stacks.
+# Requires your deploy SSH key loaded locally and SILLYBUS_SSH_HOST set to the
+# host (IP, or a Host alias in ~/.ssh/config). The `deploy` user runs docker
+# without sudo, so these need no root. The DB is the `*_app-data` named volume,
+# holding `sqlite.db` at its root; we reach it with a throwaway sqlite3
+# container mounting that volume (no sqlite3 needed on the host).
+#
+#   export SILLYBUS_SSH_HOST=1.2.3.4   # or an ssh-config alias
+#   just db-sql-staging 'SELECT count(*) FROM activity;'
+#   just db-sql-prod    'DELETE FROM activity;'   # prompts to confirm
+#   just remote 'docker ps'
+
+ssh_host := env_var_or_default("SILLYBUS_SSH_HOST", "")
+ssh_user := env_var_or_default("SILLYBUS_SSH_USER", "deploy")
+sqlite_image := "keinos/sqlite3:latest"
+
+[group('remote')]
+[private]
+_require-host:
+    @test -n "{{ssh_host}}" || { echo "Set SILLYBUS_SSH_HOST (host IP or ssh-config alias)"; exit 1; }
+
+# Run an arbitrary command on the shared host, e.g. `just remote 'docker ps'`.
+[group('remote')]
+remote *cmd: _require-host
+    ssh {{ssh_user}}@{{ssh_host}} {{quote(cmd)}}
+
+# Internal: pipe SQL (stdin) to a stack's sqlite DB volume.
+[group('remote')]
+[private]
+_db-sql vol sql:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    printf '%s\n' {{quote(sql)}} | ssh {{ssh_user}}@{{ssh_host}} \
+      "docker run --rm -i -v {{vol}}:/data --entrypoint sqlite3 {{sqlite_image}} /data/sqlite.db"
+
+# Run SQL against the STAGING database.
+[group('remote')]
+db-sql-staging sql: _require-host (_db-sql "sillybus-staging_app-data" sql)
+
+# Interactive sqlite shell on STAGING.
+[group('remote')]
+db-shell-staging: _require-host
+    ssh -t {{ssh_user}}@{{ssh_host}} "docker run --rm -it -v sillybus-staging_app-data:/data --entrypoint sqlite3 {{sqlite_image}} /data/sqlite.db"
+
+# Run SQL against the PROD database. Prompts for confirmation first.
+[group('remote')]
+db-sql-prod sql: _require-host
+    #!/usr/bin/env bash
+    set -euo pipefail
+    echo "About to run against PROD:"
+    printf '  %s\n' {{quote(sql)}}
+    read -r -p "Type 'prod' to continue: " ok
+    [ "$ok" = "prod" ] || { echo "aborted"; exit 1; }
+    printf '%s\n' {{quote(sql)}} | ssh {{ssh_user}}@{{ssh_host}} \
+      "docker run --rm -i -v sillybus_app-data:/data --entrypoint sqlite3 {{sqlite_image}} /data/sqlite.db"
+
+# Interactive sqlite shell on PROD.
+[group('remote')]
+db-shell-prod: _require-host
+    ssh -t {{ssh_user}}@{{ssh_host}} "docker run --rm -it -v sillybus_app-data:/data --entrypoint sqlite3 {{sqlite_image}} /data/sqlite.db"
+
 # ---- housekeeping ---------------------------------------------------------
 
 # Delete local sqlite files and build artifacts (cargo target/, frontend
