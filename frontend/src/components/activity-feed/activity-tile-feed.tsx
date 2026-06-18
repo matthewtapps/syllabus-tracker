@@ -59,26 +59,31 @@ export function ActivityTileFeed({
     );
   }
 
-  // Mark where the viewer's unread (new-since-last-visit) rows end: a divider
-  // after the last unread row, so everything below it is known-seen. `unread`
-  // comes from the activity cursor (computed server-side in feed()).
+  // Mark where the viewer's unread (new-since-last-visit) rows end. `unread`
+  // comes from the activity cursor (computed server-side in feed()). The divider
+  // sits after the last unread row; when nothing is unread (caught up) it sits
+  // at the very top so the "Up to date" line is always present once seen.
   const lastUnreadIdx = visible.reduce((acc, row, i) => (row.unread ? i : acc), -1);
+  const caughtUp = lastUnreadIdx === -1;
+
+  const divider = (
+    <li className="flex items-center gap-3 px-1 text-xs font-medium text-primary">
+      <span className="h-px flex-1 bg-primary/40" />
+      Up to date
+      <span className="h-px flex-1 bg-primary/40" />
+    </li>
+  );
 
   return (
     <ul className="space-y-4">
+      {caughtUp && <Fragment key="caught-up">{divider}</Fragment>}
       {visible.map((row, i) => (
         <Fragment key={`${row.id}-${row.occurred_at}`}>
           <li className="overflow-hidden rounded-lg border border-border bg-card">
             <ActivityTileHeader row={row} scope={scope} showAvatar={showAvatar} />
             <ActivityTile row={row} />
           </li>
-          {i === lastUnreadIdx && i < visible.length - 1 && (
-            <li className="flex items-center gap-3 px-1 text-xs font-medium text-primary">
-              <span className="h-px flex-1 bg-primary/40" />
-              Up to date
-              <span className="h-px flex-1 bg-primary/40" />
-            </li>
-          )}
+          {i === lastUnreadIdx && i < visible.length - 1 && divider}
         </Fragment>
       ))}
     </ul>
