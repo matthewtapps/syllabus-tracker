@@ -141,6 +141,29 @@ describe("resolveFeedItem path", () => {
     );
     expect(item.path).toEqual([]);
   });
+
+  it("links the promote-camp tile to the camp, not the competition", () => {
+    // The camp is the navigable noun; the competition is named only in the caption.
+    const item = resolveFeedItem(
+      row({
+        verb: "camp_promoted_to_competition",
+        context_kind: "competition",
+        camp_id: 7,
+        camp_name: "Worlds Camp",
+        competition_id: 3,
+        competition_name: "Worlds",
+        technique_id: null,
+        sst_id: null,
+        syllabus_id: null,
+        syllabus_name: null,
+      }),
+    );
+    expect(item.path).toContainEqual({
+      surfaceKind: "camp",
+      label: "Worlds Camp",
+      href: "/camps/7",
+    });
+  });
 });
 
 /**

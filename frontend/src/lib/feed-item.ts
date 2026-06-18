@@ -146,6 +146,12 @@ function resolveSubject(row: ActivityRow, context: ViewContext | null): Subject 
  * (deep-linked to the technique in that surface). This is the "Demo Coach →
  * Global Technique Library → Scissor Sweep" chain; the actor is prepended by the
  * header, the surface and noun come from here.
+ *
+ * For `camp_promoted_to_competition`, `rowToViewContext` returns a camp context
+ * (the navigable noun), so the breadcrumb chip links to the camp page
+ * (`/camps/<id>`) and labels it with `camp_name`. The competition name appears in
+ * the verb caption instead. This is intentional: the camp is the page users can
+ * navigate to; the competition is the outcome named in the caption.
  */
 function buildPath(row: ActivityRow, context: ViewContext | null): Crumb[] {
   if (!context) return [];
