@@ -1,11 +1,11 @@
 /**
  * Student profile "Recent activity" section tests (browser project).
  *
- * Verifies that the feed renders activityLine text from the mocked endpoint,
- * and that the request URL is scoped to the profiled student (not the gym-wide
- * feed). This guards against the regression where useActivityFeed() was called
- * with no student id, causing coaches to see gym-wide activity on a student's
- * profile page.
+ * The recent-activity section is now a COACH's per-student view (a student's own
+ * profile drops it in favour of the feed), so these render as a coach viewing
+ * student 42. They verify the section renders activityLine text from the mocked
+ * endpoint and that the request URL is scoped to the profiled student (not the
+ * gym-wide feed).
  */
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { screen, waitFor } from "@testing-library/react";
@@ -71,7 +71,18 @@ function makeStubFetch(feedRows: ActivityRow[]) {
         }),
       );
     }
-    if (url.includes("/api/users") || url.includes("/api/me")) {
+    if (url.includes("/api/users")) {
+      // Coaches resolve the profiled student from the users list.
+      return Promise.resolve(
+        new Response(
+          JSON.stringify([
+            { id: 42, username: "jon", display_name: "Jon Sharp", role: "student", archived: false },
+          ]),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      );
+    }
+    if (url.includes("/api/me")) {
       return Promise.resolve(
         new Response(JSON.stringify([]), {
           status: 200,
@@ -117,7 +128,7 @@ describe("StudentProfilePage / recent activity", () => {
     const { mockFn, requestedUrls } = makeStubFetch(rows);
     fetchSpy = vi.spyOn(window, "fetch").mockImplementation(mockFn);
 
-    const student = buildUser({ id: 42, role: "student" });
+    const student = buildUser({ id: 99, role: "coach" }); // coach viewing the profile (own view now uses the feed)
     renderWithProviders(
       <Routes>
         <Route path="/student/:id" element={<StudentProfilePage />} />
@@ -148,7 +159,7 @@ describe("StudentProfilePage / recent activity", () => {
     const { mockFn } = makeStubFetch(rows);
     fetchSpy = vi.spyOn(window, "fetch").mockImplementation(mockFn);
 
-    const student = buildUser({ id: 42, role: "student" });
+    const student = buildUser({ id: 99, role: "coach" }); // coach viewing the profile (own view now uses the feed)
     renderWithProviders(
       <Routes>
         <Route path="/student/:id" element={<StudentProfilePage />} />
@@ -166,7 +177,7 @@ describe("StudentProfilePage / recent activity", () => {
     const { mockFn } = makeStubFetch([]);
     fetchSpy = vi.spyOn(window, "fetch").mockImplementation(mockFn);
 
-    const student = buildUser({ id: 42, role: "student" });
+    const student = buildUser({ id: 99, role: "coach" }); // coach viewing the profile (own view now uses the feed)
     renderWithProviders(
       <Routes>
         <Route path="/student/:id" element={<StudentProfilePage />} />
