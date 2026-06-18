@@ -188,7 +188,24 @@ confirm:
 - Deploy infra first (metrics/logs cut is independent and low-risk), then
   sillybus, then verify the end-to-end trace.
 
+## Confirmed root cause (post-design, from gcloud logs 2026-06-17)
+
+The Cloud Run logs pinned the real failure: the worker transcodes fine but the
+OTLP exporter panics on its batch thread — `there is no reactor running, must be
+called from the context of a Tokio 1.x runtime` + `otel flush error: sending on
+a closed channel` + `BatchSpanProcessor.SpansDropped`. opentelemetry_sdk 0.29's
+`with_batch_exporter` runs the exporter on a dedicated OS thread with no tokio
+reactor, but the exporter used the **async** reqwest client, which needs an
+ambient runtime. Every span was dropped, so the dataset never materialised.
+
+Endpoint and auth header were already correct (verified in the crate source),
+so the `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` change is a harmless no-op kept for
+clarity. The actual fix shipped is switching `crates/video-worker/Cargo.toml`
+to the **blocking** reqwest client (`reqwest-blocking-client`), which works
+without a reactor on the dedicated batch thread. This also fixes the new
+transcode-server relay span (shared `telemetry::init()`).
+
 ## Open items
 
-- `gcloud` log paste to pin the exact worker export failure (404 vs 401 vs
-  flush). Fixes above cover all three; the log just confirms which.
+- Verify on next staging deploy: `syllabus-tracker-video-worker` dataset
+  populates and the form→relay→worker trace is one waterfall.
