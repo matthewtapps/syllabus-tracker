@@ -640,7 +640,7 @@ function PromoteDialog({
 
 const logMatchSchema = z.object({
   result: z.enum(["win", "loss", "draw"]),
-  method: z.enum(["submission", "points", "decision", "dq", "other", ""]).optional(),
+  method: z.enum(["none", "submission", "points", "decision", "dq", "other"]).optional(),
   method_detail: z.string().max(200).optional(),
   occurred_at: z.string().optional(),
 });
@@ -661,12 +661,12 @@ function LogMatchDialog({
 
   const form = useFormWithValidation<LogMatchValues>({
     resolver: zodResolver(logMatchSchema),
-    defaultValues: { result: "win", method: "", method_detail: "", occurred_at: "" },
+    defaultValues: { result: "win", method: "none", method_detail: "", occurred_at: "" },
   });
 
   useEffect(() => {
     if (!open) {
-      form.reset({ result: "win", method: "", method_detail: "", occurred_at: "" });
+      form.reset({ result: "win", method: "none", method_detail: "", occurred_at: "" });
     }
   }, [open, form]);
 
@@ -674,11 +674,11 @@ function LogMatchDialog({
     try {
       await logMatch.mutateAsync({
         result: values.result as MatchResult,
-        method: (values.method || null) as MatchMethod | null,
+        method: (values.method && values.method !== "none" ? values.method : null) as MatchMethod | null,
         method_detail: values.method_detail?.trim() || null,
         occurred_at: values.occurred_at?.trim() || null,
       });
-      toast.success("Match logged.");
+      toast.success("Match added.");
       onOpenChange(false);
     } catch {
       toast.error("Failed to log match. Please try again.");
@@ -693,7 +693,7 @@ function LogMatchDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent aria-describedby={undefined}>
         <DialogHeader>
-          <DialogTitle>Log match</DialogTitle>
+          <DialogTitle>Add match</DialogTitle>
         </DialogHeader>
         <Form {...form}>
           <TracedForm
@@ -730,12 +730,12 @@ function LogMatchDialog({
                 <FormItem>
                   <FormLabel>Method (optional)</FormLabel>
                   <FormControl>
-                    <Select value={field.value ?? ""} onValueChange={field.onChange}>
+                    <Select value={field.value ?? "none"} onValueChange={field.onChange}>
                       <SelectTrigger>
                         <SelectValue placeholder="None" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="">None</SelectItem>
+                        <SelectItem value="none">None</SelectItem>
                         <SelectItem value="submission">Submission</SelectItem>
                         <SelectItem value="points">Points</SelectItem>
                         <SelectItem value="decision">Decision</SelectItem>
@@ -785,7 +785,7 @@ function LogMatchDialog({
                 Cancel
               </Button>
               <Button type="submit" disabled={logMatch.isPending} className="w-full">
-                {logMatch.isPending ? "Logging..." : "Log match"}
+                {logMatch.isPending ? "Adding..." : "Add"}
               </Button>
             </DialogFooter>
           </TracedForm>
@@ -1268,7 +1268,7 @@ function MatchesSection({
             onClick={() => setLogOpen(true)}
           >
             <Plus className="h-3.5 w-3.5" />
-            Log match
+            match
           </Button>
         )}
       </div>
