@@ -169,6 +169,14 @@ export function rowToViewContext(row: ViewContextRow): ViewContext | null {
         match: { type: "match", id: row.match_id },
       };
     }
+    // The camp is the navigable noun for a promotion: link the chip to the camp
+    // page; the competition is named in the verb caption instead.
+    if (row.verb === "camp_promoted_to_competition" && row.camp_id != null) {
+      return {
+        kind: "camp",
+        camp: { type: "camp", id: row.camp_id },
+      };
+    }
     if (row.competition_id != null) {
       return {
         kind: "competition",

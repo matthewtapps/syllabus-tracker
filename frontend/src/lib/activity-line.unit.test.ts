@@ -813,7 +813,7 @@ describe("activityLine", () => {
     expect(result.href).toBe("/competitions/5");
   });
 
-  test("camp_promoted_to_competition routes to the competition page", () => {
+  test("camp_promoted_to_competition routes to the camp page", () => {
     const result = activityLine(
       row({
         verb: "camp_promoted_to_competition",
@@ -824,7 +824,7 @@ describe("activityLine", () => {
       }),
     );
     expect(result.verb).toBe("linked camp to competition");
-    expect(result.href).toBe("/competitions/5");
+    expect(result.href).toBe("/camps/7?focus=camp:7");
   });
 
   // --- match verbs ---

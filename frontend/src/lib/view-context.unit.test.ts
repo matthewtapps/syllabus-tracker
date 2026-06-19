@@ -463,7 +463,7 @@ describe("competition and match deep links", () => {
     expect(viewContextHref(ctx!)).toBe("/competitions/5");
   });
 
-  it("routes a camp_promoted_to_competition row to the competition page", () => {
+  it("routes a camp_promoted_to_competition row to the camp page", () => {
     const ctx = rowToViewContext({
       verb: "camp_promoted_to_competition",
       context_kind: "competition",
@@ -477,8 +477,9 @@ describe("competition and match deep links", () => {
       match_id: null,
     });
     expect(ctx).not.toBeNull();
-    // The event is "promoted TO competition": surface names + links the competition.
-    expect(viewContextHref(ctx!)).toBe("/competitions/5");
+    // The camp is the navigable noun: link the chip to the camp page; the
+    // competition it was promoted to is named in the verb caption instead.
+    expect(viewContextHref(ctx!)).toBe("/camps/7?focus=camp:7");
   });
 
   it("routes a match_logged row to the owning camp page", () => {
