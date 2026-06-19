@@ -101,6 +101,31 @@ mod tests {
     }
 
     #[rocket::async_test]
+    async fn competition_and_match_tables_are_gone() {
+        use crate::test::test_utils::TestDbBuilder;
+        let db = TestDbBuilder::new()
+            .coach("coach_user", Some("Coach"))
+            .student("student_user", Some("Sam"))
+            .build()
+            .await
+            .unwrap();
+        for table in ["competitions", "competition_registrations", "matches", "match_techniques", "camp_referenced_matches"] {
+            let count: i64 = sqlx::query_scalar(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name = ?",
+            ).bind(table).fetch_one(&db.pool).await.unwrap();
+            assert_eq!(count, 0, "table {table} should not exist");
+        }
+        let camp_competition_col: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM pragma_table_info('camps') WHERE name = 'competition_id'",
+        ).fetch_one(&db.pool).await.unwrap();
+        assert_eq!(camp_competition_col, 0, "camps.competition_id should be dropped");
+        let video_match_col: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM pragma_table_info('videos') WHERE name = 'match_id'",
+        ).fetch_one(&db.pool).await.unwrap();
+        assert_eq!(video_match_col, 0, "videos.match_id should be dropped");
+    }
+
+    #[rocket::async_test]
     async fn create_video_with_camp_parent() {
         let db = TestDbBuilder::new()
             .coach("coach_user", Some("Coach"))
@@ -803,13 +828,7 @@ mod tests {
             .await
             .unwrap();
 
-        // Verify the three link tables exist and are empty.
-        let rm: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM camp_referenced_matches")
-            .fetch_one(&db.pool)
-            .await
-            .unwrap();
-        assert_eq!(rm, 0);
-
+        // Verify the camp link tables exist and are empty.
         let rt: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM camp_referenced_threads")
             .fetch_one(&db.pool)
             .await
@@ -1503,9 +1522,8 @@ mod tests {
     // -----------------------------------------------------------------------
 
     #[rocket::async_test]
-    async fn camp_summary_carries_counts_and_competition_name() {
+    async fn camp_summary_carries_counts() {
         use crate::db::camps::{create_camp, list_camp_summaries_for_student, NewCamp};
-        use crate::db::competitions::create_competition;
         use crate::db::{create_processing_video, VideoParent};
 
         let db = TestDbBuilder::new()
@@ -1518,12 +1536,6 @@ mod tests {
         let coach = db.user_id("coach_user").unwrap();
         let student = db.user_id("student_user").unwrap();
 
-        // Create a competition named "IBJJF Worlds".
-        let competition_id = create_competition(&db.pool, "IBJJF Worlds", None, coach)
-            .await
-            .unwrap();
-
-        // Create a camp linked to that competition.
         let camp_id = create_camp(
             &db.pool,
             NewCamp {
@@ -1536,12 +1548,6 @@ mod tests {
         )
         .await
         .unwrap();
-
-        // Link the camp to the competition.
-        sqlx::query!("UPDATE camps SET competition_id = ? WHERE id = ?", competition_id, camp_id)
-            .execute(&db.pool)
-            .await
-            .unwrap();
 
         // Add one camp technique.
         let tech_id: i64 = sqlx::query_scalar(
@@ -1574,7 +1580,6 @@ mod tests {
         assert_eq!(summaries.len(), 1);
         let s = &summaries[0];
 
-        assert_eq!(s.competition_name, Some("IBJJF Worlds".to_string()));
         assert_eq!(s.technique_count, 1);
         assert_eq!(s.video_count, 1);
         assert!(s.last_activity_at.is_some());
