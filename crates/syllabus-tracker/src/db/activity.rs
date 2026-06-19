@@ -21,8 +21,6 @@ pub enum EntityKind {
     Video,
     Thread,
     Camp,
-    Competition,
-    Match,
 }
 
 /// The activity verbs. Named `<target>_<past_tense>`. Each carries static
@@ -54,17 +52,10 @@ pub enum Verb {
     CampCreated,
     CampTechniqueAdded,
     CampArchived,
-    // S2-3: competition verbs (match verbs + read-side added in S2-6)
-    CompetitionCreated,
-    StudentRegistered,
-    CampPromotedToCompetition,
-    // S2-4: match verbs
-    MatchLogged,
-    MatchTechniqueLinked,
 }
 
 impl Verb {
-    pub const ALL: [Verb; 29] = [
+    pub const ALL: [Verb; 24] = [
         Verb::VideoWatched,
         Verb::AttemptLogged,
         Verb::AttemptEdited,
@@ -89,11 +80,6 @@ impl Verb {
         Verb::CampCreated,
         Verb::CampTechniqueAdded,
         Verb::CampArchived,
-        Verb::CompetitionCreated,
-        Verb::StudentRegistered,
-        Verb::CampPromotedToCompetition,
-        Verb::MatchLogged,
-        Verb::MatchTechniqueLinked,
     ];
 
     pub fn as_str(self) -> &'static str {
@@ -122,11 +108,6 @@ impl Verb {
             Verb::CampCreated => "camp_created",
             Verb::CampTechniqueAdded => "camp_technique_added",
             Verb::CampArchived => "camp_archived",
-            Verb::CompetitionCreated => "competition_created",
-            Verb::StudentRegistered => "student_registered",
-            Verb::CampPromotedToCompetition => "camp_promoted_to_competition",
-            Verb::MatchLogged => "match_logged",
-            Verb::MatchTechniqueLinked => "match_technique_linked",
         }
     }
 
@@ -148,7 +129,6 @@ impl Verb {
                 | Verb::SyllabusTechniqueRemoved
                 | Verb::VideoVisibilitySet
                 | Verb::CampArchived
-                | Verb::CompetitionCreated
         )
     }
 
@@ -162,11 +142,6 @@ impl Verb {
                 | Verb::CampCreated
                 | Verb::CampTechniqueAdded
                 | Verb::CampArchived
-                | Verb::CompetitionCreated
-                | Verb::StudentRegistered
-                | Verb::CampPromotedToCompetition
-                | Verb::MatchLogged
-                | Verb::MatchTechniqueLinked
         )
     }
 
@@ -195,10 +170,6 @@ impl Verb {
             | Verb::SyllabusTechniqueRemoved => EntityKind::Syllabus,
             Verb::ThreadCommentPosted => EntityKind::Thread,
             Verb::CampCreated | Verb::CampTechniqueAdded | Verb::CampArchived => EntityKind::Camp,
-            Verb::CompetitionCreated
-            | Verb::StudentRegistered
-            | Verb::CampPromotedToCompetition => EntityKind::Competition,
-            Verb::MatchLogged | Verb::MatchTechniqueLinked => EntityKind::Match,
         }
     }
 }
@@ -216,8 +187,6 @@ pub struct NewActivity {
     pub video_id: Option<i64>,
     pub thread_id: Option<i64>,
     pub camp_id: Option<i64>,
-    pub competition_id: Option<i64>,
-    pub match_id: Option<i64>,
     pub payload_json: Option<String>,
     pub context_kind: Option<&'static str>,
 }
@@ -234,8 +203,6 @@ impl NewActivity {
             video_id: None,
             thread_id: None,
             camp_id: None,
-            competition_id: None,
-            match_id: None,
             payload_json: None,
             context_kind: None,
         }
@@ -269,16 +236,6 @@ impl NewActivity {
         self.camp_id = Some(id);
         self
     }
-    pub fn competition(mut self, id: i64) -> Self {
-        self.competition_id = Some(id);
-        self
-    }
-    /// Set the `match_id` reference on this activity row. Named `match_ref`
-    /// to avoid collision with the `match` keyword at call sites.
-    pub fn match_ref(mut self, id: i64) -> Self {
-        self.match_id = Some(id);
-        self
-    }
     pub fn payload(mut self, json: String) -> Self {
         self.payload_json = Some(json);
         self
@@ -300,8 +257,6 @@ impl NewActivity {
             EntityKind::Video => self.video_id,
             EntityKind::Thread => self.thread_id,
             EntityKind::Camp => self.camp_id,
-            EntityKind::Competition => self.competition_id,
-            EntityKind::Match => self.match_id,
         }
     }
 }
@@ -395,8 +350,8 @@ pub async fn emit(tx: &mut Transaction<'_, Sqlite>, ev: NewActivity) -> Result<(
         "INSERT INTO activity
             (occurred_at, verb, actor_user_id, target_student_id,
              technique_id, syllabus_id, sst_id, video_id, thread_id, camp_id,
-             competition_id, match_id, payload_json, context_kind)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+             payload_json, context_kind)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         now,
         verb,
         ev.actor_user_id,
@@ -407,8 +362,6 @@ pub async fn emit(tx: &mut Transaction<'_, Sqlite>, ev: NewActivity) -> Result<(
         ev.video_id,
         ev.thread_id,
         ev.camp_id,
-        ev.competition_id,
-        ev.match_id,
         ev.payload_json,
         ev.context_kind,
     )
@@ -505,12 +458,6 @@ async fn find_coalesce_target(
         // Camp verbs are non-coalescing; this branch is unreachable in
         // practice because emit() skips find_coalesce_target for them.
         EntityKind::Camp => None,
-        // Competition verbs are non-coalescing; this branch is unreachable in
-        // practice because emit() skips find_coalesce_target for them.
-        EntityKind::Competition => None,
-        // Match verbs are non-coalescing; this branch is unreachable in
-        // practice because emit() skips find_coalesce_target for them.
-        EntityKind::Match => None,
     };
     Ok(id)
 }
@@ -863,7 +810,6 @@ mod registry_tests {
             "syllabus_technique_removed",
             "video_visibility_set",
             "camp_archived",
-            "competition_created",
         ];
         want.sort_unstable();
         assert_eq!(got, want);

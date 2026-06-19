@@ -2,7 +2,7 @@
 extern crate rocket;
 
 pub use syllabus_tracker::{
-    api, auth, camps, capabilities, catchers, competitions, db, env, error, models,
+    api, auth, camps, capabilities, catchers, db, env, error, models,
     syllabi, telemetry, threads, validation, videos,
 };
 
@@ -58,14 +58,6 @@ use camps::{
     api_get_camp, api_list_camps, api_list_camp_videos, api_promote_pinned_to_camp,
     api_remove_camp_technique, api_update_camp, api_set_camp_video_visibility,
 };
-use competitions::{
-    api_create_competition, api_list_competitions, api_get_competition, api_update_competition,
-    api_self_register_competition, api_coach_register_student, api_unregister_student,
-    api_promote_camp_to_competition,
-    api_create_match, api_list_registration_matches, api_update_match, api_delete_match,
-    api_link_match_technique, api_unlink_match_technique, api_list_match_techniques,
-    api_list_match_videos,
-};
 use threads::{
     api_create_thread, api_list_threads, api_create_comment, api_delete_thread, api_delete_comment,
 };
@@ -75,7 +67,7 @@ use thiserror::Error;
 use videos::{
     CallbackSecret, RemoteProcessor, DynVideoProcessor, HostFfmpegProcessor,
     api_admin_storage, api_camp_video_upload, api_dashboard_video_overview, api_delete_video,
-    api_list_technique_videos, api_match_video_upload, api_my_watch_state, api_processing_result,
+    api_list_technique_videos, api_my_watch_state, api_processing_result,
     api_reorder_videos, api_replace_video, api_set_video_global_hidden,
     api_set_video_student_visibility, api_student_watch_activity, api_update_video,
     api_video_download_url, api_video_link, api_video_playback_url, api_video_privacy_ack,
@@ -393,23 +385,6 @@ pub async fn init_rocket_with_callback_secret(
                 api_list_camp_videos,
                 api_set_camp_video_visibility,
                 api_promote_pinned_to_camp,
-                // competitions + matches
-                api_create_competition,
-                api_list_competitions,
-                api_get_competition,
-                api_update_competition,
-                api_self_register_competition,
-                api_coach_register_student,
-                api_unregister_student,
-                api_promote_camp_to_competition,
-                api_create_match,
-                api_list_registration_matches,
-                api_update_match,
-                api_delete_match,
-                api_link_match_technique,
-                api_unlink_match_technique,
-                api_list_match_techniques,
-                api_list_match_videos,
             ],
         )
         .register(
@@ -523,7 +498,6 @@ pub async fn init_rocket_with_callback_secret(
                 routes![
                     api_video_upload,
                     api_camp_video_upload,
-                    api_match_video_upload,
                     api_video_status,
                     api_video_link,
                     api_list_technique_videos,

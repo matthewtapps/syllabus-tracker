@@ -5,7 +5,6 @@ pub mod api;
 pub mod auth;
 pub mod camps;
 pub mod capabilities;
-pub mod competitions;
 pub mod catchers;
 pub mod db;
 pub mod env;

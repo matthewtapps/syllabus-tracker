@@ -10,7 +10,6 @@ use crate::db::camps::{
     list_camp_summaries_for_student, list_camp_techniques, remove_camp_technique, update_camp,
     Camp, CampSummary, CampTechnique, NewCamp, TechniqueScope,
 };
-use crate::db::competitions::{get_competition, registration_for};
 use crate::db::{list_videos_for_camp, set_video_camp_visibility};
 use crate::models::Video;
 
@@ -93,19 +92,10 @@ pub struct CampDetailResponse {
     pub created_at: chrono::NaiveDateTime,
     pub archived_at: Option<chrono::NaiveDateTime>,
     pub techniques: Vec<CampTechnique>,
-    /// Id of the competition this camp is linked to, if any.
-    pub competition_id: Option<i64>,
-    /// Name of the linked competition, resolved eagerly so the frontend does not
-    /// need a second round-trip to display it.
-    pub competition_name: Option<String>,
-    /// Registration id for (camp.student_id, camp.competition_id). Present only
-    /// when competition_id is set and the student is registered. The frontend
-    /// uses this to key match queries without a separate registration lookup.
-    pub registration_id: Option<i64>,
     /// Id of the camp this camp builds on, if any.
     pub references_camp_id: Option<i64>,
-    /// Name of the referenced camp, resolved eagerly (mirrors competition_name).
-    /// Present only when references_camp_id is set.
+    /// Name of the referenced camp, resolved eagerly. Present only when
+    /// references_camp_id is set.
     pub references_camp_name: Option<String>,
 }
 
@@ -168,24 +158,6 @@ pub async fn api_get_camp(
         .await
         .map_err(Status::from)?;
 
-    // Resolve competition name + registration id when camp is linked to a comp.
-    let (competition_name, registration_id) = if let Some(comp_id) = camp.competition_id {
-        let comp_name = get_competition(pool, comp_id)
-            .await
-            .map_err(Status::from)?
-            .map(|c| c.name);
-        // Only expose the registration_id for an ACTIVE registration: a
-        // soft-unregistered student must not get the match-logging surface.
-        let reg_id = registration_for(pool, camp.student_id, comp_id)
-            .await
-            .map_err(Status::from)?
-            .filter(|r| r.unregistered_at.is_none())
-            .map(|r| r.id);
-        (comp_name, reg_id)
-    } else {
-        (None, None)
-    };
-
     // Resolve the referenced camp name when this camp builds on a prior one.
     let references_camp_name = if let Some(ref_id) = camp.references_camp_id {
         get_camp(pool, ref_id)
@@ -205,9 +177,6 @@ pub async fn api_get_camp(
         created_at: camp.created_at,
         archived_at: camp.archived_at,
         techniques,
-        competition_id: camp.competition_id,
-        competition_name,
-        registration_id,
         references_camp_id: camp.references_camp_id,
         references_camp_name,
     }))

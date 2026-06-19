@@ -29,7 +29,6 @@ pub struct Camp {
     pub description: Option<String>,
     pub created_at: NaiveDateTime,
     pub archived_at: Option<NaiveDateTime>,
-    pub competition_id: Option<i64>,
     /// Id of the camp this camp builds on (set at creation, optional).
     pub references_camp_id: Option<i64>,
 }
@@ -102,7 +101,6 @@ pub async fn get_camp(pool: &Pool<Sqlite>, id: i64) -> Result<Option<Camp>, AppE
                   coach_id AS "coach_id!: i64", name, description,
                   created_at AS "created_at!: NaiveDateTime",
                   archived_at AS "archived_at?: NaiveDateTime",
-                  competition_id AS "competition_id?: i64",
                   references_camp_id AS "references_camp_id?: i64"
            FROM camps WHERE id = ?"#,
         id
@@ -117,7 +115,6 @@ pub async fn get_camp(pool: &Pool<Sqlite>, id: i64) -> Result<Option<Camp>, AppE
         description: r.description,
         created_at: r.created_at,
         archived_at: r.archived_at,
-        competition_id: r.competition_id,
         references_camp_id: r.references_camp_id,
     }))
 }
@@ -133,7 +130,6 @@ pub async fn list_camps_for_student(
                   coach_id AS "coach_id!: i64", name, description,
                   created_at AS "created_at!: NaiveDateTime",
                   archived_at AS "archived_at?: NaiveDateTime",
-                  competition_id AS "competition_id?: i64",
                   references_camp_id AS "references_camp_id?: i64"
            FROM camps
            WHERE student_id = ? AND (? OR archived_at IS NULL)
@@ -153,7 +149,6 @@ pub async fn list_camps_for_student(
             description: r.description,
             created_at: r.created_at,
             archived_at: r.archived_at,
-            competition_id: r.competition_id,
             references_camp_id: r.references_camp_id,
         })
         .collect())
@@ -168,10 +163,7 @@ pub struct CampSummary {
     pub description: Option<String>,
     pub created_at: NaiveDateTime,
     pub archived_at: Option<NaiveDateTime>,
-    pub competition_id: Option<i64>,
     pub references_camp_id: Option<i64>,
-    /// Name of the linked competition, resolved via LEFT JOIN. None when unlinked.
-    pub competition_name: Option<String>,
     pub technique_count: i64,
     pub video_count: i64,
     /// Most recent activity timestamp for this camp (MAX over the activity
@@ -180,8 +172,8 @@ pub struct CampSummary {
 }
 
 /// Enriched camp list for the profile/list surfaces: bare camp columns plus
-/// competition name, technique/video counts, and last-activity. Ordered active
-/// first, then by last activity (falling back to creation) descending.
+/// technique/video counts and last-activity. Ordered active first, then by
+/// last activity (falling back to creation) descending.
 #[instrument(skip(pool))]
 pub async fn list_camp_summaries_for_student(
     pool: &Pool<Sqlite>,
@@ -194,9 +186,7 @@ pub async fn list_camp_summaries_for_student(
                c.coach_id AS "coach_id!: i64", c.name, c.description,
                c.created_at AS "created_at!: NaiveDateTime",
                c.archived_at AS "archived_at?: NaiveDateTime",
-               c.competition_id AS "competition_id?: i64",
                c.references_camp_id AS "references_camp_id?: i64",
-               comp.name AS "competition_name?: String",
                (SELECT COUNT(*) FROM camp_techniques ct WHERE ct.camp_id = c.id)
                    AS "technique_count!: i64",
                (SELECT COUNT(*) FROM videos v WHERE v.camp_id = c.id)
@@ -204,7 +194,6 @@ pub async fn list_camp_summaries_for_student(
                (SELECT MAX(a.occurred_at) FROM activity a WHERE a.camp_id = c.id)
                    AS "last_activity_at?: NaiveDateTime"
            FROM camps c
-           LEFT JOIN competitions comp ON comp.id = c.competition_id
            WHERE c.student_id = ? AND (? OR c.archived_at IS NULL)
            ORDER BY (c.archived_at IS NOT NULL),
                     COALESCE(
@@ -226,9 +215,7 @@ pub async fn list_camp_summaries_for_student(
             description: r.description,
             created_at: r.created_at,
             archived_at: r.archived_at,
-            competition_id: r.competition_id,
             references_camp_id: r.references_camp_id,
-            competition_name: r.competition_name,
             technique_count: r.technique_count,
             video_count: r.video_count,
             last_activity_at: r.last_activity_at,

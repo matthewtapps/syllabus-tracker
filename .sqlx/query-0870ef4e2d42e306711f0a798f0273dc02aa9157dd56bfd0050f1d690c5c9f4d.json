@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT id AS \"id!: i64\", student_id AS \"student_id!: i64\",\n                  coach_id AS \"coach_id!: i64\", name, description,\n                  created_at AS \"created_at!: NaiveDateTime\",\n                  archived_at AS \"archived_at?: NaiveDateTime\",\n                  competition_id AS \"competition_id?: i64\",\n                  references_camp_id AS \"references_camp_id?: i64\"\n           FROM camps\n           WHERE student_id = ? AND (? OR archived_at IS NULL)\n           ORDER BY (archived_at IS NOT NULL), created_at DESC",
+  "query": "SELECT id AS \"id!: i64\", student_id AS \"student_id!: i64\",\n                  coach_id AS \"coach_id!: i64\", name, description,\n                  created_at AS \"created_at!: NaiveDateTime\",\n                  archived_at AS \"archived_at?: NaiveDateTime\",\n                  references_camp_id AS \"references_camp_id?: i64\"\n           FROM camps\n           WHERE student_id = ? AND (? OR archived_at IS NULL)\n           ORDER BY (archived_at IS NOT NULL), created_at DESC",
   "describe": {
     "columns": [
       {
@@ -39,13 +39,8 @@
         "type_info": "Datetime"
       },
       {
-        "name": "competition_id?: i64",
-        "ordinal": 7,
-        "type_info": "Integer"
-      },
-      {
         "name": "references_camp_id?: i64",
-        "ordinal": 8,
+        "ordinal": 7,
         "type_info": "Integer"
       }
     ],
@@ -60,9 +55,8 @@
       true,
       false,
       true,
-      true,
       true
     ]
   },
-  "hash": "e8e21dc78b0d27261abcb47ff7a61a6f1e056fe473ef3a5c7cc38d1661b84af0"
+  "hash": "0870ef4e2d42e306711f0a798f0273dc02aa9157dd56bfd0050f1d690c5c9f4d"
 }

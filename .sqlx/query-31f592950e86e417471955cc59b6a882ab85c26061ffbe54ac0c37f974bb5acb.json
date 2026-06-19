@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT v.id, v.parent_kind, v.technique_id, v.student_id, v.thread_id,\n                v.camp_id AS \"camp_id?: i64\", v.match_id AS \"match_id?: i64\",\n                v.title, v.description, v.position, v.kind,\n                v.processing_status, v.processing_error, v.storage_key, v.bytes,\n                v.duration_seconds, v.width, v.height,\n                v.external_url, v.external_host, v.external_video_id, v.uploaded_by_id,\n                v.created_at, v.updated_at, v.hidden_at\n         FROM videos v\n         LEFT JOIN video_visibility_overrides vsv\n                ON vsv.video_id = v.id\n               AND vsv.scope_kind = 'student'\n               AND vsv.student_id = ?\n         WHERE v.technique_id = ?\n           AND v.deleted_at IS NULL\n           AND COALESCE(vsv.visible, v.hidden_at IS NULL) = 1\n         ORDER BY v.position ASC, v.id ASC",
+  "query": "SELECT id, parent_kind, technique_id, student_id, thread_id,\n                camp_id AS \"camp_id?: i64\", title, description,\n                position, kind, processing_status, processing_error, storage_key, bytes,\n                duration_seconds, width, height,\n                external_url, external_host, external_video_id, uploaded_by_id,\n                created_at, updated_at, hidden_at\n         FROM videos\n         WHERE id = ? AND deleted_at IS NULL",
   "describe": {
     "columns": [
       {
@@ -34,108 +34,102 @@
         "type_info": "Integer"
       },
       {
-        "name": "match_id?: i64",
-        "ordinal": 6,
-        "type_info": "Integer"
-      },
-      {
         "name": "title",
-        "ordinal": 7,
+        "ordinal": 6,
         "type_info": "Text"
       },
       {
         "name": "description",
-        "ordinal": 8,
+        "ordinal": 7,
         "type_info": "Text"
       },
       {
         "name": "position",
-        "ordinal": 9,
+        "ordinal": 8,
         "type_info": "Integer"
       },
       {
         "name": "kind",
-        "ordinal": 10,
+        "ordinal": 9,
         "type_info": "Text"
       },
       {
         "name": "processing_status",
-        "ordinal": 11,
+        "ordinal": 10,
         "type_info": "Text"
       },
       {
         "name": "processing_error",
-        "ordinal": 12,
+        "ordinal": 11,
         "type_info": "Text"
       },
       {
         "name": "storage_key",
-        "ordinal": 13,
+        "ordinal": 12,
         "type_info": "Text"
       },
       {
         "name": "bytes",
-        "ordinal": 14,
+        "ordinal": 13,
         "type_info": "Integer"
       },
       {
         "name": "duration_seconds",
-        "ordinal": 15,
+        "ordinal": 14,
         "type_info": "Integer"
       },
       {
         "name": "width",
-        "ordinal": 16,
+        "ordinal": 15,
         "type_info": "Integer"
       },
       {
         "name": "height",
-        "ordinal": 17,
+        "ordinal": 16,
         "type_info": "Integer"
       },
       {
         "name": "external_url",
-        "ordinal": 18,
+        "ordinal": 17,
         "type_info": "Text"
       },
       {
         "name": "external_host",
-        "ordinal": 19,
+        "ordinal": 18,
         "type_info": "Text"
       },
       {
         "name": "external_video_id",
-        "ordinal": 20,
+        "ordinal": 19,
         "type_info": "Text"
       },
       {
         "name": "uploaded_by_id",
-        "ordinal": 21,
+        "ordinal": 20,
         "type_info": "Integer"
       },
       {
         "name": "created_at",
-        "ordinal": 22,
+        "ordinal": 21,
         "type_info": "Datetime"
       },
       {
         "name": "updated_at",
-        "ordinal": 23,
+        "ordinal": 22,
         "type_info": "Datetime"
       },
       {
         "name": "hidden_at",
-        "ordinal": 24,
+        "ordinal": 23,
         "type_info": "Datetime"
       }
     ],
     "parameters": {
-      "Right": 2
+      "Right": 1
     },
     "nullable": [
-      true,
       false,
-      true,
+      false,
       true,
       true,
       true,
@@ -160,5 +154,5 @@
       true
     ]
   },
-  "hash": "3c6a2a1f0ce6cb90ba73d617283fe8820cfe4e08b82c92ca7485732dd3ae9e09"
+  "hash": "31f592950e86e417471955cc59b6a882ab85c26061ffbe54ac0c37f974bb5acb"
 }

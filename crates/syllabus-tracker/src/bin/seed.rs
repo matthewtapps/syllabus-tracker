@@ -5,12 +5,11 @@
 //! aggregates, and a backdated activity log. On top of that it seeds the
 //! social layer so every feature surface has something to look at: discussion
 //! threads with replies (technique / video / video-timestamp / sst / profile
-//! anchors), camps with referenced footage, and competitions with registrations
-//! and logged matches.
+//! anchors) and camps with referenced footage.
 //!
 //! The core stack (users .. activity backfill) is idempotent: existing rows are
 //! detected and left alone (INSERT OR IGNORE + explicit existence checks). The
-//! social/camp/competition phases run AFTER the activity backfill (so their
+//! social/camp phases run AFTER the activity backfill (so their
 //! live-emitted activity rows survive the rebuild) and are made re-run safe by
 //! clearing their own feature tables before recreating them. Those tables hold
 //! only demo data on a seeded dev DB, so the wipe is local to the demo.
@@ -31,7 +30,6 @@ use sqlx::sqlite::SqliteConnectOptions;
 use syllabus_tracker::auth::Role;
 use syllabus_tracker::db;
 use syllabus_tracker::db::camps::NewCamp;
-use syllabus_tracker::db::matches::{MatchMethod, MatchResult};
 use syllabus_tracker::db::{
     Anchor, AnchorKind, NewExternalVideo, NewThread, ThreadVisibility, VideoParent,
     add_tag_to_technique, create_comment, create_external_video, create_syllabus, create_tag,
@@ -527,9 +525,8 @@ async fn run() -> Result<()> {
         "Seeding video watch data",     // 13
         "Rebuilding activity log",      // 14
         "Seeding discussion threads",   // 15
-        "Seeding competitions + matches", // 16
-        "Seeding camps",                // 17
-        "Refreshing activity cursors",  // 18
+        "Seeding camps",                // 16
+        "Refreshing activity cursors",  // 17
     ];
     reporter.seed_started(&phases);
 
@@ -1235,7 +1232,7 @@ async fn run() -> Result<()> {
     );
 
     // ------------------------------------------------------------------
-    // Social / camp / competition layer.
+    // Social / camp layer.
     //
     // These run AFTER the activity rebuild (phase 14) so their live-emitted
     // activity rows are not wiped by the backfill's DELETE. Each phase clears
@@ -1427,151 +1424,8 @@ async fn run() -> Result<()> {
     .await?;
     reporter.phase_finished();
 
-    // 16. Competitions, registrations, and logged matches.
+    // 16. Camps: per-student technique blocks with referenced footage.
     reporter.phase_started(phases[16], None);
-    sqlx::query("DELETE FROM match_techniques")
-        .execute(&pool)
-        .await?;
-    sqlx::query("DELETE FROM matches").execute(&pool).await?;
-    sqlx::query("DELETE FROM competition_registrations")
-        .execute(&pool)
-        .await?;
-    sqlx::query("DELETE FROM competitions")
-        .execute(&pool)
-        .await?;
-
-    // A past comp (has matches) and an upcoming comp (registrations only).
-    let sundown = db::competitions::create_competition(
-        &pool,
-        "Sundown Open",
-        Some("2026-05-24"),
-        coach_id,
-    )
-    .await?;
-    backdate_last_activity(&pool, now - Duration::days(40)).await?;
-    reporter.phase_item(ItemOutcome::Created);
-
-    let winter = db::competitions::create_competition(
-        &pool,
-        "Winter Classic",
-        Some("2026-07-18"),
-        coach_id,
-    )
-    .await?;
-    backdate_last_activity(&pool, now - Duration::days(8)).await?;
-    reporter.phase_item(ItemOutcome::Created);
-
-    // Past-comp registrations (Alex, Bianca, Diego), backdated near the event.
-    let mut past_regs: Vec<(usize, i64)> = Vec::new();
-    for (offset, &student_idx) in [0usize, 1, 4].iter().enumerate() {
-        let reg = db::competitions::register_student(
-            &pool,
-            sundown,
-            student_ids[student_idx],
-            coach_id,
-        )
-        .await?;
-        backdate_last_activity(&pool, now - Duration::days(38) + Duration::hours(offset as i64))
-            .await?;
-        past_regs.push((student_idx, reg));
-        reporter.phase_item(ItemOutcome::Created);
-    }
-
-    // Upcoming-comp registrations (Alex, Marcus): no matches yet.
-    for (offset, &student_idx) in [0usize, 2].iter().enumerate() {
-        db::competitions::register_student(&pool, winter, student_ids[student_idx], coach_id)
-            .await?;
-        backdate_last_activity(&pool, now - Duration::days(7) + Duration::hours(offset as i64))
-            .await?;
-        reporter.phase_item(ItemOutcome::Created);
-    }
-
-    // Log matches against the past-comp registrations and link techniques.
-    // (student_idx, result, method, detail, [linked technique names])
-    type MatchPlan = (
-        usize,
-        MatchResult,
-        Option<MatchMethod>,
-        Option<&'static str>,
-        &'static [&'static str],
-    );
-    let match_plan: &[MatchPlan] = &[
-        (
-            0,
-            MatchResult::Win,
-            Some(MatchMethod::Submission),
-            Some("armbar from closed guard"),
-            &["Armbar from Closed Guard"],
-        ),
-        (
-            0,
-            MatchResult::Loss,
-            Some(MatchMethod::Points),
-            Some("swept late in the round"),
-            &["Scissor Sweep"],
-        ),
-        (
-            1,
-            MatchResult::Win,
-            Some(MatchMethod::Points),
-            Some("pressure passing"),
-            &["Knee Slice Pass"],
-        ),
-        (
-            4,
-            MatchResult::Draw,
-            Some(MatchMethod::Decision),
-            None,
-            &["Rear Naked Choke"],
-        ),
-    ];
-    // Keep one match per student for camp referencing later.
-    let mut match_by_student: std::collections::HashMap<usize, i64> =
-        std::collections::HashMap::new();
-    for (match_idx, (student_idx, result, method, detail, technique_names)) in
-        match_plan.iter().enumerate()
-    {
-        let Some((_, reg_id)) = past_regs.iter().find(|(si, _)| si == student_idx) else {
-            continue;
-        };
-        let occurred = format!(
-            "2026-05-24 {:02}:00:00",
-            10 + match_idx % 6 // spread across the comp day
-        );
-        let match_id = db::matches::create_match(
-            &pool,
-            *reg_id,
-            *result,
-            *method,
-            *detail,
-            Some(&occurred),
-            coach_id,
-        )
-        .await?;
-        backdate_last_activity(&pool, now - Duration::days(38) + Duration::hours(match_idx as i64))
-            .await?;
-        match_by_student.entry(*student_idx).or_insert(match_id);
-        reporter.phase_item(ItemOutcome::Created);
-
-        for tech_name in *technique_names {
-            if let Some(tech_id) = tid_of(tech_name) {
-                db::matches::link_match_technique(&pool, match_id, tech_id, coach_id).await?;
-                backdate_last_activity(
-                    &pool,
-                    now - Duration::days(37) + Duration::hours(match_idx as i64),
-                )
-                .await?;
-                reporter.phase_item(ItemOutcome::Created);
-            }
-        }
-    }
-    reporter.phase_finished();
-
-    // 17. Camps: per-student technique blocks with referenced footage.
-    reporter.phase_started(phases[17], None);
-    sqlx::query("DELETE FROM camp_referenced_matches")
-        .execute(&pool)
-        .await?;
     sqlx::query("DELETE FROM camp_referenced_threads")
         .execute(&pool)
         .await?;
@@ -1676,7 +1530,7 @@ async fn run() -> Result<()> {
     }
 
     // Referenced footage links (pure join rows; no helper, so raw INSERT).
-    // Alex's camp references the RNC discussion thread and his Sundown match.
+    // Alex's camp references the RNC discussion thread.
     if let Some(&alex_camp) = camp_by_student.get(&0) {
         if let Some(thread_id) = rnc_thread {
             sqlx::query(
@@ -1684,16 +1538,6 @@ async fn run() -> Result<()> {
             )
             .bind(alex_camp)
             .bind(thread_id)
-            .execute(&pool)
-            .await?;
-            reporter.phase_item(ItemOutcome::Created);
-        }
-        if let Some(&match_id) = match_by_student.get(&0) {
-            sqlx::query(
-                "INSERT OR IGNORE INTO camp_referenced_matches (camp_id, match_id) VALUES (?, ?)",
-            )
-            .bind(alex_camp)
-            .bind(match_id)
             .execute(&pool)
             .await?;
             reporter.phase_item(ItemOutcome::Created);
@@ -1716,9 +1560,9 @@ async fn run() -> Result<()> {
     }
     reporter.phase_finished();
 
-    // 18. Refresh cursors so the new social activity is accounted for: mark all
+    // 17. Refresh cursors so the new social activity is accounted for: mark all
     //     viewers caught up, then hand the coach ~15 unread for the badge.
-    reporter.phase_started(phases[18], Some(1));
+    reporter.phase_started(phases[17], Some(1));
     run_cursor_init(&pool).await?;
     sqlx::query("UPDATE activity_cursors SET max_seen_id = (SELECT COALESCE(MAX(id), 0) FROM activity)")
         .execute(&pool)

@@ -41,9 +41,6 @@ pub struct ActivityRow {
     pub thread_id: Option<i64>,
     pub camp_id: Option<i64>,
     pub camp_name: Option<String>,
-    pub competition_id: Option<i64>,
-    pub competition_name: Option<String>,
-    pub match_id: Option<i64>,
     pub payload_json: Option<String>,
     pub unread: bool,
     pub context_kind: Option<String>,
@@ -249,9 +246,6 @@ pub async fn feed(
                           act.thread_id        AS "thread_id?: i64",
                           act.camp_id          AS "camp_id?: i64",
                           cp.name              AS "camp_name?: String",
-                          act.competition_id   AS "competition_id?: i64",
-                          co.name              AS "competition_name?: String",
-                          act.match_id         AS "match_id?: i64",
                           COALESCE(tr.comment_count, 0) AS "comment_count!: i64",
                           act.payload_json     AS "payload_json?: String",
                           act.context_kind     AS "context_kind?: String",
@@ -269,7 +263,6 @@ pub async fn feed(
                    LEFT JOIN videos v     ON v.id = act.video_id
                    LEFT JOIN threads th   ON th.id = act.thread_id
                    LEFT JOIN camps cp     ON cp.id = act.camp_id
-                   LEFT JOIN competitions co ON co.id = act.competition_id
                    LEFT JOIN thread_ranked tr ON tr.id = act.id
                    LEFT JOIN activity_cursors c
                           ON c.viewer_user_id = ?
@@ -358,9 +351,6 @@ pub async fn feed(
                         thread_id: r.thread_id,
                         camp_id: r.camp_id,
                         camp_name: r.camp_name,
-                        competition_id: r.competition_id,
-                        competition_name: r.competition_name,
-                        match_id: r.match_id,
                         payload_json: r.payload_json,
                         unread,
                         context_kind: r.context_kind,
@@ -399,9 +389,6 @@ pub async fn feed(
                           act.thread_id        AS "thread_id?: i64",
                           act.camp_id          AS "camp_id?: i64",
                           cp.name              AS "camp_name?: String",
-                          act.competition_id   AS "competition_id?: i64",
-                          co.name              AS "competition_name?: String",
-                          act.match_id         AS "match_id?: i64",
                           COALESCE(tr.comment_count, 0) AS "comment_count!: i64",
                           act.payload_json     AS "payload_json?: String",
                           act.context_kind     AS "context_kind?: String",
@@ -419,7 +406,6 @@ pub async fn feed(
                    LEFT JOIN videos v     ON v.id = act.video_id
                    LEFT JOIN threads th   ON th.id = act.thread_id
                    LEFT JOIN camps cp     ON cp.id = act.camp_id
-                   LEFT JOIN competitions co ON co.id = act.competition_id
                    LEFT JOIN thread_ranked tr ON tr.id = act.id
                    LEFT JOIN activity_cursors c
                           ON c.viewer_user_id = ?
@@ -475,9 +461,6 @@ pub async fn feed(
                         thread_id: r.thread_id,
                         camp_id: r.camp_id,
                         camp_name: r.camp_name,
-                        competition_id: r.competition_id,
-                        competition_name: r.competition_name,
-                        match_id: r.match_id,
                         payload_json: r.payload_json,
                         unread,
                         context_kind: r.context_kind,
@@ -534,8 +517,6 @@ pub async fn dashboard_activity_feed(
                   act.video_id          AS "video_id?: i64",
                   v.title               AS "video_title?: String",
                   act.camp_id           AS "camp_id?: i64",
-                  act.competition_id    AS "competition_id?: i64",
-                  act.match_id          AS "match_id?: i64",
                   act.payload_json      AS "payload_json?: String",
                   act.context_kind      AS "context_kind?: String"
            FROM activity act
@@ -592,12 +573,9 @@ pub async fn dashboard_activity_feed(
             video_title: r.video_title,
             thread_id: None,
             camp_id: r.camp_id,
-            // The dashboard glance does not join camps/competitions (it never
-            // deep-links into those gated surfaces), so names stay None here.
+            // The dashboard glance does not join camps (it never deep-links
+            // into that gated surface), so the name stays None here.
             camp_name: None,
-            competition_id: r.competition_id,
-            competition_name: None,
-            match_id: r.match_id,
             payload_json: r.payload_json,
             unread: false,
             context_kind: r.context_kind,
