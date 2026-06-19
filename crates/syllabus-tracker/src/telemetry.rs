@@ -155,23 +155,16 @@ impl Fairing for TelemetryFairing {
         let parent_context =
             global::get_text_map_propagator(|propagator| propagator.extract(&extractor));
 
-        // Low-cardinality span name: "METHOD /route/template" (path params
-        // templated by `http.route`, query string dropped). Rocket's own
-        // per-request span is named the static literal "request", so grouping
-        // `main=true` by `name` in Honeycomb was useless; this gives one row per
-        // logical operation. Unmatched requests (404s) collapse to
-        // "METHOD <unmatched>" so stray paths don't explode cardinality.
-        let span_name = match request.route() {
-            Some(route) => format!("{} {}", request.method().as_str(), route.uri),
-            None => format!("{} <unmatched>", request.method().as_str()),
-        };
-
         // The request's single wide-event "main" span. We mint our own rather
         // than reuse Rocket's "request" span because (a) we need a dynamic name
         // and (b) tracing span names are static. It is created as a registry
         // root (`parent: None`); the magic `otel.name` field is what
-        // tracing-opentelemetry maps onto the exported OTel span name.
-        let span = tracing::info_span!(parent: None, "http.request", otel.name = %span_name);
+        // tracing-opentelemetry maps onto the exported OTel span name. The name
+        // is declared empty here and recorded in `on_response`: request fairings
+        // run BEFORE routing, so `request.route()` is always `None` at this
+        // point (the name + http.route depend on the matched route).
+        let span =
+            tracing::info_span!(parent: None, "http.request", otel.name = tracing::field::Empty);
 
         // Wire the trace graph: incoming distributed-trace context -> our main
         // span -> Rocket's request span (the registry ancestor of all
@@ -187,14 +180,6 @@ impl Fairing for TelemetryFairing {
         span.set_attribute("main", true);
         span.set_attribute(HTTP_REQUEST_METHOD, request.method().as_str().to_string());
         span.set_attribute(URL_PATH, request.uri().path().to_string());
-        if let Some(route) = request.route() {
-            // http.route is the matched, low-cardinality template (good for
-            // grouping); the concrete path lives on url.path above.
-            span.set_attribute(HTTP_ROUTE, route.uri.to_string());
-            if let Some(name) = &route.name {
-                span.set_attribute("route.handler", name.to_string());
-            }
-        }
         span.set_attribute(
             USER_AGENT_ORIGINAL,
             request
@@ -263,6 +248,24 @@ impl Fairing for TelemetryFairing {
             .0
             .to_owned()
         {
+            // Routing has happened by now, so `request.route()` is populated.
+            // Set the dynamic span name + route attributes here (they were
+            // unavailable in `on_request`, which runs before routing). Name is
+            // the low-cardinality "METHOD /route/template" (params templated,
+            // query dropped); unmatched requests (404s) collapse to
+            // "METHOD <unmatched>".
+            let span_name = match request.route() {
+                Some(route) => format!("{} {}", request.method().as_str(), route.uri),
+                None => format!("{} <unmatched>", request.method().as_str()),
+            };
+            span.record("otel.name", span_name.as_str());
+            if let Some(route) = request.route() {
+                span.set_attribute(HTTP_ROUTE, route.uri.to_string());
+                if let Some(name) = &route.name {
+                    span.set_attribute("route.handler", name.to_string());
+                }
+            }
+
             let code = response.status().code;
             span.set_attribute(HTTP_RESPONSE_STATUS_CODE, code as i64);
 
