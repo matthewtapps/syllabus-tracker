@@ -420,8 +420,8 @@ async fn ensure_syllabus(
 }
 
 /// Backdate the most-recently emitted activity row to `ts`. The live thread /
-/// camp / match / competition / suggestion helpers stamp `now()` on the row
-/// they emit; the demo wants historical spread so the feed orders believably.
+/// camp helpers stamp `now()` on the row they emit; the demo wants historical
+/// spread so the feed orders believably.
 /// Call immediately after the helper, before any other emit, so `MAX(id)` is
 /// still the row we just wrote.
 async fn backdate_last_activity(pool: &SqlitePool, ts: NaiveDateTime) -> Result<()> {
