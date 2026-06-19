@@ -216,15 +216,6 @@ describe("every activity verb surfaces correctly", () => {
     { name: "camp_created", verb: "camp_created", over: { context_kind: "camp", camp_id: 9, camp_name: "Winter Prep", technique_id: null, sst_id: null }, subject: { kind: "none" }, caption: "Started", surface: { label: "Winter Prep", href: "/camps/9" }, gated: true },
     { name: "camp_technique_added", verb: "camp_technique_added", over: { context_kind: "camp", camp_id: 9, camp_name: "Winter Prep", sst_id: null }, subject: technique, caption: "Added", surface: { label: "Winter Prep", href: "/camps/9" }, gated: true },
     { name: "camp_archived", verb: "camp_archived", over: { context_kind: "camp", camp_id: 9, camp_name: "Winter Prep", technique_id: null, sst_id: null }, subject: { kind: "none" }, caption: "Archived", surface: { label: "Winter Prep", href: "/camps/9" }, gated: true },
-
-    // --- competition epic (gated) ---
-    { name: "competition_created", verb: "competition_created", over: { context_kind: "competition", competition_id: 8, competition_name: "Summer Open", target_student_id: null, technique_id: null, sst_id: null, syllabus_id: null }, subject: { kind: "none" }, caption: "Created", surface: { label: "Summer Open", href: "/competitions/8" }, gated: true },
-    { name: "student_registered", verb: "student_registered", over: { context_kind: "competition", competition_id: 8, competition_name: "Summer Open", technique_id: null, sst_id: null, syllabus_id: null }, subject: { kind: "none" }, caption: "Registered", surface: { label: "Summer Open", href: "/competitions/8" }, gated: true },
-    { name: "camp_promoted_to_competition", verb: "camp_promoted_to_competition", over: { context_kind: "competition", competition_id: 8, competition_name: "Summer Open", camp_id: 9, camp_name: "Winter Prep", technique_id: null, sst_id: null, syllabus_id: null }, subject: { kind: "none" }, caption: "Promoted a camp", surface: { label: "Summer Open", href: "/competitions/8" }, gated: true },
-
-    // --- match epic (gated) — links to the owning camp page ---
-    { name: "match_logged", verb: "match_logged", over: { context_kind: "competition", competition_id: 8, competition_name: "Summer Open", match_id: 6, camp_id: 9, technique_id: null, sst_id: null, syllabus_id: null }, subject: { kind: "none" }, caption: "Logged a match", surface: { label: "Summer Open", href: "/camps/9" }, gated: true },
-    { name: "match_technique_linked", verb: "match_technique_linked", over: { context_kind: "competition", competition_id: 8, competition_name: "Summer Open", match_id: 6, camp_id: 9, sst_id: null, syllabus_id: null }, subject: technique, caption: "Linked to a match", surface: { label: "Summer Open", href: "/camps/9" }, gated: true },
   ];
 
   it.each(cases)("$name", ({ verb, over, subject, caption, surface, gated }) => {

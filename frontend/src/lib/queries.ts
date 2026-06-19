@@ -38,11 +38,6 @@ import {
   listAttempts,
   listVideos,
   listThreads,
-  getCompetitions,
-  getCompetition,
-  getRegistrationMatches,
-  getMatchVideos,
-  getMatchTechniques,
 } from "./api";
 import type { AnchorKind } from "./api";
 import type { ActivityRow } from "./activity-line";
@@ -496,47 +491,3 @@ export function useThreadsForAnchor(
   });
 }
 
-// ---- Competitions + Matches ----
-
-export function useCompetitions() {
-  return useQuery({
-    queryKey: qk.competitions(),
-    queryFn: getCompetitions,
-  });
-}
-
-export function useCompetition(id: number | undefined) {
-  return useQuery({
-    queryKey: qk.competition(id ?? 0),
-    queryFn: whenId(id, getCompetition),
-  });
-}
-
-export function useRegistrationMatches(regId: number | undefined) {
-  return useQuery({
-    queryKey: qk.registrationMatches(regId ?? 0),
-    queryFn: whenId(regId, getRegistrationMatches),
-  });
-}
-
-export function useMatchVideos(matchId: number | undefined) {
-  return useQuery({
-    queryKey: qk.matchVideos(matchId ?? 0),
-    queryFn: whenId(matchId, getMatchVideos),
-    staleTime: 0,
-    refetchOnWindowFocus: true,
-    refetchIntervalInBackground: true,
-    refetchInterval: (query) => {
-      const data = query.state.data;
-      if (!data) return false;
-      return data.some((v) => v.processing_status === "processing") ? 1500 : false;
-    },
-  });
-}
-
-export function useMatchTechniques(matchId: number | undefined) {
-  return useQuery({
-    queryKey: qk.matchTechniques(matchId ?? 0),
-    queryFn: whenId(matchId, getMatchTechniques),
-  });
-}

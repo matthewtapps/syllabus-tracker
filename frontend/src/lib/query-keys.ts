@@ -98,14 +98,6 @@ export const qk = {
     ["threads", anchorKind, anchorId] as const,
   thread: (id: number) => ["thread", id] as const,
 
-  competitions: () => ["competitions"] as const,
-  competition: (id: number) => ["competitions", id] as const,
-  registrationMatches: (regId: number) =>
-    ["registrations", regId, "matches"] as const,
-  matchVideos: (matchId: number) => ["matches", matchId, "videos"] as const,
-  matchTechniques: (matchId: number) =>
-    ["matches", matchId, "techniques"] as const,
-
   studentSyllabusTechniquesFlat: (studentId: number) =>
     ["student", studentId, "syllabusTechniquesFlat"] as const,
   studentRecentSyllabusAttempts: (studentId: number, limit: number) =>

@@ -55,8 +55,6 @@ const StudentSyllabusDetailPage = lazy(
 const StudentActivityPage = lazy(() => import('./app/student-activity/page'));
 const StudentCampsPage = lazy(() => import('./app/student-camps/page'));
 const CampDetailPage = lazy(() => import('./app/camps/[id]/page'));
-const CompetitionsPage = lazy(() => import('./app/competitions/page'));
-const CompetitionDetailPage = lazy(() => import('./app/competitions/[id]/page'));
 const InvitePage = lazy(() => import('./app/invite/page'));
 const RegisterPage = lazy(() => import('./app/register/page'));
 const PendingApprovalPage = lazy(() => import('./app/pending/page'));
@@ -362,9 +360,9 @@ function AuthedRoutes() {
           </RequireAuth>
         }
       />
-      {/* Camps + competitions/matches: in-progress epic, gated off on prod
-          (campsUiEnabled). When disabled the routes redirect to the dashboard
-          so direct navigation can't reach the half-built surfaces. */}
+      {/* Camps: in-progress epic, gated off on prod (campsUiEnabled). When
+          disabled the routes redirect to the dashboard so direct navigation
+          can't reach the half-built surfaces. */}
       <Route
         path="/student/:id/camps"
         element={
@@ -383,30 +381,6 @@ function AuthedRoutes() {
           campsUiEnabled ? (
             <RequireAuth>
               <CampDetailPage />
-            </RequireAuth>
-          ) : (
-            <Navigate to="/dashboard" replace />
-          )
-        }
-      />
-      <Route
-        path="/competitions"
-        element={
-          campsUiEnabled ? (
-            <RequireAuth>
-              <CompetitionsPage />
-            </RequireAuth>
-          ) : (
-            <Navigate to="/dashboard" replace />
-          )
-        }
-      />
-      <Route
-        path="/competitions/:id"
-        element={
-          campsUiEnabled ? (
-            <RequireAuth>
-              <CompetitionDetailPage />
             </RequireAuth>
           ) : (
             <Navigate to="/dashboard" replace />

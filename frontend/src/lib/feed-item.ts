@@ -33,7 +33,7 @@ import {
  *   below the collapsed row); null = a plain action (attempt/status/pin/edit).
  * - `thread`: a thread with no technique/video noun (profile or camp anchor)
  *   surfaces the thread directly.
- * - `none`: header-only (assignment/graduation, gated camp/competition verbs).
+ * - `none`: header-only (assignment/graduation, gated camp verbs).
  */
 export interface FocusThread {
   anchorKind: AnchorKind;
@@ -59,7 +59,7 @@ export interface Crumb {
   label: string;
   href?: string;
   /** Drives the leading icon for a surface crumb (syllabus/library/camp). */
-  surfaceKind?: "library" | "syllabus" | "camp" | "competition" | "match";
+  surfaceKind?: "library" | "syllabus" | "camp";
 }
 
 export interface FeedItem {
@@ -69,7 +69,7 @@ export interface FeedItem {
   caption: ActivityCaption;
   /** Surface → noun crumbs, after the actor/target the header renders itself. */
   path: Crumb[];
-  /** True for the camp/competition/match epic that is hidden on production. */
+  /** True for the camp epic that is hidden on production. */
   gated: boolean;
 }
 
@@ -135,8 +135,7 @@ function resolveSubject(row: ActivityRow, context: ViewContext | null): Subject 
     return { kind: "technique", thread: null };
   }
 
-  // 4. No renderable noun (assignment/graduation, camp_created, competition,
-  //    match_logged): header-only.
+  // 4. No renderable noun (assignment/graduation, camp_created): header-only.
   return { kind: "none" };
 }
 

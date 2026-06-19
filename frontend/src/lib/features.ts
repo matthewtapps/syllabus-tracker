@@ -1,7 +1,7 @@
 /**
  * Build-time feature gates.
  *
- * Camps and competitions/matches are an in-progress epic. They ship to staging
+ * Camps are an in-progress epic. They ship to staging
  * (and local dev) so the work can be reviewed, but stay hidden on production
  * until the epic lands. `VITE_ENVIRONMENT` is a per-build arg: `production` on
  * the prod deploy, `staging` on the staging sibling, `development` / `pr-check`

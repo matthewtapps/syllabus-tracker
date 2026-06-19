@@ -1,6 +1,4 @@
 import { Link } from "react-router-dom";
-import { Trophy } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
 import { formatRelativeShort } from "@/lib/dates";
 import type { CampSummary } from "@/lib/api";
 
@@ -19,12 +17,6 @@ export function CampSummaryCard({ camp }: { camp: CampSummary }) {
     >
       <div className="flex flex-wrap items-center gap-2">
         <span className="text-sm font-semibold">{camp.name}</span>
-        {camp.competition_name && (
-          <Badge variant="outline" className="gap-1 text-xs">
-            <Trophy className="h-3 w-3" aria-hidden />
-            {camp.competition_name}
-          </Badge>
-        )}
       </div>
       {camp.description && (
         <p className="mt-1 truncate text-sm text-muted-foreground">{camp.description}</p>

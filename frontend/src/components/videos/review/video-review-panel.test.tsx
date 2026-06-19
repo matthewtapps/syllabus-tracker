@@ -12,7 +12,6 @@ function buildVideo(over: Partial<Video> = {}): Video {
     student_id: null,
     thread_id: null,
     camp_id: null,
-    match_id: null,
     title: "Test clip",
     description: null,
     position: 0,

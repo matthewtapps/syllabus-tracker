@@ -321,38 +321,6 @@ export function activityLine(row: ActivityRow, scope: ActivityScope = { kind: "g
         : { verb: "archived a camp", href: deep };
     }
 
-    // --- competition verbs --- (competition_name comes from the read-layer join)
-    case "competition_created": {
-      const comp = row.competition_name ?? undefined;
-      return comp
-        ? { verb: "created", subject: comp, href: deep }
-        : { verb: "created a competition", href: deep };
-    }
-    case "student_registered": {
-      const comp = row.competition_name ?? undefined;
-      return comp
-        ? { verb: "registered for", subject: comp, href: deep }
-        : { verb: "registered for a competition", href: deep };
-    }
-    case "camp_promoted_to_competition": {
-      const comp = row.competition_name ?? undefined;
-      return comp
-        ? { verb: "linked a camp to", subject: comp, href: deep }
-        : { verb: "linked camp to competition", href: deep };
-    }
-
-    // --- match verbs ---
-    case "match_logged": {
-      const comp = row.competition_name ?? undefined;
-      return comp
-        ? { verb: "logged a match at", subject: comp, href: deep }
-        : { verb: "logged a match", href: deep };
-    }
-    case "match_technique_linked":
-      return tech
-        ? { verb: "linked", subject: tech, detail: "to a match", href: deep }
-        : { verb: "linked a technique to a match", href: deep };
-
     default:
       return { verb: "performed an action" };
   }

@@ -9,7 +9,7 @@ import type { ActivityRow } from "@/lib/activity-line";
  * The embedded tile beneath a feed entry's header. A dumb dispatcher: the
  * taxonomy lives in `resolveFeedItem`, and rendering is polymorphic on the
  * resolved subject kind (ActivityStreams object), never on the verb. Returns
- * null for header-only entries (assignment/graduation, gated camp/competition).
+ * null for header-only entries (assignment/graduation, gated camp).
  */
 export function ActivityTile({ row }: { row: ActivityRow }) {
   const { subject } = resolveFeedItem(row);
