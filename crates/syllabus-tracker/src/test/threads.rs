@@ -119,7 +119,7 @@ mod tests {
         .await
         .unwrap();
 
-        create_comment(&db.pool, thread_id, None, coach_id, "answer")
+        create_comment(&db.pool, thread_id, None, coach_id, "answer", None, None)
             .await
             .unwrap();
 
@@ -175,20 +175,22 @@ mod tests {
         .await
         .unwrap();
         let top =
-            create_comment(&db.pool, thread_id, None, student_id, "top").await.unwrap();
-        create_comment(&db.pool, thread_id, Some(top), student_id, "ok reply")
+            create_comment(&db.pool, thread_id, None, student_id, "top", None, None).await.unwrap();
+        create_comment(&db.pool, thread_id, Some(top), student_id, "ok reply", None, None)
             .await
             .unwrap();
         let nested = create_comment(
             &db.pool,
             thread_id,
             Some(
-                create_comment(&db.pool, thread_id, Some(top), student_id, "another reply")
+                create_comment(&db.pool, thread_id, Some(top), student_id, "another reply", None, None)
                     .await
                     .unwrap(),
             ),
             student_id,
             "reply to a reply",
+            None,
+            None,
         )
         .await;
         assert!(nested.is_err(), "replying to a reply must be rejected");
@@ -218,7 +220,7 @@ mod tests {
         .await
         .unwrap();
         let comment_id =
-            create_comment(&db.pool, thread_id, None, student_id, "oops").await.unwrap();
+            create_comment(&db.pool, thread_id, None, student_id, "oops", None, None).await.unwrap();
         soft_delete_comment(&db.pool, comment_id, coach_id).await.unwrap();
 
         let view = get_thread(
@@ -991,10 +993,10 @@ mod tests {
         .await
         .unwrap();
 
-        create_comment(&db.pool, thread_id, None, coach_id, "first comment")
+        create_comment(&db.pool, thread_id, None, coach_id, "first comment", None, None)
             .await
             .unwrap();
-        create_comment(&db.pool, thread_id, None, coach_id, "second comment")
+        create_comment(&db.pool, thread_id, None, coach_id, "second comment", None, None)
             .await
             .unwrap();
 
@@ -1274,7 +1276,7 @@ mod tests {
         .await
         .unwrap();
 
-        create_comment(&db.pool, thread_id, None, coach_id, "a reply")
+        create_comment(&db.pool, thread_id, None, coach_id, "a reply", None, None)
             .await
             .unwrap();
 
@@ -1334,6 +1336,77 @@ mod tests {
         assert_eq!(view.comments[0].references_video_id, Some(video_id));
         assert_eq!(view.comments[0].ref_ts_seconds, Some(32));
         assert_eq!(view.comments[0].referenced_caption.as_deref(), Some("nice grip"));
+    }
+
+    // ---- Video reference tests ----
+
+    #[rocket::async_test]
+    async fn comment_reference_must_point_at_a_reply_in_this_thread() {
+        let db = db_with_coach_and_student().await;
+        let coach_id = db.user_id("coach_user").unwrap();
+        let student_id = db.user_id("student_user").unwrap();
+        sqlx::query("INSERT INTO techniques (id, name) VALUES (1, 'Armbar')")
+            .execute(&db.pool).await.unwrap();
+
+        let thread_a = create_thread(&db.pool, NewThread {
+            author_id: coach_id,
+            anchor: Anchor { kind: AnchorKind::Technique, id: 1, video_ts_seconds: None,
+                             pinned_student_id: None, camp_id: None },
+            visibility: ThreadVisibility::Broadcast, scope_student_id: None,
+            body: "a".to_string(),
+        }).await.unwrap();
+        let thread_b = create_thread(&db.pool, NewThread {
+            author_id: coach_id,
+            anchor: Anchor { kind: AnchorKind::Technique, id: 1, video_ts_seconds: None,
+                             pinned_student_id: None, camp_id: None },
+            visibility: ThreadVisibility::Broadcast, scope_student_id: None,
+            body: "b".to_string(),
+        }).await.unwrap();
+
+        let reply_in_b: i64 = sqlx::query_scalar(
+            "INSERT INTO videos (parent_kind, thread_id, title, position, kind, \
+                processing_status, uploaded_by_id) \
+             VALUES ('thread', ?, '', 0, 'native', 'ready', ?) RETURNING id")
+            .bind(thread_b).bind(student_id)
+            .fetch_one(&db.pool).await.unwrap();
+
+        let err = create_comment(&db.pool, thread_a, None, coach_id, "x",
+            Some(reply_in_b), Some(10)).await;
+        assert!(err.is_err(), "cross-thread reference must be rejected");
+
+        let err2 = create_comment(&db.pool, thread_a, None, coach_id, "x", None, Some(10)).await;
+        assert!(err2.is_err(), "timestamp without a reference must be rejected");
+    }
+
+    #[rocket::async_test]
+    async fn comment_reference_to_same_thread_reply_is_stored() {
+        let db = db_with_coach_and_student().await;
+        let coach_id = db.user_id("coach_user").unwrap();
+        let student_id = db.user_id("student_user").unwrap();
+        sqlx::query("INSERT INTO techniques (id, name) VALUES (1, 'Armbar')")
+            .execute(&db.pool).await.unwrap();
+        let thread_id = create_thread(&db.pool, NewThread {
+            author_id: coach_id,
+            anchor: Anchor { kind: AnchorKind::Technique, id: 1, video_ts_seconds: None,
+                             pinned_student_id: None, camp_id: None },
+            visibility: ThreadVisibility::Broadcast, scope_student_id: None,
+            body: "a".to_string(),
+        }).await.unwrap();
+        let reply: i64 = sqlx::query_scalar(
+            "INSERT INTO videos (parent_kind, thread_id, title, position, kind, \
+                processing_status, uploaded_by_id) \
+             VALUES ('thread', ?, '', 0, 'native', 'ready', ?) RETURNING id")
+            .bind(thread_id).bind(student_id)
+            .fetch_one(&db.pool).await.unwrap();
+
+        let cid = create_comment(&db.pool, thread_id, None, coach_id, "see it",
+            Some(reply), Some(32)).await.unwrap();
+        let row = sqlx::query!(
+            r#"SELECT references_video_id AS "r?: i64", ref_ts_seconds AS "t?: i64"
+               FROM thread_comments WHERE id = ?"#, cid)
+            .fetch_one(&db.pool).await.unwrap();
+        assert_eq!(row.r, Some(reply));
+        assert_eq!(row.t, Some(32));
     }
 
     // ---- CampTechnique anchor tests ----

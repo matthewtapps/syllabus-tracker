@@ -37,6 +37,8 @@ pub struct ThreadListResponse { pub threads: Vec<ThreadView> }
 pub struct CreateCommentRequest {
     pub parent_comment_id: Option<i64>,
     pub body: String,
+    pub references_video_id: Option<i64>,
+    pub ref_ts_seconds: Option<i64>,
 }
 
 fn parse_kind(s: &str) -> Result<AnchorKind, Status> {
@@ -159,8 +161,11 @@ pub async fn api_create_comment(
     if visible.is_none() {
         return Err(Status::NotFound);
     }
-    let comment_id = create_comment(pool, id, req.parent_comment_id, user.id, &req.body)
-        .await.map_err(|_| Status::BadRequest)?;
+    let comment_id = create_comment(
+        pool, id, req.parent_comment_id, user.id, &req.body,
+        req.references_video_id, req.ref_ts_seconds,
+    )
+    .await.map_err(|_| Status::BadRequest)?;
     Ok(Json(CreatedResponse { id: comment_id }))
 }
 

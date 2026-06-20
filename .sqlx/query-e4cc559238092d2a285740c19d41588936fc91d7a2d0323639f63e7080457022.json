@@ -1,0 +1,26 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT references_video_id AS \"r?: i64\", ref_ts_seconds AS \"t?: i64\"\n               FROM thread_comments WHERE id = ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "r?: i64",
+        "ordinal": 0,
+        "type_info": "Integer"
+      },
+      {
+        "name": "t?: i64",
+        "ordinal": 1,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      true,
+      true
+    ]
+  },
+  "hash": "e4cc559238092d2a285740c19d41588936fc91d7a2d0323639f63e7080457022"
+}

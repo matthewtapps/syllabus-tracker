@@ -425,6 +425,8 @@ pub async fn create_comment(
     parent_comment_id: Option<i64>,
     author_id: i64,
     body: &str,
+    references_video_id: Option<i64>,
+    ref_ts_seconds: Option<i64>,
 ) -> Result<i64, AppError> {
     // Fetch the thread's liveness, visibility, scope student, and anchor
     // details in one query so we can emit the activity row with the right
@@ -472,16 +474,44 @@ pub async fn create_comment(
         }
     }
 
+    // A timestamp is meaningless without a referenced clip.
+    if ref_ts_seconds.is_some() && references_video_id.is_none() {
+        return Err(AppError::Validation(
+            "ref_ts_seconds requires references_video_id".to_string(),
+        ));
+    }
+    // A referenced clip must be a live video reply ON THIS thread.
+    if let Some(ref_id) = references_video_id {
+        let ok = sqlx::query_scalar!(
+            r#"SELECT EXISTS(
+                  SELECT 1 FROM videos
+                  WHERE id = ? AND thread_id = ? AND parent_kind = 'thread'
+                    AND deleted_at IS NULL
+               ) AS "e!: i64""#,
+            ref_id, thread_id,
+        )
+        .fetch_one(pool)
+        .await?;
+        if ok == 0 {
+            return Err(AppError::Validation(
+                "referenced video is not a reply on this thread".to_string(),
+            ));
+        }
+    }
+
     let mut tx = pool.begin().await?;
 
     let comment_id = sqlx::query_scalar!(
-        r#"INSERT INTO thread_comments (thread_id, parent_comment_id, author_id, body)
-           VALUES (?, ?, ?, ?)
+        r#"INSERT INTO thread_comments
+              (thread_id, parent_comment_id, author_id, body, references_video_id, ref_ts_seconds)
+           VALUES (?, ?, ?, ?, ?, ?)
            RETURNING id AS "id!: i64""#,
         thread_id,
         parent_comment_id,
         author_id,
         body,
+        references_video_id,
+        ref_ts_seconds,
     )
     .fetch_one(&mut *tx)
     .await?;
