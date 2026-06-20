@@ -1366,6 +1366,7 @@ export function useDeleteComment(
 
 import {
   addCampTechnique,
+  addCampTechniqueVideo,
   archiveCamp,
   createCamp,
   createCampTechnique,
@@ -1429,6 +1430,35 @@ export function useRemoveCampTechnique(campId: number) {
     mutationFn: (techniqueId: number) =>
       removeCampTechnique(campId, techniqueId),
     onSuccess: () => {
+      qc.invalidateQueries({ queryKey: qk.camp(campId) });
+    },
+  });
+}
+
+/**
+ * Attach a camp footage video to a technique as camp-only reference footage or
+ * promote it globally. Invalidates every viewer's copy of the technique's video
+ * list (`techniqueVideosAll` covers all `forStudent` buckets) so a global
+ * promotion surfaces everywhere, plus the camp's own video list and camp detail
+ * since the footage's role changed.
+ */
+export function useAddCampTechniqueVideo(campId: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: {
+      techniqueId: number;
+      videoId: number;
+      scope: "camp_only" | "global";
+    }) =>
+      addCampTechniqueVideo(campId, vars.techniqueId, {
+        video_id: vars.videoId,
+        scope: vars.scope,
+      }),
+    onSuccess: (_d, vars) => {
+      qc.invalidateQueries({
+        queryKey: qk.techniqueVideosAll(vars.techniqueId),
+      });
+      qc.invalidateQueries({ queryKey: qk.campVideos(campId) });
       qc.invalidateQueries({ queryKey: qk.camp(campId) });
     },
   });

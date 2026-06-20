@@ -2146,6 +2146,30 @@ export async function getCampVideos(campId: number): Promise<Video[]> {
   return ((await res.json()) as { videos: Video[] }).videos;
 }
 
+/**
+ * Attach one of this camp's footage videos to a technique within the camp.
+ * `camp_only` keeps it as camp-scoped reference footage (surfaced only inside
+ * this camp); `global` promotes it to a normal technique video visible
+ * everywhere the technique appears. The backend rejects (404) any `video_id`
+ * that isn't this camp's own footage. Returns 204 on success.
+ */
+export async function addCampTechniqueVideo(
+  campId: number,
+  techniqueId: number,
+  data: { video_id: number; scope: "camp_only" | "global" },
+): Promise<void> {
+  const res = await fetch(
+    `/api/camps/${campId}/techniques/${techniqueId}/videos`,
+    {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    },
+  );
+  if (!res.ok) throw res;
+}
+
 export async function uploadCampVideo(
   campId: number,
   file: File,

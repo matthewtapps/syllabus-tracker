@@ -1,10 +1,13 @@
 import { useMemo, useState } from "react";
+import { FilmIcon } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { qk } from "@/lib/query-keys";
+import { Button } from "@/components/ui/button";
 import { AddVideoButton } from "@/components/videos/add-video-button";
 import { VideoList } from "@/components/videos/video-list";
 import type { WatchContext } from "@/components/videos/useWatchTracker";
 import type { VideoThreadSurface } from "@/lib/thread-visibility";
+import { AddCampFootageDialog } from "./add-camp-footage-dialog";
 import { useTechniqueRow } from "./technique-row-context";
 
 interface VideosBlockProps {
@@ -21,7 +24,14 @@ export function VideosBlock({
   const { context, technique, role } = useTechniqueRow();
   const isCoach = role === "coach" || role === "admin";
   const [reloadKey, setReloadKey] = useState(0);
+  const [campFootageOpen, setCampFootageOpen] = useState(false);
   const qc = useQueryClient();
+
+  // Coach-only control on the camp surface: attach one of the camp's footage
+  // videos to this technique as camp-only reference footage or promote it
+  // globally. Coaches are not the camp's owning student, so this is gated on
+  // the coach role rather than viewerIsOwner.
+  const showAddCampFootage = context.kind === "camp" && isCoach;
 
   // In a student's syllabus context, the add-video flow offers a "also add to
   // global library" switch and, when off, scopes the new video to this
@@ -102,24 +112,37 @@ export function VideosBlock({
             </p>
           )}
         </div>
-        {canManage && (
-          <AddVideoButton
-            techniqueId={technique.id}
-            studentSyllabus={studentSyllabus}
-            onAdded={() => {
-              setReloadKey((k) => k + 1);
-              if (studentSyllabus) {
-                qc.invalidateQueries({
-                  queryKey: qk.syllabusTechniqueVideos(
-                    studentSyllabus.studentId,
-                    studentSyllabus.syllabusId,
-                    technique.id,
-                  ),
-                });
-              }
-            }}
-          />
-        )}
+        <div className="flex shrink-0 items-center gap-2">
+          {showAddCampFootage && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setCampFootageOpen(true)}
+            >
+              <FilmIcon className="mr-1.5 h-4 w-4" aria-hidden />
+              Add footage
+            </Button>
+          )}
+          {canManage && (
+            <AddVideoButton
+              techniqueId={technique.id}
+              studentSyllabus={studentSyllabus}
+              onAdded={() => {
+                setReloadKey((k) => k + 1);
+                if (studentSyllabus) {
+                  qc.invalidateQueries({
+                    queryKey: qk.syllabusTechniqueVideos(
+                      studentSyllabus.studentId,
+                      studentSyllabus.syllabusId,
+                      technique.id,
+                    ),
+                  });
+                }
+              }}
+            />
+          )}
+        </div>
       </div>
       <VideoList
         techniqueId={technique.id}
@@ -133,6 +156,15 @@ export function VideosBlock({
         watchContext={watchContext}
         contextLabel={contextLabel}
       />
+      {showAddCampFootage && context.kind === "camp" && (
+        <AddCampFootageDialog
+          open={campFootageOpen}
+          onOpenChange={setCampFootageOpen}
+          campId={context.campId}
+          techniqueId={technique.id}
+          techniqueName={technique.name}
+        />
+      )}
     </section>
   );
 }
