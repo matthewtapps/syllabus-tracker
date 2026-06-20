@@ -164,7 +164,11 @@ describe("ThreadView", () => {
       screen.getByPlaceholderText("Reply…"),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: /reply/i }),
+      screen.getByRole("button", { name: "Reply" }),
+    ).toBeInTheDocument();
+    // The video-reply composer trigger sits alongside the text reply button.
+    expect(
+      screen.getByRole("button", { name: /video reply/i }),
     ).toBeInTheDocument();
   });
 });
