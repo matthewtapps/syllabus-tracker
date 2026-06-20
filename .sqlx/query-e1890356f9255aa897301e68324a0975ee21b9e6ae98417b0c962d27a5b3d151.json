@@ -1,0 +1,32 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT parent_kind, thread_id AS \"th?: i64\", description\n               FROM videos WHERE id = ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "parent_kind",
+        "ordinal": 0,
+        "type_info": "Text"
+      },
+      {
+        "name": "th?: i64",
+        "ordinal": 1,
+        "type_info": "Integer"
+      },
+      {
+        "name": "description",
+        "ordinal": 2,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      true,
+      true
+    ]
+  },
+  "hash": "e1890356f9255aa897301e68324a0975ee21b9e6ae98417b0c962d27a5b3d151"
+}

@@ -371,6 +371,122 @@ pub async fn api_video_link(
     Ok(Json(video))
 }
 
+/// Shared gate: the caller must be able to see the thread (coach, broadcast,
+/// or the scope student). 404 if not visible/exists.
+async fn require_thread_visible(
+    pool: &Pool<Sqlite>,
+    user: &User,
+    thread_id: i64,
+) -> Result<(), Status> {
+    let viewer = crate::db::threads::Viewer {
+        user_id: user.id,
+        is_coach: user.has_permission(Permission::ViewAllStudents),
+    };
+    let visible = crate::db::threads::get_thread(pool, thread_id, viewer)
+        .await
+        .map_err(Status::from)?;
+    if visible.is_none() {
+        return Err(Status::NotFound);
+    }
+    Ok(())
+}
+
+#[instrument(skip(form, pool, processor))]
+#[post("/threads/<thread_id>/videos/upload", data = "<form>")]
+pub async fn api_thread_video_reply_upload(
+    thread_id: i64,
+    user: User,
+    form: Result<Form<UploadForm<'_>>, FormErrors<'_>>,
+    pool: &State<Pool<Sqlite>>,
+    processor: &State<DynVideoProcessor>,
+) -> Result<Json<UploadResponse>, Status> {
+    let pool = pool.inner();
+    require_thread_visible(pool, &user, thread_id).await?;
+
+    let mut form = form.map_err(|errs| {
+        error!(thread_id, errors = %errs, "thread video reply form failed to parse");
+        Status::BadRequest
+    })?;
+    let metrics = video_metrics();
+    if !is_mp4(form.file.content_type()) {
+        metrics.uploads_total.add(1, &[kv("result", "fail_format")]);
+        return Err(Status::UnsupportedMediaType);
+    }
+    if form.file.len() > max_video_bytes() as u64 {
+        metrics.uploads_total.add(1, &[kv("result", "fail_size")]);
+        return Err(Status::PayloadTooLarge);
+    }
+    tokio::fs::create_dir_all(pipeline::temp_dir()).await.map_err(|e| {
+        error!(thread_id, error = %e, "failed to create video temp dir for thread reply");
+        Status::InternalServerError
+    })?;
+    let mut dest = pipeline::temp_dir();
+    dest.push(format!("{}.mp4", Uuid::new_v4()));
+    form.file.persist_to(&dest).await.map_err(|e| {
+        error!(thread_id, dest = ?dest, error = %e, "failed to persist thread reply upload");
+        Status::InternalServerError
+    })?;
+
+    // Thread replies have no title; the caption lives in description.
+    let video_id = db::create_processing_video(
+        pool,
+        db::VideoParent::Thread(thread_id),
+        "",
+        form.description.as_deref(),
+        user.id,
+    )
+    .await
+    .map_err(Status::from)?;
+    db::threads::record_thread_video_reply(pool, thread_id, video_id, user.id)
+        .await
+        .map_err(Status::from)?;
+
+    processor.start(HostJob { video_id, parent_id: thread_id, original_temp_path: dest }).await;
+
+    Ok(Json(UploadResponse {
+        video_id,
+        processing_status: ProcessingStatus::Processing.as_str().to_string(),
+    }))
+}
+
+#[instrument(skip(body, pool))]
+#[post("/threads/<thread_id>/videos/link", data = "<body>")]
+pub async fn api_thread_video_reply_link(
+    thread_id: i64,
+    user: User,
+    body: Json<LinkVideoRequest>,
+    pool: &State<Pool<Sqlite>>,
+) -> Result<Json<Video>, Status> {
+    let pool = pool.inner();
+    require_thread_visible(pool, &user, thread_id).await?;
+    let req = body.into_inner();
+    if req.url.trim().is_empty() {
+        return Err(Status::UnprocessableEntity);
+    }
+    let parsed = embeds::parse(&req.url);
+    let id = db::create_external_video(
+        pool,
+        db::NewExternalVideo {
+            parent: db::VideoParent::Thread(thread_id),
+            title: "",
+            description: req.description.as_deref(),
+            uploaded_by_id: user.id,
+            kind: parsed.kind,
+            external_url: &parsed.canonical_url,
+            external_host: Some(parsed.host.as_str()),
+            external_video_id: parsed.video_id.as_deref(),
+        },
+    )
+    .await
+    .map_err(Status::from)?;
+    db::threads::record_thread_video_reply(pool, thread_id, id, user.id)
+        .await
+        .map_err(Status::from)?;
+    let video = db::get_video(pool, id).await.map_err(Status::from)?
+        .ok_or(Status::InternalServerError)?;
+    Ok(Json(video))
+}
+
 #[derive(Serialize)]
 pub struct VideoListItem {
     #[serde(flatten)]

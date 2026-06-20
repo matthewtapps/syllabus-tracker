@@ -2027,6 +2027,44 @@ mod tests {
 
         (client, test_db)
     }
+
+    #[rocket::async_test]
+    async fn thread_video_reply_link_creates_reply_and_activity() {
+        use crate::db;
+        let db = crate::test::test_utils::TestDbBuilder::new()
+            .coach("coach_user", Some("Coach"))
+            .student("student_user", Some("Sam"))
+            .build().await.unwrap();
+        let coach_id = db.user_id("coach_user").unwrap();
+        let student_id = db.user_id("student_user").unwrap();
+        sqlx::query("INSERT INTO techniques (id, name) VALUES (1, 'Armbar')")
+            .execute(&db.pool).await.unwrap();
+        let thread_id = db::threads::create_thread(&db.pool, db::threads::NewThread {
+            author_id: coach_id,
+            anchor: db::threads::Anchor { kind: db::threads::AnchorKind::StudentProfile,
+                id: student_id, video_ts_seconds: None, pinned_student_id: None, camp_id: None },
+            visibility: db::threads::ThreadVisibility::Private,
+            scope_student_id: Some(student_id), body: "hi".to_string(),
+        }).await.unwrap();
+
+        let vid = db::create_external_video(&db.pool, db::NewExternalVideo {
+            parent: db::VideoParent::Thread(thread_id),
+            title: "", description: Some("my reply"),
+            uploaded_by_id: student_id, kind: crate::models::VideoKind::Youtube,
+            external_url: "https://youtu.be/abc", external_host: Some("youtube"),
+            external_video_id: Some("abc"),
+        }).await.unwrap();
+        db::threads::record_thread_video_reply(&db.pool, thread_id, vid, student_id)
+            .await.unwrap();
+
+        let row = sqlx::query!(
+            r#"SELECT parent_kind, thread_id AS "th?: i64", description
+               FROM videos WHERE id = ?"#, vid)
+            .fetch_one(&db.pool).await.unwrap();
+        assert_eq!(row.parent_kind, "thread");
+        assert_eq!(row.th, Some(thread_id));
+        assert_eq!(row.description.as_deref(), Some("my reply"));
+    }
 }
 
 #[cfg(test)]
