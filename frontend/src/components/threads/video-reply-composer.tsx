@@ -11,6 +11,7 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useUser } from "@/lib/current-user-context";
 import { useCreateThreadVideoReply } from "@/lib/mutations";
 
 interface VideoReplyComposerProps {
@@ -26,39 +27,39 @@ export function VideoReplyComposer({
   anchorId,
   campId,
 }: VideoReplyComposerProps) {
+  const user = useUser();
   const [open, setOpen] = useState(false);
   const [tab, setTab] = useState<"upload" | "link">("upload");
   const [file, setFile] = useState<File | null>(null);
   const [url, setUrl] = useState("");
-  const [caption, setCaption] = useState("");
   const mutate = useCreateThreadVideoReply(anchorKind, anchorId, campId);
 
-  async function submit() {
-    try {
-      if (tab === "upload") {
-        if (!file) return;
-        await mutate.mutateAsync({
+  // Fire-and-forget: the upload runs in the background while the reply shows up
+  // immediately (optimistic placeholder, see useCreateThreadVideoReply). We
+  // close the sheet right away rather than blocking on the upload.
+  function submit() {
+    if (tab === "upload") {
+      if (!file) return;
+      mutate.mutate(
+        {
           threadId,
           kind: "upload",
           file,
-          caption: caption || null,
-        });
-      } else {
-        if (!url.trim()) return;
-        await mutate.mutateAsync({
-          threadId,
-          kind: "link",
-          url: url.trim(),
-          caption: caption || null,
-        });
-      }
-      setOpen(false);
-      setFile(null);
-      setUrl("");
-      setCaption("");
-    } catch {
-      toast.error("Failed to post video reply. Please try again.");
+          authorId: user.id,
+          authorName: user.display_name,
+        },
+        { onError: () => toast.error("Failed to post video reply. Please try again.") },
+      );
+    } else {
+      if (!url.trim()) return;
+      mutate.mutate(
+        { threadId, kind: "link", url: url.trim() },
+        { onError: () => toast.error("Failed to post video reply. Please try again.") },
+      );
     }
+    setOpen(false);
+    setFile(null);
+    setUrl("");
   }
 
   return (
@@ -110,18 +111,8 @@ export function VideoReplyComposer({
             </TabsContent>
           </Tabs>
 
-          <Input
-            placeholder="Caption (optional)"
-            value={caption}
-            onChange={(e) => setCaption(e.target.value)}
-          />
-
-          <Button
-            type="button"
-            onClick={submit}
-            disabled={mutate.isPending}
-          >
-            {mutate.isPending ? "Posting..." : "Post reply"}
+          <Button type="button" onClick={submit}>
+            Post reply
           </Button>
         </SheetContent>
       </Sheet>

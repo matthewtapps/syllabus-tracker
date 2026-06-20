@@ -14,9 +14,6 @@ function buildComment(overrides: Partial<CommentView> = {}): CommentView {
     body: "Great technique!",
     created_at: new Date().toISOString(),
     deleted_at: null,
-    references_video_id: null,
-    ref_ts_seconds: null,
-    referenced_caption: null,
     ...overrides,
   };
 }

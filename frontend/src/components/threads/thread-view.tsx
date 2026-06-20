@@ -15,7 +15,6 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { useUser } from "@/lib/current-user-context";
 import { useCreateComment, useDeleteThread } from "@/lib/mutations";
 import { CommentItem } from "./comment-item";
@@ -38,8 +37,6 @@ export function ThreadView({ thread, anchorKind, anchorId, campId }: ThreadViewP
   const createComment = useCreateComment(anchorKind, anchorId, campId);
   const deleteThread = useDeleteThread(anchorKind, anchorId, campId);
   const [deleteOpen, setDeleteOpen] = useState(false);
-  const [refId, setRefId] = useState<number | null>(null);
-  const [tsText, setTsText] = useState("");
 
   type TimelineEntry =
     | { kind: "comment"; at: string; comment: CommentView }
@@ -50,31 +47,13 @@ export function ThreadView({ thread, anchorKind, anchorId, campId }: ThreadViewP
     ...thread.video_replies.map((r) => ({ kind: "video" as const, at: r.created_at, reply: r })),
   ].sort((a, b) => a.at.localeCompare(b.at));
 
-  const liveReplies = thread.video_replies.filter((r) => r.video);
-
   const authorName = thread.author_name;
   const canDelete =
     thread.author_id === user.id || user.role !== "student";
 
   async function handleReply(body: string) {
-    let ref: { videoId: number; tsSeconds: number | null } | undefined;
-    if (refId != null) {
-      const t = tsText.trim();
-      let tsSeconds: number | null = null;
-      if (t) {
-        const parts = t.split(":");
-        tsSeconds =
-          parts.length === 2
-            ? Number(parts[0]) * 60 + Number(parts[1])
-            : Number(t);
-        if (!Number.isFinite(tsSeconds)) tsSeconds = null;
-      }
-      ref = { videoId: refId, tsSeconds };
-    }
     try {
-      await createComment.mutateAsync({ threadId: thread.id, body, ref });
-      setRefId(null);
-      setTsText("");
+      await createComment.mutateAsync({ threadId: thread.id, body });
     } catch {
       toast.error("Failed to post reply. Please try again.");
     }
@@ -153,7 +132,6 @@ export function ThreadView({ thread, anchorKind, anchorId, campId }: ThreadViewP
                 key={`c${e.comment.id}`}
                 comment={e.comment}
                 authorName={e.comment.author_name}
-                videoReplies={thread.video_replies}
               />
             ) : (
               <VideoReplyItem key={`v${e.reply.id}`} reply={e.reply} />
@@ -164,32 +142,6 @@ export function ThreadView({ thread, anchorKind, anchorId, campId }: ThreadViewP
 
       {/* Reply composer */}
       <div className="ml-4 space-y-2 pl-3">
-        {liveReplies.length > 0 && (
-          <div className="flex items-center gap-2">
-            <select
-              value={refId ?? ""}
-              onChange={(e) =>
-                setRefId(e.target.value ? Number(e.target.value) : null)
-              }
-              className="rounded border bg-background px-2 py-1 text-xs"
-            >
-              <option value="">No clip reference</option>
-              {liveReplies.map((r) => (
-                <option key={r.id} value={r.id}>
-                  {r.caption ?? `clip by ${r.author_name}`}
-                </option>
-              ))}
-            </select>
-            {refId != null && (
-              <Input
-                className="h-7 w-20 text-xs"
-                placeholder="m:ss"
-                value={tsText}
-                onChange={(e) => setTsText(e.target.value)}
-              />
-            )}
-          </div>
-        )}
         <ThreadComposer
           placeholder="Reply…"
           submitLabel="Reply"

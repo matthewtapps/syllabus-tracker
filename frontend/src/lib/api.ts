@@ -1913,16 +1913,12 @@ export interface CommentView {
   body: string | null;
   created_at: string;
   deleted_at: string | null;
-  references_video_id: number | null;
-  ref_ts_seconds: number | null;
-  referenced_caption: string | null;
 }
 
 export interface VideoReplyView {
   id: number;
   author_id: number;
   author_name: string;
-  caption: string | null;
   created_at: string;
   deleted_at: string | null;
   video: Video | null;
@@ -1987,7 +1983,6 @@ export async function createComment(
   threadId: number,
   body: string,
   parentCommentId?: number | null,
-  ref?: { videoId: number; tsSeconds: number | null },
 ): Promise<Response> {
   return fetch(`/api/threads/${threadId}/comments`, {
     method: "POST",
@@ -1996,8 +1991,6 @@ export async function createComment(
     body: JSON.stringify({
       body,
       parent_comment_id: parentCommentId ?? null,
-      references_video_id: ref?.videoId ?? null,
-      ref_ts_seconds: ref?.tsSeconds ?? null,
     }),
   });
 }
@@ -2005,12 +1998,10 @@ export async function createComment(
 export async function uploadThreadVideoReply(
   threadId: number,
   file: File,
-  caption: string | null,
 ): Promise<{ video_id: number; processing_status: string }> {
   const form = new FormData();
   form.append("file", file);
   form.append("title", "");
-  if (caption) form.append("description", caption);
   const res = await fetch(`/api/threads/${threadId}/videos/upload`, {
     method: "POST",
     credentials: "include",
@@ -2023,13 +2014,12 @@ export async function uploadThreadVideoReply(
 export async function linkThreadVideoReply(
   threadId: number,
   url: string,
-  caption: string | null,
 ): Promise<Video> {
   const res = await fetch(`/api/threads/${threadId}/videos/link`, {
     method: "POST",
     credentials: "include",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ title: "", url, description: caption }),
+    body: JSON.stringify({ title: "", url }),
   });
   if (!res.ok) throw new Error(`Link failed: ${res.statusText}`);
   return res.json();

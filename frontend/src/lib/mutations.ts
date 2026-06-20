@@ -43,8 +43,10 @@ import type {
   StudentTechniques,
   Technique,
   TechniqueUpdate,
+  ThreadView,
   User,
   VideoParentInput,
+  VideoReplyView,
 } from "./api";
 import { qk } from "./query-keys";
 
@@ -1314,8 +1316,7 @@ export function useCreateComment(
       threadId: number;
       body: string;
       parentCommentId?: number | null;
-      ref?: { videoId: number; tsSeconds: number | null };
-    }) => unwrap(await createComment(v.threadId, v.body, v.parentCommentId, v.ref)),
+    }) => unwrap(await createComment(v.threadId, v.body, v.parentCommentId)),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: qk.threads(anchorKind, anchorId, keyCampId) });
       if (anchorKind === "video_timestamp" || anchorKind === "video") {
@@ -1363,6 +1364,12 @@ export function useDeleteComment(
   });
 }
 
+// Posts a video reply. The upload path is optimistic: a placeholder reply (in
+// the "processing" state) is dropped into the thread immediately so the user
+// sees it the moment they submit, then reconciled against server truth when the
+// upload lands. The thread query polls processing replies to "ready" (see
+// useThreadsForAnchor). The link path is effectively instant, so it just
+// invalidates.
 export function useCreateThreadVideoReply(
   anchorKind: string,
   anchorId: number,
@@ -1370,18 +1377,67 @@ export function useCreateThreadVideoReply(
 ) {
   const qc = useQueryClient();
   const keyCampId = anchorKind === "camp_technique" ? campId : undefined;
+  const key = qk.threads(anchorKind, anchorId, keyCampId);
   return useMutation({
     mutationFn: async (v:
-      | { threadId: number; kind: "upload"; file: File; caption: string | null }
-      | { threadId: number; kind: "link"; url: string; caption: string | null },
+      | {
+          threadId: number;
+          kind: "upload";
+          file: File;
+          authorId: number;
+          authorName: string;
+        }
+      | { threadId: number; kind: "link"; url: string },
     ) => {
       if (v.kind === "upload") {
-        return uploadThreadVideoReply(v.threadId, v.file, v.caption);
+        return uploadThreadVideoReply(v.threadId, v.file);
       }
-      return linkThreadVideoReply(v.threadId, v.url, v.caption);
+      return linkThreadVideoReply(v.threadId, v.url);
     },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: qk.threads(anchorKind, anchorId, keyCampId) });
+    onMutate: async (v) => {
+      if (v.kind !== "upload") return;
+      await qc.cancelQueries({ queryKey: key });
+      const previous = qc.getQueryData<ThreadView[]>(key);
+      const now = new Date().toISOString();
+      // Negative id keeps the optimistic row distinct from any real video id.
+      const tempId = -Date.now();
+      const placeholder: VideoReplyView = {
+        id: tempId,
+        author_id: v.authorId,
+        author_name: v.authorName,
+        created_at: now,
+        deleted_at: null,
+        video: {
+          id: tempId,
+          parent_kind: "thread",
+          technique_id: null,
+          student_id: null,
+          thread_id: v.threadId,
+          camp_id: null,
+          title: "",
+          position: 0,
+          kind: "native",
+          processing_status: "processing",
+          uploaded_by_id: v.authorId,
+          created_at: now,
+          updated_at: now,
+          hidden_at: null,
+        },
+      };
+      qc.setQueryData<ThreadView[]>(key, (prev) =>
+        prev?.map((t) =>
+          t.id === v.threadId
+            ? { ...t, video_replies: [...t.video_replies, placeholder] }
+            : t,
+        ),
+      );
+      return { previous };
+    },
+    onError: (_err, _v, ctx) => {
+      if (ctx?.previous) qc.setQueryData(key, ctx.previous);
+    },
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: key });
       if (anchorKind === "video") {
         qc.invalidateQueries({ queryKey: qk.threads("video", anchorId) });
       }

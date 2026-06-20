@@ -21,9 +21,6 @@ export function VideoReplyItem({ reply }: { reply: VideoReplyView }) {
         </span>
       </div>
       <VideoPlayerPanel video={reply.video} />
-      {reply.caption && (
-        <p className="text-sm text-muted-foreground">{reply.caption}</p>
-      )}
     </div>
   );
 }
