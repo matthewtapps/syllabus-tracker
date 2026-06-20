@@ -18,8 +18,9 @@ import { Button } from "@/components/ui/button";
 import { useUser } from "@/lib/current-user-context";
 import { useCreateComment, useDeleteThread } from "@/lib/mutations";
 import { CommentItem } from "./comment-item";
+import { VideoReplyItem } from "./video-reply-item";
 import { ThreadComposer } from "./thread-composer";
-import type { ThreadView as ThreadViewModel } from "@/lib/api";
+import type { CommentView, VideoReplyView, ThreadView as ThreadViewModel } from "@/lib/api";
 
 interface ThreadViewProps {
   thread: ThreadViewModel;
@@ -35,6 +36,15 @@ export function ThreadView({ thread, anchorKind, anchorId, campId }: ThreadViewP
   const createComment = useCreateComment(anchorKind, anchorId, campId);
   const deleteThread = useDeleteThread(anchorKind, anchorId, campId);
   const [deleteOpen, setDeleteOpen] = useState(false);
+
+  type TimelineEntry =
+    | { kind: "comment"; at: string; comment: CommentView }
+    | { kind: "video"; at: string; reply: VideoReplyView };
+
+  const entries: TimelineEntry[] = [
+    ...thread.comments.map((c) => ({ kind: "comment" as const, at: c.created_at, comment: c })),
+    ...thread.video_replies.map((r) => ({ kind: "video" as const, at: r.created_at, reply: r })),
+  ].sort((a, b) => a.at.localeCompare(b.at));
 
   const authorName = thread.author_name;
   const canDelete =
@@ -113,15 +123,19 @@ export function ThreadView({ thread, anchorKind, anchorId, campId }: ThreadViewP
       </div>
 
       {/* Replies */}
-      {thread.comments.length > 0 && (
+      {entries.length > 0 && (
         <div className="ml-4 space-y-3 border-l-2 border-border pl-3">
-          {thread.comments.map((comment) => (
-            <CommentItem
-              key={comment.id}
-              comment={comment}
-              authorName={comment.author_name}
-            />
-          ))}
+          {entries.map((e) =>
+            e.kind === "comment" ? (
+              <CommentItem
+                key={`c${e.comment.id}`}
+                comment={e.comment}
+                authorName={e.comment.author_name}
+              />
+            ) : (
+              <VideoReplyItem key={`v${e.reply.id}`} reply={e.reply} />
+            ),
+          )}
         </div>
       )}
 
