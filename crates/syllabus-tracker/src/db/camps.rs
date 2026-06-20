@@ -449,12 +449,51 @@ pub async fn list_camp_techniques(
         .collect())
 }
 
+/// Provenance guard for camp-technique video adds. A video may only be added to
+/// a camp technique if it is currently THIS camp's own footage: an alive video
+/// row with `parent_kind='camp' AND camp_id = <camp_id>`. This blocks moving
+/// another student's footage (or any unrelated video) onto a technique, and
+/// turns a non-existent `video_id` into a clean rejection (rather than a silent
+/// no-op UPDATE).
+///
+/// Returns `AppError::NotFound` if the video does not exist or is not this
+/// camp's footage. Runs inside the caller's transaction so the check and the
+/// subsequent mutation are atomic.
+async fn require_video_is_camp_footage(
+    tx: &mut sqlx::Transaction<'_, Sqlite>,
+    camp_id: i64,
+    video_id: i64,
+) -> Result<(), AppError> {
+    let is_camp_footage = sqlx::query_scalar!(
+        r#"SELECT EXISTS(
+              SELECT 1 FROM videos
+              WHERE id = ?
+                AND parent_kind = 'camp'
+                AND camp_id = ?
+                AND deleted_at IS NULL
+           ) AS "e!: i64""#,
+        video_id,
+        camp_id,
+    )
+    .fetch_one(&mut **tx)
+    .await?;
+    if is_camp_footage == 0 {
+        return Err(AppError::NotFound(format!(
+            "video {video_id} is not footage owned by camp {camp_id}"
+        )));
+    }
+    Ok(())
+}
+
 /// Pin an EXISTING video as camp-only reference footage on a camp technique.
 ///
+/// Guarded: the video must currently be THIS camp's own footage
+/// (`parent_kind='camp' AND camp_id=<camp>`); otherwise `AppError::NotFound`.
+///
 /// Idempotent: the join table's composite PK means a repeat call is a no-op.
-/// The video stays where it is (e.g. parent_kind='camp'); the join row only
-/// surfaces it inside this camp's view of the technique. It does NOT make the
-/// video appear in the global technique-video list.
+/// The video stays where it is (parent_kind='camp'); the join row only surfaces
+/// it inside this camp's view of the technique. It does NOT make the video
+/// appear in the global technique-video list, so no override cleanup is needed.
 #[instrument(skip(pool))]
 pub async fn add_camp_technique_video(
     pool: &Pool<Sqlite>,
@@ -462,6 +501,8 @@ pub async fn add_camp_technique_video(
     technique_id: i64,
     video_id: i64,
 ) -> Result<(), AppError> {
+    let mut tx = pool.begin().await?;
+    require_video_is_camp_footage(&mut tx, camp_id, video_id).await?;
     sqlx::query!(
         r#"INSERT OR IGNORE INTO camp_technique_referenced_videos (camp_id, technique_id, video_id)
            VALUES (?, ?, ?)"#,
@@ -469,8 +510,9 @@ pub async fn add_camp_technique_video(
         technique_id,
         video_id,
     )
-    .execute(pool)
+    .execute(&mut *tx)
     .await?;
+    tx.commit().await?;
     Ok(())
 }
 
@@ -479,21 +521,41 @@ pub async fn add_camp_technique_video(
 /// cleared). This is the "global" scope: the video then appears everywhere the
 /// technique appears, including the global technique-video list.
 ///
-/// Used by the camp-technique video route's global path. Position is appended
-/// to the technique's existing videos so ordering stays stable.
+/// Guarded: the video must currently be THIS camp's own footage
+/// (`parent_kind='camp' AND camp_id=<camp>`); otherwise `AppError::NotFound`.
+///
+/// Because the video is leaving camp scope, any now-stale camp-scoped visibility
+/// override for it is deleted. The provenance check, the override cleanup, and
+/// the re-parent run in a single transaction so they are atomic. Position is
+/// appended to the technique's existing videos so ordering stays stable.
 #[instrument(skip(pool))]
 pub async fn attach_video_to_technique(
     pool: &Pool<Sqlite>,
+    camp_id: i64,
     video_id: i64,
     technique_id: i64,
 ) -> Result<(), AppError> {
+    let mut tx = pool.begin().await?;
+    require_video_is_camp_footage(&mut tx, camp_id, video_id).await?;
+
+    // The video is leaving camp scope; drop any stale camp-scoped visibility
+    // override for it.
+    sqlx::query!(
+        r#"DELETE FROM video_visibility_overrides
+           WHERE scope_kind = 'camp' AND camp_id = ? AND video_id = ?"#,
+        camp_id,
+        video_id,
+    )
+    .execute(&mut *tx)
+    .await?;
+
     let position = sqlx::query_scalar!(
         r#"SELECT COALESCE(MAX(position), -1) + 1 AS "p!: i64"
            FROM videos
            WHERE technique_id = ? AND parent_kind = 'technique' AND deleted_at IS NULL"#,
         technique_id,
     )
-    .fetch_one(pool)
+    .fetch_one(&mut *tx)
     .await?;
     sqlx::query!(
         r#"UPDATE videos
@@ -510,8 +572,9 @@ pub async fn attach_video_to_technique(
         position,
         video_id,
     )
-    .execute(pool)
+    .execute(&mut *tx)
     .await?;
+    tx.commit().await?;
     Ok(())
 }
 

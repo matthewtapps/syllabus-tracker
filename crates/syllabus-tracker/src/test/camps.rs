@@ -2025,4 +2025,159 @@ mod tests {
             .await;
         assert_eq!(resp.status(), Status::Forbidden);
     }
+
+    /// A video that is NOT this camp's footage (it belongs to a different camp)
+    /// must be rejected for BOTH scopes, with no mutation: the video is not
+    /// re-parented and no camp_only join row is written.
+    #[rocket::async_test]
+    async fn add_camp_technique_video_rejects_foreign_video() {
+        use crate::test::test_utils::{create_standard_test_db, setup_test_client};
+        use rocket::http::{ContentType, Status};
+
+        let test_db = create_standard_test_db().await;
+        let coach = test_db.user_id("coach_user").unwrap();
+        let student = test_db.user_id("student_user").unwrap();
+        let (client, db) = setup_test_client(test_db).await;
+        let (camp_id, technique_id, _own_video) = camp_technique_video_fixture(&db).await;
+
+        // A DIFFERENT camp owning the foreign video.
+        let other_camp_id: i64 = sqlx::query_scalar(
+            "INSERT INTO camps (student_id, coach_id, name) VALUES (?, ?, 'Other camp') RETURNING id",
+        )
+        .bind(student)
+        .bind(coach)
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+        let foreign_video = create_processing_video(
+            &db.pool,
+            VideoParent::Camp(other_camp_id),
+            "Foreign clip",
+            None,
+            coach,
+        )
+        .await
+        .unwrap();
+
+        login_as(&client, "coach_user").await;
+
+        for scope in ["global", "camp_only"] {
+            let resp = client
+                .post(format!(
+                    "/api/camps/{}/techniques/{}/videos",
+                    camp_id, technique_id
+                ))
+                .header(ContentType::JSON)
+                .body(format!(
+                    r#"{{"video_id": {}, "scope": "{}"}}"#,
+                    foreign_video, scope
+                ))
+                .dispatch()
+                .await;
+            assert_eq!(
+                resp.status(),
+                Status::NotFound,
+                "foreign video must be rejected for scope {scope}"
+            );
+        }
+
+        // The foreign video was NOT re-parented.
+        let (parent_kind, vid_camp): (String, Option<i64>) =
+            sqlx::query_as("SELECT parent_kind, camp_id FROM videos WHERE id = ?")
+                .bind(foreign_video)
+                .fetch_one(&db.pool)
+                .await
+                .unwrap();
+        assert_eq!(parent_kind, "camp", "foreign video stays parent_kind='camp'");
+        assert_eq!(vid_camp, Some(other_camp_id), "foreign video camp_id unchanged");
+
+        // No camp_only join row was written for the foreign video.
+        let join_count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM camp_technique_referenced_videos WHERE video_id = ?",
+        )
+        .bind(foreign_video)
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+        assert_eq!(join_count, 0, "no join row written for foreign video");
+    }
+
+    /// Promoting a camp video to global scope clears any stale camp-scoped
+    /// visibility override and re-parents the video onto the technique.
+    #[rocket::async_test]
+    async fn global_promote_clears_camp_visibility_override() {
+        use crate::test::test_utils::{create_standard_test_db, setup_test_client};
+        use rocket::http::{ContentType, Status};
+
+        let test_db = create_standard_test_db().await;
+        let (client, db) = setup_test_client(test_db).await;
+        let (camp_id, technique_id, video_id) = camp_technique_video_fixture(&db).await;
+
+        // Seed a camp-scoped visibility override on the video.
+        sqlx::query(
+            "INSERT INTO video_visibility_overrides (scope_kind, camp_id, video_id, visible) \
+             VALUES ('camp', ?, ?, 0)",
+        )
+        .bind(camp_id)
+        .bind(video_id)
+        .execute(&db.pool)
+        .await
+        .unwrap();
+
+        login_as(&client, "coach_user").await;
+        let resp = client
+            .post(format!(
+                "/api/camps/{}/techniques/{}/videos",
+                camp_id, technique_id
+            ))
+            .header(ContentType::JSON)
+            .body(format!(r#"{{"video_id": {}, "scope": "global"}}"#, video_id))
+            .dispatch()
+            .await;
+        assert_eq!(resp.status(), Status::NoContent);
+
+        // The camp override row is gone.
+        let override_count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM video_visibility_overrides \
+             WHERE scope_kind='camp' AND camp_id=? AND video_id=?",
+        )
+        .bind(camp_id)
+        .bind(video_id)
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+        assert_eq!(override_count, 0, "stale camp override cleared on global promote");
+
+        // The video is now a technique video.
+        let global = crate::db::list_videos_for_technique(&db.pool, technique_id)
+            .await
+            .unwrap();
+        assert!(
+            global.iter().any(|v| v.id == video_id),
+            "promoted video appears in the global technique list"
+        );
+    }
+
+    /// A video_id that does not exist must 404, not silently 204.
+    #[rocket::async_test]
+    async fn add_camp_technique_video_unknown_video_id_not_found() {
+        use crate::test::test_utils::{create_standard_test_db, setup_test_client};
+        use rocket::http::{ContentType, Status};
+
+        let test_db = create_standard_test_db().await;
+        let (client, db) = setup_test_client(test_db).await;
+        let (camp_id, technique_id, _video_id) = camp_technique_video_fixture(&db).await;
+
+        login_as(&client, "coach_user").await;
+        let resp = client
+            .post(format!(
+                "/api/camps/{}/techniques/{}/videos",
+                camp_id, technique_id
+            ))
+            .header(ContentType::JSON)
+            .body(r#"{"video_id": 999999, "scope": "global"}"#)
+            .dispatch()
+            .await;
+        assert_eq!(resp.status(), Status::NotFound);
+    }
 }

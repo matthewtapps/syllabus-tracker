@@ -349,7 +349,7 @@ pub async fn api_add_camp_technique_video(
                 .map_err(Status::from)?;
         }
         "global" => {
-            attach_video_to_technique(pool, req.video_id, technique_id)
+            attach_video_to_technique(pool, camp_id, req.video_id, technique_id)
                 .await
                 .map_err(Status::from)?;
         }
