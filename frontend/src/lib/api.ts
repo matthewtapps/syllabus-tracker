@@ -2082,6 +2082,19 @@ export async function archiveCamp(id: number): Promise<void> {
   if (!res.ok) throw res;
 }
 
+export async function updateCamp(
+  campId: number,
+  body: { name: string; description: string | null },
+): Promise<void> {
+  const res = await fetch(`/api/camps/${campId}`, {
+    method: "PUT",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw res;
+}
+
 export async function addCampTechnique(
   campId: number,
   techniqueId: number,

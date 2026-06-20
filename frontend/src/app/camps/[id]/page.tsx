@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Link, Navigate, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { Navigate, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
-import { Archive, ExternalLink, GitBranch, Plus } from "lucide-react";
+import { Archive, Pencil, Plus } from "lucide-react";
 import { Accordion } from "@/components/ui/accordion";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -36,6 +36,7 @@ import {
   useCreateThread,
   useRemoveCampTechnique,
 } from "@/lib/mutations";
+import { RenameCampDialog } from "@/components/camps/rename-camp-dialog";
 import { useConfirm } from "@/components/confirm-context";
 import { TechniqueRow } from "@/components/technique-row/technique-row";
 import { ThreadView } from "@/components/threads/thread-view";
@@ -565,6 +566,7 @@ function CampDetail({
   const archiveCamp = useArchiveCamp(camp?.student_id ?? 0);
 
   const [addPickerOpen, setAddPickerOpen] = useState(false);
+  const [renameOpen, setRenameOpen] = useState(false);
 
   async function handleArchive() {
     const ok = await confirm({
@@ -658,17 +660,30 @@ function CampDetail({
       <header className="space-y-1">
         <div className="flex items-start justify-between gap-2">
           <h1 className="text-base font-semibold">{camp.name}</h1>
-          {isCoach && !camp.archived_at && (
-            <Button
-              size="sm"
-              variant="outline"
-              className="h-7 shrink-0 gap-1.5 text-xs"
-              onClick={handleArchive}
-              disabled={archiveCamp.isPending}
-            >
-              <Archive className="h-3.5 w-3.5" />
-              Archive camp
-            </Button>
+          {isCoach && (
+            <div className="flex shrink-0 items-center gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7 gap-1.5 text-xs"
+                onClick={() => setRenameOpen(true)}
+              >
+                <Pencil className="h-3.5 w-3.5" />
+                Rename
+              </Button>
+              {!camp.archived_at && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-7 gap-1.5 text-xs"
+                  onClick={handleArchive}
+                  disabled={archiveCamp.isPending}
+                >
+                  <Archive className="h-3.5 w-3.5" />
+                  Archive camp
+                </Button>
+              )}
+            </div>
           )}
         </div>
         {camp.description && (
@@ -679,23 +694,16 @@ function CampDetail({
         )}
       </header>
 
-      {/* Builds-on section (only when this camp references a prior one) */}
-      {camp.references_camp_id != null && (
-        <section className="space-y-2">
-          <h2 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-            Builds on
-          </h2>
-          <div className="flex items-center gap-2">
-            <GitBranch className="h-4 w-4 text-muted-foreground" />
-            <Link
-              to={`/camps/${camp.references_camp_id}`}
-              className="text-sm font-medium hover:underline underline-offset-2 flex items-center gap-1"
-            >
-              {camp.references_camp_name ?? `Camp #${camp.references_camp_id}`}
-              <ExternalLink className="h-3 w-3 opacity-60" />
-            </Link>
-          </div>
-        </section>
+      {isCoach && (
+        <Dialog open={renameOpen} onOpenChange={setRenameOpen}>
+          <RenameCampDialog
+            campId={campId}
+            studentId={camp.student_id}
+            currentName={camp.name}
+            currentDescription={camp.description}
+            onRenamed={() => setRenameOpen(false)}
+          />
+        </Dialog>
       )}
 
       {/* Techniques section */}

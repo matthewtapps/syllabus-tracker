@@ -5,8 +5,7 @@
  * - Camp name renders from the stubbed GET /api/camps/1 response.
  * - Empty technique state text appears when techniques: [].
  * - Empty discussion state text appears when threads: [].
- * - "Builds on" link renders when references_camp_id + references_camp_name
- *   are present in the camp payload.
+ * - Coaches see a Rename control; the builds-on display is gone.
  *
  * NOTE: .test.tsx files run in Chromium via vitest-browser and cannot execute
  * on this NixOS dev box (Chromium shared-lib dependencies are absent). This
@@ -127,7 +126,7 @@ describe("CampDetailPage", () => {
     fetchSpy.mockRestore();
   });
 
-  test("renders Builds-on link when references_camp_id and references_camp_name are present", async () => {
+  test("coach sees a Rename control and no builds-on display", async () => {
     const fetchSpy = vi.spyOn(window, "fetch").mockImplementation(
       (input: RequestInfo | URL) => {
         const url = typeof input === "string" ? input : input.toString();
@@ -143,6 +142,7 @@ describe("CampDetailPage", () => {
                 description: null,
                 created_at: "2026-06-16T00:00:00Z",
                 archived_at: null,
+                // Even when a prior camp is referenced, the builds-on UI is gone.
                 references_camp_id: 7,
                 references_camp_name: "Foundation camp",
                 techniques: [],
@@ -187,11 +187,42 @@ describe("CampDetailPage", () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByText("Foundation camp")).toBeInTheDocument();
+      expect(screen.getByText("Worlds prep")).toBeInTheDocument();
     });
 
-    // The heading label should also be visible.
-    expect(screen.getByText(/builds on/i)).toBeInTheDocument();
+    // Coach-only rename affordance present.
+    expect(
+      screen.getByRole("button", { name: /rename/i }),
+    ).toBeInTheDocument();
+
+    // Builds-on display has been removed.
+    expect(screen.queryByText(/builds on/i)).not.toBeInTheDocument();
+    expect(screen.queryByText("Foundation camp")).not.toBeInTheDocument();
+
+    fetchSpy.mockRestore();
+  });
+
+  test("student does not see the Rename control", async () => {
+    const fetchSpy = makeStubFetch();
+
+    renderWithProviders(
+      <Routes>
+        <Route path="/camps/:id" element={<CampDetailPage />} />
+      </Routes>,
+      {
+        // student_id in the stub is 2, so this is the owning student.
+        user: buildUser({ id: 2, role: "student" }),
+        initialEntries: ["/camps/1"],
+      },
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("Worlds prep")).toBeInTheDocument();
+    });
+
+    expect(
+      screen.queryByRole("button", { name: /rename/i }),
+    ).not.toBeInTheDocument();
 
     fetchSpy.mockRestore();
   });

@@ -1373,6 +1373,7 @@ import {
   promotePinnedToCamp,
   removeCampTechnique,
   setCampVideoVisibility,
+  updateCamp,
 } from "./api";
 
 export function useCreateCamp(studentId: number) {
@@ -1396,6 +1397,18 @@ export function useArchiveCamp(studentId: number) {
     onSuccess: (_d, id) => {
       qc.invalidateQueries({ queryKey: qk.campsForStudent(studentId) });
       qc.invalidateQueries({ queryKey: qk.camp(id) });
+    },
+  });
+}
+
+export function useUpdateCamp(campId: number, studentId: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: { name: string; description: string | null }) =>
+      updateCamp(campId, body),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: qk.camp(campId) });
+      qc.invalidateQueries({ queryKey: qk.campsForStudent(studentId) });
     },
   });
 }
