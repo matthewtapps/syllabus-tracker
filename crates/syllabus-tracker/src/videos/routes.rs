@@ -221,10 +221,19 @@ pub async fn api_camp_video_upload(
     pool: &State<Pool<Sqlite>>,
     processor: &State<DynVideoProcessor>,
 ) -> Result<Json<UploadResponse>, Status> {
-    // All coaches (ManageCamps) may upload to any camp. Per-coach scoping is
+    // A coach (ManageCamps) may upload to any camp; per-coach scoping is
     // intentionally not enforced in v1 (matches the gym-wide coach model;
-    // substitute teaching makes per-coach ownership noisy).
-    user.require_permission(Permission::ManageCamps)?;
+    // substitute teaching makes per-coach ownership noisy). The camp's OWN
+    // student may also upload footage directly to their camp. Any other
+    // student is forbidden.
+    let camp = db::camps::get_camp(pool.inner(), camp_id)
+        .await
+        .map_err(Status::from)?
+        .ok_or(Status::NotFound)?;
+    let is_coach = user.has_permission(Permission::ManageCamps);
+    if !is_coach && user.id != camp.student_id {
+        return Err(Status::Forbidden);
+    }
 
     let mut form = form.map_err(|errs| {
         error!(

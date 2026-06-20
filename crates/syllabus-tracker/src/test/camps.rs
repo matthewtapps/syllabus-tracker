@@ -500,6 +500,165 @@ mod tests {
     }
 
     #[rocket::async_test]
+    async fn student_uploads_video_to_own_camp() {
+        use crate::test::test_utils::{create_standard_test_db, setup_test_client};
+        use rocket::http::Status;
+
+        const BOUNDARY: &str = "----testboundarycampstudent";
+
+        fn multipart_body(file_bytes: &[u8], filename: &str, title: &str) -> Vec<u8> {
+            let mut body = Vec::new();
+            body.extend_from_slice(format!("--{}\r\n", BOUNDARY).as_bytes());
+            body.extend_from_slice(
+                format!(
+                    "Content-Disposition: form-data; name=\"file\"; filename=\"{}\"\r\n",
+                    filename
+                )
+                .as_bytes(),
+            );
+            body.extend_from_slice(b"Content-Type: video/mp4\r\n\r\n");
+            body.extend_from_slice(file_bytes);
+            body.extend_from_slice(b"\r\n");
+            body.extend_from_slice(format!("--{}\r\n", BOUNDARY).as_bytes());
+            body.extend_from_slice(b"Content-Disposition: form-data; name=\"title\"\r\n\r\n");
+            body.extend_from_slice(title.as_bytes());
+            body.extend_from_slice(b"\r\n");
+            body.extend_from_slice(format!("--{}--\r\n", BOUNDARY).as_bytes());
+            body
+        }
+
+        fn multipart_ct() -> rocket::http::ContentType {
+            rocket::http::ContentType::parse_flexible(&format!(
+                "multipart/form-data; boundary={}",
+                BOUNDARY
+            ))
+            .expect("multipart content type")
+        }
+
+        let test_db = create_standard_test_db().await;
+        let coach_id = test_db.user_id("coach_user").unwrap();
+        let student_id = test_db.user_id("student_user").unwrap();
+        let (client, db) = setup_test_client(test_db).await;
+
+        // Coach creates a camp owned by student_user.
+        let camp_id = create_camp(
+            &db.pool,
+            NewCamp {
+                student_id,
+                coach_id,
+                name: "My footage camp".to_string(),
+                description: None,
+                references_camp_id: None,
+            },
+        )
+        .await
+        .unwrap();
+
+        // The camp's own student uploads footage directly.
+        login_as(&client, "student_user").await;
+
+        let body = multipart_body(b"fake-mp4-bytes", "clip.mp4", "Student Clip");
+        let resp = client
+            .post(format!("/api/camps/{}/videos/upload", camp_id))
+            .header(multipart_ct())
+            .body(body)
+            .dispatch()
+            .await;
+        assert_eq!(resp.status(), Status::Ok);
+
+        let parsed: serde_json::Value =
+            serde_json::from_str(&resp.into_string().await.unwrap()).unwrap();
+        let video_id = parsed["video_id"].as_i64().unwrap();
+
+        let (kind, got_camp): (String, i64) =
+            sqlx::query_as("SELECT parent_kind, camp_id FROM videos WHERE id = ?")
+                .bind(video_id)
+                .fetch_one(&db.pool)
+                .await
+                .unwrap();
+        assert_eq!(kind, "camp");
+        assert_eq!(got_camp, camp_id);
+    }
+
+    #[rocket::async_test]
+    async fn student_cannot_upload_to_another_students_camp() {
+        use crate::test::test_utils::{create_standard_test_db, setup_test_client};
+        use rocket::http::Status;
+
+        const BOUNDARY: &str = "----testboundarycampotherstudent";
+
+        fn multipart_body(file_bytes: &[u8], filename: &str, title: &str) -> Vec<u8> {
+            let mut body = Vec::new();
+            body.extend_from_slice(format!("--{}\r\n", BOUNDARY).as_bytes());
+            body.extend_from_slice(
+                format!(
+                    "Content-Disposition: form-data; name=\"file\"; filename=\"{}\"\r\n",
+                    filename
+                )
+                .as_bytes(),
+            );
+            body.extend_from_slice(b"Content-Type: video/mp4\r\n\r\n");
+            body.extend_from_slice(file_bytes);
+            body.extend_from_slice(b"\r\n");
+            body.extend_from_slice(format!("--{}\r\n", BOUNDARY).as_bytes());
+            body.extend_from_slice(b"Content-Disposition: form-data; name=\"title\"\r\n\r\n");
+            body.extend_from_slice(title.as_bytes());
+            body.extend_from_slice(b"\r\n");
+            body.extend_from_slice(format!("--{}--\r\n", BOUNDARY).as_bytes());
+            body
+        }
+
+        fn multipart_ct() -> rocket::http::ContentType {
+            rocket::http::ContentType::parse_flexible(&format!(
+                "multipart/form-data; boundary={}",
+                BOUNDARY
+            ))
+            .expect("multipart content type")
+        }
+
+        let test_db = create_standard_test_db().await;
+        let coach_id = test_db.user_id("coach_user").unwrap();
+        let (client, db) = setup_test_client(test_db).await;
+
+        // Create a SECOND plain student who will own the camp. Clone the seeded
+        // student's auth columns so the shared "password123" login works.
+        let other_student_id: i64 = sqlx::query_scalar(
+            "INSERT INTO users (username, role, password, display_name, approved_at, claimed_at)
+             SELECT 'other_student', 'student', password, 'Other Student', approved_at, claimed_at
+             FROM users WHERE username = 'student_user' RETURNING id",
+        )
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+
+        // Camp belongs to other_student, NOT student_user.
+        let camp_id = create_camp(
+            &db.pool,
+            NewCamp {
+                student_id: other_student_id,
+                coach_id,
+                name: "Not your camp".to_string(),
+                description: None,
+                references_camp_id: None,
+            },
+        )
+        .await
+        .unwrap();
+
+        // student_user tries to upload to a camp they don't own.
+        login_as(&client, "student_user").await;
+
+        let body = multipart_body(b"fake-mp4-bytes", "clip.mp4", "Sneaky Clip");
+        let resp = client
+            .post(format!("/api/camps/{}/videos/upload", camp_id))
+            .header(multipart_ct())
+            .body(body)
+            .dispatch()
+            .await;
+        assert_eq!(resp.status(), Status::Forbidden);
+    }
+
+    #[rocket::async_test]
     async fn list_camp_videos_returns_camp_owned_videos_with_camp_id() {
         use crate::db::list_videos_for_camp;
 
