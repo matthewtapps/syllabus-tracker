@@ -1900,7 +1900,8 @@ export type AnchorKind =
   | "video_timestamp"
   | "sst"
   | "pinned_technique"
-  | "camp";
+  | "camp"
+  | "camp_technique";
 export type ThreadVisibility = "private" | "broadcast";
 
 export interface CommentView {
@@ -1934,6 +1935,8 @@ export interface CreateThreadInput {
   anchor_id: number;
   video_ts_seconds?: number | null;
   pinned_student_id?: number | null;
+  /** Camp scope for camp_technique threads; keeps them off the global library. */
+  camp_id?: number | null;
   visibility: ThreadVisibility;
   scope_student_id?: number | null;
   body: string;
@@ -1942,9 +1945,14 @@ export interface CreateThreadInput {
 export async function listThreads(
   anchorKind: AnchorKind,
   anchorId: number,
+  campId?: number,
 ): Promise<ThreadView[]> {
+  const campParam =
+    anchorKind === "camp_technique" && campId !== undefined
+      ? `&camp_id=${campId}`
+      : "";
   const res = await fetch(
-    `/api/threads?anchor_kind=${anchorKind}&anchor_id=${anchorId}`,
+    `/api/threads?anchor_kind=${anchorKind}&anchor_id=${anchorId}${campParam}`,
     { credentials: "include" },
   );
   if (!res.ok) throw new Error(`Failed to load threads: ${res.statusText}`);

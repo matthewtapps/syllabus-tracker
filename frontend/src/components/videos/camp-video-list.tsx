@@ -51,7 +51,14 @@ interface CampVideoListProps {
   campId: number;
   /** Student who owns this camp. Used to scope thread visibility on playback. */
   studentId: number;
+  /** Coach-only management: per-video delete and visibility controls. */
   canManage: boolean;
+  /**
+   * Footage upload affordance. The camp's own student may upload footage even
+   * though they get none of the coach-only management controls. Defaults to
+   * `canManage` so existing callers keep coach-upload behaviour.
+   */
+  canUpload?: boolean;
   /** When set, scroll this video into view once the list loads. */
   scrollToVideoId?: number | null;
   onVideoScrolled?: () => void;
@@ -61,6 +68,7 @@ export function CampVideoList({
   campId,
   studentId,
   canManage,
+  canUpload = canManage,
   scrollToVideoId,
   onVideoScrolled,
 }: CampVideoListProps) {
@@ -132,7 +140,7 @@ export function CampVideoList({
 
   return (
     <div className="space-y-2">
-      {canManage && (
+      {canUpload && (
         <div className="flex justify-end">
           <Button
             type="button"
@@ -150,7 +158,7 @@ export function CampVideoList({
 
       {videos.length === 0 ? (
         <p className="text-xs italic text-muted-foreground">
-          {canManage
+          {canUpload
             ? "No videos yet. Add the first clip with the button above."
             : "No videos yet."}
         </p>
@@ -177,7 +185,7 @@ export function CampVideoList({
         context={{ label: "Camp video" }}
       />
 
-      {canManage && (
+      {canUpload && (
         <CampUploadSheet
           campId={campId}
           open={uploadOpen}

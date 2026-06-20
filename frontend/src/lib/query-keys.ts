@@ -94,8 +94,12 @@ export const qk = {
   camp: (id: number) => ["camps", id] as const,
   campVideos: (campId: number) => ["camps", campId, "videos"] as const,
 
-  threads: (anchorKind: string, anchorId: number) =>
-    ["threads", anchorKind, anchorId] as const,
+  // camp_technique lists are cached per (technique, camp) so a technique's
+  // camp-scoped conversation never collides with its global-library one.
+  threads: (anchorKind: string, anchorId: number, campId?: number) =>
+    campId === undefined
+      ? (["threads", anchorKind, anchorId] as const)
+      : (["threads", anchorKind, anchorId, "camp", campId] as const),
   thread: (id: number) => ["thread", id] as const,
 
   studentSyllabusTechniquesFlat: (studentId: number) =>

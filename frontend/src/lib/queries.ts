@@ -484,10 +484,14 @@ export function useCampVideos(campId: number | undefined) {
 export function useThreadsForAnchor(
   anchorKind: AnchorKind,
   anchorId: number | undefined,
+  campId?: number,
 ) {
+  // camp_technique lists are scoped to a (technique, camp) pair so they cache
+  // and invalidate separately from the global-library technique conversation.
+  const keyCampId = anchorKind === "camp_technique" ? campId : undefined;
   return useQuery({
-    queryKey: qk.threads(anchorKind, anchorId ?? 0),
-    queryFn: whenId(anchorId, (id) => listThreads(anchorKind, id)),
+    queryKey: qk.threads(anchorKind, anchorId ?? 0, keyCampId),
+    queryFn: whenId(anchorId, (id) => listThreads(anchorKind, id, keyCampId)),
   });
 }
 

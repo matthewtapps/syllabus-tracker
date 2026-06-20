@@ -25,12 +25,15 @@ interface ThreadViewProps {
   thread: ThreadViewModel;
   anchorKind: string;
   anchorId: number;
+  /** Camp scope for camp_technique threads, so reply/delete invalidate the
+   *  camp-scoped list rather than the global-library one. */
+  campId?: number;
 }
 
-export function ThreadView({ thread, anchorKind, anchorId }: ThreadViewProps) {
+export function ThreadView({ thread, anchorKind, anchorId, campId }: ThreadViewProps) {
   const user = useUser();
-  const createComment = useCreateComment(anchorKind, anchorId);
-  const deleteThread = useDeleteThread(anchorKind, anchorId);
+  const createComment = useCreateComment(anchorKind, anchorId, campId);
+  const deleteThread = useDeleteThread(anchorKind, anchorId, campId);
   const [deleteOpen, setDeleteOpen] = useState(false);
 
   const authorName = thread.author_name;

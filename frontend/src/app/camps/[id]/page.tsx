@@ -776,6 +776,7 @@ function CampDetail({
           campId={campId}
           studentId={camp.student_id}
           canManage={isCoach}
+          canUpload={isCoach || viewerIsOwner}
           scrollToVideoId={campVideoConsumed ? null : campVideoId}
           onVideoScrolled={() => setCampVideoConsumed(true)}
         />

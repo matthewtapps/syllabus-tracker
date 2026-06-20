@@ -1276,8 +1276,15 @@ export function useCreateThread() {
     mutationFn: async (input: CreateThreadInput) =>
       unwrap(await createThread(input)),
     onSuccess: (_d, input) => {
+      // camp_technique threads cache per (technique, camp); invalidate that
+      // precise key so the camp-scoped list refreshes without touching the
+      // global-library conversation for the same technique.
+      const campId =
+        input.anchor_kind === "camp_technique"
+          ? (input.camp_id ?? undefined)
+          : undefined;
       qc.invalidateQueries({
-        queryKey: qk.threads(input.anchor_kind, input.anchor_id),
+        queryKey: qk.threads(input.anchor_kind, input.anchor_id, campId),
       });
       // video_timestamp threads are read back through the "video" anchor query;
       // invalidate that key too so the feed refreshes without a dialog reopen.
@@ -1293,8 +1300,13 @@ export function useCreateThread() {
   });
 }
 
-export function useCreateComment(anchorKind: string, anchorId: number) {
+export function useCreateComment(
+  anchorKind: string,
+  anchorId: number,
+  campId?: number,
+) {
   const qc = useQueryClient();
+  const keyCampId = anchorKind === "camp_technique" ? campId : undefined;
   return useMutation({
     mutationFn: async (v: {
       threadId: number;
@@ -1302,7 +1314,7 @@ export function useCreateComment(anchorKind: string, anchorId: number) {
       parentCommentId?: number | null;
     }) => unwrap(await createComment(v.threadId, v.body, v.parentCommentId)),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: qk.threads(anchorKind, anchorId) });
+      qc.invalidateQueries({ queryKey: qk.threads(anchorKind, anchorId, keyCampId) });
       if (anchorKind === "video_timestamp" || anchorKind === "video") {
         qc.invalidateQueries({ queryKey: qk.threads("video", anchorId) });
       }
@@ -1310,13 +1322,18 @@ export function useCreateComment(anchorKind: string, anchorId: number) {
   });
 }
 
-export function useDeleteThread(anchorKind: string, anchorId: number) {
+export function useDeleteThread(
+  anchorKind: string,
+  anchorId: number,
+  campId?: number,
+) {
   const qc = useQueryClient();
+  const keyCampId = anchorKind === "camp_technique" ? campId : undefined;
   return useMutation({
     mutationFn: async (threadId: number) =>
       unwrap(await deleteThread(threadId)),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: qk.threads(anchorKind, anchorId) });
+      qc.invalidateQueries({ queryKey: qk.threads(anchorKind, anchorId, keyCampId) });
       if (anchorKind === "video_timestamp" || anchorKind === "video") {
         qc.invalidateQueries({ queryKey: qk.threads("video", anchorId) });
       }
@@ -1324,13 +1341,18 @@ export function useDeleteThread(anchorKind: string, anchorId: number) {
   });
 }
 
-export function useDeleteComment(anchorKind: string, anchorId: number) {
+export function useDeleteComment(
+  anchorKind: string,
+  anchorId: number,
+  campId?: number,
+) {
   const qc = useQueryClient();
+  const keyCampId = anchorKind === "camp_technique" ? campId : undefined;
   return useMutation({
     mutationFn: async (commentId: number) =>
       unwrap(await deleteComment(commentId)),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: qk.threads(anchorKind, anchorId) });
+      qc.invalidateQueries({ queryKey: qk.threads(anchorKind, anchorId, keyCampId) });
       if (anchorKind === "video_timestamp" || anchorKind === "video") {
         qc.invalidateQueries({ queryKey: qk.threads("video", anchorId) });
       }
