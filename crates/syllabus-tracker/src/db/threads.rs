@@ -21,6 +21,7 @@ pub enum AnchorKind {
     Sst,
     PinnedTechnique,
     Camp,
+    CampTechnique,
 }
 
 impl AnchorKind {
@@ -33,6 +34,7 @@ impl AnchorKind {
             AnchorKind::Sst => "sst",
             AnchorKind::PinnedTechnique => "pinned_technique",
             AnchorKind::Camp => "camp",
+            AnchorKind::CampTechnique => "camp_technique",
         }
     }
 
@@ -45,6 +47,7 @@ impl AnchorKind {
             "sst" => Some(AnchorKind::Sst),
             "pinned_technique" => Some(AnchorKind::PinnedTechnique),
             "camp" => Some(AnchorKind::Camp),
+            "camp_technique" => Some(AnchorKind::CampTechnique),
             _ => None,
         }
     }
@@ -88,6 +91,9 @@ pub struct Anchor {
     /// Only set for `pinned_technique` (its anchor is the (student, technique)
     /// pair, so both ids are needed).
     pub pinned_student_id: Option<i64>,
+    /// Only set for `camp_technique`: the (camp, technique) pair. `id` carries
+    /// the technique; this carries the camp.
+    pub camp_id: Option<i64>,
 }
 
 /// Input for creating a thread (the root post).
@@ -114,6 +120,7 @@ fn anchor_columns(
         AnchorKind::Sst => (None, None, None, None, Some(anchor.id), None),
         AnchorKind::PinnedTechnique => (anchor.pinned_student_id, Some(anchor.id), None, None, None, None),
         AnchorKind::Camp => (None, None, None, None, None, Some(anchor.id)),
+        AnchorKind::CampTechnique => (None, Some(anchor.id), None, None, None, anchor.camp_id),
     }
 }
 
@@ -188,6 +195,23 @@ async fn validate_anchor(pool: &Pool<Sqlite>, anchor: &Anchor) -> Result<(), App
         )
         .fetch_one(pool)
         .await?,
+        // A camp_technique anchor is only valid if technique `id` is actually
+        // attached to camp `camp_id` (membership in camp_techniques).
+        AnchorKind::CampTechnique => {
+            let camp_id = anchor.camp_id.ok_or_else(|| {
+                AppError::Validation("camp_technique anchor requires a camp".to_string())
+            })?;
+            sqlx::query_scalar!(
+                r#"SELECT EXISTS(
+                      SELECT 1 FROM camp_techniques
+                      WHERE camp_id = ? AND technique_id = ?
+                   ) AS "e!: i64""#,
+                camp_id,
+                anchor.id
+            )
+            .fetch_one(pool)
+            .await?
+        }
     };
     if exists == 0 {
         return Err(AppError::Validation(format!(
@@ -267,10 +291,19 @@ pub async fn create_thread(pool: &Pool<Sqlite>, new: NewThread) -> Result<i64, A
         // Camp threads carry no technique/video/sst id but do carry camp context
         // for deep-linking back to the camp page.
         AnchorKind::Camp => (None, None, None),
+        // Camp-technique threads deep-link back to the camp (the camp context is
+        // tagged below); the technique id alone would route to the library, which
+        // is a different surface, so it is intentionally not carried here.
+        AnchorKind::CampTechnique => (None, None, None),
     };
     let mut ev = apply_thread_anchor_context(&mut tx, ev, technique_id, video_id, sst_id).await?;
     if new.anchor.kind == AnchorKind::Camp {
         ev = ev.camp(new.anchor.id).context_kind("camp");
+    }
+    if new.anchor.kind == AnchorKind::CampTechnique {
+        if let Some(camp_id) = new.anchor.camp_id {
+            ev = ev.camp(camp_id).context_kind("camp");
+        }
     }
     emit(&mut tx, ev).await?;
 
@@ -677,6 +710,19 @@ pub async fn list_threads_for_anchor(
             .fetch_all(pool)
             .await?
         }
+        AnchorKind::CampTechnique => {
+            sqlx::query_scalar!(
+                r#"SELECT id AS "id!: i64" FROM threads
+                   WHERE anchor_kind = 'camp_technique'
+                     AND camp_id = ? AND technique_id = ?
+                     AND deleted_at IS NULL
+                   ORDER BY last_activity_at DESC"#,
+                camp_id,
+                technique_id
+            )
+            .fetch_all(pool)
+            .await?
+        }
     };
 
     let mut views = Vec::with_capacity(thread_ids.len());
@@ -740,6 +786,7 @@ mod type_tests {
             AnchorKind::Sst,
             AnchorKind::PinnedTechnique,
             AnchorKind::Camp,
+            AnchorKind::CampTechnique,
         ] {
             assert_eq!(AnchorKind::from_str_kind(kind.as_str()), Some(kind));
         }
@@ -755,6 +802,7 @@ mod type_tests {
         assert!(!AnchorKind::Sst.allows_broadcast());
         assert!(!AnchorKind::PinnedTechnique.allows_broadcast());
         assert!(!AnchorKind::Camp.allows_broadcast());
+        assert!(!AnchorKind::CampTechnique.allows_broadcast());
     }
 
     #[test]

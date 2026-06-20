@@ -92,7 +92,7 @@ pub async fn api_create_thread(
 
     let id = create_thread(pool, NewThread {
         author_id: user.id,
-        anchor: Anchor { kind, id: req.anchor_id, video_ts_seconds: req.video_ts_seconds, pinned_student_id: req.pinned_student_id },
+        anchor: Anchor { kind, id: req.anchor_id, video_ts_seconds: req.video_ts_seconds, pinned_student_id: req.pinned_student_id, camp_id: None },
         visibility,
         scope_student_id,
         body: req.body.clone(),
@@ -112,7 +112,7 @@ pub async fn api_list_threads(
     let kind = parse_kind(&anchor_kind)?;
     let threads = list_threads_for_anchor(
         pool,
-        Anchor { kind, id: anchor_id, video_ts_seconds: None, pinned_student_id: None },
+        Anchor { kind, id: anchor_id, video_ts_seconds: None, pinned_student_id: None, camp_id: None },
         viewer_for(&user),
     ).await.map_err(|_| Status::BadRequest)?;
     Ok(Json(ThreadListResponse { threads }))

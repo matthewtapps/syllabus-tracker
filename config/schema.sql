@@ -466,7 +466,8 @@ CREATE TABLE IF NOT EXISTS threads (
 
     anchor_kind     TEXT NOT NULL CHECK (anchor_kind IN (
                         'student_profile','technique','video',
-                        'video_timestamp','sst','pinned_technique','camp')),
+                        'video_timestamp','sst','pinned_technique','camp',
+                        'camp_technique')),
 
     student_id      INTEGER REFERENCES users(id)                       ON DELETE CASCADE,
     technique_id    INTEGER REFERENCES techniques(id)                  ON DELETE CASCADE,
@@ -490,7 +491,8 @@ CREATE TABLE IF NOT EXISTS threads (
       (anchor_kind='video_timestamp'  AND video_id IS NOT NULL AND video_ts_seconds IS NOT NULL AND student_id IS NULL AND technique_id IS NULL AND sst_id IS NULL AND camp_id IS NULL) OR
       (anchor_kind='sst'              AND sst_id IS NOT NULL AND student_id IS NULL AND technique_id IS NULL AND video_id IS NULL AND video_ts_seconds IS NULL AND camp_id IS NULL) OR
       (anchor_kind='pinned_technique' AND student_id IS NOT NULL AND technique_id IS NOT NULL AND video_id IS NULL AND video_ts_seconds IS NULL AND sst_id IS NULL AND camp_id IS NULL) OR
-      (anchor_kind='camp'             AND camp_id IS NOT NULL AND student_id IS NULL AND technique_id IS NULL AND video_id IS NULL AND video_ts_seconds IS NULL AND sst_id IS NULL)
+      (anchor_kind='camp'             AND camp_id IS NOT NULL AND student_id IS NULL AND technique_id IS NULL AND video_id IS NULL AND video_ts_seconds IS NULL AND sst_id IS NULL) OR
+      (anchor_kind='camp_technique'   AND camp_id IS NOT NULL AND technique_id IS NOT NULL AND student_id IS NULL AND video_id IS NULL AND video_ts_seconds IS NULL AND sst_id IS NULL)
     ),
     CHECK (
       (visibility='private'   AND scope_student_id IS NOT NULL) OR
@@ -508,6 +510,7 @@ CREATE INDEX IF NOT EXISTS idx_threads_video     ON threads(video_id)     WHERE 
 CREATE INDEX IF NOT EXISTS idx_threads_sst       ON threads(sst_id)       WHERE deleted_at IS NULL;
 CREATE INDEX IF NOT EXISTS idx_threads_scope     ON threads(scope_student_id) WHERE scope_student_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_threads_camp      ON threads(camp_id) WHERE deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_threads_camp_technique ON threads(camp_id, technique_id) WHERE anchor_kind='camp_technique' AND deleted_at IS NULL;
 
 CREATE TABLE IF NOT EXISTS thread_comments (
     id                INTEGER PRIMARY KEY AUTOINCREMENT,
