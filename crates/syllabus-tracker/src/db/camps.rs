@@ -516,6 +516,38 @@ pub async fn add_camp_technique_video(
     Ok(())
 }
 
+/// List the camp-only reference videos for a (camp, technique): the `videos`
+/// rows pinned through `camp_technique_referenced_videos`. Returns ONLY the
+/// camp-only refs (NOT the global technique videos, which are fetched
+/// separately). Soft-deleted videos are excluded. Ordered by video id so the
+/// list is stable. Reuses the shared [`Video`] DTO.
+#[instrument(skip(pool))]
+pub async fn list_camp_technique_videos(
+    pool: &Pool<Sqlite>,
+    camp_id: i64,
+    technique_id: i64,
+) -> Result<Vec<crate::models::Video>, AppError> {
+    let rows = sqlx::query_as!(
+        crate::models::DbVideo,
+        r#"SELECT v.id, v.parent_kind, v.technique_id, v.student_id, v.thread_id,
+                v.camp_id AS "camp_id?: i64", v.title, v.description,
+                v.position, v.kind, v.processing_status, v.processing_error,
+                v.storage_key, v.bytes, v.duration_seconds, v.width, v.height,
+                v.external_url, v.external_host, v.external_video_id, v.uploaded_by_id,
+                v.created_at, v.updated_at, v.hidden_at
+         FROM camp_technique_referenced_videos ctrv
+         JOIN videos v ON v.id = ctrv.video_id
+         WHERE ctrv.camp_id = ? AND ctrv.technique_id = ?
+           AND v.deleted_at IS NULL
+         ORDER BY v.id ASC"#,
+        camp_id,
+        technique_id,
+    )
+    .fetch_all(pool)
+    .await?;
+    Ok(rows.into_iter().map(crate::models::Video::from).collect())
+}
+
 /// Re-parent an EXISTING video onto a technique as a normal technique video
 /// (parent_kind='technique', technique_id=<technique>, other parent columns
 /// cleared). This is the "global" scope: the video then appears everywhere the

@@ -8,8 +8,8 @@ use crate::auth::{Permission, User};
 use crate::db::camps::{
     add_camp_technique, add_camp_technique_video, archive_camp, attach_video_to_technique,
     create_camp, create_camp_technique_new, get_camp, list_camp_summaries_for_student,
-    list_camp_techniques, remove_camp_technique, update_camp, Camp, CampSummary, CampTechnique,
-    NewCamp, TechniqueScope,
+    list_camp_technique_videos, list_camp_techniques, remove_camp_technique, update_camp, Camp,
+    CampSummary, CampTechnique, NewCamp, TechniqueScope,
 };
 use crate::db::{list_videos_for_camp, set_video_camp_visibility};
 use crate::models::Video;
@@ -357,6 +357,36 @@ pub async fn api_add_camp_technique_video(
     }
 
     Ok(Status::NoContent)
+}
+
+/// Lists the camp-only reference videos pinned to a technique within a camp:
+/// the `videos` rows joined via `camp_technique_referenced_videos`. This returns
+/// ONLY the camp-only refs (NOT the global technique videos, which the frontend
+/// fetches separately). Soft-deleted videos are excluded.
+///
+/// Readable by a coach OR the camp's own student (same `can_read` rule as the
+/// other camp reads). The technique need not be a member: a non-member simply
+/// has no referenced-video rows and yields an empty list.
+#[instrument(skip(pool, user))]
+#[get("/camps/<camp_id>/techniques/<technique_id>/videos")]
+pub async fn api_list_camp_technique_videos(
+    camp_id: i64,
+    technique_id: i64,
+    user: User,
+    pool: &State<Pool<Sqlite>>,
+) -> Result<Json<CampVideosResponse>, Status> {
+    let pool = pool.inner();
+    let camp = get_camp(pool, camp_id)
+        .await
+        .map_err(Status::from)?
+        .ok_or(Status::NotFound)?;
+    if !can_read(&user, &camp) {
+        return Err(Status::Forbidden);
+    }
+    let videos = list_camp_technique_videos(pool, camp_id, technique_id)
+        .await
+        .map_err(Status::from)?;
+    Ok(Json(CampVideosResponse { videos }))
 }
 
 #[derive(Serialize)]

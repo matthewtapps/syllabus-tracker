@@ -2180,4 +2180,159 @@ mod tests {
             .await;
         assert_eq!(resp.status(), Status::NotFound);
     }
+
+    /// The camp-only read endpoint lists ONLY the camp_technique_referenced_videos
+    /// for the (camp, technique). A video attached as `global` is re-parented onto
+    /// the technique and must NOT appear in this camp-only list.
+    #[rocket::async_test]
+    async fn camp_technique_videos_lists_camp_only_refs() {
+        use crate::test::test_utils::{create_standard_test_db, setup_test_client};
+        use rocket::http::{ContentType, Status};
+
+        let test_db = create_standard_test_db().await;
+        let coach = test_db.user_id("coach_user").unwrap();
+        let (client, db) = setup_test_client(test_db).await;
+        let (camp_id, technique_id, camp_only_video) =
+            camp_technique_video_fixture(&db).await;
+
+        // A second camp-owned video that we'll attach as `global`.
+        let global_video = create_processing_video(
+            &db.pool,
+            VideoParent::Camp(camp_id),
+            "Global clip",
+            None,
+            coach,
+        )
+        .await
+        .unwrap();
+
+        login_as(&client, "coach_user").await;
+
+        // Attach the first video as camp_only.
+        let resp = client
+            .post(format!(
+                "/api/camps/{}/techniques/{}/videos",
+                camp_id, technique_id
+            ))
+            .header(ContentType::JSON)
+            .body(format!(
+                r#"{{"video_id": {}, "scope": "camp_only"}}"#,
+                camp_only_video
+            ))
+            .dispatch()
+            .await;
+        assert_eq!(resp.status(), Status::NoContent);
+
+        // Attach the second video as global.
+        let resp = client
+            .post(format!(
+                "/api/camps/{}/techniques/{}/videos",
+                camp_id, technique_id
+            ))
+            .header(ContentType::JSON)
+            .body(format!(
+                r#"{{"video_id": {}, "scope": "global"}}"#,
+                global_video
+            ))
+            .dispatch()
+            .await;
+        assert_eq!(resp.status(), Status::NoContent);
+
+        // Read the camp-only list.
+        let resp = client
+            .get(format!(
+                "/api/camps/{}/techniques/{}/videos",
+                camp_id, technique_id
+            ))
+            .dispatch()
+            .await;
+        assert_eq!(resp.status(), Status::Ok);
+        let body: serde_json::Value =
+            serde_json::from_str(&resp.into_string().await.unwrap()).unwrap();
+        let videos = body["videos"].as_array().expect("videos array");
+
+        let ids: Vec<i64> = videos
+            .iter()
+            .map(|v| v["id"].as_i64().unwrap())
+            .collect();
+        assert!(
+            ids.contains(&camp_only_video),
+            "camp_only video must appear in the camp-only list"
+        );
+        assert!(
+            !ids.contains(&global_video),
+            "global video must NOT appear in the camp-only list"
+        );
+        assert_eq!(ids.len(), 1, "only the camp_only ref is listed");
+    }
+
+    /// The camp-only video list is readable by the camp's own student (200) and
+    /// any coach, but a different student is forbidden (403), mirroring
+    /// `can_read` (coach or owner).
+    #[rocket::async_test]
+    async fn camp_technique_videos_readable_by_owner_student_not_other() {
+        use crate::test::test_utils::{create_standard_test_db, setup_test_client};
+        use rocket::http::{ContentType, Status};
+
+        let test_db = create_standard_test_db().await;
+        let (client, db) = setup_test_client(test_db).await;
+        let (camp_id, technique_id, camp_only_video) =
+            camp_technique_video_fixture(&db).await;
+
+        // Coach attaches the camp_only video.
+        login_as(&client, "coach_user").await;
+        let resp = client
+            .post(format!(
+                "/api/camps/{}/techniques/{}/videos",
+                camp_id, technique_id
+            ))
+            .header(ContentType::JSON)
+            .body(format!(
+                r#"{{"video_id": {}, "scope": "camp_only"}}"#,
+                camp_only_video
+            ))
+            .dispatch()
+            .await;
+        assert_eq!(resp.status(), Status::NoContent);
+
+        // Coach can read.
+        let resp = client
+            .get(format!(
+                "/api/camps/{}/techniques/{}/videos",
+                camp_id, technique_id
+            ))
+            .dispatch()
+            .await;
+        assert_eq!(resp.status(), Status::Ok);
+
+        // The camp's own student can read.
+        login_as(&client, "student_user").await;
+        let resp = client
+            .get(format!(
+                "/api/camps/{}/techniques/{}/videos",
+                camp_id, technique_id
+            ))
+            .dispatch()
+            .await;
+        assert_eq!(resp.status(), Status::Ok);
+
+        // A different plain student is forbidden.
+        sqlx::query(
+            "INSERT INTO users (username, role, password, display_name, approved_at, claimed_at)
+             SELECT 'other_student', 'student', password, 'Other Student', approved_at, claimed_at
+             FROM users WHERE username = 'student_user'",
+        )
+        .execute(&db.pool)
+        .await
+        .unwrap();
+        login_as(&client, "other_student").await;
+        let resp = client
+            .get(format!(
+                "/api/camps/{}/techniques/{}/videos",
+                camp_id, technique_id
+            ))
+            .dispatch()
+            .await;
+        assert_eq!(resp.status(), Status::Forbidden);
+    }
 }
