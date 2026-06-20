@@ -39,9 +39,6 @@ export interface ActivityRow {
   thread_id: number | null;
   camp_id: number | null;
   camp_name: string | null;
-  competition_id: number | null;
-  competition_name: string | null;
-  match_id: number | null;
   /** Coalesced thread_comment_posted rows: comment events on the thread (opener
    *  + replies). 1 for a lone thread, 0 for non-thread verbs. */
   comment_count: number;

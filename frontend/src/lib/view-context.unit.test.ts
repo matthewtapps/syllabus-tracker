@@ -52,8 +52,6 @@ describe("rowToViewContext", () => {
         technique_id: 9,
         video_id: 7,
         camp_id: null,
-        competition_id: null,
-        match_id: null,
       }),
     ).toEqual({
       kind: "syllabus",
@@ -74,8 +72,6 @@ describe("rowToViewContext", () => {
         technique_id: 9,
         video_id: 7,
         camp_id: null,
-        competition_id: null,
-        match_id: null,
       }),
     ).toEqual({
       kind: "library",
@@ -94,8 +90,6 @@ describe("rowToViewContext", () => {
         technique_id: 9,
         video_id: 7,
         camp_id: null,
-        competition_id: null,
-        match_id: null,
       }),
     ).toEqual({
       kind: "library",
@@ -114,8 +108,6 @@ describe("rowToViewContext", () => {
         technique_id: null,
         video_id: 7,
         camp_id: null,
-        competition_id: null,
-        match_id: null,
       }),
     ).toBeNull();
   });
@@ -130,8 +122,6 @@ describe("rowToViewContext", () => {
         technique_id: 9,
         video_id: null,
         camp_id: null,
-        competition_id: null,
-        match_id: null,
       }),
     ).toEqual({
       kind: "syllabus",
@@ -151,8 +141,6 @@ describe("rowToViewContext", () => {
         technique_id: 9,
         video_id: null,
         camp_id: null,
-        competition_id: null,
-        match_id: null,
       }),
     ).toBeNull();
   });
@@ -167,8 +155,6 @@ describe("rowToViewContext", () => {
         technique_id: 9,
         video_id: null,
         camp_id: null,
-        competition_id: null,
-        match_id: null,
       }),
     ).toEqual({
       kind: "syllabus",
@@ -188,8 +174,6 @@ describe("rowToViewContext", () => {
         technique_id: 9,
         video_id: null,
         camp_id: null,
-        competition_id: null,
-        match_id: null,
       }),
     ).toBeNull();
   });
@@ -204,8 +188,6 @@ describe("rowToViewContext", () => {
         technique_id: 9,
         video_id: null,
         camp_id: null,
-        competition_id: null,
-        match_id: null,
       }),
     ).toEqual({
       kind: "syllabus",
@@ -225,8 +207,6 @@ describe("rowToViewContext", () => {
         technique_id: 9,
         video_id: null,
         camp_id: null,
-        competition_id: null,
-        match_id: null,
       }),
     ).toEqual({
       kind: "library",
@@ -244,8 +224,6 @@ describe("rowToViewContext", () => {
         technique_id: 9,
         video_id: null,
         camp_id: null,
-        competition_id: null,
-        match_id: null,
       }),
     ).toBeNull();
   });
@@ -260,8 +238,6 @@ describe("rowToViewContext", () => {
         technique_id: null,
         video_id: null,
         camp_id: null,
-        competition_id: null,
-        match_id: null,
       }),
     ).toBeNull();
   });
@@ -276,8 +252,6 @@ describe("rowToViewContext", () => {
         technique_id: null,
         video_id: null,
         camp_id: null,
-        competition_id: null,
-        match_id: null,
       });
       expect(ctx).toEqual({
         kind: "syllabus",
@@ -302,8 +276,6 @@ describe("activitySurface", () => {
         technique_id: 9,
         video_id: null,
         camp_id: null,
-        competition_id: null,
-        match_id: null,
         syllabus_name: "Blue Belt",
       }),
     ).toEqual({ kind: "syllabus", label: "Blue Belt" });
@@ -319,8 +291,6 @@ describe("activitySurface", () => {
         technique_id: 9,
         video_id: null,
         camp_id: null,
-        competition_id: null,
-        match_id: null,
         syllabus_name: "Blue Belt",
       }),
     ).toEqual({ kind: "syllabus", label: "Blue Belt" });
@@ -336,8 +306,6 @@ describe("activitySurface", () => {
         technique_id: 9,
         video_id: 7,
         camp_id: null,
-        competition_id: null,
-        match_id: null,
         syllabus_name: null,
       }),
     ).toEqual({ kind: "library", label: "Global Technique Library" });
@@ -353,8 +321,6 @@ describe("activitySurface", () => {
         technique_id: null,
         video_id: null,
         camp_id: null,
-        competition_id: null,
-        match_id: null,
         syllabus_name: "Blue Belt",
       }),
     ).toEqual({ kind: "syllabus", label: "Blue Belt" });
@@ -370,8 +336,6 @@ describe("activitySurface", () => {
         technique_id: null,
         video_id: null,
         camp_id: null,
-        competition_id: null,
-        match_id: null,
         syllabus_name: "Blue Belt",
       }),
     ).toBeNull();
@@ -394,8 +358,6 @@ describe("camp deep links", () => {
       technique_id: null,
       video_id: null,
       camp_id: 7,
-      competition_id: null,
-      match_id: null,
     });
     expect(ctx).not.toBeNull();
     expect(viewContextHref(ctx!)).toBe("/camps/7?focus=camp:7");
@@ -411,8 +373,6 @@ describe("camp deep links", () => {
       technique_id: null,
       video_id: 12,
       camp_id: 7,
-      competition_id: null,
-      match_id: null,
     });
     expect(viewContextHref(ctx!)).toBe("/camps/7?focus=camp:7&video=12");
   });

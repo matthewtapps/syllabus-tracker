@@ -75,8 +75,6 @@ export interface ViewContextRow {
   technique_id: number | null;
   video_id: number | null;
   camp_id: number | null;
-  competition_id: number | null;
-  match_id: number | null;
 }
 
 const SYLLABUS_SCOPED_VERBS = new Set([
@@ -221,7 +219,6 @@ export function activitySurface(
   row: ViewContextRow & {
     syllabus_name: string | null;
     camp_name?: string | null;
-    competition_name?: string | null;
   },
 ): ActivitySurface | null {
   const ctx = rowToViewContext(row);
