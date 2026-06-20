@@ -1,0 +1,38 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT verb, target_student_id AS \"t?: i64\", thread_id AS \"th?: i64\",\n                      video_id AS \"v?: i64\"\n               FROM activity WHERE verb = 'video_reply_posted'",
+  "describe": {
+    "columns": [
+      {
+        "name": "verb",
+        "ordinal": 0,
+        "type_info": "Text"
+      },
+      {
+        "name": "t?: i64",
+        "ordinal": 1,
+        "type_info": "Integer"
+      },
+      {
+        "name": "th?: i64",
+        "ordinal": 2,
+        "type_info": "Integer"
+      },
+      {
+        "name": "v?: i64",
+        "ordinal": 3,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      false,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "0ab03332c8032f24dad139b818fdcbea2d05ddc195d0a00930270f415ad555db"
+}

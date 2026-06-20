@@ -1,0 +1,50 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT visibility,\n                  scope_student_id AS \"scope_student_id?: i64\",\n                  technique_id     AS \"technique_id?: i64\",\n                  video_id         AS \"video_id?: i64\",\n                  sst_id           AS \"sst_id?: i64\",\n                  camp_id          AS \"camp_id?: i64\"\n           FROM threads WHERE id = ? AND deleted_at IS NULL",
+  "describe": {
+    "columns": [
+      {
+        "name": "visibility",
+        "ordinal": 0,
+        "type_info": "Text"
+      },
+      {
+        "name": "scope_student_id?: i64",
+        "ordinal": 1,
+        "type_info": "Integer"
+      },
+      {
+        "name": "technique_id?: i64",
+        "ordinal": 2,
+        "type_info": "Integer"
+      },
+      {
+        "name": "video_id?: i64",
+        "ordinal": 3,
+        "type_info": "Integer"
+      },
+      {
+        "name": "sst_id?: i64",
+        "ordinal": 4,
+        "type_info": "Integer"
+      },
+      {
+        "name": "camp_id?: i64",
+        "ordinal": 5,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "0f7c6ef91abf18e94740900f24f803445f8dce07844689627be88ff31c941667"
+}

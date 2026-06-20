@@ -553,6 +553,62 @@ pub async fn create_comment(
     Ok(comment_id)
 }
 
+/// Bumps the thread's `last_activity_at` and emits a `VideoReplyPosted` feed
+/// event after a video-reply row (parent_kind='thread') has been created for
+/// `thread_id`. Targeting mirrors `create_comment`: a private thread targets
+/// its scope student; a broadcast thread targets none (coach-only feed).
+#[instrument(skip(pool))]
+pub async fn record_thread_video_reply(
+    pool: &Pool<Sqlite>,
+    thread_id: i64,
+    video_id: i64,
+    author_id: i64,
+) -> Result<(), AppError> {
+    let thread_row = sqlx::query!(
+        r#"SELECT visibility,
+                  scope_student_id AS "scope_student_id?: i64",
+                  technique_id     AS "technique_id?: i64",
+                  video_id         AS "video_id?: i64",
+                  sst_id           AS "sst_id?: i64",
+                  camp_id          AS "camp_id?: i64"
+           FROM threads WHERE id = ? AND deleted_at IS NULL"#,
+        thread_id
+    )
+    .fetch_optional(pool)
+    .await?
+    .ok_or_else(|| AppError::NotFound(format!("thread #{thread_id} not found")))?;
+
+    let mut tx = pool.begin().await?;
+    sqlx::query!(
+        "UPDATE threads SET last_activity_at = CURRENT_TIMESTAMP WHERE id = ?",
+        thread_id
+    )
+    .execute(&mut *tx)
+    .await?;
+
+    let target = if thread_row.visibility == "private" {
+        thread_row.scope_student_id
+    } else {
+        None
+    };
+    let mut ev = NewActivity::new(Verb::VideoReplyPosted, author_id)
+        .thread(thread_id)
+        .video(video_id);
+    if let Some(t) = target {
+        ev = ev.target_student(t);
+    }
+    let mut ev = apply_thread_anchor_context(
+        &mut tx, ev,
+        thread_row.technique_id, thread_row.video_id, thread_row.sst_id,
+    ).await?;
+    if let Some(camp_id) = thread_row.camp_id {
+        ev = ev.camp(camp_id).context_kind("camp");
+    }
+    emit(&mut tx, ev).await?;
+    tx.commit().await?;
+    Ok(())
+}
+
 fn viewer_can_see(viewer: &Viewer, visibility: &str, scope_student_id: Option<i64>) -> bool {
     viewer.is_coach || visibility == "broadcast" || scope_student_id == Some(viewer.user_id)
 }

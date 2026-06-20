@@ -1636,6 +1636,39 @@ mod tests {
     /// A student must NOT be able to start a camp_technique thread on another
     /// student's camp.
     #[rocket::async_test]
+    async fn recording_a_video_reply_emits_activity_and_bumps_thread() {
+        let db = db_with_coach_and_student().await;
+        let coach_id = db.user_id("coach_user").unwrap();
+        let student_id = db.user_id("student_user").unwrap();
+
+        let thread_id = create_thread(&db.pool, NewThread {
+            author_id: coach_id,
+            anchor: Anchor { kind: AnchorKind::StudentProfile, id: student_id,
+                             video_ts_seconds: None, pinned_student_id: None, camp_id: None },
+            visibility: ThreadVisibility::Private, scope_student_id: Some(student_id),
+            body: "hi".to_string(),
+        }).await.unwrap();
+        let video_id: i64 = sqlx::query_scalar(
+            "INSERT INTO videos (parent_kind, thread_id, title, position, kind, \
+                processing_status, uploaded_by_id) \
+             VALUES ('thread', ?, '', 0, 'native', 'ready', ?) RETURNING id")
+            .bind(thread_id).bind(student_id)
+            .fetch_one(&db.pool).await.unwrap();
+
+        crate::db::threads::record_thread_video_reply(&db.pool, thread_id, video_id, student_id)
+            .await.unwrap();
+
+        let act = sqlx::query!(
+            r#"SELECT verb, target_student_id AS "t?: i64", thread_id AS "th?: i64",
+                      video_id AS "v?: i64"
+               FROM activity WHERE verb = 'video_reply_posted'"#)
+            .fetch_one(&db.pool).await.unwrap();
+        assert_eq!(act.t, Some(student_id));
+        assert_eq!(act.th, Some(thread_id));
+        assert_eq!(act.v, Some(video_id));
+    }
+
+    #[rocket::async_test]
     async fn student_cannot_start_camp_technique_thread_on_another_camp() {
         use crate::db::camps::{add_camp_technique, create_camp, NewCamp};
         let db = TB::new()
