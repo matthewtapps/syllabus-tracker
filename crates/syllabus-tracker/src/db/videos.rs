@@ -26,7 +26,6 @@ pub enum VideoParent {
     /// (`student_syllabus_techniques.id`).
     StudentSyllabusTechnique(i64),
     Camp(i64),
-    Match(i64),
     Loose,
 }
 
@@ -63,7 +62,7 @@ impl VisibilityScope {
     }
 }
 
-/// The six typed columns a `VideoParent` resolves to in the `videos` table.
+/// The typed columns a `VideoParent` resolves to in the `videos` table.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ParentColumns {
     pub kind: &'static str,
@@ -73,7 +72,6 @@ pub struct ParentColumns {
     pub syllabus_technique_id: Option<i64>,
     pub student_syllabus_technique_id: Option<i64>,
     pub camp_id: Option<i64>,
-    pub match_id: Option<i64>,
 }
 
 impl VideoParent {
@@ -94,35 +92,31 @@ impl VideoParent {
         match self {
             VideoParent::Technique(id) => ParentColumns {
                 kind: "technique", technique_id: Some(id), student_id: None, thread_id: None,
-                syllabus_technique_id: None, student_syllabus_technique_id: None, camp_id: None, match_id: None,
+                syllabus_technique_id: None, student_syllabus_technique_id: None, camp_id: None,
             },
             VideoParent::StudentProfile(id) => ParentColumns {
                 kind: "student_profile", technique_id: None, student_id: Some(id), thread_id: None,
-                syllabus_technique_id: None, student_syllabus_technique_id: None, camp_id: None, match_id: None,
+                syllabus_technique_id: None, student_syllabus_technique_id: None, camp_id: None,
             },
             VideoParent::Thread(id) => ParentColumns {
                 kind: "thread", technique_id: None, student_id: None, thread_id: Some(id),
-                syllabus_technique_id: None, student_syllabus_technique_id: None, camp_id: None, match_id: None,
+                syllabus_technique_id: None, student_syllabus_technique_id: None, camp_id: None,
             },
             VideoParent::SyllabusTechnique(id) => ParentColumns {
                 kind: "syllabus_technique", technique_id: None, student_id: None, thread_id: None,
-                syllabus_technique_id: Some(id), student_syllabus_technique_id: None, camp_id: None, match_id: None,
+                syllabus_technique_id: Some(id), student_syllabus_technique_id: None, camp_id: None,
             },
             VideoParent::StudentSyllabusTechnique(id) => ParentColumns {
                 kind: "student_syllabus_technique", technique_id: None, student_id: None, thread_id: None,
-                syllabus_technique_id: None, student_syllabus_technique_id: Some(id), camp_id: None, match_id: None,
+                syllabus_technique_id: None, student_syllabus_technique_id: Some(id), camp_id: None,
             },
             VideoParent::Camp(id) => ParentColumns {
                 kind: "camp", technique_id: None, student_id: None, thread_id: None,
-                syllabus_technique_id: None, student_syllabus_technique_id: None, camp_id: Some(id), match_id: None,
-            },
-            VideoParent::Match(id) => ParentColumns {
-                kind: "match", technique_id: None, student_id: None, thread_id: None,
-                syllabus_technique_id: None, student_syllabus_technique_id: None, camp_id: None, match_id: Some(id),
+                syllabus_technique_id: None, student_syllabus_technique_id: None, camp_id: Some(id),
             },
             VideoParent::Loose => ParentColumns {
                 kind: "loose", technique_id: None, student_id: None, thread_id: None,
-                syllabus_technique_id: None, student_syllabus_technique_id: None, camp_id: None, match_id: None,
+                syllabus_technique_id: None, student_syllabus_technique_id: None, camp_id: None,
             },
         }
     }
@@ -157,10 +151,6 @@ pub async fn validate_parent(pool: &Pool<Sqlite>, parent: VideoParent) -> Result
             sqlx::query_scalar!("SELECT 1 FROM camps WHERE id = ? AND archived_at IS NULL", id)
                 .fetch_optional(pool).await?.is_some()
         }
-        VideoParent::Match(id) => {
-            sqlx::query_scalar!("SELECT 1 FROM matches WHERE id = ?", id)
-                .fetch_optional(pool).await?.is_some()
-        }
         VideoParent::Loose => true,
     };
     if exists {
@@ -183,8 +173,7 @@ pub async fn next_video_position(pool: &Pool<Sqlite>, parent: VideoParent) -> Re
            AND (thread_id    IS ? OR (thread_id    IS NULL AND ? IS NULL))
            AND (syllabus_technique_id IS ? OR (syllabus_technique_id IS NULL AND ? IS NULL))
            AND (student_syllabus_technique_id IS ? OR (student_syllabus_technique_id IS NULL AND ? IS NULL))
-           AND (camp_id      IS ? OR (camp_id      IS NULL AND ? IS NULL))
-           AND (match_id     IS ? OR (match_id     IS NULL AND ? IS NULL))",
+           AND (camp_id      IS ? OR (camp_id      IS NULL AND ? IS NULL))",
         c.kind,
         c.technique_id,
         c.technique_id,
@@ -198,8 +187,6 @@ pub async fn next_video_position(pool: &Pool<Sqlite>, parent: VideoParent) -> Re
         c.student_syllabus_technique_id,
         c.camp_id,
         c.camp_id,
-        c.match_id,
-        c.match_id,
     )
     .fetch_one(pool)
     .await?;
@@ -224,9 +211,9 @@ pub async fn create_processing_video(
     let res = sqlx::query!(
         "INSERT INTO videos (
             parent_kind, technique_id, student_id, thread_id,
-            syllabus_technique_id, student_syllabus_technique_id, camp_id, match_id,
+            syllabus_technique_id, student_syllabus_technique_id, camp_id,
             title, description, position, kind, processing_status, uploaded_by_id
-         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         c.kind,
         c.technique_id,
         c.student_id,
@@ -234,7 +221,6 @@ pub async fn create_processing_video(
         c.syllabus_technique_id,
         c.student_syllabus_technique_id,
         c.camp_id,
-        c.match_id,
         title,
         description,
         position,
@@ -285,10 +271,10 @@ pub async fn create_external_video(
     let res = sqlx::query!(
         "INSERT INTO videos (
             parent_kind, technique_id, student_id, thread_id,
-            syllabus_technique_id, student_syllabus_technique_id, camp_id, match_id,
+            syllabus_technique_id, student_syllabus_technique_id, camp_id,
             title, description, position, kind, processing_status,
             external_url, external_host, external_video_id, uploaded_by_id
-         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         c.kind,
         c.technique_id,
         c.student_id,
@@ -296,7 +282,6 @@ pub async fn create_external_video(
         c.syllabus_technique_id,
         c.student_syllabus_technique_id,
         c.camp_id,
-        c.match_id,
         input.title,
         input.description,
         position,
@@ -452,7 +437,7 @@ pub async fn get_db_video(pool: &Pool<Sqlite>, id: i64) -> Result<Option<DbVideo
     let row = sqlx::query_as!(
         DbVideo,
         r#"SELECT id, parent_kind, technique_id, student_id, thread_id,
-                camp_id AS "camp_id?: i64", match_id AS "match_id?: i64", title, description,
+                camp_id AS "camp_id?: i64", title, description,
                 position, kind, processing_status, processing_error, storage_key, bytes,
                 duration_seconds, width, height,
                 external_url, external_host, external_video_id, uploaded_by_id,
@@ -483,7 +468,7 @@ pub async fn list_videos_for_technique(
     let rows = sqlx::query_as!(
         DbVideo,
         r#"SELECT id, parent_kind, technique_id, student_id, thread_id,
-                camp_id AS "camp_id?: i64", match_id AS "match_id?: i64", title, description,
+                camp_id AS "camp_id?: i64", title, description,
                 position, kind, processing_status, processing_error, storage_key, bytes,
                 duration_seconds, width, height,
                 external_url, external_host, external_video_id, uploaded_by_id,
@@ -545,7 +530,7 @@ pub async fn list_videos_for_technique_in_syllabus_visible_to(
     let candidates = sqlx::query_as!(
         DbVideo,
         r#"SELECT id, parent_kind, technique_id, student_id, thread_id,
-                camp_id AS "camp_id?: i64", match_id AS "match_id?: i64", title, description,
+                camp_id AS "camp_id?: i64", title, description,
                 position, kind, processing_status, processing_error, storage_key, bytes,
                 duration_seconds, width, height,
                 external_url, external_host, external_video_id, uploaded_by_id,
@@ -601,7 +586,7 @@ pub async fn list_videos_for_technique_global_visible(
     let rows = sqlx::query_as!(
         DbVideo,
         r#"SELECT id, parent_kind, technique_id, student_id, thread_id,
-                camp_id AS "camp_id?: i64", match_id AS "match_id?: i64", title, description,
+                camp_id AS "camp_id?: i64", title, description,
                 position, kind, processing_status, processing_error, storage_key, bytes,
                 duration_seconds, width, height,
                 external_url, external_host, external_video_id, uploaded_by_id,
@@ -634,7 +619,7 @@ pub async fn list_videos_for_parent_global_visible(
     let rows = sqlx::query_as!(
         DbVideo,
         r#"SELECT id, parent_kind, technique_id, student_id, thread_id,
-                camp_id AS "camp_id?: i64", match_id AS "match_id?: i64", title, description,
+                camp_id AS "camp_id?: i64", title, description,
                 position, kind, processing_status, processing_error, storage_key, bytes,
                 duration_seconds, width, height,
                 external_url, external_host, external_video_id, uploaded_by_id,
@@ -648,7 +633,6 @@ pub async fn list_videos_for_parent_global_visible(
            AND (syllabus_technique_id IS ? OR (syllabus_technique_id IS NULL AND ? IS NULL))
            AND (student_syllabus_technique_id IS ? OR (student_syllabus_technique_id IS NULL AND ? IS NULL))
            AND (camp_id      IS ? OR (camp_id      IS NULL AND ? IS NULL))
-           AND (match_id     IS ? OR (match_id     IS NULL AND ? IS NULL))
          ORDER BY position ASC, id ASC"#,
         c.kind,
         c.technique_id,
@@ -663,8 +647,6 @@ pub async fn list_videos_for_parent_global_visible(
         c.student_syllabus_technique_id,
         c.camp_id,
         c.camp_id,
-        c.match_id,
-        c.match_id,
     )
     .fetch_all(pool)
     .await?;
@@ -717,7 +699,7 @@ pub async fn list_videos_for_camp(
     let rows = sqlx::query_as!(
         DbVideo,
         r#"SELECT v.id, v.parent_kind, v.technique_id, v.student_id, v.thread_id,
-                v.camp_id AS "camp_id?: i64", v.match_id AS "match_id?: i64",
+                v.camp_id AS "camp_id?: i64",
                 v.title, v.description, v.position, v.kind,
                 v.processing_status, v.processing_error, v.storage_key, v.bytes,
                 v.duration_seconds, v.width, v.height,
@@ -764,39 +746,6 @@ pub async fn set_video_camp_visibility(
     set_video_override(pool, VisibilityScope::Camp(camp_id), video_id, visible, by_id).await
 }
 
-/// Returns true if a match video should be visible.
-/// Approach A: alive and not globally hidden.
-fn effective_match_video_visible(deleted_at_is_null: bool, hidden_at_is_null: bool) -> bool {
-    deleted_at_is_null && hidden_at_is_null
-}
-
-/// Lists all alive, non-hidden match-owned videos for a match.
-#[instrument(skip(pool))]
-pub async fn list_videos_for_match(
-    pool: &Pool<Sqlite>,
-    match_id: i64,
-) -> Result<Vec<Video>, AppError> {
-    let _ = effective_match_video_visible; // keep lint from warning about dead_code
-    let rows = sqlx::query_as!(
-        DbVideo,
-        r#"SELECT id, parent_kind, technique_id, student_id, thread_id,
-                camp_id AS "camp_id?: i64", match_id AS "match_id?: i64", title, description,
-                position, kind, processing_status, processing_error, storage_key, bytes,
-                duration_seconds, width, height,
-                external_url, external_host, external_video_id, uploaded_by_id,
-                created_at, updated_at, hidden_at
-         FROM videos
-         WHERE match_id = ?
-           AND deleted_at IS NULL
-           AND hidden_at IS NULL
-         ORDER BY position ASC, id ASC"#,
-        match_id,
-    )
-    .fetch_all(pool)
-    .await?;
-    Ok(rows.into_iter().map(Video::from).collect())
-}
-
 /// Lists videos for a technique, filtered to what `student_id` should
 /// actually see (effective visibility: per-student override beats global
 /// hide, soft-deleted videos always excluded).
@@ -812,7 +761,7 @@ pub async fn list_videos_for_technique_visible_to(
     let rows = sqlx::query_as!(
         DbVideo,
         r#"SELECT v.id, v.parent_kind, v.technique_id, v.student_id, v.thread_id,
-                v.camp_id AS "camp_id?: i64", v.match_id AS "match_id?: i64",
+                v.camp_id AS "camp_id?: i64",
                 v.title, v.description, v.position, v.kind,
                 v.processing_status, v.processing_error, v.storage_key, v.bytes,
                 v.duration_seconds, v.width, v.height,
@@ -1702,35 +1651,31 @@ mod parent_tests {
     fn parent_columns_map_each_kind_to_exactly_one_id() {
         assert_eq!(
             VideoParent::Technique(7).columns(),
-            ParentColumns { kind: "technique", technique_id: Some(7), student_id: None, thread_id: None, syllabus_technique_id: None, student_syllabus_technique_id: None, camp_id: None, match_id: None }
+            ParentColumns { kind: "technique", technique_id: Some(7), student_id: None, thread_id: None, syllabus_technique_id: None, student_syllabus_technique_id: None, camp_id: None }
         );
         assert_eq!(
             VideoParent::StudentProfile(3).columns(),
-            ParentColumns { kind: "student_profile", technique_id: None, student_id: Some(3), thread_id: None, syllabus_technique_id: None, student_syllabus_technique_id: None, camp_id: None, match_id: None }
+            ParentColumns { kind: "student_profile", technique_id: None, student_id: Some(3), thread_id: None, syllabus_technique_id: None, student_syllabus_technique_id: None, camp_id: None }
         );
         assert_eq!(
             VideoParent::Thread(11).columns(),
-            ParentColumns { kind: "thread", technique_id: None, student_id: None, thread_id: Some(11), syllabus_technique_id: None, student_syllabus_technique_id: None, camp_id: None, match_id: None }
+            ParentColumns { kind: "thread", technique_id: None, student_id: None, thread_id: Some(11), syllabus_technique_id: None, student_syllabus_technique_id: None, camp_id: None }
         );
         assert_eq!(
             VideoParent::SyllabusTechnique(5).columns(),
-            ParentColumns { kind: "syllabus_technique", technique_id: None, student_id: None, thread_id: None, syllabus_technique_id: Some(5), student_syllabus_technique_id: None, camp_id: None, match_id: None }
+            ParentColumns { kind: "syllabus_technique", technique_id: None, student_id: None, thread_id: None, syllabus_technique_id: Some(5), student_syllabus_technique_id: None, camp_id: None }
         );
         assert_eq!(
             VideoParent::StudentSyllabusTechnique(9).columns(),
-            ParentColumns { kind: "student_syllabus_technique", technique_id: None, student_id: None, thread_id: None, syllabus_technique_id: None, student_syllabus_technique_id: Some(9), camp_id: None, match_id: None }
+            ParentColumns { kind: "student_syllabus_technique", technique_id: None, student_id: None, thread_id: None, syllabus_technique_id: None, student_syllabus_technique_id: Some(9), camp_id: None }
         );
         assert_eq!(
             VideoParent::Camp(5).columns(),
-            ParentColumns { kind: "camp", technique_id: None, student_id: None, thread_id: None, syllabus_technique_id: None, student_syllabus_technique_id: None, camp_id: Some(5), match_id: None }
-        );
-        assert_eq!(
-            VideoParent::Match(9).columns(),
-            ParentColumns { kind: "match", technique_id: None, student_id: None, thread_id: None, syllabus_technique_id: None, student_syllabus_technique_id: None, camp_id: None, match_id: Some(9) }
+            ParentColumns { kind: "camp", technique_id: None, student_id: None, thread_id: None, syllabus_technique_id: None, student_syllabus_technique_id: None, camp_id: Some(5) }
         );
         assert_eq!(
             VideoParent::Loose.columns(),
-            ParentColumns { kind: "loose", technique_id: None, student_id: None, thread_id: None, syllabus_technique_id: None, student_syllabus_technique_id: None, camp_id: None, match_id: None }
+            ParentColumns { kind: "loose", technique_id: None, student_id: None, thread_id: None, syllabus_technique_id: None, student_syllabus_technique_id: None, camp_id: None }
         );
     }
 }

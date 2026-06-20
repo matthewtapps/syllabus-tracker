@@ -90,23 +90,13 @@ export function activityCaption(row: ActivityRow): ActivityCaption {
       return { text: "Added" };
     case "thread_comment_posted":
       return { text: "Commented" };
-    // Camp / competition / match epic: the camp or competition is named + linked
-    // by the breadcrumb, so the caption is a clean past-tense verb (the narrative
-    // activityLine verbs dangle a preposition once their trailing noun is dropped).
+    // Camp epic: the camp is named + linked by the breadcrumb, so the caption is
+    // a clean past-tense verb (the narrative activityLine verbs dangle a
+    // preposition once their trailing noun is dropped).
     case "camp_created":
       return { text: "Started" };
     case "camp_archived":
       return { text: "Archived" };
-    case "competition_created":
-      return { text: "Created" };
-    case "student_registered":
-      return { text: "Registered" };
-    case "camp_promoted_to_competition":
-      return { text: "Promoted a camp" };
-    case "match_logged":
-      return { text: "Logged a match" };
-    case "match_technique_linked":
-      return { text: "Linked to a match" };
     default:
       // Plain narrative verb fallback for any verb without a tailored caption.
       return { text: activityLine(row).verb };

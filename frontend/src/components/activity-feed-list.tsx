@@ -216,9 +216,8 @@ export function ActivityFeedList({
   // Drop hide/unhide curation noise (net-visibility rule) before gating.
   const deNoised = suppressHideUnhide(rows);
 
-  // Camps + competitions/matches/suggestions are gated off on prod
-  // (campsUiEnabled). Drop their activity rows so the feed doesn't surface links
-  // into hidden surfaces.
+  // Camps are gated off on prod (campsUiEnabled). Drop their activity rows so
+  // the feed doesn't surface links into hidden surfaces.
   const visibleRows = campsUiEnabled
     ? deNoised
     : deNoised.filter((row) => !isGatedEpicRow(row));

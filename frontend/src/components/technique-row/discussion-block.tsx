@@ -15,16 +15,24 @@ export function DiscussionBlock() {
   // Determine which anchor this surface's discussion uses.
   // library/pinned -> the technique anchor (the library/pinned conversation).
   // syllabus       -> the sst anchor (the syllabus-context conversation).
+  // camp           -> the camp_technique anchor: a technique's conversation
+  //                   WITHIN this camp, kept separate from the global library.
   const anchor =
     context.kind === "student-syllabus"
       ? { kind: "sst" as const, id: context.sst.id }
-      : { kind: "technique" as const, id: technique.id };
+      : context.kind === "camp"
+        ? { kind: "camp_technique" as const, id: technique.id }
+        : { kind: "technique" as const, id: technique.id };
 
-  const threadsQuery = useThreadsForAnchor(anchor.kind, anchor.id);
+  // camp_technique lists are scoped to the camp so they never appear on the
+  // global-library technique conversation.
+  const campId = context.kind === "camp" ? context.campId : undefined;
+
+  const threadsQuery = useThreadsForAnchor(anchor.kind, anchor.id, campId);
   const createThread = useCreateThread();
 
   // Scope student for a NEW private thread: a student scopes to themselves; a
-  // coach on a student's pinned surface scopes to that student. A coach
+  // coach on a student's pinned/camp surface scopes to that student. A coach
   // browsing the global library has no specific student, so no composer.
   // On the syllabus surface the coach scopes to the assignment's student.
   const scopeStudentId =
@@ -43,6 +51,7 @@ export function DiscussionBlock() {
     await createThread.mutateAsync({
       anchor_kind: anchor.kind,
       anchor_id: anchor.id,
+      ...(campId !== undefined ? { camp_id: campId } : {}),
       visibility: "private",
       scope_student_id: scopeStudentId,
       body,
@@ -106,7 +115,12 @@ export function DiscussionBlock() {
                 highlightThreadId === t.id && "bg-muted/60 ring-2 ring-ring/50",
               )}
             >
-              <ThreadView thread={t} anchorKind={anchor.kind} anchorId={anchor.id} />
+              <ThreadView
+                thread={t}
+                anchorKind={anchor.kind}
+                anchorId={anchor.id}
+                campId={campId}
+              />
             </div>
           ))}
         </div>

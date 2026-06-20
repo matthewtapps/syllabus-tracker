@@ -5,7 +5,8 @@ import { generatePath, matchPath } from "react-router-dom";
 export type DynamicKey =
   | "studentName"
   | "studentSyllabusName"
-  | "globalSyllabusName";
+  | "globalSyllabusName"
+  | "campName";
 
 export interface CrumbDef {
   pattern: string;
@@ -42,6 +43,7 @@ export const CRUMB_DEFS: CrumbDef[] = [
   },
   { pattern: "/student/:id/pinned", label: "Pinned", parent: "/student/:id" },
   { pattern: "/student/:id/activity", label: "Timeline", parent: "/student/:id" },
+  { pattern: "/student/:id/camps", label: "Camps", parent: "/student/:id" },
   { pattern: "/library", label: "Library", parent: "/dashboard" },
   { pattern: "/syllabi", label: "Syllabus library", parent: "/dashboard" },
   { pattern: "/syllabi/:id", label: { dynamic: "globalSyllabusName" }, parent: "/syllabi" },

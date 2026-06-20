@@ -46,9 +46,8 @@ export function ActivityTileFeed({
   // Drop hide/unhide curation noise (net-visibility rule) before gating.
   const deNoised = suppressHideUnhide(rows);
 
-  // Camps + competitions/matches/suggestions are gated off on prod; drop their
-  // rows so the feed never links into half-built surfaces (mirrors
-  // ActivityFeedList).
+  // Camps are gated off on prod; drop their rows so the feed never links into
+  // half-built surfaces (mirrors ActivityFeedList).
   const visible = campsUiEnabled ? deNoised : deNoised.filter((row) => !isGatedEpicRow(row));
 
   if (visible.length === 0) {

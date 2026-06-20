@@ -93,18 +93,19 @@ export const qk = {
     ["camps", "student", studentId] as const,
   camp: (id: number) => ["camps", id] as const,
   campVideos: (campId: number) => ["camps", campId, "videos"] as const,
+  // Camp-only reference videos for a (camp, technique). Distinct bucket from
+  // both `campVideos` (all of a camp's footage) and `techniqueVideos` (the
+  // technique's global videos).
+  campTechniqueVideos: (campId: number, techniqueId: number) =>
+    ["camps", campId, "techniques", techniqueId, "videos"] as const,
 
-  threads: (anchorKind: string, anchorId: number) =>
-    ["threads", anchorKind, anchorId] as const,
+  // camp_technique lists are cached per (technique, camp) so a technique's
+  // camp-scoped conversation never collides with its global-library one.
+  threads: (anchorKind: string, anchorId: number, campId?: number) =>
+    campId === undefined
+      ? (["threads", anchorKind, anchorId] as const)
+      : (["threads", anchorKind, anchorId, "camp", campId] as const),
   thread: (id: number) => ["thread", id] as const,
-
-  competitions: () => ["competitions"] as const,
-  competition: (id: number) => ["competitions", id] as const,
-  registrationMatches: (regId: number) =>
-    ["registrations", regId, "matches"] as const,
-  matchVideos: (matchId: number) => ["matches", matchId, "videos"] as const,
-  matchTechniques: (matchId: number) =>
-    ["matches", matchId, "techniques"] as const,
 
   studentSyllabusTechniquesFlat: (studentId: number) =>
     ["student", studentId, "syllabusTechniquesFlat"] as const,

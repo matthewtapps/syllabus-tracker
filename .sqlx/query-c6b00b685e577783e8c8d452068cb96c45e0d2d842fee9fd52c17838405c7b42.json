@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT EXISTS(\n              SELECT 1 FROM camp_techniques\n              WHERE camp_id = ? AND technique_id = ?\n           ) AS \"e!: i64\"",
+  "describe": {
+    "columns": [
+      {
+        "name": "e!: i64",
+        "ordinal": 0,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "c6b00b685e577783e8c8d452068cb96c45e0d2d842fee9fd52c17838405c7b42"
+}

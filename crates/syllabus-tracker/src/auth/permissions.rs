@@ -34,7 +34,6 @@ pub enum Permission {
     ManageThreads,
     BroadcastLibraryComment,
     ManageCamps,
-    ManageCompetitions,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -77,7 +76,6 @@ static COACH_PERMISSIONS: Lazy<HashSet<Permission>> = Lazy::new(|| {
     permissions.insert(Permission::ManageThreads);
     permissions.insert(Permission::BroadcastLibraryComment);
     permissions.insert(Permission::ManageCamps);
-    permissions.insert(Permission::ManageCompetitions);
 
     permissions
 });

@@ -13,7 +13,7 @@ pub use processor::{RemoteProcessor, DynVideoProcessor, HostFfmpegProcessor, Hos
 pub use routes::{
     CallbackSecret, SigHeader,
     api_admin_storage, api_camp_video_upload, api_dashboard_video_overview, api_delete_video,
-    api_list_technique_videos, api_match_video_upload, api_my_watch_state, api_processing_result,
+    api_list_technique_videos, api_my_watch_state, api_processing_result,
     api_reorder_videos, api_replace_video, api_set_video_global_hidden,
     api_set_video_student_visibility, api_student_watch_activity, api_update_video,
     api_video_download_url, api_video_link, api_video_playback_url, api_video_privacy_ack,

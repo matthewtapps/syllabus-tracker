@@ -4,9 +4,9 @@ import { refToken } from "./entity-ref";
 /**
  * The surface a student was on when an activity happened (ActivityStreams
  * `context`). The discriminant picks the route; the refs fill the path and the
- * focus token. Add a member when a new surface arrives (camp, match,
- * video_thread, ...); the switch in viewContextHref then fails to compile until
- * the new arm is added.
+ * focus token. Add a member when a new surface arrives (camp, video_thread,
+ * ...); the switch in viewContextHref then fails to compile until the new arm
+ * is added.
  */
 export type ViewContext =
   | { kind: "library"; technique: EntityRef; video?: EntityRef }
@@ -21,10 +21,7 @@ export type ViewContext =
       sst?: EntityRef;
       video?: EntityRef;
     }
-  | { kind: "camp"; camp: EntityRef; video?: EntityRef }
-  | { kind: "competition"; competition: EntityRef }
-  // `match` is carried for a deferred scroll-to-match anchor on the camp page (Chunk B); not read yet.
-  | { kind: "match"; camp: EntityRef; match: EntityRef };
+  | { kind: "camp"; camp: EntityRef; video?: EntityRef };
 
 /** The one place deep-link routing lives. Pure. */
 export function viewContextHref(ctx: ViewContext): string {
@@ -47,12 +44,6 @@ export function viewContextHref(ctx: ViewContext): string {
       const video = ctx.video ? `&video=${ctx.video.id}` : "";
       return `/camps/${ctx.camp.id}?focus=${refToken(ctx.camp)}${video}`;
     }
-    case "competition": {
-      return `/competitions/${ctx.competition.id}`;
-    }
-    case "match": {
-      return `/camps/${ctx.camp.id}`;
-    }
   }
 }
 
@@ -70,10 +61,6 @@ export function viewContextSurfaceHref(ctx: ViewContext): string {
         : `/syllabi/${ctx.syllabus.id}`;
     case "camp":
       return `/camps/${ctx.camp.id}`;
-    case "competition":
-      return `/competitions/${ctx.competition.id}`;
-    case "match":
-      return `/camps/${ctx.camp.id}`;
   }
 }
 
@@ -88,8 +75,6 @@ export interface ViewContextRow {
   technique_id: number | null;
   video_id: number | null;
   camp_id: number | null;
-  competition_id: number | null;
-  match_id: number | null;
 }
 
 const SYLLABUS_SCOPED_VERBS = new Set([
@@ -153,29 +138,6 @@ export function rowToViewContext(row: ViewContextRow): ViewContext | null {
       camp: { type: "camp", id: row.camp_id },
       video: row.video_id != null ? { type: "video", id: row.video_id } : undefined,
     };
-  }
-  // Competition-scoped verbs: all 5 new verbs set context_kind="competition".
-  // Dispatch by verb: match verbs with a known camp -> the owning camp page
-  // (deferred scroll-to-match); everything else -> the competition page.
-  if (row.context_kind === "competition") {
-    if (
-      (row.verb === "match_logged" || row.verb === "match_technique_linked") &&
-      row.match_id != null &&
-      row.camp_id != null
-    ) {
-      return {
-        kind: "match",
-        camp: { type: "camp", id: row.camp_id },
-        match: { type: "match", id: row.match_id },
-      };
-    }
-    if (row.competition_id != null) {
-      return {
-        kind: "competition",
-        competition: { type: "competition", id: row.competition_id },
-      };
-    }
-    return null;
   }
   if (
     row.verb === "video_watched" ||
@@ -257,7 +219,6 @@ export function activitySurface(
   row: ViewContextRow & {
     syllabus_name: string | null;
     camp_name?: string | null;
-    competition_name?: string | null;
   },
 ): ActivitySurface | null {
   const ctx = rowToViewContext(row);
@@ -268,24 +229,16 @@ export function activitySurface(
   if (ctx.kind === "camp") {
     return { kind: "camp", label: row.camp_name ?? "Camp" };
   }
-  if (ctx.kind === "competition") {
-    return { kind: "competition", label: row.competition_name ?? "Competition" };
-  }
-  if (ctx.kind === "match") {
-    // A match has no name of its own; surface the competition it was logged in.
-    return { kind: "match", label: row.competition_name ?? "Match" };
-  }
   return { kind: "library", label: "Global Technique Library" };
 }
 
 /**
- * Whether a row belongs to the camp/competition/match epic that is hidden on
- * production until the epic ships. The single predicate both feeds use, so the
- * gate can never drift between them.
+ * Whether a row belongs to the camp epic that is hidden on production until the
+ * epic ships. The single predicate both feeds use, so the gate can never drift
+ * between them.
  */
 export function isGatedEpicRow(
   row: ViewContextRow & { syllabus_name: string | null; camp_name?: string | null },
 ): boolean {
-  const kind = activitySurface(row)?.kind;
-  return kind === "camp" || kind === "competition" || kind === "match";
+  return activitySurface(row)?.kind === "camp";
 }

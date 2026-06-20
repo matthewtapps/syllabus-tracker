@@ -7,6 +7,7 @@ import {
   getDashboardActivityFeed,
   getCamp,
   getCampVideos,
+  getCampTechniqueVideos,
   getCampsForStudent,
   getStudentActivityFeed,
   getActivityFeedHeadId,
@@ -38,11 +39,6 @@ import {
   listAttempts,
   listVideos,
   listThreads,
-  getCompetitions,
-  getCompetition,
-  getRegistrationMatches,
-  getMatchVideos,
-  getMatchTechniques,
 } from "./api";
 import type { AnchorKind } from "./api";
 import type { ActivityRow } from "./activity-line";
@@ -484,59 +480,36 @@ export function useCampVideos(campId: number | undefined) {
   });
 }
 
+/** Camp-only reference videos for a (camp, technique). */
+export function useCampTechniqueVideos(
+  campId: number | undefined,
+  techniqueId: number | undefined,
+) {
+  return useQuery({
+    queryKey: qk.campTechniqueVideos(campId ?? 0, techniqueId ?? 0),
+    queryFn:
+      typeof campId === "number" &&
+      Number.isFinite(campId) &&
+      typeof techniqueId === "number" &&
+      Number.isFinite(techniqueId)
+        ? () => getCampTechniqueVideos(campId, techniqueId)
+        : skipToken,
+  });
+}
+
 // ---- Threads ----
 
 export function useThreadsForAnchor(
   anchorKind: AnchorKind,
   anchorId: number | undefined,
+  campId?: number,
 ) {
+  // camp_technique lists are scoped to a (technique, camp) pair so they cache
+  // and invalidate separately from the global-library technique conversation.
+  const keyCampId = anchorKind === "camp_technique" ? campId : undefined;
   return useQuery({
-    queryKey: qk.threads(anchorKind, anchorId ?? 0),
-    queryFn: whenId(anchorId, (id) => listThreads(anchorKind, id)),
+    queryKey: qk.threads(anchorKind, anchorId ?? 0, keyCampId),
+    queryFn: whenId(anchorId, (id) => listThreads(anchorKind, id, keyCampId)),
   });
 }
 
-// ---- Competitions + Matches ----
-
-export function useCompetitions() {
-  return useQuery({
-    queryKey: qk.competitions(),
-    queryFn: getCompetitions,
-  });
-}
-
-export function useCompetition(id: number | undefined) {
-  return useQuery({
-    queryKey: qk.competition(id ?? 0),
-    queryFn: whenId(id, getCompetition),
-  });
-}
-
-export function useRegistrationMatches(regId: number | undefined) {
-  return useQuery({
-    queryKey: qk.registrationMatches(regId ?? 0),
-    queryFn: whenId(regId, getRegistrationMatches),
-  });
-}
-
-export function useMatchVideos(matchId: number | undefined) {
-  return useQuery({
-    queryKey: qk.matchVideos(matchId ?? 0),
-    queryFn: whenId(matchId, getMatchVideos),
-    staleTime: 0,
-    refetchOnWindowFocus: true,
-    refetchIntervalInBackground: true,
-    refetchInterval: (query) => {
-      const data = query.state.data;
-      if (!data) return false;
-      return data.some((v) => v.processing_status === "processing") ? 1500 : false;
-    },
-  });
-}
-
-export function useMatchTechniques(matchId: number | undefined) {
-  return useQuery({
-    queryKey: qk.matchTechniques(matchId ?? 0),
-    queryFn: whenId(matchId, getMatchTechniques),
-  });
-}

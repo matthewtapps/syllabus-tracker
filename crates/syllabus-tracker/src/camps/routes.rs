@@ -6,11 +6,11 @@ use tracing::instrument;
 
 use crate::auth::{Permission, User};
 use crate::db::camps::{
-    add_camp_technique, archive_camp, create_camp, create_camp_technique_new, get_camp,
-    list_camp_summaries_for_student, list_camp_techniques, remove_camp_technique, update_camp,
-    Camp, CampSummary, CampTechnique, NewCamp, TechniqueScope,
+    add_camp_technique, add_camp_technique_video, archive_camp, attach_video_to_technique,
+    create_camp, create_camp_technique_new, get_camp, list_camp_summaries_for_student,
+    list_camp_technique_videos, list_camp_techniques, remove_camp_technique, update_camp, Camp,
+    CampSummary, CampTechnique, NewCamp, TechniqueScope,
 };
-use crate::db::competitions::{get_competition, registration_for};
 use crate::db::{list_videos_for_camp, set_video_camp_visibility};
 use crate::models::Video;
 
@@ -93,19 +93,10 @@ pub struct CampDetailResponse {
     pub created_at: chrono::NaiveDateTime,
     pub archived_at: Option<chrono::NaiveDateTime>,
     pub techniques: Vec<CampTechnique>,
-    /// Id of the competition this camp is linked to, if any.
-    pub competition_id: Option<i64>,
-    /// Name of the linked competition, resolved eagerly so the frontend does not
-    /// need a second round-trip to display it.
-    pub competition_name: Option<String>,
-    /// Registration id for (camp.student_id, camp.competition_id). Present only
-    /// when competition_id is set and the student is registered. The frontend
-    /// uses this to key match queries without a separate registration lookup.
-    pub registration_id: Option<i64>,
     /// Id of the camp this camp builds on, if any.
     pub references_camp_id: Option<i64>,
-    /// Name of the referenced camp, resolved eagerly (mirrors competition_name).
-    /// Present only when references_camp_id is set.
+    /// Name of the referenced camp, resolved eagerly. Present only when
+    /// references_camp_id is set.
     pub references_camp_name: Option<String>,
 }
 
@@ -168,24 +159,6 @@ pub async fn api_get_camp(
         .await
         .map_err(Status::from)?;
 
-    // Resolve competition name + registration id when camp is linked to a comp.
-    let (competition_name, registration_id) = if let Some(comp_id) = camp.competition_id {
-        let comp_name = get_competition(pool, comp_id)
-            .await
-            .map_err(Status::from)?
-            .map(|c| c.name);
-        // Only expose the registration_id for an ACTIVE registration: a
-        // soft-unregistered student must not get the match-logging surface.
-        let reg_id = registration_for(pool, camp.student_id, comp_id)
-            .await
-            .map_err(Status::from)?
-            .filter(|r| r.unregistered_at.is_none())
-            .map(|r| r.id);
-        (comp_name, reg_id)
-    } else {
-        (None, None)
-    };
-
     // Resolve the referenced camp name when this camp builds on a prior one.
     let references_camp_name = if let Some(ref_id) = camp.references_camp_id {
         get_camp(pool, ref_id)
@@ -205,9 +178,6 @@ pub async fn api_get_camp(
         created_at: camp.created_at,
         archived_at: camp.archived_at,
         techniques,
-        competition_id: camp.competition_id,
-        competition_name,
-        registration_id,
         references_camp_id: camp.references_camp_id,
         references_camp_name,
     }))
@@ -318,6 +288,105 @@ pub async fn api_remove_camp_technique(
         .await
         .map_err(Status::from)?;
     Ok(Status::NoContent)
+}
+
+/// Body for `POST /api/camps/<camp_id>/techniques/<technique_id>/videos`.
+#[derive(Deserialize)]
+pub struct AddCampTechniqueVideoRequest {
+    pub video_id: i64,
+    /// `"camp_only"` → reference footage surfaced only inside this camp's view
+    /// of the technique (does not leak to the global technique list).
+    /// `"global"`    → attach as a normal technique video, visible everywhere
+    /// the technique appears.
+    pub scope: String,
+}
+
+/// Coach-only: add a video to a technique WITHIN a camp.
+///
+/// `scope = "camp_only"` → pin the (existing) video as camp-only reference
+///   footage via `camp_technique_referenced_videos` (idempotent). The video is
+///   NOT added to the global technique-video list.
+/// `scope = "global"`    → attach the video to the technique as a normal
+///   technique video (parent_kind='technique'); it then appears everywhere the
+///   technique appears. No camp_technique_referenced_videos row is written.
+///
+/// Requires `ManageCamps` (technique authoring is coach-only; students upload
+/// to the camp itself via the separate camp-upload route). The technique must
+/// be attached to the camp.
+#[instrument(skip(req, pool, user))]
+#[post("/camps/<camp_id>/techniques/<technique_id>/videos", data = "<req>")]
+pub async fn api_add_camp_technique_video(
+    camp_id: i64,
+    technique_id: i64,
+    user: User,
+    req: Json<AddCampTechniqueVideoRequest>,
+    pool: &State<Pool<Sqlite>>,
+) -> Result<Status, Status> {
+    require_camps(&user)?;
+    let pool = pool.inner();
+
+    // The technique must be a member of this camp. This also implicitly
+    // confirms the camp exists (no membership row otherwise).
+    let is_member = sqlx::query_scalar!(
+        r#"SELECT EXISTS(
+              SELECT 1 FROM camp_techniques
+              WHERE camp_id = ? AND technique_id = ?
+           ) AS "e!: i64""#,
+        camp_id,
+        technique_id,
+    )
+    .fetch_one(pool)
+    .await
+    .map_err(|_| Status::InternalServerError)?;
+    if is_member == 0 {
+        return Err(Status::NotFound);
+    }
+
+    match req.scope.as_str() {
+        "camp_only" => {
+            add_camp_technique_video(pool, camp_id, technique_id, req.video_id)
+                .await
+                .map_err(Status::from)?;
+        }
+        "global" => {
+            attach_video_to_technique(pool, camp_id, req.video_id, technique_id)
+                .await
+                .map_err(Status::from)?;
+        }
+        _ => return Err(Status::UnprocessableEntity),
+    }
+
+    Ok(Status::NoContent)
+}
+
+/// Lists the camp-only reference videos pinned to a technique within a camp:
+/// the `videos` rows joined via `camp_technique_referenced_videos`. This returns
+/// ONLY the camp-only refs (NOT the global technique videos, which the frontend
+/// fetches separately). Soft-deleted videos are excluded.
+///
+/// Readable by a coach OR the camp's own student (same `can_read` rule as the
+/// other camp reads). The technique need not be a member: a non-member simply
+/// has no referenced-video rows and yields an empty list.
+#[instrument(skip(pool, user))]
+#[get("/camps/<camp_id>/techniques/<technique_id>/videos")]
+pub async fn api_list_camp_technique_videos(
+    camp_id: i64,
+    technique_id: i64,
+    user: User,
+    pool: &State<Pool<Sqlite>>,
+) -> Result<Json<CampVideosResponse>, Status> {
+    let pool = pool.inner();
+    let camp = get_camp(pool, camp_id)
+        .await
+        .map_err(Status::from)?
+        .ok_or(Status::NotFound)?;
+    if !can_read(&user, &camp) {
+        return Err(Status::Forbidden);
+    }
+    let videos = list_camp_technique_videos(pool, camp_id, technique_id)
+        .await
+        .map_err(Status::from)?;
+    Ok(Json(CampVideosResponse { videos }))
 }
 
 #[derive(Serialize)]

@@ -3,7 +3,7 @@
  * serializer and every page consumer switch exhaustively. This is the
  * Rails-polymorphic / Relay-node "(type, id)" idea, constrained for
  * compiler-checked safety. Add a member here when a new deep-linkable kind
- * arrives (camp, match, video_thread, comment, ...).
+ * arrives (camp, video_thread, comment, ...).
  */
 export type EntityRef =
   | { type: "technique"; id: number }
@@ -11,9 +11,7 @@ export type EntityRef =
   | { type: "sst"; id: number }
   | { type: "syllabus"; id: number }
   | { type: "student"; id: number }
-  | { type: "camp"; id: number }
-  | { type: "competition"; id: number }
-  | { type: "match"; id: number };
+  | { type: "camp"; id: number };
 
 export type EntityType = EntityRef["type"];
 
@@ -26,8 +24,6 @@ const ENTITY_TYPE_LOOKUP: Record<EntityType, true> = {
   syllabus: true,
   student: true,
   camp: true,
-  competition: true,
-  match: true,
 };
 
 function isEntityType(value: string): value is EntityType {

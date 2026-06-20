@@ -1276,8 +1276,15 @@ export function useCreateThread() {
     mutationFn: async (input: CreateThreadInput) =>
       unwrap(await createThread(input)),
     onSuccess: (_d, input) => {
+      // camp_technique threads cache per (technique, camp); invalidate that
+      // precise key so the camp-scoped list refreshes without touching the
+      // global-library conversation for the same technique.
+      const campId =
+        input.anchor_kind === "camp_technique"
+          ? (input.camp_id ?? undefined)
+          : undefined;
       qc.invalidateQueries({
-        queryKey: qk.threads(input.anchor_kind, input.anchor_id),
+        queryKey: qk.threads(input.anchor_kind, input.anchor_id, campId),
       });
       // video_timestamp threads are read back through the "video" anchor query;
       // invalidate that key too so the feed refreshes without a dialog reopen.
@@ -1293,8 +1300,13 @@ export function useCreateThread() {
   });
 }
 
-export function useCreateComment(anchorKind: string, anchorId: number) {
+export function useCreateComment(
+  anchorKind: string,
+  anchorId: number,
+  campId?: number,
+) {
   const qc = useQueryClient();
+  const keyCampId = anchorKind === "camp_technique" ? campId : undefined;
   return useMutation({
     mutationFn: async (v: {
       threadId: number;
@@ -1302,7 +1314,7 @@ export function useCreateComment(anchorKind: string, anchorId: number) {
       parentCommentId?: number | null;
     }) => unwrap(await createComment(v.threadId, v.body, v.parentCommentId)),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: qk.threads(anchorKind, anchorId) });
+      qc.invalidateQueries({ queryKey: qk.threads(anchorKind, anchorId, keyCampId) });
       if (anchorKind === "video_timestamp" || anchorKind === "video") {
         qc.invalidateQueries({ queryKey: qk.threads("video", anchorId) });
       }
@@ -1310,13 +1322,18 @@ export function useCreateComment(anchorKind: string, anchorId: number) {
   });
 }
 
-export function useDeleteThread(anchorKind: string, anchorId: number) {
+export function useDeleteThread(
+  anchorKind: string,
+  anchorId: number,
+  campId?: number,
+) {
   const qc = useQueryClient();
+  const keyCampId = anchorKind === "camp_technique" ? campId : undefined;
   return useMutation({
     mutationFn: async (threadId: number) =>
       unwrap(await deleteThread(threadId)),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: qk.threads(anchorKind, anchorId) });
+      qc.invalidateQueries({ queryKey: qk.threads(anchorKind, anchorId, keyCampId) });
       if (anchorKind === "video_timestamp" || anchorKind === "video") {
         qc.invalidateQueries({ queryKey: qk.threads("video", anchorId) });
       }
@@ -1324,13 +1341,18 @@ export function useDeleteThread(anchorKind: string, anchorId: number) {
   });
 }
 
-export function useDeleteComment(anchorKind: string, anchorId: number) {
+export function useDeleteComment(
+  anchorKind: string,
+  anchorId: number,
+  campId?: number,
+) {
   const qc = useQueryClient();
+  const keyCampId = anchorKind === "camp_technique" ? campId : undefined;
   return useMutation({
     mutationFn: async (commentId: number) =>
       unwrap(await deleteComment(commentId)),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: qk.threads(anchorKind, anchorId) });
+      qc.invalidateQueries({ queryKey: qk.threads(anchorKind, anchorId, keyCampId) });
       if (anchorKind === "video_timestamp" || anchorKind === "video") {
         qc.invalidateQueries({ queryKey: qk.threads("video", anchorId) });
       }
@@ -1344,27 +1366,14 @@ export function useDeleteComment(anchorKind: string, anchorId: number) {
 
 import {
   addCampTechnique,
+  addCampTechniqueVideo,
   archiveCamp,
   createCamp,
   createCampTechnique,
   promotePinnedToCamp,
   removeCampTechnique,
   setCampVideoVisibility,
-  createCompetition,
-  updateCompetition,
-  registerSelf,
-  registerStudent,
-  unregisterStudent,
-  promoteCampToCompetition,
-  createMatch,
-  updateMatch,
-  deleteMatch,
-  linkMatchTechnique,
-  unlinkMatchTechnique,
-} from "./api";
-import type {
-  MatchResult,
-  MatchMethod,
+  updateCamp,
 } from "./api";
 
 export function useCreateCamp(studentId: number) {
@@ -1388,6 +1397,18 @@ export function useArchiveCamp(studentId: number) {
     onSuccess: (_d, id) => {
       qc.invalidateQueries({ queryKey: qk.campsForStudent(studentId) });
       qc.invalidateQueries({ queryKey: qk.camp(id) });
+    },
+  });
+}
+
+export function useUpdateCamp(campId: number, studentId: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: { name: string; description: string | null }) =>
+      updateCamp(campId, body),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: qk.camp(campId) });
+      qc.invalidateQueries({ queryKey: qk.campsForStudent(studentId) });
     },
   });
 }
@@ -1423,6 +1444,40 @@ export function useRemoveCampTechnique(campId: number) {
       removeCampTechnique(campId, techniqueId),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: qk.camp(campId) });
+    },
+  });
+}
+
+/**
+ * Attach a camp footage video to a technique as camp-only reference footage or
+ * promote it globally. Invalidates every viewer's copy of the technique's video
+ * list (`techniqueVideosAll` covers all `forStudent` buckets) so a global
+ * promotion surfaces everywhere, plus the camp's own video list and camp detail
+ * since the footage's role changed.
+ */
+export function useAddCampTechniqueVideo(campId: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: {
+      techniqueId: number;
+      videoId: number;
+      scope: "camp_only" | "global";
+    }) =>
+      addCampTechniqueVideo(campId, vars.techniqueId, {
+        video_id: vars.videoId,
+        scope: vars.scope,
+      }),
+    onSuccess: (_d, vars) => {
+      qc.invalidateQueries({
+        queryKey: qk.techniqueVideosAll(vars.techniqueId),
+      });
+      qc.invalidateQueries({ queryKey: qk.campVideos(campId) });
+      qc.invalidateQueries({ queryKey: qk.camp(campId) });
+      // Refresh the camp-only section in the camp technique row so a
+      // `camp_only` add appears without a manual reload.
+      qc.invalidateQueries({
+        queryKey: qk.campTechniqueVideos(campId, vars.techniqueId),
+      });
     },
   });
 }
@@ -1535,65 +1590,6 @@ export function useApplyAssignmentDiff() {
   });
 }
 
-// ============================================================
-// Competitions + Matches (C-Slice 2)
-// ============================================================
-
-export function useCreateCompetition() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (data: { name: string; date?: string | null }) =>
-      createCompetition(data),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: qk.competitions() });
-    },
-  });
-}
-
-export function useUpdateCompetition() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (vars: {
-      id: number;
-      data: { name: string; date?: string | null };
-    }) => updateCompetition(vars.id, vars.data),
-    onSuccess: (_res, vars) => {
-      qc.invalidateQueries({ queryKey: qk.competitions() });
-      qc.invalidateQueries({ queryKey: qk.competition(vars.id) });
-    },
-  });
-}
-
-export function useRegisterSelf(competitionId: number) {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: () => registerSelf(competitionId),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: qk.competition(competitionId) });
-    },
-  });
-}
-
-export function useRegisterStudent(competitionId: number) {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (studentId: number) => registerStudent(competitionId, studentId),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: qk.competition(competitionId) });
-    },
-  });
-}
-
-export function useUnregisterStudent(competitionId: number) {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (studentId: number) => unregisterStudent(competitionId, studentId),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: qk.competition(competitionId) });
-    },
-  });
-}
-
 export function usePromotePinnedToCamp(studentId: number) {
   const qc = useQueryClient();
   return useMutation({
@@ -1605,91 +1601,3 @@ export function usePromotePinnedToCamp(studentId: number) {
     },
   });
 }
-
-export function usePromoteCampToCompetition(campId: number) {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (competitionId: number) =>
-      promoteCampToCompetition(campId, competitionId),
-    onSuccess: (_res, competitionId) => {
-      qc.invalidateQueries({ queryKey: qk.camp(campId) });
-      qc.invalidateQueries({ queryKey: qk.competition(competitionId) });
-    },
-  });
-}
-
-export function useLogMatch(registrationId: number) {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (data: {
-      result: MatchResult;
-      method?: MatchMethod | null;
-      method_detail?: string | null;
-      occurred_at?: string | null;
-    }) => createMatch(registrationId, data),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: qk.registrationMatches(registrationId) });
-      qc.invalidateQueries({ queryKey: ["student"] });
-    },
-  });
-}
-
-export function useUpdateMatch() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (vars: {
-      matchId: number;
-      registrationId: number;
-      studentId?: number;
-      data: {
-        result: MatchResult;
-        method?: MatchMethod | null;
-        method_detail?: string | null;
-        occurred_at?: string | null;
-      };
-    }) => updateMatch(vars.matchId, vars.data),
-    onSuccess: (_res, vars) => {
-      qc.invalidateQueries({
-        queryKey: qk.registrationMatches(vars.registrationId),
-      });
-    },
-  });
-}
-
-export function useDeleteMatch() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (vars: {
-      matchId: number;
-      registrationId: number;
-      studentId?: number;
-    }) => deleteMatch(vars.matchId),
-    onSuccess: (_res, vars) => {
-      qc.invalidateQueries({
-        queryKey: qk.registrationMatches(vars.registrationId),
-      });
-    },
-  });
-}
-
-export function useLinkMatchTechnique(matchId: number) {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (techniqueId: number) => linkMatchTechnique(matchId, techniqueId),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: qk.matchTechniques(matchId) });
-    },
-  });
-}
-
-export function useUnlinkMatchTechnique(matchId: number) {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (techniqueId: number) => unlinkMatchTechnique(matchId, techniqueId),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: qk.matchTechniques(matchId) });
-    },
-  });
-}
-
-

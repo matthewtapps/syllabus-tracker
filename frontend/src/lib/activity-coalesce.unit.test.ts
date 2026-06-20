@@ -8,8 +8,8 @@ function row(p: Partial<ActivityRow>): ActivityRow {
     actor_user_id: 1, actor_name: "Alex", target_student_id: 1, target_student_name: null,
     technique_id: 1, technique_name: "Armbar", syllabus_id: null, syllabus_name: null,
     sst_id: null, video_id: null, video_title: null, payload_json: null, unread: false,
-    context_kind: null, thread_id: null, camp_id: null, competition_id: null, match_id: null,
-    camp_name: null, competition_name: null, comment_count: 0,
+    context_kind: null, thread_id: null, camp_id: null,
+    camp_name: null, comment_count: 0,
     ...p,
   };
 }

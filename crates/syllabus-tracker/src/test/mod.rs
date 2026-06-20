@@ -3,8 +3,6 @@ pub mod activity_read;
 pub mod api;
 pub mod attempts;
 pub mod camps;
-pub mod competitions;
-pub mod matches;
 pub mod dashboard_digest;
 pub mod dashboard_reporting;
 pub mod db;

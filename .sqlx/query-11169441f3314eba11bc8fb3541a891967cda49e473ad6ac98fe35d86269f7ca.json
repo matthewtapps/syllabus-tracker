@@ -1,0 +1,32 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT anchor_kind, camp_id AS \"camp_id?: i64\", technique_id AS \"technique_id?: i64\"\n               FROM threads WHERE id = ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "anchor_kind",
+        "ordinal": 0,
+        "type_info": "Text"
+      },
+      {
+        "name": "camp_id?: i64",
+        "ordinal": 1,
+        "type_info": "Integer"
+      },
+      {
+        "name": "technique_id?: i64",
+        "ordinal": 2,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      true,
+      true
+    ]
+  },
+  "hash": "11169441f3314eba11bc8fb3541a891967cda49e473ad6ac98fe35d86269f7ca"
+}

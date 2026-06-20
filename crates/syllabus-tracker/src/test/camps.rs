@@ -101,6 +101,31 @@ mod tests {
     }
 
     #[rocket::async_test]
+    async fn competition_and_match_tables_are_gone() {
+        use crate::test::test_utils::TestDbBuilder;
+        let db = TestDbBuilder::new()
+            .coach("coach_user", Some("Coach"))
+            .student("student_user", Some("Sam"))
+            .build()
+            .await
+            .unwrap();
+        for table in ["competitions", "competition_registrations", "matches", "match_techniques", "camp_referenced_matches"] {
+            let count: i64 = sqlx::query_scalar(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name = ?",
+            ).bind(table).fetch_one(&db.pool).await.unwrap();
+            assert_eq!(count, 0, "table {table} should not exist");
+        }
+        let camp_competition_col: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM pragma_table_info('camps') WHERE name = 'competition_id'",
+        ).fetch_one(&db.pool).await.unwrap();
+        assert_eq!(camp_competition_col, 0, "camps.competition_id should be dropped");
+        let video_match_col: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM pragma_table_info('videos') WHERE name = 'match_id'",
+        ).fetch_one(&db.pool).await.unwrap();
+        assert_eq!(video_match_col, 0, "videos.match_id should be dropped");
+    }
+
+    #[rocket::async_test]
     async fn create_video_with_camp_parent() {
         let db = TestDbBuilder::new()
             .coach("coach_user", Some("Coach"))
@@ -172,6 +197,7 @@ mod tests {
                     id: camp_id,
                     video_ts_seconds: None,
                     pinned_student_id: None,
+                    camp_id: None,
                 },
                 visibility: ThreadVisibility::Private,
                 scope_student_id: Some(student),
@@ -270,6 +296,7 @@ mod tests {
                     id: camp_id,
                     video_ts_seconds: None,
                     pinned_student_id: None,
+                    camp_id: None,
                 },
                 visibility: ThreadVisibility::Private,
                 scope_student_id: Some(student),
@@ -322,6 +349,7 @@ mod tests {
                     id: camp_id,
                     video_ts_seconds: None,
                     pinned_student_id: None,
+                    camp_id: None,
                 },
                 visibility: ThreadVisibility::Private,
                 scope_student_id: Some(student),
@@ -472,6 +500,165 @@ mod tests {
         .unwrap();
         assert_eq!(kind, "camp");
         assert_eq!(got_camp, camp_id);
+    }
+
+    #[rocket::async_test]
+    async fn student_uploads_video_to_own_camp() {
+        use crate::test::test_utils::{create_standard_test_db, setup_test_client};
+        use rocket::http::Status;
+
+        const BOUNDARY: &str = "----testboundarycampstudent";
+
+        fn multipart_body(file_bytes: &[u8], filename: &str, title: &str) -> Vec<u8> {
+            let mut body = Vec::new();
+            body.extend_from_slice(format!("--{}\r\n", BOUNDARY).as_bytes());
+            body.extend_from_slice(
+                format!(
+                    "Content-Disposition: form-data; name=\"file\"; filename=\"{}\"\r\n",
+                    filename
+                )
+                .as_bytes(),
+            );
+            body.extend_from_slice(b"Content-Type: video/mp4\r\n\r\n");
+            body.extend_from_slice(file_bytes);
+            body.extend_from_slice(b"\r\n");
+            body.extend_from_slice(format!("--{}\r\n", BOUNDARY).as_bytes());
+            body.extend_from_slice(b"Content-Disposition: form-data; name=\"title\"\r\n\r\n");
+            body.extend_from_slice(title.as_bytes());
+            body.extend_from_slice(b"\r\n");
+            body.extend_from_slice(format!("--{}--\r\n", BOUNDARY).as_bytes());
+            body
+        }
+
+        fn multipart_ct() -> rocket::http::ContentType {
+            rocket::http::ContentType::parse_flexible(&format!(
+                "multipart/form-data; boundary={}",
+                BOUNDARY
+            ))
+            .expect("multipart content type")
+        }
+
+        let test_db = create_standard_test_db().await;
+        let coach_id = test_db.user_id("coach_user").unwrap();
+        let student_id = test_db.user_id("student_user").unwrap();
+        let (client, db) = setup_test_client(test_db).await;
+
+        // Coach creates a camp owned by student_user.
+        let camp_id = create_camp(
+            &db.pool,
+            NewCamp {
+                student_id,
+                coach_id,
+                name: "My footage camp".to_string(),
+                description: None,
+                references_camp_id: None,
+            },
+        )
+        .await
+        .unwrap();
+
+        // The camp's own student uploads footage directly.
+        login_as(&client, "student_user").await;
+
+        let body = multipart_body(b"fake-mp4-bytes", "clip.mp4", "Student Clip");
+        let resp = client
+            .post(format!("/api/camps/{}/videos/upload", camp_id))
+            .header(multipart_ct())
+            .body(body)
+            .dispatch()
+            .await;
+        assert_eq!(resp.status(), Status::Ok);
+
+        let parsed: serde_json::Value =
+            serde_json::from_str(&resp.into_string().await.unwrap()).unwrap();
+        let video_id = parsed["video_id"].as_i64().unwrap();
+
+        let (kind, got_camp): (String, i64) =
+            sqlx::query_as("SELECT parent_kind, camp_id FROM videos WHERE id = ?")
+                .bind(video_id)
+                .fetch_one(&db.pool)
+                .await
+                .unwrap();
+        assert_eq!(kind, "camp");
+        assert_eq!(got_camp, camp_id);
+    }
+
+    #[rocket::async_test]
+    async fn student_cannot_upload_to_another_students_camp() {
+        use crate::test::test_utils::{create_standard_test_db, setup_test_client};
+        use rocket::http::Status;
+
+        const BOUNDARY: &str = "----testboundarycampotherstudent";
+
+        fn multipart_body(file_bytes: &[u8], filename: &str, title: &str) -> Vec<u8> {
+            let mut body = Vec::new();
+            body.extend_from_slice(format!("--{}\r\n", BOUNDARY).as_bytes());
+            body.extend_from_slice(
+                format!(
+                    "Content-Disposition: form-data; name=\"file\"; filename=\"{}\"\r\n",
+                    filename
+                )
+                .as_bytes(),
+            );
+            body.extend_from_slice(b"Content-Type: video/mp4\r\n\r\n");
+            body.extend_from_slice(file_bytes);
+            body.extend_from_slice(b"\r\n");
+            body.extend_from_slice(format!("--{}\r\n", BOUNDARY).as_bytes());
+            body.extend_from_slice(b"Content-Disposition: form-data; name=\"title\"\r\n\r\n");
+            body.extend_from_slice(title.as_bytes());
+            body.extend_from_slice(b"\r\n");
+            body.extend_from_slice(format!("--{}--\r\n", BOUNDARY).as_bytes());
+            body
+        }
+
+        fn multipart_ct() -> rocket::http::ContentType {
+            rocket::http::ContentType::parse_flexible(&format!(
+                "multipart/form-data; boundary={}",
+                BOUNDARY
+            ))
+            .expect("multipart content type")
+        }
+
+        let test_db = create_standard_test_db().await;
+        let coach_id = test_db.user_id("coach_user").unwrap();
+        let (client, db) = setup_test_client(test_db).await;
+
+        // Create a SECOND plain student who will own the camp. Clone the seeded
+        // student's auth columns so the shared "password123" login works.
+        let other_student_id: i64 = sqlx::query_scalar(
+            "INSERT INTO users (username, role, password, display_name, approved_at, claimed_at)
+             SELECT 'other_student', 'student', password, 'Other Student', approved_at, claimed_at
+             FROM users WHERE username = 'student_user' RETURNING id",
+        )
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+
+        // Camp belongs to other_student, NOT student_user.
+        let camp_id = create_camp(
+            &db.pool,
+            NewCamp {
+                student_id: other_student_id,
+                coach_id,
+                name: "Not your camp".to_string(),
+                description: None,
+                references_camp_id: None,
+            },
+        )
+        .await
+        .unwrap();
+
+        // student_user tries to upload to a camp they don't own.
+        login_as(&client, "student_user").await;
+
+        let body = multipart_body(b"fake-mp4-bytes", "clip.mp4", "Sneaky Clip");
+        let resp = client
+            .post(format!("/api/camps/{}/videos/upload", camp_id))
+            .header(multipart_ct())
+            .body(body)
+            .dispatch()
+            .await;
+        assert_eq!(resp.status(), Status::Forbidden);
     }
 
     #[rocket::async_test]
@@ -803,13 +990,7 @@ mod tests {
             .await
             .unwrap();
 
-        // Verify the three link tables exist and are empty.
-        let rm: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM camp_referenced_matches")
-            .fetch_one(&db.pool)
-            .await
-            .unwrap();
-        assert_eq!(rm, 0);
-
+        // Verify the camp link tables exist and are empty.
         let rt: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM camp_referenced_threads")
             .fetch_one(&db.pool)
             .await
@@ -1503,9 +1684,8 @@ mod tests {
     // -----------------------------------------------------------------------
 
     #[rocket::async_test]
-    async fn camp_summary_carries_counts_and_competition_name() {
+    async fn camp_summary_carries_counts() {
         use crate::db::camps::{create_camp, list_camp_summaries_for_student, NewCamp};
-        use crate::db::competitions::create_competition;
         use crate::db::{create_processing_video, VideoParent};
 
         let db = TestDbBuilder::new()
@@ -1518,12 +1698,6 @@ mod tests {
         let coach = db.user_id("coach_user").unwrap();
         let student = db.user_id("student_user").unwrap();
 
-        // Create a competition named "IBJJF Worlds".
-        let competition_id = create_competition(&db.pool, "IBJJF Worlds", None, coach)
-            .await
-            .unwrap();
-
-        // Create a camp linked to that competition.
         let camp_id = create_camp(
             &db.pool,
             NewCamp {
@@ -1536,12 +1710,6 @@ mod tests {
         )
         .await
         .unwrap();
-
-        // Link the camp to the competition.
-        sqlx::query!("UPDATE camps SET competition_id = ? WHERE id = ?", competition_id, camp_id)
-            .execute(&db.pool)
-            .await
-            .unwrap();
 
         // Add one camp technique.
         let tech_id: i64 = sqlx::query_scalar(
@@ -1574,7 +1742,6 @@ mod tests {
         assert_eq!(summaries.len(), 1);
         let s = &summaries[0];
 
-        assert_eq!(s.competition_name, Some("IBJJF Worlds".to_string()));
         assert_eq!(s.technique_count, 1);
         assert_eq!(s.video_count, 1);
         assert!(s.last_activity_at.is_some());
@@ -1658,5 +1825,514 @@ mod tests {
         .unwrap();
         assert_eq!(is_global, 0);
         assert_eq!(scoped_camp_id, camp_id);
+    }
+
+    // -----------------------------------------------------------------------
+    // Camp-technique videos: camp-only vs global scope (P2-T5)
+    // -----------------------------------------------------------------------
+
+    /// Shared setup: a coach, a student, a global technique attached to a camp,
+    /// and an existing (camp-owned) video. Returns (camp_id, technique_id,
+    /// video_id).
+    async fn camp_technique_video_fixture(
+        db: &crate::test::test_utils::TestDb,
+    ) -> (i64, i64, i64) {
+        let coach = db.user_id("coach_user").unwrap();
+        let student = db.user_id("student_user").unwrap();
+
+        let technique_id: i64 = sqlx::query_scalar(
+            "INSERT INTO techniques (name, description) VALUES ('Armbar', '') RETURNING id",
+        )
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+
+        let camp_id: i64 = sqlx::query_scalar(
+            "INSERT INTO camps (student_id, coach_id, name) VALUES (?, ?, 'Worlds prep') RETURNING id",
+        )
+        .bind(student)
+        .bind(coach)
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+
+        add_camp_technique(&db.pool, camp_id, technique_id, coach)
+            .await
+            .unwrap();
+
+        // An existing camp-owned video, the natural footage source.
+        let video_id = create_processing_video(
+            &db.pool,
+            VideoParent::Camp(camp_id),
+            "Reference clip",
+            None,
+            coach,
+        )
+        .await
+        .unwrap();
+
+        (camp_id, technique_id, video_id)
+    }
+
+    /// Coach adds a camp_only video to a camp technique: the join row is written
+    /// and the video does NOT leak into the global technique-video list.
+    #[rocket::async_test]
+    async fn coach_adds_camp_only_video_to_camp_technique() {
+        use crate::test::test_utils::{create_standard_test_db, setup_test_client};
+        use rocket::http::{ContentType, Status};
+
+        let test_db = create_standard_test_db().await;
+        let (client, db) = setup_test_client(test_db).await;
+        let (camp_id, technique_id, video_id) = camp_technique_video_fixture(&db).await;
+
+        login_as(&client, "coach_user").await;
+        let resp = client
+            .post(format!(
+                "/api/camps/{}/techniques/{}/videos",
+                camp_id, technique_id
+            ))
+            .header(ContentType::JSON)
+            .body(format!(
+                r#"{{"video_id": {}, "scope": "camp_only"}}"#,
+                video_id
+            ))
+            .dispatch()
+            .await;
+        assert_eq!(resp.status(), Status::NoContent);
+
+        // The join row exists.
+        let join_count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM camp_technique_referenced_videos \
+             WHERE camp_id = ? AND technique_id = ? AND video_id = ?",
+        )
+        .bind(camp_id)
+        .bind(technique_id)
+        .bind(video_id)
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+        assert_eq!(join_count, 1, "camp_only join row written");
+
+        // The video is ABSENT from the global technique-video list.
+        let global = crate::db::list_videos_for_technique(&db.pool, technique_id)
+            .await
+            .unwrap();
+        assert!(
+            !global.iter().any(|v| v.id == video_id),
+            "camp_only video must not leak into the global technique list"
+        );
+
+        // Idempotent: a second call is a no-op, not an error, and writes no
+        // duplicate join row.
+        let resp2 = client
+            .post(format!(
+                "/api/camps/{}/techniques/{}/videos",
+                camp_id, technique_id
+            ))
+            .header(ContentType::JSON)
+            .body(format!(
+                r#"{{"video_id": {}, "scope": "camp_only"}}"#,
+                video_id
+            ))
+            .dispatch()
+            .await;
+        assert_eq!(resp2.status(), Status::NoContent);
+        let join_count2: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM camp_technique_referenced_videos \
+             WHERE camp_id = ? AND technique_id = ? AND video_id = ?",
+        )
+        .bind(camp_id)
+        .bind(technique_id)
+        .bind(video_id)
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+        assert_eq!(join_count2, 1, "camp_only insert is idempotent");
+    }
+
+    /// Coach adds a global video to a camp technique: it appears on the global
+    /// technique-video list and NO camp_technique_referenced_videos row is
+    /// written.
+    #[rocket::async_test]
+    async fn coach_adds_global_video_to_camp_technique() {
+        use crate::test::test_utils::{create_standard_test_db, setup_test_client};
+        use rocket::http::{ContentType, Status};
+
+        let test_db = create_standard_test_db().await;
+        let (client, db) = setup_test_client(test_db).await;
+        let (camp_id, technique_id, video_id) = camp_technique_video_fixture(&db).await;
+
+        login_as(&client, "coach_user").await;
+        let resp = client
+            .post(format!(
+                "/api/camps/{}/techniques/{}/videos",
+                camp_id, technique_id
+            ))
+            .header(ContentType::JSON)
+            .body(format!(
+                r#"{{"video_id": {}, "scope": "global"}}"#,
+                video_id
+            ))
+            .dispatch()
+            .await;
+        assert_eq!(resp.status(), Status::NoContent);
+
+        // The video IS present on the global technique-video list.
+        let global = crate::db::list_videos_for_technique(&db.pool, technique_id)
+            .await
+            .unwrap();
+        assert!(
+            global.iter().any(|v| v.id == video_id),
+            "global video must appear in the global technique list"
+        );
+
+        // No camp_technique_referenced_videos row was written.
+        let join_count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM camp_technique_referenced_videos \
+             WHERE camp_id = ? AND technique_id = ? AND video_id = ?",
+        )
+        .bind(camp_id)
+        .bind(technique_id)
+        .bind(video_id)
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+        assert_eq!(join_count, 0, "global scope must not write a camp-only join row");
+    }
+
+    /// A student is forbidden from adding a video to a camp technique.
+    #[rocket::async_test]
+    async fn student_cannot_add_video_to_camp_technique() {
+        use crate::test::test_utils::{create_standard_test_db, setup_test_client};
+        use rocket::http::{ContentType, Status};
+
+        let test_db = create_standard_test_db().await;
+        let (client, db) = setup_test_client(test_db).await;
+        let (camp_id, technique_id, video_id) = camp_technique_video_fixture(&db).await;
+
+        login_as(&client, "student_user").await;
+        let resp = client
+            .post(format!(
+                "/api/camps/{}/techniques/{}/videos",
+                camp_id, technique_id
+            ))
+            .header(ContentType::JSON)
+            .body(format!(
+                r#"{{"video_id": {}, "scope": "camp_only"}}"#,
+                video_id
+            ))
+            .dispatch()
+            .await;
+        assert_eq!(resp.status(), Status::Forbidden);
+    }
+
+    /// A video that is NOT this camp's footage (it belongs to a different camp)
+    /// must be rejected for BOTH scopes, with no mutation: the video is not
+    /// re-parented and no camp_only join row is written.
+    #[rocket::async_test]
+    async fn add_camp_technique_video_rejects_foreign_video() {
+        use crate::test::test_utils::{create_standard_test_db, setup_test_client};
+        use rocket::http::{ContentType, Status};
+
+        let test_db = create_standard_test_db().await;
+        let coach = test_db.user_id("coach_user").unwrap();
+        let student = test_db.user_id("student_user").unwrap();
+        let (client, db) = setup_test_client(test_db).await;
+        let (camp_id, technique_id, _own_video) = camp_technique_video_fixture(&db).await;
+
+        // A DIFFERENT camp owning the foreign video.
+        let other_camp_id: i64 = sqlx::query_scalar(
+            "INSERT INTO camps (student_id, coach_id, name) VALUES (?, ?, 'Other camp') RETURNING id",
+        )
+        .bind(student)
+        .bind(coach)
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+        let foreign_video = create_processing_video(
+            &db.pool,
+            VideoParent::Camp(other_camp_id),
+            "Foreign clip",
+            None,
+            coach,
+        )
+        .await
+        .unwrap();
+
+        login_as(&client, "coach_user").await;
+
+        for scope in ["global", "camp_only"] {
+            let resp = client
+                .post(format!(
+                    "/api/camps/{}/techniques/{}/videos",
+                    camp_id, technique_id
+                ))
+                .header(ContentType::JSON)
+                .body(format!(
+                    r#"{{"video_id": {}, "scope": "{}"}}"#,
+                    foreign_video, scope
+                ))
+                .dispatch()
+                .await;
+            assert_eq!(
+                resp.status(),
+                Status::NotFound,
+                "foreign video must be rejected for scope {scope}"
+            );
+        }
+
+        // The foreign video was NOT re-parented.
+        let (parent_kind, vid_camp): (String, Option<i64>) =
+            sqlx::query_as("SELECT parent_kind, camp_id FROM videos WHERE id = ?")
+                .bind(foreign_video)
+                .fetch_one(&db.pool)
+                .await
+                .unwrap();
+        assert_eq!(parent_kind, "camp", "foreign video stays parent_kind='camp'");
+        assert_eq!(vid_camp, Some(other_camp_id), "foreign video camp_id unchanged");
+
+        // No camp_only join row was written for the foreign video.
+        let join_count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM camp_technique_referenced_videos WHERE video_id = ?",
+        )
+        .bind(foreign_video)
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+        assert_eq!(join_count, 0, "no join row written for foreign video");
+    }
+
+    /// Promoting a camp video to global scope clears any stale camp-scoped
+    /// visibility override and re-parents the video onto the technique.
+    #[rocket::async_test]
+    async fn global_promote_clears_camp_visibility_override() {
+        use crate::test::test_utils::{create_standard_test_db, setup_test_client};
+        use rocket::http::{ContentType, Status};
+
+        let test_db = create_standard_test_db().await;
+        let (client, db) = setup_test_client(test_db).await;
+        let (camp_id, technique_id, video_id) = camp_technique_video_fixture(&db).await;
+
+        // Seed a camp-scoped visibility override on the video.
+        sqlx::query(
+            "INSERT INTO video_visibility_overrides (scope_kind, camp_id, video_id, visible) \
+             VALUES ('camp', ?, ?, 0)",
+        )
+        .bind(camp_id)
+        .bind(video_id)
+        .execute(&db.pool)
+        .await
+        .unwrap();
+
+        login_as(&client, "coach_user").await;
+        let resp = client
+            .post(format!(
+                "/api/camps/{}/techniques/{}/videos",
+                camp_id, technique_id
+            ))
+            .header(ContentType::JSON)
+            .body(format!(r#"{{"video_id": {}, "scope": "global"}}"#, video_id))
+            .dispatch()
+            .await;
+        assert_eq!(resp.status(), Status::NoContent);
+
+        // The camp override row is gone.
+        let override_count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM video_visibility_overrides \
+             WHERE scope_kind='camp' AND camp_id=? AND video_id=?",
+        )
+        .bind(camp_id)
+        .bind(video_id)
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+        assert_eq!(override_count, 0, "stale camp override cleared on global promote");
+
+        // The video is now a technique video.
+        let global = crate::db::list_videos_for_technique(&db.pool, technique_id)
+            .await
+            .unwrap();
+        assert!(
+            global.iter().any(|v| v.id == video_id),
+            "promoted video appears in the global technique list"
+        );
+    }
+
+    /// A video_id that does not exist must 404, not silently 204.
+    #[rocket::async_test]
+    async fn add_camp_technique_video_unknown_video_id_not_found() {
+        use crate::test::test_utils::{create_standard_test_db, setup_test_client};
+        use rocket::http::{ContentType, Status};
+
+        let test_db = create_standard_test_db().await;
+        let (client, db) = setup_test_client(test_db).await;
+        let (camp_id, technique_id, _video_id) = camp_technique_video_fixture(&db).await;
+
+        login_as(&client, "coach_user").await;
+        let resp = client
+            .post(format!(
+                "/api/camps/{}/techniques/{}/videos",
+                camp_id, technique_id
+            ))
+            .header(ContentType::JSON)
+            .body(r#"{"video_id": 999999, "scope": "global"}"#)
+            .dispatch()
+            .await;
+        assert_eq!(resp.status(), Status::NotFound);
+    }
+
+    /// The camp-only read endpoint lists ONLY the camp_technique_referenced_videos
+    /// for the (camp, technique). A video attached as `global` is re-parented onto
+    /// the technique and must NOT appear in this camp-only list.
+    #[rocket::async_test]
+    async fn camp_technique_videos_lists_camp_only_refs() {
+        use crate::test::test_utils::{create_standard_test_db, setup_test_client};
+        use rocket::http::{ContentType, Status};
+
+        let test_db = create_standard_test_db().await;
+        let coach = test_db.user_id("coach_user").unwrap();
+        let (client, db) = setup_test_client(test_db).await;
+        let (camp_id, technique_id, camp_only_video) =
+            camp_technique_video_fixture(&db).await;
+
+        // A second camp-owned video that we'll attach as `global`.
+        let global_video = create_processing_video(
+            &db.pool,
+            VideoParent::Camp(camp_id),
+            "Global clip",
+            None,
+            coach,
+        )
+        .await
+        .unwrap();
+
+        login_as(&client, "coach_user").await;
+
+        // Attach the first video as camp_only.
+        let resp = client
+            .post(format!(
+                "/api/camps/{}/techniques/{}/videos",
+                camp_id, technique_id
+            ))
+            .header(ContentType::JSON)
+            .body(format!(
+                r#"{{"video_id": {}, "scope": "camp_only"}}"#,
+                camp_only_video
+            ))
+            .dispatch()
+            .await;
+        assert_eq!(resp.status(), Status::NoContent);
+
+        // Attach the second video as global.
+        let resp = client
+            .post(format!(
+                "/api/camps/{}/techniques/{}/videos",
+                camp_id, technique_id
+            ))
+            .header(ContentType::JSON)
+            .body(format!(
+                r#"{{"video_id": {}, "scope": "global"}}"#,
+                global_video
+            ))
+            .dispatch()
+            .await;
+        assert_eq!(resp.status(), Status::NoContent);
+
+        // Read the camp-only list.
+        let resp = client
+            .get(format!(
+                "/api/camps/{}/techniques/{}/videos",
+                camp_id, technique_id
+            ))
+            .dispatch()
+            .await;
+        assert_eq!(resp.status(), Status::Ok);
+        let body: serde_json::Value =
+            serde_json::from_str(&resp.into_string().await.unwrap()).unwrap();
+        let videos = body["videos"].as_array().expect("videos array");
+
+        let ids: Vec<i64> = videos
+            .iter()
+            .map(|v| v["id"].as_i64().unwrap())
+            .collect();
+        assert!(
+            ids.contains(&camp_only_video),
+            "camp_only video must appear in the camp-only list"
+        );
+        assert!(
+            !ids.contains(&global_video),
+            "global video must NOT appear in the camp-only list"
+        );
+        assert_eq!(ids.len(), 1, "only the camp_only ref is listed");
+    }
+
+    /// The camp-only video list is readable by the camp's own student (200) and
+    /// any coach, but a different student is forbidden (403), mirroring
+    /// `can_read` (coach or owner).
+    #[rocket::async_test]
+    async fn camp_technique_videos_readable_by_owner_student_not_other() {
+        use crate::test::test_utils::{create_standard_test_db, setup_test_client};
+        use rocket::http::{ContentType, Status};
+
+        let test_db = create_standard_test_db().await;
+        let (client, db) = setup_test_client(test_db).await;
+        let (camp_id, technique_id, camp_only_video) =
+            camp_technique_video_fixture(&db).await;
+
+        // Coach attaches the camp_only video.
+        login_as(&client, "coach_user").await;
+        let resp = client
+            .post(format!(
+                "/api/camps/{}/techniques/{}/videos",
+                camp_id, technique_id
+            ))
+            .header(ContentType::JSON)
+            .body(format!(
+                r#"{{"video_id": {}, "scope": "camp_only"}}"#,
+                camp_only_video
+            ))
+            .dispatch()
+            .await;
+        assert_eq!(resp.status(), Status::NoContent);
+
+        // Coach can read.
+        let resp = client
+            .get(format!(
+                "/api/camps/{}/techniques/{}/videos",
+                camp_id, technique_id
+            ))
+            .dispatch()
+            .await;
+        assert_eq!(resp.status(), Status::Ok);
+
+        // The camp's own student can read.
+        login_as(&client, "student_user").await;
+        let resp = client
+            .get(format!(
+                "/api/camps/{}/techniques/{}/videos",
+                camp_id, technique_id
+            ))
+            .dispatch()
+            .await;
+        assert_eq!(resp.status(), Status::Ok);
+
+        // A different plain student is forbidden.
+        sqlx::query(
+            "INSERT INTO users (username, role, password, display_name, approved_at, claimed_at)
+             SELECT 'other_student', 'student', password, 'Other Student', approved_at, claimed_at
+             FROM users WHERE username = 'student_user'",
+        )
+        .execute(&db.pool)
+        .await
+        .unwrap();
+        login_as(&client, "other_student").await;
+        let resp = client
+            .get(format!(
+                "/api/camps/{}/techniques/{}/videos",
+                camp_id, technique_id
+            ))
+            .dispatch()
+            .await;
+        assert_eq!(resp.status(), Status::Forbidden);
     }
 }

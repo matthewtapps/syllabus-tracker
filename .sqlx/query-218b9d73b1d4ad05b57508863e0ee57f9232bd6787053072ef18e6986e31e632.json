@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT COALESCE(MAX(position), -1) + 1 AS \"p!: i64\"\n           FROM videos\n           WHERE technique_id = ? AND parent_kind = 'technique' AND deleted_at IS NULL",
+  "describe": {
+    "columns": [
+      {
+        "name": "p!: i64",
+        "ordinal": 0,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "218b9d73b1d4ad05b57508863e0ee57f9232bd6787053072ef18e6986e31e632"
+}

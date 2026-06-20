@@ -44,6 +44,7 @@ mod tests {
                     id: student_id,
                     video_ts_seconds: None,
                     pinned_student_id: None,
+                    camp_id: None,
                 },
                 visibility: ThreadVisibility::Private,
                 scope_student_id: Some(student_id),
@@ -95,6 +96,7 @@ mod tests {
                     id: student_id,
                     video_ts_seconds: None,
                     pinned_student_id: None,
+                    camp_id: None,
                 },
                 visibility: ThreadVisibility::Private,
                 scope_student_id: Some(student_id),
@@ -150,6 +152,7 @@ mod tests {
                     id: student_id,
                     video_ts_seconds: None,
                     pinned_student_id: None,
+                    camp_id: None,
                 },
                 visibility: ThreadVisibility::Private,
                 scope_student_id: Some(student_id),
@@ -192,6 +195,7 @@ mod tests {
                     id: student_id,
                     video_ts_seconds: None,
                     pinned_student_id: None,
+                    camp_id: None,
                 },
                 visibility: ThreadVisibility::Private,
                 scope_student_id: Some(student_id),
@@ -227,13 +231,13 @@ mod tests {
 
         create_thread(&db.pool, NewThread {
             author_id: coach_id,
-            anchor: Anchor { kind: AnchorKind::StudentProfile, id: student_id, video_ts_seconds: None, pinned_student_id: None },
+            anchor: Anchor { kind: AnchorKind::StudentProfile, id: student_id, video_ts_seconds: None, pinned_student_id: None, camp_id: None },
             visibility: ThreadVisibility::Private,
             scope_student_id: Some(student_id),
             body: "hi".to_string(),
         }).await.unwrap();
 
-        let anchor = Anchor { kind: AnchorKind::StudentProfile, id: student_id, video_ts_seconds: None, pinned_student_id: None };
+        let anchor = Anchor { kind: AnchorKind::StudentProfile, id: student_id, video_ts_seconds: None, pinned_student_id: None, camp_id: None };
         let as_owner = list_threads_for_anchor(&db.pool, anchor, Viewer { user_id: student_id, is_coach: false }).await.unwrap();
         assert_eq!(as_owner.len(), 1);
         let as_other = list_threads_for_anchor(&db.pool, anchor, Viewer { user_id: other, is_coach: false }).await.unwrap();
@@ -248,7 +252,7 @@ mod tests {
         let student_id = db.user_id("student_user").unwrap();
         let t = create_thread(&db.pool, NewThread {
             author_id: student_id,
-            anchor: Anchor { kind: AnchorKind::StudentProfile, id: student_id, video_ts_seconds: None, pinned_student_id: None },
+            anchor: Anchor { kind: AnchorKind::StudentProfile, id: student_id, video_ts_seconds: None, pinned_student_id: None, camp_id: None },
             visibility: ThreadVisibility::Private,
             scope_student_id: Some(student_id),
             body: "q".to_string(),
@@ -300,7 +304,7 @@ mod tests {
             &db.pool,
             NewThread {
                 author_id: coach_id,
-                anchor: Anchor { kind: AnchorKind::Video, id: video_id, video_ts_seconds: None, pinned_student_id: None },
+                anchor: Anchor { kind: AnchorKind::Video, id: video_id, video_ts_seconds: None, pinned_student_id: None, camp_id: None },
                 visibility: ThreadVisibility::Private,
                 scope_student_id: Some(student_id),
                 body: "Great video!".to_string(),
@@ -310,7 +314,7 @@ mod tests {
         .unwrap();
 
         // Owner can see it
-        let anchor = Anchor { kind: AnchorKind::Video, id: video_id, video_ts_seconds: None, pinned_student_id: None };
+        let anchor = Anchor { kind: AnchorKind::Video, id: video_id, video_ts_seconds: None, pinned_student_id: None, camp_id: None };
         let as_owner = list_threads_for_anchor(&db.pool, anchor, Viewer { user_id: student_id, is_coach: false }).await.unwrap();
         assert_eq!(as_owner.len(), 1);
         assert_eq!(as_owner[0].id, thread_id);
@@ -343,7 +347,7 @@ mod tests {
                 &db.pool,
                 NewThread {
                     author_id: coach_id,
-                    anchor: Anchor { kind: AnchorKind::Video, id: video_id, video_ts_seconds: None, pinned_student_id: None },
+                    anchor: Anchor { kind: AnchorKind::Video, id: video_id, video_ts_seconds: None, pinned_student_id: None, camp_id: None },
                     visibility: ThreadVisibility::Private,
                     scope_student_id: Some(sid),
                     body: "note".to_string(),
@@ -384,7 +388,7 @@ mod tests {
             &db.pool,
             NewThread {
                 author_id: coach_id,
-                anchor: Anchor { kind: AnchorKind::Video, id: video_id, video_ts_seconds: None, pinned_student_id: None },
+                anchor: Anchor { kind: AnchorKind::Video, id: video_id, video_ts_seconds: None, pinned_student_id: None, camp_id: None },
                 visibility: ThreadVisibility::Private,
                 scope_student_id: Some(student_id),
                 body: "Overall comment".to_string(),
@@ -397,7 +401,7 @@ mod tests {
             &db.pool,
             NewThread {
                 author_id: coach_id,
-                anchor: Anchor { kind: AnchorKind::VideoTimestamp, id: video_id, video_ts_seconds: Some(42), pinned_student_id: None },
+                anchor: Anchor { kind: AnchorKind::VideoTimestamp, id: video_id, video_ts_seconds: Some(42), pinned_student_id: None, camp_id: None },
                 visibility: ThreadVisibility::Private,
                 scope_student_id: Some(student_id),
                 body: "At 42 seconds".to_string(),
@@ -407,12 +411,12 @@ mod tests {
         .unwrap();
 
         // Listing by video anchor returns BOTH kinds
-        let anchor = Anchor { kind: AnchorKind::Video, id: video_id, video_ts_seconds: None, pinned_student_id: None };
+        let anchor = Anchor { kind: AnchorKind::Video, id: video_id, video_ts_seconds: None, pinned_student_id: None, camp_id: None };
         let views = list_threads_for_anchor(&db.pool, anchor, Viewer { user_id: student_id, is_coach: false }).await.unwrap();
         assert_eq!(views.len(), 2, "video anchor list must include both video and video_timestamp threads");
 
         // Also listing by video_timestamp anchor returns both
-        let anchor_ts = Anchor { kind: AnchorKind::VideoTimestamp, id: video_id, video_ts_seconds: Some(42), pinned_student_id: None };
+        let anchor_ts = Anchor { kind: AnchorKind::VideoTimestamp, id: video_id, video_ts_seconds: Some(42), pinned_student_id: None, camp_id: None };
         let views_ts = list_threads_for_anchor(&db.pool, anchor_ts, Viewer { user_id: student_id, is_coach: false }).await.unwrap();
         assert_eq!(views_ts.len(), 2, "video_timestamp anchor list must also return both kinds");
     }
@@ -442,6 +446,7 @@ mod tests {
                     id: video_id,
                     video_ts_seconds: None,
                     pinned_student_id: None,
+                    camp_id: None,
                 },
                 visibility: ThreadVisibility::Private,
                 scope_student_id: Some(student_id),
@@ -461,6 +466,7 @@ mod tests {
                     id: video_id,
                     video_ts_seconds: Some(42),
                     pinned_student_id: None,
+                    camp_id: None,
                 },
                 visibility: ThreadVisibility::Private,
                 scope_student_id: Some(student_id),
@@ -476,6 +482,7 @@ mod tests {
             id: video_id,
             video_ts_seconds: None,
             pinned_student_id: None,
+            camp_id: None,
         };
         let threads = list_threads_for_anchor(
             &db.pool,
@@ -509,6 +516,7 @@ mod tests {
                     id: student_id,
                     video_ts_seconds: None,
                     pinned_student_id: None,
+                    camp_id: None,
                 },
                 visibility: ThreadVisibility::Private,
                 scope_student_id: Some(student_id),
@@ -539,6 +547,7 @@ mod tests {
                     id: reply_video_id,
                     video_ts_seconds: None,
                     pinned_student_id: None,
+                    camp_id: None,
                 },
                 visibility: ThreadVisibility::Private,
                 scope_student_id: Some(student_id),
@@ -571,7 +580,7 @@ mod tests {
             &db.pool,
             NewThread {
                 author_id: coach_id,
-                anchor: Anchor { kind: AnchorKind::Video, id: 9999, video_ts_seconds: None, pinned_student_id: None },
+                anchor: Anchor { kind: AnchorKind::Video, id: 9999, video_ts_seconds: None, pinned_student_id: None, camp_id: None },
                 visibility: ThreadVisibility::Private,
                 scope_student_id: Some(student_id),
                 body: "should fail".to_string(),
@@ -626,7 +635,7 @@ mod tests {
             &db.pool,
             NewThread {
                 author_id: coach_id,
-                anchor: Anchor { kind: AnchorKind::Sst, id: sst_id, video_ts_seconds: None, pinned_student_id: None },
+                anchor: Anchor { kind: AnchorKind::Sst, id: sst_id, video_ts_seconds: None, pinned_student_id: None, camp_id: None },
                 visibility: ThreadVisibility::Private,
                 scope_student_id: Some(student_id),
                 body: "Work on your grip here.".to_string(),
@@ -635,7 +644,7 @@ mod tests {
         .await
         .unwrap();
 
-        let anchor = Anchor { kind: AnchorKind::Sst, id: sst_id, video_ts_seconds: None, pinned_student_id: None };
+        let anchor = Anchor { kind: AnchorKind::Sst, id: sst_id, video_ts_seconds: None, pinned_student_id: None, camp_id: None };
         let views = list_threads_for_anchor(&db.pool, anchor, Viewer { user_id: student_id, is_coach: false }).await.unwrap();
         assert_eq!(views.len(), 1);
         assert_eq!(views[0].id, thread_id);
@@ -666,6 +675,7 @@ mod tests {
                     id: technique_id,
                     video_ts_seconds: None,
                     pinned_student_id: Some(student_id),
+                    camp_id: None,
                 },
                 visibility: ThreadVisibility::Private,
                 scope_student_id: Some(student_id),
@@ -698,6 +708,7 @@ mod tests {
                     id: technique_id,
                     video_ts_seconds: None,
                     pinned_student_id: None, // missing
+                    camp_id: None,
                 },
                 visibility: ThreadVisibility::Private,
                 scope_student_id: Some(student_id),
@@ -733,6 +744,7 @@ mod tests {
                     id: technique_id,
                     video_ts_seconds: None,
                     pinned_student_id: Some(student_id),
+                    camp_id: None,
                 },
                 visibility: ThreadVisibility::Private,
                 scope_student_id: Some(student_id),
@@ -747,6 +759,7 @@ mod tests {
             id: technique_id,
             video_ts_seconds: None,
             pinned_student_id: Some(student_id),
+            camp_id: None,
         };
         let views = list_threads_for_anchor(&db.pool, anchor, Viewer { user_id: student_id, is_coach: false }).await.unwrap();
         assert_eq!(views.len(), 1);
@@ -768,6 +781,7 @@ mod tests {
                     id: student_id,
                     video_ts_seconds: None,
                     pinned_student_id: None,
+                    camp_id: None,
                 },
                 visibility: ThreadVisibility::Broadcast,
                 scope_student_id: None,
@@ -822,6 +836,66 @@ mod tests {
         assert_eq!(res.status(), HttpStatus::Forbidden);
     }
 
+    /// A student may start a camp-level thread on their OWN camp. The thread is
+    /// forced Private and scoped to the camp's student regardless of the request.
+    #[rocket::async_test]
+    async fn student_creates_camp_level_thread_on_own_camp() {
+        let (client, db) = client_with_users().await;
+        let coach_id = db.user_id("coach_user").unwrap();
+        let student_id = db.user_id("student_user").unwrap();
+
+        let camp_id: i64 = sqlx::query_scalar(
+            "INSERT INTO camps (student_id, coach_id, name) VALUES (?, ?, 'Own camp') RETURNING id",
+        )
+        .bind(student_id)
+        .bind(coach_id)
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+
+        login_test_user(&client, "student_user", "password123").await;
+        let res = client.post("/api/threads").header(ContentType::JSON)
+            .body(json!({"anchor_kind":"camp","anchor_id":camp_id,"visibility":"private","scope_student_id":null,"body":"How's my prep?"}).to_string())
+            .dispatch().await;
+        assert_eq!(res.status(), HttpStatus::Ok);
+        let thread_id = res.into_json::<Value>().await.unwrap()["id"].as_i64().unwrap();
+
+        let (vis, scope, got_camp): (String, i64, i64) = sqlx::query_as(
+            "SELECT visibility, scope_student_id, camp_id FROM threads WHERE id = ?",
+        )
+        .bind(thread_id)
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+        assert_eq!(vis, "private", "camp threads must be forced private");
+        assert_eq!(scope, student_id, "camp thread must be scoped to the camp's student");
+        assert_eq!(got_camp, camp_id);
+    }
+
+    /// A student must NOT be able to start a camp-level thread on another
+    /// student's camp.
+    #[rocket::async_test]
+    async fn student_cannot_create_camp_thread_on_another_students_camp() {
+        let (client, db) = client_with_users().await;
+        let coach_id = db.user_id("coach_user").unwrap();
+        let other_student_id = db.user_id("student2").unwrap();
+
+        let camp_id: i64 = sqlx::query_scalar(
+            "INSERT INTO camps (student_id, coach_id, name) VALUES (?, ?, 'Other camp') RETURNING id",
+        )
+        .bind(other_student_id)
+        .bind(coach_id)
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+
+        login_test_user(&client, "student_user", "password123").await;
+        let res = client.post("/api/threads").header(ContentType::JSON)
+            .body(json!({"anchor_kind":"camp","anchor_id":camp_id,"visibility":"private","scope_student_id":null,"body":"intrusion"}).to_string())
+            .dispatch().await;
+        assert_eq!(res.status(), HttpStatus::Forbidden);
+    }
+
     #[rocket::async_test]
     async fn student_cannot_broadcast() {
         let (client, _db) = client_with_users().await;
@@ -852,6 +926,7 @@ mod tests {
                     id: student_id,
                     video_ts_seconds: None,
                     pinned_student_id: None,
+                    camp_id: None,
                 },
                 visibility: ThreadVisibility::Private,
                 scope_student_id: Some(student_id),
@@ -893,6 +968,7 @@ mod tests {
                     id: student_id,
                     video_ts_seconds: None,
                     pinned_student_id: None,
+                    camp_id: None,
                 },
                 visibility: ThreadVisibility::Private,
                 scope_student_id: Some(student_id),
@@ -950,6 +1026,7 @@ mod tests {
                     id: technique_id,
                     video_ts_seconds: None,
                     pinned_student_id: None,
+                    camp_id: None,
                 },
                 visibility: ThreadVisibility::Broadcast,
                 scope_student_id: None,
@@ -1004,6 +1081,7 @@ mod tests {
                     id: technique_id,
                     video_ts_seconds: None,
                     pinned_student_id: None,
+                    camp_id: None,
                 },
                 visibility: ThreadVisibility::Broadcast,
                 scope_student_id: None,
@@ -1051,6 +1129,7 @@ mod tests {
                     id: video_id,
                     video_ts_seconds: None,
                     pinned_student_id: None,
+                    camp_id: None,
                 },
                 visibility: ThreadVisibility::Broadcast,
                 scope_student_id: None,
@@ -1118,6 +1197,7 @@ mod tests {
                     id: sst_id,
                     video_ts_seconds: None,
                     pinned_student_id: None,
+                    camp_id: None,
                 },
                 visibility: ThreadVisibility::Private,
                 scope_student_id: Some(student_id),
@@ -1171,6 +1251,7 @@ mod tests {
                     id: sst_id,
                     video_ts_seconds: None,
                     pinned_student_id: None,
+                    camp_id: None,
                 },
                 visibility: ThreadVisibility::Private,
                 scope_student_id: Some(student_id),
@@ -1198,5 +1279,269 @@ mod tests {
 
         assert_eq!(row.context_kind.as_deref(), Some("syllabus"));
         assert!(row.syllabus_id.is_some(), "comment row must carry syllabus_id");
+    }
+
+    // ---- CampTechnique anchor tests ----
+
+    #[rocket::async_test]
+    async fn camp_technique_thread_stores_camp_and_technique() {
+        use crate::db::camps::{add_camp_technique, create_camp, NewCamp};
+        let db = TestDbBuilder::new()
+            .coach("coach_user", Some("Coach"))
+            .student("student_user", Some("Sam"))
+            .technique("Armbar", "an armbar", Some("coach_user"))
+            .build()
+            .await
+            .unwrap();
+        let coach_id = db.user_id("coach_user").unwrap();
+        let student_id = db.user_id("student_user").unwrap();
+        let technique_id = db.technique_id("Armbar").unwrap();
+
+        let camp_id = create_camp(
+            &db.pool,
+            NewCamp {
+                student_id,
+                coach_id,
+                name: "X-guard camp".to_string(),
+                description: None,
+                references_camp_id: None,
+            },
+        )
+        .await
+        .unwrap();
+        add_camp_technique(&db.pool, camp_id, technique_id, coach_id)
+            .await
+            .unwrap();
+
+        let anchor = Anchor {
+            kind: AnchorKind::CampTechnique,
+            id: technique_id,
+            video_ts_seconds: None,
+            pinned_student_id: None,
+            camp_id: Some(camp_id),
+        };
+        let id = create_thread(
+            &db.pool,
+            NewThread {
+                author_id: coach_id,
+                anchor,
+                visibility: ThreadVisibility::Private,
+                scope_student_id: Some(student_id),
+                body: "camp technique note".into(),
+            },
+        )
+        .await
+        .unwrap();
+
+        let row = sqlx::query!(
+            r#"SELECT anchor_kind, camp_id AS "camp_id?: i64", technique_id AS "technique_id?: i64"
+               FROM threads WHERE id = ?"#,
+            id
+        )
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+        assert_eq!(row.anchor_kind, "camp_technique");
+        assert_eq!(row.camp_id, Some(camp_id));
+        assert_eq!(row.technique_id, Some(technique_id));
+    }
+
+    #[rocket::async_test]
+    async fn camp_technique_anchor_rejects_technique_not_in_camp() {
+        use crate::db::camps::{create_camp, NewCamp};
+        let db = TestDbBuilder::new()
+            .coach("coach_user", Some("Coach"))
+            .student("student_user", Some("Sam"))
+            .technique("Armbar", "an armbar", Some("coach_user"))
+            .build()
+            .await
+            .unwrap();
+        let coach_id = db.user_id("coach_user").unwrap();
+        let student_id = db.user_id("student_user").unwrap();
+        let technique_id = db.technique_id("Armbar").unwrap();
+
+        // Camp exists but the technique is NOT attached to it.
+        let camp_id = create_camp(
+            &db.pool,
+            NewCamp {
+                student_id,
+                coach_id,
+                name: "X-guard camp".to_string(),
+                description: None,
+                references_camp_id: None,
+            },
+        )
+        .await
+        .unwrap();
+
+        let result = create_thread(
+            &db.pool,
+            NewThread {
+                author_id: coach_id,
+                anchor: Anchor {
+                    kind: AnchorKind::CampTechnique,
+                    id: technique_id,
+                    video_ts_seconds: None,
+                    pinned_student_id: None,
+                    camp_id: Some(camp_id),
+                },
+                visibility: ThreadVisibility::Private,
+                scope_student_id: Some(student_id),
+                body: "should fail".into(),
+            },
+        )
+        .await;
+        assert!(
+            result.is_err(),
+            "camp_technique thread must be rejected when the technique is not attached to the camp"
+        );
+    }
+
+    // ---- CampTechnique HTTP route tests ----
+
+    /// Helper: build a client with a coach, two students, and a technique, then
+    /// create a camp for `student_user` with the technique attached. Returns the
+    /// (client, db, camp_id, technique_id).
+    async fn client_with_camp_technique() -> (
+        rocket::local::asynchronous::Client,
+        crate::test::test_utils::TestDb,
+        i64,
+        i64,
+    ) {
+        use crate::db::camps::{add_camp_technique, create_camp, NewCamp};
+        let db = TB::new()
+            .coach("coach_user", Some("Coach"))
+            .student("student_user", Some("Sam"))
+            .student("student2", Some("Mia"))
+            .technique("Armbar", "an armbar", Some("coach_user"))
+            .build()
+            .await
+            .unwrap();
+        let coach_id = db.user_id("coach_user").unwrap();
+        let student_id = db.user_id("student_user").unwrap();
+        let technique_id = db.technique_id("Armbar").unwrap();
+        let camp_id = create_camp(
+            &db.pool,
+            NewCamp {
+                student_id,
+                coach_id,
+                name: "Own camp".to_string(),
+                description: None,
+                references_camp_id: None,
+            },
+        )
+        .await
+        .unwrap();
+        add_camp_technique(&db.pool, camp_id, technique_id, coach_id)
+            .await
+            .unwrap();
+        let (client, db) = setup_test_client(db).await;
+        (client, db, camp_id, technique_id)
+    }
+
+    /// A camp_technique thread is camp-scoped: it must be creatable and listable
+    /// under the camp_technique anchor, but must NEVER appear in the global
+    /// library technique thread list (anchor_kind='technique').
+    #[rocket::async_test]
+    async fn camp_technique_thread_not_visible_on_global_technique() {
+        let (client, db, camp_id, technique_id) = client_with_camp_technique().await;
+        let student_id = db.user_id("student_user").unwrap();
+
+        // (a) Coach creates a camp_technique thread.
+        login_test_user(&client, "coach_user", "password123").await;
+        let create = client.post("/api/threads").header(ContentType::JSON)
+            .body(json!({"anchor_kind":"camp_technique","anchor_id":technique_id,"camp_id":camp_id,"visibility":"private","scope_student_id":student_id,"body":"camp note"}).to_string())
+            .dispatch().await;
+        assert_eq!(create.status(), HttpStatus::Ok);
+        let thread_id = create.into_json::<Value>().await.unwrap()["id"].as_i64().unwrap();
+
+        // (b) The global-library technique list must NOT include it.
+        let lib = client
+            .get(format!("/api/threads?anchor_kind=technique&anchor_id={technique_id}"))
+            .dispatch()
+            .await;
+        assert_eq!(lib.status(), HttpStatus::Ok);
+        let lib_threads = lib.into_json::<Value>().await.unwrap();
+        let lib_ids: Vec<i64> = lib_threads["threads"].as_array().unwrap().iter()
+            .map(|t| t["id"].as_i64().unwrap()).collect();
+        assert!(!lib_ids.contains(&thread_id), "camp_technique thread leaked into the global library list");
+
+        // (c) The camp_technique list MUST include it.
+        let camp_list = client
+            .get(format!("/api/threads?anchor_kind=camp_technique&anchor_id={technique_id}&camp_id={camp_id}"))
+            .dispatch()
+            .await;
+        assert_eq!(camp_list.status(), HttpStatus::Ok);
+        let camp_threads = camp_list.into_json::<Value>().await.unwrap();
+        let camp_ids: Vec<i64> = camp_threads["threads"].as_array().unwrap().iter()
+            .map(|t| t["id"].as_i64().unwrap()).collect();
+        assert!(camp_ids.contains(&thread_id), "camp_technique thread missing from its own camp list");
+    }
+
+    /// A student may start a camp_technique thread on their OWN camp's technique.
+    /// It is forced Private + scoped to the camp's student.
+    #[rocket::async_test]
+    async fn student_can_start_camp_technique_thread_on_own_camp() {
+        let (client, db, camp_id, technique_id) = client_with_camp_technique().await;
+        let student_id = db.user_id("student_user").unwrap();
+
+        login_test_user(&client, "student_user", "password123").await;
+        // Send broadcast + a bogus scope to prove the route forces private+scope.
+        let res = client.post("/api/threads").header(ContentType::JSON)
+            .body(json!({"anchor_kind":"camp_technique","anchor_id":technique_id,"camp_id":camp_id,"visibility":"broadcast","scope_student_id":null,"body":"my note"}).to_string())
+            .dispatch().await;
+        assert_eq!(res.status(), HttpStatus::Ok);
+        let thread_id = res.into_json::<Value>().await.unwrap()["id"].as_i64().unwrap();
+
+        let (vis, scope, got_camp): (String, i64, i64) = sqlx::query_as(
+            "SELECT visibility, scope_student_id, camp_id FROM threads WHERE id = ?",
+        )
+        .bind(thread_id)
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+        assert_eq!(vis, "private", "camp_technique threads must be forced private");
+        assert_eq!(scope, student_id, "camp_technique thread must be scoped to the camp's student");
+        assert_eq!(got_camp, camp_id);
+    }
+
+    /// A student must NOT be able to start a camp_technique thread on another
+    /// student's camp.
+    #[rocket::async_test]
+    async fn student_cannot_start_camp_technique_thread_on_another_camp() {
+        use crate::db::camps::{add_camp_technique, create_camp, NewCamp};
+        let db = TB::new()
+            .coach("coach_user", Some("Coach"))
+            .student("student_user", Some("Sam"))
+            .student("student2", Some("Mia"))
+            .technique("Armbar", "an armbar", Some("coach_user"))
+            .build()
+            .await
+            .unwrap();
+        let coach_id = db.user_id("coach_user").unwrap();
+        let other_student_id = db.user_id("student2").unwrap();
+        let technique_id = db.technique_id("Armbar").unwrap();
+        let camp_id = create_camp(
+            &db.pool,
+            NewCamp {
+                student_id: other_student_id,
+                coach_id,
+                name: "Other camp".to_string(),
+                description: None,
+                references_camp_id: None,
+            },
+        )
+        .await
+        .unwrap();
+        add_camp_technique(&db.pool, camp_id, technique_id, coach_id)
+            .await
+            .unwrap();
+        let (client, _db) = setup_test_client(db).await;
+
+        login_test_user(&client, "student_user", "password123").await;
+        let res = client.post("/api/threads").header(ContentType::JSON)
+            .body(json!({"anchor_kind":"camp_technique","anchor_id":technique_id,"camp_id":camp_id,"visibility":"private","scope_student_id":other_student_id,"body":"intrusion"}).to_string())
+            .dispatch().await;
+        assert_eq!(res.status(), HttpStatus::Forbidden);
     }
 }
