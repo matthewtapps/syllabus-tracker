@@ -449,6 +449,72 @@ pub async fn list_camp_techniques(
         .collect())
 }
 
+/// Pin an EXISTING video as camp-only reference footage on a camp technique.
+///
+/// Idempotent: the join table's composite PK means a repeat call is a no-op.
+/// The video stays where it is (e.g. parent_kind='camp'); the join row only
+/// surfaces it inside this camp's view of the technique. It does NOT make the
+/// video appear in the global technique-video list.
+#[instrument(skip(pool))]
+pub async fn add_camp_technique_video(
+    pool: &Pool<Sqlite>,
+    camp_id: i64,
+    technique_id: i64,
+    video_id: i64,
+) -> Result<(), AppError> {
+    sqlx::query!(
+        r#"INSERT OR IGNORE INTO camp_technique_referenced_videos (camp_id, technique_id, video_id)
+           VALUES (?, ?, ?)"#,
+        camp_id,
+        technique_id,
+        video_id,
+    )
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+/// Re-parent an EXISTING video onto a technique as a normal technique video
+/// (parent_kind='technique', technique_id=<technique>, other parent columns
+/// cleared). This is the "global" scope: the video then appears everywhere the
+/// technique appears, including the global technique-video list.
+///
+/// Used by the camp-technique video route's global path. Position is appended
+/// to the technique's existing videos so ordering stays stable.
+#[instrument(skip(pool))]
+pub async fn attach_video_to_technique(
+    pool: &Pool<Sqlite>,
+    video_id: i64,
+    technique_id: i64,
+) -> Result<(), AppError> {
+    let position = sqlx::query_scalar!(
+        r#"SELECT COALESCE(MAX(position), -1) + 1 AS "p!: i64"
+           FROM videos
+           WHERE technique_id = ? AND parent_kind = 'technique' AND deleted_at IS NULL"#,
+        technique_id,
+    )
+    .fetch_one(pool)
+    .await?;
+    sqlx::query!(
+        r#"UPDATE videos
+           SET parent_kind = 'technique',
+               technique_id = ?,
+               camp_id = NULL,
+               student_id = NULL,
+               thread_id = NULL,
+               syllabus_technique_id = NULL,
+               student_syllabus_technique_id = NULL,
+               position = ?
+           WHERE id = ?"#,
+        technique_id,
+        position,
+        video_id,
+    )
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
 /// CC-009 (global) + CC-010 (scoped): create a NEW technique inside a camp,
 /// then add it to that camp's technique list.
 ///

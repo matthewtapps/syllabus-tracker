@@ -6,9 +6,10 @@ use tracing::instrument;
 
 use crate::auth::{Permission, User};
 use crate::db::camps::{
-    add_camp_technique, archive_camp, create_camp, create_camp_technique_new, get_camp,
-    list_camp_summaries_for_student, list_camp_techniques, remove_camp_technique, update_camp,
-    Camp, CampSummary, CampTechnique, NewCamp, TechniqueScope,
+    add_camp_technique, add_camp_technique_video, archive_camp, attach_video_to_technique,
+    create_camp, create_camp_technique_new, get_camp, list_camp_summaries_for_student,
+    list_camp_techniques, remove_camp_technique, update_camp, Camp, CampSummary, CampTechnique,
+    NewCamp, TechniqueScope,
 };
 use crate::db::{list_videos_for_camp, set_video_camp_visibility};
 use crate::models::Video;
@@ -286,6 +287,75 @@ pub async fn api_remove_camp_technique(
     remove_camp_technique(pool.inner(), id, technique_id)
         .await
         .map_err(Status::from)?;
+    Ok(Status::NoContent)
+}
+
+/// Body for `POST /api/camps/<camp_id>/techniques/<technique_id>/videos`.
+#[derive(Deserialize)]
+pub struct AddCampTechniqueVideoRequest {
+    pub video_id: i64,
+    /// `"camp_only"` → reference footage surfaced only inside this camp's view
+    /// of the technique (does not leak to the global technique list).
+    /// `"global"`    → attach as a normal technique video, visible everywhere
+    /// the technique appears.
+    pub scope: String,
+}
+
+/// Coach-only: add a video to a technique WITHIN a camp.
+///
+/// `scope = "camp_only"` → pin the (existing) video as camp-only reference
+///   footage via `camp_technique_referenced_videos` (idempotent). The video is
+///   NOT added to the global technique-video list.
+/// `scope = "global"`    → attach the video to the technique as a normal
+///   technique video (parent_kind='technique'); it then appears everywhere the
+///   technique appears. No camp_technique_referenced_videos row is written.
+///
+/// Requires `ManageCamps` (technique authoring is coach-only; students upload
+/// to the camp itself via the separate camp-upload route). The technique must
+/// be attached to the camp.
+#[instrument(skip(req, pool, user))]
+#[post("/camps/<camp_id>/techniques/<technique_id>/videos", data = "<req>")]
+pub async fn api_add_camp_technique_video(
+    camp_id: i64,
+    technique_id: i64,
+    user: User,
+    req: Json<AddCampTechniqueVideoRequest>,
+    pool: &State<Pool<Sqlite>>,
+) -> Result<Status, Status> {
+    require_camps(&user)?;
+    let pool = pool.inner();
+
+    // The technique must be a member of this camp. This also implicitly
+    // confirms the camp exists (no membership row otherwise).
+    let is_member = sqlx::query_scalar!(
+        r#"SELECT EXISTS(
+              SELECT 1 FROM camp_techniques
+              WHERE camp_id = ? AND technique_id = ?
+           ) AS "e!: i64""#,
+        camp_id,
+        technique_id,
+    )
+    .fetch_one(pool)
+    .await
+    .map_err(|_| Status::InternalServerError)?;
+    if is_member == 0 {
+        return Err(Status::NotFound);
+    }
+
+    match req.scope.as_str() {
+        "camp_only" => {
+            add_camp_technique_video(pool, camp_id, technique_id, req.video_id)
+                .await
+                .map_err(Status::from)?;
+        }
+        "global" => {
+            attach_video_to_technique(pool, req.video_id, technique_id)
+                .await
+                .map_err(Status::from)?;
+        }
+        _ => return Err(Status::UnprocessableEntity),
+    }
+
     Ok(Status::NoContent)
 }
 
