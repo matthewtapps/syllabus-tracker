@@ -53,9 +53,9 @@ Three product requirements:
 ### `videos`
 No schema change. A video reply is an ordinary `videos` row with
 `parent_kind='thread'`, `thread_id=<thread>`. Caption is stored in
-`videos.description`. `videos.title` is synthesized (e.g. author display name +
-" — video reply") since title is required by the create path but is not a
-user-entered field for replies.
+`videos.description`. `videos.title` is left empty/NULL for replies (it is not a
+user-entered field for a reply); the create path must accept an empty title for
+the thread parent rather than requiring one.
 
 ### `thread_comments`
 Add two nullable columns:
