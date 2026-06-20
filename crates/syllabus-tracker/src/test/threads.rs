@@ -1669,6 +1669,45 @@ mod tests {
     }
 
     #[rocket::async_test]
+    async fn video_reply_activity_carries_reply_id_on_video_anchored_thread() {
+        let db = db_with_coach_and_student().await;
+        let coach_id = db.user_id("coach_user").unwrap();
+        let student_id = db.user_id("student_user").unwrap();
+
+        // A technique + a library video to anchor a broadcast video thread on.
+        sqlx::query("INSERT INTO techniques (id, name) VALUES (1, 'Armbar')")
+            .execute(&db.pool).await.unwrap();
+        let anchor_vid: i64 = sqlx::query_scalar(
+            "INSERT INTO videos (parent_kind, technique_id, title, position, kind, \
+                processing_status, uploaded_by_id) \
+             VALUES ('technique', 1, 'anchor', 0, 'native', 'ready', ?) RETURNING id")
+            .bind(coach_id).fetch_one(&db.pool).await.unwrap();
+
+        let thread_id = create_thread(&db.pool, NewThread {
+            author_id: coach_id,
+            anchor: Anchor { kind: AnchorKind::Video, id: anchor_vid, video_ts_seconds: None,
+                             pinned_student_id: None, camp_id: None },
+            visibility: ThreadVisibility::Broadcast, scope_student_id: None,
+            body: "look".to_string(),
+        }).await.unwrap();
+
+        // A reply video on the thread.
+        let reply_vid: i64 = sqlx::query_scalar(
+            "INSERT INTO videos (parent_kind, thread_id, title, position, kind, \
+                processing_status, uploaded_by_id) \
+             VALUES ('thread', ?, '', 0, 'native', 'ready', ?) RETURNING id")
+            .bind(thread_id).bind(student_id).fetch_one(&db.pool).await.unwrap();
+
+        crate::db::threads::record_thread_video_reply(&db.pool, thread_id, reply_vid, student_id)
+            .await.unwrap();
+
+        let act = sqlx::query!(
+            r#"SELECT video_id AS "v?: i64" FROM activity WHERE verb = 'video_reply_posted'"#)
+            .fetch_one(&db.pool).await.unwrap();
+        assert_eq!(act.v, Some(reply_vid), "activity must carry the reply video id, not the anchor's");
+    }
+
+    #[rocket::async_test]
     async fn student_cannot_start_camp_technique_thread_on_another_camp() {
         use crate::db::camps::{add_camp_technique, create_camp, NewCamp};
         let db = TB::new()

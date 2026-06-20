@@ -586,21 +586,26 @@ pub async fn record_thread_video_reply(
     .execute(&mut *tx)
     .await?;
 
+    // Build the event with anchor deep-link context first, THEN set the reply
+    // video id last so the anchor-context resolution (which also writes video_id
+    // for video-anchored threads) cannot clobber it.
+    let mut ev = apply_thread_anchor_context(
+        &mut tx,
+        NewActivity::new(Verb::VideoReplyPosted, author_id).thread(thread_id),
+        thread_row.technique_id,
+        thread_row.video_id,
+        thread_row.sst_id,
+    )
+    .await?;
+    ev = ev.video(video_id);
     let target = if thread_row.visibility == "private" {
         thread_row.scope_student_id
     } else {
         None
     };
-    let mut ev = NewActivity::new(Verb::VideoReplyPosted, author_id)
-        .thread(thread_id)
-        .video(video_id);
     if let Some(t) = target {
         ev = ev.target_student(t);
     }
-    let mut ev = apply_thread_anchor_context(
-        &mut tx, ev,
-        thread_row.technique_id, thread_row.video_id, thread_row.sst_id,
-    ).await?;
     if let Some(camp_id) = thread_row.camp_id {
         ev = ev.camp(camp_id).context_kind("camp");
     }
@@ -708,7 +713,7 @@ pub async fn get_thread(
                   c.deleted_at AS "deleted_at?: NaiveDateTime"
            FROM thread_comments c
            JOIN users u ON u.id = c.author_id
-           LEFT JOIN videos rv ON rv.id = c.references_video_id
+           LEFT JOIN videos rv ON rv.id = c.references_video_id AND rv.deleted_at IS NULL
            WHERE c.thread_id = ?
            ORDER BY c.created_at, c.id"#,
         thread_id

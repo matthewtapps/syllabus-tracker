@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT c.id AS \"id!: i64\",\n                  c.thread_id AS \"thread_id!: i64\",\n                  c.parent_comment_id AS \"parent_comment_id?: i64\",\n                  c.author_id AS \"author_id!: i64\",\n                  COALESCE(u.display_name, u.username, '?') AS \"author_name!: String\",\n                  c.body,\n                  c.references_video_id AS \"references_video_id?: i64\",\n                  c.ref_ts_seconds AS \"ref_ts_seconds?: i64\",\n                  rv.description AS \"referenced_caption?: String\",\n                  c.created_at AS \"created_at!: NaiveDateTime\",\n                  c.deleted_at AS \"deleted_at?: NaiveDateTime\"\n           FROM thread_comments c\n           JOIN users u ON u.id = c.author_id\n           LEFT JOIN videos rv ON rv.id = c.references_video_id\n           WHERE c.thread_id = ?\n           ORDER BY c.created_at, c.id",
+  "query": "SELECT c.id AS \"id!: i64\",\n                  c.thread_id AS \"thread_id!: i64\",\n                  c.parent_comment_id AS \"parent_comment_id?: i64\",\n                  c.author_id AS \"author_id!: i64\",\n                  COALESCE(u.display_name, u.username, '?') AS \"author_name!: String\",\n                  c.body,\n                  c.references_video_id AS \"references_video_id?: i64\",\n                  c.ref_ts_seconds AS \"ref_ts_seconds?: i64\",\n                  rv.description AS \"referenced_caption?: String\",\n                  c.created_at AS \"created_at!: NaiveDateTime\",\n                  c.deleted_at AS \"deleted_at?: NaiveDateTime\"\n           FROM thread_comments c\n           JOIN users u ON u.id = c.author_id\n           LEFT JOIN videos rv ON rv.id = c.references_video_id AND rv.deleted_at IS NULL\n           WHERE c.thread_id = ?\n           ORDER BY c.created_at, c.id",
   "describe": {
     "columns": [
       {
@@ -76,5 +76,5 @@
       true
     ]
   },
-  "hash": "5013a4935d0f2a1933c1f55a6f5cff394311c5ea8563a56913471b2db3d66c7a"
+  "hash": "fed9b03888f4ac164853146eee5a18e2fd98ad11227b6c9da68fc6e4a99fa286"
 }
