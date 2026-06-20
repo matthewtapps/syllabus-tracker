@@ -30,6 +30,19 @@ mod tests {
     }
 
     #[rocket::async_test]
+    async fn thread_comments_has_reference_columns() {
+        let db = create_standard_test_db().await;
+        let cols: Vec<String> = sqlx::query_scalar(
+            "SELECT name FROM pragma_table_info('thread_comments') \
+             WHERE name IN ('references_video_id','ref_ts_seconds') ORDER BY name",
+        )
+        .fetch_all(&db.pool)
+        .await
+        .unwrap();
+        assert_eq!(cols, vec!["ref_ts_seconds", "references_video_id"]);
+    }
+
+    #[rocket::async_test]
     async fn create_private_profile_thread_persists_row() {
         let db = db_with_coach_and_student().await;
         let coach_id = db.user_id("coach_user").unwrap();
