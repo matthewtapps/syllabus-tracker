@@ -1281,6 +1281,48 @@ mod tests {
         assert!(row.syllabus_id.is_some(), "comment row must carry syllabus_id");
     }
 
+    #[rocket::async_test]
+    async fn get_thread_returns_video_replies_and_comment_refs() {
+        let db = db_with_coach_and_student().await;
+        let coach_id = db.user_id("coach_user").unwrap();
+        let student_id = db.user_id("student_user").unwrap();
+
+        sqlx::query("INSERT INTO techniques (id, name) VALUES (1, 'Armbar')")
+            .execute(&db.pool).await.unwrap();
+        let thread_id = create_thread(&db.pool, NewThread {
+            author_id: coach_id,
+            anchor: Anchor { kind: AnchorKind::Technique, id: 1, video_ts_seconds: None,
+                             pinned_student_id: None, camp_id: None },
+            visibility: ThreadVisibility::Broadcast,
+            scope_student_id: None,
+            body: "thoughts?".to_string(),
+        }).await.unwrap();
+
+        let video_id: i64 = sqlx::query_scalar(
+            "INSERT INTO videos (parent_kind, thread_id, title, description, position, kind, \
+                processing_status, uploaded_by_id) \
+             VALUES ('thread', ?, '', 'nice grip', 0, 'native', 'ready', ?) RETURNING id")
+            .bind(thread_id).bind(student_id)
+            .fetch_one(&db.pool).await.unwrap();
+
+        sqlx::query(
+            "INSERT INTO thread_comments (thread_id, author_id, body, references_video_id, ref_ts_seconds) \
+             VALUES (?, ?, 'see 0:32', ?, 32)")
+            .bind(thread_id).bind(coach_id).bind(video_id)
+            .execute(&db.pool).await.unwrap();
+
+        let view = get_thread(&db.pool, thread_id,
+            Viewer { user_id: coach_id, is_coach: true }).await.unwrap().unwrap();
+
+        assert_eq!(view.video_replies.len(), 1);
+        assert_eq!(view.video_replies[0].id, video_id);
+        assert_eq!(view.video_replies[0].caption.as_deref(), Some("nice grip"));
+        assert_eq!(view.comments.len(), 1);
+        assert_eq!(view.comments[0].references_video_id, Some(video_id));
+        assert_eq!(view.comments[0].ref_ts_seconds, Some(32));
+        assert_eq!(view.comments[0].referenced_caption.as_deref(), Some("nice grip"));
+    }
+
     // ---- CampTechnique anchor tests ----
 
     #[rocket::async_test]

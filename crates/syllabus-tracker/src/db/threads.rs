@@ -2,13 +2,14 @@
 //! anchor/visibility vocabulary, the (kind, visibility) allow-matrix, and the
 //! CRUD SQL. Activity-feed emission is handled here (PR5).
 
-use chrono::NaiveDateTime;
+use chrono::{DateTime, NaiveDateTime, Utc};
 use serde::Serialize;
 use sqlx::{Pool, Sqlite};
 use tracing::{info, instrument};
 
 use crate::db::activity::{emit, NewActivity, Verb};
 use crate::error::AppError;
+use crate::models::Video;
 
 /// The kinds of thing a thread can anchor to. Mirrors the `anchor_kind` CHECK
 /// in `config/schema.sql` and (later) the shared frontend EntityRef union.
@@ -370,6 +371,19 @@ pub struct Viewer {
 }
 
 #[derive(Debug, Serialize)]
+pub struct VideoReplyView {
+    pub id: i64,
+    pub author_id: i64,
+    pub author_name: String,
+    /// The reply's caption (videos.description); `None` when soft-deleted.
+    pub caption: Option<String>,
+    pub created_at: DateTime<Utc>,
+    pub deleted_at: Option<DateTime<Utc>>,
+    /// The full video payload; `None` when soft-deleted (tombstoned).
+    pub video: Option<Video>,
+}
+
+#[derive(Debug, Serialize)]
 pub struct CommentView {
     pub id: i64,
     pub thread_id: i64,
@@ -378,6 +392,10 @@ pub struct CommentView {
     pub author_name: String,
     /// `None` when the comment is soft-deleted (tombstoned in the read layer).
     pub body: Option<String>,
+    pub references_video_id: Option<i64>,
+    pub ref_ts_seconds: Option<i64>,
+    /// Denormalized caption of the referenced reply, for the chip label.
+    pub referenced_caption: Option<String>,
     pub created_at: NaiveDateTime,
     pub deleted_at: Option<NaiveDateTime>,
 }
@@ -397,6 +415,7 @@ pub struct ThreadView {
     pub created_at: NaiveDateTime,
     pub deleted_at: Option<NaiveDateTime>,
     pub comments: Vec<CommentView>,
+    pub video_replies: Vec<VideoReplyView>,
 }
 
 #[instrument(skip(pool, body))]
@@ -596,10 +615,14 @@ pub async fn get_thread(
                   c.author_id AS "author_id!: i64",
                   COALESCE(u.display_name, u.username, '?') AS "author_name!: String",
                   c.body,
+                  c.references_video_id AS "references_video_id?: i64",
+                  c.ref_ts_seconds AS "ref_ts_seconds?: i64",
+                  rv.description AS "referenced_caption?: String",
                   c.created_at AS "created_at!: NaiveDateTime",
                   c.deleted_at AS "deleted_at?: NaiveDateTime"
            FROM thread_comments c
            JOIN users u ON u.id = c.author_id
+           LEFT JOIN videos rv ON rv.id = c.references_video_id
            WHERE c.thread_id = ?
            ORDER BY c.created_at, c.id"#,
         thread_id
@@ -614,10 +637,39 @@ pub async fn get_thread(
         author_id: c.author_id,
         author_name: c.author_name,
         body: if c.deleted_at.is_some() { None } else { Some(c.body) },
+        references_video_id: c.references_video_id,
+        ref_ts_seconds: c.ref_ts_seconds,
+        referenced_caption: c.referenced_caption,
         created_at: c.created_at,
         deleted_at: c.deleted_at,
     })
     .collect();
+
+    let reply_rows = crate::db::videos::list_videos_for_parent_global_visible(
+        pool, crate::db::videos::VideoParent::Thread(thread_id),
+    ).await?;
+    // list_videos_for_parent_global_visible already filters deleted + hidden, so
+    // every returned row is a live reply (deleted_at = None, video = Some). A
+    // deleted reply simply disappears from this list.
+    let mut video_replies = Vec::with_capacity(reply_rows.len());
+    for v in reply_rows {
+        let author_name: String = sqlx::query_scalar::<_, String>(
+            "SELECT COALESCE(display_name, username, '?') FROM users WHERE id = ?")
+            .bind(v.uploaded_by_id)
+            .fetch_one(pool)
+            .await?;
+        let caption = v.description.clone();
+        let created_at = v.created_at;
+        video_replies.push(VideoReplyView {
+            id: v.id,
+            author_id: v.uploaded_by_id,
+            author_name,
+            caption,
+            created_at,
+            deleted_at: None,
+            video: Some(v),
+        });
+    }
 
     let thread_body = if row.deleted_at.is_some() { None } else { Some(row.body) };
 
@@ -633,6 +685,7 @@ pub async fn get_thread(
         created_at: row.created_at,
         deleted_at: row.deleted_at,
         comments,
+        video_replies,
     }))
 }
 

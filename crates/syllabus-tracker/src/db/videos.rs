@@ -607,9 +607,6 @@ pub async fn list_videos_for_technique_global_visible(
 /// Lists the globally-visible (not soft-deleted, not globally-hidden) videos
 /// hanging off a given parent. Used by profile/thread/loose surfaces, which
 /// per CX-019 apply only the global hide (no per-student override layers).
-// Consumed by the profile/thread/loose video surfaces in later PRs; kept here
-// so this slab delivers the read primitive alongside the write path.
-#[allow(dead_code)]
 #[instrument(skip(pool))]
 pub async fn list_videos_for_parent_global_visible(
     pool: &Pool<Sqlite>,
