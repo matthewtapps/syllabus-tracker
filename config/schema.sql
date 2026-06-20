@@ -518,13 +518,10 @@ CREATE TABLE IF NOT EXISTS thread_comments (
     parent_comment_id INTEGER REFERENCES thread_comments(id) ON DELETE CASCADE,
     author_id         INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     body              TEXT NOT NULL,
-    references_video_id INTEGER REFERENCES videos(id),
-    ref_ts_seconds    INTEGER,
     created_at        TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     edited_at         TIMESTAMP,
     deleted_at        TIMESTAMP,
-    deleted_by_id     INTEGER REFERENCES users(id),
-    CHECK (ref_ts_seconds IS NULL OR references_video_id IS NOT NULL)
+    deleted_by_id     INTEGER REFERENCES users(id)
 );
 CREATE INDEX IF NOT EXISTS idx_thread_comments_thread ON thread_comments(thread_id, created_at);
 

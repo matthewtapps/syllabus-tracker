@@ -375,8 +375,6 @@ pub struct VideoReplyView {
     pub id: i64,
     pub author_id: i64,
     pub author_name: String,
-    /// The reply's caption (videos.description); `None` when soft-deleted.
-    pub caption: Option<String>,
     pub created_at: DateTime<Utc>,
     pub deleted_at: Option<DateTime<Utc>>,
     /// The full video payload; `None` when soft-deleted (tombstoned).
@@ -392,10 +390,6 @@ pub struct CommentView {
     pub author_name: String,
     /// `None` when the comment is soft-deleted (tombstoned in the read layer).
     pub body: Option<String>,
-    pub references_video_id: Option<i64>,
-    pub ref_ts_seconds: Option<i64>,
-    /// Denormalized caption of the referenced reply, for the chip label.
-    pub referenced_caption: Option<String>,
     pub created_at: NaiveDateTime,
     pub deleted_at: Option<NaiveDateTime>,
 }
@@ -425,8 +419,6 @@ pub async fn create_comment(
     parent_comment_id: Option<i64>,
     author_id: i64,
     body: &str,
-    references_video_id: Option<i64>,
-    ref_ts_seconds: Option<i64>,
 ) -> Result<i64, AppError> {
     // Fetch the thread's liveness, visibility, scope student, and anchor
     // details in one query so we can emit the activity row with the right
@@ -474,44 +466,17 @@ pub async fn create_comment(
         }
     }
 
-    // A timestamp is meaningless without a referenced clip.
-    if ref_ts_seconds.is_some() && references_video_id.is_none() {
-        return Err(AppError::Validation(
-            "ref_ts_seconds requires references_video_id".to_string(),
-        ));
-    }
-    // A referenced clip must be a live video reply ON THIS thread.
-    if let Some(ref_id) = references_video_id {
-        let ok = sqlx::query_scalar!(
-            r#"SELECT EXISTS(
-                  SELECT 1 FROM videos
-                  WHERE id = ? AND thread_id = ? AND parent_kind = 'thread'
-                    AND deleted_at IS NULL
-               ) AS "e!: i64""#,
-            ref_id, thread_id,
-        )
-        .fetch_one(pool)
-        .await?;
-        if ok == 0 {
-            return Err(AppError::Validation(
-                "referenced video is not a reply on this thread".to_string(),
-            ));
-        }
-    }
-
     let mut tx = pool.begin().await?;
 
     let comment_id = sqlx::query_scalar!(
         r#"INSERT INTO thread_comments
-              (thread_id, parent_comment_id, author_id, body, references_video_id, ref_ts_seconds)
-           VALUES (?, ?, ?, ?, ?, ?)
+              (thread_id, parent_comment_id, author_id, body)
+           VALUES (?, ?, ?, ?)
            RETURNING id AS "id!: i64""#,
         thread_id,
         parent_comment_id,
         author_id,
         body,
-        references_video_id,
-        ref_ts_seconds,
     )
     .fetch_one(&mut *tx)
     .await?;
@@ -706,14 +671,10 @@ pub async fn get_thread(
                   c.author_id AS "author_id!: i64",
                   COALESCE(u.display_name, u.username, '?') AS "author_name!: String",
                   c.body,
-                  c.references_video_id AS "references_video_id?: i64",
-                  c.ref_ts_seconds AS "ref_ts_seconds?: i64",
-                  rv.description AS "referenced_caption?: String",
                   c.created_at AS "created_at!: NaiveDateTime",
                   c.deleted_at AS "deleted_at?: NaiveDateTime"
            FROM thread_comments c
            JOIN users u ON u.id = c.author_id
-           LEFT JOIN videos rv ON rv.id = c.references_video_id AND rv.deleted_at IS NULL
            WHERE c.thread_id = ?
            ORDER BY c.created_at, c.id"#,
         thread_id
@@ -728,9 +689,6 @@ pub async fn get_thread(
         author_id: c.author_id,
         author_name: c.author_name,
         body: if c.deleted_at.is_some() { None } else { Some(c.body) },
-        references_video_id: c.references_video_id,
-        ref_ts_seconds: c.ref_ts_seconds,
-        referenced_caption: c.referenced_caption,
         created_at: c.created_at,
         deleted_at: c.deleted_at,
     })
@@ -749,13 +707,11 @@ pub async fn get_thread(
             .bind(v.uploaded_by_id)
             .fetch_one(pool)
             .await?;
-        let caption = v.description.clone();
         let created_at = v.created_at;
         video_replies.push(VideoReplyView {
             id: v.id,
             author_id: v.uploaded_by_id,
             author_name,
-            caption,
             created_at,
             deleted_at: None,
             video: Some(v),

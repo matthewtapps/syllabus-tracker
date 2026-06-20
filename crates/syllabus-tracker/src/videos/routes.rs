@@ -427,12 +427,12 @@ pub async fn api_thread_video_reply_upload(
         Status::InternalServerError
     })?;
 
-    // Thread replies have no title; the caption lives in description.
+    // Thread replies carry no title or caption.
     let video_id = db::create_processing_video(
         pool,
         db::VideoParent::Thread(thread_id),
         "",
-        form.description.as_deref(),
+        None,
         user.id,
     )
     .await
@@ -469,7 +469,7 @@ pub async fn api_thread_video_reply_link(
         db::NewExternalVideo {
             parent: db::VideoParent::Thread(thread_id),
             title: "",
-            description: req.description.as_deref(),
+            description: None,
             uploaded_by_id: user.id,
             kind: parsed.kind,
             external_url: &parsed.canonical_url,
