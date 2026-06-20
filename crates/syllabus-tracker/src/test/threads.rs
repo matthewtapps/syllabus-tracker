@@ -822,6 +822,66 @@ mod tests {
         assert_eq!(res.status(), HttpStatus::Forbidden);
     }
 
+    /// A student may start a camp-level thread on their OWN camp. The thread is
+    /// forced Private and scoped to the camp's student regardless of the request.
+    #[rocket::async_test]
+    async fn student_creates_camp_level_thread_on_own_camp() {
+        let (client, db) = client_with_users().await;
+        let coach_id = db.user_id("coach_user").unwrap();
+        let student_id = db.user_id("student_user").unwrap();
+
+        let camp_id: i64 = sqlx::query_scalar(
+            "INSERT INTO camps (student_id, coach_id, name) VALUES (?, ?, 'Own camp') RETURNING id",
+        )
+        .bind(student_id)
+        .bind(coach_id)
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+
+        login_test_user(&client, "student_user", "password123").await;
+        let res = client.post("/api/threads").header(ContentType::JSON)
+            .body(json!({"anchor_kind":"camp","anchor_id":camp_id,"visibility":"private","scope_student_id":null,"body":"How's my prep?"}).to_string())
+            .dispatch().await;
+        assert_eq!(res.status(), HttpStatus::Ok);
+        let thread_id = res.into_json::<Value>().await.unwrap()["id"].as_i64().unwrap();
+
+        let (vis, scope, got_camp): (String, i64, i64) = sqlx::query_as(
+            "SELECT visibility, scope_student_id, camp_id FROM threads WHERE id = ?",
+        )
+        .bind(thread_id)
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+        assert_eq!(vis, "private", "camp threads must be forced private");
+        assert_eq!(scope, student_id, "camp thread must be scoped to the camp's student");
+        assert_eq!(got_camp, camp_id);
+    }
+
+    /// A student must NOT be able to start a camp-level thread on another
+    /// student's camp.
+    #[rocket::async_test]
+    async fn student_cannot_create_camp_thread_on_another_students_camp() {
+        let (client, db) = client_with_users().await;
+        let coach_id = db.user_id("coach_user").unwrap();
+        let other_student_id = db.user_id("student2").unwrap();
+
+        let camp_id: i64 = sqlx::query_scalar(
+            "INSERT INTO camps (student_id, coach_id, name) VALUES (?, ?, 'Other camp') RETURNING id",
+        )
+        .bind(other_student_id)
+        .bind(coach_id)
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+
+        login_test_user(&client, "student_user", "password123").await;
+        let res = client.post("/api/threads").header(ContentType::JSON)
+            .body(json!({"anchor_kind":"camp","anchor_id":camp_id,"visibility":"private","scope_student_id":null,"body":"intrusion"}).to_string())
+            .dispatch().await;
+        assert_eq!(res.status(), HttpStatus::Forbidden);
+    }
+
     #[rocket::async_test]
     async fn student_cannot_broadcast() {
         let (client, _db) = client_with_users().await;

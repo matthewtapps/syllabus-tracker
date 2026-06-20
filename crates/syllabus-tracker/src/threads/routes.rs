@@ -64,20 +64,23 @@ pub async fn api_create_thread(
     }
 
     // Camp threads are inherently scoped to the camp's student; never trust a
-    // client-supplied scope for them. Coaches only (Slice 1).
+    // client-supplied scope for them. A coach OR the camp's own student may
+    // start one; any other user is forbidden.
+    let is_coach = user.has_permission(Permission::ViewAllStudents);
     let (visibility, scope_student_id) = if kind == AnchorKind::Camp {
-        user.require_permission(Permission::ManageCamps).map_err(|_| Status::Forbidden)?;
         let camp_student = sqlx::query_scalar!(
             "SELECT student_id FROM camps WHERE id = ?", req.anchor_id
         )
         .fetch_optional(pool).await.map_err(|_| Status::InternalServerError)?
         .ok_or(Status::NotFound)?;
+        if !is_coach && user.id != camp_student {
+            return Err(Status::Forbidden);
+        }
         (ThreadVisibility::Private, Some(camp_student))
     } else {
         (visibility, req.scope_student_id)
     };
 
-    let is_coach = user.has_permission(Permission::ViewAllStudents);
     if !is_coach && kind != AnchorKind::Camp {
         let own_profile = kind == AnchorKind::StudentProfile && req.anchor_id == user.id;
         let own_scope = visibility == ThreadVisibility::Private && scope_student_id == Some(user.id);
