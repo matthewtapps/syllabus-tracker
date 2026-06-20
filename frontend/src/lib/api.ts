@@ -2147,6 +2147,23 @@ export async function getCampVideos(campId: number): Promise<Video[]> {
 }
 
 /**
+ * The camp-only reference videos attached to a technique within this camp.
+ * Returns ONLY the camp-scoped refs; the technique's global videos come from
+ * `getTechniqueVideos`. Readable by the coach or the camp's own student.
+ */
+export async function getCampTechniqueVideos(
+  campId: number,
+  techniqueId: number,
+): Promise<Video[]> {
+  const res = await fetch(
+    `/api/camps/${campId}/techniques/${techniqueId}/videos`,
+    { credentials: "include" },
+  );
+  if (!res.ok) throw res;
+  return ((await res.json()) as { videos: Video[] }).videos;
+}
+
+/**
  * Attach one of this camp's footage videos to a technique within the camp.
  * `camp_only` keeps it as camp-scoped reference footage (surfaced only inside
  * this camp); `global` promotes it to a normal technique video visible

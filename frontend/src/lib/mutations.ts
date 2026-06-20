@@ -1460,6 +1460,11 @@ export function useAddCampTechniqueVideo(campId: number) {
       });
       qc.invalidateQueries({ queryKey: qk.campVideos(campId) });
       qc.invalidateQueries({ queryKey: qk.camp(campId) });
+      // Refresh the camp-only section in the camp technique row so a
+      // `camp_only` add appears without a manual reload.
+      qc.invalidateQueries({
+        queryKey: qk.campTechniqueVideos(campId, vars.techniqueId),
+      });
     },
   });
 }
