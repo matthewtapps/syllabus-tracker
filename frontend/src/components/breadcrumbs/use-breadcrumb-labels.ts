@@ -1,4 +1,4 @@
-import { useAllUsers, useSyllabi, useStudentSyllabi } from "@/lib/queries";
+import { useAllUsers, useCamp, useSyllabi, useStudentSyllabi } from "@/lib/queries";
 import type { DynamicKey, RawCrumb } from "./breadcrumb-config";
 
 /**
@@ -18,11 +18,13 @@ export function useBreadcrumbLabels(chain: RawCrumb[]): (crumb: RawCrumb) => str
     .find((c) => c.params.syllabusId !== undefined)
     ?.params.syllabusId;
   const globalSyllabusIdRaw = chain.find((c) => c.params.id !== undefined && c.pattern === "/syllabi/:id")?.params.id;
+  const campIdRaw = chain.find((c) => c.params.campId !== undefined)?.params.campId;
 
   const studentId = studentIdRaw !== undefined ? Number(studentIdRaw) : undefined;
   const syllabusId = syllabusIdRaw !== undefined ? Number(syllabusIdRaw) : undefined;
   const globalSyllabusId =
     globalSyllabusIdRaw !== undefined ? Number(globalSyllabusIdRaw) : undefined;
+  const campId = campIdRaw !== undefined ? Number(campIdRaw) : undefined;
 
   // --- studentName: look up from the all-users list ---
   const allUsersQuery = useAllUsers();
@@ -54,10 +56,17 @@ export function useBreadcrumbLabels(chain: RawCrumb[]): (crumb: RawCrumb) => str
     ? globalSyllabusEntry.name
     : "Syllabus";
 
+  // --- campName: look up the camp by id (camp-detail route) ---
+  const campQuery = useCamp(
+    typeof campId === "number" && Number.isFinite(campId) ? campId : undefined,
+  );
+  const campName = campQuery.data?.name ?? "Camp";
+
   const resolvers: Record<DynamicKey, string> = {
     studentName,
     studentSyllabusName,
     globalSyllabusName,
+    campName,
   };
 
   return (crumb: RawCrumb): string => {

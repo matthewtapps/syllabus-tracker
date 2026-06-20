@@ -1,4 +1,4 @@
-import { Link, useLocation } from "react-router-dom";
+import { Link, matchPath, useLocation } from "react-router-dom";
 import {
   Breadcrumb,
   BreadcrumbEllipsis,
@@ -15,8 +15,84 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useUser } from "@/lib/current-user-context";
-import { buildCrumbChain } from "./breadcrumb-config";
+import { useCamp } from "@/lib/queries";
+import { buildCrumbChain, type RawCrumb } from "./breadcrumb-config";
 import { useBreadcrumbLabels } from "./use-breadcrumb-labels";
+
+/**
+ * Builds the breadcrumb chain for the camp-detail route `/camps/:id`.
+ *
+ * This route is special-cased rather than driven by `CRUMB_DEFS` because the
+ * student id it needs to link back to (`/student/<sid>/...`) lives in the camp
+ * data, NOT the URL. The generic builder fills every pattern in a chain from a
+ * single `matchedParams` map, so routing `/camps/:id` through the `:id`-based
+ * student patterns would substitute the CAMP id as the STUDENT id (a wrong
+ * link). Here we build each crumb's `to` path by hand from the resolved student
+ * id, so there is no param collision.
+ *
+ * Crumbs carry `params.id = studentId` (which the existing `studentName`
+ * resolver keys off on `/student/...` patterns) and `params.campId = campId`
+ * (which the `campName` resolver keys off). Dynamic labels are left unresolved;
+ * `useBreadcrumbLabels` fills them.
+ *
+ * While the camp is still loading `studentId` is undefined, so we render a
+ * shallow `Dashboard > {campName}` fallback (campName itself resolves once the
+ * camp loads), avoiding a flash of wrong student links.
+ */
+function buildCampDetailChain(
+  campId: number,
+  studentId: number | undefined,
+  role: string,
+): RawCrumb[] {
+  const campIdStr = String(campId);
+  const dashboard: RawCrumb = {
+    pattern: "/dashboard",
+    params: { campId: campIdStr },
+    to: "/dashboard",
+    staticLabel: "Dashboard",
+  };
+  const campCurrent: RawCrumb = {
+    pattern: "/camps/:id",
+    params: { campId: campIdStr },
+    to: `/camps/${campIdStr}`,
+    dynamic: "campName",
+  };
+
+  if (studentId === undefined) {
+    // Camp not loaded yet: shallow fallback, no (wrong) student links.
+    return [dashboard, campCurrent];
+  }
+
+  const sid = String(studentId);
+  const chain: RawCrumb[] = [dashboard];
+
+  if (role !== "student") {
+    chain.push({
+      pattern: "/students",
+      params: { id: sid, campId: campIdStr },
+      to: "/students",
+      staticLabel: "Students",
+    });
+  }
+
+  chain.push(
+    {
+      pattern: "/student/:id",
+      params: { id: sid, campId: campIdStr },
+      to: `/student/${sid}`,
+      dynamic: "studentName",
+    },
+    {
+      pattern: "/student/:id/camps",
+      params: { id: sid, campId: campIdStr },
+      to: `/student/${sid}/camps`,
+      staticLabel: "Camps",
+    },
+    campCurrent,
+  );
+
+  return chain;
+}
 
 /**
  * Renders a URL-hierarchy breadcrumb trail for the current location.
@@ -32,7 +108,21 @@ import { useBreadcrumbLabels } from "./use-breadcrumb-labels";
 export function AppBreadcrumbs() {
   const location = useLocation();
   const user = useUser();
-  const chain = buildCrumbChain(location.pathname, user.role);
+
+  // Camp-detail (`/camps/:id`) is special-cased: its student id comes from camp
+  // data, not the URL. Detect it and parse the camp id. `useCamp` is called
+  // UNCONDITIONALLY (gated on a valid id) so rules of hooks hold on every route;
+  // off the camp route the id is undefined and the query is disabled.
+  const campMatch = matchPath({ path: "/camps/:id", end: true }, location.pathname);
+  const campIdRaw = campMatch?.params.id;
+  const campId =
+    campIdRaw !== undefined && /^\d+$/.test(campIdRaw) ? Number(campIdRaw) : undefined;
+  const campQuery = useCamp(campId);
+
+  const chain =
+    campId !== undefined
+      ? buildCampDetailChain(campId, campQuery.data?.student_id, user.role)
+      : buildCrumbChain(location.pathname, user.role);
 
   // All resolver hooks must be called unconditionally (rules of hooks),
   // even when chain is empty or short.

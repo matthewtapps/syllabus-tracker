@@ -138,6 +138,54 @@ describe("buildCrumbChain", () => {
     });
   });
 
+  describe("/student/:id/camps, role coach", () => {
+    const chain = buildCrumbChain("/student/4/camps", "coach");
+
+    it("returns four crumbs", () => {
+      expect(chain).toHaveLength(4);
+    });
+
+    it("has the correct patterns in root-first order", () => {
+      expect(chain.map((c) => c.pattern)).toEqual([
+        "/dashboard",
+        "/students",
+        "/student/:id",
+        "/student/:id/camps",
+      ]);
+    });
+
+    it("has the correct to paths", () => {
+      expect(chain.map((c) => c.to)).toEqual([
+        "/dashboard",
+        "/students",
+        "/student/4",
+        "/student/4/camps",
+      ]);
+    });
+
+    it("marks /student/:id as dynamic studentName", () => {
+      expect(chain[2].dynamic).toBe("studentName");
+    });
+
+    it("marks /student/:id/camps as staticLabel Camps", () => {
+      expect(chain[3].staticLabel).toBe("Camps");
+      expect(chain[3].dynamic).toBeUndefined();
+    });
+  });
+
+  describe("/student/:id/camps, role student", () => {
+    const chain = buildCrumbChain("/student/4/camps", "student");
+
+    it("drops the /students crumb", () => {
+      expect(chain.find((c) => c.pattern === "/students")).toBeUndefined();
+    });
+
+    it("returns three crumbs ending at /student/:id/camps", () => {
+      expect(chain).toHaveLength(3);
+      expect(chain[chain.length - 1].pattern).toBe("/student/:id/camps");
+    });
+  });
+
   describe("unmatched path", () => {
     it("returns [] for /login", () => {
       expect(buildCrumbChain("/login", "coach")).toEqual([]);
