@@ -1,8 +1,12 @@
-import { Navigate, useParams, Link } from 'react-router-dom';
-import { Dumbbell, ChevronRight } from 'lucide-react';
+import { useState } from 'react';
+import { Navigate, useParams, Link, useNavigate } from 'react-router-dom';
+import { Dumbbell, ChevronRight, Plus } from 'lucide-react';
 import { useUser } from '@/lib/current-user-context';
 import { isCoachOrAdmin } from '@/lib/api';
 import { useAllUsers, useCampsForStudent } from '@/lib/queries';
+import { Button } from '@/components/ui/button';
+import { Dialog, DialogTrigger } from '@/components/ui/dialog';
+import { CreateCampDialog } from '@/components/camps/create-camp-dialog';
 import type { Camp } from '@/lib/api';
 
 export default function StudentCampsPage() {
@@ -20,16 +24,21 @@ export default function StudentCampsPage() {
     return <Navigate to="/dashboard" replace />;
   }
 
-  return <CampsListing studentId={studentId} isOwnView={isOwner} />;
+  return (
+    <CampsListing studentId={studentId} isOwnView={isOwner} isCoach={isCoach} />
+  );
 }
 
 function CampsListing({
   studentId,
   isOwnView,
+  isCoach,
 }: {
   studentId: number;
   isOwnView: boolean;
+  isCoach: boolean;
 }) {
+  const navigate = useNavigate();
   const campsQuery = useCampsForStudent(studentId);
   const camps = campsQuery.data ?? [];
   const active = camps.filter((c) => !c.archived_at);
@@ -44,15 +53,39 @@ function CampsListing({
     : (usersQuery.data ?? []).find((u) => u.id === studentId);
   const studentName = student?.display_name || student?.username;
 
+  // Coaches create camps for a student; students don't create their own.
+  const canCreateCamp = isCoach && !isOwnView;
+  const [createCampOpen, setCreateCampOpen] = useState(false);
+
   return (
     <div className="container mx-auto space-y-6 px-4 py-6 sm:px-6 md:py-8">
-      <h1 className="text-base font-semibold">
-        {isOwnView
-          ? 'My camps'
-          : studentName
-            ? `${studentName}'s camps`
-            : 'Camps'}
-      </h1>
+      <div className="flex items-center justify-between gap-2">
+        <h1 className="text-base font-semibold">
+          {isOwnView
+            ? 'My camps'
+            : studentName
+              ? `${studentName}'s camps`
+              : 'Camps'}
+        </h1>
+        {canCreateCamp && (
+          <Dialog open={createCampOpen} onOpenChange={setCreateCampOpen}>
+            <DialogTrigger asChild>
+              <Button size="sm" variant="outline" className="gap-1.5">
+                <Plus className="h-4 w-4" aria-hidden />
+                <span>Add camp</span>
+              </Button>
+            </DialogTrigger>
+            <CreateCampDialog
+              studentId={studentId}
+              studentName={studentName ?? 'this student'}
+              onCreated={(id) => {
+                setCreateCampOpen(false);
+                navigate(`/camps/${id}`);
+              }}
+            />
+          </Dialog>
+        )}
+      </div>
 
       <CampsSection
         title="Active"

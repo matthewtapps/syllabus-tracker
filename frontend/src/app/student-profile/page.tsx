@@ -10,21 +10,11 @@ import {
   Plus,
   Settings,
 } from "lucide-react";
-import { z } from "zod";
-import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
 import { StudentAvatar } from "@/components/student-avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
+import { Dialog, DialogTrigger } from "@/components/ui/dialog";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -36,28 +26,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Accordion } from "@/components/ui/accordion";
-import {
-  Form,
-  FormControl,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-} from "@/components/ui/form";
-import { Input } from "@/components/ui/input";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { Textarea } from "@/components/ui/textarea";
-import { TracedForm } from "@/components/traced-form";
-import {
-  handleApiFormError,
-  useFormWithValidation,
-} from "@/components/hooks/useFormErrors";
+import { CreateCampDialog } from "@/components/camps/create-camp-dialog";
 import { AccountDialog } from "@/components/account-dialog";
 import { EmptyState } from "@/components/empty-state";
 import { TechniqueRow } from "@/components/technique-row";
@@ -69,7 +38,7 @@ import {
   useStudentSyllabi,
   useStudentPinnedTechniques,
 } from "@/lib/queries";
-import { useCreateCamp, useCreateThread, useArchiveStudent } from "@/lib/mutations";
+import { useCreateThread, useArchiveStudent } from "@/lib/mutations";
 import { useUser } from "@/lib/current-user-context";
 import { isAdmin, isCoachOrAdmin } from "@/lib/api";
 import { campsUiEnabled } from "@/lib/features";
@@ -79,16 +48,6 @@ import { ThreadView } from "@/components/threads/thread-view";
 import { ThreadComposer } from "@/components/threads/thread-composer";
 import { SyllabusAssignmentRow } from "@/app/student-syllabi/components/syllabus-assignment-row";
 import type { User } from "@/lib/api";
-
-const createCampSchema = z.object({
-  name: z
-    .string()
-    .min(1, "Name is required")
-    .max(100, "Name must be under 100 characters"),
-  description: z.string().max(1000, "Description is too long").optional(),
-  references_camp_id: z.string().optional(),
-});
-type CreateCampValues = z.infer<typeof createCampSchema>;
 
 export default function StudentProfilePage() {
   const params = useParams<{ id: string }>();
@@ -432,129 +391,3 @@ function ProfileHub({
   );
 }
 
-function CreateCampDialog({
-  studentId,
-  studentName,
-  onCreated,
-}: {
-  studentId: number;
-  studentName: string;
-  onCreated: (id: number) => void;
-}) {
-  const createMutation = useCreateCamp(studentId);
-  const campsQuery = useCampsForStudent(studentId);
-  const existingCamps = campsQuery.data ?? [];
-
-  const form = useFormWithValidation<CreateCampValues>({
-    resolver: zodResolver(createCampSchema),
-    defaultValues: { name: "", description: "", references_camp_id: "" },
-  });
-
-  async function handleSubmit(values: CreateCampValues) {
-    try {
-      const refId =
-        values.references_camp_id && values.references_camp_id !== "none"
-          ? Number(values.references_camp_id)
-          : null;
-      const { id } = await createMutation.mutateAsync({
-        name: values.name,
-        description: values.description?.trim() ? values.description : null,
-        references_camp_id: refId,
-      });
-      toast.success(`Created ${values.name}`);
-      onCreated(id);
-    } catch (err) {
-      const handled = await handleApiFormError(
-        err,
-        form.setError,
-        Object.keys(form.getValues()),
-      );
-      if (!handled) toast.error("Failed to create camp");
-    }
-  }
-
-  return (
-    <DialogContent>
-      <DialogHeader>
-        <DialogTitle>New camp for {studentName}</DialogTitle>
-        <DialogDescription>
-          Add a name and optional description. You can add techniques after.
-        </DialogDescription>
-      </DialogHeader>
-      <Form {...form}>
-        <TracedForm
-          id="create_camp"
-          onSubmit={form.handleSubmit(handleSubmit)}
-          className="space-y-3"
-        >
-          <FormField
-            control={form.control}
-            name="name"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>Name</FormLabel>
-                <FormControl>
-                  <Input autoFocus placeholder="e.g. Worlds prep" {...field} />
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-          <FormField
-            control={form.control}
-            name="description"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>Description</FormLabel>
-                <FormControl>
-                  <Textarea {...field} className="min-h-20" />
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-          {existingCamps.length > 0 && (
-            <FormField
-              control={form.control}
-              name="references_camp_id"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Builds on (optional)</FormLabel>
-                  <Select
-                    value={field.value ?? ""}
-                    onValueChange={field.onChange}
-                  >
-                    <FormControl>
-                      <SelectTrigger>
-                        <SelectValue placeholder="None" />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      <SelectItem value="none">None</SelectItem>
-                      {existingCamps.map((c) => (
-                        <SelectItem key={c.id} value={String(c.id)}>
-                          {c.name}
-                          {c.archived_at ? " (archived)" : ""}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-          )}
-          <DialogFooter>
-            <Button
-              type="submit"
-              size="sm"
-              disabled={form.formState.isSubmitting}
-            >
-              {form.formState.isSubmitting ? "Creating..." : "Create"}
-            </Button>
-          </DialogFooter>
-        </TracedForm>
-      </Form>
-    </DialogContent>
-  );
-}
