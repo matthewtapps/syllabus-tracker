@@ -2065,6 +2065,37 @@ mod tests {
         assert_eq!(row.th, Some(thread_id));
         assert_eq!(row.description.as_deref(), Some("my reply"));
     }
+
+    #[rocket::async_test]
+    async fn private_thread_reply_not_playable_by_other_student() {
+        use crate::db;
+        let tdb = crate::test::test_utils::TestDbBuilder::new()
+            .coach("coach_user", Some("Coach"))
+            .student("sam", Some("Sam"))
+            .student("pat", Some("Pat"))
+            .build().await.unwrap();
+        let coach_id = tdb.user_id("coach_user").unwrap();
+        let sam = tdb.user_id("sam").unwrap();
+        let pat = tdb.user_id("pat").unwrap();
+
+        let thread_id = db::threads::create_thread(&tdb.pool, db::threads::NewThread {
+            author_id: coach_id,
+            anchor: db::threads::Anchor { kind: db::threads::AnchorKind::StudentProfile,
+                id: sam, video_ts_seconds: None, pinned_student_id: None, camp_id: None },
+            visibility: db::threads::ThreadVisibility::Private,
+            scope_student_id: Some(sam), body: "hi".to_string(),
+        }).await.unwrap();
+        let vid: i64 = sqlx::query_scalar(
+            "INSERT INTO videos (parent_kind, thread_id, title, position, kind, \
+                processing_status, uploaded_by_id) \
+             VALUES ('thread', ?, '', 0, 'native', 'ready', ?) RETURNING id")
+            .bind(thread_id).bind(sam).fetch_one(&tdb.pool).await.unwrap();
+
+        assert!(db::video_visible_to_student_anywhere(&tdb.pool, vid, sam).await.unwrap(),
+            "scope student can play");
+        assert!(!db::video_visible_to_student_anywhere(&tdb.pool, vid, pat).await.unwrap(),
+            "other student cannot play a private thread reply");
+    }
 }
 
 #[cfg(test)]

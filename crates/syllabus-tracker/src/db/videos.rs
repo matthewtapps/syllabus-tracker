@@ -842,6 +842,27 @@ pub async fn video_visible_to_student_anywhere(
         return Ok(false);
     };
 
+    // Thread replies are scoped by their parent thread's visibility, NOT the
+    // naive global hide. A student may play a reply only if they could see the
+    // thread (broadcast, or they are its scope student). Coaches bypass this
+    // function entirely at the call site.
+    if parent_kind == "thread" {
+        let row = sqlx::query!(
+            r#"SELECT t.visibility,
+                      t.scope_student_id AS "scope?: i64",
+                      (v.hidden_at IS NULL) AS "not_hidden!: i64"
+               FROM videos v
+               JOIN threads t ON t.id = v.thread_id
+               WHERE v.id = ? AND t.deleted_at IS NULL"#,
+            video_id,
+        )
+        .fetch_optional(pool)
+        .await?;
+        let Some(row) = row else { return Ok(false); };
+        let can_see = row.visibility == "broadcast" || row.scope == Some(student_id);
+        return Ok(can_see && row.not_hidden != 0);
+    }
+
     // Non-syllabus surfaces have no per-assignment scoping; follow the global
     // rule only. (deleted_at was already excluded above.)
     if !matches!(

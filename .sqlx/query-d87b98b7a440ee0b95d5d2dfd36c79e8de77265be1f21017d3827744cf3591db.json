@@ -1,0 +1,32 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT t.visibility,\n                      t.scope_student_id AS \"scope?: i64\",\n                      (v.hidden_at IS NULL) AS \"not_hidden!: i64\"\n               FROM videos v\n               JOIN threads t ON t.id = v.thread_id\n               WHERE v.id = ? AND t.deleted_at IS NULL",
+  "describe": {
+    "columns": [
+      {
+        "name": "visibility",
+        "ordinal": 0,
+        "type_info": "Text"
+      },
+      {
+        "name": "scope?: i64",
+        "ordinal": 1,
+        "type_info": "Integer"
+      },
+      {
+        "name": "not_hidden!: i64",
+        "ordinal": 2,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      true,
+      false
+    ]
+  },
+  "hash": "d87b98b7a440ee0b95d5d2dfd36c79e8de77265be1f21017d3827744cf3591db"
+}
