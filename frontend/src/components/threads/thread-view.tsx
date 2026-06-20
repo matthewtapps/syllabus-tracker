@@ -131,6 +131,7 @@ export function ThreadView({ thread, anchorKind, anchorId, campId }: ThreadViewP
                 key={`c${e.comment.id}`}
                 comment={e.comment}
                 authorName={e.comment.author_name}
+                videoReplies={thread.video_replies}
               />
             ) : (
               <VideoReplyItem key={`v${e.reply.id}`} reply={e.reply} />
