@@ -202,6 +202,7 @@ mod tests {
                 visibility: ThreadVisibility::Private,
                 scope_student_id: Some(student),
                 body: "How's the prep going?".into(),
+                attached_video_id: None,
             },
         )
         .await
@@ -301,6 +302,7 @@ mod tests {
                 visibility: ThreadVisibility::Private,
                 scope_student_id: Some(student),
                 body: "Camp prep thread".into(),
+                attached_video_id: None,
             },
         )
         .await
@@ -354,6 +356,7 @@ mod tests {
                 visibility: ThreadVisibility::Private,
                 scope_student_id: Some(student),
                 body: "How's prep?".into(),
+                attached_video_id: None,
             },
         )
         .await
@@ -361,7 +364,7 @@ mod tests {
 
         // A reply (create_comment) must carry the same camp deep-link context as
         // the root post, or the feed notification for the reply is un-clickable.
-        create_comment(&db.pool, thread_id, None, student, "Going well")
+        create_comment(&db.pool, thread_id, None, student, "Going well", None)
             .await
             .unwrap();
 

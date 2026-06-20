@@ -476,6 +476,11 @@ CREATE TABLE IF NOT EXISTS threads (
     sst_id          INTEGER REFERENCES student_syllabus_techniques(id) ON DELETE CASCADE,
     camp_id         INTEGER REFERENCES camps(id)                       ON DELETE CASCADE,
 
+    -- Optional video attached to the thread's root post (distinct from the
+    -- anchor `video_id` above, which is what a video thread is anchored to).
+    -- Rendered under the root body, same as a comment's attached video.
+    attached_video_id INTEGER REFERENCES videos(id),
+
     visibility      TEXT NOT NULL DEFAULT 'broadcast'
                         CHECK (visibility IN ('broadcast','private')),
     scope_student_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
@@ -518,6 +523,9 @@ CREATE TABLE IF NOT EXISTS thread_comments (
     parent_comment_id INTEGER REFERENCES thread_comments(id) ON DELETE CASCADE,
     author_id         INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     body              TEXT NOT NULL,
+    -- Optional single video attached to this comment (a thread-reply video).
+    -- The comment is the unit; the clip renders underneath its text.
+    video_id          INTEGER REFERENCES videos(id),
     created_at        TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     edited_at         TIMESTAMP,
     deleted_at        TIMESTAMP,

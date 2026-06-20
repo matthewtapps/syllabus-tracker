@@ -25,6 +25,8 @@ pub struct CreateThreadRequest {
     /// Only for `camp_technique`: the camp the technique discussion belongs to.
     pub camp_id: Option<i64>,
     pub body: String,
+    /// Optional draft video to attach to the root post.
+    pub attached_video_id: Option<i64>,
 }
 
 #[derive(Serialize)]
@@ -37,6 +39,8 @@ pub struct ThreadListResponse { pub threads: Vec<ThreadView> }
 pub struct CreateCommentRequest {
     pub parent_comment_id: Option<i64>,
     pub body: String,
+    /// Optional draft video to attach to this comment.
+    pub video_id: Option<i64>,
 }
 
 fn parse_kind(s: &str) -> Result<AnchorKind, Status> {
@@ -113,12 +117,24 @@ pub async fn api_create_thread(
         }
     }
 
+    // Attaching a video is coach-only, except on a camp surface the student owns
+    // (the only surface a student can add videos to at all). The camp's student
+    // is `scope_student_id` here.
+    if req.attached_video_id.is_some() {
+        let can_attach = user.has_permission(Permission::UploadVideos)
+            || (is_camp_anchor && scope_student_id == Some(user.id));
+        if !can_attach {
+            return Err(Status::Forbidden);
+        }
+    }
+
     let id = create_thread(pool, NewThread {
         author_id: user.id,
         anchor: Anchor { kind, id: req.anchor_id, video_ts_seconds: req.video_ts_seconds, pinned_student_id: req.pinned_student_id, camp_id: req.camp_id },
         visibility,
         scope_student_id,
         body: req.body.clone(),
+        attached_video_id: req.attached_video_id,
     }).await.map_err(|_| Status::BadRequest)?;
     Ok(Json(CreatedResponse { id }))
 }
@@ -159,7 +175,25 @@ pub async fn api_create_comment(
     if visible.is_none() {
         return Err(Status::NotFound);
     }
-    let comment_id = create_comment(pool, id, req.parent_comment_id, user.id, &req.body)
+    // Attaching a video is coach-only, except on a camp-scoped thread the student
+    // owns (its `scope_student_id` is the camp's student).
+    if req.video_id.is_some() && !user.has_permission(Permission::UploadVideos) {
+        let trow = sqlx::query!(
+            r#"SELECT anchor_kind, scope_student_id AS "ssid?: i64"
+               FROM threads WHERE id = ?"#,
+            id
+        )
+        .fetch_optional(pool)
+        .await
+        .map_err(|_| Status::InternalServerError)?
+        .ok_or(Status::NotFound)?;
+        let camp_ok = matches!(trow.anchor_kind.as_str(), "camp" | "camp_technique")
+            && trow.ssid == Some(user.id);
+        if !camp_ok {
+            return Err(Status::Forbidden);
+        }
+    }
+    let comment_id = create_comment(pool, id, req.parent_comment_id, user.id, &req.body, req.video_id)
         .await
         .map_err(|_| Status::BadRequest)?;
     Ok(Json(CreatedResponse { id: comment_id }))

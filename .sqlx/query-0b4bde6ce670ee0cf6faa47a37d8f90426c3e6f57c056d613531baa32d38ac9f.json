@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT c.id AS \"id!: i64\",\n                  c.thread_id AS \"thread_id!: i64\",\n                  c.parent_comment_id AS \"parent_comment_id?: i64\",\n                  c.author_id AS \"author_id!: i64\",\n                  COALESCE(u.display_name, u.username, '?') AS \"author_name!: String\",\n                  c.body,\n                  c.created_at AS \"created_at!: NaiveDateTime\",\n                  c.deleted_at AS \"deleted_at?: NaiveDateTime\"\n           FROM thread_comments c\n           JOIN users u ON u.id = c.author_id\n           WHERE c.thread_id = ?\n           ORDER BY c.created_at, c.id",
+  "query": "SELECT c.id AS \"id!: i64\",\n                  c.thread_id AS \"thread_id!: i64\",\n                  c.parent_comment_id AS \"parent_comment_id?: i64\",\n                  c.author_id AS \"author_id!: i64\",\n                  COALESCE(u.display_name, u.username, '?') AS \"author_name!: String\",\n                  c.body,\n                  c.video_id AS \"video_id?: i64\",\n                  c.created_at AS \"created_at!: NaiveDateTime\",\n                  c.deleted_at AS \"deleted_at?: NaiveDateTime\"\n           FROM thread_comments c\n           JOIN users u ON u.id = c.author_id\n           WHERE c.thread_id = ?\n           ORDER BY c.created_at, c.id",
   "describe": {
     "columns": [
       {
@@ -34,13 +34,18 @@
         "type_info": "Text"
       },
       {
-        "name": "created_at!: NaiveDateTime",
+        "name": "video_id?: i64",
         "ordinal": 6,
+        "type_info": "Integer"
+      },
+      {
+        "name": "created_at!: NaiveDateTime",
+        "ordinal": 7,
         "type_info": "Datetime"
       },
       {
         "name": "deleted_at?: NaiveDateTime",
-        "ordinal": 7,
+        "ordinal": 8,
         "type_info": "Datetime"
       }
     ],
@@ -54,9 +59,10 @@
       false,
       null,
       false,
+      true,
       false,
       true
     ]
   },
-  "hash": "8527cd5427810301dc71eff2c5fd1e0fd8b305abf4a4bb0575f5541a0ca766fc"
+  "hash": "0b4bde6ce670ee0cf6faa47a37d8f90426c3e6f57c056d613531baa32d38ac9f"
 }

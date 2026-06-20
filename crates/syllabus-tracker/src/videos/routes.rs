@@ -371,42 +371,62 @@ pub async fn api_video_link(
     Ok(Json(video))
 }
 
-/// Shared gate: the caller must be able to see the thread (coach, broadcast,
-/// or the scope student). 404 if not visible/exists.
-async fn require_thread_visible(
+/// Whether `user` may attach a video to a thread on the given surface. Coaches
+/// (`UploadVideos`) may attach anywhere; a student may attach only on a camp
+/// surface they own (the only surface a student can add videos to at all).
+async fn user_can_attach_thread_video(
     pool: &Pool<Sqlite>,
     user: &User,
-    thread_id: i64,
-) -> Result<(), Status> {
-    let viewer = crate::db::threads::Viewer {
-        user_id: user.id,
-        is_coach: user.has_permission(Permission::ViewAllStudents),
-    };
-    let visible = crate::db::threads::get_thread(pool, thread_id, viewer)
-        .await
-        .map_err(Status::from)?;
-    if visible.is_none() {
-        return Err(Status::NotFound);
+    anchor_kind: &str,
+    camp_id: Option<i64>,
+) -> Result<bool, Status> {
+    if user.has_permission(Permission::UploadVideos) {
+        return Ok(true);
     }
-    Ok(())
+    if matches!(anchor_kind, "camp" | "camp_technique") {
+        if let Some(cid) = camp_id {
+            if let Some(camp) = db::camps::get_camp(pool, cid).await.map_err(Status::from)? {
+                return Ok(camp.student_id == user.id);
+            }
+        }
+    }
+    Ok(false)
+}
+
+/// Upload form for a draft reply video. `anchor_kind` / `camp_id` describe the
+/// surface the reply will land on, so the permission gate can run before the
+/// (possibly large) file is processed. The video starts life as a `Loose`
+/// draft and is re-parented onto its thread when the comment/thread is created.
+#[derive(FromForm)]
+pub struct DraftReplyUploadForm<'r> {
+    pub file: TempFile<'r>,
+    pub anchor_kind: String,
+    pub camp_id: Option<i64>,
+}
+
+#[derive(Deserialize)]
+pub struct DraftReplyLinkRequest {
+    pub url: String,
+    pub anchor_kind: String,
+    pub camp_id: Option<i64>,
 }
 
 #[instrument(skip(form, pool, processor))]
-#[post("/threads/<thread_id>/videos/upload", data = "<form>")]
-pub async fn api_thread_video_reply_upload(
-    thread_id: i64,
+#[post("/thread-reply-videos/upload", data = "<form>")]
+pub async fn api_thread_reply_video_upload(
     user: User,
-    form: Result<Form<UploadForm<'_>>, FormErrors<'_>>,
+    form: Result<Form<DraftReplyUploadForm<'_>>, FormErrors<'_>>,
     pool: &State<Pool<Sqlite>>,
     processor: &State<DynVideoProcessor>,
 ) -> Result<Json<UploadResponse>, Status> {
     let pool = pool.inner();
-    require_thread_visible(pool, &user, thread_id).await?;
-
     let mut form = form.map_err(|errs| {
-        error!(thread_id, errors = %errs, "thread video reply form failed to parse");
+        error!(errors = %errs, "thread reply video form failed to parse");
         Status::BadRequest
     })?;
+    if !user_can_attach_thread_video(pool, &user, &form.anchor_kind, form.camp_id).await? {
+        return Err(Status::Forbidden);
+    }
     let metrics = video_metrics();
     if !is_mp4(form.file.content_type()) {
         metrics.uploads_total.add(1, &[kv("result", "fail_format")]);
@@ -417,31 +437,23 @@ pub async fn api_thread_video_reply_upload(
         return Err(Status::PayloadTooLarge);
     }
     tokio::fs::create_dir_all(pipeline::temp_dir()).await.map_err(|e| {
-        error!(thread_id, error = %e, "failed to create video temp dir for thread reply");
+        error!(error = %e, "failed to create video temp dir for thread reply");
         Status::InternalServerError
     })?;
     let mut dest = pipeline::temp_dir();
     dest.push(format!("{}.mp4", Uuid::new_v4()));
     form.file.persist_to(&dest).await.map_err(|e| {
-        error!(thread_id, dest = ?dest, error = %e, "failed to persist thread reply upload");
+        error!(dest = ?dest, error = %e, "failed to persist thread reply upload");
         Status::InternalServerError
     })?;
 
-    // Thread replies carry no title or caption.
-    let video_id = db::create_processing_video(
-        pool,
-        db::VideoParent::Thread(thread_id),
-        "",
-        None,
-        user.id,
-    )
-    .await
-    .map_err(Status::from)?;
-    db::threads::record_thread_video_reply(pool, thread_id, video_id, user.id)
+    // Draft reply videos carry no title or caption and have no parent until the
+    // comment/thread that attaches them is created.
+    let video_id = db::create_processing_video(pool, db::VideoParent::Loose, "", None, user.id)
         .await
         .map_err(Status::from)?;
 
-    processor.start(HostJob { video_id, parent_id: thread_id, original_temp_path: dest }).await;
+    processor.start(HostJob { video_id, parent_id: video_id, original_temp_path: dest }).await;
 
     Ok(Json(UploadResponse {
         video_id,
@@ -450,16 +462,17 @@ pub async fn api_thread_video_reply_upload(
 }
 
 #[instrument(skip(body, pool))]
-#[post("/threads/<thread_id>/videos/link", data = "<body>")]
-pub async fn api_thread_video_reply_link(
-    thread_id: i64,
+#[post("/thread-reply-videos/link", data = "<body>")]
+pub async fn api_thread_reply_video_link(
     user: User,
-    body: Json<LinkVideoRequest>,
+    body: Json<DraftReplyLinkRequest>,
     pool: &State<Pool<Sqlite>>,
 ) -> Result<Json<Video>, Status> {
     let pool = pool.inner();
-    require_thread_visible(pool, &user, thread_id).await?;
     let req = body.into_inner();
+    if !user_can_attach_thread_video(pool, &user, &req.anchor_kind, req.camp_id).await? {
+        return Err(Status::Forbidden);
+    }
     if req.url.trim().is_empty() {
         return Err(Status::UnprocessableEntity);
     }
@@ -467,7 +480,7 @@ pub async fn api_thread_video_reply_link(
     let id = db::create_external_video(
         pool,
         db::NewExternalVideo {
-            parent: db::VideoParent::Thread(thread_id),
+            parent: db::VideoParent::Loose,
             title: "",
             description: None,
             uploaded_by_id: user.id,
@@ -479,9 +492,6 @@ pub async fn api_thread_video_reply_link(
     )
     .await
     .map_err(Status::from)?;
-    db::threads::record_thread_video_reply(pool, thread_id, id, user.id)
-        .await
-        .map_err(Status::from)?;
     let video = db::get_video(pool, id).await.map_err(Status::from)?
         .ok_or(Status::InternalServerError)?;
     Ok(Json(video))

@@ -1,0 +1,26 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT anchor_kind, scope_student_id AS \"ssid?: i64\"\n               FROM threads WHERE id = ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "anchor_kind",
+        "ordinal": 0,
+        "type_info": "Text"
+      },
+      {
+        "name": "ssid?: i64",
+        "ordinal": 1,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      true
+    ]
+  },
+  "hash": "e0c1655092a4b028f21b4df6f9dfe2c5434a6967baef18c4a62cd9cca88b76fa"
+}

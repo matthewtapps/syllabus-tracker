@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE videos SET parent_kind = 'thread', thread_id = ?, updated_at = CURRENT_TIMESTAMP\n         WHERE id = ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "b40558f282a952ae8a62fdc791dfd1c724aa30b2d896e4c902bcbb6c1b591c32"
+}

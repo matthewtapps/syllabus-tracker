@@ -49,14 +49,13 @@ pub enum Verb {
     VideoVisibilitySet,
     TechniqueEdited,
     ThreadCommentPosted,
-    VideoReplyPosted,
     CampCreated,
     CampTechniqueAdded,
     CampArchived,
 }
 
 impl Verb {
-    pub const ALL: [Verb; 25] = [
+    pub const ALL: [Verb; 24] = [
         Verb::VideoWatched,
         Verb::AttemptLogged,
         Verb::AttemptEdited,
@@ -78,7 +77,6 @@ impl Verb {
         Verb::VideoVisibilitySet,
         Verb::TechniqueEdited,
         Verb::ThreadCommentPosted,
-        Verb::VideoReplyPosted,
         Verb::CampCreated,
         Verb::CampTechniqueAdded,
         Verb::CampArchived,
@@ -107,7 +105,6 @@ impl Verb {
             Verb::VideoVisibilitySet => "video_visibility_set",
             Verb::TechniqueEdited => "technique_edited",
             Verb::ThreadCommentPosted => "thread_comment_posted",
-            Verb::VideoReplyPosted => "video_reply_posted",
             Verb::CampCreated => "camp_created",
             Verb::CampTechniqueAdded => "camp_technique_added",
             Verb::CampArchived => "camp_archived",
@@ -142,7 +139,6 @@ impl Verb {
         !matches!(
             self,
             Verb::ThreadCommentPosted
-                | Verb::VideoReplyPosted
                 | Verb::CampCreated
                 | Verb::CampTechniqueAdded
                 | Verb::CampArchived
@@ -172,7 +168,7 @@ impl Verb {
             | Verb::SyllabusGraduated
             | Verb::SyllabusTechniqueAdded
             | Verb::SyllabusTechniqueRemoved => EntityKind::Syllabus,
-            Verb::ThreadCommentPosted | Verb::VideoReplyPosted => EntityKind::Thread,
+            Verb::ThreadCommentPosted => EntityKind::Thread,
             Verb::CampCreated | Verb::CampTechniqueAdded | Verb::CampArchived => EntityKind::Camp,
         }
     }
@@ -788,15 +784,6 @@ pub async fn run_backfill(pool: &Pool<Sqlite>) -> Result<BackfillCounts, AppErro
 #[cfg(test)]
 mod registry_tests {
     use super::{EntityKind, Verb};
-
-    #[test]
-    fn video_reply_posted_roundtrips_and_is_non_coalescing() {
-        assert_eq!(Verb::from_str_verb("video_reply_posted"), Some(Verb::VideoReplyPosted));
-        assert_eq!(Verb::VideoReplyPosted.as_str(), "video_reply_posted");
-        assert!(!Verb::VideoReplyPosted.coalesces());
-        assert!(Verb::VideoReplyPosted.notifiable());
-        assert_eq!(Verb::VideoReplyPosted.primary_entity(), EntityKind::Thread);
-    }
 
     #[test]
     fn verb_str_roundtrips() {

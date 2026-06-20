@@ -2,14 +2,14 @@
 //! anchor/visibility vocabulary, the (kind, visibility) allow-matrix, and the
 //! CRUD SQL. Activity-feed emission is handled here (PR5).
 
-use chrono::{DateTime, NaiveDateTime, Utc};
+use chrono::NaiveDateTime;
 use serde::Serialize;
 use sqlx::{Pool, Sqlite};
 use tracing::{info, instrument};
 
 use crate::db::activity::{emit, NewActivity, Verb};
 use crate::error::AppError;
-use crate::models::Video;
+use crate::models::{ProcessingStatus, Video};
 
 /// The kinds of thing a thread can anchor to. Mirrors the `anchor_kind` CHECK
 /// in `config/schema.sql` and (later) the shared frontend EntityRef union.
@@ -105,6 +105,9 @@ pub struct NewThread {
     /// Required iff `visibility == Private`.
     pub scope_student_id: Option<i64>,
     pub body: String,
+    /// Optional draft video to attach to the root post. Re-parented onto the
+    /// new thread; surface permission is enforced at the route layer.
+    pub attached_video_id: Option<i64>,
 }
 
 /// Resolve an `Anchor` into the six typed columns the `threads` table stores.
@@ -241,7 +244,14 @@ pub async fn create_thread(pool: &Pool<Sqlite>, new: NewThread) -> Result<i64, A
             "a broadcast thread must not name a scope student".to_string(),
         ));
     }
+    // A root post needs content: text, a video, or both.
+    if new.body.trim().is_empty() && new.attached_video_id.is_none() {
+        return Err(AppError::Validation("a thread needs text or a video".to_string()));
+    }
     validate_anchor(pool, &new.anchor).await?;
+    if let Some(vid) = new.attached_video_id {
+        validate_attachable_draft(pool, vid, new.author_id).await?;
+    }
 
     let (student_id, technique_id, video_id, video_ts, sst_id, camp_id) = anchor_columns(&new.anchor);
     let kind = new.anchor.kind.as_str();
@@ -254,8 +264,8 @@ pub async fn create_thread(pool: &Pool<Sqlite>, new: NewThread) -> Result<i64, A
     let thread_id = sqlx::query_scalar!(
         r#"INSERT INTO threads
               (created_by_id, body, anchor_kind, student_id, technique_id, video_id,
-               video_ts_seconds, sst_id, camp_id, visibility, scope_student_id)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+               video_ts_seconds, sst_id, camp_id, attached_video_id, visibility, scope_student_id)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
            RETURNING id AS "id!: i64""#,
         new.author_id,
         new.body,
@@ -266,11 +276,16 @@ pub async fn create_thread(pool: &Pool<Sqlite>, new: NewThread) -> Result<i64, A
         video_ts,
         sst_id,
         camp_id,
+        new.attached_video_id,
         visibility,
         new.scope_student_id,
     )
     .fetch_one(&mut *tx)
     .await?;
+
+    if let Some(vid) = new.attached_video_id {
+        reparent_draft_to_thread(&mut tx, vid, thread_id).await?;
+    }
 
     // Emit activity row. Private threads target the scope student's feed;
     // broadcast threads are coach-only (target_student_id = NULL, per spec D8).
@@ -371,17 +386,6 @@ pub struct Viewer {
 }
 
 #[derive(Debug, Serialize)]
-pub struct VideoReplyView {
-    pub id: i64,
-    pub author_id: i64,
-    pub author_name: String,
-    pub created_at: DateTime<Utc>,
-    pub deleted_at: Option<DateTime<Utc>>,
-    /// The full video payload; `None` when soft-deleted (tombstoned).
-    pub video: Option<Video>,
-}
-
-#[derive(Debug, Serialize)]
 pub struct CommentView {
     pub id: i64,
     pub thread_id: i64,
@@ -390,6 +394,10 @@ pub struct CommentView {
     pub author_name: String,
     /// `None` when the comment is soft-deleted (tombstoned in the read layer).
     pub body: Option<String>,
+    /// Optional video attached to this comment, rendered under the text. A
+    /// still-processing video is only included for the comment's own author
+    /// (others don't see the comment at all until it is playable).
+    pub video: Option<Video>,
     pub created_at: NaiveDateTime,
     pub deleted_at: Option<NaiveDateTime>,
 }
@@ -406,10 +414,89 @@ pub struct ThreadView {
     /// anchor kind (including whole-video `video` threads).
     pub video_ts_seconds: Option<i64>,
     pub body: Option<String>,
+    /// Optional video attached to the root post, rendered under the body. Same
+    /// author-only-until-ready rule as a comment's video (a thread whose root
+    /// video is still processing is hidden from everyone but its author).
+    pub video: Option<Video>,
     pub created_at: NaiveDateTime,
     pub deleted_at: Option<NaiveDateTime>,
     pub comments: Vec<CommentView>,
-    pub video_replies: Vec<VideoReplyView>,
+}
+
+/// Validates that `video_id` is a live draft video the author may attach: it
+/// must exist, not be soft-deleted, have been uploaded by `author_id`, sit in a
+/// draft/thread parent (`loose` while still a draft, or `thread` if re-checked),
+/// and not already be attached to another comment or thread root. Surface-level
+/// permission (who may attach a video at all) is enforced at the route layer.
+async fn validate_attachable_draft(
+    pool: &Pool<Sqlite>,
+    video_id: i64,
+    author_id: i64,
+) -> Result<(), AppError> {
+    let v = sqlx::query!(
+        r#"SELECT uploaded_by_id AS "uploaded_by_id!: i64", parent_kind,
+                  (deleted_at IS NULL) AS "alive!: i64"
+           FROM videos WHERE id = ?"#,
+        video_id
+    )
+    .fetch_optional(pool)
+    .await?
+    .ok_or_else(|| AppError::Validation("attached video not found".to_string()))?;
+    if v.alive == 0 {
+        return Err(AppError::Validation("attached video is deleted".to_string()));
+    }
+    if v.uploaded_by_id != author_id {
+        return Err(AppError::Validation("cannot attach another user's video".to_string()));
+    }
+    if v.parent_kind != "loose" && v.parent_kind != "thread" {
+        return Err(AppError::Validation("video is not a thread reply draft".to_string()));
+    }
+    let used = sqlx::query_scalar!(
+        r#"SELECT (
+              EXISTS(SELECT 1 FROM thread_comments WHERE video_id = ? AND deleted_at IS NULL)
+              OR EXISTS(SELECT 1 FROM threads WHERE attached_video_id = ? AND deleted_at IS NULL)
+           ) AS "e!: i64""#,
+        video_id,
+        video_id,
+    )
+    .fetch_one(pool)
+    .await?;
+    if used != 0 {
+        return Err(AppError::Validation("video is already attached".to_string()));
+    }
+    Ok(())
+}
+
+/// Re-parents a draft (Loose) video onto a thread inside the caller's tx, so it
+/// inherits thread visibility/playback rules.
+async fn reparent_draft_to_thread(
+    tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
+    video_id: i64,
+    thread_id: i64,
+) -> Result<(), AppError> {
+    sqlx::query!(
+        "UPDATE videos SET parent_kind = 'thread', thread_id = ?, updated_at = CURRENT_TIMESTAMP
+         WHERE id = ?",
+        thread_id,
+        video_id,
+    )
+    .execute(&mut **tx)
+    .await?;
+    Ok(())
+}
+
+/// Hard-deletes the comment or thread that attached `video_id`, used when the
+/// video's processing fails: a reply whose clip never lands is cancelled so it
+/// never surfaces. Idempotent. Called from the processing-result handler.
+#[instrument(skip(pool))]
+pub async fn cancel_for_failed_video(pool: &Pool<Sqlite>, video_id: i64) -> Result<(), AppError> {
+    sqlx::query!("DELETE FROM thread_comments WHERE video_id = ?", video_id)
+        .execute(pool)
+        .await?;
+    sqlx::query!("DELETE FROM threads WHERE attached_video_id = ?", video_id)
+        .execute(pool)
+        .await?;
+    Ok(())
 }
 
 #[instrument(skip(pool, body))]
@@ -419,7 +506,15 @@ pub async fn create_comment(
     parent_comment_id: Option<i64>,
     author_id: i64,
     body: &str,
+    video_id: Option<i64>,
 ) -> Result<i64, AppError> {
+    // A reply needs content: text, a video, or both.
+    if body.trim().is_empty() && video_id.is_none() {
+        return Err(AppError::Validation("a reply needs text or a video".to_string()));
+    }
+    if let Some(vid) = video_id {
+        validate_attachable_draft(pool, vid, author_id).await?;
+    }
     // Fetch the thread's liveness, visibility, scope student, and anchor
     // details in one query so we can emit the activity row with the right
     // target_student_id and denormalised anchor column.
@@ -470,16 +565,21 @@ pub async fn create_comment(
 
     let comment_id = sqlx::query_scalar!(
         r#"INSERT INTO thread_comments
-              (thread_id, parent_comment_id, author_id, body)
-           VALUES (?, ?, ?, ?)
+              (thread_id, parent_comment_id, author_id, body, video_id)
+           VALUES (?, ?, ?, ?, ?)
            RETURNING id AS "id!: i64""#,
         thread_id,
         parent_comment_id,
         author_id,
         body,
+        video_id,
     )
     .fetch_one(&mut *tx)
     .await?;
+
+    if let Some(vid) = video_id {
+        reparent_draft_to_thread(&mut tx, vid, thread_id).await?;
+    }
 
     sqlx::query!(
         "UPDATE threads SET last_activity_at = CURRENT_TIMESTAMP WHERE id = ?",
@@ -516,67 +616,6 @@ pub async fn create_comment(
 
     tx.commit().await?;
     Ok(comment_id)
-}
-
-/// Bumps the thread's `last_activity_at` and emits a `VideoReplyPosted` feed
-/// event after a video-reply row (parent_kind='thread') has been created for
-/// `thread_id`. Targeting mirrors `create_comment`: a private thread targets
-/// its scope student; a broadcast thread targets none (coach-only feed).
-#[instrument(skip(pool))]
-pub async fn record_thread_video_reply(
-    pool: &Pool<Sqlite>,
-    thread_id: i64,
-    video_id: i64,
-    author_id: i64,
-) -> Result<(), AppError> {
-    let thread_row = sqlx::query!(
-        r#"SELECT visibility,
-                  scope_student_id AS "scope_student_id?: i64",
-                  technique_id     AS "technique_id?: i64",
-                  video_id         AS "video_id?: i64",
-                  sst_id           AS "sst_id?: i64",
-                  camp_id          AS "camp_id?: i64"
-           FROM threads WHERE id = ? AND deleted_at IS NULL"#,
-        thread_id
-    )
-    .fetch_optional(pool)
-    .await?
-    .ok_or_else(|| AppError::NotFound(format!("thread #{thread_id} not found")))?;
-
-    let mut tx = pool.begin().await?;
-    sqlx::query!(
-        "UPDATE threads SET last_activity_at = CURRENT_TIMESTAMP WHERE id = ?",
-        thread_id
-    )
-    .execute(&mut *tx)
-    .await?;
-
-    // Build the event with anchor deep-link context first, THEN set the reply
-    // video id last so the anchor-context resolution (which also writes video_id
-    // for video-anchored threads) cannot clobber it.
-    let mut ev = apply_thread_anchor_context(
-        &mut tx,
-        NewActivity::new(Verb::VideoReplyPosted, author_id).thread(thread_id),
-        thread_row.technique_id,
-        thread_row.video_id,
-        thread_row.sst_id,
-    )
-    .await?;
-    ev = ev.video(video_id);
-    let target = if thread_row.visibility == "private" {
-        thread_row.scope_student_id
-    } else {
-        None
-    };
-    if let Some(t) = target {
-        ev = ev.target_student(t);
-    }
-    if let Some(camp_id) = thread_row.camp_id {
-        ev = ev.camp(camp_id).context_kind("camp");
-    }
-    emit(&mut tx, ev).await?;
-    tx.commit().await?;
-    Ok(())
 }
 
 fn viewer_can_see(viewer: &Viewer, visibility: &str, scope_student_id: Option<i64>) -> bool {
@@ -644,6 +683,7 @@ pub async fn get_thread(
                   t.visibility,
                   t.scope_student_id AS "scope_student_id?: i64",
                   t.video_ts_seconds AS "video_ts_seconds?: i64",
+                  t.attached_video_id AS "attached_video_id?: i64",
                   t.body,
                   t.created_at AS "created_at!: NaiveDateTime",
                   t.deleted_at AS "deleted_at?: NaiveDateTime"
@@ -664,13 +704,27 @@ pub async fn get_thread(
         return Ok(None);
     }
 
-    let comments = sqlx::query!(
+    // Resolve the root's attached video. A root whose video is still processing
+    // (or has failed) is hidden from everyone but its author until it is
+    // playable, mirroring the per-comment rule.
+    let root_video = match row.attached_video_id {
+        Some(vid) => crate::db::get_video(pool, vid).await?,
+        None => None,
+    };
+    if let Some(v) = &root_video {
+        if v.processing_status != ProcessingStatus::Ready && row.author_id != viewer.user_id {
+            return Ok(None);
+        }
+    }
+
+    let comment_rows = sqlx::query!(
         r#"SELECT c.id AS "id!: i64",
                   c.thread_id AS "thread_id!: i64",
                   c.parent_comment_id AS "parent_comment_id?: i64",
                   c.author_id AS "author_id!: i64",
                   COALESCE(u.display_name, u.username, '?') AS "author_name!: String",
                   c.body,
+                  c.video_id AS "video_id?: i64",
                   c.created_at AS "created_at!: NaiveDateTime",
                   c.deleted_at AS "deleted_at?: NaiveDateTime"
            FROM thread_comments c
@@ -680,45 +734,38 @@ pub async fn get_thread(
         thread_id
     )
     .fetch_all(pool)
-    .await?
-    .into_iter()
-    .map(|c| CommentView {
-        id: c.id,
-        thread_id: c.thread_id,
-        parent_comment_id: c.parent_comment_id,
-        author_id: c.author_id,
-        author_name: c.author_name,
-        body: if c.deleted_at.is_some() { None } else { Some(c.body) },
-        created_at: c.created_at,
-        deleted_at: c.deleted_at,
-    })
-    .collect();
+    .await?;
 
-    let reply_rows = crate::db::videos::list_videos_for_parent_global_visible(
-        pool, crate::db::videos::VideoParent::Thread(thread_id),
-    ).await?;
-    // list_videos_for_parent_global_visible already filters deleted + hidden, so
-    // every returned row is a live reply (deleted_at = None, video = Some). A
-    // deleted reply simply disappears from this list.
-    let mut video_replies = Vec::with_capacity(reply_rows.len());
-    for v in reply_rows {
-        let author_name: String = sqlx::query_scalar::<_, String>(
-            "SELECT COALESCE(display_name, username, '?') FROM users WHERE id = ?")
-            .bind(v.uploaded_by_id)
-            .fetch_one(pool)
-            .await?;
-        let created_at = v.created_at;
-        video_replies.push(VideoReplyView {
-            id: v.id,
-            author_id: v.uploaded_by_id,
-            author_name,
-            created_at,
-            deleted_at: None,
-            video: Some(v),
+    let mut comments = Vec::with_capacity(comment_rows.len());
+    for c in comment_rows {
+        let deleted = c.deleted_at.is_some();
+        // A tombstoned comment drops its video; otherwise resolve it.
+        let video = match (deleted, c.video_id) {
+            (false, Some(vid)) => crate::db::get_video(pool, vid).await?,
+            _ => None,
+        };
+        // Author-only-until-ready: a comment whose video is still processing
+        // (or failed) is hidden from everyone but the author.
+        if let Some(v) = &video {
+            if v.processing_status != ProcessingStatus::Ready && c.author_id != viewer.user_id {
+                continue;
+            }
+        }
+        comments.push(CommentView {
+            id: c.id,
+            thread_id: c.thread_id,
+            parent_comment_id: c.parent_comment_id,
+            author_id: c.author_id,
+            author_name: c.author_name,
+            body: if deleted { None } else { Some(c.body) },
+            video,
+            created_at: c.created_at,
+            deleted_at: c.deleted_at,
         });
     }
 
     let thread_body = if row.deleted_at.is_some() { None } else { Some(row.body) };
+    let root_video = if row.deleted_at.is_some() { None } else { root_video };
 
     Ok(Some(ThreadView {
         id: row.id,
@@ -729,10 +776,10 @@ pub async fn get_thread(
         scope_student_id: row.scope_student_id,
         video_ts_seconds: row.video_ts_seconds,
         body: thread_body,
+        video: root_video,
         created_at: row.created_at,
         deleted_at: row.deleted_at,
         comments,
-        video_replies,
     }))
 }
 
