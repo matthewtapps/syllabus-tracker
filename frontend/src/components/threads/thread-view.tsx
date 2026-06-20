@@ -19,8 +19,7 @@ import { useUser } from "@/lib/current-user-context";
 import { useCreateComment, useDeleteThread } from "@/lib/mutations";
 import { CommentItem } from "./comment-item";
 import { VideoReplyItem } from "./video-reply-item";
-import { ThreadComposer } from "./thread-composer";
-import { VideoReplyComposer } from "./video-reply-composer";
+import { ReplyComposer } from "./reply-composer";
 import type { CommentView, VideoReplyView, ThreadView as ThreadViewModel } from "@/lib/api";
 
 interface ThreadViewProps {
@@ -141,18 +140,14 @@ export function ThreadView({ thread, anchorKind, anchorId, campId }: ThreadViewP
       )}
 
       {/* Reply composer */}
-      <div className="ml-4 space-y-2 pl-3">
-        <ThreadComposer
-          placeholder="Reply…"
-          submitLabel="Reply"
-          pending={createComment.isPending}
-          onSubmit={handleReply}
-        />
-        <VideoReplyComposer
+      <div className="ml-4 pl-3">
+        <ReplyComposer
           threadId={thread.id}
           anchorKind={anchorKind}
           anchorId={anchorId}
           campId={campId}
+          pending={createComment.isPending}
+          onSubmit={handleReply}
         />
       </div>
     </div>
