@@ -45,8 +45,11 @@ const users = [
 
 /** Reads the desktop (full-trail) breadcrumb nav. */
 function desktopNav() {
-  // The desktop trail is the first <nav>/breadcrumb; query by the link list.
-  return screen.getAllByRole("navigation")[0];
+  // AppBreadcrumbs renders three <nav>s: the outer container (no accessible
+  // name) plus a desktop and a mobile <Breadcrumb>, both aria-label="breadcrumb".
+  // Scope to the desktop breadcrumb (the first named one) so a link isn't matched
+  // twice across the responsive bars.
+  return screen.getAllByRole("navigation", { name: "breadcrumb" })[0];
 }
 
 describe("AppBreadcrumbs camp detail (/camps/:id)", () => {
