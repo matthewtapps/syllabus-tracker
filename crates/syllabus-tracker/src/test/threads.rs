@@ -1396,4 +1396,152 @@ mod tests {
             "camp_technique thread must be rejected when the technique is not attached to the camp"
         );
     }
+
+    // ---- CampTechnique HTTP route tests ----
+
+    /// Helper: build a client with a coach, two students, and a technique, then
+    /// create a camp for `student_user` with the technique attached. Returns the
+    /// (client, db, camp_id, technique_id).
+    async fn client_with_camp_technique() -> (
+        rocket::local::asynchronous::Client,
+        crate::test::test_utils::TestDb,
+        i64,
+        i64,
+    ) {
+        use crate::db::camps::{add_camp_technique, create_camp, NewCamp};
+        let db = TB::new()
+            .coach("coach_user", Some("Coach"))
+            .student("student_user", Some("Sam"))
+            .student("student2", Some("Mia"))
+            .technique("Armbar", "an armbar", Some("coach_user"))
+            .build()
+            .await
+            .unwrap();
+        let coach_id = db.user_id("coach_user").unwrap();
+        let student_id = db.user_id("student_user").unwrap();
+        let technique_id = db.technique_id("Armbar").unwrap();
+        let camp_id = create_camp(
+            &db.pool,
+            NewCamp {
+                student_id,
+                coach_id,
+                name: "Own camp".to_string(),
+                description: None,
+                references_camp_id: None,
+            },
+        )
+        .await
+        .unwrap();
+        add_camp_technique(&db.pool, camp_id, technique_id, coach_id)
+            .await
+            .unwrap();
+        let (client, db) = setup_test_client(db).await;
+        (client, db, camp_id, technique_id)
+    }
+
+    /// A camp_technique thread is camp-scoped: it must be creatable and listable
+    /// under the camp_technique anchor, but must NEVER appear in the global
+    /// library technique thread list (anchor_kind='technique').
+    #[rocket::async_test]
+    async fn camp_technique_thread_not_visible_on_global_technique() {
+        let (client, db, camp_id, technique_id) = client_with_camp_technique().await;
+        let student_id = db.user_id("student_user").unwrap();
+
+        // (a) Coach creates a camp_technique thread.
+        login_test_user(&client, "coach_user", "password123").await;
+        let create = client.post("/api/threads").header(ContentType::JSON)
+            .body(json!({"anchor_kind":"camp_technique","anchor_id":technique_id,"camp_id":camp_id,"visibility":"private","scope_student_id":student_id,"body":"camp note"}).to_string())
+            .dispatch().await;
+        assert_eq!(create.status(), HttpStatus::Ok);
+        let thread_id = create.into_json::<Value>().await.unwrap()["id"].as_i64().unwrap();
+
+        // (b) The global-library technique list must NOT include it.
+        let lib = client
+            .get(format!("/api/threads?anchor_kind=technique&anchor_id={technique_id}"))
+            .dispatch()
+            .await;
+        assert_eq!(lib.status(), HttpStatus::Ok);
+        let lib_threads = lib.into_json::<Value>().await.unwrap();
+        let lib_ids: Vec<i64> = lib_threads["threads"].as_array().unwrap().iter()
+            .map(|t| t["id"].as_i64().unwrap()).collect();
+        assert!(!lib_ids.contains(&thread_id), "camp_technique thread leaked into the global library list");
+
+        // (c) The camp_technique list MUST include it.
+        let camp_list = client
+            .get(format!("/api/threads?anchor_kind=camp_technique&anchor_id={technique_id}&camp_id={camp_id}"))
+            .dispatch()
+            .await;
+        assert_eq!(camp_list.status(), HttpStatus::Ok);
+        let camp_threads = camp_list.into_json::<Value>().await.unwrap();
+        let camp_ids: Vec<i64> = camp_threads["threads"].as_array().unwrap().iter()
+            .map(|t| t["id"].as_i64().unwrap()).collect();
+        assert!(camp_ids.contains(&thread_id), "camp_technique thread missing from its own camp list");
+    }
+
+    /// A student may start a camp_technique thread on their OWN camp's technique.
+    /// It is forced Private + scoped to the camp's student.
+    #[rocket::async_test]
+    async fn student_can_start_camp_technique_thread_on_own_camp() {
+        let (client, db, camp_id, technique_id) = client_with_camp_technique().await;
+        let student_id = db.user_id("student_user").unwrap();
+
+        login_test_user(&client, "student_user", "password123").await;
+        // Send broadcast + a bogus scope to prove the route forces private+scope.
+        let res = client.post("/api/threads").header(ContentType::JSON)
+            .body(json!({"anchor_kind":"camp_technique","anchor_id":technique_id,"camp_id":camp_id,"visibility":"broadcast","scope_student_id":null,"body":"my note"}).to_string())
+            .dispatch().await;
+        assert_eq!(res.status(), HttpStatus::Ok);
+        let thread_id = res.into_json::<Value>().await.unwrap()["id"].as_i64().unwrap();
+
+        let (vis, scope, got_camp): (String, i64, i64) = sqlx::query_as(
+            "SELECT visibility, scope_student_id, camp_id FROM threads WHERE id = ?",
+        )
+        .bind(thread_id)
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+        assert_eq!(vis, "private", "camp_technique threads must be forced private");
+        assert_eq!(scope, student_id, "camp_technique thread must be scoped to the camp's student");
+        assert_eq!(got_camp, camp_id);
+    }
+
+    /// A student must NOT be able to start a camp_technique thread on another
+    /// student's camp.
+    #[rocket::async_test]
+    async fn student_cannot_start_camp_technique_thread_on_another_camp() {
+        use crate::db::camps::{add_camp_technique, create_camp, NewCamp};
+        let db = TB::new()
+            .coach("coach_user", Some("Coach"))
+            .student("student_user", Some("Sam"))
+            .student("student2", Some("Mia"))
+            .technique("Armbar", "an armbar", Some("coach_user"))
+            .build()
+            .await
+            .unwrap();
+        let coach_id = db.user_id("coach_user").unwrap();
+        let other_student_id = db.user_id("student2").unwrap();
+        let technique_id = db.technique_id("Armbar").unwrap();
+        let camp_id = create_camp(
+            &db.pool,
+            NewCamp {
+                student_id: other_student_id,
+                coach_id,
+                name: "Other camp".to_string(),
+                description: None,
+                references_camp_id: None,
+            },
+        )
+        .await
+        .unwrap();
+        add_camp_technique(&db.pool, camp_id, technique_id, coach_id)
+            .await
+            .unwrap();
+        let (client, _db) = setup_test_client(db).await;
+
+        login_test_user(&client, "student_user", "password123").await;
+        let res = client.post("/api/threads").header(ContentType::JSON)
+            .body(json!({"anchor_kind":"camp_technique","anchor_id":technique_id,"camp_id":camp_id,"visibility":"private","scope_student_id":other_student_id,"body":"intrusion"}).to_string())
+            .dispatch().await;
+        assert_eq!(res.status(), HttpStatus::Forbidden);
+    }
 }
