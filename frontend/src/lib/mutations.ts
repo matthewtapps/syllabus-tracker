@@ -1124,6 +1124,8 @@ import {
   createComment,
   deleteThread,
   deleteComment,
+  uploadThreadVideoReply,
+  linkThreadVideoReply,
   type GhostActionEntry,
   type MissingActionEntry,
   type VideoActionEntry,
@@ -1312,7 +1314,8 @@ export function useCreateComment(
       threadId: number;
       body: string;
       parentCommentId?: number | null;
-    }) => unwrap(await createComment(v.threadId, v.body, v.parentCommentId)),
+      ref?: { videoId: number; tsSeconds: number | null };
+    }) => unwrap(await createComment(v.threadId, v.body, v.parentCommentId, v.ref)),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: qk.threads(anchorKind, anchorId, keyCampId) });
       if (anchorKind === "video_timestamp" || anchorKind === "video") {
@@ -1354,6 +1357,32 @@ export function useDeleteComment(
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: qk.threads(anchorKind, anchorId, keyCampId) });
       if (anchorKind === "video_timestamp" || anchorKind === "video") {
+        qc.invalidateQueries({ queryKey: qk.threads("video", anchorId) });
+      }
+    },
+  });
+}
+
+export function useCreateThreadVideoReply(
+  anchorKind: string,
+  anchorId: number,
+  campId?: number,
+) {
+  const qc = useQueryClient();
+  const keyCampId = anchorKind === "camp_technique" ? campId : undefined;
+  return useMutation({
+    mutationFn: async (v:
+      | { threadId: number; kind: "upload"; file: File; caption: string | null }
+      | { threadId: number; kind: "link"; url: string; caption: string | null },
+    ) => {
+      if (v.kind === "upload") {
+        return uploadThreadVideoReply(v.threadId, v.file, v.caption);
+      }
+      return linkThreadVideoReply(v.threadId, v.url, v.caption);
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: qk.threads(anchorKind, anchorId, keyCampId) });
+      if (anchorKind === "video") {
         qc.invalidateQueries({ queryKey: qk.threads("video", anchorId) });
       }
     },
