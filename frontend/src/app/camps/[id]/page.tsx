@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Navigate, useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
 import { Archive, Loader2, Pencil, Search } from "lucide-react";
@@ -34,6 +34,7 @@ import {
   useCreateThread,
 } from "@/lib/mutations";
 import { RenameCampDialog } from "@/components/camps/rename-camp-dialog";
+import { CampSearchSheet } from "@/components/camps/camp-search-sheet";
 import { useConfirm } from "@/components/confirm-context";
 import { CampComposer } from "@/components/camps/camp-composer";
 import { ActivityTileFeed } from "@/components/activity-feed/activity-tile-feed";
@@ -509,7 +510,15 @@ function AddCampTechniqueDialog({
 // Infinite feed body
 // ---------------------------------------------------------------------------
 
-function CampFeedBody({ campId }: { campId: number }) {
+function CampFeedBody({
+  campId,
+  feedRef,
+  highlightThreadId,
+}: {
+  campId: number;
+  feedRef: React.RefObject<HTMLDivElement | null>;
+  highlightThreadId: number | null;
+}) {
   const feed = useInfiniteCampFeed(campId);
   const rows = useMemo(() => feed.data?.pages.flat() ?? [], [feed.data]);
 
@@ -532,13 +541,23 @@ function CampFeedBody({ campId }: { campId: number }) {
   }, [fetchNextPage, hasNextPage, isFetchingNextPage]);
 
   return (
-    <div>
+    <div ref={feedRef}>
       <ActivityTileFeed
         rows={rows}
         isLoading={feed.isLoading}
         scope={{ kind: "gym" }}
         showAvatar
         emptyText="Post a technique, video, or note to start this camp."
+        getRowDataAttrs={(row) => {
+          if (row.thread_id == null) return {};
+          const isHighlighted = row.thread_id === highlightThreadId;
+          return {
+            "data-thread-id": String(row.thread_id),
+            ...(isHighlighted
+              ? { className: "ring-2 ring-ring/60 bg-muted/40" }
+              : {}),
+          };
+        }}
       />
       <div ref={sentinelRef} className="h-px" aria-hidden />
       {isFetchingNextPage && (
@@ -612,11 +631,33 @@ function CampDetail({
 
   const [addPickerOpen, setAddPickerOpen] = useState(false);
   const [renameOpen, setRenameOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [highlightThreadId, setHighlightThreadId] = useState<number | null>(null);
+  const feedRef = useRef<HTMLDivElement>(null);
 
   // Invalidate the camp feed after any successful post so the new item appears.
   function invalidateCampFeed() {
     qc.invalidateQueries({ queryKey: ["camps", campId, "feed"] });
   }
+
+  /**
+   * Jump to a feed tile with the given thread_id by scrolling it into view
+   * and applying a brief highlight ring.
+   *
+   * If the tile isn't in the currently loaded feed pages (deeper in the
+   * infinite scroll), this is a best-effort no-op for now. A focused
+   * single-thread view would let us show any thread regardless of feed
+   * position, but that's a future enhancement.
+   */
+  const onJump = useCallback((threadId: number) => {
+    const el = feedRef.current?.querySelector<HTMLElement>(
+      `[data-thread-id="${threadId}"]`,
+    );
+    if (!el) return; // not loaded yet — best-effort no-op (see comment above)
+    el.scrollIntoView({ behavior: "smooth", block: "center" });
+    setHighlightThreadId(threadId);
+    setTimeout(() => setHighlightThreadId(null), 2200);
+  }, []);
 
   async function handleArchive() {
     const ok = await confirm({
@@ -671,13 +712,12 @@ function CampDetail({
         <div className="flex items-start justify-between gap-2">
           <h1 className="text-base font-semibold">{camp.name}</h1>
           <div className="flex shrink-0 items-center gap-2">
-            {/* Search placeholder — behaviour deferred */}
             <Button
               size="sm"
               variant="ghost"
               className="h-7 w-7 p-0"
-              aria-label="Search (coming soon)"
-              disabled
+              aria-label="Search camp"
+              onClick={() => setSearchOpen(true)}
             >
               <Search className="h-3.5 w-3.5" aria-hidden />
             </Button>
@@ -748,8 +788,20 @@ function CampDetail({
         onAttach={attachTechniqueAsThread}
       />
 
+      {/* Camp search sheet */}
+      <CampSearchSheet
+        campId={campId}
+        open={searchOpen}
+        onOpenChange={setSearchOpen}
+        onJump={onJump}
+      />
+
       {/* Chronological activity feed */}
-      <CampFeedBody campId={campId} />
+      <CampFeedBody
+        campId={campId}
+        feedRef={feedRef}
+        highlightThreadId={highlightThreadId}
+      />
     </div>
   );
 }

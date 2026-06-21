@@ -9,6 +9,7 @@ import {
   getCamp,
   getCampVideos,
   getCampsForStudent,
+  searchCamp,
   getStudentActivityFeed,
   getActivityFeedHeadId,
   getActivityUnreadCount,
@@ -492,6 +493,27 @@ export function useCampVideos(campId: number | undefined) {
   return useQuery({
     queryKey: qk.campVideos(campId ?? 0),
     queryFn: whenId(campId, getCampVideos),
+  });
+}
+
+/**
+ * Camp search query. Only fires when q.trim() is non-empty and campId is valid.
+ * Results are cached per (campId, q, kind) triple so flipping kind chips is
+ * instant on a warm cache.
+ */
+export function useCampSearch(
+  campId: number | undefined,
+  q: string,
+  kind?: "technique" | "video" | "thread",
+) {
+  const trimmed = q.trim();
+  const valid =
+    typeof campId === "number" && Number.isFinite(campId) && trimmed.length > 0;
+  return useQuery({
+    queryKey: qk.campSearch(campId ?? 0, trimmed, kind),
+    queryFn: valid ? () => searchCamp(campId as number, trimmed, kind) : skipToken,
+    staleTime: 30_000,
+    placeholderData: keepPreviousData,
   });
 }
 

@@ -339,7 +339,7 @@ pub async fn search_camp_videos(
     let rows = sqlx::query!(
         r#"SELECT v.id AS "video_id!: i64",
                   v.title,
-                  th.id AS "thread_id?: i64"
+                  MIN(th.id) AS "thread_id?: i64"
            FROM (
                -- Branch 1: videos attached to a camp thread
                SELECT v.id, v.title, th.id AS thread_id

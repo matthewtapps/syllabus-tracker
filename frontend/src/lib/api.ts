@@ -2213,6 +2213,55 @@ export async function createCampTechnique(
   return res.json();
 }
 
+// ============================================================
+// Camp search (Phase 4)
+// ============================================================
+
+/** A technique hit from camp search. */
+export interface CampTechniqueHit {
+  thread_id: number;
+  technique_id: number;
+  technique_name: string;
+}
+
+/** A video hit from camp search. */
+export interface CampVideoHit {
+  video_id: number;
+  title: string;
+  /** The thread whose attached_video_id points to this video, if any. */
+  thread_id: number | null;
+}
+
+/** A thread/comment body hit from camp search. */
+export interface CampThreadHit {
+  thread_id: number;
+  /** A snippet of the matching body (truncated at 200 chars). */
+  snippet: string;
+  /** true if the match came from a comment body rather than the root post. */
+  is_comment: boolean;
+}
+
+export interface CampSearchResult {
+  techniques: CampTechniqueHit[];
+  videos: CampVideoHit[];
+  threads: CampThreadHit[];
+}
+
+/** GET /api/camps/:id/search?q=&kind= */
+export async function searchCamp(
+  campId: number,
+  q: string,
+  kind?: "technique" | "video" | "thread",
+): Promise<CampSearchResult> {
+  const params = new URLSearchParams({ q });
+  if (kind) params.set("kind", kind);
+  const res = await fetch(`/api/camps/${campId}/search?${params.toString()}`, {
+    credentials: "include",
+  });
+  if (!res.ok) throw res;
+  return (await res.json()) as CampSearchResult;
+}
+
 export async function getCampVideos(campId: number): Promise<Video[]> {
   const res = await fetch(`/api/camps/${campId}/videos`, {
     credentials: "include",
