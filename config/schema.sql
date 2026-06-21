@@ -244,20 +244,8 @@ CREATE TABLE IF NOT EXISTS camps (
 CREATE INDEX IF NOT EXISTS idx_camps_student
     ON camps (student_id) WHERE archived_at IS NULL;
 
--- Membership of (global library) techniques in a camp, with display order.
-CREATE TABLE IF NOT EXISTS camp_techniques (
-    camp_id      INTEGER NOT NULL REFERENCES camps (id) ON DELETE CASCADE,
-    technique_id INTEGER NOT NULL REFERENCES techniques (id) ON DELETE CASCADE,
-    position     INTEGER NOT NULL DEFAULT 0,
-    added_at     TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    added_by_id  INTEGER REFERENCES users (id),
-    PRIMARY KEY (camp_id, technique_id)
-);
-CREATE INDEX IF NOT EXISTS idx_camp_techniques_position
-    ON camp_techniques (camp_id, position);
-
--- Referenced-footage link tables (C-Slice 3). Pure join tables with no extra
--- columns; ON DELETE CASCADE cleans up automatically.
+-- Techniques are "in" a camp when a camp_technique THREAD exists for them
+-- (anchor_kind='camp_technique'); no separate ordered-list table is needed.
 
 -- A thread that a camp explicitly references (e.g. an earlier coaching thread
 -- whose insights informed this camp).
@@ -265,16 +253,6 @@ CREATE TABLE IF NOT EXISTS camp_referenced_threads (
     camp_id   INTEGER NOT NULL REFERENCES camps (id) ON DELETE CASCADE,
     thread_id INTEGER NOT NULL REFERENCES threads (id) ON DELETE CASCADE,
     PRIMARY KEY (camp_id, thread_id)
-);
-
--- A specific video on a camp technique that has been pinned as reference
--- footage for that technique in this camp (e.g. the student's footage that
--- first identified the gap this technique addresses).
-CREATE TABLE IF NOT EXISTS camp_technique_referenced_videos (
-    camp_id      INTEGER NOT NULL REFERENCES camps (id) ON DELETE CASCADE,
-    technique_id INTEGER NOT NULL REFERENCES techniques (id) ON DELETE CASCADE,
-    video_id     INTEGER NOT NULL REFERENCES videos (id) ON DELETE CASCADE,
-    PRIMARY KEY (camp_id, technique_id, video_id)
 );
 
 -- New "syllabus" stack (PR 3). Parallel to legacy collections /

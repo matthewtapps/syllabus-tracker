@@ -1,19 +1,10 @@
 import { useMemo, useState } from "react";
-import { FilmIcon } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { qk } from "@/lib/query-keys";
-import { useCampTechniqueVideos } from "@/lib/queries";
-import type { Video } from "@/lib/api";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { AddVideoButton } from "@/components/videos/add-video-button";
 import { VideoList } from "@/components/videos/video-list";
-import { VideoRow } from "@/components/videos/video-row";
-import { VideoPlayerDialog } from "@/components/videos/video-player-dialog";
-import { PrivacyAckBanner } from "@/components/videos/privacy-ack-banner";
 import type { WatchContext } from "@/components/videos/useWatchTracker";
 import type { VideoThreadSurface } from "@/lib/thread-visibility";
-import { AddCampFootageDialog } from "./add-camp-footage-dialog";
 import { useTechniqueRow } from "./technique-row-context";
 
 interface VideosBlockProps {
@@ -30,14 +21,7 @@ export function VideosBlock({
   const { context, technique, role } = useTechniqueRow();
   const isCoach = role === "coach" || role === "admin";
   const [reloadKey, setReloadKey] = useState(0);
-  const [campFootageOpen, setCampFootageOpen] = useState(false);
   const qc = useQueryClient();
-
-  // Coach-only control on the camp surface: attach one of the camp's footage
-  // videos to this technique as camp-only reference footage or promote it
-  // globally. Coaches are not the camp's owning student, so this is gated on
-  // the coach role rather than viewerIsOwner.
-  const showAddCampFootage = context.kind === "camp" && isCoach;
 
   // In a student's syllabus context, the add-video flow offers a "also add to
   // global library" switch and, when off, scopes the new video to this
@@ -119,17 +103,6 @@ export function VideosBlock({
           )}
         </div>
         <div className="flex shrink-0 items-center gap-2">
-          {showAddCampFootage && (
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => setCampFootageOpen(true)}
-            >
-              <FilmIcon className="mr-1.5 h-4 w-4" aria-hidden />
-              Add footage
-            </Button>
-          )}
           {canManage && (
             <AddVideoButton
               techniqueId={technique.id}
@@ -162,89 +135,6 @@ export function VideosBlock({
         watchContext={watchContext}
         contextLabel={contextLabel}
       />
-      {context.kind === "camp" && (
-        <CampOnlyVideos
-          campId={context.campId}
-          studentId={context.studentId}
-          techniqueId={technique.id}
-          contextLabel={contextLabel}
-        />
-      )}
-      {showAddCampFootage && context.kind === "camp" && (
-        <AddCampFootageDialog
-          open={campFootageOpen}
-          onOpenChange={setCampFootageOpen}
-          campId={context.campId}
-          techniqueId={technique.id}
-          techniqueName={technique.name}
-        />
-      )}
     </section>
-  );
-}
-
-interface CampOnlyVideosProps {
-  campId: number;
-  /** Camp's owning student. Scopes thread visibility on playback. */
-  studentId: number;
-  techniqueId: number;
-  contextLabel?: string;
-}
-
-/**
- * Read-only "Camp only" reference clips for a technique inside a camp. These
- * are footage attached to the technique but visible only within this camp.
- * Renders nothing until there is at least one such clip (no empty-state noise).
- * Both the coach and the camp's own student see this section; the backend
- * gates the read. Rendered read-only (canManage={false}) so no delete or
- * visibility controls appear here.
- */
-function CampOnlyVideos({
-  campId,
-  studentId,
-  techniqueId,
-  contextLabel,
-}: CampOnlyVideosProps) {
-  const { data } = useCampTechniqueVideos(campId, techniqueId);
-  const [playing, setPlaying] = useState<Video | null>(null);
-
-  // No loading or error noise: this is a supplementary section below the main
-  // list. If it never loads, the global list still stands on its own.
-  if (!data || data.length === 0) return null;
-
-  // Dummy techniqueId for VideoRow's rename-dialog cache key; rename controls
-  // are not rendered here (canManage={false}), so it is unused.
-  const CAMP_VIDEO_TECHNIQUE_SENTINEL = 0;
-
-  return (
-    <div className="space-y-1.5 pt-1">
-      <div className="flex items-center gap-2">
-        <Badge variant="secondary" className="text-[10px] uppercase tracking-wide">
-          Camp only
-        </Badge>
-        <span className="text-[11px] text-muted-foreground">
-          Visible only in this camp.
-        </span>
-      </div>
-      <PrivacyAckBanner enabled={playing !== null} />
-      <ul className="divide-y divide-white/15 overflow-hidden rounded-md border border-white/20 bg-card shadow-sm">
-        {data.map((video) => (
-          <VideoRow
-            key={video.id}
-            video={video}
-            techniqueId={CAMP_VIDEO_TECHNIQUE_SENTINEL}
-            canManage={false}
-            onPlay={() => setPlaying(video)}
-            onDeleted={() => {}}
-          />
-        ))}
-      </ul>
-      <VideoPlayerDialog
-        video={playing}
-        onClose={() => setPlaying(null)}
-        surface={{ kind: "student", studentId }}
-        context={contextLabel ? { label: contextLabel } : undefined}
-      />
-    </div>
   );
 }

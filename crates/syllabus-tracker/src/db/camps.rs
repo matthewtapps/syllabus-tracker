@@ -1,6 +1,7 @@
 //! Camps: a generic camp is a coach-curated stretch of work for one student,
-//! holding library-technique membership, camp-owned videos, and camp threads.
-//! Slice 1: generic only. All writes are coach-gated at the route layer.
+//! holding camp-owned videos and camp threads. Techniques are "in" a camp when a
+//! camp_technique THREAD (anchor_kind='camp_technique') exists for them; there is
+//! no separate ordered-list table.
 
 use chrono::NaiveDateTime;
 use serde::Serialize;
@@ -9,7 +10,6 @@ use tracing::instrument;
 
 use crate::db::activity::{emit, NewActivity, Verb};
 use crate::error::AppError;
-use crate::models::Tag;
 
 /// Scope for a technique created inside a camp.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -29,16 +29,6 @@ pub struct Camp {
     pub description: Option<String>,
     pub created_at: NaiveDateTime,
     pub archived_at: Option<NaiveDateTime>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct CampTechnique {
-    pub technique_id: i64,
-    pub name: String,
-    pub description: Option<String>,
-    pub position: i64,
-    pub tags: Vec<Tag>,
-    pub video_count: i64,
 }
 
 pub struct NewCamp {
@@ -138,7 +128,6 @@ pub struct CampSummary {
     pub description: Option<String>,
     pub created_at: NaiveDateTime,
     pub archived_at: Option<NaiveDateTime>,
-    pub technique_count: i64,
     pub video_count: i64,
     /// Most recent activity timestamp for this camp (MAX over the activity
     /// table by camp_id). None when the camp has no activity rows.
@@ -146,8 +135,8 @@ pub struct CampSummary {
 }
 
 /// Enriched camp list for the profile/list surfaces: bare camp columns plus
-/// technique/video counts and last-activity. Ordered active first, then by
-/// last activity (falling back to creation) descending.
+/// video count and last-activity. Ordered active first, then by last activity
+/// (falling back to creation) descending.
 #[instrument(skip(pool))]
 pub async fn list_camp_summaries_for_student(
     pool: &Pool<Sqlite>,
@@ -160,8 +149,6 @@ pub async fn list_camp_summaries_for_student(
                c.coach_id AS "coach_id!: i64", c.name, c.description,
                c.created_at AS "created_at!: NaiveDateTime",
                c.archived_at AS "archived_at?: NaiveDateTime",
-               (SELECT COUNT(*) FROM camp_techniques ct WHERE ct.camp_id = c.id)
-                   AS "technique_count!: i64",
                (SELECT COUNT(*) FROM videos v WHERE v.camp_id = c.id)
                    AS "video_count!: i64",
                (SELECT MAX(a.occurred_at) FROM activity a WHERE a.camp_id = c.id)
@@ -188,7 +175,6 @@ pub async fn list_camp_summaries_for_student(
             description: r.description,
             created_at: r.created_at,
             archived_at: r.archived_at,
-            technique_count: r.technique_count,
             video_count: r.video_count,
             last_activity_at: r.last_activity_at,
         })
@@ -252,347 +238,16 @@ pub async fn archive_camp(pool: &Pool<Sqlite>, id: i64, by_id: i64) -> Result<()
     Ok(())
 }
 
-#[instrument(skip(pool))]
-pub async fn add_camp_technique(
-    pool: &Pool<Sqlite>,
-    camp_id: i64,
-    technique_id: i64,
-    by_id: i64,
-) -> Result<(), AppError> {
-    let mut tx = pool.begin().await?;
-    let camp = sqlx::query!(
-        r#"SELECT student_id AS "student_id!: i64" FROM camps WHERE id = ?"#,
-        camp_id
-    )
-    .fetch_optional(&mut *tx)
-    .await?
-    .ok_or_else(|| AppError::NotFound("camp not found".into()))?;
-    let position = sqlx::query_scalar!(
-        r#"SELECT COALESCE(MAX(position), -1) + 1 AS "p!: i64"
-           FROM camp_techniques WHERE camp_id = ?"#,
-        camp_id
-    )
-    .fetch_one(&mut *tx)
-    .await?;
-    let affected = sqlx::query!(
-        "INSERT OR IGNORE INTO camp_techniques (camp_id, technique_id, position, added_by_id)
-         VALUES (?, ?, ?, ?)",
-        camp_id,
-        technique_id,
-        position,
-        by_id,
-    )
-    .execute(&mut *tx)
-    .await?
-    .rows_affected();
-    // Re-adding an existing technique is a no-op (INSERT OR IGNORE); don't emit
-    // a spurious CampTechniqueAdded activity row in that case.
-    if affected > 0 {
-        emit(
-            &mut tx,
-            NewActivity::new(Verb::CampTechniqueAdded, by_id)
-                .target_student(camp.student_id)
-                .camp(camp_id)
-                .technique(technique_id)
-                .context_kind("camp"),
-        )
-        .await?;
-    }
-    tx.commit().await?;
-    Ok(())
-}
-
-#[instrument(skip(pool))]
-pub async fn remove_camp_technique(
-    pool: &Pool<Sqlite>,
-    camp_id: i64,
-    technique_id: i64,
-) -> Result<(), AppError> {
-    // A scoped technique (is_global=0, scoped_camp_id = this camp) has no life
-    // outside the camp: it's hidden from the global library and reachable only
-    // through its camp. Plain-unlinking it would strand it (invisible in the
-    // library AND absent from any camp). So "removing" a scoped technique
-    // deletes the technique outright -- the FK cascade reaps its camp_techniques
-    // link, its videos (parent_kind='technique'), tags and notes with it. A
-    // global technique is merely unlinked (it lives on in the library). This
-    // keeps the invariant: a scoped technique exists iff it is in its owning
-    // camp, so no scoped orphans can accumulate.
-    let scoped = sqlx::query_scalar!(
-        r#"SELECT EXISTS(
-              SELECT 1 FROM techniques
-              WHERE id = ? AND is_global = 0 AND scoped_camp_id = ?
-           ) AS "e!: i64""#,
-        technique_id,
-        camp_id,
-    )
-    .fetch_one(pool)
-    .await?;
-
-    if scoped == 1 {
-        sqlx::query!("DELETE FROM techniques WHERE id = ?", technique_id)
-            .execute(pool)
-            .await?;
-    } else {
-        sqlx::query!(
-            "DELETE FROM camp_techniques WHERE camp_id = ? AND technique_id = ?",
-            camp_id,
-            technique_id,
-        )
-        .execute(pool)
-        .await?;
-    }
-    Ok(())
-}
-
-#[instrument(skip(pool))]
-pub async fn list_camp_techniques(
-    pool: &Pool<Sqlite>,
-    camp_id: i64,
-) -> Result<Vec<CampTechnique>, AppError> {
-    let rows = sqlx::query!(
-        r#"SELECT t.id AS "technique_id!: i64", t.name, t.description,
-                  ct.position AS "position!: i64",
-                  COALESCE(
-                      (SELECT COUNT(*) FROM videos v
-                       WHERE v.technique_id = t.id AND v.deleted_at IS NULL),
-                      0
-                  ) AS "video_count!: i64"
-           FROM camp_techniques ct
-           JOIN techniques t ON t.id = ct.technique_id
-           WHERE ct.camp_id = ?
-           ORDER BY ct.position"#,
-        camp_id
-    )
-    .fetch_all(pool)
-    .await?;
-
-    // Collect technique ids to fetch tags in one query, matching the library
-    // list pattern (separate bulk fetch, keyed by technique_id, ordered by
-    // tag name).
-    let technique_ids: Vec<i64> = rows.iter().map(|r| r.technique_id).collect();
-
-    let mut tags_by_technique: std::collections::HashMap<i64, Vec<Tag>> =
-        std::collections::HashMap::new();
-
-    if !technique_ids.is_empty() {
-        let ids_json = serde_json::Value::Array(
-            technique_ids
-                .iter()
-                .map(|id| serde_json::Value::Number((*id).into()))
-                .collect(),
-        );
-        let tag_rows = sqlx::query!(
-            r#"SELECT tt.technique_id AS "technique_id!: i64",
-                      tag.id AS "tag_id!: i64",
-                      tag.name AS "tag_name!: String"
-               FROM technique_tags tt
-               JOIN tags tag ON tag.id = tt.tag_id
-               WHERE tt.technique_id IN (SELECT value FROM json_each(?))
-               ORDER BY tag.name"#,
-            ids_json
-        )
-        .fetch_all(pool)
-        .await?;
-
-        for row in tag_rows {
-            tags_by_technique
-                .entry(row.technique_id)
-                .or_default()
-                .push(Tag {
-                    id: row.tag_id,
-                    name: row.tag_name,
-                });
-        }
-    }
-
-    Ok(rows
-        .into_iter()
-        .map(|r| {
-            let tags = tags_by_technique.remove(&r.technique_id).unwrap_or_default();
-            CampTechnique {
-                technique_id: r.technique_id,
-                name: r.name,
-                description: r.description,
-                position: r.position,
-                tags,
-                video_count: r.video_count,
-            }
-        })
-        .collect())
-}
-
-/// Provenance guard for camp-technique video adds. A video may only be added to
-/// a camp technique if it is currently THIS camp's own footage: an alive video
-/// row with `parent_kind='camp' AND camp_id = <camp_id>`. This blocks moving
-/// another student's footage (or any unrelated video) onto a technique, and
-/// turns a non-existent `video_id` into a clean rejection (rather than a silent
-/// no-op UPDATE).
-///
-/// Returns `AppError::NotFound` if the video does not exist or is not this
-/// camp's footage. Runs inside the caller's transaction so the check and the
-/// subsequent mutation are atomic.
-async fn require_video_is_camp_footage(
-    tx: &mut sqlx::Transaction<'_, Sqlite>,
-    camp_id: i64,
-    video_id: i64,
-) -> Result<(), AppError> {
-    let is_camp_footage = sqlx::query_scalar!(
-        r#"SELECT EXISTS(
-              SELECT 1 FROM videos
-              WHERE id = ?
-                AND parent_kind = 'camp'
-                AND camp_id = ?
-                AND deleted_at IS NULL
-           ) AS "e!: i64""#,
-        video_id,
-        camp_id,
-    )
-    .fetch_one(&mut **tx)
-    .await?;
-    if is_camp_footage == 0 {
-        return Err(AppError::NotFound(format!(
-            "video {video_id} is not footage owned by camp {camp_id}"
-        )));
-    }
-    Ok(())
-}
-
-/// Pin an EXISTING video as camp-only reference footage on a camp technique.
-///
-/// Guarded: the video must currently be THIS camp's own footage
-/// (`parent_kind='camp' AND camp_id=<camp>`); otherwise `AppError::NotFound`.
-///
-/// Idempotent: the join table's composite PK means a repeat call is a no-op.
-/// The video stays where it is (parent_kind='camp'); the join row only surfaces
-/// it inside this camp's view of the technique. It does NOT make the video
-/// appear in the global technique-video list, so no override cleanup is needed.
-#[instrument(skip(pool))]
-pub async fn add_camp_technique_video(
-    pool: &Pool<Sqlite>,
-    camp_id: i64,
-    technique_id: i64,
-    video_id: i64,
-) -> Result<(), AppError> {
-    let mut tx = pool.begin().await?;
-    require_video_is_camp_footage(&mut tx, camp_id, video_id).await?;
-    sqlx::query!(
-        r#"INSERT OR IGNORE INTO camp_technique_referenced_videos (camp_id, technique_id, video_id)
-           VALUES (?, ?, ?)"#,
-        camp_id,
-        technique_id,
-        video_id,
-    )
-    .execute(&mut *tx)
-    .await?;
-    tx.commit().await?;
-    Ok(())
-}
-
-/// List the camp-only reference videos for a (camp, technique): the `videos`
-/// rows pinned through `camp_technique_referenced_videos`. Returns ONLY the
-/// camp-only refs (NOT the global technique videos, which are fetched
-/// separately). Soft-deleted videos are excluded. Ordered by video id so the
-/// list is stable. Reuses the shared [`Video`] DTO.
-#[instrument(skip(pool))]
-pub async fn list_camp_technique_videos(
-    pool: &Pool<Sqlite>,
-    camp_id: i64,
-    technique_id: i64,
-) -> Result<Vec<crate::models::Video>, AppError> {
-    let rows = sqlx::query_as!(
-        crate::models::DbVideo,
-        r#"SELECT v.id, v.parent_kind, v.technique_id, v.student_id, v.thread_id,
-                v.camp_id AS "camp_id?: i64", v.title, v.description,
-                v.position, v.kind, v.processing_status, v.processing_error,
-                v.storage_key, v.bytes, v.duration_seconds, v.width, v.height,
-                v.external_url, v.external_host, v.external_video_id, v.uploaded_by_id,
-                v.created_at, v.updated_at, v.hidden_at
-         FROM camp_technique_referenced_videos ctrv
-         JOIN videos v ON v.id = ctrv.video_id
-         WHERE ctrv.camp_id = ? AND ctrv.technique_id = ?
-           AND v.deleted_at IS NULL
-         ORDER BY v.id ASC"#,
-        camp_id,
-        technique_id,
-    )
-    .fetch_all(pool)
-    .await?;
-    Ok(rows.into_iter().map(crate::models::Video::from).collect())
-}
-
-/// Re-parent an EXISTING video onto a technique as a normal technique video
-/// (parent_kind='technique', technique_id=<technique>, other parent columns
-/// cleared). This is the "global" scope: the video then appears everywhere the
-/// technique appears, including the global technique-video list.
-///
-/// Guarded: the video must currently be THIS camp's own footage
-/// (`parent_kind='camp' AND camp_id=<camp>`); otherwise `AppError::NotFound`.
-///
-/// Because the video is leaving camp scope, any now-stale camp-scoped visibility
-/// override for it is deleted. The provenance check, the override cleanup, and
-/// the re-parent run in a single transaction so they are atomic. Position is
-/// appended to the technique's existing videos so ordering stays stable.
-#[instrument(skip(pool))]
-pub async fn attach_video_to_technique(
-    pool: &Pool<Sqlite>,
-    camp_id: i64,
-    video_id: i64,
-    technique_id: i64,
-) -> Result<(), AppError> {
-    let mut tx = pool.begin().await?;
-    require_video_is_camp_footage(&mut tx, camp_id, video_id).await?;
-
-    // The video is leaving camp scope; drop any stale camp-scoped visibility
-    // override for it.
-    sqlx::query!(
-        r#"DELETE FROM video_visibility_overrides
-           WHERE scope_kind = 'camp' AND camp_id = ? AND video_id = ?"#,
-        camp_id,
-        video_id,
-    )
-    .execute(&mut *tx)
-    .await?;
-
-    let position = sqlx::query_scalar!(
-        r#"SELECT COALESCE(MAX(position), -1) + 1 AS "p!: i64"
-           FROM videos
-           WHERE technique_id = ? AND parent_kind = 'technique' AND deleted_at IS NULL"#,
-        technique_id,
-    )
-    .fetch_one(&mut *tx)
-    .await?;
-    sqlx::query!(
-        r#"UPDATE videos
-           SET parent_kind = 'technique',
-               technique_id = ?,
-               camp_id = NULL,
-               student_id = NULL,
-               thread_id = NULL,
-               syllabus_technique_id = NULL,
-               student_syllabus_technique_id = NULL,
-               position = ?
-           WHERE id = ?"#,
-        technique_id,
-        position,
-        video_id,
-    )
-    .execute(&mut *tx)
-    .await?;
-    tx.commit().await?;
-    Ok(())
-}
-
-/// CC-009 (global) + CC-010 (scoped): create a NEW technique inside a camp,
-/// then add it to that camp's technique list.
+/// CC-009 (global) + CC-010 (scoped): create a NEW technique inside a camp.
 ///
 /// `scope = TechniqueScope::Global`  → technique joins the shared library
 ///   (`is_global=1`, `scoped_camp_id=NULL`).
 /// `scope = TechniqueScope::Scoped`  → technique is camp-only
 ///   (`is_global=0`, `scoped_camp_id=camp_id`).
 ///
-/// The technique INSERT and the camp_technique INSERT run sequentially (two
-/// separate transactions is fine here: the technique exists before the
-/// camp_technique row, and add_camp_technique opens its own tx).
+/// The technique is NOT inserted into a camp_techniques list (that table no
+/// longer exists). The caller is responsible for posting a camp_technique
+/// THREAD so the technique appears in the camp feed.
 #[instrument(skip(pool))]
 pub async fn create_camp_technique_new(
     pool: &Pool<Sqlite>,
@@ -631,9 +286,6 @@ pub async fn create_camp_technique_new(
             res.last_insert_rowid()
         }
     };
-
-    // Link the newly-created technique to the camp (opens its own transaction).
-    add_camp_technique(pool, camp_id, technique_id, by_id).await?;
 
     Ok(technique_id)
 }

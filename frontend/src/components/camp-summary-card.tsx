@@ -8,7 +8,6 @@ import type { CampSummary } from "@/lib/api";
  * only: no interaction beyond the link.
  */
 export function CampSummaryCard({ camp }: { camp: CampSummary }) {
-  const techLabel = `${camp.technique_count} ${camp.technique_count === 1 ? "technique" : "techniques"}`;
   const videoLabel = `${camp.video_count} ${camp.video_count === 1 ? "video" : "videos"}`;
   return (
     <Link
@@ -22,7 +21,7 @@ export function CampSummaryCard({ camp }: { camp: CampSummary }) {
         <p className="mt-1 truncate text-sm text-muted-foreground">{camp.description}</p>
       )}
       <p className="mt-2 text-xs text-muted-foreground">
-        {techLabel} · {videoLabel}
+        {videoLabel}
         {camp.last_activity_at ? ` · updated ${formatRelativeShort(camp.last_activity_at)}` : ""}
       </p>
     </Link>

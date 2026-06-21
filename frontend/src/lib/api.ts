@@ -2135,19 +2135,6 @@ export interface Camp {
   archived_at: string | null;
 }
 
-export interface CampTechnique {
-  technique_id: number;
-  name: string;
-  description: string | null;
-  position: number;
-  tags: Tag[];
-  video_count: number;
-}
-
-export interface CampDetail extends Camp {
-  techniques: CampTechnique[];
-}
-
 /** Row from GET /api/camps (enriched list payload). */
 export interface CampSummary {
   id: number;
@@ -2157,7 +2144,6 @@ export interface CampSummary {
   description: string | null;
   created_at: string;
   archived_at: string | null;
-  technique_count: number;
   video_count: number;
   last_activity_at: string | null;
 }
@@ -2170,10 +2156,10 @@ export async function getCampsForStudent(studentId: number): Promise<CampSummary
   return ((await res.json()) as { camps: CampSummary[] }).camps;
 }
 
-export async function getCamp(id: number): Promise<CampDetail> {
+export async function getCamp(id: number): Promise<Camp> {
   const res = await fetch(`/api/camps/${id}`, { credentials: "include" });
   if (!res.ok) throw res;
-  return (await res.json()) as CampDetail;
+  return (await res.json()) as Camp;
 }
 
 export async function createCamp(data: {
@@ -2212,31 +2198,7 @@ export async function updateCamp(
   if (!res.ok) throw res;
 }
 
-export async function addCampTechnique(
-  campId: number,
-  techniqueId: number,
-): Promise<void> {
-  const res = await fetch(`/api/camps/${campId}/techniques`, {
-    method: "POST",
-    credentials: "include",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ technique_id: techniqueId }),
-  });
-  if (!res.ok) throw res;
-}
-
-export async function removeCampTechnique(
-  campId: number,
-  techniqueId: number,
-): Promise<void> {
-  const res = await fetch(`/api/camps/${campId}/techniques/${techniqueId}`, {
-    method: "DELETE",
-    credentials: "include",
-  });
-  if (!res.ok) throw res;
-}
-
-/** CC-009/010: Create a brand-new technique inside a camp and add it there. */
+/** CC-009/010: Create a brand-new technique inside a camp. */
 export async function createCampTechnique(
   campId: number,
   data: { name: string; description: string; scope: "global" | "scoped" },
@@ -2251,70 +2213,12 @@ export async function createCampTechnique(
   return res.json();
 }
 
-export async function promotePinnedToCamp(
-  studentId: number,
-  techniqueId: number,
-  campId: number,
-): Promise<void> {
-  const res = await fetch(
-    `/api/students/${studentId}/pinned/${techniqueId}/promote`,
-    {
-      method: "POST",
-      credentials: "include",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ camp_id: campId }),
-    },
-  );
-  if (!res.ok) throw res;
-}
-
 export async function getCampVideos(campId: number): Promise<Video[]> {
   const res = await fetch(`/api/camps/${campId}/videos`, {
     credentials: "include",
   });
   if (!res.ok) throw res;
   return ((await res.json()) as { videos: Video[] }).videos;
-}
-
-/**
- * The camp-only reference videos attached to a technique within this camp.
- * Returns ONLY the camp-scoped refs; the technique's global videos come from
- * `getTechniqueVideos`. Readable by the coach or the camp's own student.
- */
-export async function getCampTechniqueVideos(
-  campId: number,
-  techniqueId: number,
-): Promise<Video[]> {
-  const res = await fetch(
-    `/api/camps/${campId}/techniques/${techniqueId}/videos`,
-    { credentials: "include" },
-  );
-  if (!res.ok) throw res;
-  return ((await res.json()) as { videos: Video[] }).videos;
-}
-
-/**
- * Attach one of this camp's footage videos to a technique within the camp.
- * `camp_only` keeps it as camp-scoped reference footage (surfaced only inside
- * this camp); `global` promotes it to a normal technique video visible
- * everywhere the technique appears. The backend rejects (404) any `video_id`
- * that isn't this camp's own footage. Returns 204 on success.
- */
-export async function addCampTechniqueVideo(
-  campId: number,
-  techniqueId: number,
-  data: { video_id: number; scope: "camp_only" | "global" },
-): Promise<void> {
-  const res = await fetch(
-    `/api/camps/${campId}/techniques/${techniqueId}/videos`,
-    {
-      method: "POST",
-      credentials: "include",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(data),
-    },
-  );
-  if (!res.ok) throw res;
 }
 
 export async function uploadCampVideo(

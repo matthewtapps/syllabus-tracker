@@ -93,11 +93,6 @@ export const qk = {
     ["camps", "student", studentId] as const,
   camp: (id: number) => ["camps", id] as const,
   campVideos: (campId: number) => ["camps", campId, "videos"] as const,
-  // Camp-only reference videos for a (camp, technique). Distinct bucket from
-  // both `campVideos` (all of a camp's footage) and `techniqueVideos` (the
-  // technique's global videos).
-  campTechniqueVideos: (campId: number, techniqueId: number) =>
-    ["camps", campId, "techniques", techniqueId, "videos"] as const,
   campFeed: (campId: number, limit: number) =>
     ["camps", campId, "feed", limit] as const,
 

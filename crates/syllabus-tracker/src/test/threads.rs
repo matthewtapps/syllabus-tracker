@@ -1545,7 +1545,7 @@ mod tests {
 
     #[rocket::async_test]
     async fn camp_technique_thread_stores_camp_and_technique() {
-        use crate::db::camps::{add_camp_technique, create_camp, NewCamp};
+        use crate::db::camps::{create_camp, NewCamp};
         let db = TestDbBuilder::new()
             .coach("coach_user", Some("Coach"))
             .student("student_user", Some("Sam"))
@@ -1568,9 +1568,7 @@ mod tests {
         )
         .await
         .unwrap();
-        add_camp_technique(&db.pool, camp_id, technique_id, coach_id)
-            .await
-            .unwrap();
+        // No prior camp_techniques membership needed; posting the thread is the attach.
 
         let anchor = Anchor {
             kind: AnchorKind::CampTechnique,
@@ -1754,7 +1752,7 @@ mod tests {
         i64,
         i64,
     ) {
-        use crate::db::camps::{add_camp_technique, create_camp, NewCamp};
+        use crate::db::camps::{create_camp, NewCamp};
         let db = TB::new()
             .coach("coach_user", Some("Coach"))
             .student("student_user", Some("Sam"))
@@ -1777,9 +1775,7 @@ mod tests {
         )
         .await
         .unwrap();
-        add_camp_technique(&db.pool, camp_id, technique_id, coach_id)
-            .await
-            .unwrap();
+        // No prior camp_techniques insert needed; posting the camp_technique thread is the attach.
         let (client, db) = setup_test_client(db).await;
         (client, db, camp_id, technique_id)
     }
@@ -1854,7 +1850,7 @@ mod tests {
     /// student's camp.
     #[rocket::async_test]
     async fn student_cannot_start_camp_technique_thread_on_another_camp() {
-        use crate::db::camps::{add_camp_technique, create_camp, NewCamp};
+        use crate::db::camps::{create_camp, NewCamp};
         let db = TB::new()
             .coach("coach_user", Some("Coach"))
             .student("student_user", Some("Sam"))
@@ -1877,9 +1873,7 @@ mod tests {
         )
         .await
         .unwrap();
-        add_camp_technique(&db.pool, camp_id, technique_id, coach_id)
-            .await
-            .unwrap();
+        // No prior camp_techniques insert; the route guards by camp.student_id ownership.
         let (client, _db) = setup_test_client(db).await;
 
         login_test_user(&client, "student_user", "password123").await;

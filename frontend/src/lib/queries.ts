@@ -8,7 +8,6 @@ import {
   getDashboardActivityFeed,
   getCamp,
   getCampVideos,
-  getCampTechniqueVideos,
   getCampsForStudent,
   getStudentActivityFeed,
   getActivityFeedHeadId,
@@ -493,23 +492,6 @@ export function useCampVideos(campId: number | undefined) {
   return useQuery({
     queryKey: qk.campVideos(campId ?? 0),
     queryFn: whenId(campId, getCampVideos),
-  });
-}
-
-/** Camp-only reference videos for a (camp, technique). */
-export function useCampTechniqueVideos(
-  campId: number | undefined,
-  techniqueId: number | undefined,
-) {
-  return useQuery({
-    queryKey: qk.campTechniqueVideos(campId ?? 0, techniqueId ?? 0),
-    queryFn:
-      typeof campId === "number" &&
-      Number.isFinite(campId) &&
-      typeof techniqueId === "number" &&
-      Number.isFinite(techniqueId)
-        ? () => getCampTechniqueVideos(campId, techniqueId)
-        : skipToken,
   });
 }
 
