@@ -607,9 +607,6 @@ pub async fn list_videos_for_technique_global_visible(
 /// Lists the globally-visible (not soft-deleted, not globally-hidden) videos
 /// hanging off a given parent. Used by profile/thread/loose surfaces, which
 /// per CX-019 apply only the global hide (no per-student override layers).
-// Consumed by the profile/thread/loose video surfaces in later PRs; kept here
-// so this slab delivers the read primitive alongside the write path.
-#[allow(dead_code)]
 #[instrument(skip(pool))]
 pub async fn list_videos_for_parent_global_visible(
     pool: &Pool<Sqlite>,
@@ -844,6 +841,27 @@ pub async fn video_visible_to_student_anywhere(
         // No live row (missing or soft-deleted) -> never visible.
         return Ok(false);
     };
+
+    // Thread replies are scoped by their parent thread's visibility, NOT the
+    // naive global hide. A student may play a reply only if they could see the
+    // thread (broadcast, or they are its scope student). Coaches bypass this
+    // function entirely at the call site.
+    if parent_kind == "thread" {
+        let row = sqlx::query!(
+            r#"SELECT t.visibility,
+                      t.scope_student_id AS "scope?: i64",
+                      (v.hidden_at IS NULL) AS "not_hidden!: i64"
+               FROM videos v
+               JOIN threads t ON t.id = v.thread_id
+               WHERE v.id = ? AND t.deleted_at IS NULL"#,
+            video_id,
+        )
+        .fetch_optional(pool)
+        .await?;
+        let Some(row) = row else { return Ok(false); };
+        let can_see = row.visibility == "broadcast" || row.scope == Some(student_id);
+        return Ok(can_see && row.not_hidden != 0);
+    }
 
     // Non-syllabus surfaces have no per-assignment scoping; follow the global
     // rule only. (deleted_at was already excluded above.)

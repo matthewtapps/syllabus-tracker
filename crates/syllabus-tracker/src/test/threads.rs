@@ -30,6 +30,20 @@ mod tests {
     }
 
     #[rocket::async_test]
+    async fn thread_comments_has_no_reference_columns() {
+        // The clip-reference feature was dropped; the columns must not exist.
+        let db = create_standard_test_db().await;
+        let cols: Vec<String> = sqlx::query_scalar(
+            "SELECT name FROM pragma_table_info('thread_comments') \
+             WHERE name IN ('references_video_id','ref_ts_seconds') ORDER BY name",
+        )
+        .fetch_all(&db.pool)
+        .await
+        .unwrap();
+        assert!(cols.is_empty(), "unexpected clip-reference columns: {cols:?}");
+    }
+
+    #[rocket::async_test]
     async fn create_private_profile_thread_persists_row() {
         let db = db_with_coach_and_student().await;
         let coach_id = db.user_id("coach_user").unwrap();
@@ -49,6 +63,7 @@ mod tests {
                 visibility: ThreadVisibility::Private,
                 scope_student_id: Some(student_id),
                 body: "Let's plan your next six weeks.".to_string(),
+                attached_video_id: None,
             },
         )
         .await
@@ -101,12 +116,13 @@ mod tests {
                 visibility: ThreadVisibility::Private,
                 scope_student_id: Some(student_id),
                 body: "question".to_string(),
+                attached_video_id: None,
             },
         )
         .await
         .unwrap();
 
-        create_comment(&db.pool, thread_id, None, coach_id, "answer")
+        create_comment(&db.pool, thread_id, None, coach_id, "answer", None)
             .await
             .unwrap();
 
@@ -157,25 +173,27 @@ mod tests {
                 visibility: ThreadVisibility::Private,
                 scope_student_id: Some(student_id),
                 body: "q".to_string(),
+                attached_video_id: None,
             },
         )
         .await
         .unwrap();
         let top =
-            create_comment(&db.pool, thread_id, None, student_id, "top").await.unwrap();
-        create_comment(&db.pool, thread_id, Some(top), student_id, "ok reply")
+            create_comment(&db.pool, thread_id, None, student_id, "top", None).await.unwrap();
+        create_comment(&db.pool, thread_id, Some(top), student_id, "ok reply", None)
             .await
             .unwrap();
         let nested = create_comment(
             &db.pool,
             thread_id,
             Some(
-                create_comment(&db.pool, thread_id, Some(top), student_id, "another reply")
+                create_comment(&db.pool, thread_id, Some(top), student_id, "another reply", None)
                     .await
                     .unwrap(),
             ),
             student_id,
             "reply to a reply",
+            None,
         )
         .await;
         assert!(nested.is_err(), "replying to a reply must be rejected");
@@ -200,12 +218,13 @@ mod tests {
                 visibility: ThreadVisibility::Private,
                 scope_student_id: Some(student_id),
                 body: "q".to_string(),
+                attached_video_id: None,
             },
         )
         .await
         .unwrap();
         let comment_id =
-            create_comment(&db.pool, thread_id, None, student_id, "oops").await.unwrap();
+            create_comment(&db.pool, thread_id, None, student_id, "oops", None).await.unwrap();
         soft_delete_comment(&db.pool, comment_id, coach_id).await.unwrap();
 
         let view = get_thread(
@@ -235,6 +254,7 @@ mod tests {
             visibility: ThreadVisibility::Private,
             scope_student_id: Some(student_id),
             body: "hi".to_string(),
+            attached_video_id: None,
         }).await.unwrap();
 
         let anchor = Anchor { kind: AnchorKind::StudentProfile, id: student_id, video_ts_seconds: None, pinned_student_id: None, camp_id: None };
@@ -256,6 +276,7 @@ mod tests {
             visibility: ThreadVisibility::Private,
             scope_student_id: Some(student_id),
             body: "q".to_string(),
+            attached_video_id: None,
         }).await.unwrap();
 
         soft_delete_thread(&db.pool, t, coach_id).await.unwrap();
@@ -308,6 +329,7 @@ mod tests {
                 visibility: ThreadVisibility::Private,
                 scope_student_id: Some(student_id),
                 body: "Great video!".to_string(),
+                attached_video_id: None,
             },
         )
         .await
@@ -351,6 +373,7 @@ mod tests {
                     visibility: ThreadVisibility::Private,
                     scope_student_id: Some(sid),
                     body: "note".to_string(),
+                    attached_video_id: None,
                 },
             )
             .await
@@ -392,6 +415,7 @@ mod tests {
                 visibility: ThreadVisibility::Private,
                 scope_student_id: Some(student_id),
                 body: "Overall comment".to_string(),
+                attached_video_id: None,
             },
         )
         .await
@@ -405,6 +429,7 @@ mod tests {
                 visibility: ThreadVisibility::Private,
                 scope_student_id: Some(student_id),
                 body: "At 42 seconds".to_string(),
+                attached_video_id: None,
             },
         )
         .await
@@ -451,6 +476,7 @@ mod tests {
                 visibility: ThreadVisibility::Private,
                 scope_student_id: Some(student_id),
                 body: "Overall comment".to_string(),
+                attached_video_id: None,
             },
         )
         .await
@@ -471,6 +497,7 @@ mod tests {
                 visibility: ThreadVisibility::Private,
                 scope_student_id: Some(student_id),
                 body: "At 42 seconds".to_string(),
+                attached_video_id: None,
             },
         )
         .await
@@ -521,6 +548,7 @@ mod tests {
                 visibility: ThreadVisibility::Private,
                 scope_student_id: Some(student_id),
                 body: "Here's a fix.".to_string(),
+                attached_video_id: None,
             },
         )
         .await
@@ -552,6 +580,7 @@ mod tests {
                 visibility: ThreadVisibility::Private,
                 scope_student_id: Some(student_id),
                 body: "should be rejected".to_string(),
+                attached_video_id: None,
             },
         )
         .await;
@@ -584,6 +613,7 @@ mod tests {
                 visibility: ThreadVisibility::Private,
                 scope_student_id: Some(student_id),
                 body: "should fail".to_string(),
+                attached_video_id: None,
             },
         )
         .await;
@@ -639,6 +669,7 @@ mod tests {
                 visibility: ThreadVisibility::Private,
                 scope_student_id: Some(student_id),
                 body: "Work on your grip here.".to_string(),
+                attached_video_id: None,
             },
         )
         .await
@@ -680,6 +711,7 @@ mod tests {
                 visibility: ThreadVisibility::Private,
                 scope_student_id: Some(student_id),
                 body: "should fail".to_string(),
+                attached_video_id: None,
             },
         )
         .await;
@@ -713,6 +745,7 @@ mod tests {
                 visibility: ThreadVisibility::Private,
                 scope_student_id: Some(student_id),
                 body: "should fail".to_string(),
+                attached_video_id: None,
             },
         )
         .await;
@@ -749,6 +782,7 @@ mod tests {
                 visibility: ThreadVisibility::Private,
                 scope_student_id: Some(student_id),
                 body: "Nice pin!".to_string(),
+                attached_video_id: None,
             },
         )
         .await
@@ -786,6 +820,7 @@ mod tests {
                 visibility: ThreadVisibility::Broadcast,
                 scope_student_id: None,
                 body: "nope".to_string(),
+                attached_video_id: None,
             },
         )
         .await;
@@ -931,6 +966,7 @@ mod tests {
                 visibility: ThreadVisibility::Private,
                 scope_student_id: Some(student_id),
                 body: "Let's plan your next cycle.".to_string(),
+                attached_video_id: None,
             },
         )
         .await
@@ -973,15 +1009,16 @@ mod tests {
                 visibility: ThreadVisibility::Private,
                 scope_student_id: Some(student_id),
                 body: "Thread body".to_string(),
+                attached_video_id: None,
             },
         )
         .await
         .unwrap();
 
-        create_comment(&db.pool, thread_id, None, coach_id, "first comment")
+        create_comment(&db.pool, thread_id, None, coach_id, "first comment", None)
             .await
             .unwrap();
-        create_comment(&db.pool, thread_id, None, coach_id, "second comment")
+        create_comment(&db.pool, thread_id, None, coach_id, "second comment", None)
             .await
             .unwrap();
 
@@ -1031,6 +1068,7 @@ mod tests {
                 visibility: ThreadVisibility::Broadcast,
                 scope_student_id: None,
                 body: "Coach broadcast on technique.".to_string(),
+                attached_video_id: None,
             },
         )
         .await
@@ -1086,6 +1124,7 @@ mod tests {
                 visibility: ThreadVisibility::Broadcast,
                 scope_student_id: None,
                 body: "Look at this entry.".to_string(),
+                attached_video_id: None,
             },
         )
         .await
@@ -1134,6 +1173,7 @@ mod tests {
                 visibility: ThreadVisibility::Broadcast,
                 scope_student_id: None,
                 body: "Nice detail here.".to_string(),
+                attached_video_id: None,
             },
         )
         .await
@@ -1202,6 +1242,7 @@ mod tests {
                 visibility: ThreadVisibility::Private,
                 scope_student_id: Some(student_id),
                 body: "On your syllabus technique.".to_string(),
+                attached_video_id: None,
             },
         )
         .await
@@ -1256,12 +1297,13 @@ mod tests {
                 visibility: ThreadVisibility::Private,
                 scope_student_id: Some(student_id),
                 body: "Thread body.".to_string(),
+                attached_video_id: None,
             },
         )
         .await
         .unwrap();
 
-        create_comment(&db.pool, thread_id, None, coach_id, "a reply")
+        create_comment(&db.pool, thread_id, None, coach_id, "a reply", None)
             .await
             .unwrap();
 
@@ -1279,6 +1321,49 @@ mod tests {
 
         assert_eq!(row.context_kind.as_deref(), Some("syllabus"));
         assert!(row.syllabus_id.is_some(), "comment row must carry syllabus_id");
+    }
+
+    #[rocket::async_test]
+    async fn comment_carries_attached_video() {
+        let db = db_with_coach_and_student().await;
+        let coach_id = db.user_id("coach_user").unwrap();
+
+        sqlx::query("INSERT INTO techniques (id, name) VALUES (1, 'Armbar')")
+            .execute(&db.pool).await.unwrap();
+        let thread_id = create_thread(&db.pool, NewThread {
+            author_id: coach_id,
+            anchor: Anchor { kind: AnchorKind::Technique, id: 1, video_ts_seconds: None,
+                             pinned_student_id: None, camp_id: None },
+            visibility: ThreadVisibility::Broadcast,
+            scope_student_id: None,
+            body: "thoughts?".to_string(),
+            attached_video_id: None,
+        }).await.unwrap();
+
+        // A ready draft video uploaded by the comment's author.
+        let video_id: i64 = sqlx::query_scalar(
+            "INSERT INTO videos (parent_kind, title, position, kind, \
+                processing_status, uploaded_by_id) \
+             VALUES ('loose', '', 0, 'native', 'ready', ?) RETURNING id")
+            .bind(coach_id)
+            .fetch_one(&db.pool).await.unwrap();
+
+        create_comment(&db.pool, thread_id, None, coach_id, "great clip", Some(video_id))
+            .await.unwrap();
+
+        let view = get_thread(&db.pool, thread_id,
+            Viewer { user_id: coach_id, is_coach: true }).await.unwrap().unwrap();
+
+        assert_eq!(view.comments.len(), 1);
+        let v = view.comments[0].video.as_ref().expect("comment carries its video");
+        assert_eq!(v.id, video_id);
+        // The draft was re-parented onto the thread.
+        let (pk, tid): (String, Option<i64>) = sqlx::query_as(
+            "SELECT parent_kind, thread_id FROM videos WHERE id = ?")
+            .bind(video_id)
+            .fetch_one(&db.pool).await.unwrap();
+        assert_eq!(pk, "thread");
+        assert_eq!(tid, Some(thread_id));
     }
 
     // ---- CampTechnique anchor tests ----
@@ -1328,6 +1413,7 @@ mod tests {
                 visibility: ThreadVisibility::Private,
                 scope_student_id: Some(student_id),
                 body: "camp technique note".into(),
+                attached_video_id: None,
             },
         )
         .await
@@ -1388,6 +1474,7 @@ mod tests {
                 visibility: ThreadVisibility::Private,
                 scope_student_id: Some(student_id),
                 body: "should fail".into(),
+                attached_video_id: None,
             },
         )
         .await;

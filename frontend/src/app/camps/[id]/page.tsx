@@ -40,7 +40,7 @@ import { RenameCampDialog } from "@/components/camps/rename-camp-dialog";
 import { useConfirm } from "@/components/confirm-context";
 import { TechniqueRow } from "@/components/technique-row/technique-row";
 import { ThreadView } from "@/components/threads/thread-view";
-import { ThreadComposer } from "@/components/threads/thread-composer";
+import { ReplyComposer } from "@/components/threads/reply-composer";
 import { CampVideoList } from "@/components/videos/camp-video-list";
 import { useListUrlState } from "@/lib/use-list-url-state";
 import { cn } from "@/lib/utils";
@@ -641,18 +641,15 @@ function CampDetail({
   const viewerIsOwner = viewerId === camp.student_id;
   if (!viewerIsOwner && !isCoach) return <Navigate to="/dashboard" replace />;
 
-  async function startThread(body: string) {
-    try {
-      await createThread.mutateAsync({
-        anchor_kind: "camp",
-        anchor_id: campId,
-        visibility: "private",
-        scope_student_id: camp!.student_id,
-        body,
-      });
-    } catch {
-      toast.error("Couldn't post your thread.");
-    }
+  async function startThread(body: string, videoId: number | null) {
+    await createThread.mutateAsync({
+      anchor_kind: "camp",
+      anchor_id: campId,
+      visibility: "private",
+      scope_student_id: camp!.student_id,
+      body,
+      attached_video_id: videoId,
+    });
   }
 
   return (
@@ -819,9 +816,10 @@ function CampDetail({
               ))}
             </div>
           )}
-          <ThreadComposer
-            placeholder="Start a thread..."
-            submitLabel="Post"
+          <ReplyComposer
+            placeholder="Start a thread…"
+            anchorKind="camp"
+            anchorId={campId}
             pending={createThread.isPending}
             onSubmit={startThread}
           />

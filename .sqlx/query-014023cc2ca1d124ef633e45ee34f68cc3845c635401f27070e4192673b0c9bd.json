@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT (\n              EXISTS(SELECT 1 FROM thread_comments WHERE video_id = ? AND deleted_at IS NULL)\n              OR EXISTS(SELECT 1 FROM threads WHERE attached_video_id = ? AND deleted_at IS NULL)\n           ) AS \"e!: i64\"",
+  "describe": {
+    "columns": [
+      {
+        "name": "e!: i64",
+        "ordinal": 0,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "014023cc2ca1d124ef633e45ee34f68cc3845c635401f27070e4192673b0c9bd"
+}

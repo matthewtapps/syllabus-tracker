@@ -10,6 +10,7 @@ import {
   NotebookPen,
   Pin,
   Shield,
+  Tent,
   UserPlus,
   UserRound,
   Users,
@@ -17,6 +18,7 @@ import {
 } from 'lucide-react';
 import type { User } from '@/lib/api';
 import { isCoachOrAdmin, isAdmin } from '@/lib/api';
+import { campsUiEnabled } from '@/lib/features';
 import { useInstallTrigger } from '@/lib/install';
 import { cn } from '@/lib/utils';
 import {
@@ -182,6 +184,18 @@ function MoreTab({ user, onLogout }: { user: User; onLogout: () => void }) {
         <SheetTitle className="sr-only">More</SheetTitle>
 
         <div className="space-y-1 p-2">
+          {/* Camps lives in More for students: a less-frequent surface than the
+              primary tabs, and reachable from the profile hub too. */}
+          {!coachOrAdmin && campsUiEnabled && (
+            <MoreItem
+              icon={Tent}
+              label="Camps"
+              onClick={() => {
+                close();
+                navigate(`/student/${user.id}/camps`);
+              }}
+            />
+          )}
           {coachOrAdmin && (
             <MoreItem
               icon={UserPlus}

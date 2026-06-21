@@ -510,6 +510,18 @@ export function useThreadsForAnchor(
   return useQuery({
     queryKey: qk.threads(anchorKind, anchorId ?? 0, keyCampId),
     queryFn: whenId(anchorId, (id) => listThreads(anchorKind, id, keyCampId)),
+    // A freshly posted video reply lands in the "processing" state; poll until
+    // every attached clip (root or comment) resolves to playable.
+    refetchInterval: (query) => {
+      const data = query.state.data;
+      if (!data) return false;
+      const processing = data.some(
+        (t) =>
+          t.video?.processing_status === "processing" ||
+          t.comments.some((c) => c.video?.processing_status === "processing"),
+      );
+      return processing ? 1500 : false;
+    },
   });
 }
 

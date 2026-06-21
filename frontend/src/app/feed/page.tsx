@@ -1,10 +1,9 @@
 import { useEffect, useMemo, useRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { toast } from "sonner";
 import { Activity, ArrowUp, Loader2 } from "lucide-react";
 import { ActivityTileFeed } from "@/components/activity-feed/activity-tile-feed";
 import { CoachQueue } from "@/app/dashboard/components/coach-queue";
-import { ThreadComposer } from "@/components/threads/thread-composer";
+import { ReplyComposer } from "@/components/threads/reply-composer";
 import { useActivityFeedHeadId, useInfiniteActivityFeed } from "@/lib/queries";
 import { useCreateThread } from "@/lib/mutations";
 import { useUser } from "@/lib/current-user-context";
@@ -51,29 +50,27 @@ function ProfileDiscussionComposer({ studentId }: { studentId: number }) {
   const queryClient = useQueryClient();
   const createThread = useCreateThread();
 
-  async function submit(body: string) {
-    try {
-      await createThread.mutateAsync({
-        anchor_kind: "student_profile",
-        anchor_id: studentId,
-        visibility: "private",
-        scope_student_id: studentId,
-        body,
-      });
-      // Surface the new thread in the feed below (useCreateThread already
-      // refreshed the thread cache the tile hydrates from). The student's own
-      // feed lives under ["activity","feed",...].
-      queryClient.invalidateQueries({ queryKey: ["activity", "feed"] });
-    } catch {
-      toast.error("Couldn't post your discussion.");
-    }
+  async function submit(body: string, videoId: number | null) {
+    await createThread.mutateAsync({
+      anchor_kind: "student_profile",
+      anchor_id: studentId,
+      visibility: "private",
+      scope_student_id: studentId,
+      body,
+      attached_video_id: videoId,
+    });
+    // Surface the new thread in the feed below (useCreateThread already
+    // refreshed the thread cache the tile hydrates from). The student's own
+    // feed lives under ["activity","feed",...].
+    queryClient.invalidateQueries({ queryKey: ["activity", "feed"] });
   }
 
   return (
     <div className="rounded-lg border border-border bg-card p-3">
-      <ThreadComposer
-        placeholder="Start a discussion..."
-        submitLabel="Post"
+      <ReplyComposer
+        placeholder="Start a discussion…"
+        anchorKind="student_profile"
+        anchorId={studentId}
         pending={createThread.isPending}
         onSubmit={submit}
       />

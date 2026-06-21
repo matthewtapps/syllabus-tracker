@@ -171,7 +171,10 @@ pub async fn apply_processing_result(
             .await
         }
         ProcessingResult::Failed { error } => {
-            db::mark_video_failed_if_not_ready(pool, video_id, &error).await
+            db::mark_video_failed_if_not_ready(pool, video_id, &error).await?;
+            // A reply whose clip never processes is cancelled: the comment or
+            // thread that attached this video is removed so it never surfaces.
+            db::threads::cancel_for_failed_video(pool, video_id).await
         }
     }
 }

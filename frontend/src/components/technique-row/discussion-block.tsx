@@ -5,7 +5,7 @@ import { useThreadsForAnchor } from "@/lib/queries";
 import { useCreateThread } from "@/lib/mutations";
 import { useUser } from "@/lib/current-user-context";
 import { ThreadView } from "@/components/threads/thread-view";
-import { ThreadComposer } from "@/components/threads/thread-composer";
+import { ReplyComposer } from "@/components/threads/reply-composer";
 import { cn } from "@/lib/utils";
 
 export function DiscussionBlock() {
@@ -46,7 +46,7 @@ export function DiscussionBlock() {
           ? context.studentId
           : undefined;
 
-  async function start(body: string) {
+  async function start(body: string, videoId: number | null) {
     if (scopeStudentId === undefined) return;
     await createThread.mutateAsync({
       anchor_kind: anchor.kind,
@@ -55,6 +55,7 @@ export function DiscussionBlock() {
       visibility: "private",
       scope_student_id: scopeStudentId,
       body,
+      attached_video_id: videoId,
     });
   }
 
@@ -126,9 +127,11 @@ export function DiscussionBlock() {
         </div>
       )}
       {scopeStudentId !== undefined && (
-        <ThreadComposer
+        <ReplyComposer
           placeholder="Discuss…"
-          submitLabel="Post"
+          anchorKind={anchor.kind}
+          anchorId={anchor.id}
+          campId={campId}
           pending={createThread.isPending}
           onSubmit={start}
         />

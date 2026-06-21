@@ -2027,6 +2027,76 @@ mod tests {
 
         (client, test_db)
     }
+
+    #[rocket::async_test]
+    async fn comment_with_external_video_reparents_draft_to_thread() {
+        use crate::db;
+        let db = crate::test::test_utils::TestDbBuilder::new()
+            .coach("coach_user", Some("Coach"))
+            .student("student_user", Some("Sam"))
+            .build().await.unwrap();
+        let coach_id = db.user_id("coach_user").unwrap();
+        let student_id = db.user_id("student_user").unwrap();
+        let thread_id = db::threads::create_thread(&db.pool, db::threads::NewThread {
+            author_id: coach_id,
+            anchor: db::threads::Anchor { kind: db::threads::AnchorKind::StudentProfile,
+                id: student_id, video_ts_seconds: None, pinned_student_id: None, camp_id: None },
+            visibility: db::threads::ThreadVisibility::Private,
+            scope_student_id: Some(student_id), body: "hi".to_string(),
+            attached_video_id: None,
+        }).await.unwrap();
+
+        // A loose draft external video uploaded by the comment's author (coach).
+        let vid = db::create_external_video(&db.pool, db::NewExternalVideo {
+            parent: db::VideoParent::Loose,
+            title: "", description: None,
+            uploaded_by_id: coach_id, kind: crate::models::VideoKind::Youtube,
+            external_url: "https://youtu.be/abc", external_host: Some("youtube"),
+            external_video_id: Some("abc"),
+        }).await.unwrap();
+
+        // A video-only comment (empty body) attaching that draft.
+        db::threads::create_comment(&db.pool, thread_id, None, coach_id, "", Some(vid))
+            .await.unwrap();
+
+        let (pk, th): (String, Option<i64>) = sqlx::query_as(
+            "SELECT parent_kind, thread_id FROM videos WHERE id = ?")
+            .bind(vid).fetch_one(&db.pool).await.unwrap();
+        assert_eq!(pk, "thread");
+        assert_eq!(th, Some(thread_id));
+    }
+
+    #[rocket::async_test]
+    async fn private_thread_reply_not_playable_by_other_student() {
+        use crate::db;
+        let tdb = crate::test::test_utils::TestDbBuilder::new()
+            .coach("coach_user", Some("Coach"))
+            .student("sam", Some("Sam"))
+            .student("pat", Some("Pat"))
+            .build().await.unwrap();
+        let coach_id = tdb.user_id("coach_user").unwrap();
+        let sam = tdb.user_id("sam").unwrap();
+        let pat = tdb.user_id("pat").unwrap();
+
+        let thread_id = db::threads::create_thread(&tdb.pool, db::threads::NewThread {
+            author_id: coach_id,
+            anchor: db::threads::Anchor { kind: db::threads::AnchorKind::StudentProfile,
+                id: sam, video_ts_seconds: None, pinned_student_id: None, camp_id: None },
+            visibility: db::threads::ThreadVisibility::Private,
+            scope_student_id: Some(sam), body: "hi".to_string(),
+            attached_video_id: None,
+        }).await.unwrap();
+        let vid: i64 = sqlx::query_scalar(
+            "INSERT INTO videos (parent_kind, thread_id, title, position, kind, \
+                processing_status, uploaded_by_id) \
+             VALUES ('thread', ?, '', 0, 'native', 'ready', ?) RETURNING id")
+            .bind(thread_id).bind(sam).fetch_one(&tdb.pool).await.unwrap();
+
+        assert!(db::video_visible_to_student_anywhere(&tdb.pool, vid, sam).await.unwrap(),
+            "scope student can play");
+        assert!(!db::video_visible_to_student_anywhere(&tdb.pool, vid, pat).await.unwrap(),
+            "other student cannot play a private thread reply");
+    }
 }
 
 #[cfg(test)]

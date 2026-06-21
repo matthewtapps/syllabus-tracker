@@ -1,0 +1,32 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT uploaded_by_id AS \"uploaded_by_id!: i64\", parent_kind,\n                  (deleted_at IS NULL) AS \"alive!: i64\"\n           FROM videos WHERE id = ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "uploaded_by_id!: i64",
+        "ordinal": 0,
+        "type_info": "Integer"
+      },
+      {
+        "name": "parent_kind",
+        "ordinal": 1,
+        "type_info": "Text"
+      },
+      {
+        "name": "alive!: i64",
+        "ordinal": 2,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "a1055ae0187d9c472f7cd8e4644b64958d447a479341dc9b3ae5dd2869d42e9a"
+}

@@ -18,6 +18,7 @@ function thread(over: Partial<ThreadView>): ThreadView {
     created_at: new Date().toISOString(),
     deleted_at: null,
     comments: [],
+    video: null,
     ...over,
   };
 }

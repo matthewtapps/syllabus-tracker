@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO threads\n              (created_by_id, body, anchor_kind, student_id, technique_id, video_id,\n               video_ts_seconds, sst_id, camp_id, attached_video_id, visibility, scope_student_id)\n           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)\n           RETURNING id AS \"id!: i64\"",
+  "describe": {
+    "columns": [
+      {
+        "name": "id!: i64",
+        "ordinal": 0,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 12
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "7fc918a7452c794a677ac74e2bd87b913cd23cc4997f1a9a4fb0de5616b9903a"
+}

@@ -371,6 +371,132 @@ pub async fn api_video_link(
     Ok(Json(video))
 }
 
+/// Whether `user` may attach a video to a thread on the given surface. Coaches
+/// (`UploadVideos`) may attach anywhere; a student may attach only on a camp
+/// surface they own (the only surface a student can add videos to at all).
+async fn user_can_attach_thread_video(
+    pool: &Pool<Sqlite>,
+    user: &User,
+    anchor_kind: &str,
+    camp_id: Option<i64>,
+) -> Result<bool, Status> {
+    if user.has_permission(Permission::UploadVideos) {
+        return Ok(true);
+    }
+    if matches!(anchor_kind, "camp" | "camp_technique") {
+        if let Some(cid) = camp_id {
+            if let Some(camp) = db::camps::get_camp(pool, cid).await.map_err(Status::from)? {
+                return Ok(camp.student_id == user.id);
+            }
+        }
+    }
+    Ok(false)
+}
+
+/// Upload form for a draft reply video. `anchor_kind` / `camp_id` describe the
+/// surface the reply will land on, so the permission gate can run before the
+/// (possibly large) file is processed. The video starts life as a `Loose`
+/// draft and is re-parented onto its thread when the comment/thread is created.
+#[derive(FromForm)]
+pub struct DraftReplyUploadForm<'r> {
+    pub file: TempFile<'r>,
+    pub anchor_kind: String,
+    pub camp_id: Option<i64>,
+}
+
+#[derive(Deserialize)]
+pub struct DraftReplyLinkRequest {
+    pub url: String,
+    pub anchor_kind: String,
+    pub camp_id: Option<i64>,
+}
+
+#[instrument(skip(form, pool, processor))]
+#[post("/thread-reply-videos/upload", data = "<form>")]
+pub async fn api_thread_reply_video_upload(
+    user: User,
+    form: Result<Form<DraftReplyUploadForm<'_>>, FormErrors<'_>>,
+    pool: &State<Pool<Sqlite>>,
+    processor: &State<DynVideoProcessor>,
+) -> Result<Json<UploadResponse>, Status> {
+    let pool = pool.inner();
+    let mut form = form.map_err(|errs| {
+        error!(errors = %errs, "thread reply video form failed to parse");
+        Status::BadRequest
+    })?;
+    if !user_can_attach_thread_video(pool, &user, &form.anchor_kind, form.camp_id).await? {
+        return Err(Status::Forbidden);
+    }
+    let metrics = video_metrics();
+    if !is_mp4(form.file.content_type()) {
+        metrics.uploads_total.add(1, &[kv("result", "fail_format")]);
+        return Err(Status::UnsupportedMediaType);
+    }
+    if form.file.len() > max_video_bytes() as u64 {
+        metrics.uploads_total.add(1, &[kv("result", "fail_size")]);
+        return Err(Status::PayloadTooLarge);
+    }
+    tokio::fs::create_dir_all(pipeline::temp_dir()).await.map_err(|e| {
+        error!(error = %e, "failed to create video temp dir for thread reply");
+        Status::InternalServerError
+    })?;
+    let mut dest = pipeline::temp_dir();
+    dest.push(format!("{}.mp4", Uuid::new_v4()));
+    form.file.persist_to(&dest).await.map_err(|e| {
+        error!(dest = ?dest, error = %e, "failed to persist thread reply upload");
+        Status::InternalServerError
+    })?;
+
+    // Draft reply videos carry no title or caption and have no parent until the
+    // comment/thread that attaches them is created.
+    let video_id = db::create_processing_video(pool, db::VideoParent::Loose, "", None, user.id)
+        .await
+        .map_err(Status::from)?;
+
+    processor.start(HostJob { video_id, parent_id: video_id, original_temp_path: dest }).await;
+
+    Ok(Json(UploadResponse {
+        video_id,
+        processing_status: ProcessingStatus::Processing.as_str().to_string(),
+    }))
+}
+
+#[instrument(skip(body, pool))]
+#[post("/thread-reply-videos/link", data = "<body>")]
+pub async fn api_thread_reply_video_link(
+    user: User,
+    body: Json<DraftReplyLinkRequest>,
+    pool: &State<Pool<Sqlite>>,
+) -> Result<Json<Video>, Status> {
+    let pool = pool.inner();
+    let req = body.into_inner();
+    if !user_can_attach_thread_video(pool, &user, &req.anchor_kind, req.camp_id).await? {
+        return Err(Status::Forbidden);
+    }
+    if req.url.trim().is_empty() {
+        return Err(Status::UnprocessableEntity);
+    }
+    let parsed = embeds::parse(&req.url);
+    let id = db::create_external_video(
+        pool,
+        db::NewExternalVideo {
+            parent: db::VideoParent::Loose,
+            title: "",
+            description: None,
+            uploaded_by_id: user.id,
+            kind: parsed.kind,
+            external_url: &parsed.canonical_url,
+            external_host: Some(parsed.host.as_str()),
+            external_video_id: parsed.video_id.as_deref(),
+        },
+    )
+    .await
+    .map_err(Status::from)?;
+    let video = db::get_video(pool, id).await.map_err(Status::from)?
+        .ok_or(Status::InternalServerError)?;
+    Ok(Json(video))
+}
+
 #[derive(Serialize)]
 pub struct VideoListItem {
     #[serde(flatten)]

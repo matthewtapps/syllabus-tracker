@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "DELETE FROM threads WHERE attached_video_id = ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": []
+  },
+  "hash": "b6a1cbee1a17dbc1c2c13d4ae8a44b4ed194a99551c55dc03043d2a2c82204fd"
+}

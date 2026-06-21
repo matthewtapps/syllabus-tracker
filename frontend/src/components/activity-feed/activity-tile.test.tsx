@@ -104,6 +104,7 @@ function thread(overrides: Partial<ThreadViewModel> = {}): ThreadViewModel {
     created_at: new Date().toISOString(),
     deleted_at: null,
     comments: [],
+    video: null,
     ...overrides,
   };
 }
