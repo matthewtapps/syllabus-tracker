@@ -4,6 +4,7 @@ import {
   getAllUsers,
   getActivityDigest,
   getActivityFeed,
+  getCampFeed,
   getDashboardActivityFeed,
   getCamp,
   getCampVideos,
@@ -454,6 +455,21 @@ export function useSyllabusAttemptHeatmap(studentId: number | undefined) {
   return useQuery({
     queryKey: qk.studentSyllabusAttemptHeatmap(studentId ?? 0),
     queryFn: whenId(studentId, getSyllabusAttemptHeatmap),
+  });
+}
+
+// ---- Camp feed ----
+
+/** Infinite (keyset-paginated) activity feed scoped to a single camp. */
+export function useInfiniteCampFeed(campId: number | undefined, limit = 20) {
+  const valid = typeof campId === "number" && Number.isFinite(campId);
+  return useInfiniteQuery({
+    queryKey: qk.campFeed(campId ?? 0, limit),
+    enabled: valid,
+    initialPageParam: undefined as FeedCursor,
+    queryFn: ({ pageParam }) =>
+      getCampFeed(campId as number, { limit, ...(pageParam ?? {}) }),
+    getNextPageParam: (lastPage) => nextFeedCursor(lastPage, limit),
   });
 }
 

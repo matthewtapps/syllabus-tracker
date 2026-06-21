@@ -1889,6 +1889,26 @@ export async function getDashboardActivityFeed(limit = 30): Promise<ActivityRow[
   return (await response.json()) as ActivityRow[];
 }
 
+/** Keyset-paginated activity feed scoped to a single camp. */
+export async function getCampFeed(
+  campId: number,
+  params?: {
+    before_ts?: string;
+    before_id?: number;
+    limit?: number;
+  },
+): Promise<ActivityRow[]> {
+  const url = new URL(`/api/camps/${campId}/feed`, window.location.origin);
+  if (params?.before_ts) url.searchParams.set("before_ts", params.before_ts);
+  if (params?.before_id !== undefined)
+    url.searchParams.set("before_id", String(params.before_id));
+  if (params?.limit !== undefined)
+    url.searchParams.set("limit", String(params.limit));
+  const response = await fetch(url.toString(), { credentials: "include" });
+  if (!response.ok) throw response;
+  return (await response.json()) as ActivityRow[];
+}
+
 // ============================================================
 // Threads (PR 2, Task 1)
 // ============================================================

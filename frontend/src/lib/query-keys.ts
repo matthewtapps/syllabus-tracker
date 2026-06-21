@@ -98,6 +98,8 @@ export const qk = {
   // technique's global videos).
   campTechniqueVideos: (campId: number, techniqueId: number) =>
     ["camps", campId, "techniques", techniqueId, "videos"] as const,
+  campFeed: (campId: number, limit: number) =>
+    ["camps", campId, "feed", limit] as const,
 
   // camp_technique lists are cached per (technique, camp) so a technique's
   // camp-scoped conversation never collides with its global-library one.
