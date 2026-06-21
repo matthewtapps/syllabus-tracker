@@ -2187,6 +2187,74 @@ mod tests {
         );
     }
 
+    /// GET /api/camps/<id>/feed as the COACH who created the camp returns 200
+    /// and includes the coach's own authored thread row.
+    #[rocket::async_test]
+    async fn camp_feed_accessible_to_coach_and_includes_coach_authored_rows() {
+        use crate::test::test_utils::{create_standard_test_db, setup_test_client};
+        use rocket::http::Status;
+
+        let test_db = create_standard_test_db().await;
+        let coach_id = test_db.user_id("coach_user").unwrap();
+        let student_id = test_db.user_id("student_user").unwrap();
+        let (client, db) = setup_test_client(test_db).await;
+
+        // Create a camp for the standard student.
+        let camp_id: i64 = sqlx::query_scalar(
+            "INSERT INTO camps (student_id, coach_id, name) VALUES (?, ?, 'Coach View Camp') RETURNING id",
+        )
+        .bind(student_id)
+        .bind(coach_id)
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+
+        // Coach posts a thread anchored to this camp.
+        let thread_id = create_thread(
+            &db.pool,
+            NewThread {
+                author_id: coach_id,
+                anchor: Anchor {
+                    kind: AnchorKind::Camp,
+                    id: camp_id,
+                    video_ts_seconds: None,
+                    pinned_student_id: None,
+                    camp_id: None,
+                },
+                visibility: ThreadVisibility::Private,
+                scope_student_id: Some(student_id),
+                body: "Coach thread in camp".into(),
+                attached_video_id: None,
+            },
+        )
+        .await
+        .unwrap();
+
+        // GET the camp feed logged in as the COACH.
+        login_as(&client, "coach_user").await;
+        let resp = client
+            .get(format!("/api/camps/{}/feed", camp_id))
+            .dispatch()
+            .await;
+        assert_eq!(resp.status(), Status::Ok, "coach must get 200 for camp feed");
+
+        let body: serde_json::Value =
+            serde_json::from_str(&resp.into_string().await.unwrap()).unwrap();
+        let items = body.as_array().expect("response must be an array");
+
+        assert!(!items.is_empty(), "coach camp feed must not be empty");
+
+        // The coach-authored thread must appear in the feed.
+        let has_coach_row = items.iter().any(|item| {
+            item["actor_user_id"].as_i64() == Some(coach_id)
+                && item["thread_id"].as_i64() == Some(thread_id)
+        });
+        assert!(
+            has_coach_row,
+            "coach camp feed must contain the coach-authored thread (coach_id={coach_id}, thread_id={thread_id}); got: {items:?}"
+        );
+    }
+
     /// A video_id that does not exist must 404, not silently 204.
     #[rocket::async_test]
     async fn add_camp_technique_video_unknown_video_id_not_found() {
