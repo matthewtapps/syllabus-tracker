@@ -210,6 +210,7 @@ describe("ReplyComposer – thread-starter title requirement", () => {
         isReference: true,
         title: "My drill",
       }),
+      null,
     );
   });
 });

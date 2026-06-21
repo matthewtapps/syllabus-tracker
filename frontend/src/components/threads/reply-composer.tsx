@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { SendHorizontal, Video as VideoIcon, X, Loader2, TriangleAlert } from "lucide-react";
+import { SendHorizontal, Video as VideoIcon, X, Loader2, TriangleAlert, Clock } from "lucide-react";
+import { formatTimestamp } from "@/lib/dates";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -47,8 +48,14 @@ interface ReplyComposerProps {
    * "Choose from Sillybus" source is hidden.
    */
   scopeStudentId?: number;
-  /** Posts the reply/thread with an optional video attachment. */
-  onSubmit: (body: string, attachment: VideoAttachment | null) => Promise<void>;
+  /**
+   * When provided, enables a "stamp current time" button in the composer.
+   * Used on video-post reply composers so the user can pin their reply to a
+   * moment in the video.
+   */
+  stampable?: { currentTime: number; canStamp: boolean };
+  /** Posts the reply/thread with an optional video attachment and optional timestamp. */
+  onSubmit: (body: string, attachment: VideoAttachment | null, videoTsSeconds: number | null) => Promise<void>;
 }
 
 type Draft =
@@ -76,6 +83,7 @@ export function ReplyComposer({
   placeholder = "Reply…",
   requireVideoTitle = false,
   scopeStudentId,
+  stampable,
   onSubmit,
 }: ReplyComposerProps) {
   const user = useUser();
@@ -92,6 +100,8 @@ export function ReplyComposer({
   // Text + video id of the most recent send whose video was still processing,
   // so a later processing failure can restore the text for a retry.
   const [sentPending, setSentPending] = useState<{ body: string; videoId: number } | null>(null);
+  // Stamped timestamp for video-post replies; null = whole-video reply.
+  const [stampedTs, setStampedTs] = useState<number | null>(null);
 
   // file input refs — one for camera capture, one for device pick
   const cameraInputRef = useRef<HTMLInputElement>(null);
@@ -239,10 +249,11 @@ export function ReplyComposer({
     }
 
     try {
-      await onSubmit(text, attachment);
+      await onSubmit(text, attachment, stampedTs);
       setBody("");
       setDraft(null);
       setRefTitle("");
+      setStampedTs(null);
       setSentPending(stillProcessing != null ? { body: text, videoId: stillProcessing } : null);
     } catch {
       toast.error("Failed to post reply. Please try again.");
@@ -259,6 +270,20 @@ export function ReplyComposer({
           requireVideoTitle={requireVideoTitle}
           onTitleChange={setRefTitle}
         />
+      )}
+      {stampable && stampedTs != null && (
+        <div className="mb-1 flex items-center gap-1.5 text-xs text-primary">
+          <Clock className="h-3 w-3 shrink-0" aria-hidden />
+          <span>Replying at {formatTimestamp(stampedTs)}</span>
+          <button
+            type="button"
+            onClick={() => setStampedTs(null)}
+            aria-label="Clear timestamp"
+            className="ml-0.5 rounded-full p-0.5 hover:bg-muted"
+          >
+            <X className="h-3 w-3" aria-hidden />
+          </button>
+        </div>
       )}
       <div className="flex items-end gap-2">
         <div className="relative flex-1">
@@ -289,6 +314,20 @@ export function ReplyComposer({
             </Button>
           )}
         </div>
+        {stampable && stampedTs == null && (
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            disabled={!stampable.canStamp}
+            onClick={() => setStampedTs(stampable.currentTime)}
+            aria-label="Pin reply to current time"
+            title={stampable.canStamp ? `Stamp at ${formatTimestamp(stampable.currentTime)}` : "Play the video to stamp a time"}
+            className="shrink-0 rounded-full text-muted-foreground hover:text-foreground"
+          >
+            <Clock className="h-4 w-4" aria-hidden />
+          </Button>
+        )}
         <Button
           type="button"
           size="icon"
