@@ -2444,4 +2444,141 @@ mod tests {
             .await;
         assert_eq!(resp.status(), Status::Forbidden);
     }
+
+    // -----------------------------------------------------------------------
+    // camp_technique thread activity: technique_id is carried so the feed can
+    // render the technique card (context_kind="camp" disambiguates it from a
+    // plain library technique thread).
+    // -----------------------------------------------------------------------
+
+    /// A camp_technique thread's activity row must carry both technique_id and
+    /// camp_id, with context_kind="camp". A plain camp thread must have
+    /// technique_id IS NULL (the two kinds must stay distinct).
+    #[rocket::async_test]
+    async fn camp_technique_thread_activity_carries_technique_and_camp() {
+        use crate::db::camps::{add_camp_technique, create_camp, NewCamp};
+
+        let db = TestDbBuilder::new()
+            .coach("coach_user", Some("Coach"))
+            .student("student_user", Some("Sam"))
+            .technique("Armbar", "an armbar", Some("coach_user"))
+            .build()
+            .await
+            .unwrap();
+
+        let coach = db.user_id("coach_user").unwrap();
+        let student = db.user_id("student_user").unwrap();
+        let technique_id = db.technique_id("Armbar").unwrap();
+
+        let camp_id = create_camp(
+            &db.pool,
+            NewCamp {
+                student_id: student,
+                coach_id: coach,
+                name: "X-guard camp".into(),
+                description: None,
+            },
+        )
+        .await
+        .unwrap();
+
+        add_camp_technique(&db.pool, camp_id, technique_id, coach)
+            .await
+            .unwrap();
+
+        // Create a camp_technique thread.
+        let camp_tech_thread_id = create_thread(
+            &db.pool,
+            NewThread {
+                author_id: coach,
+                anchor: Anchor {
+                    kind: AnchorKind::CampTechnique,
+                    id: technique_id,
+                    video_ts_seconds: None,
+                    pinned_student_id: None,
+                    camp_id: Some(camp_id),
+                },
+                visibility: ThreadVisibility::Private,
+                scope_student_id: Some(student),
+                body: "Work on this grip entry.".into(),
+                attached_video_id: None,
+                attached_video_is_reference: false,
+                attached_video_title: None,
+            },
+        )
+        .await
+        .unwrap();
+
+        // Assert: activity row for the camp_technique thread carries both ids.
+        use sqlx::Row;
+        let row = sqlx::query(
+            "SELECT technique_id, camp_id, context_kind \
+             FROM activity \
+             WHERE verb = 'thread_comment_posted' AND thread_id = ?",
+        )
+        .bind(camp_tech_thread_id)
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+
+        let got_technique_id: Option<i64> = row.try_get("technique_id").unwrap();
+        let got_camp_id: Option<i64> = row.try_get("camp_id").unwrap();
+        let got_context: Option<String> = row.try_get("context_kind").unwrap();
+
+        assert_eq!(
+            got_technique_id,
+            Some(technique_id),
+            "camp_technique thread activity must carry technique_id"
+        );
+        assert_eq!(
+            got_camp_id,
+            Some(camp_id),
+            "camp_technique thread activity must carry camp_id"
+        );
+        assert_eq!(
+            got_context.as_deref(),
+            Some("camp"),
+            "camp_technique thread activity must have context_kind='camp'"
+        );
+
+        // Guard: a plain camp thread must have technique_id IS NULL so the feed
+        // can distinguish the two kinds by (camp_id != null && technique_id != null).
+        let camp_thread_id = create_thread(
+            &db.pool,
+            NewThread {
+                author_id: coach,
+                anchor: Anchor {
+                    kind: AnchorKind::Camp,
+                    id: camp_id,
+                    video_ts_seconds: None,
+                    pinned_student_id: None,
+                    camp_id: None,
+                },
+                visibility: ThreadVisibility::Private,
+                scope_student_id: Some(student),
+                body: "General camp thread.".into(),
+                attached_video_id: None,
+                attached_video_is_reference: false,
+                attached_video_title: None,
+            },
+        )
+        .await
+        .unwrap();
+
+        let plain_row = sqlx::query(
+            "SELECT technique_id, camp_id \
+             FROM activity \
+             WHERE verb = 'thread_comment_posted' AND thread_id = ?",
+        )
+        .bind(camp_thread_id)
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+
+        let plain_technique_id: Option<i64> = plain_row.try_get("technique_id").unwrap();
+        assert!(
+            plain_technique_id.is_none(),
+            "plain camp thread activity must have technique_id IS NULL (got {plain_technique_id:?})"
+        );
+    }
 }

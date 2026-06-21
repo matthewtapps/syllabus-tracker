@@ -367,10 +367,12 @@ pub async fn create_thread(pool: &Pool<Sqlite>, new: NewThread) -> Result<i64, A
         // Camp threads carry no technique/video/sst id but do carry camp context
         // for deep-linking back to the camp page.
         AnchorKind::Camp => (None, None, None),
-        // Camp-technique threads deep-link back to the camp (the camp context is
-        // tagged below); the technique id alone would route to the library, which
-        // is a different surface, so it is intentionally not carried here.
-        AnchorKind::CampTechnique => (None, None, None),
+        // Camp-technique threads carry the technique id so the feed can render
+        // the technique card. The camp context (tagged below via
+        // `.camp(camp_id).context_kind("camp")`) keeps the feed routing to the
+        // camp surface rather than the library, so technique_id+camp_id together
+        // are unambiguous.
+        AnchorKind::CampTechnique => (Some(new.anchor.id), None, None),
     };
     let mut ev = apply_thread_anchor_context(&mut tx, ev, technique_id, video_id, sst_id).await?;
     if new.anchor.kind == AnchorKind::Camp {
