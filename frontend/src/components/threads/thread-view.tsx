@@ -45,12 +45,13 @@ export function ThreadView({ thread, anchorKind, anchorId, campId }: ThreadViewP
   const canDelete =
     thread.author_id === user.id || user.role !== "student";
 
-  async function handleReply(body: string, videoId: number | null) {
+  async function handleReply(body: string, attachment: import("./reply-composer").VideoAttachment | null) {
     // Throw on failure so the composer surfaces it (and keeps the draft).
     await createComment.mutateAsync({
       threadId: thread.id,
       body,
-      videoId,
+      videoId: attachment?.videoId ?? null,
+      videoIsReference: attachment?.isReference ?? null,
       authorId: user.id,
       authorName: user.display_name,
     });

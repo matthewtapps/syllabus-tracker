@@ -641,14 +641,16 @@ function CampDetail({
   const viewerIsOwner = viewerId === camp.student_id;
   if (!viewerIsOwner && !isCoach) return <Navigate to="/dashboard" replace />;
 
-  async function startThread(body: string, videoId: number | null) {
+  async function startThread(body: string, attachment: import("@/components/threads/reply-composer").VideoAttachment | null) {
     await createThread.mutateAsync({
       anchor_kind: "camp",
       anchor_id: campId,
       visibility: "private",
       scope_student_id: camp!.student_id,
       body,
-      attached_video_id: videoId,
+      attached_video_id: attachment?.videoId ?? null,
+      attached_video_is_reference: attachment?.isReference ?? null,
+      attached_video_title: attachment?.title ?? null,
     });
   }
 
@@ -821,6 +823,8 @@ function CampDetail({
             anchorKind="camp"
             anchorId={campId}
             pending={createThread.isPending}
+            requireVideoTitle
+            scopeStudentId={camp.student_id}
             onSubmit={startThread}
           />
         </div>

@@ -1946,6 +1946,50 @@ export interface CreateThreadInput {
   body: string;
   /** Optional draft video to attach to the root post. */
   attached_video_id?: number | null;
+  /** True when attached_video_id references an existing video (no reparent). */
+  attached_video_is_reference?: boolean | null;
+  /** Title override for a reference video that has no title yet. */
+  attached_video_title?: string | null;
+}
+
+// ============================================================
+// Video browse (Sillybus navigator)
+// ============================================================
+
+export interface BrowseParent {
+  id: number;
+  name: string;
+  video_count: number;
+}
+
+export interface BrowseVideo {
+  id: number;
+  title?: string | null;
+  duration_seconds?: number | null;
+  external_url?: string | null;
+  provenance: string;
+}
+
+export type BrowseResult =
+  | { kind: "parents"; parents: BrowseParent[] }
+  | { kind: "videos"; videos: BrowseVideo[] };
+
+export async function browseVideos(params: {
+  studentId: number;
+  source?: "library" | "camps" | "syllabuses";
+  parentId?: number;
+  q?: string;
+}): Promise<BrowseResult> {
+  const qs = new URLSearchParams();
+  qs.set("student_id", String(params.studentId));
+  if (params.source) qs.set("source", params.source);
+  if (params.parentId != null) qs.set("parent_id", String(params.parentId));
+  if (params.q) qs.set("q", params.q);
+  const res = await fetch(`/api/videos/browse?${qs.toString()}`, {
+    credentials: "include",
+  });
+  if (!res.ok) throw new Error(`Browse failed: ${res.statusText}`);
+  return res.json() as Promise<BrowseResult>;
 }
 
 export async function listThreads(
@@ -1980,6 +2024,7 @@ export async function createComment(
   body: string,
   parentCommentId?: number | null,
   videoId?: number | null,
+  videoIsReference?: boolean | null,
 ): Promise<Response> {
   return fetch(`/api/threads/${threadId}/comments`, {
     method: "POST",
@@ -1989,6 +2034,7 @@ export async function createComment(
       body,
       parent_comment_id: parentCommentId ?? null,
       video_id: videoId ?? null,
+      video_is_reference: videoIsReference ?? false,
     }),
   });
 }

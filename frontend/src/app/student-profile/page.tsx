@@ -92,14 +92,16 @@ function ProfileHub({
   const feedQuery = useStudentActivityFeed(studentId);
   const profileThreadsQuery = useThreadsForAnchor("student_profile", studentId);
   const createProfileThread = useCreateThread();
-  async function startProfileThread(body: string, videoId: number | null) {
+  async function startProfileThread(body: string, attachment: import("@/components/threads/reply-composer").VideoAttachment | null) {
     await createProfileThread.mutateAsync({
       anchor_kind: "student_profile",
       anchor_id: studentId,
       visibility: "private",
       scope_student_id: studentId,
       body,
-      attached_video_id: videoId,
+      attached_video_id: attachment?.videoId ?? null,
+      attached_video_is_reference: attachment?.isReference ?? null,
+      attached_video_title: attachment?.title ?? null,
     });
   }
 

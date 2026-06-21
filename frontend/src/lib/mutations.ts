@@ -1316,9 +1316,10 @@ export function useCreateComment(
       body: string;
       parentCommentId?: number | null;
       videoId?: number | null;
+      videoIsReference?: boolean | null;
       authorId?: number;
       authorName?: string;
-    }) => unwrap(await createComment(v.threadId, v.body, v.parentCommentId, v.videoId)),
+    }) => unwrap(await createComment(v.threadId, v.body, v.parentCommentId, v.videoId, v.videoIsReference)),
     // When the comment carries a video, optimistically drop it into the thread
     // (with the video in its "processing" state) so the author sees their reply
     // immediately; the thread query polls it to playable. Reconciled on settle.
