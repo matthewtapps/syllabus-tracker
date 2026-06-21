@@ -50,12 +50,11 @@ pub enum Verb {
     TechniqueEdited,
     ThreadCommentPosted,
     CampCreated,
-    CampTechniqueAdded,
     CampArchived,
 }
 
 impl Verb {
-    pub const ALL: [Verb; 24] = [
+    pub const ALL: [Verb; 23] = [
         Verb::VideoWatched,
         Verb::AttemptLogged,
         Verb::AttemptEdited,
@@ -78,7 +77,6 @@ impl Verb {
         Verb::TechniqueEdited,
         Verb::ThreadCommentPosted,
         Verb::CampCreated,
-        Verb::CampTechniqueAdded,
         Verb::CampArchived,
     ];
 
@@ -106,7 +104,6 @@ impl Verb {
             Verb::TechniqueEdited => "technique_edited",
             Verb::ThreadCommentPosted => "thread_comment_posted",
             Verb::CampCreated => "camp_created",
-            Verb::CampTechniqueAdded => "camp_technique_added",
             Verb::CampArchived => "camp_archived",
         }
     }
@@ -138,10 +135,7 @@ impl Verb {
     pub fn coalesces(self) -> bool {
         !matches!(
             self,
-            Verb::ThreadCommentPosted
-                | Verb::CampCreated
-                | Verb::CampTechniqueAdded
-                | Verb::CampArchived
+            Verb::ThreadCommentPosted | Verb::CampCreated | Verb::CampArchived
         )
     }
 
@@ -169,7 +163,7 @@ impl Verb {
             | Verb::SyllabusTechniqueAdded
             | Verb::SyllabusTechniqueRemoved => EntityKind::Syllabus,
             Verb::ThreadCommentPosted => EntityKind::Thread,
-            Verb::CampCreated | Verb::CampTechniqueAdded | Verb::CampArchived => EntityKind::Camp,
+            Verb::CampCreated | Verb::CampArchived => EntityKind::Camp,
         }
     }
 }
