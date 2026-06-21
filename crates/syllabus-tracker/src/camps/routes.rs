@@ -2,16 +2,18 @@ use rocket::State;
 use rocket::http::Status;
 use rocket::serde::{Deserialize, Serialize, json::Json};
 use sqlx::{Pool, Sqlite};
-use tracing::instrument;
+use tracing::{instrument, warn};
 
+use crate::api::{ActivityFeedQuery, ACTIVITY_FEED_DEFAULT_LIMIT, ACTIVITY_FEED_MAX_LIMIT, parse_before_ts};
 use crate::auth::{Permission, User};
+use crate::db::ActivityRow;
 use crate::db::camps::{
     add_camp_technique, add_camp_technique_video, archive_camp, attach_video_to_technique,
     create_camp, create_camp_technique_new, get_camp, list_camp_summaries_for_student,
     list_camp_technique_videos, list_camp_techniques, remove_camp_technique, update_camp, Camp,
     CampSummary, CampTechnique, NewCamp, TechniqueScope,
 };
-use crate::db::{list_videos_for_camp, set_video_camp_visibility};
+use crate::db::{feed, list_videos_for_camp, set_video_camp_visibility};
 use crate::models::Video;
 
 /// Guard query: is the given technique pinned for the given student?
@@ -395,6 +397,72 @@ pub async fn api_list_camp_videos(
         .await
         .map_err(Status::from)?;
     Ok(Json(CampVideosResponse { videos }))
+}
+
+/// `GET /api/camps/<camp_id>/feed?before_ts=&before_id=&limit=`
+///
+/// Returns the activity feed sliced to the given camp. Authorized for the
+/// camp's own student OR any coach (ManageCamps). Does NOT advance the
+/// viewer's activity cursor (read-only scoped view; the student's global
+/// cursor is advanced by the main `/api/activity/feed` endpoint).
+#[instrument(skip(params, pool, user))]
+#[get("/camps/<camp_id>/feed?<params..>")]
+pub async fn api_camp_feed(
+    camp_id: i64,
+    params: ActivityFeedQuery,
+    user: User,
+    pool: &State<Pool<Sqlite>>,
+) -> Result<Json<Vec<ActivityRow>>, Status> {
+    let pool = pool.inner();
+    let camp = get_camp(pool, camp_id)
+        .await
+        .map_err(Status::from)?
+        .ok_or(Status::NotFound)?;
+    let is_coach = user.has_permission(Permission::ManageCamps);
+    if !is_coach && user.id != camp.student_id {
+        return Err(Status::Forbidden);
+    }
+
+    let limit = params
+        .limit
+        .unwrap_or(ACTIVITY_FEED_DEFAULT_LIMIT)
+        .clamp(1, ACTIVITY_FEED_MAX_LIMIT);
+
+    let before = match (&params.before_ts, params.before_id) {
+        (Some(ts_str), Some(id)) => {
+            let ts = parse_before_ts(ts_str).ok_or_else(|| {
+                warn!(
+                    raw = ts_str,
+                    "rejected camps/feed: unparseable before_ts"
+                );
+                Status::BadRequest
+            })?;
+            Some((ts, id))
+        }
+        (None, None) => None,
+        _ => {
+            warn!(
+                "rejected camps/feed: partial cursor (before_ts and before_id must both be present or both absent)"
+            );
+            return Err(Status::BadRequest);
+        }
+    };
+
+    // Use the student role so the feed query is scoped to the camp's student
+    // (target_student_id = camp.student_id). The camp_id filter then narrows
+    // it further to only rows for this specific camp.
+    let rows = feed(
+        pool,
+        camp.student_id,
+        crate::auth::Role::Student,
+        before,
+        limit,
+        Some(camp_id),
+    )
+    .await
+    .map_err(Status::from)?;
+
+    Ok(Json(rows))
 }
 
 /// CC-015: Set a per-camp visibility override for a video.

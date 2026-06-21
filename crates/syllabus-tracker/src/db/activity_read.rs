@@ -209,6 +209,7 @@ pub async fn feed(
     role: Role,
     before: Option<(NaiveDateTime, i64)>,
     limit: i64,
+    camp_id: Option<i64>,
 ) -> Result<Vec<ActivityRow>, AppError> {
     let (before_ts, before_id) = match before {
         Some((ts, id)) => (Some(ts), Some(id)),
@@ -311,6 +312,8 @@ pub async fn feed(
                      -- and target, so the viewer-relevance predicate above holds
                      -- for the kept row just as it did for the dropped ones.
                      AND (act.verb != 'thread_comment_posted' OR tr.rn = 1)
+                     -- Optional camp filter: when non-NULL, restrict to that camp only.
+                     AND (? IS NULL OR act.camp_id = ?)
                      AND (? IS NULL OR (act.occurred_at, act.id) < (?, ?))
                    ORDER BY act.occurred_at DESC, act.id DESC
                    LIMIT ?"#,
@@ -320,6 +323,8 @@ pub async fn feed(
                 viewer,
                 viewer,
                 viewer,
+                camp_id,
+                camp_id,
                 before_ts,
                 before_ts,
                 before_id,
@@ -425,11 +430,15 @@ pub async fn feed(
                      -- and target, so the viewer-relevance predicate above holds
                      -- for the kept row just as it did for the dropped ones.
                      AND (act.verb != 'thread_comment_posted' OR tr.rn = 1)
+                     -- Optional camp filter: when non-NULL, restrict to that camp only.
+                     AND (? IS NULL OR act.camp_id = ?)
                      AND (? IS NULL OR (act.occurred_at, act.id) < (?, ?))
                    ORDER BY act.occurred_at DESC, act.id DESC
                    LIMIT ?"#,
                 viewer,
                 viewer,
+                camp_id,
+                camp_id,
                 before_ts,
                 before_ts,
                 before_id,

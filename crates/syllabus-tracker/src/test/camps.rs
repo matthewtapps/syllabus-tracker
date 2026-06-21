@@ -2041,6 +2041,152 @@ mod tests {
         );
     }
 
+    // -----------------------------------------------------------------------
+    // Task 4: camp feed read endpoint
+    // -----------------------------------------------------------------------
+
+    /// GET /api/camps/<A>/feed as the owning student returns only activity rows
+    /// whose camp_id = A. Rows from camp B are absent.
+    #[rocket::async_test]
+    async fn camp_feed_returns_only_this_camps_activity() {
+        use crate::test::test_utils::{create_standard_test_db, setup_test_client};
+        use rocket::http::Status;
+
+        let test_db = create_standard_test_db().await;
+        let coach_id = test_db.user_id("coach_user").unwrap();
+        let student_id = test_db.user_id("student_user").unwrap();
+        let (client, db) = setup_test_client(test_db).await;
+
+        // Create two camps for the same student.
+        let camp_a: i64 = sqlx::query_scalar(
+            "INSERT INTO camps (student_id, coach_id, name) VALUES (?, ?, 'Camp A') RETURNING id",
+        )
+        .bind(student_id)
+        .bind(coach_id)
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+
+        let camp_b: i64 = sqlx::query_scalar(
+            "INSERT INTO camps (student_id, coach_id, name) VALUES (?, ?, 'Camp B') RETURNING id",
+        )
+        .bind(student_id)
+        .bind(coach_id)
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+
+        // Create a thread anchored to camp A (emits thread_comment_posted activity
+        // with camp_id = camp_a, target_student_id = student_id).
+        create_thread(
+            &db.pool,
+            NewThread {
+                author_id: coach_id,
+                anchor: Anchor {
+                    kind: AnchorKind::Camp,
+                    id: camp_a,
+                    video_ts_seconds: None,
+                    pinned_student_id: None,
+                    camp_id: None,
+                },
+                visibility: ThreadVisibility::Private,
+                scope_student_id: Some(student_id),
+                body: "Thread in camp A".into(),
+                attached_video_id: None,
+            },
+        )
+        .await
+        .unwrap();
+
+        // Create a thread anchored to camp B.
+        create_thread(
+            &db.pool,
+            NewThread {
+                author_id: coach_id,
+                anchor: Anchor {
+                    kind: AnchorKind::Camp,
+                    id: camp_b,
+                    video_ts_seconds: None,
+                    pinned_student_id: None,
+                    camp_id: None,
+                },
+                visibility: ThreadVisibility::Private,
+                scope_student_id: Some(student_id),
+                body: "Thread in camp B".into(),
+                attached_video_id: None,
+            },
+        )
+        .await
+        .unwrap();
+
+        // GET the camp A feed as the owning student.
+        login_as(&client, "student_user").await;
+        let resp = client
+            .get(format!("/api/camps/{}/feed", camp_a))
+            .dispatch()
+            .await;
+        assert_eq!(resp.status(), Status::Ok, "camp feed must return 200");
+
+        let body: serde_json::Value =
+            serde_json::from_str(&resp.into_string().await.unwrap()).unwrap();
+        let items = body.as_array().expect("response must be an array");
+
+        // Every returned item must belong to camp A.
+        assert!(!items.is_empty(), "camp A feed must not be empty");
+        for item in items {
+            let got_camp_id = item["camp_id"].as_i64();
+            assert_eq!(
+                got_camp_id,
+                Some(camp_a),
+                "feed item camp_id must equal camp A; got {:?}",
+                got_camp_id
+            );
+        }
+    }
+
+    /// GET /api/camps/<id>/feed as a student who does NOT own the camp returns
+    /// 403 Forbidden.
+    #[rocket::async_test]
+    async fn camp_feed_forbidden_for_other_student() {
+        use crate::test::test_utils::{create_standard_test_db, setup_test_client};
+        use rocket::http::Status;
+
+        let test_db = create_standard_test_db().await;
+        let coach_id = test_db.user_id("coach_user").unwrap();
+        let (client, db) = setup_test_client(test_db).await;
+
+        // Create a second student who will own the camp.
+        let other_student_id: i64 = sqlx::query_scalar(
+            "INSERT INTO users (username, role, password, display_name, approved_at, claimed_at)
+             SELECT 'other_student', 'student', password, 'Other Student', approved_at, claimed_at
+             FROM users WHERE username = 'student_user' RETURNING id",
+        )
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+
+        let other_camp: i64 = sqlx::query_scalar(
+            "INSERT INTO camps (student_id, coach_id, name) VALUES (?, ?, 'Other camp') RETURNING id",
+        )
+        .bind(other_student_id)
+        .bind(coach_id)
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+
+        // student_user (not the owner) tries to read the other student's camp feed.
+        login_as(&client, "student_user").await;
+        let resp = client
+            .get(format!("/api/camps/{}/feed", other_camp))
+            .dispatch()
+            .await;
+        assert_eq!(
+            resp.status(),
+            Status::Forbidden,
+            "non-owner student must get 403"
+        );
+    }
+
     /// A video_id that does not exist must 404, not silently 204.
     #[rocket::async_test]
     async fn add_camp_technique_video_unknown_video_id_not_found() {

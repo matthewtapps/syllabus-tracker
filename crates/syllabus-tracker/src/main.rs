@@ -54,10 +54,10 @@ use syllabi::{
     api_unassign_syllabus, api_update_sst, api_update_syllabus, api_update_syllabus_attempt,
 };
 use camps::{
-    api_add_camp_technique, api_add_camp_technique_video, api_archive_camp, api_create_camp,
-    api_create_camp_technique, api_get_camp, api_list_camps, api_list_camp_technique_videos,
-    api_list_camp_videos, api_promote_pinned_to_camp, api_remove_camp_technique, api_update_camp,
-    api_set_camp_video_visibility,
+    api_add_camp_technique, api_add_camp_technique_video, api_archive_camp, api_camp_feed,
+    api_create_camp, api_create_camp_technique, api_get_camp, api_list_camps,
+    api_list_camp_technique_videos, api_list_camp_videos, api_promote_pinned_to_camp,
+    api_remove_camp_technique, api_update_camp, api_set_camp_video_visibility,
 };
 use threads::{
     api_create_thread, api_list_threads, api_create_comment, api_delete_thread, api_delete_comment,
@@ -389,6 +389,7 @@ pub async fn init_rocket_with_callback_secret(
                 api_list_camp_videos,
                 api_set_camp_video_visibility,
                 api_promote_pinned_to_camp,
+                api_camp_feed,
             ],
         )
         .register(
