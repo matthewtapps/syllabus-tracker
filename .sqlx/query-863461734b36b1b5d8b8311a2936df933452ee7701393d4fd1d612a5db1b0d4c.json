@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT name FROM camps WHERE id = ? AND student_id = ? AND archived_at IS NULL",
+  "describe": {
+    "columns": [
+      {
+        "name": "name",
+        "ordinal": 0,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "863461734b36b1b5d8b8311a2936df933452ee7701393d4fd1d612a5db1b0d4c"
+}

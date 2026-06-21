@@ -2097,6 +2097,394 @@ mod tests {
         assert!(!db::video_visible_to_student_anywhere(&tdb.pool, vid, pat).await.unwrap(),
             "other student cannot play a private thread reply");
     }
+
+    // -----------------------------------------------------------------------
+    // Browse endpoint tests
+    // -----------------------------------------------------------------------
+
+    /// Helper: inserts an external (link) video directly with raw SQL to avoid
+    /// needing the video processor.
+    #[allow(clippy::too_many_arguments)]
+    async fn insert_external_video_browse(
+        pool: &sqlx::Pool<sqlx::Sqlite>,
+        parent_kind: &str,
+        technique_id: Option<i64>,
+        camp_id: Option<i64>,
+        syllabus_technique_id: Option<i64>,
+        title: &str,
+        hidden: bool,
+        uploaded_by_id: i64,
+    ) -> i64 {
+        let hidden_at: Option<&str> = if hidden { Some("2020-01-01 00:00:00") } else { None };
+        sqlx::query_scalar(
+            "INSERT INTO videos (
+                parent_kind, technique_id, camp_id,
+                syllabus_technique_id,
+                title, kind, processing_status, external_url,
+                hidden_at, uploaded_by_id
+             ) VALUES (?, ?, ?, ?, ?, 'link', 'ready', 'https://example.com/v', ?, ?)
+             RETURNING id",
+        )
+        .bind(parent_kind)
+        .bind(technique_id)
+        .bind(camp_id)
+        .bind(syllabus_technique_id)
+        .bind(title)
+        .bind(hidden_at)
+        .bind(uploaded_by_id)
+        .fetch_one(pool)
+        .await
+        .unwrap()
+    }
+
+    /// Sets up:
+    ///   - coach, student1 (the subject), student2 (another student)
+    ///   - A library technique with one visible and one globally-hidden video.
+    ///   - A camp owned by student1 with one visible camp video.
+    ///   - A syllabus assigned to student1 with one visible technique video.
+    ///   - A camp owned by student2 (must not appear for student1).
+    struct BrowseFixture {
+        pool: sqlx::Pool<sqlx::Sqlite>,
+        coach_id: i64,
+        student1_id: i64,
+        student2_id: i64,
+        technique_id: i64,
+        visible_lib_video_id: i64,
+        hidden_lib_video_id: i64,
+        camp1_id: i64,
+        camp_video_id: i64,
+        camp2_id: i64,
+        camp2_video_id: i64,
+        syllabus_id: i64,
+        syllabus_video_id: i64,
+    }
+
+    async fn setup_browse_fixture() -> BrowseFixture {
+        use crate::test::test_utils::TestDbBuilder;
+        let db = TestDbBuilder::new()
+            .coach("browse_coach", None)
+            .student("browse_student1", None)
+            .student("browse_student2", None)
+            .build()
+            .await
+            .unwrap();
+
+        let pool = db.pool;
+        let coach_id = db.user_id_map["browse_coach"];
+        let student1_id = db.user_id_map["browse_student1"];
+        let student2_id = db.user_id_map["browse_student2"];
+
+        // Library technique.
+        let technique_id: i64 = sqlx::query_scalar(
+            "INSERT INTO techniques (name, description, coach_id, is_global)
+             VALUES ('Guard Pass', 'desc', ?, 1) RETURNING id",
+        )
+        .bind(coach_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+
+        let visible_lib_video_id = insert_external_video_browse(
+            &pool, "technique", Some(technique_id), None, None,
+            "Guard Pass visible", false, coach_id,
+        ).await;
+
+        let hidden_lib_video_id = insert_external_video_browse(
+            &pool, "technique", Some(technique_id), None, None,
+            "Guard Pass hidden", true, coach_id,
+        ).await;
+
+        // Camp 1 owned by student1.
+        let camp1_id: i64 = sqlx::query_scalar(
+            "INSERT INTO camps (student_id, coach_id, name) VALUES (?, ?, 'Camp A') RETURNING id",
+        )
+        .bind(student1_id)
+        .bind(coach_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+
+        let camp_video_id = insert_external_video_browse(
+            &pool, "camp", None, Some(camp1_id), None,
+            "Camp A footage", false, coach_id,
+        ).await;
+
+        // Camp 2 owned by student2 (must never appear for student1).
+        let camp2_id: i64 = sqlx::query_scalar(
+            "INSERT INTO camps (student_id, coach_id, name) VALUES (?, ?, 'Camp B') RETURNING id",
+        )
+        .bind(student2_id)
+        .bind(coach_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+
+        let camp2_video_id = insert_external_video_browse(
+            &pool, "camp", None, Some(camp2_id), None,
+            "Camp B footage", false, coach_id,
+        ).await;
+
+        // Syllabus for student1.
+        let syllabus_id: i64 = sqlx::query_scalar(
+            "INSERT INTO syllabi (name, created_by_id) VALUES ('Blue Belt', ?) RETURNING id",
+        )
+        .bind(coach_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+
+        let st_id: i64 = sqlx::query_scalar(
+            "INSERT INTO syllabus_techniques (syllabus_id, technique_id, position, added_by_id)
+             VALUES (?, ?, 0, ?) RETURNING id",
+        )
+        .bind(syllabus_id)
+        .bind(technique_id)
+        .bind(coach_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+
+        let assignment_id: i64 = sqlx::query_scalar(
+            "INSERT INTO syllabus_assignments (student_id, syllabus_id, assigned_by_id)
+             VALUES (?, ?, ?) RETURNING id",
+        )
+        .bind(student1_id)
+        .bind(syllabus_id)
+        .bind(coach_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+
+        let _sst_id: i64 = sqlx::query_scalar(
+            "INSERT INTO student_syllabus_techniques (assignment_id, technique_id)
+             VALUES (?, ?) RETURNING id",
+        )
+        .bind(assignment_id)
+        .bind(technique_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+
+        // A T2 video on the syllabus_technique (will be visible to student1).
+        let syllabus_video_id = insert_external_video_browse(
+            &pool, "syllabus_technique", None, None, Some(st_id),
+            "Syllabus technique video", false, coach_id,
+        ).await;
+
+        BrowseFixture {
+            pool,
+            coach_id,
+            student1_id,
+            student2_id,
+            technique_id,
+            visible_lib_video_id,
+            hidden_lib_video_id,
+            camp1_id,
+            camp_video_id,
+            camp2_id,
+            camp2_video_id,
+            syllabus_id,
+            syllabus_video_id,
+        }
+    }
+
+    /// 1. Library source: visible video appears, hidden video does NOT, even
+    ///    when a COACH calls the endpoint (no-back-door rule).
+    #[rocket::async_test]
+    async fn browse_library_visible_video_appears_hidden_does_not_even_for_coach() {
+        let f = setup_browse_fixture().await;
+        let results = crate::db::browse_library_videos_for_technique(
+            &f.pool,
+            f.technique_id,
+            f.student1_id,
+        )
+        .await
+        .unwrap();
+        let ids: Vec<i64> = results.iter().map(|v| v.id).collect();
+        assert!(
+            ids.contains(&f.visible_lib_video_id),
+            "globally-visible library video must appear"
+        );
+        assert!(
+            !ids.contains(&f.hidden_lib_video_id),
+            "globally-hidden library video must NOT appear (no back door for coach caller)"
+        );
+    }
+
+    /// 2. Another student's camp videos must not appear in student1's browse.
+    #[rocket::async_test]
+    async fn browse_camps_another_students_camp_never_appears() {
+        let f = setup_browse_fixture().await;
+        let parents = crate::db::browse_camp_parents(&f.pool, f.student1_id)
+            .await
+            .unwrap();
+        let parent_ids: Vec<i64> = parents.iter().map(|p| p.id).collect();
+        assert!(
+            parent_ids.contains(&f.camp1_id),
+            "student1's own camp must appear"
+        );
+        assert!(
+            !parent_ids.contains(&f.camp2_id),
+            "another student's camp must NOT appear"
+        );
+        // Drilling into camp2 with student1's id must return empty (DB guard).
+        let camp2_videos = crate::db::browse_camp_videos(&f.pool, f.camp2_id, f.student1_id)
+            .await
+            .unwrap();
+        assert!(
+            camp2_videos.is_empty(),
+            "drilling into another student's camp must return empty (no back door)"
+        );
+        // Make sure camp2's video also does not surface in the search.
+        let search = crate::db::search_videos_visible_to_student(
+            &f.pool, f.student1_id, "Camp B"
+        )
+        .await
+        .unwrap();
+        let search_ids: Vec<i64> = search.iter().map(|v| v.id).collect();
+        assert!(
+            !search_ids.contains(&f.camp2_video_id),
+            "another student's camp video must not appear in search"
+        );
+    }
+
+    /// 3. Text search matches by title and respects visibility.
+    #[rocket::async_test]
+    async fn browse_search_matches_title_and_respects_visibility() {
+        let f = setup_browse_fixture().await;
+        // "guard pass" should hit the visible library video but NOT the hidden one.
+        let results = crate::db::search_videos_visible_to_student(
+            &f.pool, f.student1_id, "guard pass"
+        )
+        .await
+        .unwrap();
+        let ids: Vec<i64> = results.iter().map(|v| v.id).collect();
+        assert!(
+            ids.contains(&f.visible_lib_video_id),
+            "search must find globally-visible library video"
+        );
+        assert!(
+            !ids.contains(&f.hidden_lib_video_id),
+            "search must NOT return hidden library video"
+        );
+        // "Camp A" should find the camp video.
+        let camp_results = crate::db::search_videos_visible_to_student(
+            &f.pool, f.student1_id, "Camp A"
+        )
+        .await
+        .unwrap();
+        let camp_ids: Vec<i64> = camp_results.iter().map(|v| v.id).collect();
+        assert!(
+            camp_ids.contains(&f.camp_video_id),
+            "search must find student1's camp video"
+        );
+    }
+
+    /// 4. 403 when a different student (not the subject, not a coach) calls
+    ///    the HTTP endpoint with another student's id.
+    #[rocket::async_test]
+    async fn browse_http_forbidden_for_wrong_student() {
+        let f = setup_browse_fixture().await;
+        use std::collections::HashMap;
+        use crate::test::test_utils::TestDb;
+        let test_db = TestDb {
+            pool: f.pool.clone(),
+            user_id_map: {
+                let mut m = HashMap::new();
+                m.insert("browse_coach".into(), f.coach_id);
+                m.insert("browse_student1".into(), f.student1_id);
+                m.insert("browse_student2".into(), f.student2_id);
+                m
+            },
+            technique_id_map: HashMap::new(),
+        };
+        let (client, _db) = setup_test_client(test_db).await;
+        login_as(&client, "browse_student2").await;
+        let response = client
+            .get(format!(
+                "/api/videos/browse?student_id={}&source=library",
+                f.student1_id
+            ))
+            .dispatch()
+            .await;
+        assert_eq!(
+            response.status(),
+            Status::Forbidden,
+            "student2 must not be able to browse student1's videos"
+        );
+    }
+
+    /// 5. A coach CAN call the endpoint but gets only the student's visibility
+    ///    (the hidden library video must still not appear).
+    #[rocket::async_test]
+    async fn browse_http_coach_sees_only_student_visibility() {
+        let f = setup_browse_fixture().await;
+        use std::collections::HashMap;
+        use crate::test::test_utils::TestDb;
+        let test_db = TestDb {
+            pool: f.pool.clone(),
+            user_id_map: {
+                let mut m = HashMap::new();
+                m.insert("browse_coach".into(), f.coach_id);
+                m.insert("browse_student1".into(), f.student1_id);
+                m.insert("browse_student2".into(), f.student2_id);
+                m
+            },
+            technique_id_map: HashMap::new(),
+        };
+        let (client, _db) = setup_test_client(test_db).await;
+        login_as(&client, "browse_coach").await;
+        let response = client
+            .get(format!(
+                "/api/videos/browse?student_id={}&source=library&parent_id={}",
+                f.student1_id, f.technique_id
+            ))
+            .dispatch()
+            .await;
+        assert_eq!(response.status(), Status::Ok);
+        let body: serde_json::Value =
+            serde_json::from_str(&response.into_string().await.unwrap()).unwrap();
+        let videos = body["videos"].as_array().unwrap();
+        let ids: Vec<i64> = videos.iter().map(|v| v["id"].as_i64().unwrap()).collect();
+        assert!(
+            ids.contains(&f.visible_lib_video_id),
+            "coach must see visible video"
+        );
+        assert!(
+            !ids.contains(&f.hidden_lib_video_id),
+            "coach must NOT see hidden video (student visibility, no back door)"
+        );
+    }
+
+    /// 6. Syllabus source parents list and drill-in work.
+    #[rocket::async_test]
+    async fn browse_syllabus_parents_and_drill_in_work() {
+        let f = setup_browse_fixture().await;
+        let parents = crate::db::browse_syllabus_parents(&f.pool, f.student1_id)
+            .await
+            .unwrap();
+        let parent_ids: Vec<i64> = parents.iter().map(|p| p.id).collect();
+        assert!(
+            parent_ids.contains(&f.syllabus_id),
+            "student1's syllabus must appear as a parent"
+        );
+        let videos = crate::db::browse_syllabus_videos(
+            &f.pool,
+            f.syllabus_id,
+            f.student1_id,
+        )
+        .await
+        .unwrap();
+        let video_ids: Vec<i64> = videos.iter().map(|v| v.id).collect();
+        assert!(
+            video_ids.contains(&f.visible_lib_video_id),
+            "visible T1 library video must appear in syllabus drill-in"
+        );
+        assert!(
+            video_ids.contains(&f.syllabus_video_id),
+            "T2 syllabus_technique video must appear in syllabus drill-in"
+        );
+    }
 }
 
 #[cfg(test)]
