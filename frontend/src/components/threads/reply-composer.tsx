@@ -200,7 +200,7 @@ export function ReplyComposer({
   }
 
   function isReferenceDraft(d: Draft): boolean {
-    return d.state === "ready" && (d as { isReference: boolean }).isReference === true;
+    return d.state === "ready" && d.isReference === true;
   }
 
   const draftVideoId =
@@ -438,7 +438,7 @@ function DraftPreview({
   requireVideoTitle: boolean;
   onTitleChange: (t: string) => void;
 }) {
-  const isRef = draft.state === "ready" && (draft as { isReference: boolean }).isReference;
+  const isRef = draft.state === "ready" && draft.isReference;
   const label =
     draft.state === "uploading"
       ? "Uploading video…"
@@ -451,7 +451,10 @@ function DraftPreview({
           : "Video failed to upload";
   const failed = draft.state === "failed";
 
-  const needsTitle = requireVideoTitle && isRef && !refTitle.trim();
+  // Show the title input whenever we have a ready reference draft and the
+  // surface requires a title — regardless of whether refTitle is filled yet.
+  // (Gating on emptiness caused the input to unmount mid-typing.)
+  const showTitleInput = requireVideoTitle && isRef;
 
   return (
     <div
@@ -479,7 +482,7 @@ function DraftPreview({
           <X className="h-4 w-4" aria-hidden />
         </Button>
       </div>
-      {needsTitle && (
+      {showTitleInput && (
         <Input
           className="mt-2"
           placeholder="Title for this video (required)"

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { ArrowLeft, BookOpen, Search, Tent, Video as VideoIcon } from "lucide-react";
+import { ArrowLeft, BookOpen, GraduationCap, Search, Tent, Video as VideoIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -174,7 +174,7 @@ export function SillybusVideoNavigator({
     {
       source: "syllabuses",
       label: "Syllabuses",
-      icon: <BookOpen className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />,
+      icon: <GraduationCap className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />,
     },
   ];
 
