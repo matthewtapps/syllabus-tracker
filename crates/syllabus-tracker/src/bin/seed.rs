@@ -458,6 +458,8 @@ async fn seed_thread_with_replies(
             scope_student_id,
             body: body.to_string(),
             attached_video_id: None,
+            attached_video_is_reference: false,
+            attached_video_title: None,
         },
     )
     .await?;
@@ -472,7 +474,7 @@ async fn seed_thread_with_replies(
 
     let mut last = started;
     for (reply_author, reply_body, hours_after) in replies {
-        let comment_id = create_comment(pool, thread_id, None, *reply_author, reply_body, None, None).await?;
+        let comment_id = create_comment(pool, thread_id, None, *reply_author, reply_body, None, None, false).await?;
         let comment_time = started + Duration::hours(*hours_after);
         sqlx::query("UPDATE thread_comments SET created_at = ? WHERE id = ?")
             .bind(comment_time)

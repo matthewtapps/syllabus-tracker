@@ -105,9 +105,23 @@ pub struct NewThread {
     /// Required iff `visibility == Private`.
     pub scope_student_id: Option<i64>,
     pub body: String,
-    /// Optional draft video to attach to the root post. Re-parented onto the
-    /// new thread; surface permission is enforced at the route layer.
+    /// Optional video to attach to the root post.
+    ///
+    /// When `attached_video_is_reference` is `false` (the default): the video
+    /// must be an unattached draft belonging to `author_id`; it will be
+    /// re-parented onto the new thread (existing behaviour).
+    ///
+    /// When `true`: the video is an existing library/camp/syllabus video that
+    /// is simply *linked* — it is NOT re-parented. The video must be visible
+    /// to `scope_student_id` at write time (enforced by
+    /// `validate_attachable_reference`).
     pub attached_video_id: Option<i64>,
+    /// `true` to link an existing video by reference (no reparent).
+    /// `false` (default) to use the original draft-upload path.
+    pub attached_video_is_reference: bool,
+    /// Required (non-empty) when referencing a video whose title is currently
+    /// empty. Silently ignored if the video already has a non-empty title.
+    pub attached_video_title: Option<String>,
 }
 
 /// Resolve an `Anchor` into the six typed columns the `threads` table stores.
@@ -254,7 +268,18 @@ pub async fn create_thread(pool: &Pool<Sqlite>, new: NewThread) -> Result<i64, A
     }
     validate_anchor(pool, &new.anchor).await?;
     if let Some(vid) = new.attached_video_id {
-        validate_attachable_draft(pool, vid, new.author_id).await?;
+        if new.attached_video_is_reference {
+            // Reference path: video must be visible to the scope student.
+            let scope_student_id = new.scope_student_id.ok_or_else(|| {
+                AppError::Validation(
+                    "attached_video_is_reference requires scope_student_id (camp thread only)".to_string(),
+                )
+            })?;
+            validate_attachable_reference(pool, vid, scope_student_id).await?;
+        } else {
+            // Draft path: unchanged behaviour.
+            validate_attachable_draft(pool, vid, new.author_id).await?;
+        }
     }
 
     let (student_id, technique_id, video_id, video_ts, sst_id, camp_id) = anchor_columns(&new.anchor);
@@ -288,7 +313,38 @@ pub async fn create_thread(pool: &Pool<Sqlite>, new: NewThread) -> Result<i64, A
     .await?;
 
     if let Some(vid) = new.attached_video_id {
-        reparent_draft_to_thread(&mut tx, vid, thread_id).await?;
+        if new.attached_video_is_reference {
+            // Reference path: title backfill only; do NOT reparent.
+            let current_title: Option<String> = sqlx::query_scalar(
+                "SELECT title FROM videos WHERE id = ?",
+            )
+            .bind(vid)
+            .fetch_optional(&mut *tx)
+            .await?;
+            let needs_title = current_title.as_deref().map(|t| t.trim().is_empty()).unwrap_or(true);
+            if needs_title {
+                let provided = new.attached_video_title
+                    .as_deref()
+                    .map(|t| t.trim())
+                    .filter(|t| !t.is_empty())
+                    .ok_or_else(|| {
+                        AppError::Validation(
+                            "a title is required when referencing a video with no title".to_string(),
+                        )
+                    })?;
+                sqlx::query!(
+                    "UPDATE videos SET title = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                    provided,
+                    vid,
+                )
+                .execute(&mut *tx)
+                .await?;
+            }
+            // If the video already has a title, attached_video_title is silently ignored.
+        } else {
+            // Draft path: reparent as before.
+            reparent_draft_to_thread(&mut tx, vid, thread_id).await?;
+        }
     }
 
     // Emit activity row. Private threads target the scope student's feed;
@@ -474,6 +530,47 @@ async fn validate_attachable_draft(
     Ok(())
 }
 
+/// Validates that `video_id` is an existing, live, ready video that is visible
+/// to `scope_student_id` anywhere in their account. Unlike the draft path, this
+/// does NOT check `uploaded_by_id` or `parent_kind` — the caller is linking a
+/// library/camp/syllabus video, not uploading their own draft.
+///
+/// Returns `AppError::Validation` if the video is missing/deleted/hidden/not-ready,
+/// and `AppError::Authorization` if the student cannot see it.
+async fn validate_attachable_reference(
+    pool: &Pool<Sqlite>,
+    video_id: i64,
+    scope_student_id: i64,
+) -> Result<(), AppError> {
+    use crate::db::video_visible_to_student_anywhere;
+    // Check existence + liveness + ready status in one query.
+    let row = sqlx::query!(
+        r#"SELECT processing_status,
+                  (deleted_at IS NOT NULL OR hidden_at IS NOT NULL) AS "gone!: i64"
+           FROM videos WHERE id = ?"#,
+        video_id
+    )
+    .fetch_optional(pool)
+    .await?
+    .ok_or_else(|| AppError::Validation("referenced video not found".to_string()))?;
+
+    if row.gone != 0 {
+        return Err(AppError::Validation("referenced video is deleted or hidden".to_string()));
+    }
+    if row.processing_status != "ready" {
+        return Err(AppError::Validation("referenced video is not ready for playback".to_string()));
+    }
+
+    // Write-time visibility guard: no back-door references at creation.
+    let visible = video_visible_to_student_anywhere(pool, video_id, scope_student_id).await?;
+    if !visible {
+        return Err(AppError::Authorization(
+            "referenced video is not visible to this student".to_string(),
+        ));
+    }
+    Ok(())
+}
+
 /// Re-parents a draft (Loose) video onto a thread inside the caller's tx, so it
 /// inherits thread visibility/playback rules.
 async fn reparent_draft_to_thread(
@@ -506,6 +603,10 @@ pub async fn cancel_for_failed_video(pool: &Pool<Sqlite>, video_id: i64) -> Resu
     Ok(())
 }
 
+/// `video_is_reference`: when `true`, link `video_id` by reference (no reparent).
+/// The video must be visible to the thread's scope student at write time.
+/// When `false` (default): treat it as a draft upload (existing behaviour).
+#[allow(clippy::too_many_arguments)]
 #[instrument(skip(pool, body))]
 pub async fn create_comment(
     pool: &Pool<Sqlite>,
@@ -515,13 +616,20 @@ pub async fn create_comment(
     body: &str,
     video_id: Option<i64>,
     video_ts_seconds: Option<i64>,
+    video_is_reference: bool,
 ) -> Result<i64, AppError> {
     // A reply needs content: text, a video, or both.
     if body.trim().is_empty() && video_id.is_none() {
         return Err(AppError::Validation("a reply needs text or a video".to_string()));
     }
     if let Some(vid) = video_id {
-        validate_attachable_draft(pool, vid, author_id).await?;
+        if video_is_reference {
+            // Defer reference validation until we've loaded the thread row so we
+            // can use its scope_student_id. Validated below after thread_row fetch.
+            let _ = vid; // suppress unused warning; actual check happens below
+        } else {
+            validate_attachable_draft(pool, vid, author_id).await?;
+        }
     }
     // Fetch the thread's liveness, visibility, scope student, and anchor
     // details in one query so we can emit the activity row with the right
@@ -546,6 +654,19 @@ pub async fn create_comment(
         Some(r) if r.alive == 0 => return Err(AppError::Validation("thread is deleted".to_string())),
         Some(r) => r,
     };
+
+    // Now that we have the thread's scope_student_id we can validate a reference
+    // attachment. (Draft validation happened before the fetch above.)
+    if let Some(vid) = video_id {
+        if video_is_reference {
+            let scope_student_id = thread_row.scope_student_id.ok_or_else(|| {
+                AppError::Validation(
+                    "cannot reference a video on a broadcast thread (no scope student)".to_string(),
+                )
+            })?;
+            validate_attachable_reference(pool, vid, scope_student_id).await?;
+        }
+    }
 
     // One level of nesting: the parent (if any) must belong to THIS thread and
     // must itself be a top-level comment.
@@ -587,7 +708,12 @@ pub async fn create_comment(
     .await?;
 
     if let Some(vid) = video_id {
-        reparent_draft_to_thread(&mut tx, vid, thread_id).await?;
+        if video_is_reference {
+            // Reference path: the video stays where it lives; do NOT reparent.
+        } else {
+            // Draft path: reparent as before.
+            reparent_draft_to_thread(&mut tx, vid, thread_id).await?;
+        }
     }
 
     sqlx::query!(

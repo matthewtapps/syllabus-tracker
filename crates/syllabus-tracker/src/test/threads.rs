@@ -64,6 +64,8 @@ mod tests {
                 scope_student_id: Some(student_id),
                 body: "Let's plan your next six weeks.".to_string(),
                 attached_video_id: None,
+                attached_video_is_reference: false,
+                attached_video_title: None,
             },
         )
         .await
@@ -117,12 +119,14 @@ mod tests {
                 scope_student_id: Some(student_id),
                 body: "question".to_string(),
                 attached_video_id: None,
+                attached_video_is_reference: false,
+                attached_video_title: None,
             },
         )
         .await
         .unwrap();
 
-        create_comment(&db.pool, thread_id, None, coach_id, "answer", None, None)
+        create_comment(&db.pool, thread_id, None, coach_id, "answer", None, None, false)
             .await
             .unwrap();
 
@@ -174,20 +178,22 @@ mod tests {
                 scope_student_id: Some(student_id),
                 body: "q".to_string(),
                 attached_video_id: None,
+                attached_video_is_reference: false,
+                attached_video_title: None,
             },
         )
         .await
         .unwrap();
         let top =
-            create_comment(&db.pool, thread_id, None, student_id, "top", None, None).await.unwrap();
-        create_comment(&db.pool, thread_id, Some(top), student_id, "ok reply", None, None)
+            create_comment(&db.pool, thread_id, None, student_id, "top", None, None, false).await.unwrap();
+        create_comment(&db.pool, thread_id, Some(top), student_id, "ok reply", None, None, false)
             .await
             .unwrap();
         let nested = create_comment(
             &db.pool,
             thread_id,
             Some(
-                create_comment(&db.pool, thread_id, Some(top), student_id, "another reply", None, None)
+                create_comment(&db.pool, thread_id, Some(top), student_id, "another reply", None, None, false)
                     .await
                     .unwrap(),
             ),
@@ -195,6 +201,7 @@ mod tests {
             "reply to a reply",
             None,
             None,
+            false,
         )
         .await;
         assert!(nested.is_err(), "replying to a reply must be rejected");
@@ -220,12 +227,14 @@ mod tests {
                 scope_student_id: Some(student_id),
                 body: "q".to_string(),
                 attached_video_id: None,
+                attached_video_is_reference: false,
+                attached_video_title: None,
             },
         )
         .await
         .unwrap();
         let comment_id =
-            create_comment(&db.pool, thread_id, None, student_id, "oops", None, None).await.unwrap();
+            create_comment(&db.pool, thread_id, None, student_id, "oops", None, None, false).await.unwrap();
         soft_delete_comment(&db.pool, comment_id, coach_id).await.unwrap();
 
         let view = get_thread(
@@ -256,6 +265,8 @@ mod tests {
             scope_student_id: Some(student_id),
             body: "hi".to_string(),
             attached_video_id: None,
+            attached_video_is_reference: false,
+            attached_video_title: None,
         }).await.unwrap();
 
         let anchor = Anchor { kind: AnchorKind::StudentProfile, id: student_id, video_ts_seconds: None, pinned_student_id: None, camp_id: None };
@@ -278,6 +289,8 @@ mod tests {
             scope_student_id: Some(student_id),
             body: "q".to_string(),
             attached_video_id: None,
+            attached_video_is_reference: false,
+            attached_video_title: None,
         }).await.unwrap();
 
         soft_delete_thread(&db.pool, t, coach_id).await.unwrap();
@@ -331,6 +344,8 @@ mod tests {
                 scope_student_id: Some(student_id),
                 body: "Great video!".to_string(),
                 attached_video_id: None,
+                attached_video_is_reference: false,
+                attached_video_title: None,
             },
         )
         .await
@@ -375,6 +390,8 @@ mod tests {
                     scope_student_id: Some(sid),
                     body: "note".to_string(),
                     attached_video_id: None,
+                attached_video_is_reference: false,
+                attached_video_title: None,
                 },
             )
             .await
@@ -417,6 +434,8 @@ mod tests {
                 scope_student_id: Some(student_id),
                 body: "Overall comment".to_string(),
                 attached_video_id: None,
+                attached_video_is_reference: false,
+                attached_video_title: None,
             },
         )
         .await
@@ -431,6 +450,8 @@ mod tests {
                 scope_student_id: Some(student_id),
                 body: "At 42 seconds".to_string(),
                 attached_video_id: None,
+                attached_video_is_reference: false,
+                attached_video_title: None,
             },
         )
         .await
@@ -478,6 +499,8 @@ mod tests {
                 scope_student_id: Some(student_id),
                 body: "Overall comment".to_string(),
                 attached_video_id: None,
+                attached_video_is_reference: false,
+                attached_video_title: None,
             },
         )
         .await
@@ -499,6 +522,8 @@ mod tests {
                 scope_student_id: Some(student_id),
                 body: "At 42 seconds".to_string(),
                 attached_video_id: None,
+                attached_video_is_reference: false,
+                attached_video_title: None,
             },
         )
         .await
@@ -550,6 +575,8 @@ mod tests {
                 scope_student_id: Some(student_id),
                 body: "Here's a fix.".to_string(),
                 attached_video_id: None,
+                attached_video_is_reference: false,
+                attached_video_title: None,
             },
         )
         .await
@@ -582,6 +609,8 @@ mod tests {
                 scope_student_id: Some(student_id),
                 body: "should be rejected".to_string(),
                 attached_video_id: None,
+                attached_video_is_reference: false,
+                attached_video_title: None,
             },
         )
         .await;
@@ -615,6 +644,8 @@ mod tests {
                 scope_student_id: Some(student_id),
                 body: "should fail".to_string(),
                 attached_video_id: None,
+                attached_video_is_reference: false,
+                attached_video_title: None,
             },
         )
         .await;
@@ -671,6 +702,8 @@ mod tests {
                 scope_student_id: Some(student_id),
                 body: "Work on your grip here.".to_string(),
                 attached_video_id: None,
+                attached_video_is_reference: false,
+                attached_video_title: None,
             },
         )
         .await
@@ -713,6 +746,8 @@ mod tests {
                 scope_student_id: Some(student_id),
                 body: "should fail".to_string(),
                 attached_video_id: None,
+                attached_video_is_reference: false,
+                attached_video_title: None,
             },
         )
         .await;
@@ -747,6 +782,8 @@ mod tests {
                 scope_student_id: Some(student_id),
                 body: "should fail".to_string(),
                 attached_video_id: None,
+                attached_video_is_reference: false,
+                attached_video_title: None,
             },
         )
         .await;
@@ -784,6 +821,8 @@ mod tests {
                 scope_student_id: Some(student_id),
                 body: "Nice pin!".to_string(),
                 attached_video_id: None,
+                attached_video_is_reference: false,
+                attached_video_title: None,
             },
         )
         .await
@@ -822,6 +861,8 @@ mod tests {
                 scope_student_id: None,
                 body: "nope".to_string(),
                 attached_video_id: None,
+                attached_video_is_reference: false,
+                attached_video_title: None,
             },
         )
         .await;
@@ -968,6 +1009,8 @@ mod tests {
                 scope_student_id: Some(student_id),
                 body: "Let's plan your next cycle.".to_string(),
                 attached_video_id: None,
+                attached_video_is_reference: false,
+                attached_video_title: None,
             },
         )
         .await
@@ -1011,15 +1054,17 @@ mod tests {
                 scope_student_id: Some(student_id),
                 body: "Thread body".to_string(),
                 attached_video_id: None,
+                attached_video_is_reference: false,
+                attached_video_title: None,
             },
         )
         .await
         .unwrap();
 
-        create_comment(&db.pool, thread_id, None, coach_id, "first comment", None, None)
+        create_comment(&db.pool, thread_id, None, coach_id, "first comment", None, None, false)
             .await
             .unwrap();
-        create_comment(&db.pool, thread_id, None, coach_id, "second comment", None, None)
+        create_comment(&db.pool, thread_id, None, coach_id, "second comment", None, None, false)
             .await
             .unwrap();
 
@@ -1070,6 +1115,8 @@ mod tests {
                 scope_student_id: None,
                 body: "Coach broadcast on technique.".to_string(),
                 attached_video_id: None,
+                attached_video_is_reference: false,
+                attached_video_title: None,
             },
         )
         .await
@@ -1126,6 +1173,8 @@ mod tests {
                 scope_student_id: None,
                 body: "Look at this entry.".to_string(),
                 attached_video_id: None,
+                attached_video_is_reference: false,
+                attached_video_title: None,
             },
         )
         .await
@@ -1175,6 +1224,8 @@ mod tests {
                 scope_student_id: None,
                 body: "Nice detail here.".to_string(),
                 attached_video_id: None,
+                attached_video_is_reference: false,
+                attached_video_title: None,
             },
         )
         .await
@@ -1244,6 +1295,8 @@ mod tests {
                 scope_student_id: Some(student_id),
                 body: "On your syllabus technique.".to_string(),
                 attached_video_id: None,
+                attached_video_is_reference: false,
+                attached_video_title: None,
             },
         )
         .await
@@ -1299,12 +1352,14 @@ mod tests {
                 scope_student_id: Some(student_id),
                 body: "Thread body.".to_string(),
                 attached_video_id: None,
+                attached_video_is_reference: false,
+                attached_video_title: None,
             },
         )
         .await
         .unwrap();
 
-        create_comment(&db.pool, thread_id, None, coach_id, "a reply", None, None)
+        create_comment(&db.pool, thread_id, None, coach_id, "a reply", None, None, false)
             .await
             .unwrap();
 
@@ -1339,6 +1394,8 @@ mod tests {
             scope_student_id: None,
             body: "thoughts?".to_string(),
             attached_video_id: None,
+            attached_video_is_reference: false,
+            attached_video_title: None,
         }).await.unwrap();
 
         // A ready draft video uploaded by the comment's author.
@@ -1349,7 +1406,7 @@ mod tests {
             .bind(coach_id)
             .fetch_one(&db.pool).await.unwrap();
 
-        create_comment(&db.pool, thread_id, None, coach_id, "great clip", Some(video_id), None)
+        create_comment(&db.pool, thread_id, None, coach_id, "great clip", Some(video_id), None, false)
             .await.unwrap();
 
         let view = get_thread(&db.pool, thread_id,
@@ -1404,12 +1461,14 @@ mod tests {
                 scope_student_id: Some(student_id),
                 body: "Watch this moment.".to_string(),
                 attached_video_id: None,
+                attached_video_is_reference: false,
+                attached_video_title: None,
             },
         )
         .await
         .unwrap();
 
-        create_comment(&db.pool, thread_id, None, coach_id, "check 12s", None, Some(12))
+        create_comment(&db.pool, thread_id, None, coach_id, "check 12s", None, Some(12), false)
             .await
             .unwrap();
 
@@ -1477,6 +1536,8 @@ mod tests {
                 scope_student_id: Some(student_id),
                 body: "camp technique note".into(),
                 attached_video_id: None,
+                attached_video_is_reference: false,
+                attached_video_title: None,
             },
         )
         .await
@@ -1542,6 +1603,8 @@ mod tests {
                 scope_student_id: Some(student_id),
                 body: "posting without pre-attach must succeed".into(),
                 attached_video_id: None,
+                attached_video_is_reference: false,
+                attached_video_title: None,
             },
         )
         .await;
@@ -1617,6 +1680,8 @@ mod tests {
                 scope_student_id: Some(student_id),
                 body: "this must be rejected".into(),
                 attached_video_id: None,
+                attached_video_is_reference: false,
+                attached_video_title: None,
             },
         )
         .await;
@@ -1770,5 +1835,366 @@ mod tests {
             .body(json!({"anchor_kind":"camp_technique","anchor_id":technique_id,"camp_id":camp_id,"visibility":"private","scope_student_id":other_student_id,"body":"intrusion"}).to_string())
             .dispatch().await;
         assert_eq!(res.status(), HttpStatus::Forbidden);
+    }
+
+    // ---- Reference-attach tests (P2T2) ----
+
+    /// A reference-attach links the video without reparenting it.
+    #[rocket::async_test]
+    async fn reference_attach_links_without_reparenting() {
+        use crate::db::camps::{create_camp, NewCamp};
+        let db = TestDbBuilder::new()
+            .coach("coach_user", Some("Coach"))
+            .student("student_user", Some("Sam"))
+            .technique("Armbar", "an armbar", Some("coach_user"))
+            .build()
+            .await
+            .unwrap();
+        let coach_id = db.user_id("coach_user").unwrap();
+        let student_id = db.user_id("student_user").unwrap();
+        let _technique_id = db.technique_id("Armbar").unwrap();
+
+        let camp_id = create_camp(
+            &db.pool,
+            NewCamp { student_id, coach_id, name: "Ref camp".to_string(), description: None },
+        )
+        .await
+        .unwrap();
+
+        // V: a loose video uploaded by the student (visible to them; no syllabus ladder needed).
+        let v: i64 = sqlx::query_scalar(
+            "INSERT INTO videos (parent_kind, title, kind, processing_status, uploaded_by_id, \
+             deleted_at, hidden_at) \
+             VALUES ('loose', 'Carry forward clip', 'native', 'ready', ?, NULL, NULL) RETURNING id",
+        )
+        .bind(student_id)
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+
+        let thread_id = create_thread(
+            &db.pool,
+            NewThread {
+                author_id: coach_id,
+                anchor: Anchor {
+                    kind: AnchorKind::Camp,
+                    id: camp_id,
+                    video_ts_seconds: None,
+                    pinned_student_id: None,
+                    camp_id: None,
+                },
+                visibility: ThreadVisibility::Private,
+                scope_student_id: Some(student_id),
+                body: "".to_string(),
+                attached_video_id: Some(v),
+                attached_video_is_reference: true,
+                attached_video_title: Some("Carry forward clip".to_string()),
+            },
+        )
+        .await
+        .unwrap();
+
+        // V must NOT have been reparented.
+        let (pk, tid): (String, Option<i64>) = sqlx::query_as(
+            "SELECT parent_kind, thread_id FROM videos WHERE id = ?",
+        )
+        .bind(v)
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+        assert_eq!(pk, "loose", "video must NOT be reparented on a reference attach");
+        assert!(tid.is_none(), "thread_id must remain NULL (not reparented)");
+
+        // Thread must point at V.
+        let got_vid: Option<i64> = sqlx::query_scalar(
+            "SELECT attached_video_id FROM threads WHERE id = ?",
+        )
+        .bind(thread_id)
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+        assert_eq!(got_vid, Some(v), "thread.attached_video_id must equal V");
+    }
+
+    /// Reference attach with an empty video title backfills from the provided title;
+    /// a video that already has a title is not modified.
+    #[rocket::async_test]
+    async fn reference_attach_backfills_empty_title() {
+        use crate::db::camps::{create_camp, NewCamp};
+        let db = TestDbBuilder::new()
+            .coach("coach_user", Some("Coach"))
+            .student("student_user", Some("Sam"))
+            .build()
+            .await
+            .unwrap();
+        let coach_id = db.user_id("coach_user").unwrap();
+        let student_id = db.user_id("student_user").unwrap();
+
+        let camp_id = create_camp(
+            &db.pool,
+            NewCamp { student_id, coach_id, name: "Title camp".to_string(), description: None },
+        )
+        .await
+        .unwrap();
+
+        // Video with empty title — should receive "Backfilled Title".
+        let v_empty: i64 = sqlx::query_scalar(
+            "INSERT INTO videos (parent_kind, title, kind, processing_status, uploaded_by_id, \
+             deleted_at, hidden_at) \
+             VALUES ('loose', '', 'native', 'ready', ?, NULL, NULL) RETURNING id",
+        )
+        .bind(student_id)
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+
+        // Video with an existing title — should remain "Existing Title".
+        let v_titled: i64 = sqlx::query_scalar(
+            "INSERT INTO videos (parent_kind, title, kind, processing_status, uploaded_by_id, \
+             deleted_at, hidden_at) \
+             VALUES ('loose', 'Existing Title', 'native', 'ready', ?, NULL, NULL) RETURNING id",
+        )
+        .bind(student_id)
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+
+        // Reference-attach the empty-title video with a provided title.
+        create_thread(
+            &db.pool,
+            NewThread {
+                author_id: coach_id,
+                anchor: Anchor {
+                    kind: AnchorKind::Camp,
+                    id: camp_id,
+                    video_ts_seconds: None,
+                    pinned_student_id: None,
+                    camp_id: None,
+                },
+                visibility: ThreadVisibility::Private,
+                scope_student_id: Some(student_id),
+                body: "".to_string(),
+                attached_video_id: Some(v_empty),
+                attached_video_is_reference: true,
+                attached_video_title: Some("Backfilled Title".to_string()),
+            },
+        )
+        .await
+        .unwrap();
+
+        let got_title: String = sqlx::query_scalar("SELECT title FROM videos WHERE id = ?")
+            .bind(v_empty)
+            .fetch_one(&db.pool)
+            .await
+            .unwrap();
+        assert_eq!(got_title, "Backfilled Title", "empty title must be backfilled");
+
+        // Now create a second camp to attach the pre-titled video.
+        let camp2_id = create_camp(
+            &db.pool,
+            NewCamp { student_id, coach_id, name: "Title camp 2".to_string(), description: None },
+        )
+        .await
+        .unwrap();
+
+        create_thread(
+            &db.pool,
+            NewThread {
+                author_id: coach_id,
+                anchor: Anchor {
+                    kind: AnchorKind::Camp,
+                    id: camp2_id,
+                    video_ts_seconds: None,
+                    pinned_student_id: None,
+                    camp_id: None,
+                },
+                visibility: ThreadVisibility::Private,
+                scope_student_id: Some(student_id),
+                body: "".to_string(),
+                attached_video_id: Some(v_titled),
+                attached_video_is_reference: true,
+                attached_video_title: Some("Should Be Ignored".to_string()),
+            },
+        )
+        .await
+        .unwrap();
+
+        let preserved_title: String = sqlx::query_scalar("SELECT title FROM videos WHERE id = ?")
+            .bind(v_titled)
+            .fetch_one(&db.pool)
+            .await
+            .unwrap();
+        assert_eq!(
+            preserved_title, "Existing Title",
+            "provided title must be ignored when the video already has a title"
+        );
+    }
+
+    /// Referencing a video not visible to the scope student must be rejected.
+    #[rocket::async_test]
+    async fn reference_attach_rejects_video_not_visible_to_student() {
+        use crate::db::camps::{create_camp, NewCamp};
+        let db = TestDbBuilder::new()
+            .coach("coach_user", Some("Coach"))
+            .student("student_user", Some("Sam"))
+            .student("student2", Some("Mia"))
+            .technique("Armbar", "an armbar", Some("coach_user"))
+            .build()
+            .await
+            .unwrap();
+        let coach_id = db.user_id("coach_user").unwrap();
+        let student_id = db.user_id("student_user").unwrap();
+        let other_id = db.user_id("student2").unwrap();
+        let technique_id = db.technique_id("Armbar").unwrap();
+
+        let camp_id = create_camp(
+            &db.pool,
+            NewCamp { student_id, coach_id, name: "Gate camp".to_string(), description: None },
+        )
+        .await
+        .unwrap();
+
+        // A private thread video scoped to `other` — student_user cannot see it.
+        let thread_for_other = create_thread(
+            &db.pool,
+            NewThread {
+                author_id: coach_id,
+                anchor: Anchor {
+                    kind: AnchorKind::Technique,
+                    id: technique_id,
+                    video_ts_seconds: None,
+                    pinned_student_id: None,
+                    camp_id: None,
+                },
+                visibility: ThreadVisibility::Private,
+                scope_student_id: Some(other_id),
+                body: "other's note".to_string(),
+                attached_video_id: None,
+                attached_video_is_reference: false,
+                attached_video_title: None,
+            },
+        )
+        .await
+        .unwrap();
+
+        // Insert a ready video that belongs to a private thread scoped to `other`.
+        let coach_only_vid: i64 = sqlx::query_scalar(
+            "INSERT INTO videos (parent_kind, thread_id, title, kind, processing_status, \
+             uploaded_by_id, deleted_at, hidden_at) \
+             VALUES ('thread', ?, 'Coach Only', 'native', 'ready', ?, NULL, NULL) RETURNING id",
+        )
+        .bind(thread_for_other)
+        .bind(coach_id)
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+
+        // student_user tries to reference it — must be rejected.
+        let result = create_thread(
+            &db.pool,
+            NewThread {
+                author_id: coach_id,
+                anchor: Anchor {
+                    kind: AnchorKind::Camp,
+                    id: camp_id,
+                    video_ts_seconds: None,
+                    pinned_student_id: None,
+                    camp_id: None,
+                },
+                visibility: ThreadVisibility::Private,
+                scope_student_id: Some(student_id),
+                body: "".to_string(),
+                attached_video_id: Some(coach_only_vid),
+                attached_video_is_reference: true,
+                attached_video_title: Some("Stolen".to_string()),
+            },
+        )
+        .await;
+
+        assert!(
+            result.is_err(),
+            "referencing a video not visible to the scope student must be rejected"
+        );
+    }
+
+    /// A comment (reply) can reference an existing video without reparenting.
+    /// No title is required for replies.
+    #[rocket::async_test]
+    async fn reference_attach_on_comment_no_reparent() {
+        use crate::db::camps::{create_camp, NewCamp};
+        let db = TestDbBuilder::new()
+            .coach("coach_user", Some("Coach"))
+            .student("student_user", Some("Sam"))
+            .build()
+            .await
+            .unwrap();
+        let coach_id = db.user_id("coach_user").unwrap();
+        let student_id = db.user_id("student_user").unwrap();
+
+        let camp_id = create_camp(
+            &db.pool,
+            NewCamp { student_id, coach_id, name: "Reply ref camp".to_string(), description: None },
+        )
+        .await
+        .unwrap();
+
+        // A camp thread to post the comment onto.
+        let thread_id = create_thread(
+            &db.pool,
+            NewThread {
+                author_id: coach_id,
+                anchor: Anchor {
+                    kind: AnchorKind::Camp,
+                    id: camp_id,
+                    video_ts_seconds: None,
+                    pinned_student_id: None,
+                    camp_id: None,
+                },
+                visibility: ThreadVisibility::Private,
+                scope_student_id: Some(student_id),
+                body: "root post".to_string(),
+                attached_video_id: None,
+                attached_video_is_reference: false,
+                attached_video_title: None,
+            },
+        )
+        .await
+        .unwrap();
+
+        // Existing loose video uploaded by the student (visible to themselves).
+        let ref_vid: i64 = sqlx::query_scalar(
+            "INSERT INTO videos (parent_kind, title, kind, processing_status, uploaded_by_id, \
+             deleted_at, hidden_at) \
+             VALUES ('loose', 'My old clip', 'native', 'ready', ?, NULL, NULL) RETURNING id",
+        )
+        .bind(student_id)
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+
+        // Post the comment with a reference video (no title required on comments).
+        create_comment(
+            &db.pool,
+            thread_id,
+            None,
+            coach_id,
+            "check this clip",
+            Some(ref_vid),
+            None,
+            true, // video_is_reference
+        )
+        .await
+        .unwrap();
+
+        // The video must NOT have been reparented.
+        let (pk, tid): (String, Option<i64>) = sqlx::query_as(
+            "SELECT parent_kind, thread_id FROM videos WHERE id = ?",
+        )
+        .bind(ref_vid)
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+        assert_eq!(pk, "loose", "comment reference attach must not reparent the video");
+        assert!(tid.is_none(), "thread_id on the video must remain NULL");
     }
 }

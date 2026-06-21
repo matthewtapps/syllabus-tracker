@@ -1,0 +1,26 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT processing_status,\n                  (deleted_at IS NOT NULL OR hidden_at IS NOT NULL) AS \"gone!: i64\"\n           FROM videos WHERE id = ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "processing_status",
+        "ordinal": 0,
+        "type_info": "Text"
+      },
+      {
+        "name": "gone!: i64",
+        "ordinal": 1,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "0c969cf637318c68876866a6b2fb3704e0b4aee86d3ed12e296fa2d739faae53"
+}

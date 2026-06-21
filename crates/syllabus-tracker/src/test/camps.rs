@@ -203,6 +203,8 @@ mod tests {
                 scope_student_id: Some(student),
                 body: "How's the prep going?".into(),
                 attached_video_id: None,
+                attached_video_is_reference: false,
+                attached_video_title: None,
             },
         )
         .await
@@ -303,6 +305,8 @@ mod tests {
                 scope_student_id: Some(student),
                 body: "Camp prep thread".into(),
                 attached_video_id: None,
+                attached_video_is_reference: false,
+                attached_video_title: None,
             },
         )
         .await
@@ -357,6 +361,8 @@ mod tests {
                 scope_student_id: Some(student),
                 body: "How's prep?".into(),
                 attached_video_id: None,
+                attached_video_is_reference: false,
+                attached_video_title: None,
             },
         )
         .await
@@ -364,7 +370,7 @@ mod tests {
 
         // A reply (create_comment) must carry the same camp deep-link context as
         // the root post, or the feed notification for the reply is un-clickable.
-        create_comment(&db.pool, thread_id, None, student, "Going well", None, None)
+        create_comment(&db.pool, thread_id, None, student, "Going well", None, None, false)
             .await
             .unwrap();
 
@@ -2093,6 +2099,8 @@ mod tests {
                 scope_student_id: Some(student_id),
                 body: "Thread in camp A".into(),
                 attached_video_id: None,
+                attached_video_is_reference: false,
+                attached_video_title: None,
             },
         )
         .await
@@ -2114,6 +2122,8 @@ mod tests {
                 scope_student_id: Some(student_id),
                 body: "Thread in camp B".into(),
                 attached_video_id: None,
+                attached_video_is_reference: false,
+                attached_video_title: None,
             },
         )
         .await
@@ -2225,6 +2235,8 @@ mod tests {
                 scope_student_id: Some(student_id),
                 body: "Coach thread in camp".into(),
                 attached_video_id: None,
+                attached_video_is_reference: false,
+                attached_video_title: None,
             },
         )
         .await

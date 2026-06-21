@@ -2044,6 +2044,8 @@ mod tests {
             visibility: db::threads::ThreadVisibility::Private,
             scope_student_id: Some(student_id), body: "hi".to_string(),
             attached_video_id: None,
+            attached_video_is_reference: false,
+            attached_video_title: None,
         }).await.unwrap();
 
         // A loose draft external video uploaded by the comment's author (coach).
@@ -2056,7 +2058,7 @@ mod tests {
         }).await.unwrap();
 
         // A video-only comment (empty body) attaching that draft.
-        db::threads::create_comment(&db.pool, thread_id, None, coach_id, "", Some(vid), None)
+        db::threads::create_comment(&db.pool, thread_id, None, coach_id, "", Some(vid), None, false)
             .await.unwrap();
 
         let (pk, th): (String, Option<i64>) = sqlx::query_as(
@@ -2085,6 +2087,8 @@ mod tests {
             visibility: db::threads::ThreadVisibility::Private,
             scope_student_id: Some(sam), body: "hi".to_string(),
             attached_video_id: None,
+            attached_video_is_reference: false,
+            attached_video_title: None,
         }).await.unwrap();
         let vid: i64 = sqlx::query_scalar(
             "INSERT INTO videos (parent_kind, thread_id, title, position, kind, \

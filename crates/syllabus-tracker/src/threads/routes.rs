@@ -25,8 +25,14 @@ pub struct CreateThreadRequest {
     /// Only for `camp_technique`: the camp the technique discussion belongs to.
     pub camp_id: Option<i64>,
     pub body: String,
-    /// Optional draft video to attach to the root post.
+    /// Optional video to attach to the root post.
     pub attached_video_id: Option<i64>,
+    /// `true` to link an existing video by reference (no reparent). Defaults
+    /// to `false` (existing draft-upload behaviour).
+    pub attached_video_is_reference: Option<bool>,
+    /// Title to backfill onto the referenced video when its title is empty.
+    /// Ignored when `attached_video_is_reference` is false.
+    pub attached_video_title: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -39,8 +45,11 @@ pub struct ThreadListResponse { pub threads: Vec<ThreadView> }
 pub struct CreateCommentRequest {
     pub parent_comment_id: Option<i64>,
     pub body: String,
-    /// Optional draft video to attach to this comment.
+    /// Optional video to attach to this comment.
     pub video_id: Option<i64>,
+    /// `true` to link an existing video by reference (no reparent). Defaults
+    /// to `false` (existing draft-upload behaviour).
+    pub video_is_reference: Option<bool>,
     /// Optional timestamp (seconds) into the thread's attached video that this
     /// comment is pinned to. NULL means a whole-video reply.
     pub video_ts_seconds: Option<i64>,
@@ -138,7 +147,9 @@ pub async fn api_create_thread(
         scope_student_id,
         body: req.body.clone(),
         attached_video_id: req.attached_video_id,
-    }).await.map_err(|_| Status::BadRequest)?;
+        attached_video_is_reference: req.attached_video_is_reference.unwrap_or(false),
+        attached_video_title: req.attached_video_title.clone(),
+    }).await.map_err(|e| { e.log_and_record("api_create_thread"); Status::BadRequest })?;
     Ok(Json(CreatedResponse { id }))
 }
 
@@ -196,9 +207,18 @@ pub async fn api_create_comment(
             return Err(Status::Forbidden);
         }
     }
-    let comment_id = create_comment(pool, id, req.parent_comment_id, user.id, &req.body, req.video_id, req.video_ts_seconds)
-        .await
-        .map_err(|_| Status::BadRequest)?;
+    let comment_id = create_comment(
+        pool,
+        id,
+        req.parent_comment_id,
+        user.id,
+        &req.body,
+        req.video_id,
+        req.video_ts_seconds,
+        req.video_is_reference.unwrap_or(false),
+    )
+    .await
+    .map_err(|_| Status::BadRequest)?;
     Ok(Json(CreatedResponse { id: comment_id }))
 }
 
