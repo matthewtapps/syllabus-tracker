@@ -57,8 +57,11 @@ Decisions:
 
 Additive unless noted.
 
-- **`videos.title`** (new, nullable `TEXT`). Required when a video *starts* a
-  thread (a video post); null is allowed for videos attached as replies. One
+- **`videos.title`** already exists (`NOT NULL`); reply/draft videos currently
+  store an empty string (`videos/routes.rs` draft upload). No schema change. The
+  work is enforcing a *meaningful* (non-empty) title on the thread-start paths
+  (the upload/link forms already collect one; the reference path must collect or
+  backfill it) and using it for search. Reply videos keep the empty title. One
   title per video. See Section 5 for the backfill-on-reference rule.
 - **`thread_comments.video_ts_seconds`** (new, nullable `INTEGER`). A reply
   pinned to a timestamp in *its own thread's* attached video. This is distinct
@@ -220,12 +223,15 @@ comments", never "moment".
 ## 8. Activity integration
 
 Every camp post and reply emits an `activity` row with `camp_id` set and
-`context_kind='camp'`, scoped private to the student + coaches. So:
+`context_kind='camp'`, scoped private to the student + coaches. **This is already
+implemented** for `camp`/`camp_technique` threads and their comments in
+`create_thread` / `create_comment` (`db/threads.rs`); no new emission work. So:
 
-- It flows into the student's and the coach's existing dashboard feeds
+- It already flows into the student's and the coach's existing dashboard feeds
   chronologically, as normal tiles, with no special-casing.
-- The camp page is the same data filtered to one `camp_id`. The `activity` table
-  already has `camp_id` and `context_kind` columns; no schema work needed here.
+- The camp page is the same data filtered to one `camp_id` (the new read path in
+  Section 7). The `activity` table already has `camp_id` and `context_kind`
+  columns; no schema work needed here.
 
 ---
 
