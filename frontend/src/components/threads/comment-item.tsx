@@ -13,7 +13,7 @@ export function CommentItem({
   /** When provided and the comment has a video_ts_seconds, render a seek chip. */
   onSeek?: (seconds: number) => void;
 }) {
-  const hasTs = comment.video_ts_seconds != null;
+  const ts = comment.video_ts_seconds;
 
   return (
     <div className="flex items-start gap-2.5">
@@ -24,19 +24,19 @@ export function CommentItem({
           <span className="text-xs text-muted-foreground">
             {formatRelativeShort(comment.created_at)}
           </span>
-          {hasTs && (
+          {ts != null && (
             onSeek ? (
               <button
                 type="button"
-                onClick={() => onSeek(comment.video_ts_seconds as number)}
+                onClick={() => onSeek(ts)}
                 className="rounded bg-primary/10 px-1 py-0.5 text-[11px] font-medium tabular-nums text-primary hover:bg-primary/20"
-                aria-label={`Seek to ${formatTimestamp(comment.video_ts_seconds as number)}`}
+                aria-label={`Seek to ${formatTimestamp(ts)}`}
               >
-                @{formatTimestamp(comment.video_ts_seconds as number)}
+                @{formatTimestamp(ts)}
               </button>
             ) : (
               <span className="rounded bg-muted px-1 py-0.5 text-[11px] tabular-nums text-muted-foreground">
-                @{formatTimestamp(comment.video_ts_seconds as number)}
+                @{formatTimestamp(ts)}
               </span>
             )
           )}

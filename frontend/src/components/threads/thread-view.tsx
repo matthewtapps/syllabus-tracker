@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { StudentAvatar } from "@/components/student-avatar";
@@ -47,8 +47,9 @@ export function ThreadView({ thread, anchorKind, anchorId, campId }: ThreadViewP
   const deleteThread = useDeleteThread(anchorKind, anchorId, campId);
   const [deleteOpen, setDeleteOpen] = useState(false);
 
-  const comments = [...thread.comments].sort((a, b) =>
-    a.created_at.localeCompare(b.created_at),
+  const comments = useMemo(
+    () => [...thread.comments].sort((a, b) => a.created_at.localeCompare(b.created_at)),
+    [thread.comments],
   );
 
   const authorName = thread.author_name;
@@ -204,15 +205,28 @@ function VideoPostBody({
   const [pinnedComment, setPinnedComment] = useState<TimestampedEntry | null>(null);
   const [highlightCommentId, setHighlightCommentId] = useState<number | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
+  const pinTimerRef = useRef<number | null>(null);
   const highlightTimerRef = useRef<number | null>(null);
 
-  const tsComments: TimestampedEntry[] = comments.map((c) => ({
-    id: c.id,
-    author_id: c.author_id,
-    author_name: c.author_name,
-    body: c.body,
-    video_ts_seconds: c.video_ts_seconds,
-  }));
+  // Clear both timers on unmount to prevent setState-after-unmount warnings.
+  useEffect(() => {
+    return () => {
+      if (pinTimerRef.current) window.clearTimeout(pinTimerRef.current);
+      if (highlightTimerRef.current) window.clearTimeout(highlightTimerRef.current);
+    };
+  }, []);
+
+  const tsComments = useMemo<TimestampedEntry[]>(
+    () =>
+      comments.map((c) => ({
+        id: c.id,
+        author_id: c.author_id,
+        author_name: c.author_name,
+        body: c.body,
+        video_ts_seconds: c.video_ts_seconds,
+      })),
+    [comments],
+  );
 
   // Bridge player events -> controller registration.
   // Stable reference (registration is a stable useMemo from the provider).
@@ -236,13 +250,21 @@ function VideoPostBody({
   function handlePinClick(entry: TimestampedEntry) {
     if (pinnedComment?.id === entry.id) {
       setPinnedComment(null);
+      if (pinTimerRef.current) {
+        window.clearTimeout(pinTimerRef.current);
+        pinTimerRef.current = null;
+      }
       return;
     }
     setPinnedComment(entry);
     if (entry.video_ts_seconds != null) controller.seekTo(entry.video_ts_seconds);
     highlightComment(entry.id);
-    // Auto-clear the overlay pin after 6 s.
-    setTimeout(() => setPinnedComment((cur) => (cur?.id === entry.id ? null : cur)), 6000);
+    // Auto-clear the overlay pin after 6 s. Clear any prior handle first.
+    if (pinTimerRef.current) window.clearTimeout(pinTimerRef.current);
+    pinTimerRef.current = window.setTimeout(
+      () => setPinnedComment((cur) => (cur?.id === entry.id ? null : cur)),
+      6000,
+    );
   }
 
   function handleSeekChip(commentId: number, seconds: number) {
