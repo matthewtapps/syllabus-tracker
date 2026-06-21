@@ -10,6 +10,7 @@
  */
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { screen, waitFor, fireEvent } from "@testing-library/react";
+import { Routes, Route } from "react-router-dom";
 import { renderWithProviders, buildUser } from "@/test/render";
 import { ActivityTile } from "./activity-tile";
 import type { ActivityRow } from "@/lib/activity-line";
@@ -179,6 +180,15 @@ describe("camp technique picker — thread posting", () => {
             }),
           );
         }
+        // camp feed endpoint — must be checked before the general camp endpoint
+        if (url.includes("/api/camps/") && url.includes("/feed")) {
+          return Promise.resolve(
+            new Response(JSON.stringify([]), {
+              status: 200,
+              headers: { "Content-Type": "application/json" },
+            }),
+          );
+        }
         // camp data endpoint
         if (url.includes("/api/camps/")) {
           return Promise.resolve(
@@ -202,18 +212,19 @@ describe("camp technique picker — thread posting", () => {
       }),
     );
 
-    // Render the camp page with a stubbed camp — we drive it by importing the
-    // PickExistingPanel behaviour indirectly through the dialog.  For a lighter
-    // test we call the onAttach callback directly; the camp page's
-    // attachTechniqueAsThread is the real source; we assert its POST payload.
-    //
-    // The simplest approach: render a minimal component that calls createThread
-    // via the useCreateThread hook when a button is clicked.
+    // Render the camp page inside a matched Route so useParams returns the
+    // camp id. Without a <Route path="/camps/:id">, useParams() returns {}
+    // and the page immediately redirects rather than loading.
     const { default: CampDetailPage } = await import("@/app/camps/[id]/page");
-    renderWithProviders(<CampDetailPage />, {
-      user: buildUser({ id: 2, role: "coach" }),
-      initialEntries: ["/camps/3"],
-    });
+    renderWithProviders(
+      <Routes>
+        <Route path="/camps/:id" element={<CampDetailPage />} />
+      </Routes>,
+      {
+        user: buildUser({ id: 2, role: "coach" }),
+        initialEntries: ["/camps/3"],
+      },
+    );
 
     // Wait for the camp to load.
     await waitFor(() => {

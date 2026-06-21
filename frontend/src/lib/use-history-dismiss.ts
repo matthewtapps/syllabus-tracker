@@ -9,21 +9,32 @@ import { useEffect, useRef } from "react";
  *
  * Pushing the *same* URL means React Router sees a popstate to the current
  * location and re-renders in place, so the route never visibly changes.
+ *
+ * Each overlay gets a unique ID stored in the history state so the cleanup can
+ * tell whether it is still the topmost entry. If another overlay has pushed on
+ * top (e.g. navigating source-picker → Sillybus navigator), the source-picker
+ * cleanup skips the history.back() call and avoids an inadvertent popstate that
+ * would immediately close the newly-opened overlay.
  */
 export function useHistoryDismiss(open: boolean, onClose: () => void): void {
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
+  const idRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (!open) return;
-    window.history.pushState({ overlayDismiss: true }, "");
+    const id = Math.random().toString(36).slice(2);
+    idRef.current = id;
+    window.history.pushState({ overlayDismiss: id }, "");
     const onPop = () => onCloseRef.current();
     window.addEventListener("popstate", onPop);
     return () => {
       window.removeEventListener("popstate", onPop);
-      // Closed via the UI (not Back): our entry is still on top, so pop it.
-      // Closed via Back: the entry is already gone, so skip the extra back.
-      if ((window.history.state as { overlayDismiss?: boolean } | null)?.overlayDismiss) {
+      // Only pop our history entry if it is still the topmost overlay entry.
+      // If another overlay has pushed on top, leave that entry alone — the
+      // newly-opened overlay is responsible for its own cleanup.
+      const state = window.history.state as { overlayDismiss?: string } | null;
+      if (state?.overlayDismiss === idRef.current) {
         window.history.back();
       }
     };
