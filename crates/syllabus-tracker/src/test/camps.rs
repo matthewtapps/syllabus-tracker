@@ -554,7 +554,6 @@ mod tests {
                 coach_id,
                 name: "My footage camp".to_string(),
                 description: None,
-                references_camp_id: None,
             },
         )
         .await
@@ -645,7 +644,6 @@ mod tests {
                 coach_id,
                 name: "Not your camp".to_string(),
                 description: None,
-                references_camp_id: None,
             },
         )
         .await
@@ -853,7 +851,6 @@ mod tests {
                 coach_id: coach,
                 name: "Worlds prep".into(),
                 description: Some("focus".into()),
-                references_camp_id: None,
             },
         )
         .await
@@ -862,7 +859,6 @@ mod tests {
         let camp = get_camp(&db.pool, camp_id).await.unwrap().unwrap();
         assert_eq!(camp.name, "Worlds prep");
         assert!(camp.archived_at.is_none());
-        assert!(camp.references_camp_id.is_none());
 
         add_camp_technique(&db.pool, camp_id, tech, coach).await.unwrap();
         let techs = list_camp_techniques(&db.pool, camp_id).await.unwrap();
@@ -876,112 +872,6 @@ mod tests {
 
         let listed = list_camps_for_student(&db.pool, student, true).await.unwrap();
         assert_eq!(listed.len(), 1);
-    }
-
-    // -----------------------------------------------------------------------
-    // S3-4: next-camp references (builds-on lineage)
-    // -----------------------------------------------------------------------
-
-    #[rocket::async_test]
-    async fn create_camp_with_references_camp_id_roundtrip() {
-        let db = TestDbBuilder::new()
-            .coach("coach_user", Some("Coach"))
-            .student("student_user", Some("Sam"))
-            .build()
-            .await
-            .unwrap();
-
-        let coach = db.user_id("coach_user").unwrap();
-        let student = db.user_id("student_user").unwrap();
-
-        // Create the prior camp (no references_camp_id).
-        let prior_id = create_camp(
-            &db.pool,
-            NewCamp {
-                student_id: student,
-                coach_id: coach,
-                name: "Guard retention".into(),
-                description: None,
-                references_camp_id: None,
-            },
-        )
-        .await
-        .unwrap();
-
-        // Create a new camp that builds on the prior one.
-        let next_id = create_camp(
-            &db.pool,
-            NewCamp {
-                student_id: student,
-                coach_id: coach,
-                name: "Guard retention v2".into(),
-                description: None,
-                references_camp_id: Some(prior_id),
-            },
-        )
-        .await
-        .unwrap();
-
-        let next = get_camp(&db.pool, next_id).await.unwrap().unwrap();
-        assert_eq!(next.references_camp_id, Some(prior_id));
-
-        // list_camps_for_student should carry references_camp_id through.
-        let camps = list_camps_for_student(&db.pool, student, true)
-            .await
-            .unwrap();
-        let next_listed = camps.iter().find(|c| c.id == next_id).unwrap();
-        assert_eq!(next_listed.references_camp_id, Some(prior_id));
-    }
-
-    #[rocket::async_test]
-    async fn get_camp_via_route_returns_references_camp_name() {
-        use crate::test::test_utils::{create_standard_test_db, setup_test_client};
-        use rocket::http::{ContentType, Status};
-
-        let test_db = create_standard_test_db().await;
-        let coach_id = test_db.user_id("coach_user").unwrap();
-        let student_id = test_db.user_id("student_user").unwrap();
-        let (client, db) = setup_test_client(test_db).await;
-
-        // Create the prior camp directly.
-        let prior_id: i64 = sqlx::query_scalar(
-            "INSERT INTO camps (student_id, coach_id, name) VALUES (?, ?, 'Prior camp') RETURNING id",
-        )
-        .bind(student_id)
-        .bind(coach_id)
-        .fetch_one(&db.pool)
-        .await
-        .unwrap();
-
-        // Login as coach and create the next camp via the API.
-        let _ = crate::test::test_utils::login_test_user(&client, "coach_user", "password123").await;
-        let resp = client
-            .post("/api/camps")
-            .header(ContentType::JSON)
-            .body(format!(
-                r#"{{"student_id": {}, "name": "Next camp", "description": null, "references_camp_id": {}}}"#,
-                student_id, prior_id
-            ))
-            .dispatch()
-            .await;
-        assert_eq!(resp.status(), Status::Ok);
-        let created: serde_json::Value =
-            serde_json::from_str(&resp.into_string().await.unwrap()).unwrap();
-        let next_id = created["id"].as_i64().unwrap();
-
-        // Fetch the next camp's detail and check references_camp_name is resolved.
-        let resp = client
-            .get(format!("/api/camps/{}", next_id))
-            .dispatch()
-            .await;
-        assert_eq!(resp.status(), Status::Ok);
-        let detail: serde_json::Value =
-            serde_json::from_str(&resp.into_string().await.unwrap()).unwrap();
-        assert_eq!(detail["references_camp_id"].as_i64(), Some(prior_id));
-        assert_eq!(
-            detail["references_camp_name"].as_str(),
-            Some("Prior camp")
-        );
     }
 
     #[rocket::async_test]
@@ -1005,15 +895,6 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(rv, 0);
-
-        // Verify references_camp_id column exists on camps.
-        let col: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM pragma_table_info('camps') WHERE name = 'references_camp_id'",
-        )
-        .fetch_one(&db.pool)
-        .await
-        .unwrap();
-        assert_eq!(col, 1);
     }
 
     // -----------------------------------------------------------------------
@@ -1708,7 +1589,6 @@ mod tests {
                 coach_id: coach,
                 name: "Worlds prep".into(),
                 description: None,
-                references_camp_id: None,
             },
         )
         .await

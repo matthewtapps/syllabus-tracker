@@ -29,8 +29,6 @@ pub struct Camp {
     pub description: Option<String>,
     pub created_at: NaiveDateTime,
     pub archived_at: Option<NaiveDateTime>,
-    /// Id of the camp this camp builds on (set at creation, optional).
-    pub references_camp_id: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -48,37 +46,18 @@ pub struct NewCamp {
     pub coach_id: i64,
     pub name: String,
     pub description: Option<String>,
-    /// Optional id of an earlier camp this new camp builds on.
-    pub references_camp_id: Option<i64>,
 }
 
 #[instrument(skip(pool, new))]
 pub async fn create_camp(pool: &Pool<Sqlite>, new: NewCamp) -> Result<i64, AppError> {
-    // A "builds on" reference must point at a camp of the SAME student, so we
-    // don't link to (or leak the name of) another student's camp.
-    if let Some(ref_id) = new.references_camp_id {
-        let ref_student = sqlx::query_scalar!(
-            r#"SELECT student_id AS "student_id!: i64" FROM camps WHERE id = ?"#,
-            ref_id
-        )
-        .fetch_optional(pool)
-        .await?
-        .ok_or_else(|| AppError::NotFound(format!("referenced camp #{ref_id} not found")))?;
-        if ref_student != new.student_id {
-            return Err(AppError::Validation(
-                "referenced camp belongs to a different student".to_string(),
-            ));
-        }
-    }
     let mut tx = pool.begin().await?;
     let id = sqlx::query_scalar!(
-        r#"INSERT INTO camps (student_id, coach_id, name, description, references_camp_id)
-           VALUES (?, ?, ?, ?, ?) RETURNING id AS "id!: i64""#,
+        r#"INSERT INTO camps (student_id, coach_id, name, description)
+           VALUES (?, ?, ?, ?) RETURNING id AS "id!: i64""#,
         new.student_id,
         new.coach_id,
         new.name,
         new.description,
-        new.references_camp_id,
     )
     .fetch_one(&mut *tx)
     .await?;
@@ -100,8 +79,7 @@ pub async fn get_camp(pool: &Pool<Sqlite>, id: i64) -> Result<Option<Camp>, AppE
         r#"SELECT id AS "id!: i64", student_id AS "student_id!: i64",
                   coach_id AS "coach_id!: i64", name, description,
                   created_at AS "created_at!: NaiveDateTime",
-                  archived_at AS "archived_at?: NaiveDateTime",
-                  references_camp_id AS "references_camp_id?: i64"
+                  archived_at AS "archived_at?: NaiveDateTime"
            FROM camps WHERE id = ?"#,
         id
     )
@@ -115,7 +93,6 @@ pub async fn get_camp(pool: &Pool<Sqlite>, id: i64) -> Result<Option<Camp>, AppE
         description: r.description,
         created_at: r.created_at,
         archived_at: r.archived_at,
-        references_camp_id: r.references_camp_id,
     }))
 }
 
@@ -129,8 +106,7 @@ pub async fn list_camps_for_student(
         r#"SELECT id AS "id!: i64", student_id AS "student_id!: i64",
                   coach_id AS "coach_id!: i64", name, description,
                   created_at AS "created_at!: NaiveDateTime",
-                  archived_at AS "archived_at?: NaiveDateTime",
-                  references_camp_id AS "references_camp_id?: i64"
+                  archived_at AS "archived_at?: NaiveDateTime"
            FROM camps
            WHERE student_id = ? AND (? OR archived_at IS NULL)
            ORDER BY (archived_at IS NOT NULL), created_at DESC"#,
@@ -149,7 +125,6 @@ pub async fn list_camps_for_student(
             description: r.description,
             created_at: r.created_at,
             archived_at: r.archived_at,
-            references_camp_id: r.references_camp_id,
         })
         .collect())
 }
@@ -163,7 +138,6 @@ pub struct CampSummary {
     pub description: Option<String>,
     pub created_at: NaiveDateTime,
     pub archived_at: Option<NaiveDateTime>,
-    pub references_camp_id: Option<i64>,
     pub technique_count: i64,
     pub video_count: i64,
     /// Most recent activity timestamp for this camp (MAX over the activity
@@ -186,7 +160,6 @@ pub async fn list_camp_summaries_for_student(
                c.coach_id AS "coach_id!: i64", c.name, c.description,
                c.created_at AS "created_at!: NaiveDateTime",
                c.archived_at AS "archived_at?: NaiveDateTime",
-               c.references_camp_id AS "references_camp_id?: i64",
                (SELECT COUNT(*) FROM camp_techniques ct WHERE ct.camp_id = c.id)
                    AS "technique_count!: i64",
                (SELECT COUNT(*) FROM videos v WHERE v.camp_id = c.id)
@@ -215,7 +188,6 @@ pub async fn list_camp_summaries_for_student(
             description: r.description,
             created_at: r.created_at,
             archived_at: r.archived_at,
-            references_camp_id: r.references_camp_id,
             technique_count: r.technique_count,
             video_count: r.video_count,
             last_activity_at: r.last_activity_at,

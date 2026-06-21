@@ -230,19 +230,16 @@ CREATE TABLE IF NOT EXISTS student_pinned_techniques (
 CREATE INDEX IF NOT EXISTS idx_spt_student ON student_pinned_techniques (student_id);
 
 -- A camp: a stretch of intentional work between one coach and one student,
--- holding techniques, videos, and discussion. Slice 1 = generic camp only.
--- references_camp_id added in C-Slice 3 to capture "builds on" lineage (a new
--- camp that continues from a prior one).
+-- holding techniques, videos, and discussion.
 CREATE TABLE IF NOT EXISTS camps (
-    id                 INTEGER PRIMARY KEY,
-    student_id         INTEGER NOT NULL REFERENCES users (id) ON DELETE CASCADE,
-    coach_id           INTEGER NOT NULL REFERENCES users (id),
-    name               TEXT NOT NULL,
-    description        TEXT,
-    created_at         TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    archived_at        TIMESTAMP,
-    archived_by_id     INTEGER REFERENCES users (id),
-    references_camp_id INTEGER REFERENCES camps(id)
+    id             INTEGER PRIMARY KEY,
+    student_id     INTEGER NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+    coach_id       INTEGER NOT NULL REFERENCES users (id),
+    name           TEXT NOT NULL,
+    description    TEXT,
+    created_at     TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    archived_at    TIMESTAMP,
+    archived_by_id INTEGER REFERENCES users (id)
 );
 CREATE INDEX IF NOT EXISTS idx_camps_student
     ON camps (student_id) WHERE archived_at IS NULL;

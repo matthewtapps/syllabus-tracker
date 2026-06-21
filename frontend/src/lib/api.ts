@@ -2063,10 +2063,6 @@ export interface Camp {
   description: string | null;
   created_at: string;
   archived_at: string | null;
-  // The list endpoint (GET /api/camps) serializes the bare DB row, which only
-  // carries references_camp_id. references_camp_name is resolved and sent ONLY
-  // by the detail endpoint (CampDetail below).
-  references_camp_id: number | null;
 }
 
 export interface CampTechnique {
@@ -2080,8 +2076,6 @@ export interface CampTechnique {
 
 export interface CampDetail extends Camp {
   techniques: CampTechnique[];
-  /// Name of the camp this one builds on, resolved server-side.
-  references_camp_name: string | null;
 }
 
 /** Row from GET /api/camps (enriched list payload). */
@@ -2093,7 +2087,6 @@ export interface CampSummary {
   description: string | null;
   created_at: string;
   archived_at: string | null;
-  references_camp_id: number | null;
   technique_count: number;
   video_count: number;
   last_activity_at: string | null;
@@ -2117,7 +2110,6 @@ export async function createCamp(data: {
   student_id: number;
   name: string;
   description: string | null;
-  references_camp_id?: number | null;
 }): Promise<{ id: number }> {
   const res = await fetch("/api/camps", {
     method: "POST",

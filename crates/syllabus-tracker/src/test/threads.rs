@@ -1384,7 +1384,6 @@ mod tests {
                 coach_id,
                 name: "Timestamp camp".to_string(),
                 description: None,
-                references_camp_id: None,
             },
         )
         .await
@@ -1454,7 +1453,6 @@ mod tests {
                 coach_id,
                 name: "X-guard camp".to_string(),
                 description: None,
-                references_camp_id: None,
             },
         )
         .await
@@ -1523,7 +1521,6 @@ mod tests {
                 coach_id,
                 name: "X-guard camp".to_string(),
                 description: None,
-                references_camp_id: None,
             },
         )
         .await
@@ -1576,7 +1573,6 @@ mod tests {
                 coach_id,
                 name: "Target camp".to_string(),
                 description: None,
-                references_camp_id: None,
             },
         )
         .await
@@ -1588,7 +1584,6 @@ mod tests {
                 coach_id,
                 name: "Other camp".to_string(),
                 description: None,
-                references_camp_id: None,
             },
         )
         .await
@@ -1661,7 +1656,6 @@ mod tests {
                 coach_id,
                 name: "Own camp".to_string(),
                 description: None,
-                references_camp_id: None,
             },
         )
         .await
@@ -1762,7 +1756,6 @@ mod tests {
                 coach_id,
                 name: "Other camp".to_string(),
                 description: None,
-                references_camp_id: None,
             },
         )
         .await

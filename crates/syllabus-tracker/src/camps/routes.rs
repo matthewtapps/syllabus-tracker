@@ -48,8 +48,6 @@ pub struct CreateCampRequest {
     pub student_id: i64,
     pub name: String,
     pub description: Option<String>,
-    /// Optional id of an earlier camp this new camp builds on ("builds-on" lineage).
-    pub references_camp_id: Option<i64>,
 }
 
 #[derive(Deserialize)]
@@ -93,11 +91,6 @@ pub struct CampDetailResponse {
     pub created_at: chrono::NaiveDateTime,
     pub archived_at: Option<chrono::NaiveDateTime>,
     pub techniques: Vec<CampTechnique>,
-    /// Id of the camp this camp builds on, if any.
-    pub references_camp_id: Option<i64>,
-    /// Name of the referenced camp, resolved eagerly. Present only when
-    /// references_camp_id is set.
-    pub references_camp_name: Option<String>,
 }
 
 #[instrument(skip(req, pool, user))]
@@ -115,7 +108,6 @@ pub async fn api_create_camp(
             coach_id: user.id,
             name: req.name.clone(),
             description: req.description.clone(),
-            references_camp_id: req.references_camp_id,
         },
     )
     .await
@@ -159,16 +151,6 @@ pub async fn api_get_camp(
         .await
         .map_err(Status::from)?;
 
-    // Resolve the referenced camp name when this camp builds on a prior one.
-    let references_camp_name = if let Some(ref_id) = camp.references_camp_id {
-        get_camp(pool, ref_id)
-            .await
-            .map_err(Status::from)?
-            .map(|c| c.name)
-    } else {
-        None
-    };
-
     Ok(Json(CampDetailResponse {
         id: camp.id,
         student_id: camp.student_id,
@@ -178,8 +160,6 @@ pub async fn api_get_camp(
         created_at: camp.created_at,
         archived_at: camp.archived_at,
         techniques,
-        references_camp_id: camp.references_camp_id,
-        references_camp_name,
     }))
 }
 

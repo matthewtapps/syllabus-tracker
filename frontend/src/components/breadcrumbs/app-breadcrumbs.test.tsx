@@ -36,7 +36,6 @@ const camp = {
   description: null,
   created_at: "2026-01-01T00:00:00Z",
   archived_at: null,
-  references_camp_id: null,
 };
 
 const users = [

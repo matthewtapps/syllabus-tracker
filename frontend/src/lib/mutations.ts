@@ -1433,7 +1433,6 @@ export function useCreateCamp(studentId: number) {
     mutationFn: (data: {
       name: string;
       description: string | null;
-      references_camp_id?: number | null;
     }) => createCamp({ student_id: studentId, ...data }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: qk.campsForStudent(studentId) });

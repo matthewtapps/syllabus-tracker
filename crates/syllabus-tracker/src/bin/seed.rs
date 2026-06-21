@@ -1490,7 +1490,6 @@ async fn run() -> Result<()> {
                 coach_id,
                 name: name.to_string(),
                 description: Some(description.to_string()),
-                references_camp_id: None,
             },
         )
         .await?;

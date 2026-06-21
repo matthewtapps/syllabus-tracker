@@ -142,9 +142,6 @@ describe("CampDetailPage", () => {
                 description: null,
                 created_at: "2026-06-16T00:00:00Z",
                 archived_at: null,
-                // Even when a prior camp is referenced, the builds-on UI is gone.
-                references_camp_id: 7,
-                references_camp_name: "Foundation camp",
                 techniques: [],
               }),
               { status: 200, headers: { "Content-Type": "application/json" } },
