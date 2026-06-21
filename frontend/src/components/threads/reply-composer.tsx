@@ -418,7 +418,12 @@ export function ReplyComposer({
                 <button
                   type="button"
                   className="flex w-full items-center gap-3 py-3 text-sm hover:text-foreground"
-                  onClick={() => setPickerSheet("sillybus")}
+                  onClick={() => {
+                    // Close the source sheet first, then open the navigator, so
+                    // the two bottom sheets never overlap as stacked modals.
+                    setPickerSheet(null);
+                    setTimeout(() => setPickerSheet("sillybus"), 80);
+                  }}
                 >
                   Choose from Sillybus
                 </button>

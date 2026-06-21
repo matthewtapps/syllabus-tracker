@@ -137,7 +137,11 @@ describe("ReplyComposer – Sillybus navigator picks a reference draft", () => {
     // Open Sillybus navigator
     await user.click(screen.getByText("Choose from Sillybus"));
     // The navigator fetches sources; navigate to search (which fetches videos)
-    const searchInput = await screen.findByPlaceholderText("Search videos…");
+    const searchInput = await screen.findByPlaceholderText(
+      "Search videos…",
+      undefined,
+      { timeout: 3000 },
+    );
     await user.type(searchInput, "hip");
     // Wait for debounce + fetch to resolve and video to appear
     const linkBtn = await screen.findByRole("button", { name: /hip escape drill/i });
@@ -182,7 +186,11 @@ describe("ReplyComposer – thread-starter title requirement", () => {
     // Attach a reference video via the navigator
     await user.click(screen.getByRole("button", { name: /attach video/i }));
     await user.click(screen.getByText("Choose from Sillybus"));
-    const searchInput = await screen.findByPlaceholderText("Search videos…");
+    const searchInput = await screen.findByPlaceholderText(
+      "Search videos…",
+      undefined,
+      { timeout: 3000 },
+    );
     await user.type(searchInput, "something");
     // The video has no title; provenance fallback is "camps"
     const linkBtn = await screen.findByRole("button", { name: /camps/i });

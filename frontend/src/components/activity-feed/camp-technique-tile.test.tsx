@@ -239,8 +239,9 @@ describe("camp technique picker — thread posting", () => {
       expect(screen.getByText("Scissor Sweep")).toBeInTheDocument();
     });
 
-    // Select the technique and click Add.
-    fireEvent.click(screen.getByLabelText(/add-camp-tech-7/i));
+    // Select the technique and click Add. The checkbox is labelled by the
+    // technique name (the <label> wraps both the Checkbox and the name text).
+    fireEvent.click(screen.getByRole("checkbox", { name: /scissor sweep/i }));
 
     await waitFor(() => {
       expect(
