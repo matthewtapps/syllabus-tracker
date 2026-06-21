@@ -1913,6 +1913,8 @@ export interface CommentView {
   body: string | null;
   /** Optional video attached to this comment, rendered under the text. */
   video: Video | null;
+  /** Seconds into the parent video this comment references; null if not anchored. */
+  video_ts_seconds: number | null;
   created_at: string;
   deleted_at: string | null;
 }
@@ -2025,6 +2027,7 @@ export async function createComment(
   parentCommentId?: number | null,
   videoId?: number | null,
   videoIsReference?: boolean | null,
+  videoTsSeconds?: number | null,
 ): Promise<Response> {
   return fetch(`/api/threads/${threadId}/comments`, {
     method: "POST",
@@ -2035,6 +2038,7 @@ export async function createComment(
       parent_comment_id: parentCommentId ?? null,
       video_id: videoId ?? null,
       video_is_reference: videoIsReference ?? false,
+      video_ts_seconds: videoTsSeconds ?? null,
     }),
   });
 }
