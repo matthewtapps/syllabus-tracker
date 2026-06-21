@@ -159,7 +159,10 @@ describe("ReplyComposer – thread-starter title requirement", () => {
     fetchSpy = stubFetch({
       browse: {
         kind: "videos",
-        videos: [{ id: 7, provenance: "camps" }], // no title
+        // No title: the row's display falls back to the provenance string.
+        // Use a provenance that can't collide with a source button label
+        // ("Other camps" etc.) so the Link button query is unambiguous.
+        videos: [{ id: 7, provenance: "Untitled match clip" }],
       },
     });
   });
@@ -192,8 +195,10 @@ describe("ReplyComposer – thread-starter title requirement", () => {
       { timeout: 3000 },
     );
     await user.type(searchInput, "something");
-    // The video has no title; provenance fallback is "camps"
-    const linkBtn = await screen.findByRole("button", { name: /camps/i });
+    // The video has no title; its row shows the provenance fallback.
+    const linkBtn = await screen.findByRole("button", {
+      name: /untitled match clip/i,
+    });
     await user.click(linkBtn);
 
     // Draft appears; title input should be required
