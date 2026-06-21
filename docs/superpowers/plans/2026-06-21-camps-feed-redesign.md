@@ -459,6 +459,13 @@ single-thread focused view when deeper than the loaded slice.
   ordered-technique-list UI, the Pick/Create technique picker tabs, and the
   `camp_techniques`-derived rendering.
 - Reuse `discussion-block.tsx`'s `?thread=` scroll-and-highlight for the jump.
+- **Caveat from P1T4:** `GET /api/camps/:id/feed` computes each row's `unread`
+  from the camp STUDENT's cursor (it queries from the student's perspective so a
+  coach sees the full timeline incl. their own posts). The camp feed UI must NOT
+  badge `unread` for coach viewers (a coach would see their own posts as unread);
+  ignore/suppress it there. (Minor nit also noted: `ActivityFeedQuery` /
+  `parse_before_ts` / limit constants are `pub` in `api.rs` for reuse; if a third
+  consumer appears, extract a `feed_params` module.)
 
 **Backend cleanup (now safe, the page no longer reads it):**
 - Drop the `camp_techniques` table + indexes from `config/schema.sql` (destructive;
