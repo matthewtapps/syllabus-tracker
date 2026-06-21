@@ -1472,6 +1472,7 @@ export function useAddCampTechnique(campId: number) {
     mutationFn: (techniqueId: number) => addCampTechnique(campId, techniqueId),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: qk.camp(campId) });
+      qc.invalidateQueries({ queryKey: ["camps", campId, "feed"] });
     },
   });
 }
@@ -1484,6 +1485,7 @@ export function useCreateCampTechnique(campId: number) {
       createCampTechnique(campId, vars),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: qk.camp(campId) });
+      qc.invalidateQueries({ queryKey: ["camps", campId, "feed"] });
       // A new global technique joins the library; refresh the pick-existing picker.
       qc.invalidateQueries({ queryKey: qk.libraryTechniques() });
     },

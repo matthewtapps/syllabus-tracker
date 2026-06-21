@@ -696,7 +696,6 @@ function CampDetail({
         <CampComposer
           campId={campId}
           studentId={camp.student_id}
-          canCreateTechnique={isCoach}
           onSubmit={startThread}
           pending={createThread.isPending}
           onOpenTechniquePicker={() => setAddPickerOpen(true)}
@@ -706,13 +705,7 @@ function CampDetail({
       {/* Technique picker dialog (triggered from composer) */}
       <AddCampTechniqueDialog
         open={addPickerOpen}
-        onOpenChange={(open) => {
-          setAddPickerOpen(open);
-          if (!open) {
-            // Invalidate feed so a newly-attached technique row appears.
-            invalidateCampFeed();
-          }
-        }}
+        onOpenChange={setAddPickerOpen}
         campId={campId}
         existingTechniqueIds={existingTechniqueIds}
         isCoach={isCoach}

@@ -18,8 +18,6 @@ import type { VideoAttachment } from "@/components/threads/reply-composer";
 interface CampComposerProps {
   campId: number;
   studentId: number;
-  /** Whether the viewer can create new techniques (coach-only). */
-  canCreateTechnique: boolean;
   /** Called to post the thread (plain text or video). Passed straight to ReplyComposer. */
   onSubmit: (body: string, attachment: VideoAttachment | null) => Promise<void>;
   pending: boolean;
