@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO thread_comments\n              (thread_id, parent_comment_id, author_id, body, video_id, video_ts_seconds)\n           VALUES (?, ?, ?, ?, ?, ?)\n           RETURNING id AS \"id!: i64\"",
+  "describe": {
+    "columns": [
+      {
+        "name": "id!: i64",
+        "ordinal": 0,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 6
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "4924b6694fefa35cb4c348668a91a7132674d2e8d7b7bfd7d2a26039587a417c"
+}

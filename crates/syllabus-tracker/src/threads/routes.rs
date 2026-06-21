@@ -41,6 +41,9 @@ pub struct CreateCommentRequest {
     pub body: String,
     /// Optional draft video to attach to this comment.
     pub video_id: Option<i64>,
+    /// Optional timestamp (seconds) into the thread's attached video that this
+    /// comment is pinned to. NULL means a whole-video reply.
+    pub video_ts_seconds: Option<i64>,
 }
 
 fn parse_kind(s: &str) -> Result<AnchorKind, Status> {
@@ -193,7 +196,7 @@ pub async fn api_create_comment(
             return Err(Status::Forbidden);
         }
     }
-    let comment_id = create_comment(pool, id, req.parent_comment_id, user.id, &req.body, req.video_id)
+    let comment_id = create_comment(pool, id, req.parent_comment_id, user.id, &req.body, req.video_id, req.video_ts_seconds)
         .await
         .map_err(|_| Status::BadRequest)?;
     Ok(Json(CreatedResponse { id: comment_id }))

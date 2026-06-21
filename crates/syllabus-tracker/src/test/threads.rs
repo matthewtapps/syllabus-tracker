@@ -122,7 +122,7 @@ mod tests {
         .await
         .unwrap();
 
-        create_comment(&db.pool, thread_id, None, coach_id, "answer", None)
+        create_comment(&db.pool, thread_id, None, coach_id, "answer", None, None)
             .await
             .unwrap();
 
@@ -179,20 +179,21 @@ mod tests {
         .await
         .unwrap();
         let top =
-            create_comment(&db.pool, thread_id, None, student_id, "top", None).await.unwrap();
-        create_comment(&db.pool, thread_id, Some(top), student_id, "ok reply", None)
+            create_comment(&db.pool, thread_id, None, student_id, "top", None, None).await.unwrap();
+        create_comment(&db.pool, thread_id, Some(top), student_id, "ok reply", None, None)
             .await
             .unwrap();
         let nested = create_comment(
             &db.pool,
             thread_id,
             Some(
-                create_comment(&db.pool, thread_id, Some(top), student_id, "another reply", None)
+                create_comment(&db.pool, thread_id, Some(top), student_id, "another reply", None, None)
                     .await
                     .unwrap(),
             ),
             student_id,
             "reply to a reply",
+            None,
             None,
         )
         .await;
@@ -224,7 +225,7 @@ mod tests {
         .await
         .unwrap();
         let comment_id =
-            create_comment(&db.pool, thread_id, None, student_id, "oops", None).await.unwrap();
+            create_comment(&db.pool, thread_id, None, student_id, "oops", None, None).await.unwrap();
         soft_delete_comment(&db.pool, comment_id, coach_id).await.unwrap();
 
         let view = get_thread(
@@ -1015,10 +1016,10 @@ mod tests {
         .await
         .unwrap();
 
-        create_comment(&db.pool, thread_id, None, coach_id, "first comment", None)
+        create_comment(&db.pool, thread_id, None, coach_id, "first comment", None, None)
             .await
             .unwrap();
-        create_comment(&db.pool, thread_id, None, coach_id, "second comment", None)
+        create_comment(&db.pool, thread_id, None, coach_id, "second comment", None, None)
             .await
             .unwrap();
 
@@ -1303,7 +1304,7 @@ mod tests {
         .await
         .unwrap();
 
-        create_comment(&db.pool, thread_id, None, coach_id, "a reply", None)
+        create_comment(&db.pool, thread_id, None, coach_id, "a reply", None, None)
             .await
             .unwrap();
 
@@ -1348,7 +1349,7 @@ mod tests {
             .bind(coach_id)
             .fetch_one(&db.pool).await.unwrap();
 
-        create_comment(&db.pool, thread_id, None, coach_id, "great clip", Some(video_id))
+        create_comment(&db.pool, thread_id, None, coach_id, "great clip", Some(video_id), None)
             .await.unwrap();
 
         let view = get_thread(&db.pool, thread_id,
@@ -1364,6 +1365,70 @@ mod tests {
             .fetch_one(&db.pool).await.unwrap();
         assert_eq!(pk, "thread");
         assert_eq!(tid, Some(thread_id));
+    }
+
+    /// A comment can carry an optional `video_ts_seconds` pinning it to a moment
+    /// in its thread's attached video. The value must round-trip through
+    /// `create_comment` / `get_thread` unchanged.
+    #[rocket::async_test]
+    async fn comment_carries_video_timestamp() {
+        use crate::db::camps::{create_camp, NewCamp};
+        let db = db_with_coach_and_student().await;
+        let coach_id = db.user_id("coach_user").unwrap();
+        let student_id = db.user_id("student_user").unwrap();
+
+        let camp_id = create_camp(
+            &db.pool,
+            NewCamp {
+                student_id,
+                coach_id,
+                name: "Timestamp camp".to_string(),
+                description: None,
+                references_camp_id: None,
+            },
+        )
+        .await
+        .unwrap();
+
+        let thread_id = create_thread(
+            &db.pool,
+            NewThread {
+                author_id: coach_id,
+                anchor: Anchor {
+                    kind: AnchorKind::Camp,
+                    id: camp_id,
+                    video_ts_seconds: None,
+                    pinned_student_id: None,
+                    camp_id: None,
+                },
+                visibility: ThreadVisibility::Private,
+                scope_student_id: Some(student_id),
+                body: "Watch this moment.".to_string(),
+                attached_video_id: None,
+            },
+        )
+        .await
+        .unwrap();
+
+        create_comment(&db.pool, thread_id, None, coach_id, "check 12s", None, Some(12))
+            .await
+            .unwrap();
+
+        let view = get_thread(
+            &db.pool,
+            thread_id,
+            Viewer { user_id: coach_id, is_coach: true },
+        )
+        .await
+        .unwrap()
+        .unwrap();
+
+        assert_eq!(view.comments.len(), 1);
+        assert_eq!(
+            view.comments[0].video_ts_seconds,
+            Some(12),
+            "comment must carry the video_ts_seconds it was created with"
+        );
     }
 
     // ---- CampTechnique anchor tests ----

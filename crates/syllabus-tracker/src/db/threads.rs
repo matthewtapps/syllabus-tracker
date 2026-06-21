@@ -398,6 +398,9 @@ pub struct CommentView {
     /// still-processing video is only included for the comment's own author
     /// (others don't see the comment at all until it is playable).
     pub video: Option<Video>,
+    /// Optional timestamp (seconds) into this comment's thread's attached video,
+    /// for a reply pinned to a moment of the post's video. NULL = whole-video reply.
+    pub video_ts_seconds: Option<i64>,
     pub created_at: NaiveDateTime,
     pub deleted_at: Option<NaiveDateTime>,
 }
@@ -507,6 +510,7 @@ pub async fn create_comment(
     author_id: i64,
     body: &str,
     video_id: Option<i64>,
+    video_ts_seconds: Option<i64>,
 ) -> Result<i64, AppError> {
     // A reply needs content: text, a video, or both.
     if body.trim().is_empty() && video_id.is_none() {
@@ -565,14 +569,15 @@ pub async fn create_comment(
 
     let comment_id = sqlx::query_scalar!(
         r#"INSERT INTO thread_comments
-              (thread_id, parent_comment_id, author_id, body, video_id)
-           VALUES (?, ?, ?, ?, ?)
+              (thread_id, parent_comment_id, author_id, body, video_id, video_ts_seconds)
+           VALUES (?, ?, ?, ?, ?, ?)
            RETURNING id AS "id!: i64""#,
         thread_id,
         parent_comment_id,
         author_id,
         body,
         video_id,
+        video_ts_seconds,
     )
     .fetch_one(&mut *tx)
     .await?;
@@ -725,6 +730,7 @@ pub async fn get_thread(
                   COALESCE(u.display_name, u.username, '?') AS "author_name!: String",
                   c.body,
                   c.video_id AS "video_id?: i64",
+                  c.video_ts_seconds AS "video_ts_seconds?: i64",
                   c.created_at AS "created_at!: NaiveDateTime",
                   c.deleted_at AS "deleted_at?: NaiveDateTime"
            FROM thread_comments c
@@ -759,6 +765,7 @@ pub async fn get_thread(
             author_name: c.author_name,
             body: if deleted { None } else { Some(c.body) },
             video,
+            video_ts_seconds: c.video_ts_seconds,
             created_at: c.created_at,
             deleted_at: c.deleted_at,
         });

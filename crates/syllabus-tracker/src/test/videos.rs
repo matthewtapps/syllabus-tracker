@@ -2056,7 +2056,7 @@ mod tests {
         }).await.unwrap();
 
         // A video-only comment (empty body) attaching that draft.
-        db::threads::create_comment(&db.pool, thread_id, None, coach_id, "", Some(vid))
+        db::threads::create_comment(&db.pool, thread_id, None, coach_id, "", Some(vid), None)
             .await.unwrap();
 
         let (pk, th): (String, Option<i64>) = sqlx::query_as(

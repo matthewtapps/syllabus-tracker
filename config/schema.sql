@@ -526,6 +526,9 @@ CREATE TABLE IF NOT EXISTS thread_comments (
     -- Optional single video attached to this comment (a thread-reply video).
     -- The comment is the unit; the clip renders underneath its text.
     video_id          INTEGER REFERENCES videos(id),
+    -- Optional timestamp (seconds) into THIS comment's thread's attached video,
+    -- for a reply pinned to a moment of the post's video. NULL = whole-video reply.
+    video_ts_seconds  INTEGER,
     created_at        TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     edited_at         TIMESTAMP,
     deleted_at        TIMESTAMP,
