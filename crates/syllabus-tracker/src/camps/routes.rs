@@ -1,3 +1,4 @@
+use rocket::FromForm;
 use rocket::State;
 use rocket::http::Status;
 use rocket::serde::{Deserialize, Serialize, json::Json};
@@ -9,7 +10,8 @@ use crate::auth::{Permission, User};
 use crate::db::ActivityRow;
 use crate::db::camps::{
     archive_camp, create_camp, create_camp_technique_new, get_camp, list_camp_summaries_for_student,
-    update_camp, Camp, CampSummary, NewCamp, TechniqueScope,
+    search_camp_techniques, search_camp_threads, search_camp_videos,
+    update_camp, Camp, CampSummary, CampTechniqueHit, CampThreadHit, CampVideoHit, NewCamp, TechniqueScope,
 };
 use crate::db::{feed, list_videos_for_camp, set_video_camp_visibility};
 use crate::models::Video;
@@ -332,4 +334,93 @@ pub async fn api_set_camp_video_visibility(
         .await
         .map_err(Status::from)?;
     Ok(Status::NoContent)
+}
+
+// ---------------------------------------------------------------------------
+// Camp search (Phase 4)
+// ---------------------------------------------------------------------------
+
+#[derive(FromForm)]
+pub struct CampSearchParams {
+    pub q: Option<String>,
+    /// Narrow to one group: `technique` | `video` | `thread`.
+    pub kind: Option<String>,
+}
+
+#[derive(Serialize)]
+pub struct CampSearchResponse {
+    pub techniques: Vec<CampTechniqueHit>,
+    pub videos: Vec<CampVideoHit>,
+    pub threads: Vec<CampThreadHit>,
+}
+
+/// `GET /api/camps/<camp_id>/search?q=<str>&kind=<optional>`
+///
+/// Searches within a single camp across three surfaces:
+/// - `techniques`: camp_technique threads whose anchored technique name matches.
+/// - `videos`: camp-owned footage or thread-attached videos whose title matches.
+/// - `threads`: root-post and comment bodies that match.
+///
+/// Authorization: coach (`ManageCamps`) OR the camp's own student.
+/// Empty `q` → returns empty groups.
+#[instrument(skip(params, pool, user))]
+#[get("/camps/<camp_id>/search?<params..>")]
+pub async fn api_camp_search(
+    camp_id: i64,
+    params: CampSearchParams,
+    user: User,
+    pool: &State<Pool<Sqlite>>,
+) -> Result<Json<CampSearchResponse>, Status> {
+    let pool = pool.inner();
+    let camp = get_camp(pool, camp_id)
+        .await
+        .map_err(Status::from)?
+        .ok_or(Status::NotFound)?;
+    let is_coach = user.has_permission(Permission::ManageCamps);
+    if !is_coach && user.id != camp.student_id {
+        return Err(Status::Forbidden);
+    }
+
+    let q = params.q.as_deref().unwrap_or("").trim().to_lowercase();
+
+    // Empty query — return empty groups immediately.
+    if q.is_empty() {
+        return Ok(Json(CampSearchResponse {
+            techniques: vec![],
+            videos: vec![],
+            threads: vec![],
+        }));
+    }
+
+    let kind = params.kind.as_deref();
+
+    let techniques = if kind.is_none() || kind == Some("technique") {
+        search_camp_techniques(pool, camp_id, &q)
+            .await
+            .map_err(Status::from)?
+    } else {
+        vec![]
+    };
+
+    let videos = if kind.is_none() || kind == Some("video") {
+        search_camp_videos(pool, camp_id, &q)
+            .await
+            .map_err(Status::from)?
+    } else {
+        vec![]
+    };
+
+    let threads = if kind.is_none() || kind == Some("thread") {
+        search_camp_threads(pool, camp_id, &q)
+            .await
+            .map_err(Status::from)?
+    } else {
+        vec![]
+    };
+
+    Ok(Json(CampSearchResponse {
+        techniques,
+        videos,
+        threads,
+    }))
 }

@@ -1,0 +1,26 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT tc.thread_id AS \"thread_id!: i64\", tc.body\n           FROM thread_comments tc\n           JOIN threads th ON th.id = tc.thread_id\n           WHERE th.camp_id = ?\n             AND th.deleted_at IS NULL\n             AND tc.deleted_at IS NULL\n             AND lower(tc.body) LIKE ?\n           ORDER BY tc.thread_id, tc.id\n           LIMIT ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "thread_id!: i64",
+        "ordinal": 0,
+        "type_info": "Integer"
+      },
+      {
+        "name": "body",
+        "ordinal": 1,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "247c61914d431e4b0b429ca57766aa794fda38f4be09ce2bbd4e7faa445e38af"
+}
