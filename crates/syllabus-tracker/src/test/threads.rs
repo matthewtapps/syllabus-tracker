@@ -2117,6 +2117,170 @@ mod tests {
         );
     }
 
+    /// POSTing a create-thread with `attached_video_is_reference=true` for a video
+    /// that is NOT visible to the camp's scope student must return HTTP 403, not 400.
+    #[rocket::async_test]
+    async fn reference_attach_hidden_video_returns_forbidden() {
+        use crate::db::camps::{create_camp, NewCamp};
+        let db = TB::new()
+            .coach("coach_user", Some("Coach"))
+            .student("student_user", Some("Sam"))
+            .student("student2", Some("Mia"))
+            .technique("Armbar", "an armbar", Some("coach_user"))
+            .build()
+            .await
+            .unwrap();
+        let coach_id = db.user_id("coach_user").unwrap();
+        let student_id = db.user_id("student_user").unwrap();
+        let other_id = db.user_id("student2").unwrap();
+        let technique_id = db.technique_id("Armbar").unwrap();
+
+        // Camp scoped to student_user.
+        let camp_id = create_camp(
+            &db.pool,
+            NewCamp { student_id, coach_id, name: "Gate camp".to_string(), description: None },
+        )
+        .await
+        .unwrap();
+
+        // A private thread scoped to other_id so its video is NOT visible to student_user.
+        let thread_for_other: i64 = sqlx::query_scalar(
+            "INSERT INTO threads (created_by_id, anchor_kind, technique_id, visibility, scope_student_id, body) \
+             VALUES (?, 'technique', ?, 'private', ?, 'seed') RETURNING id",
+        )
+        .bind(coach_id)
+        .bind(technique_id)
+        .bind(other_id)
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+
+        // A ready video parented to that thread — invisible to student_user.
+        let hidden_vid: i64 = sqlx::query_scalar(
+            "INSERT INTO videos (parent_kind, thread_id, title, kind, processing_status, \
+             uploaded_by_id, deleted_at, hidden_at) \
+             VALUES ('thread', ?, 'Hidden', 'native', 'ready', ?, NULL, NULL) RETURNING id",
+        )
+        .bind(thread_for_other)
+        .bind(coach_id)
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+
+        let (client, _db) = setup_test_client(db).await;
+        login_test_user(&client, "coach_user", "password123").await;
+
+        // Attempt to reference the hidden video in a thread for student_user's camp.
+        let res = client
+            .post("/api/threads")
+            .header(ContentType::JSON)
+            .body(
+                json!({
+                    "anchor_kind": "camp",
+                    "anchor_id": camp_id,
+                    "visibility": "private",
+                    "scope_student_id": student_id,
+                    "body": "",
+                    "attached_video_id": hidden_vid,
+                    "attached_video_is_reference": true,
+                    "attached_video_title": "Stolen"
+                })
+                .to_string(),
+            )
+            .dispatch()
+            .await;
+
+        assert_eq!(
+            res.status(),
+            HttpStatus::Forbidden,
+            "referencing a video not visible to the scope student must return 403, not 400"
+        );
+    }
+
+    /// A comment with `video_is_reference=true` referencing a video NOT visible to
+    /// the thread's scope student must return HTTP 403.
+    #[rocket::async_test]
+    async fn reference_attach_comment_hidden_video_returns_forbidden() {
+        use crate::db::camps::{create_camp, NewCamp};
+        let db = TB::new()
+            .coach("coach_user", Some("Coach"))
+            .student("student_user", Some("Sam"))
+            .student("student2", Some("Mia"))
+            .technique("Armbar", "an armbar", Some("coach_user"))
+            .build()
+            .await
+            .unwrap();
+        let coach_id = db.user_id("coach_user").unwrap();
+        let student_id = db.user_id("student_user").unwrap();
+        let other_id = db.user_id("student2").unwrap();
+        let technique_id = db.technique_id("Armbar").unwrap();
+
+        let camp_id = create_camp(
+            &db.pool,
+            NewCamp { student_id, coach_id, name: "Comment gate".to_string(), description: None },
+        )
+        .await
+        .unwrap();
+
+        // Camp thread to post the comment onto.
+        let thread_id: i64 = sqlx::query_scalar(
+            "INSERT INTO threads (created_by_id, anchor_kind, camp_id, visibility, scope_student_id, body) \
+             VALUES (?, 'camp', ?, 'private', ?, 'root') RETURNING id",
+        )
+        .bind(coach_id)
+        .bind(camp_id)
+        .bind(student_id)
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+
+        // A video scoped to other_id — invisible to student_user.
+        let thread_for_other: i64 = sqlx::query_scalar(
+            "INSERT INTO threads (created_by_id, anchor_kind, technique_id, visibility, scope_student_id, body) \
+             VALUES (?, 'technique', ?, 'private', ?, 'seed') RETURNING id",
+        )
+        .bind(coach_id)
+        .bind(technique_id)
+        .bind(other_id)
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+
+        let hidden_vid: i64 = sqlx::query_scalar(
+            "INSERT INTO videos (parent_kind, thread_id, title, kind, processing_status, \
+             uploaded_by_id, deleted_at, hidden_at) \
+             VALUES ('thread', ?, 'Other hidden', 'native', 'ready', ?, NULL, NULL) RETURNING id",
+        )
+        .bind(thread_for_other)
+        .bind(coach_id)
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+
+        let (client, _db) = setup_test_client(db).await;
+        login_test_user(&client, "coach_user", "password123").await;
+
+        let res = client
+            .post(format!("/api/threads/{thread_id}/comments"))
+            .header(ContentType::JSON)
+            .body(
+                json!({
+                    "body": "",
+                    "video_id": hidden_vid,
+                    "video_is_reference": true
+                })
+                .to_string(),
+            )
+            .dispatch()
+            .await;
+
+        assert_eq!(
+            res.status(),
+            HttpStatus::Forbidden,
+            "comment referencing a video not visible to the scope student must return 403, not 400"
+        );
+    }
+
     /// A comment (reply) can reference an existing video without reparenting.
     /// No title is required for replies.
     #[rocket::async_test]

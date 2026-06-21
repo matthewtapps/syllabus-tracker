@@ -5,6 +5,7 @@ use sqlx::{Pool, Sqlite};
 use tracing::instrument;
 
 use crate::auth::{Permission, User};
+use crate::error::AppError;
 use crate::db::threads::{
     Anchor, AnchorKind, NewThread, ThreadView, ThreadVisibility, create_comment, create_thread,
     get_thread, list_threads_for_anchor, soft_delete_comment, soft_delete_thread, Viewer,
@@ -149,7 +150,7 @@ pub async fn api_create_thread(
         attached_video_id: req.attached_video_id,
         attached_video_is_reference: req.attached_video_is_reference.unwrap_or(false),
         attached_video_title: req.attached_video_title.clone(),
-    }).await.map_err(|e| { e.log_and_record("api_create_thread"); Status::BadRequest })?;
+    }).await.map_err(|e| { e.log_and_record("api_create_thread"); e.status_code() })?;
     Ok(Json(CreatedResponse { id }))
 }
 
@@ -218,7 +219,7 @@ pub async fn api_create_comment(
         req.video_is_reference.unwrap_or(false),
     )
     .await
-    .map_err(|_| Status::BadRequest)?;
+    .map_err(|e: AppError| { e.log_and_record("api_create_comment"); e.status_code() })?;
     Ok(Json(CreatedResponse { id: comment_id }))
 }
 
