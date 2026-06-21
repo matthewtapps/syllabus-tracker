@@ -12,6 +12,7 @@ function buildComment(overrides: Partial<CommentView> = {}): CommentView {
     author_id: 2,
     author_name: "Bob B",
     body: "Great technique!",
+    video: null,
     created_at: new Date().toISOString(),
     deleted_at: null,
     ...overrides,
@@ -31,7 +32,7 @@ function buildThread(overrides: Partial<ThreadViewModel> = {}): ThreadViewModel 
     created_at: new Date().toISOString(),
     deleted_at: null,
     comments: [],
-    video_replies: [],
+    video: null,
     ...overrides,
   };
 }
@@ -163,9 +164,26 @@ describe("ThreadView", () => {
     expect(
       screen.getByRole("button", { name: "Reply" }),
     ).toBeInTheDocument();
-    // The video-reply composer trigger sits alongside the text reply button.
+  });
+
+  test("coaches get the attach-video control; students don't (off a camp)", () => {
+    const thread = buildThread();
+
+    const coach = renderWithProviders(
+      <ThreadView thread={thread} anchorKind="technique" anchorId={99} />,
+      { user: buildUser({ id: 1, role: "coach" }) },
+    );
     expect(
-      screen.getByRole("button", { name: /video reply/i }),
+      screen.getByRole("button", { name: /attach video/i }),
     ).toBeInTheDocument();
+    coach.unmount();
+
+    renderWithProviders(
+      <ThreadView thread={thread} anchorKind="technique" anchorId={99} />,
+      { user: buildUser({ id: 2, role: "student" }) },
+    );
+    expect(
+      screen.queryByRole("button", { name: /attach video/i }),
+    ).toBeNull();
   });
 });

@@ -15,12 +15,12 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
+import { VideoPlayerPanel } from "@/components/videos/video-player-panel";
 import { useUser } from "@/lib/current-user-context";
 import { useCreateComment, useDeleteThread } from "@/lib/mutations";
 import { CommentItem } from "./comment-item";
-import { VideoReplyItem } from "./video-reply-item";
 import { ReplyComposer } from "./reply-composer";
-import type { CommentView, VideoReplyView, ThreadView as ThreadViewModel } from "@/lib/api";
+import type { ThreadView as ThreadViewModel } from "@/lib/api";
 
 interface ThreadViewProps {
   thread: ThreadViewModel;
@@ -37,25 +37,23 @@ export function ThreadView({ thread, anchorKind, anchorId, campId }: ThreadViewP
   const deleteThread = useDeleteThread(anchorKind, anchorId, campId);
   const [deleteOpen, setDeleteOpen] = useState(false);
 
-  type TimelineEntry =
-    | { kind: "comment"; at: string; comment: CommentView }
-    | { kind: "video"; at: string; reply: VideoReplyView };
-
-  const entries: TimelineEntry[] = [
-    ...thread.comments.map((c) => ({ kind: "comment" as const, at: c.created_at, comment: c })),
-    ...thread.video_replies.map((r) => ({ kind: "video" as const, at: r.created_at, reply: r })),
-  ].sort((a, b) => a.at.localeCompare(b.at));
+  const comments = [...thread.comments].sort((a, b) =>
+    a.created_at.localeCompare(b.created_at),
+  );
 
   const authorName = thread.author_name;
   const canDelete =
     thread.author_id === user.id || user.role !== "student";
 
-  async function handleReply(body: string) {
-    try {
-      await createComment.mutateAsync({ threadId: thread.id, body });
-    } catch {
-      toast.error("Failed to post reply. Please try again.");
-    }
+  async function handleReply(body: string, videoId: number | null) {
+    // Throw on failure so the composer surfaces it (and keeps the draft).
+    await createComment.mutateAsync({
+      threadId: thread.id,
+      body,
+      videoId,
+      authorId: user.id,
+      authorName: user.display_name,
+    });
   }
 
   async function handleDeleteThread() {
@@ -113,36 +111,34 @@ export function ThreadView({ thread, anchorKind, anchorId, campId }: ThreadViewP
             )}
           </div>
           {thread.body === null ? (
-            <p className="text-sm italic text-muted-foreground">
-              thread removed
-            </p>
+            thread.video ? null : (
+              <p className="text-sm italic text-muted-foreground">
+                thread removed
+              </p>
+            )
           ) : (
             <p className="whitespace-pre-wrap text-sm">{thread.body}</p>
+          )}
+          {thread.video && (
+            <div className="mt-2">
+              <VideoPlayerPanel video={thread.video} />
+            </div>
           )}
         </div>
       </div>
 
       {/* Replies */}
-      {entries.length > 0 && (
+      {comments.length > 0 && (
         <div className="ml-4 space-y-3 border-l-2 border-border pl-3">
-          {entries.map((e) =>
-            e.kind === "comment" ? (
-              <CommentItem
-                key={`c${e.comment.id}`}
-                comment={e.comment}
-                authorName={e.comment.author_name}
-              />
-            ) : (
-              <VideoReplyItem key={`v${e.reply.id}`} reply={e.reply} />
-            ),
-          )}
+          {comments.map((c) => (
+            <CommentItem key={`c${c.id}`} comment={c} authorName={c.author_name} />
+          ))}
         </div>
       )}
 
       {/* Reply composer */}
       <div className="ml-4 pl-3">
         <ReplyComposer
-          threadId={thread.id}
           anchorKind={anchorKind}
           anchorId={anchorId}
           campId={campId}

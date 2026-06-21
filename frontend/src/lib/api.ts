@@ -1911,17 +1911,10 @@ export interface CommentView {
   author_id: number;
   author_name: string;
   body: string | null;
-  created_at: string;
-  deleted_at: string | null;
-}
-
-export interface VideoReplyView {
-  id: number;
-  author_id: number;
-  author_name: string;
-  created_at: string;
-  deleted_at: string | null;
+  /** Optional video attached to this comment, rendered under the text. */
   video: Video | null;
+  created_at: string;
+  deleted_at: string | null;
 }
 
 export interface ThreadView {
@@ -1934,10 +1927,11 @@ export interface ThreadView {
   /** Anchor seconds for video_timestamp threads; null otherwise. */
   video_ts_seconds: number | null;
   body: string | null;
+  /** Optional video attached to the root post, rendered under the body. */
+  video: Video | null;
   created_at: string;
   deleted_at: string | null;
   comments: CommentView[];
-  video_replies: VideoReplyView[];
 }
 
 export interface CreateThreadInput {
@@ -1950,6 +1944,8 @@ export interface CreateThreadInput {
   visibility: ThreadVisibility;
   scope_student_id?: number | null;
   body: string;
+  /** Optional draft video to attach to the root post. */
+  attached_video_id?: number | null;
 }
 
 export async function listThreads(
@@ -1983,6 +1979,7 @@ export async function createComment(
   threadId: number,
   body: string,
   parentCommentId?: number | null,
+  videoId?: number | null,
 ): Promise<Response> {
   return fetch(`/api/threads/${threadId}/comments`, {
     method: "POST",
@@ -1991,18 +1988,24 @@ export async function createComment(
     body: JSON.stringify({
       body,
       parent_comment_id: parentCommentId ?? null,
+      video_id: videoId ?? null,
     }),
   });
 }
 
-export async function uploadThreadVideoReply(
-  threadId: number,
+/** Uploads a draft reply video. `anchorKind`/`campId` describe the surface so
+ *  the server can check the caller may attach a video there. The returned id is
+ *  attached to a comment/thread on send (the backend re-parents it). */
+export async function uploadDraftReplyVideo(
+  anchorKind: string,
+  campId: number | null,
   file: File,
-): Promise<{ video_id: number; processing_status: string }> {
+): Promise<{ video_id: number; processing_status: ProcessingStatus }> {
   const form = new FormData();
   form.append("file", file);
-  form.append("title", "");
-  const res = await fetch(`/api/threads/${threadId}/videos/upload`, {
+  form.append("anchor_kind", anchorKind);
+  if (campId != null) form.append("camp_id", String(campId));
+  const res = await fetch(`/api/thread-reply-videos/upload`, {
     method: "POST",
     credentials: "include",
     body: form,
@@ -2011,17 +2014,26 @@ export async function uploadThreadVideoReply(
   return res.json();
 }
 
-export async function linkThreadVideoReply(
-  threadId: number,
+export async function linkDraftReplyVideo(
+  anchorKind: string,
+  campId: number | null,
   url: string,
 ): Promise<Video> {
-  const res = await fetch(`/api/threads/${threadId}/videos/link`, {
+  const res = await fetch(`/api/thread-reply-videos/link`, {
     method: "POST",
     credentials: "include",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ title: "", url }),
+    body: JSON.stringify({ url, anchor_kind: anchorKind, camp_id: campId }),
   });
   if (!res.ok) throw new Error(`Link failed: ${res.statusText}`);
+  return res.json();
+}
+
+export async function getVideoStatus(
+  videoId: number,
+): Promise<{ processing_status: ProcessingStatus; processing_error: string | null }> {
+  const res = await fetch(`/api/videos/${videoId}/status`, { credentials: "include" });
+  if (!res.ok) throw new Error(`Status check failed: ${res.statusText}`);
   return res.json();
 }
 

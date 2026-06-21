@@ -1,5 +1,6 @@
 import { StudentAvatar } from "@/components/student-avatar";
 import { formatRelativeShort } from "@/lib/dates";
+import { VideoPlayerPanel } from "@/components/videos/video-player-panel";
 import type { CommentView } from "@/lib/api";
 
 export function CommentItem({
@@ -20,9 +21,16 @@ export function CommentItem({
           </span>
         </div>
         {comment.body === null ? (
-          <p className="text-sm italic text-muted-foreground">comment removed</p>
+          comment.video ? null : (
+            <p className="text-sm italic text-muted-foreground">comment removed</p>
+          )
         ) : (
           <p className="whitespace-pre-wrap text-sm">{comment.body}</p>
+        )}
+        {comment.video && (
+          <div className="mt-2">
+            <VideoPlayerPanel video={comment.video} />
+          </div>
         )}
       </div>
     </div>

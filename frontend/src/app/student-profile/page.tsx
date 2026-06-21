@@ -45,7 +45,7 @@ import { campsUiEnabled } from "@/lib/features";
 import { CampSummaryCard } from "@/components/camp-summary-card";
 import { ActivityFeedList } from "@/components/activity-feed-list";
 import { ThreadView } from "@/components/threads/thread-view";
-import { ThreadComposer } from "@/components/threads/thread-composer";
+import { ReplyComposer } from "@/components/threads/reply-composer";
 import { SyllabusAssignmentRow } from "@/app/student-syllabi/components/syllabus-assignment-row";
 import type { User } from "@/lib/api";
 
@@ -92,18 +92,15 @@ function ProfileHub({
   const feedQuery = useStudentActivityFeed(studentId);
   const profileThreadsQuery = useThreadsForAnchor("student_profile", studentId);
   const createProfileThread = useCreateThread();
-  async function startProfileThread(body: string) {
-    try {
-      await createProfileThread.mutateAsync({
-        anchor_kind: "student_profile",
-        anchor_id: studentId,
-        visibility: "private",
-        scope_student_id: studentId,
-        body,
-      });
-    } catch {
-      toast.error("Couldn't post your thread.");
-    }
+  async function startProfileThread(body: string, videoId: number | null) {
+    await createProfileThread.mutateAsync({
+      anchor_kind: "student_profile",
+      anchor_id: studentId,
+      visibility: "private",
+      scope_student_id: studentId,
+      body,
+      attached_video_id: videoId,
+    });
   }
 
   const loading = !isOwnView && usersQuery.isLoading;
@@ -314,9 +311,10 @@ function ProfileHub({
               />
             ))
           )}
-          <ThreadComposer
-            placeholder={"Start a thread..."}
-            submitLabel="Post"
+          <ReplyComposer
+            placeholder="Start a thread…"
+            anchorKind="student_profile"
+            anchorId={studentId}
             pending={createProfileThread.isPending}
             onSubmit={startProfileThread}
           />

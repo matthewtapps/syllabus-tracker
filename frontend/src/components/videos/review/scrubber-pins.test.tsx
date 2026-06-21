@@ -8,7 +8,7 @@ function t(id: number, secs: number): ThreadView {
   return {
     id, anchor_kind: "video_timestamp", author_id: 1, author_name: "x",
     visibility: "broadcast", scope_student_id: null, video_ts_seconds: secs,
-    body: "b", created_at: "", deleted_at: null, comments: [], video_replies: [],
+    body: "b", created_at: "", deleted_at: null, comments: [], video: null,
   };
 }
 
