@@ -10,6 +10,7 @@ import {
   NotebookPen,
   Pin,
   Shield,
+  Tent,
   UserPlus,
   UserRound,
   Users,
@@ -17,6 +18,7 @@ import {
 } from 'lucide-react';
 import type { User } from '@/lib/api';
 import { isCoachOrAdmin, isAdmin } from '@/lib/api';
+import { campsUiEnabled } from '@/lib/features';
 import { useInstallTrigger } from '@/lib/install';
 import { cn } from '@/lib/utils';
 import {
@@ -58,7 +60,14 @@ function buildTabs(user: User): Tab[] {
       icon: NotebookPen,
     });
     tabs.push({ to: '/library', label: 'Library', icon: Library });
-    tabs.push({ to: `/student/${user.id}/pinned`, label: 'Pinned', icon: Pin });
+    // Camps is a first-class student surface once enabled; it takes the slot
+    // Pinned otherwise holds (Pinned drops into the More sheet, and is also
+    // surfaced on the profile hub). Keeps the tab count fixed.
+    if (campsUiEnabled) {
+      tabs.push({ to: `/student/${user.id}/camps`, label: 'Camps', icon: Tent });
+    } else {
+      tabs.push({ to: `/student/${user.id}/pinned`, label: 'Pinned', icon: Pin });
+    }
     tabs.push({
       to: `/student/${user.id}`,
       label: 'Profile',
@@ -182,6 +191,17 @@ function MoreTab({ user, onLogout }: { user: User; onLogout: () => void }) {
         <SheetTitle className="sr-only">More</SheetTitle>
 
         <div className="space-y-1 p-2">
+          {/* Pinned moves here for students when Camps takes its tab slot. */}
+          {!coachOrAdmin && campsUiEnabled && (
+            <MoreItem
+              icon={Pin}
+              label="Pinned"
+              onClick={() => {
+                close();
+                navigate(`/student/${user.id}/pinned`);
+              }}
+            />
+          )}
           {coachOrAdmin && (
             <MoreItem
               icon={UserPlus}
