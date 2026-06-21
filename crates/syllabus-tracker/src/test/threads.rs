@@ -1497,8 +1497,12 @@ mod tests {
         assert_eq!(row.technique_id, Some(technique_id));
     }
 
+    /// Under the new feed model, posting a global library technique to a camp
+    /// is the attach step itself. No prior camp_techniques membership is required:
+    /// the anchor is valid as long as the camp exists and the technique is global
+    /// (scoped_camp_id IS NULL) or scoped to this specific camp.
     #[rocket::async_test]
-    async fn camp_technique_anchor_rejects_technique_not_in_camp() {
+    async fn camp_technique_thread_valid_without_pre_attach() {
         use crate::db::camps::{create_camp, NewCamp};
         let db = TestDbBuilder::new()
             .coach("coach_user", Some("Coach"))
@@ -1509,9 +1513,9 @@ mod tests {
             .unwrap();
         let coach_id = db.user_id("coach_user").unwrap();
         let student_id = db.user_id("student_user").unwrap();
+        // Technique created by TestDbBuilder has is_global=1, scoped_camp_id=NULL.
         let technique_id = db.technique_id("Armbar").unwrap();
 
-        // Camp exists but the technique is NOT attached to it.
         let camp_id = create_camp(
             &db.pool,
             NewCamp {
@@ -1524,6 +1528,7 @@ mod tests {
         )
         .await
         .unwrap();
+        // Intentionally NOT calling add_camp_technique: posting the thread IS the attach.
 
         let result = create_thread(
             &db.pool,
@@ -1538,14 +1543,91 @@ mod tests {
                 },
                 visibility: ThreadVisibility::Private,
                 scope_student_id: Some(student_id),
-                body: "should fail".into(),
+                body: "posting without pre-attach must succeed".into(),
+                attached_video_id: None,
+            },
+        )
+        .await;
+        assert!(
+            result.is_ok(),
+            "global library technique must be valid without prior camp_techniques membership"
+        );
+    }
+
+    /// A technique scoped to a DIFFERENT camp (scoped_camp_id = other_camp) must
+    /// be rejected when posted to this camp via a camp_technique anchor.
+    #[rocket::async_test]
+    async fn camp_technique_thread_rejects_other_camps_scoped_technique() {
+        use crate::db::camps::{create_camp, create_camp_technique_new, NewCamp, TechniqueScope};
+        let db = TestDbBuilder::new()
+            .coach("coach_user", Some("Coach"))
+            .student("student_user", Some("Sam"))
+            .build()
+            .await
+            .unwrap();
+        let coach_id = db.user_id("coach_user").unwrap();
+        let student_id = db.user_id("student_user").unwrap();
+
+        // Create two camps: the target camp and another camp that owns a scoped technique.
+        let target_camp_id = create_camp(
+            &db.pool,
+            NewCamp {
+                student_id,
+                coach_id,
+                name: "Target camp".to_string(),
+                description: None,
+                references_camp_id: None,
+            },
+        )
+        .await
+        .unwrap();
+        let other_camp_id = create_camp(
+            &db.pool,
+            NewCamp {
+                student_id,
+                coach_id,
+                name: "Other camp".to_string(),
+                description: None,
+                references_camp_id: None,
+            },
+        )
+        .await
+        .unwrap();
+
+        // Create a technique scoped to `other_camp` (scoped_camp_id = other_camp).
+        let other_scoped_technique_id = create_camp_technique_new(
+            &db.pool,
+            other_camp_id,
+            "Other Camp Only Move",
+            "exclusive to other camp",
+            TechniqueScope::Scoped,
+            coach_id,
+        )
+        .await
+        .unwrap();
+
+        // Attempt to post the other camp's scoped technique to target_camp.
+        let result = create_thread(
+            &db.pool,
+            NewThread {
+                author_id: coach_id,
+                anchor: Anchor {
+                    kind: AnchorKind::CampTechnique,
+                    id: other_scoped_technique_id,
+                    video_ts_seconds: None,
+                    pinned_student_id: None,
+                    camp_id: Some(target_camp_id),
+                },
+                visibility: ThreadVisibility::Private,
+                scope_student_id: Some(student_id),
+                body: "this must be rejected".into(),
                 attached_video_id: None,
             },
         )
         .await;
         assert!(
             result.is_err(),
-            "camp_technique thread must be rejected when the technique is not attached to the camp"
+            "technique scoped to a different camp must be rejected"
         );
     }
 

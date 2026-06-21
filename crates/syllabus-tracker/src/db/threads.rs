@@ -199,19 +199,23 @@ async fn validate_anchor(pool: &Pool<Sqlite>, anchor: &Anchor) -> Result<(), App
         )
         .fetch_one(pool)
         .await?,
-        // A camp_technique anchor is only valid if technique `id` is actually
-        // attached to camp `camp_id` (membership in camp_techniques).
+        // Camp must exist, and the technique must be global (scoped_camp_id IS NULL)
+        // or scoped to THIS camp. Posting the technique is the attach; no prior
+        // camp_techniques membership is required.
         AnchorKind::CampTechnique => {
             let camp_id = anchor.camp_id.ok_or_else(|| {
                 AppError::Validation("camp_technique anchor requires a camp".to_string())
             })?;
             sqlx::query_scalar!(
                 r#"SELECT EXISTS(
-                      SELECT 1 FROM camp_techniques
-                      WHERE camp_id = ? AND technique_id = ?
+                      SELECT 1 FROM techniques t
+                      JOIN camps c ON c.id = ?
+                      WHERE t.id = ?
+                        AND (t.scoped_camp_id IS NULL OR t.scoped_camp_id = ?)
                    ) AS "e!: i64""#,
                 camp_id,
-                anchor.id
+                anchor.id,
+                camp_id
             )
             .fetch_one(pool)
             .await?
