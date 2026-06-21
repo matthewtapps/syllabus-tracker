@@ -45,20 +45,15 @@ import type { VideoAttachment } from "@/components/threads/reply-composer";
 // ---------------------------------------------------------------------------
 
 function PickExistingPanel({
-  existingTechniqueIds,
   onAttach,
   onDone,
 }: {
-  existingTechniqueIds: Set<number>;
   /** Posts a camp_technique thread for each selected technique id. */
   onAttach: (techniqueIds: number[]) => Promise<void>;
   onDone: () => void;
 }) {
   const libraryQuery = useLibraryTechniques();
-  const techniques = useMemo(
-    () => (libraryQuery.data ?? []).filter((t) => !existingTechniqueIds.has(t.id)),
-    [libraryQuery.data, existingTechniqueIds],
-  );
+  const techniques = useMemo(() => libraryQuery.data ?? [], [libraryQuery.data]);
   const [pending, setPending] = useState(false);
   const [search, setSearch] = useState("");
   const [activeTags, setActiveTags] = useState<string[]>([]);
@@ -198,7 +193,7 @@ function PickExistingPanel({
         {filtered.length === 0 ? (
           <p className="px-4 py-6 text-center text-xs text-muted-foreground">
             {techniques.length === 0
-              ? "Every library technique is already in this camp."
+              ? "No techniques in the library yet."
               : "No techniques match the current filters."}
           </p>
         ) : (
@@ -335,18 +330,27 @@ function CreateNewPanel({
     }
     if (hasError || !scope) return;
 
+    let techniqueId: number;
     try {
-      const { id: techniqueId } = await createMutation.mutateAsync({
+      const result = await createMutation.mutateAsync({
         name: name.trim(),
         description: description.trim(),
         scope,
       });
-      // Post a camp_technique thread so the new technique appears in the feed.
+      techniqueId = result.id;
+    } catch {
+      toast.error("Failed to create technique. Please try again.");
+      return;
+    }
+    // Post a camp_technique thread so the new technique appears in the feed.
+    try {
       await onAttach([techniqueId]);
       toast.success("Technique created and added to camp.");
       onDone();
     } catch {
-      toast.error("Failed to create technique. Please try again.");
+      toast.error(
+        "Technique created, but couldn't add it to the camp. Try attaching it from Pick existing.",
+      );
     }
   }
 
@@ -435,14 +439,12 @@ function AddCampTechniqueDialog({
   open,
   onOpenChange,
   campId,
-  existingTechniqueIds,
   isCoach,
   onAttach,
 }: {
   open: boolean;
   onOpenChange: (b: boolean) => void;
   campId: number;
-  existingTechniqueIds: Set<number>;
   isCoach: boolean;
   /** Posts a camp_technique thread for each attached technique id. */
   onAttach: (techniqueIds: number[]) => Promise<void>;
@@ -476,7 +478,6 @@ function AddCampTechniqueDialog({
 
             <TabsContent value="pick" className="mt-3 flex min-h-0 flex-1 flex-col">
               <PickExistingPanel
-                existingTechniqueIds={existingTechniqueIds}
                 onAttach={onAttach}
                 onDone={() => onOpenChange(false)}
               />
@@ -493,7 +494,6 @@ function AddCampTechniqueDialog({
         ) : (
           <div className="flex min-h-0 flex-1 flex-col">
             <PickExistingPanel
-              existingTechniqueIds={existingTechniqueIds}
               onAttach={onAttach}
               onDone={() => onOpenChange(false)}
             />
@@ -664,8 +664,6 @@ function CampDetail({
   const viewerIsOwner = viewerId === camp.student_id;
   if (!viewerIsOwner && !isCoach) return <Navigate to="/dashboard" replace />;
 
-  const existingTechniqueIds = new Set(camp.techniques.map((t) => t.technique_id));
-
   return (
     <div className="container mx-auto space-y-4 px-4 py-6 sm:px-6 md:py-8">
       {/* Camp header */}
@@ -746,7 +744,6 @@ function CampDetail({
         open={addPickerOpen}
         onOpenChange={setAddPickerOpen}
         campId={campId}
-        existingTechniqueIds={existingTechniqueIds}
         isCoach={isCoach}
         onAttach={attachTechniqueAsThread}
       />

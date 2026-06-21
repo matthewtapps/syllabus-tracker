@@ -48,6 +48,7 @@ function TechniqueSubjectTile({ row, thread }: { row: ActivityRow; thread: Focus
           anchorKind={thread.anchorKind}
           anchorId={thread.anchorId}
           threadId={thread.threadId}
+          campId={row.camp_id ?? undefined}
           hideAnchorChip
         />
       )}

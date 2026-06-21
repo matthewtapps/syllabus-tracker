@@ -869,6 +869,58 @@ mod tests {
         assert!(result.is_err(), "broadcast on a profile anchor must be rejected");
     }
 
+    /// The empty-body exemption is ONLY for camp_technique anchors (where the
+    /// technique itself is the content). A plain Camp anchor with an empty body
+    /// and no video must still be rejected with a Validation error. This guards
+    /// against the exemption being accidentally widened to other anchor kinds.
+    #[rocket::async_test]
+    async fn empty_body_camp_anchor_is_rejected() {
+        use crate::db::camps::{create_camp, NewCamp};
+        let db = db_with_coach_and_student().await;
+        let coach_id = db.user_id("coach_user").unwrap();
+        let student_id = db.user_id("student_user").unwrap();
+
+        let camp_id = create_camp(
+            &db.pool,
+            NewCamp {
+                student_id,
+                coach_id,
+                name: "Guard camp".to_string(),
+                description: None,
+            },
+        )
+        .await
+        .unwrap();
+
+        let result = create_thread(
+            &db.pool,
+            NewThread {
+                author_id: coach_id,
+                anchor: Anchor {
+                    kind: AnchorKind::Camp,
+                    id: camp_id,
+                    video_ts_seconds: None,
+                    pinned_student_id: None,
+                    camp_id: None,
+                },
+                visibility: ThreadVisibility::Private,
+                scope_student_id: Some(student_id),
+                body: "".to_string(),
+                attached_video_id: None,
+                attached_video_is_reference: false,
+                attached_video_title: None,
+            },
+        )
+        .await;
+
+        match result {
+            Err(crate::error::AppError::Validation(_)) => {}
+            other => panic!(
+                "a Camp anchor with empty body and no video must return Validation error, got {other:?}"
+            ),
+        }
+    }
+
     // --- HTTP endpoint tests ---
 
     use crate::test::test_utils::{login_test_user, setup_test_client, TestDbBuilder as TB};

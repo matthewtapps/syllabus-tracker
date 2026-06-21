@@ -12,23 +12,30 @@ import { TileSkeleton } from "./technique-tile";
  * one the activity points at. An anchor chip names the video or technique the
  * conversation lives on. Returns null while the thread can't resolve, so the
  * entry falls back to a header-only line.
+ *
+ * For camp_technique anchors, pass `campId` so the query is scoped to the
+ * correct (technique, camp) pair — without it the backend returns nothing.
  */
 export function CommentTile({
   row,
   anchorKind,
   anchorId,
   threadId,
+  campId,
   hideAnchorChip = false,
 }: {
   row: ActivityRow;
   anchorKind: AnchorKind;
   anchorId: number;
   threadId: number;
+  /** Required for camp_technique anchors — scopes the thread list to the
+   *  specific (technique, camp) pair. Ignored for other anchor kinds. */
+  campId?: number;
   /** Hide the "on {noun}" chip when the noun is already shown above (a comment
    *  rendered beneath its collapsed technique row). */
   hideAnchorChip?: boolean;
 }) {
-  const query = useThreadsForAnchor(anchorKind, anchorId);
+  const query = useThreadsForAnchor(anchorKind, anchorId, campId);
   if (query.isLoading) return <TileSkeleton />;
   const thread = (query.data ?? []).find((t) => t.id === threadId);
   if (!thread) return null;
