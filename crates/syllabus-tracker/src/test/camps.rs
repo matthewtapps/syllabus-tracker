@@ -2581,4 +2581,90 @@ mod tests {
             "plain camp thread activity must have technique_id IS NULL (got {plain_technique_id:?})"
         );
     }
+
+    /// A `camp_technique` thread whose body is empty (and has no attached video)
+    /// must succeed — the technique anchor IS the content; no body is required.
+    #[rocket::async_test]
+    async fn camp_technique_thread_allows_empty_body() {
+        use sqlx::Row;
+        let db = TestDbBuilder::new()
+            .coach("coach_user", Some("Coach"))
+            .student("student_user", Some("Sam"))
+            .build()
+            .await
+            .unwrap();
+
+        let coach = db.user_id("coach_user").unwrap();
+        let student = db.user_id("student_user").unwrap();
+
+        let camp_id: i64 = sqlx::query_scalar(
+            "INSERT INTO camps (student_id, coach_id, name) VALUES (?, ?, 'Technique Feed Camp') RETURNING id",
+        )
+        .bind(student)
+        .bind(coach)
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+
+        // Insert a global technique (scoped_camp_id IS NULL) so validate_anchor accepts it.
+        let technique_id: i64 = sqlx::query_scalar(
+            "INSERT INTO techniques (name, description) VALUES ('Scissor Sweep', '') RETURNING id",
+        )
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+
+        // Creating a camp_technique thread with empty body must NOT fail.
+        let thread_id = create_thread(
+            &db.pool,
+            NewThread {
+                author_id: coach,
+                anchor: Anchor {
+                    kind: AnchorKind::CampTechnique,
+                    id: technique_id,
+                    video_ts_seconds: None,
+                    pinned_student_id: None,
+                    camp_id: Some(camp_id),
+                },
+                visibility: ThreadVisibility::Private,
+                scope_student_id: Some(student),
+                body: String::new(),
+                attached_video_id: None,
+                attached_video_is_reference: false,
+                attached_video_title: None,
+            },
+        )
+        .await
+        .expect("camp_technique thread with empty body should succeed");
+
+        // The persisted row carries the technique and camp ids.
+        let (got_technique_id, got_camp_id): (i64, i64) = sqlx::query_as(
+            "SELECT technique_id, camp_id FROM threads WHERE id = ?",
+        )
+        .bind(thread_id)
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+
+        assert_eq!(got_technique_id, technique_id);
+        assert_eq!(got_camp_id, camp_id);
+
+        // The activity row carries technique_id and camp context.
+        let act = sqlx::query(
+            "SELECT technique_id, camp_id, context_kind \
+             FROM activity \
+             WHERE verb = 'thread_comment_posted' AND thread_id = ?",
+        )
+        .bind(thread_id)
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+
+        let act_technique_id: i64 = act.try_get("technique_id").unwrap();
+        let act_camp_id: i64 = act.try_get("camp_id").unwrap();
+        let ctx: String = act.try_get("context_kind").unwrap();
+        assert_eq!(act_technique_id, technique_id, "activity must carry technique_id");
+        assert_eq!(act_camp_id, camp_id, "activity must carry camp_id");
+        assert_eq!(ctx, "camp", "activity context_kind must be 'camp'");
+    }
 }

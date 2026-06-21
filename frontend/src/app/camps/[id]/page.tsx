@@ -29,7 +29,6 @@ import {
   useLibraryTechniques,
 } from "@/lib/queries";
 import {
-  useAddCampTechnique,
   useArchiveCamp,
   useCreateCampTechnique,
   useCreateThread,
@@ -46,12 +45,13 @@ import type { VideoAttachment } from "@/components/threads/reply-composer";
 // ---------------------------------------------------------------------------
 
 function PickExistingPanel({
-  campId,
   existingTechniqueIds,
+  onAttach,
   onDone,
 }: {
-  campId: number;
   existingTechniqueIds: Set<number>;
+  /** Posts a camp_technique thread for each selected technique id. */
+  onAttach: (techniqueIds: number[]) => Promise<void>;
   onDone: () => void;
 }) {
   const libraryQuery = useLibraryTechniques();
@@ -59,7 +59,7 @@ function PickExistingPanel({
     () => (libraryQuery.data ?? []).filter((t) => !existingTechniqueIds.has(t.id)),
     [libraryQuery.data, existingTechniqueIds],
   );
-  const addMutation = useAddCampTechnique(campId);
+  const [pending, setPending] = useState(false);
   const [search, setSearch] = useState("");
   const [activeTags, setActiveTags] = useState<string[]>([]);
   const [selected, setSelected] = useState<Set<number>>(new Set());
@@ -126,14 +126,17 @@ function PickExistingPanel({
   async function handleAdd() {
     if (selected.size === 0) return;
     const ids = Array.from(selected);
+    setPending(true);
     try {
-      await Promise.all(ids.map((id) => addMutation.mutateAsync(id)));
+      await onAttach(ids);
       toast.success(
         ids.length === 1 ? "Added 1 technique" : `Added ${ids.length} techniques`,
       );
       onDone();
     } catch {
       toast.error("Failed to add techniques. Please try again.");
+    } finally {
+      setPending(false);
     }
   }
 
@@ -242,17 +245,17 @@ function PickExistingPanel({
         <Button
           variant="outline"
           onClick={onDone}
-          disabled={addMutation.isPending}
+          disabled={pending}
           className="w-full"
         >
           Cancel
         </Button>
         <Button
           onClick={handleAdd}
-          disabled={selected.size === 0 || addMutation.isPending}
+          disabled={selected.size === 0 || pending}
           className="w-full"
         >
-          {addMutation.isPending
+          {pending
             ? "Adding..."
             : selected.size === 0
               ? "Add"
@@ -303,9 +306,12 @@ function ScopeOption({
 
 function CreateNewPanel({
   campId,
+  onAttach,
   onDone,
 }: {
   campId: number;
+  /** Posts a camp_technique thread for a newly-created technique. */
+  onAttach: (techniqueIds: number[]) => Promise<void>;
   onDone: () => void;
 }) {
   const createMutation = useCreateCampTechnique(campId);
@@ -330,7 +336,13 @@ function CreateNewPanel({
     if (hasError || !scope) return;
 
     try {
-      await createMutation.mutateAsync({ name: name.trim(), description: description.trim(), scope });
+      const { id: techniqueId } = await createMutation.mutateAsync({
+        name: name.trim(),
+        description: description.trim(),
+        scope,
+      });
+      // Post a camp_technique thread so the new technique appears in the feed.
+      await onAttach([techniqueId]);
       toast.success("Technique created and added to camp.");
       onDone();
     } catch {
@@ -425,12 +437,15 @@ function AddCampTechniqueDialog({
   campId,
   existingTechniqueIds,
   isCoach,
+  onAttach,
 }: {
   open: boolean;
   onOpenChange: (b: boolean) => void;
   campId: number;
   existingTechniqueIds: Set<number>;
   isCoach: boolean;
+  /** Posts a camp_technique thread for each attached technique id. */
+  onAttach: (techniqueIds: number[]) => Promise<void>;
 }) {
   const [tab, setTab] = useState<"pick" | "create">("pick");
 
@@ -461,8 +476,8 @@ function AddCampTechniqueDialog({
 
             <TabsContent value="pick" className="mt-3 flex min-h-0 flex-1 flex-col">
               <PickExistingPanel
-                campId={campId}
                 existingTechniqueIds={existingTechniqueIds}
+                onAttach={onAttach}
                 onDone={() => onOpenChange(false)}
               />
             </TabsContent>
@@ -470,6 +485,7 @@ function AddCampTechniqueDialog({
             <TabsContent value="create" className="mt-3">
               <CreateNewPanel
                 campId={campId}
+                onAttach={onAttach}
                 onDone={() => onOpenChange(false)}
               />
             </TabsContent>
@@ -477,8 +493,8 @@ function AddCampTechniqueDialog({
         ) : (
           <div className="flex min-h-0 flex-1 flex-col">
             <PickExistingPanel
-              campId={campId}
               existingTechniqueIds={existingTechniqueIds}
+              onAttach={onAttach}
               onDone={() => onOpenChange(false)}
             />
           </div>
@@ -487,6 +503,7 @@ function AddCampTechniqueDialog({
     </Dialog>
   );
 }
+
 
 // ---------------------------------------------------------------------------
 // Infinite feed body
@@ -570,6 +587,28 @@ function CampDetail({
 
   const createThread = useCreateThread();
   const archiveCamp = useArchiveCamp(camp?.student_id ?? 0);
+
+  /**
+   * Posts a camp_technique thread for each technique id. The technique IS the
+   * content, so the body is empty. After all threads are posted, the camp feed
+   * is refreshed so the new cards appear immediately.
+   */
+  async function attachTechniqueAsThread(techniqueIds: number[]) {
+    const studentId = camp!.student_id;
+    await Promise.all(
+      techniqueIds.map((techniqueId) =>
+        createThread.mutateAsync({
+          anchor_kind: "camp_technique",
+          anchor_id: techniqueId,
+          camp_id: campId,
+          visibility: "private",
+          scope_student_id: studentId,
+          body: "",
+        }),
+      ),
+    );
+    invalidateCampFeed();
+  }
 
   const [addPickerOpen, setAddPickerOpen] = useState(false);
   const [renameOpen, setRenameOpen] = useState(false);
@@ -709,6 +748,7 @@ function CampDetail({
         campId={campId}
         existingTechniqueIds={existingTechniqueIds}
         isCoach={isCoach}
+        onAttach={attachTechniqueAsThread}
       />
 
       {/* Chronological activity feed */}

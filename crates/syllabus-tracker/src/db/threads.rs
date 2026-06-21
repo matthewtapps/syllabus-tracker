@@ -262,8 +262,13 @@ pub async fn create_thread(pool: &Pool<Sqlite>, new: NewThread) -> Result<i64, A
             "a broadcast thread must not name a scope student".to_string(),
         ));
     }
-    // A root post needs content: text, a video, or both.
-    if new.body.trim().is_empty() && new.attached_video_id.is_none() {
+    // A root post needs content: text, a video, or both — EXCEPT for
+    // camp_technique threads where the technique IS the content (the anchor
+    // carries the noun; no body or video is required).
+    if new.body.trim().is_empty()
+        && new.attached_video_id.is_none()
+        && new.anchor.kind != AnchorKind::CampTechnique
+    {
         return Err(AppError::Validation("a thread needs text or a video".to_string()));
     }
     validate_anchor(pool, &new.anchor).await?;

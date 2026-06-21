@@ -11,6 +11,7 @@ import {
 import { rowToViewContext } from "@/lib/view-context";
 import type { ActivityRow } from "@/lib/activity-line";
 import { toLibraryShape } from "./to-library-shape";
+import type { RowContext } from "@/components/technique-row/technique-row-context";
 
 /**
  * The embedded technique row for a feed entry. Hydrates from the same cached
@@ -39,6 +40,18 @@ export function TechniqueTile({
         studentId={ctx.student.id}
         syllabusId={ctx.syllabus.id}
         sstId={ctx.sst.id}
+        onExpandedChange={onExpandedChange}
+      />
+    );
+  }
+  // A camp_technique feed row: render the technique card in camp context so the
+  // discussion block uses the camp-scoped thread list, not the global library.
+  if (ctx?.kind === "camp" && row.technique_id != null && row.target_student_id != null) {
+    return (
+      <CampTechniqueTile
+        techniqueId={row.technique_id}
+        campId={ctx.camp.id}
+        studentId={row.target_student_id}
         onExpandedChange={onExpandedChange}
       />
     );
@@ -166,6 +179,62 @@ function LibraryTile({
           value={value}
           isOpen={open === value}
           scrollToVideoId={open === value ? videoId : null}
+        />
+      </Accordion>
+    </TileShell>
+  );
+}
+
+/**
+ * Renders a technique card in camp context from the activity feed. Hydrates the
+ * technique from the shared library list query (same cache as LibraryTile) so
+ * the discussion block opens the camp-scoped thread list rather than the global
+ * library conversation.
+ */
+function CampTechniqueTile({
+  techniqueId,
+  campId,
+  studentId,
+  onExpandedChange,
+}: {
+  techniqueId: number;
+  campId: number;
+  studentId: number;
+  onExpandedChange?: (expanded: boolean) => void;
+}) {
+  const user = useUser();
+  const coach = isCoachOrAdmin(user);
+  const coachLib = useLibraryTechniques();
+  const studentLib = useStudentLibrary(coach ? undefined : user.id);
+  const [open, setOpen] = useState<string>("");
+  const lib = coach ? coachLib : studentLib;
+  if (lib.isLoading) return <TileSkeleton />;
+  const technique = (lib.data ?? []).find((t) => t.id === techniqueId);
+  if (!technique) return null;
+  const value = `camp-tech-${campId}-${technique.id}`;
+  const context: RowContext = {
+    kind: "camp",
+    campId,
+    studentId,
+  };
+  return (
+    <TileShell>
+      <Accordion
+        type="single"
+        collapsible
+        value={open}
+        onValueChange={(v) => {
+          setOpen(v);
+          onExpandedChange?.(v !== "");
+        }}
+      >
+        <TechniqueRow
+          embedded
+          technique={technique}
+          context={context}
+          value={value}
+          isOpen={open === value}
+          scrollToVideoId={null}
         />
       </Accordion>
     </TileShell>
