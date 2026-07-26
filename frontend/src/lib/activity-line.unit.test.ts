@@ -762,7 +762,9 @@ describe("activityLine", () => {
     expect(result.href).toBe("/camps/9");
   });
 
-  test("camp_technique_added routes to the camp page", () => {
+  // The camp owns the technique, so it is addressable under the camp rather
+  // than linking back to the feed the reader may already be looking at.
+  test("camp_technique_added routes to the technique inside the camp", () => {
     const result = activityLine(
       row({
         verb: "camp_technique_added",
@@ -772,7 +774,7 @@ describe("activityLine", () => {
         technique_name: "Armbar",
       }),
     );
-    expect(result.href).toBe("/camps/9");
+    expect(result.href).toBe("/camps/9/techniques/5");
   });
 
   test("camp_archived routes to the camp page", () => {

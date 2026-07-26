@@ -21,7 +21,14 @@ export type ViewContext =
       sst?: EntityRef;
       video?: EntityRef;
     }
-  | { kind: "camp"; camp: EntityRef; video?: EntityRef };
+  | {
+      kind: "camp";
+      camp: EntityRef;
+      /** The camp technique this row acted on. Addresses its own page under the
+       *  camp; omitted for camp-level events (created/archived). */
+      technique?: EntityRef;
+      video?: EntityRef;
+    };
 
 /** The one place deep-link routing lives. Pure. */
 export function viewContextHref(ctx: ViewContext): string {
@@ -41,9 +48,22 @@ export function viewContextHref(ctx: ViewContext): string {
       return `${base}?focus=${refToken(ctx.sst)}${video}`;
     }
     case "camp": {
-      // No focus token: the camp page is its activity feed, with no rows to
-      // expand, and `focus=camp:<id>` on `/camps/<id>` said nothing anyway.
-      return ctx.video ? `/camps/${ctx.camp.id}?video=${ctx.video.id}` : `/camps/${ctx.camp.id}`;
+      // A camp OWNS its content rather than projecting it from elsewhere, so
+      // each item is addressable under the camp. Without this, a camp tile
+      // linked to /camps/<id>, which on a camp page is the page you are
+      // already reading, and nothing could be opened.
+      if (ctx.technique) {
+        // A camp technique's video lives in that technique's video list, so the
+        // technique page is the surface that owns it; `?video=` scrolls to it
+        // there exactly as it does on a syllabus or library row.
+        const video = ctx.video ? `?video=${ctx.video.id}` : "";
+        return `/camps/${ctx.camp.id}/techniques/${ctx.technique.id}${video}`;
+      }
+      // A camp-owned video with no technique row to sit in plays in the feed
+      // itself, so `?video=` scrolls to its tile there.
+      if (ctx.video) return `/camps/${ctx.camp.id}?video=${ctx.video.id}`;
+      // Camp-level events (created/archived) name the camp itself.
+      return `/camps/${ctx.camp.id}`;
     }
   }
 }
@@ -159,6 +179,7 @@ export function rowToViewContext(row: ViewContextRow): ViewContext | null {
     return {
       kind: "camp",
       camp: { type: "camp", id: row.camp_id },
+      technique: row.technique_id != null ? { type: "technique", id: row.technique_id } : undefined,
       video: row.video_id != null ? { type: "video", id: row.video_id } : undefined,
     };
   }
