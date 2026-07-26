@@ -84,9 +84,11 @@ describe("camp_technique tile rendering", () => {
   afterEach(() => fetchSpy?.mockRestore());
 
   test("a camp_technique row renders as a technique card, not a bare comment", async () => {
-    // Stub the library endpoint so TechniqueTile can hydrate the technique.
+    // Stub the camp's technique list, which is what a camp tile hydrates from
+    // (the library list omits camp-scoped techniques).
     fetchSpy = vi.spyOn(window, "fetch").mockImplementation(
       stubFetch([
+        { match: "/camps/3/techniques", json: { techniques: [technique()] } },
         { match: "/api/techniques", json: [technique()] },
         // threads endpoint may be called by the discussion block once expanded
         { match: "/api/threads", json: { threads: [] } },

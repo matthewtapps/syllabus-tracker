@@ -93,6 +93,7 @@ export const qk = {
     ["camps", "student", studentId] as const,
   camp: (id: number) => ["camps", id] as const,
   campVideos: (campId: number) => ["camps", campId, "videos"] as const,
+  campTechniques: (campId: number) => ["camps", campId, "techniques"] as const,
   campFeed: (campId: number, limit: number) =>
     ["camps", campId, "feed", limit] as const,
   campSearch: (campId: number, q: string, kind?: string) =>

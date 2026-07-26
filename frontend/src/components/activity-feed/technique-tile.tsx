@@ -3,6 +3,7 @@ import { TechniqueRowTeaser } from "@/components/technique-row";
 import { useUser } from "@/lib/current-user-context";
 import { isCoachOrAdmin } from "@/lib/api";
 import {
+  useCampTechniques,
   useLibraryTechniques,
   useStudentLibrary,
   useStudentSyllabusTechniques,
@@ -146,9 +147,10 @@ function LibraryTile({
 }
 
 /**
- * A technique card in camp context. Hydrates from the same shared library list
- * query LibraryTile uses, so the two share a cache entry; only the row context
- * differs, which is what scopes the discussion to the camp.
+ * A technique card in camp context. Hydrates from the camp's own technique list
+ * rather than the library, because the library filters to `is_global` and a
+ * camp-scoped technique created inside the camp is absent from it. Shares the
+ * cache entry with the camp's technique page, which reads the same list.
  */
 function CampTechniqueTile({
   techniqueId,
@@ -163,13 +165,9 @@ function CampTechniqueTile({
   href: string;
   focusThread: FocusThread | null;
 }) {
-  const user = useUser();
-  const coach = isCoachOrAdmin(user);
-  const coachLib = useLibraryTechniques();
-  const studentLib = useStudentLibrary(coach ? undefined : user.id);
-  const lib = coach ? coachLib : studentLib;
-  if (lib.isLoading) return <TileSkeleton />;
-  const technique = (lib.data ?? []).find((t) => t.id === techniqueId);
+  const techniques = useCampTechniques(campId);
+  if (techniques.isLoading) return <TileSkeleton />;
+  const technique = (techniques.data ?? []).find((t) => t.id === techniqueId);
   if (!technique) return null;
   return (
     <TeaserTile

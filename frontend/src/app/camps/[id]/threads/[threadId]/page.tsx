@@ -1,7 +1,7 @@
 import { Link, Navigate, useParams } from "react-router-dom";
 import { isCoachOrAdmin } from "@/lib/api";
 import { useUser } from "@/lib/current-user-context";
-import { useCamp, useThreadsForAnchor } from "@/lib/queries";
+import { useCamp, useThread } from "@/lib/queries";
 import { ThreadView } from "@/components/threads/thread-view";
 
 /**
@@ -29,11 +29,10 @@ function CampThreadDetail({ campId, threadId }: { campId: number; threadId: numb
   const viewer = useUser();
   const coach = isCoachOrAdmin(viewer);
   const campQuery = useCamp(campId);
-  // The camp's thread list is the same cached query the feed's tiles read, so
-  // the thread is usually already in cache when a teaser is tapped. The list is
-  // camp-scoped and the API filters it by visibility, so a thread absent from it
-  // is one this viewer may not read.
-  const threadsQuery = useThreadsForAnchor("camp", campId);
+  // Fetched by id rather than by listing the camp's whole anchor: this page
+  // addresses one thread, and the endpoint applies the same visibility rule the
+  // list does, so an unreadable thread 404s instead of leaking.
+  const threadQuery = useThread(threadId);
 
   const camp = campQuery.data;
 
@@ -45,9 +44,9 @@ function CampThreadDetail({ campId, threadId }: { campId: number; threadId: numb
     return <Navigate to="/dashboard" replace />;
   }
 
-  if (threadsQuery.isLoading) return <ThreadSkeleton />;
+  if (threadQuery.isLoading) return <ThreadSkeleton />;
 
-  const thread = (threadsQuery.data ?? []).find((t) => t.id === threadId);
+  const thread = threadQuery.data;
   if (!thread) {
     return (
       <div className="container mx-auto space-y-3 px-4 py-6 sm:px-6 md:py-8">

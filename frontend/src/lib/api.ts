@@ -2014,6 +2014,13 @@ export async function browseVideos(params: {
   return res.json() as Promise<BrowseResult>;
 }
 
+/** One thread with its comments. 404s when the viewer may not read it. */
+export async function getThread(threadId: number): Promise<ThreadView> {
+  const res = await fetch(`/api/threads/${threadId}`, { credentials: "include" });
+  if (!res.ok) throw new Error(`Failed to load thread: ${res.statusText}`);
+  return (await res.json()) as ThreadView;
+}
+
 export async function listThreads(
   anchorKind: AnchorKind,
   anchorId: number,
@@ -2260,6 +2267,20 @@ export async function searchCamp(
   });
   if (!res.ok) throw res;
   return (await res.json()) as CampSearchResult;
+}
+
+/**
+ * The techniques attached to a camp, in the library row shape.
+ *
+ * Not the library list: that one filters to `is_global`, so a camp-scoped
+ * technique created inside the camp is missing from it.
+ */
+export async function getCampTechniques(campId: number): Promise<LibraryTechniqueRow[]> {
+  const res = await fetch(`/api/camps/${campId}/techniques`, {
+    credentials: "include",
+  });
+  if (!res.ok) throw res;
+  return ((await res.json()) as { techniques: LibraryTechniqueRow[] }).techniques;
 }
 
 export async function getCampVideos(campId: number): Promise<Video[]> {

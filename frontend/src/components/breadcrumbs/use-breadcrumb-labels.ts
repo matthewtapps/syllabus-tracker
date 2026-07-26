@@ -1,13 +1,10 @@
 import {
   useAllUsers,
   useCamp,
-  useLibraryTechniques,
-  useStudentLibrary,
+  useCampTechniques,
   useSyllabi,
   useStudentSyllabi,
 } from "@/lib/queries";
-import { isCoachOrAdmin } from "@/lib/api";
-import { useUser } from "@/lib/current-user-context";
 import type { DynamicKey, RawCrumb } from "./breadcrumb-config";
 
 /**
@@ -75,18 +72,16 @@ export function useBreadcrumbLabels(chain: RawCrumb[]): (crumb: RawCrumb) => str
   const campName = campQuery.data?.name ?? "Camp";
 
   // --- campTechniqueName: the technique a camp item route addresses. Read from
-  // the same cached library list the camp surfaces use, so this shares their
-  // cache entry rather than fetching per crumb.
-  const user = useUser();
-  const coach = isCoachOrAdmin(user);
+  // the camp's own technique list, the same query the tile and the page use, so
+  // this shares their cache entry and resolves camp-scoped techniques too.
   const validTechniqueId =
     typeof techniqueId === "number" && Number.isFinite(techniqueId) ? techniqueId : undefined;
-  const coachLibQuery = useLibraryTechniques();
-  const studentLibQuery = useStudentLibrary(coach ? undefined : user.id);
-  const libTechniques = (coach ? coachLibQuery.data : studentLibQuery.data) ?? [];
+  const campTechniquesQuery = useCampTechniques(
+    validTechniqueId !== undefined ? campId : undefined,
+  );
   const campTechniqueName =
     (validTechniqueId !== undefined
-      ? libTechniques.find((t) => t.id === validTechniqueId)?.name
+      ? (campTechniquesQuery.data ?? []).find((t) => t.id === validTechniqueId)?.name
       : undefined) ?? "Technique";
 
   const resolvers: Record<DynamicKey, string> = {

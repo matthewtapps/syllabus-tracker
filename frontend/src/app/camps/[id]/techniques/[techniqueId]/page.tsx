@@ -1,7 +1,7 @@
 import { Link, Navigate, useParams } from "react-router-dom";
 import { isCoachOrAdmin } from "@/lib/api";
 import { useUser } from "@/lib/current-user-context";
-import { useCamp, useLibraryTechniques, useStudentLibrary } from "@/lib/queries";
+import { useCamp, useCampTechniques } from "@/lib/queries";
 import { useListUrlState } from "@/lib/use-list-url-state";
 import { TechniqueRowDetail } from "@/components/technique-row";
 
@@ -37,11 +37,10 @@ function CampTechniqueDetail({
   const viewer = useUser();
   const coach = isCoachOrAdmin(viewer);
   const campQuery = useCamp(campId);
-  // Hydrated from the same cached library list the camp feed's tiles use, so
-  // arriving here off a tile costs no extra fetch.
-  const coachLib = useLibraryTechniques();
-  const studentLib = useStudentLibrary(coach ? undefined : viewer.id);
-  const lib = coach ? coachLib : studentLib;
+  // The camp's own technique list, which the feed tiles read too, so arriving
+  // here off a tile costs no extra fetch. It carries camp-scoped techniques the
+  // library list omits.
+  const techniquesQuery = useCampTechniques(campId);
 
   // `?video=` and `?t=` ride in from a feed tile: scroll to that clip in the
   // technique's video list and resume it where the feed player left off.
@@ -57,18 +56,15 @@ function CampTechniqueDetail({
     return <Navigate to="/dashboard" replace />;
   }
 
-  if (lib.isLoading) return <DetailSkeleton />;
+  if (techniquesQuery.isLoading) return <DetailSkeleton />;
 
-  const technique = (lib.data ?? []).find((t) => t.id === techniqueId);
-  // A camp-scoped technique (is_global = 0) is absent from the library list, so
-  // it cannot be hydrated here yet. Say so rather than render an empty page.
+  const technique = (techniquesQuery.data ?? []).find((t) => t.id === techniqueId);
   if (!technique) {
     return (
       <div className="container mx-auto space-y-3 px-4 py-6 sm:px-6 md:py-8">
         <h1 className="text-base font-semibold">Technique unavailable</h1>
         <p className="text-sm text-muted-foreground">
-          This technique could not be loaded. It may have been removed, or it is
-          scoped to the camp rather than the shared library.
+          This technique is not attached to this camp. It may have been removed.
         </p>
         <Link to={`/camps/${campId}`} className="text-sm text-primary underline">
           Back to {camp.name}

@@ -1367,8 +1367,11 @@ export function useCreateComment(
     onError: (_err, _v, ctx) => {
       if (ctx?.previous) qc.setQueryData(key, ctx.previous);
     },
-    onSettled: () => {
+    onSettled: (_data, _err, v) => {
       qc.invalidateQueries({ queryKey: key });
+      // A surface reading this thread by id (a camp's thread page) holds a
+      // separate cache entry that the anchor list's key does not cover.
+      qc.invalidateQueries({ queryKey: qk.thread(v.threadId) });
       if (anchorKind === "video_timestamp" || anchorKind === "video") {
         qc.invalidateQueries({ queryKey: qk.threads("video", anchorId) });
       }
@@ -1386,8 +1389,9 @@ export function useDeleteThread(
   return useMutation({
     mutationFn: async (threadId: number) =>
       unwrap(await deleteThread(threadId)),
-    onSuccess: () => {
+    onSuccess: (_data, threadId) => {
       qc.invalidateQueries({ queryKey: qk.threads(anchorKind, anchorId, keyCampId) });
+      qc.invalidateQueries({ queryKey: qk.thread(threadId) });
       if (anchorKind === "video_timestamp" || anchorKind === "video") {
         qc.invalidateQueries({ queryKey: qk.threads("video", anchorId) });
       }
@@ -1407,6 +1411,9 @@ export function useDeleteComment(
       unwrap(await deleteComment(commentId)),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: qk.threads(anchorKind, anchorId, keyCampId) });
+      // Only the comment id is known here, so refresh every by-id thread entry
+      // rather than guess which one held it.
+      qc.invalidateQueries({ queryKey: ["thread"] });
       if (anchorKind === "video_timestamp" || anchorKind === "video") {
         qc.invalidateQueries({ queryKey: qk.threads("video", anchorId) });
       }

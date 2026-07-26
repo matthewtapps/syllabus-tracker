@@ -23,6 +23,7 @@ import {
 import { useUser } from "@/lib/current-user-context";
 import { isCoachOrAdmin } from "@/lib/api";
 import { useQueryClient } from "@tanstack/react-query";
+import { qk } from "@/lib/query-keys";
 import {
   useCamp,
   useInfiniteCampFeed,
@@ -639,6 +640,9 @@ function CampDetail({
       ),
     );
     invalidateCampFeed();
+    // The attach IS the membership, so the camp's technique list changed too;
+    // the new card hydrates from it.
+    qc.invalidateQueries({ queryKey: qk.campTechniques(campId) });
   }
 
   const [addPickerOpen, setAddPickerOpen] = useState(false);

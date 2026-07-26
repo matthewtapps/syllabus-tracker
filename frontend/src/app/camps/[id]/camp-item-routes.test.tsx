@@ -62,17 +62,28 @@ function thread(overrides: Record<string, unknown> = {}) {
   };
 }
 
-/** Records every threads URL requested so a test can assert the anchor scope. */
-function stubFetch(threadsJson: unknown, threadUrls: string[]) {
+/**
+ * Records every threads URL requested so a test can assert the anchor scope.
+ *
+ * `/api/threads/<id>` returns a bare thread and `/api/threads?anchor…` returns a
+ * list, so the two are matched apart rather than by a shared prefix.
+ */
+function stubFetch(
+  handlers: { threadList?: unknown; thread?: unknown },
+  threadUrls: string[],
+) {
   return vi.fn().mockImplementation((url: string) => {
     let json: unknown = {};
-    if (url.includes("/api/threads")) {
+    if (/\/api\/threads\/\d+/.test(url)) {
       threadUrls.push(url);
-      json = threadsJson;
+      json = handlers.thread ?? {};
+    } else if (url.includes("/api/threads")) {
+      threadUrls.push(url);
+      json = handlers.threadList ?? { threads: [] };
+    } else if (url.includes("/techniques")) {
+      json = { techniques: [technique()] };
     } else if (url.includes("/api/camps/")) {
       json = CAMP;
-    } else if (url.includes("/api/techniques")) {
-      json = [technique()];
     }
     return Promise.resolve(
       new Response(JSON.stringify(json), {
@@ -89,9 +100,12 @@ describe("camp technique route", () => {
 
   test("renders the technique and reads the camp-scoped conversation", async () => {
     const threadUrls: string[] = [];
-    fetchSpy = vi
-      .spyOn(window, "fetch")
-      .mockImplementation(stubFetch({ threads: [thread({ anchor_kind: "camp_technique" })] }, threadUrls));
+    fetchSpy = vi.spyOn(window, "fetch").mockImplementation(
+      stubFetch(
+        { threadList: { threads: [thread({ anchor_kind: "camp_technique" })] } },
+        threadUrls,
+      ),
+    );
 
     const { default: CampTechniquePage } = await import(
       "./techniques/[techniqueId]/page"
@@ -132,25 +146,23 @@ describe("camp thread route", () => {
     fetchSpy = vi.spyOn(window, "fetch").mockImplementation(
       stubFetch(
         {
-          threads: [
-            thread({
-              comments: [
-                {
-                  id: 500,
-                  thread_id: 99,
-                  parent_comment_id: null,
-                  author_id: 4,
-                  author_name: "Sam Khan",
-                  body: "Felt way better this round.",
-                  video: null,
-                  video_ts_seconds: null,
-                  created_at: new Date().toISOString(),
-                  edited_at: null,
-                  deleted_at: null,
-                },
-              ],
-            }),
-          ],
+          thread: thread({
+            comments: [
+              {
+                id: 500,
+                thread_id: 99,
+                parent_comment_id: null,
+                author_id: 4,
+                author_name: "Sam Khan",
+                body: "Felt way better this round.",
+                video: null,
+                video_ts_seconds: null,
+                created_at: new Date().toISOString(),
+                edited_at: null,
+                deleted_at: null,
+              },
+            ],
+          }),
         },
         threadUrls,
       ),
@@ -173,5 +185,9 @@ describe("camp thread route", () => {
     });
     expect(screen.getByText(/Felt way better this round/)).toBeInTheDocument();
     expect(screen.getByText(/In X-guard Camp/)).toBeInTheDocument();
+
+    // Fetched by id, not by listing the camp's whole anchor.
+    expect(threadUrls.some((u) => /\/api\/threads\/99/.test(u))).toBe(true);
+    expect(threadUrls.every((u) => !u.includes("anchor_kind=camp&"))).toBe(true);
   });
 });

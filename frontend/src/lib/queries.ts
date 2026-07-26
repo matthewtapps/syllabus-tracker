@@ -8,6 +8,7 @@ import {
   getDashboardActivityFeed,
   getCamp,
   getCampVideos,
+  getCampTechniques,
   getCampsForStudent,
   searchCamp,
   getStudentActivityFeed,
@@ -40,6 +41,7 @@ import {
   listAttempts,
   listVideos,
   listThreads,
+  getThread,
 } from "./api";
 import type { AnchorKind } from "./api";
 import type { ActivityRow } from "./activity-line";
@@ -489,6 +491,18 @@ export function useCamp(id: number | undefined) {
   });
 }
 
+/**
+ * The camp's attached techniques. Separate from the library list because a
+ * camp-scoped technique (is_global = 0) never appears there, so camp surfaces
+ * that read the library alone cannot hydrate one.
+ */
+export function useCampTechniques(campId: number | undefined) {
+  return useQuery({
+    queryKey: qk.campTechniques(campId ?? 0),
+    queryFn: whenId(campId, getCampTechniques),
+  });
+}
+
 export function useCampVideos(campId: number | undefined) {
   return useQuery({
     queryKey: qk.campVideos(campId ?? 0),
@@ -518,6 +532,26 @@ export function useCampSearch(
 }
 
 // ---- Threads ----
+
+/**
+ * One thread by id, for a surface addressing a single thread by URL (a camp's
+ * thread page). Polls a processing clip to playable on the same rule the anchor
+ * list uses, so a video reply behaves the same whichever surface shows it.
+ */
+export function useThread(threadId: number | undefined) {
+  return useQuery({
+    queryKey: qk.thread(threadId ?? 0),
+    queryFn: whenId(threadId, getThread),
+    refetchInterval: (query) => {
+      const data = query.state.data;
+      if (!data) return false;
+      const processing =
+        data.video?.processing_status === "processing" ||
+        data.comments.some((c) => c.video?.processing_status === "processing");
+      return processing ? 1500 : false;
+    },
+  });
+}
 
 export function useThreadsForAnchor(
   anchorKind: AnchorKind,
