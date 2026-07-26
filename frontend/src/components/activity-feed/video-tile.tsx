@@ -1,7 +1,9 @@
+import { useEffect, useRef } from "react";
 import { useUser } from "@/lib/current-user-context";
 import { isCoachOrAdmin } from "@/lib/api";
 import { useTechniqueVideos } from "@/lib/queries";
 import { feedTileHref } from "@/lib/view-context";
+import { useListUrlState } from "@/lib/use-list-url-state";
 import { VideoReviewPanel } from "@/components/videos/review/video-review-panel";
 import { useWatchTracker, type WatchContext } from "@/components/videos/useWatchTracker";
 import type { VideoThreadSurface } from "@/lib/thread-visibility";
@@ -49,6 +51,21 @@ export function VideoTile({
       : undefined;
   const watchEvents = useWatchTracker(subject.videoId, watchContext);
 
+  // A feed tile is the destination for a `?video=<id>&t=<seconds>` link when the
+  // video lives in a feed rather than in a technique row's video list, which is
+  // where a camp's videos now live. Scroll to it and start its player where the
+  // viewer left off; the seek itself is once-only, inside the panel.
+  const { videoId: urlVideoId, resumeSeconds } = useListUrlState();
+  const isResumeTarget =
+    urlVideoId === subject.videoId && resumeSeconds != null && resumeSeconds > 0;
+  const tileRef = useRef<HTMLDivElement>(null);
+  const scrolledRef = useRef(false);
+  useEffect(() => {
+    if (!isResumeTarget || scrolledRef.current) return;
+    scrolledRef.current = true;
+    tileRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [isResumeTarget]);
+
   // A video with no resolvable technique can't be located in a list; bail to a
   // header-only entry rather than guessing.
   if (subject.techniqueId == null) return null;
@@ -64,16 +81,19 @@ export function VideoTile({
       : { kind: "library" };
 
   return (
-    <TileShell>
-      <VideoReviewPanel
-        video={video}
-        surface={surface}
-        watchEvents={watchEvents}
-        feedPresentation={{
-          focusThreadId: subject.focusThreadId,
-          href: feedTileHref(ctx, subject.techniqueId),
-        }}
-      />
-    </TileShell>
+    <div ref={tileRef}>
+      <TileShell>
+        <VideoReviewPanel
+          video={video}
+          surface={surface}
+          watchEvents={watchEvents}
+          startAtSeconds={isResumeTarget ? resumeSeconds : null}
+          feedPresentation={{
+            focusThreadId: subject.focusThreadId,
+            href: feedTileHref(ctx, subject.techniqueId),
+          }}
+        />
+      </TileShell>
+    </div>
   );
 }
