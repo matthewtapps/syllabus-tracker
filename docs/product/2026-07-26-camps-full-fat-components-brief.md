@@ -115,30 +115,75 @@ honest for device testing in the meantime.
   is clamped. Facebook's own answer is full-but-bounded: clamped body with
   "See more", latest two comments with "View all N".
 
+## Decided 2026-07-26
+
+- **A dashboard / activity teaser lands anchored on the camp page**, not on a
+  per-component route. The item routes from `f4b205b` are demoted to permalinks.
+- **Every kind of content that can be a base component in a camp gets its own
+  full-fat camp component.** The set is not assumed; see the audit below.
+- **Camp created and archived are activity-feed events only.** They do not appear
+  as items on the camp itself.
+- **A standalone camp technique keeps today's camp block visibility**
+  (description / tags / videos / discussion, plus edit-definition for a coach).
+  No status, no attempts.
+- **Any activity on a component is an update for ordering.** Not comments only.
+
+## Audit: what can be a base component in a camp
+
+Established by reading the code on 2026-07-26.
+
+| Kind | How it is created | Rendered today? |
+| --- | --- | --- |
+| **Technique** | "Attach technique" on the camp: pick existing, or create global / camp-scoped. Posts a `camp_technique` thread, which IS the membership. | Yes, as `TechniqueTile`. |
+| **Discussion (note)** | `CampComposer`, text with an optional attached video. Posts a `camp` thread. | Yes, as `ThreadTile`. |
+| **Camp-owned video** | `POST /api/camps/:id/videos/upload`, giving `VideoParent::Camp`. | **No. Orphaned.** |
+
+The camp-owned video kind is fully alive in the backend (`list_videos_for_camp`,
+`GET /api/camps/:id/videos`, the camp visibility override route) and has a live
+`setCampVideoVisibility` frontend mutation, but:
+
+- `CampVideoList` has **zero call sites** since #101 removed it from the page.
+- A camp-owned video has `technique_id = NULL`, so `VideoTile` returns null
+  (`video-tile.tsx:71`) and its `video_added` activity row renders as a bare
+  header line with no tile.
+
+So a camp video uploaded directly is currently invisible in the product. It is
+the clearest example of a missing base component.
+
+**Sub-components**, which belong to a parent component rather than standing alone:
+
+- a video attached to a camp note's root post (reparented to `VideoParent::Thread`,
+  or *referenced*, in which case it keeps its original parent and the same clip
+  also lives in the library)
+- a video attached to a comment (a video reply, `thread_comments.video_id`)
+- timestamped comments on a video (`video_ts_seconds`)
+- the videos in a camp technique's `VideosBlock`
+
+### The taxonomy question this raises
+
+A note carrying a video is one post, Facebook-style, not a note plus a video
+component. If that holds, then a **camp-owned video is the odd one out**: the same
+user intent ("put this clip in the camp") produces two different shapes depending
+on which button was pressed.
+
+Worth considering as a simplification: make every camp video arrive as a
+discussion post carrying a video, and retire `VideoParent::Camp` as a user-facing
+kind. That collapses three base kinds to two, and it deletes the orphan rather
+than building a surface for it. Needs a decision on the existing prod rows.
+
 ## Open questions for the spec session
 
 1. **What is "full-fat" exactly, per component type?** Fully expanded, or
    full-but-bounded with progressive disclosure of overflow (clamped description,
    video strip, latest two replies)? Interaction should be inline either way; the
    question is only what is visible before you ask for more. Recommendation:
-   full-but-bounded.
-2. **Where does a dashboard / activity teaser land?** The camp page scrolled and
-   anchored to the component (`/camps/:id?focus=...`), or the per-component route
-   from `f4b205b`? The new model says the camp view *is* the full view, which
-   favours the anchored camp page and demotes the item routes to permalinks.
-3. **Is the component set closed at technique, discussion, video?** Anything else
-   postable into a camp?
-4. **Do camp-level events still appear as items** (camp created, archived,
-   technique added), or does the camp view show only components, with events
-   living in the activity feed? Recommendation: components only.
-5. **Which affordances does a standalone camp technique get?** Camp block
-   visibility today is description / tags / videos / discussion, plus
-   edit-definition for a coach. Does a camp technique also get status and
-   attempts, and does it get camp-specific chrome (remove from camp, pin)?
-6. **Where does a new component land**, given ordering is by last update? Top,
+   full-but-bounded. Decide on device.
+2. **Is a note-with-video one component or two?** See the taxonomy question above,
+   and whether `VideoParent::Camp` survives.
+3. **Where does a new component land**, given ordering is by last update? Top,
    presumably, but confirm against the composer's position.
-7. **What bumps a component?** Any comment, or also an edit, a video add, a
-   status change?
+4. **Does an update by the viewer themselves bump a component?** "Any activity"
+   ordering means your own reply re-sorts the page under you.
 
 ## Suggested shape of the session
 
