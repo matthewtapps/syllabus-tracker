@@ -72,18 +72,22 @@ sheet:
   **page** body. The sheet's defect was that it could not carry page context; a
   route carries it by definition, and `AppBreadcrumbs` now renders the full
   Students > Sam > Camps > X-guard > Scissor Sweep chain.
-- No new endpoints. Routes are keyed by anchor, not by activity row id, so
-  `useThreadsForAnchor("camp_technique", techniqueId, campId)` and
-  `useThreadsForAnchor("camp", campId)` already serve them. This also keeps
-  content identity out of the activity table, which records events, not content.
+- Routes are keyed by anchor, not by activity row id, which keeps content
+  identity out of the activity table (it records events, not content).
 - A third route for camp videos was considered and dropped: camp videos hang off
   a thread or a technique's video list, both already covered, and
   `list_videos_for_camp` only returns camp-parented videos.
 
-Known gap, pre-existing: a camp-**scoped** technique (`is_global = 0`) is absent
-from the library list query (`db/techniques.rs:56`), so neither the feed tile nor
-the new technique page can hydrate it. The page says so instead of rendering
-blank.
+Two endpoints came with it:
+
+| Endpoint | Why |
+| --- | --- |
+| `GET /api/camps/:id/techniques` | The library list filters to `is_global = 1`, so a camp-**scoped** technique (created inside the camp) was absent from it and no camp surface could hydrate one. Reads membership from `camp_technique` threads. Same one query as the library list, with the scope as its only parameter. |
+| `GET /api/threads/:id` | The thread page addresses one thread, so it should not list a whole anchor and search it. Applies `get_thread`'s visibility rule, so an unreadable thread 404s. |
+
+The camp feed tile, the camp technique page and its breadcrumb all read
+`useCampTechniques`, so they share one cache entry and a camp-scoped technique
+now renders everywhere a global one does.
 
 Separately, attaching a technique to a camp posts a `camp_technique` thread with
 an empty body, which emitted `thread_comment_posted` and captioned as
