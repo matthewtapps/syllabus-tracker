@@ -16,7 +16,6 @@ import { RequireAdmin, RequireAuth, RequireCoach } from './components/route-guar
 import { TelemetryProvider } from './context/telemetry';
 import { CapabilitiesProvider } from './context/capabilities';
 import { CurrentUserProvider } from './lib/current-user';
-import { campsUiEnabled } from './lib/features';
 import { ConfirmProvider } from './components/confirm-dialog';
 import { useCapabilities, useCurrentUser } from './lib/queries';
 import { usePointerEventsWatchdog } from './lib/use-pointer-events-watchdog';
@@ -360,31 +359,20 @@ function AuthedRoutes() {
           </RequireAuth>
         }
       />
-      {/* Camps: in-progress epic, gated off on prod (campsUiEnabled). When
-          disabled the routes redirect to the dashboard so direct navigation
-          can't reach the half-built surfaces. */}
       <Route
         path="/student/:id/camps"
         element={
-          campsUiEnabled ? (
-            <RequireAuth>
-              <StudentCampsPage />
-            </RequireAuth>
-          ) : (
-            <Navigate to="/dashboard" replace />
-          )
+          <RequireAuth>
+            <StudentCampsPage />
+          </RequireAuth>
         }
       />
       <Route
         path="/camps/:id"
         element={
-          campsUiEnabled ? (
-            <RequireAuth>
-              <CampDetailPage />
-            </RequireAuth>
-          ) : (
-            <Navigate to="/dashboard" replace />
-          )
+          <RequireAuth>
+            <CampDetailPage />
+          </RequireAuth>
         }
       />
       <Route path="/" element={<Navigate to="/dashboard" replace />} />

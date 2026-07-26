@@ -8,10 +8,9 @@ import { activityLine, type ActivityRow, type ActivityScope } from "@/lib/activi
 import { statusToDotClass } from "@/lib/status";
 import { coalesceActivity } from "@/lib/activity-coalesce";
 import { suppressHideUnhide } from "@/lib/activity-hide-unhide";
-import { activitySurface, isGatedEpicRow } from "@/lib/view-context";
+import { activitySurface } from "@/lib/view-context";
 import { formatAbsolute, formatRelativeShort } from "@/lib/dates";
 import { cn } from "@/lib/utils";
-import { campsUiEnabled } from "@/lib/features";
 import { verbIconMeta } from "@/components/activity-feed/verb-icon";
 
 interface ActivityFeedListProps {
@@ -213,14 +212,8 @@ export function ActivityFeedList({
     );
   }
 
-  // Drop hide/unhide curation noise (net-visibility rule) before gating.
-  const deNoised = suppressHideUnhide(rows);
-
-  // Camps are gated off on prod (campsUiEnabled). Drop their activity rows so
-  // the feed doesn't surface links into hidden surfaces.
-  const visibleRows = campsUiEnabled
-    ? deNoised
-    : deNoised.filter((row) => !isGatedEpicRow(row));
+  // Drop hide/unhide curation noise (net-visibility rule).
+  const visibleRows = suppressHideUnhide(rows);
 
   if (visibleRows.length === 0) {
     return <p className="px-6 py-8 text-center text-sm text-muted-foreground">{emptyText}</p>;

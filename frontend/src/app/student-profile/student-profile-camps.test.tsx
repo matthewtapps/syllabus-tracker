@@ -1,14 +1,11 @@
 /**
- * Student profile "Camps" section (browser project). Mocks campsUiEnabled on so
- * the gated section renders, stubs the camps endpoint, and asserts the card
- * renders and links to the camp, and that no standalone "Matches" link exists.
+ * Student profile "Camps" section (browser project). Stubs the camps endpoint
+ * and asserts the card renders and links to the camp, and that no standalone
+ * "Matches" link exists.
  */
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { screen } from "@testing-library/react";
 import { Route, Routes } from "react-router-dom";
-
-vi.mock("@/lib/features", () => ({ campsUiEnabled: true }));
-
 import StudentProfilePage from "./page";
 import { buildUser, renderWithProviders } from "@/test/render";
 
