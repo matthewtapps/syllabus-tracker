@@ -1326,8 +1326,17 @@ export function useCreateComment(
     // immediately; the thread query polls it to playable. Reconciled on settle.
     onMutate: async (v) => {
       if (v.videoId == null || v.authorId == null) return;
-      await qc.cancelQueries({ queryKey: key });
+      // Both cache shapes hold this thread: the anchor's list, and the single
+      // thread a by-id surface reads (a camp's thread page). Write the optimistic
+      // comment into both, or the reply appears instantly on one surface and only
+      // after a refetch on the other.
+      const byIdKey = qk.thread(v.threadId);
+      await Promise.all([
+        qc.cancelQueries({ queryKey: key }),
+        qc.cancelQueries({ queryKey: byIdKey }),
+      ]);
       const previous = qc.getQueryData<ThreadView[]>(key);
+      const previousById = qc.getQueryData<ThreadView>(byIdKey);
       const now = new Date().toISOString();
       const tempId = -Date.now();
       const optimistic: CommentView = {
@@ -1362,10 +1371,18 @@ export function useCreateComment(
           t.id === v.threadId ? { ...t, comments: [...t.comments, optimistic] } : t,
         ),
       );
-      return { previous };
+      qc.setQueryData<ThreadView>(byIdKey, (prev) =>
+        prev && prev.id === v.threadId
+          ? { ...prev, comments: [...prev.comments, optimistic] }
+          : prev,
+      );
+      return { previous, previousById, byIdKey };
     },
     onError: (_err, _v, ctx) => {
       if (ctx?.previous) qc.setQueryData(key, ctx.previous);
+      if (ctx?.previousById && ctx.byIdKey) {
+        qc.setQueryData(ctx.byIdKey, ctx.previousById);
+      }
     },
     onSettled: (_data, _err, v) => {
       qc.invalidateQueries({ queryKey: key });
