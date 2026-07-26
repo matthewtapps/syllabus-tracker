@@ -177,6 +177,27 @@ pub async fn api_list_threads(
     Ok(Json(ThreadListResponse { threads }))
 }
 
+/// One thread by id, with its comments.
+///
+/// A surface that addresses a single thread by URL (a camp's thread page) would
+/// otherwise have to list a whole anchor's threads and find one in it. Visibility
+/// is `get_thread`'s, the same rule the list and the comment routes apply, so an
+/// unreadable thread is a 404 rather than a leak.
+#[instrument(skip(pool, user))]
+#[get("/threads/<id>")]
+pub async fn api_get_thread(
+    id: i64,
+    user: User,
+    pool: &State<Pool<Sqlite>>,
+) -> Result<Json<ThreadView>, Status> {
+    let pool = pool.inner();
+    let thread = get_thread(pool, id, viewer_for(&user))
+        .await
+        .map_err(|_| Status::InternalServerError)?
+        .ok_or(Status::NotFound)?;
+    Ok(Json(thread))
+}
+
 #[instrument(skip(req, pool, user))]
 #[post("/threads/<id>/comments", data = "<req>")]
 pub async fn api_create_comment(

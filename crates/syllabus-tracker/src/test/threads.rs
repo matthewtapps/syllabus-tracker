@@ -1895,6 +1895,48 @@ mod tests {
         assert!(camp_ids.contains(&thread_id), "camp_technique thread missing from its own camp list");
     }
 
+    /// GET /api/threads/<id> serves a surface that addresses one thread by URL
+    /// (a camp's thread page). It must apply the SAME visibility rule the list
+    /// does: a private thread scoped to one student is a 404 for another, not a
+    /// readable thread just because its id was guessed.
+    #[rocket::async_test]
+    async fn get_thread_by_id_applies_visibility() {
+        let (client, db, camp_id, technique_id) = client_with_camp_technique().await;
+        let student_id = db.user_id("student_user").unwrap();
+
+        login_test_user(&client, "coach_user", "password123").await;
+        let create = client.post("/api/threads").header(ContentType::JSON)
+            .body(json!({"anchor_kind":"camp_technique","anchor_id":technique_id,"camp_id":camp_id,"visibility":"private","scope_student_id":student_id,"body":"camp note"}).to_string())
+            .dispatch().await;
+        assert_eq!(create.status(), HttpStatus::Ok);
+        let thread_id = create.into_json::<Value>().await.unwrap()["id"].as_i64().unwrap();
+
+        // The coach reads it, with its comments.
+        let got = client.get(format!("/api/threads/{thread_id}")).dispatch().await;
+        assert_eq!(got.status(), HttpStatus::Ok);
+        let body = got.into_json::<Value>().await.unwrap();
+        assert_eq!(body["id"].as_i64(), Some(thread_id));
+        assert_eq!(body["body"].as_str(), Some("camp note"));
+        assert!(body["comments"].is_array(), "the by-id read must carry comments");
+
+        // A second student must not.
+        sqlx::query(
+            "INSERT INTO users (username, role, password, display_name, approved_at, claimed_at)
+             SELECT 'other_student', 'student', password, 'Other Student', approved_at, claimed_at
+             FROM users WHERE username = 'student_user'",
+        )
+        .execute(&db.pool)
+        .await
+        .unwrap();
+        login_test_user(&client, "other_student", "password123").await;
+        let denied = client.get(format!("/api/threads/{thread_id}")).dispatch().await;
+        assert_eq!(denied.status(), HttpStatus::NotFound);
+
+        // A thread that does not exist is a 404 too.
+        let missing = client.get("/api/threads/999999").dispatch().await;
+        assert_eq!(missing.status(), HttpStatus::NotFound);
+    }
+
     /// A student may start a camp_technique thread on their OWN camp's technique.
     /// It is forced Private + scoped to the camp's student.
     #[rocket::async_test]

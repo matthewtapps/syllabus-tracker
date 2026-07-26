@@ -55,10 +55,12 @@ use syllabi::{
 };
 use camps::{
     api_archive_camp, api_camp_feed, api_camp_search, api_create_camp, api_create_camp_technique,
-    api_get_camp, api_list_camps, api_list_camp_videos, api_update_camp, api_set_camp_video_visibility,
+    api_get_camp, api_list_camps, api_list_camp_techniques, api_list_camp_videos, api_update_camp,
+    api_set_camp_video_visibility,
 };
 use threads::{
-    api_create_thread, api_list_threads, api_create_comment, api_delete_thread, api_delete_comment,
+    api_create_thread, api_get_thread, api_list_threads, api_create_comment, api_delete_thread,
+    api_delete_comment,
 };
 use telemetry::TelemetryFairing;
 use telemetry::init_tracing;
@@ -370,6 +372,7 @@ pub async fn init_rocket_with_callback_secret(
                 api_student_recent_syllabus_attempts,
                 api_student_syllabus_attempt_heatmap,
                 api_create_thread,
+                api_get_thread,
                 api_list_threads,
                 api_create_comment,
                 api_delete_thread,
@@ -380,6 +383,7 @@ pub async fn init_rocket_with_callback_secret(
                 api_update_camp,
                 api_archive_camp,
                 api_create_camp_technique,
+                api_list_camp_techniques,
                 api_list_camp_videos,
                 api_set_camp_video_visibility,
                 api_camp_feed,

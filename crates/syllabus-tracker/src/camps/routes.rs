@@ -13,7 +13,10 @@ use crate::db::camps::{
     search_camp_techniques, search_camp_threads, search_camp_videos,
     update_camp, Camp, CampSummary, CampTechniqueHit, CampThreadHit, CampVideoHit, NewCamp, TechniqueScope,
 };
-use crate::db::{feed, list_videos_for_camp, set_video_camp_visibility};
+use crate::db::{
+    feed, list_camp_techniques, list_videos_for_camp, set_video_camp_visibility,
+    LibraryTechniqueRow,
+};
 use crate::models::Video;
 
 fn require_camps(user: &User) -> Result<(), Status> {
@@ -210,6 +213,38 @@ pub async fn api_create_camp_technique(
             })?;
 
     Ok(Json(CreatedResponse { id: technique_id }))
+}
+
+#[derive(Serialize)]
+pub struct CampTechniquesResponse {
+    pub techniques: Vec<LibraryTechniqueRow>,
+}
+
+/// Lists the techniques attached to a camp, in the library row shape.
+///
+/// The camp surfaces cannot read the library list for this: it filters on
+/// `is_global = 1`, so a camp-scoped technique created inside the camp is absent
+/// from it and neither the feed tile nor the technique page could hydrate one.
+/// Accessible to the camp's student and to any coach.
+#[instrument(skip(pool, user))]
+#[get("/camps/<id>/techniques")]
+pub async fn api_list_camp_techniques(
+    id: i64,
+    user: User,
+    pool: &State<Pool<Sqlite>>,
+) -> Result<Json<CampTechniquesResponse>, Status> {
+    let pool = pool.inner();
+    let camp = get_camp(pool, id)
+        .await
+        .map_err(Status::from)?
+        .ok_or(Status::NotFound)?;
+    if !can_read(&user, &camp) {
+        return Err(Status::Forbidden);
+    }
+    let techniques = list_camp_techniques(pool, id)
+        .await
+        .map_err(Status::from)?;
+    Ok(Json(CampTechniquesResponse { techniques }))
 }
 
 #[derive(Serialize)]

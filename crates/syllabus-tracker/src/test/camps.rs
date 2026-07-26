@@ -1287,6 +1287,122 @@ mod tests {
         assert_eq!(scoped_camp_id, camp_id);
     }
 
+    /// The camp's technique list is what the camp feed tile and the camp
+    /// technique page hydrate from, so it MUST include a camp-scoped technique
+    /// the global library route deliberately omits. Without this the scoped
+    /// technique renders nowhere.
+    #[rocket::async_test]
+    async fn camp_techniques_route_includes_scoped_technique() {
+        use crate::test::test_utils::{create_standard_test_db, setup_test_client};
+        use rocket::http::{ContentType, Status};
+
+        let test_db = create_standard_test_db().await;
+        let coach_id = test_db.user_id("coach_user").unwrap();
+        let student_id = test_db.user_id("student_user").unwrap();
+        let (client, db) = setup_test_client(test_db).await;
+
+        let camp_id: i64 = sqlx::query_scalar(
+            "INSERT INTO camps (student_id, coach_id, name) VALUES (?, ?, 'Camp list test') RETURNING id",
+        )
+        .bind(student_id)
+        .bind(coach_id)
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+
+        login_as(&client, "coach_user").await;
+
+        // A camp-scoped technique (is_global = 0), then the attach that makes it
+        // a member of the camp.
+        let resp = client
+            .post(format!("/api/camps/{}/techniques/create", camp_id))
+            .header(ContentType::JSON)
+            .body(r#"{"name":"Camp-only choke","description":"only here","scope":"scoped"}"#)
+            .dispatch()
+            .await;
+        assert_eq!(resp.status(), Status::Ok);
+        let body: serde_json::Value =
+            serde_json::from_str(&resp.into_string().await.unwrap()).unwrap();
+        let tech_id = body["id"].as_i64().unwrap();
+
+        let attach = client
+            .post("/api/threads")
+            .header(ContentType::JSON)
+            .body(format!(
+                r#"{{"anchor_kind":"camp_technique","anchor_id":{tech_id},"camp_id":{camp_id},"visibility":"private","scope_student_id":{student_id},"body":""}}"#
+            ))
+            .dispatch()
+            .await;
+        assert_eq!(attach.status(), Status::Ok);
+
+        let list = client
+            .get(format!("/api/camps/{}/techniques", camp_id))
+            .dispatch()
+            .await;
+        assert_eq!(list.status(), Status::Ok);
+        let list_body: serde_json::Value =
+            serde_json::from_str(&list.into_string().await.unwrap()).unwrap();
+        let ids: Vec<i64> = list_body["techniques"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|t| t["id"].as_i64())
+            .collect();
+        assert!(
+            ids.contains(&tech_id),
+            "camp technique list must include the camp-scoped technique"
+        );
+
+        // A technique that was never attached must NOT appear, or the list is
+        // just the library under another name.
+        let unattached = db.technique_id("Armbar");
+        if let Some(other) = unattached {
+            assert!(
+                !ids.contains(&other),
+                "camp technique list must only hold techniques attached to the camp"
+            );
+        }
+    }
+
+    /// A student may not read another student's camp technique list.
+    #[rocket::async_test]
+    async fn camp_techniques_route_forbids_other_students() {
+        use crate::test::test_utils::{create_standard_test_db, setup_test_client};
+        use rocket::http::Status;
+
+        let test_db = create_standard_test_db().await;
+        let coach_id = test_db.user_id("coach_user").unwrap();
+        let student_id = test_db.user_id("student_user").unwrap();
+        let (client, db) = setup_test_client(test_db).await;
+
+        // A SECOND plain student, cloning the seeded student's auth columns so
+        // the shared "password123" login works.
+        let _other_student_id: i64 = sqlx::query_scalar(
+            "INSERT INTO users (username, role, password, display_name, approved_at, claimed_at)
+             SELECT 'other_student', 'student', password, 'Other Student', approved_at, claimed_at
+             FROM users WHERE username = 'student_user' RETURNING id",
+        )
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+
+        let camp_id: i64 = sqlx::query_scalar(
+            "INSERT INTO camps (student_id, coach_id, name) VALUES (?, ?, 'Private camp') RETURNING id",
+        )
+        .bind(student_id)
+        .bind(coach_id)
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+
+        login_as(&client, "other_student").await;
+        let resp = client
+            .get(format!("/api/camps/{}/techniques", camp_id))
+            .dispatch()
+            .await;
+        assert_eq!(resp.status(), Status::Forbidden);
+    }
+
     // -----------------------------------------------------------------------
     // Task 4: camp feed read endpoint
     // -----------------------------------------------------------------------
