@@ -12,8 +12,8 @@ interface TeaserLineProps {
   /** Anchor seconds for a video_timestamp comment. Rendered as a plain span:
    *  the whole teaser region is one button, so it can hold no chip button. */
   tsSeconds?: number | null;
-  /** Italic muted stand-in for a null body: "video reply" on a reply line,
-   *  "video post" on a thread root. */
+  /** Italic muted stand-in for a body with no text: "video reply" on a reply
+   *  line, "video post" on a thread root. */
   fallback?: string;
   /** 3 for a thread tile's root post, 2 everywhere else. */
   clamp?: 2 | 3;
@@ -52,7 +52,14 @@ export function TeaserLine({
           {tsSeconds != null && (
             <span className="mr-1 font-medium text-primary">{formatTimestamp(tsSeconds)}</span>
           )}
-          {body ?? <span className="italic text-muted-foreground">{fallback}</span>}
+          {/* A body-less post arrives as "" as often as null (a camp technique
+              attach posts an empty body), and "" would otherwise render an
+              author line with no text under it. */}
+          {body?.trim() ? (
+            body
+          ) : (
+            <span className="italic text-muted-foreground">{fallback}</span>
+          )}
         </p>
       </div>
     </div>
