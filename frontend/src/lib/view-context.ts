@@ -64,6 +64,28 @@ export function viewContextSurfaceHref(ctx: ViewContext): string {
   }
 }
 
+/**
+ * Where a feed tile navigates: the same destination the row's breadcrumb links
+ * to, optionally targeting one thread inside it with `?thread=`.
+ *
+ * A tile with no resolvable surface falls back to the technique in the global
+ * library, which is where a technique with no other home lives. Null means the
+ * row names nothing addressable, and the tile renders no link at all.
+ */
+export function feedTileHref(
+  ctx: ViewContext | null,
+  fallbackTechniqueId: number | null,
+  threadId?: number | null,
+): string | null {
+  const base = ctx
+    ? viewContextHref(ctx)
+    : fallbackTechniqueId != null
+      ? `/library?focus=${refToken({ type: "technique", id: fallbackTechniqueId })}`
+      : null;
+  if (base == null) return null;
+  return threadId != null ? `${base}${base.includes("?") ? "&" : "?"}thread=${threadId}` : base;
+}
+
 /** Minimal structural view of an ActivityRow, so this module does not depend
  *  on the full row type (avoids a cycle with activity-line.ts). */
 export interface ViewContextRow {
@@ -230,15 +252,4 @@ export function activitySurface(
     return { kind: "camp", label: row.camp_name ?? "Camp" };
   }
   return { kind: "library", label: "Global Technique Library" };
-}
-
-/**
- * Whether a row belongs to the camp epic that is hidden on production until the
- * epic ships. The single predicate both feeds use, so the gate can never drift
- * between them.
- */
-export function isGatedEpicRow(
-  row: ViewContextRow & { syllabus_name: string | null; camp_name?: string | null },
-): boolean {
-  return activitySurface(row)?.kind === "camp";
 }

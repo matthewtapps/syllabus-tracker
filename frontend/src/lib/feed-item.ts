@@ -14,7 +14,6 @@ import type { AnchorKind } from "./api";
 import { activityCaption, type ActivityCaption } from "./activity-caption";
 import {
   activitySurface,
-  isGatedEpicRow,
   rowToViewContext,
   viewContextHref,
   viewContextSurfaceHref,
@@ -69,8 +68,6 @@ export interface FeedItem {
   caption: ActivityCaption;
   /** Surface → noun crumbs, after the actor/target the header renders itself. */
   path: Crumb[];
-  /** True for the camp epic that is hidden on production. */
-  gated: boolean;
 }
 
 /** The one place the row's meaning is decided. Pure; never throws. */
@@ -80,7 +77,6 @@ export function resolveFeedItem(row: ActivityRow): FeedItem {
     subject: resolveSubject(row, context),
     caption: activityCaption(row),
     path: buildPath(row, context),
-    gated: isGatedEpicRow(row),
   };
 }
 

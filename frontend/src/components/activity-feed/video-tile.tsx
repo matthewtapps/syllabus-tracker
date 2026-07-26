@@ -1,11 +1,12 @@
 import { useUser } from "@/lib/current-user-context";
 import { isCoachOrAdmin } from "@/lib/api";
 import { useTechniqueVideos } from "@/lib/queries";
+import { feedTileHref } from "@/lib/view-context";
 import { VideoReviewPanel } from "@/components/videos/review/video-review-panel";
 import { useWatchTracker, type WatchContext } from "@/components/videos/useWatchTracker";
 import type { VideoThreadSurface } from "@/lib/thread-visibility";
 import type { Subject } from "@/lib/feed-item";
-import { TileSkeleton } from "./technique-tile";
+import { TileShell, TileSkeleton } from "./tile-shell";
 
 /**
  * The embedded video for a feed entry that is about a video (a watch, an add, or
@@ -63,13 +64,16 @@ export function VideoTile({
       : { kind: "library" };
 
   return (
-    <div className="mx-3 mb-3 overflow-hidden rounded-md border border-border bg-card">
+    <TileShell>
       <VideoReviewPanel
         video={video}
         surface={surface}
         watchEvents={watchEvents}
-        feedPresentation={{ focusThreadId: subject.focusThreadId }}
+        feedPresentation={{
+          focusThreadId: subject.focusThreadId,
+          href: feedTileHref(ctx, subject.techniqueId),
+        }}
       />
-    </div>
+    </TileShell>
   );
 }

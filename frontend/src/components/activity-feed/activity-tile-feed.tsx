@@ -1,9 +1,7 @@
 import { Fragment } from "react";
 import { ActivityTileHeader } from "./activity-tile-header";
 import { ActivityTile } from "./activity-tile";
-import { isGatedEpicRow } from "@/lib/view-context";
 import { suppressHideUnhide } from "@/lib/activity-hide-unhide";
-import { campsUiEnabled } from "@/lib/features";
 import { cn } from "@/lib/utils";
 import type { ActivityRow, ActivityScope } from "@/lib/activity-line";
 
@@ -49,12 +47,8 @@ export function ActivityTileFeed({
     );
   }
 
-  // Drop hide/unhide curation noise (net-visibility rule) before gating.
-  const deNoised = suppressHideUnhide(rows);
-
-  // Camps are gated off on prod; drop their rows so the feed never links into
-  // half-built surfaces (mirrors ActivityFeedList).
-  const visible = campsUiEnabled ? deNoised : deNoised.filter((row) => !isGatedEpicRow(row));
+  // Drop hide/unhide curation noise (net-visibility rule).
+  const visible = suppressHideUnhide(rows);
 
   if (visible.length === 0) {
     return (

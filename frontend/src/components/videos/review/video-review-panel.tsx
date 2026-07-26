@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { MessageSquare } from "lucide-react";
 import { toast } from "sonner";
 import type { Video, ThreadView } from "@/lib/api";
 import type { TimestampedEntry } from "./timestamped-entry";
@@ -15,11 +14,18 @@ import {
   usePlayerController,
   usePlayerRegistration,
 } from "../player-context";
+import { TeaserLine, TeaserRegion, ViewAllLine } from "@/components/activity-feed/teaser-line";
 import { MomentComposer, type MomentDraft } from "./moment-composer";
 import { MomentFeed } from "./moment-feed";
 import { MomentOverlay } from "./moment-overlay";
 import { ScrubberPins } from "./scrubber-pins";
-import { resolvePinFocus } from "./review-logic";
+import {
+  countThreadComments,
+  resolvePinFocus,
+  selectTeaserThreads,
+  withResumeParam,
+} from "./review-logic";
+import { useSeekOnce } from "./use-seek-once";
 
 interface VideoReviewPanelProps {
   video: Video;
@@ -29,12 +35,19 @@ interface VideoReviewPanelProps {
   /** Trailing action shown inline in the composer row (e.g. download). */
   composerAction?: ReactNode;
   /**
-   * Feed mode: collapse the discussion under the player so a feed tile isn't
-   * dominated by it. `focusThreadId` (the thread the feed entry is about) shows
-   * above the fold; the composer and the remaining threads collapse behind a
-   * toggle. Absent = the full dialog/page layout.
+   * Feed mode: the player, a fixed-budget teaser of the conversation, and the
+   * detail sheet the teaser opens. `focusThreadId` is the thread the feed entry
+   * is about, previewed first. Absent = the full dialog/page layout.
    */
-  feedPresentation?: { focusThreadId: number | null };
+  feedPresentation?: {
+    focusThreadId: number | null;
+    /** Where the teaser links: the video in its real surface. */
+    href: string | null;
+  };
+  /** Resume here, once the player reports it can seek. Carried by `?t=` from a
+   *  feed tile, so tapping a clip you were already watching does not restart
+   *  it. Embeds cannot seek, so they ignore it. */
+  startAtSeconds?: number | null;
 }
 
 export function VideoReviewPanel(props: VideoReviewPanelProps) {
@@ -51,6 +64,7 @@ function ReviewInner({
   watchEvents,
   composerAction,
   feedPresentation,
+  startAtSeconds,
 }: VideoReviewPanelProps) {
   const user = useUser();
   const controller = usePlayerController();
@@ -93,15 +107,14 @@ function ReviewInner({
     [watchEvents, registration],
   );
 
+  useSeekOnce(controller, startAtSeconds);
+
   const threadsQuery = useThreadsForAnchor("video", video.id);
   const threads: ThreadView[] = threadsQuery.data ?? [];
   const createThread = useCreateThread();
 
   const [pinnedThread, setPinnedThread] = useState<TimestampedEntry | null>(null);
   const [highlightThreadId, setHighlightThreadId] = useState<number | null>(null);
-  // Feed mode only: whether the collapsed discussion (composer + non-focus
-  // threads) is expanded.
-  const [feedDiscussionOpen, setFeedDiscussionOpen] = useState(false);
   const listRef = useRef<HTMLDivElement>(null);
   const pinTimerRef = useRef<number | null>(null);
   const highlightTimerRef = useRef<number | null>(null);
@@ -126,6 +139,12 @@ function ReviewInner({
 
   // Toggle pin on re-click; otherwise set it. The overlay chip is transient:
   // auto-clear after 6 s; the feed stacked below the video is the durable view.
+  //
+  // In feed mode there is no stacked list to scroll to: the tile shows a fixed
+  // teaser and the conversation lives on the video's own surface. Tapping a
+  // chip or a pin here seeks and shows the transient overlay, nothing else.
+  // You are watching, and navigating away would interrupt exactly that; the
+  // surface stays one deliberate tap away in the teaser region below.
   function focusPin(t: TimestampedEntry) {
     if (pinnedThread?.id === t.id) {
       setPinnedThread(null);
@@ -142,16 +161,18 @@ function ReviewInner({
 
     if (t.video_ts_seconds != null) controller.seekTo(t.video_ts_seconds);
 
-    if (actions.exitFullscreen) {
-      // Fullscreen is exiting and the stacked feed is about to mount: defer the
-      // scroll two frames so the row exists before scrollIntoView runs.
-      if (pinScrollRafRef.current) cancelAnimationFrame(pinScrollRafRef.current);
-      pinScrollRafRef.current = requestAnimationFrame(() => {
-        pinScrollRafRef.current = requestAnimationFrame(() => scrollToThread(t.id));
-      });
-    } else {
-      // Feed already laid out: scroll immediately, no lag.
-      scrollToThread(t.id);
+    if (!feedPresentation) {
+      if (actions.exitFullscreen) {
+        // Fullscreen is exiting and the stacked feed is about to mount: defer
+        // the scroll two frames so the row exists before scrollIntoView runs.
+        if (pinScrollRafRef.current) cancelAnimationFrame(pinScrollRafRef.current);
+        pinScrollRafRef.current = requestAnimationFrame(() => {
+          pinScrollRafRef.current = requestAnimationFrame(() => scrollToThread(t.id));
+        });
+      } else {
+        // Feed already laid out: scroll immediately, no lag.
+        scrollToThread(t.id);
+      }
     }
 
     if (pinTimerRef.current) window.clearTimeout(pinTimerRef.current);
@@ -227,58 +248,41 @@ function ReviewInner({
   );
 
   if (feedPresentation) {
-    const focusId = feedPresentation.focusThreadId;
-    const focusThread = focusId != null ? threads.find((t) => t.id === focusId) ?? null : null;
-    const rest = threads.filter((t) => t.id !== focusId);
-    const toggleLabel = focusThread
-      ? rest.length > 0
-        ? `${rest.length} more comment${rest.length > 1 ? "s" : ""}`
-        : "Add a comment"
-      : threads.length > 0
-        ? `Show discussion (${threads.length})`
-        : "Comment on video";
+    const teasers = selectTeaserThreads(threads, feedPresentation.focusThreadId);
+    const total = countThreadComments(threads);
+    // Hand the playhead over in the URL, so the surface resumes rather than
+    // restarting.
+    const href = withResumeParam(
+      feedPresentation.href,
+      controller.currentTime,
+      controller.canReadTime,
+    );
 
     return (
       <div>
+        {/* Tapping the frame plays and pauses, so the player is never part of
+            the teaser's tap target. */}
         <div className="relative">{player}</div>
-        <div className="space-y-3 px-3 pb-4 sm:px-4">
-          {focusThread && (
-            <div ref={listRef}>
-              <MomentFeed
-                videoId={video.id}
-                threads={[focusThread]}
-                onSeek={(s) => controller.seekTo(s)}
-                highlightThreadId={highlightThreadId}
-              />
-            </div>
-          )}
-          {/* The toggle stays in one predictable spot; its label flips and the
-              discussion expands BELOW it. */}
-          {(threads.length > 0 || !isReplyVideo) && (
-            <button
-              type="button"
-              onClick={() => setFeedDiscussionOpen((open) => !open)}
-              aria-expanded={feedDiscussionOpen}
-              className="flex w-full items-center justify-center gap-1.5 rounded-md border border-border px-3 py-2 text-xs text-muted-foreground hover:bg-muted/40 hover:text-foreground"
-            >
-              <MessageSquare className="h-3.5 w-3.5" aria-hidden />
-              {feedDiscussionOpen ? "Hide discussion" : toggleLabel}
-            </button>
-          )}
-          {feedDiscussionOpen && (
-            <div className="space-y-3">
-              {!isReplyVideo && composer}
-              {rest.length > 0 && (
-                <MomentFeed
-                  videoId={video.id}
-                  threads={rest}
-                  onSeek={(s) => controller.seekTo(s)}
-                  highlightThreadId={highlightThreadId}
+        {href && (
+          <TeaserRegion href={href} className="border-t border-border">
+            {teasers.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No comments yet</p>
+            ) : (
+              teasers.map((t) => (
+                <TeaserLine
+                  key={t.id}
+                  authorId={t.author_id}
+                  authorName={t.author_name}
+                  createdAt={t.created_at}
+                  body={t.body}
+                  tsSeconds={t.video_ts_seconds}
+                  fallback="video post"
                 />
-              )}
-            </div>
-          )}
-        </div>
+              ))
+            )}
+            {total > teasers.length && <ViewAllLine count={total} noun="comment" />}
+          </TeaserRegion>
+        )}
       </div>
     );
   }
