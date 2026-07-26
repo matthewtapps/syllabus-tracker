@@ -34,10 +34,8 @@ export function ThreadTile({
   // noun (resolveFeedItem routes the rest to the technique and video tiles):
   // a camp's own discussion, and a student profile's.
   //
-  // The profile scrolls to and highlights the thread. A camp's discussion is
-  // its activity feed, which has no thread list to scroll, so `?thread=` rides
-  // along inert there rather than being dropped: the camp page can honour it
-  // later without the link changing.
+  // Both honour `?thread=`: the profile scrolls its thread list, the camp
+  // scrolls its activity feed to the tile carrying that thread.
   const href =
     anchorKind === "camp"
       ? `/camps/${anchorId}?thread=${threadId}`

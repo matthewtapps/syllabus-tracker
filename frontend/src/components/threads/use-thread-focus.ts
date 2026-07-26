@@ -1,56 +1,47 @@
-import { useEffect, useRef, useState, type RefObject } from "react";
+import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
 import { useSearchParams } from "react-router-dom";
 import type { ThreadView } from "@/lib/api";
 
-/** How long a scrolled-to thread stays highlighted. */
+/** How long a jumped-to thread stays highlighted. */
 const HIGHLIGHT_MS = 2200;
 
 /**
- * The `?thread=<id>` deep link: scroll to that thread once its list has mounted,
- * highlight it briefly, then drop the param so a refresh or a back-forward does
- * not re-trigger it.
+ * The `?thread=<id>` deep link: once the surface holding that thread has
+ * loaded, hand it to `jump` exactly once, then drop the param so a refresh or a
+ * back-forward does not re-trigger it.
  *
- * The feed links here (alongside `?focus=`, which expands the right row). Two
- * surfaces host a thread list this way: a technique row's discussion and a
- * student profile. They resolve the param the same way, so the behaviour lives
- * here once instead of being re-derived per surface. (A camp's threads live in
- * its activity feed, which has no such list to scroll.)
+ * The feed links here (alongside `?focus=`, which expands the right row), and
+ * the surfaces that host threads differ in how they reach one: a technique
+ * row's discussion and a student profile scroll a list, a camp scrolls its
+ * activity feed to the tile carrying that thread. Only the param handling is
+ * common, so that is all this owns; the jump belongs to the surface.
  *
- * Only the surface whose list actually contains the target consumes the param;
- * the others leave it alone, so a page with several thread lists still routes
- * one link to one list.
+ * A surface that does not hold the target leaves the param alone, so a page
+ * with several thread lists still routes one link to one of them.
  */
-export function useThreadFocus(
-  threads: ThreadView[],
-  listRef: RefObject<HTMLElement | null>,
-  isLoading: boolean,
-): { highlightThreadId: number | null } {
+export function useThreadDeepLink({
+  isLoading,
+  has,
+  jump,
+}: {
+  isLoading: boolean;
+  /** Whether this surface currently holds the thread. */
+  has: (threadId: number) => boolean;
+  /** Scroll to and highlight it. Called at most once per target. */
+  jump: (threadId: number) => void;
+}): void {
   const [searchParams, setSearchParams] = useSearchParams();
-  const [highlightThreadId, setHighlightThreadId] = useState<number | null>(null);
-  // The thread we already scrolled to, so a refetch does not re-scroll it.
-  const consumedTargetRef = useRef<number | null>(null);
+  const consumedRef = useRef<number | null>(null);
 
   const raw = searchParams.get("thread");
   const parsed = raw == null ? Number.NaN : Number.parseInt(raw, 10);
   const targetThreadId = Number.isFinite(parsed) ? parsed : null;
 
   useEffect(() => {
-    if (
-      targetThreadId == null ||
-      consumedTargetRef.current === targetThreadId ||
-      isLoading
-    ) {
-      return;
-    }
-    if (!threads.some((t) => t.id === targetThreadId)) return;
-    const el = listRef.current?.querySelector<HTMLElement>(
-      `[data-thread-id="${targetThreadId}"]`,
-    );
-    if (!el) return;
-    consumedTargetRef.current = targetThreadId;
-    el.scrollIntoView({ behavior: "smooth", block: "center" });
-    setHighlightThreadId(targetThreadId);
-    const timer = setTimeout(() => setHighlightThreadId(null), HIGHLIGHT_MS);
+    if (targetThreadId == null || consumedRef.current === targetThreadId) return;
+    if (isLoading || !has(targetThreadId)) return;
+    consumedRef.current = targetThreadId;
+    jump(targetThreadId);
     setSearchParams(
       (prev) => {
         const next = new URLSearchParams(prev);
@@ -59,8 +50,42 @@ export function useThreadFocus(
       },
       { replace: true },
     );
-    return () => clearTimeout(timer);
-  }, [targetThreadId, isLoading, threads, listRef, setSearchParams]);
+  }, [targetThreadId, isLoading, has, jump, setSearchParams]);
+}
+
+/**
+ * `useThreadDeepLink` for a surface that renders threads as a plain list:
+ * scrolls the matching `[data-thread-id]` into view and highlights it briefly.
+ * Used by the technique row's discussion and the student profile.
+ */
+export function useThreadFocus(
+  threads: ThreadView[],
+  listRef: RefObject<HTMLElement | null>,
+  isLoading: boolean,
+): { highlightThreadId: number | null } {
+  const [highlightThreadId, setHighlightThreadId] = useState<number | null>(null);
+  const timerRef = useRef<number | null>(null);
+
+  useEffect(
+    () => () => {
+      if (timerRef.current) window.clearTimeout(timerRef.current);
+    },
+    [],
+  );
+
+  const has = useCallback((id: number) => threads.some((t) => t.id === id), [threads]);
+  const jump = useCallback(
+    (id: number) => {
+      const el = listRef.current?.querySelector<HTMLElement>(`[data-thread-id="${id}"]`);
+      el?.scrollIntoView({ behavior: "smooth", block: "center" });
+      setHighlightThreadId(id);
+      if (timerRef.current) window.clearTimeout(timerRef.current);
+      timerRef.current = window.setTimeout(() => setHighlightThreadId(null), HIGHLIGHT_MS);
+    },
+    [listRef],
+  );
+
+  useThreadDeepLink({ isLoading, has, jump });
 
   return { highlightThreadId };
 }

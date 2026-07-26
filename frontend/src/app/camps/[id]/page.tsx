@@ -38,6 +38,7 @@ import { CampSearchSheet } from "@/components/camps/camp-search-sheet";
 import { useConfirm } from "@/components/confirm-context";
 import { CampComposer } from "@/components/camps/camp-composer";
 import { ActivityTileFeed } from "@/components/activity-feed/activity-tile-feed";
+import { useThreadDeepLink } from "@/components/threads/use-thread-focus";
 import { cn } from "@/lib/utils";
 import type { VideoAttachment } from "@/components/threads/reply-composer";
 
@@ -514,13 +515,24 @@ function CampFeedBody({
   campId,
   feedRef,
   highlightThreadId,
+  onJump,
 }: {
   campId: number;
   feedRef: React.RefObject<HTMLDivElement | null>;
   highlightThreadId: number | null;
+  onJump: (threadId: number) => void;
 }) {
   const feed = useInfiniteCampFeed(campId);
   const rows = useMemo(() => feed.data?.pages.flat() ?? [], [feed.data]);
+
+  // A thread teaser in the activity feed links here with ?thread=<id>. The
+  // camp's discussion is this feed, so the jump is the same scroll-and-
+  // highlight the search sheet already uses.
+  const hasThread = useCallback(
+    (threadId: number) => rows.some((row) => row.thread_id === threadId),
+    [rows],
+  );
+  useThreadDeepLink({ isLoading: feed.isLoading, has: hasThread, jump: onJump });
 
   const { fetchNextPage, hasNextPage, isFetchingNextPage } = feed;
   const sentinelRef = useRef<HTMLDivElement>(null);
@@ -801,6 +813,7 @@ function CampDetail({
         campId={campId}
         feedRef={feedRef}
         highlightThreadId={highlightThreadId}
+        onJump={onJump}
       />
     </div>
   );
