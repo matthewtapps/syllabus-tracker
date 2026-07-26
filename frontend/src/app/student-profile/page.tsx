@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { Link, Navigate, useNavigate, useParams } from "react-router-dom";
 import {
   Archive,
@@ -41,11 +41,12 @@ import {
 import { useCreateThread, useArchiveStudent } from "@/lib/mutations";
 import { useUser } from "@/lib/current-user-context";
 import { isAdmin, isCoachOrAdmin } from "@/lib/api";
-import { campsUiEnabled } from "@/lib/features";
 import { CampSummaryCard } from "@/components/camp-summary-card";
 import { ActivityFeedList } from "@/components/activity-feed-list";
 import { ThreadView } from "@/components/threads/thread-view";
 import { ReplyComposer } from "@/components/threads/reply-composer";
+import { useThreadFocus } from "@/components/threads/use-thread-focus";
+import { cn } from "@/lib/utils";
 import { SyllabusAssignmentRow } from "@/app/student-syllabi/components/syllabus-assignment-row";
 import type { User } from "@/lib/api";
 
@@ -91,6 +92,17 @@ function ProfileHub({
   // rather than the gym-wide coach feed.
   const feedQuery = useStudentActivityFeed(studentId);
   const profileThreadsQuery = useThreadsForAnchor("student_profile", studentId);
+  // `?thread=<id>` from the activity feed scrolls to and highlights that thread.
+  const profileThreads = useMemo(
+    () => profileThreadsQuery.data ?? [],
+    [profileThreadsQuery.data],
+  );
+  const profileThreadsRef = useRef<HTMLDivElement>(null);
+  const { highlightThreadId } = useThreadFocus(
+    profileThreads,
+    profileThreadsRef,
+    profileThreadsQuery.isLoading,
+  );
   const createProfileThread = useCreateThread();
   async function startProfileThread(body: string, attachment: import("@/components/threads/reply-composer").VideoAttachment | null) {
     await createProfileThread.mutateAsync({
@@ -116,7 +128,7 @@ function ProfileHub({
   const archiveMutation = useArchiveStudent();
   const syllabiQuery = useStudentSyllabi(studentId);
   const pinnedQuery = useStudentPinnedTechniques(studentId);
-  const campsQuery = useCampsForStudent(campsUiEnabled ? studentId : undefined);
+  const campsQuery = useCampsForStudent(studentId);
   const [pinnedExpanded, setPinnedExpanded] = useState<string>("");
 
   if (loading || !student) {
@@ -183,48 +195,46 @@ function ProfileHub({
         )}
       </section>
 
-      {campsUiEnabled && (
-        <section className="space-y-2">
-          <div className="flex items-center justify-between gap-2">
-            <Link
-              to={`/student/${studentId}/camps`}
-              className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-muted-foreground hover:text-foreground"
-            >
-              <Dumbbell className="h-3.5 w-3.5" aria-hidden />
-              Camps
-            </Link>
-            {canCreateCamp && (
-              <Dialog open={createCampOpen} onOpenChange={setCreateCampOpen}>
-                <DialogTrigger asChild>
-                  <Button size="sm" variant="outline" className="gap-1.5">
-                    <Plus className="h-4 w-4" aria-hidden />
-                    <span>Add camp</span>
-                  </Button>
-                </DialogTrigger>
-                <CreateCampDialog
-                  studentId={studentId}
-                  studentName={displayName}
-                  onCreated={(id) => {
-                    setCreateCampOpen(false);
-                    navigate(`/camps/${id}`);
-                  }}
-                />
-              </Dialog>
-            )}
-          </div>
-          {campsQuery.isLoading ? (
-            <div className="rounded-lg border border-border bg-card px-4 py-4">
-              <div className="h-4 w-1/3 animate-pulse rounded bg-muted" />
-            </div>
-          ) : previewCamps.length === 0 ? null : (
-            <div className="space-y-2">
-              {previewCamps.map((c) => (
-                <CampSummaryCard key={c.id} camp={c} />
-              ))}
-            </div>
+      <section className="space-y-2">
+        <div className="flex items-center justify-between gap-2">
+          <Link
+            to={`/student/${studentId}/camps`}
+            className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-muted-foreground hover:text-foreground"
+          >
+            <Dumbbell className="h-3.5 w-3.5" aria-hidden />
+            Camps
+          </Link>
+          {canCreateCamp && (
+            <Dialog open={createCampOpen} onOpenChange={setCreateCampOpen}>
+              <DialogTrigger asChild>
+                <Button size="sm" variant="outline" className="gap-1.5">
+                  <Plus className="h-4 w-4" aria-hidden />
+                  <span>Add camp</span>
+                </Button>
+              </DialogTrigger>
+              <CreateCampDialog
+                studentId={studentId}
+                studentName={displayName}
+                onCreated={(id) => {
+                  setCreateCampOpen(false);
+                  navigate(`/camps/${id}`);
+                }}
+              />
+            </Dialog>
           )}
-        </section>
-      )}
+        </div>
+        {campsQuery.isLoading ? (
+          <div className="rounded-lg border border-border bg-card px-4 py-4">
+            <div className="h-4 w-1/3 animate-pulse rounded bg-muted" />
+          </div>
+        ) : previewCamps.length === 0 ? null : (
+          <div className="space-y-2">
+            {previewCamps.map((c) => (
+              <CampSummaryCard key={c.id} camp={c} />
+            ))}
+          </div>
+        )}
+      </section>
 
       <section className="space-y-2">
         <div className="flex items-center justify-between gap-2">
@@ -296,21 +306,29 @@ function ProfileHub({
           <MessageSquare className="h-3.5 w-3.5" aria-hidden />
           Discussion
         </h2>
-        <div className="space-y-4 rounded-lg border border-border bg-card p-4">
+        <div ref={profileThreadsRef} className="space-y-4 rounded-lg border border-border bg-card p-4">
           {profileThreadsQuery.isLoading ? (
             <div className="h-4 w-1/3 animate-pulse rounded bg-muted" />
-          ) : (profileThreadsQuery.data ?? []).length === 0 ? (
+          ) : profileThreads.length === 0 ? (
             <p className="text-sm text-muted-foreground">
               No discussion yet. Start one below.
             </p>
           ) : (
-            (profileThreadsQuery.data ?? []).map((t) => (
-              <ThreadView
+            profileThreads.map((t) => (
+              <div
                 key={t.id}
-                thread={t}
-                anchorKind="student_profile"
-                anchorId={studentId}
-              />
+                data-thread-id={t.id}
+                className={cn(
+                  "-mx-3 rounded-md border-l-[3px] border-transparent px-3 py-1 transition-colors",
+                  highlightThreadId === t.id && "border-primary bg-primary/5",
+                )}
+              >
+                <ThreadView
+                  thread={t}
+                  anchorKind="student_profile"
+                  anchorId={studentId}
+                />
+              </div>
             ))
           )}
           <ReplyComposer

@@ -17,7 +17,9 @@ import { PromoteToLibraryButton } from "./promote-to-library-button";
 
 interface ExpandedPanelProps {
   scrollToVideoId?: number | null;
+  resumeSeconds?: number | null;
   onVideoScrolled?: () => void;
+  /** Forwarded to the discussion block, which scrolls to and highlights it. */
 }
 
 // Orchestrates the per-block render order based on BLOCK_VISIBILITY for
@@ -26,6 +28,7 @@ interface ExpandedPanelProps {
 // second card. Block iteration order is the render order.
 export function ExpandedPanel({
   scrollToVideoId,
+  resumeSeconds,
   onVideoScrolled,
 }: ExpandedPanelProps) {
   const { context, role } = useTechniqueRow();
@@ -38,6 +41,7 @@ export function ExpandedPanel({
           key={id}
           id={id}
           scrollToVideoId={scrollToVideoId}
+          resumeSeconds={resumeSeconds}
           onVideoScrolled={onVideoScrolled}
         />
       ))}
@@ -49,10 +53,12 @@ export function ExpandedPanel({
 function BlockRenderer({
   id,
   scrollToVideoId,
+  resumeSeconds,
   onVideoScrolled,
 }: {
   id: BlockId;
   scrollToVideoId?: number | null;
+  resumeSeconds?: number | null;
   onVideoScrolled?: () => void;
 }) {
   const { context, role } = useTechniqueRow();
@@ -74,6 +80,7 @@ function BlockRenderer({
         <VideosBlock
           canManage={canManageVideos}
           scrollToVideoId={scrollToVideoId}
+          resumeSeconds={resumeSeconds}
           onVideoScrolled={onVideoScrolled}
         />
       );

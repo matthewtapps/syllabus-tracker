@@ -1,11 +1,11 @@
-import { useEffect, useRef, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useRef } from "react";
 import { useTechniqueRow } from "./technique-row-context";
 import { useThreadsForAnchor } from "@/lib/queries";
 import { useCreateThread } from "@/lib/mutations";
 import { useUser } from "@/lib/current-user-context";
 import { ThreadView } from "@/components/threads/thread-view";
 import { ReplyComposer } from "@/components/threads/reply-composer";
+import { useThreadFocus } from "@/components/threads/use-thread-focus";
 import { cn } from "@/lib/utils";
 
 export function DiscussionBlock() {
@@ -63,44 +63,10 @@ export function DiscussionBlock() {
 
   const threads = threadsQuery.data ?? [];
 
-  // Deep link from the activity feed: `?thread=<id>` scrolls to and briefly
-  // highlights that thread once its discussion has mounted (the feed link also
-  // carries `?focus=` which expands this row). Only the block whose anchor owns
-  // the thread consumes the param; others leave it for the right block.
-  const [searchParams, setSearchParams] = useSearchParams();
+  // `?thread=<id>` from the feed scrolls to and highlights that thread once this
+  // discussion has mounted (the same link carries `?focus=` to expand the row).
   const listRef = useRef<HTMLDivElement>(null);
-  const [highlightThreadId, setHighlightThreadId] = useState<number | null>(null);
-  const consumedTargetRef = useRef(false);
-  const targetThreadId = (() => {
-    const raw = searchParams.get("thread");
-    if (!raw) return null;
-    const parsed = Number.parseInt(raw, 10);
-    return Number.isFinite(parsed) ? parsed : null;
-  })();
-
-  useEffect(() => {
-    if (consumedTargetRef.current || targetThreadId == null || threadsQuery.isLoading) {
-      return;
-    }
-    if (!threads.some((t) => t.id === targetThreadId)) return;
-    const el = listRef.current?.querySelector<HTMLElement>(
-      `[data-thread-id="${targetThreadId}"]`,
-    );
-    if (!el) return;
-    consumedTargetRef.current = true;
-    el.scrollIntoView({ behavior: "smooth", block: "center" });
-    setHighlightThreadId(targetThreadId);
-    const timer = setTimeout(() => setHighlightThreadId(null), 2200);
-    setSearchParams(
-      (prev) => {
-        const next = new URLSearchParams(prev);
-        next.delete("thread");
-        return next;
-      },
-      { replace: true },
-    );
-    return () => clearTimeout(timer);
-  }, [targetThreadId, threadsQuery.isLoading, threads, setSearchParams]);
+  const { highlightThreadId } = useThreadFocus(threads, listRef, threadsQuery.isLoading);
 
   return (
     <div className="space-y-3">
@@ -114,8 +80,15 @@ export function DiscussionBlock() {
               key={t.id}
               data-thread-id={t.id}
               className={cn(
-                "rounded-md py-4 transition-colors first:pt-0 last:pb-0",
-                highlightThreadId === t.id && "bg-muted/60 ring-2 ring-ring/50",
+                // The accent bar and its gutter are always in the layout, just
+                // transparent, and the negative margin cancels the padding
+                // exactly (12 out, 3 border + 9 in). So the highlight only ever
+                // changes colour: no reflow when it lands, none when it lapses
+                // 2.2s later. Uniform py-4 (no first/last trim) keeps the bar
+                // clear of the Discussion heading above it.
+                "-mx-3 rounded-md border-l-[3px] border-transparent py-4 pl-[9px] pr-3 transition-colors",
+                // A bar plus a wash, not a box: "this one", not "error here".
+                highlightThreadId === t.id && "border-primary bg-primary/5",
               )}
             >
               <ThreadView
