@@ -104,6 +104,19 @@ function resolveSubject(row: ActivityRow, context: ViewContext | null): Subject 
   //    collapsed technique row plus that one thread.
   if (isComment) {
     if (row.thread_id == null) return { kind: "none" };
+    // A camp_technique comment: camp + technique together mean "render the
+    // technique card inside this camp". Must be checked BEFORE the generic
+    // camp branch so it doesn't collapse to a plain camp thread tile.
+    if (row.camp_id != null && row.technique_id != null && row.context_kind === "camp") {
+      return {
+        kind: "technique",
+        thread: {
+          anchorKind: "camp_technique",
+          anchorId: row.technique_id,
+          threadId: row.thread_id,
+        },
+      };
+    }
     if (row.camp_id != null) {
       return { kind: "thread", anchorKind: "camp", anchorId: row.camp_id, threadId: row.thread_id };
     }

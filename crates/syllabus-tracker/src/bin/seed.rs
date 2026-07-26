@@ -458,6 +458,8 @@ async fn seed_thread_with_replies(
             scope_student_id,
             body: body.to_string(),
             attached_video_id: None,
+            attached_video_is_reference: false,
+            attached_video_title: None,
         },
     )
     .await?;
@@ -472,7 +474,7 @@ async fn seed_thread_with_replies(
 
     let mut last = started;
     for (reply_author, reply_body, hours_after) in replies {
-        let comment_id = create_comment(pool, thread_id, None, *reply_author, reply_body, None).await?;
+        let comment_id = create_comment(pool, thread_id, None, *reply_author, reply_body, None, None, false).await?;
         let comment_time = started + Duration::hours(*hours_after);
         sqlx::query("UPDATE thread_comments SET created_at = ? WHERE id = ?")
             .bind(comment_time)
@@ -1436,52 +1438,34 @@ async fn run() -> Result<()> {
     sqlx::query("DELETE FROM camp_referenced_threads")
         .execute(&pool)
         .await?;
-    sqlx::query("DELETE FROM camp_technique_referenced_videos")
-        .execute(&pool)
-        .await?;
-    sqlx::query("DELETE FROM camp_techniques")
-        .execute(&pool)
-        .await?;
     sqlx::query("DELETE FROM camps").execute(&pool).await?;
 
-    // (student_idx, name, description, technique names, days_ago)
-    type CampPlan = (usize, &'static str, &'static str, &'static [&'static str], i64);
+    // (student_idx, name, description, days_ago)
+    type CampPlan = (usize, &'static str, &'static str, i64);
     let camp_plan: &[CampPlan] = &[
         (
             0,
             "Winter Classic Prep",
             "Eight week block sharpening takedowns and the armbar series for the Winter Classic.",
-            &[
-                "Single Leg Takedown",
-                "Double Leg Takedown",
-                "Knee Slice Pass",
-                "Armbar from Closed Guard",
-            ],
             21,
         ),
         (
             1,
             "Top Pressure Block",
             "Passing and pinning camp built around heavy top pressure.",
-            &[
-                "Knee Slice Pass",
-                "Knee on Belly Transition",
-                "Americana from Side Control",
-            ],
             14,
         ),
         (
             4,
             "Back Attack Camp",
             "Taking the back and finishing the choke, plus the escape when it goes the other way.",
-            &["Rear Naked Choke", "Bow and Arrow Choke", "Back Escape"],
             10,
         ),
     ];
 
     let mut camp_by_student: std::collections::HashMap<usize, i64> =
         std::collections::HashMap::new();
-    for (student_idx, name, description, technique_names, days_ago) in camp_plan {
+    for (student_idx, name, description, days_ago) in camp_plan {
         let created = now - Duration::days(*days_ago);
         let camp_id = db::camps::create_camp(
             &pool,
@@ -1490,7 +1474,6 @@ async fn run() -> Result<()> {
                 coach_id,
                 name: name.to_string(),
                 description: Some(description.to_string()),
-                references_camp_id: None,
             },
         )
         .await?;
@@ -1502,14 +1485,6 @@ async fn run() -> Result<()> {
         backdate_last_activity(&pool, created).await?;
         camp_by_student.insert(*student_idx, camp_id);
         reporter.phase_item(ItemOutcome::Created);
-
-        for (pos, tech_name) in technique_names.iter().enumerate() {
-            if let Some(tech_id) = tid_of(tech_name) {
-                db::camps::add_camp_technique(&pool, camp_id, tech_id, coach_id).await?;
-                backdate_last_activity(&pool, created + Duration::minutes(pos as i64 + 1)).await?;
-                reporter.phase_item(ItemOutcome::Created);
-            }
-        }
 
         // Private camp-anchored discussion thread.
         seed_thread_with_replies(
@@ -1546,21 +1521,6 @@ async fn run() -> Result<()> {
             )
             .bind(alex_camp)
             .bind(thread_id)
-            .execute(&pool)
-            .await?;
-            reporter.phase_item(ItemOutcome::Created);
-        }
-        // Pin the armbar footage as reference video on that camp technique.
-        if let (Some(tech_id), Some(vid)) =
-            (tid_of("Armbar from Closed Guard"), first_video("Armbar from Closed Guard"))
-        {
-            sqlx::query(
-                "INSERT OR IGNORE INTO camp_technique_referenced_videos
-                     (camp_id, technique_id, video_id) VALUES (?, ?, ?)",
-            )
-            .bind(alex_camp)
-            .bind(tech_id)
-            .bind(vid)
             .execute(&pool)
             .await?;
             reporter.phase_item(ItemOutcome::Created);

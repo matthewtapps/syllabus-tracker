@@ -1983,19 +1983,19 @@ pub async fn api_attempt_sparkline(
 
 // ---- Activity feed routes (Task 23) ----------------------------------------
 
-const ACTIVITY_FEED_DEFAULT_LIMIT: i64 = 50;
-const ACTIVITY_FEED_MAX_LIMIT: i64 = 200;
+pub const ACTIVITY_FEED_DEFAULT_LIMIT: i64 = 50;
+pub const ACTIVITY_FEED_MAX_LIMIT: i64 = 200;
 
 #[derive(FromForm)]
 pub struct ActivityFeedQuery {
-    before_ts: Option<String>,
-    before_id: Option<i64>,
-    limit: Option<i64>,
+    pub before_ts: Option<String>,
+    pub before_id: Option<i64>,
+    pub limit: Option<i64>,
 }
 
 /// Parse an optional RFC3339 or SQLite naive-datetime string into
 /// `chrono::NaiveDateTime`. Returns `None` when the input is `None`.
-fn parse_before_ts(s: &str) -> Option<chrono::NaiveDateTime> {
+pub fn parse_before_ts(s: &str) -> Option<chrono::NaiveDateTime> {
     // Try the SQLite storage format first (no T, no offset), then RFC3339,
     // then RFC3339 with sub-seconds.
     chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S%.f")
@@ -2042,7 +2042,7 @@ pub async fn api_activity_feed(
 
     // Snapshot the max id BEFORE building the page; advance cursor AFTER.
     let snapshot_max = feed_max_id(db, user.id, user.role.clone()).await?;
-    let rows = feed(db, user.id, user.role.clone(), before, limit).await?;
+    let rows = feed(db, user.id, user.role.clone(), before, limit, None).await?;
     advance_cursor_to(db, user.id, snapshot_max).await?;
 
     Ok(Json(rows))
@@ -2070,7 +2070,7 @@ pub async fn api_activity_feed_head_id(
     user: User,
     db: &State<Pool<Sqlite>>,
 ) -> ApiResult<Json<FeedHeadIdResponse>> {
-    let head = feed(db, user.id, user.role.clone(), None, 1).await?;
+    let head = feed(db, user.id, user.role.clone(), None, 1, None).await?;
     let head_id = head.first().map(|r| r.id).unwrap_or(0);
     Ok(Json(FeedHeadIdResponse { head_id }))
 }
@@ -2200,7 +2200,7 @@ pub async fn api_student_activity_feed(
     // Use the student-variant of feed (target_student_id = sid, unread
     // annotated against sid's cursor). Pass sid as the viewer so unread
     // annotations reflect the student's perspective.
-    let rows = feed(db, sid, crate::auth::Role::Student, before, limit).await?;
+    let rows = feed(db, sid, crate::auth::Role::Student, before, limit, None).await?;
 
     Ok(Json(rows))
 }

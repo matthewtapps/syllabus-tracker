@@ -1889,6 +1889,26 @@ export async function getDashboardActivityFeed(limit = 30): Promise<ActivityRow[
   return (await response.json()) as ActivityRow[];
 }
 
+/** Keyset-paginated activity feed scoped to a single camp. */
+export async function getCampFeed(
+  campId: number,
+  params?: {
+    before_ts?: string;
+    before_id?: number;
+    limit?: number;
+  },
+): Promise<ActivityRow[]> {
+  const url = new URL(`/api/camps/${campId}/feed`, window.location.origin);
+  if (params?.before_ts) url.searchParams.set("before_ts", params.before_ts);
+  if (params?.before_id !== undefined)
+    url.searchParams.set("before_id", String(params.before_id));
+  if (params?.limit !== undefined)
+    url.searchParams.set("limit", String(params.limit));
+  const response = await fetch(url.toString(), { credentials: "include" });
+  if (!response.ok) throw response;
+  return (await response.json()) as ActivityRow[];
+}
+
 // ============================================================
 // Threads (PR 2, Task 1)
 // ============================================================
@@ -1913,6 +1933,8 @@ export interface CommentView {
   body: string | null;
   /** Optional video attached to this comment, rendered under the text. */
   video: Video | null;
+  /** Seconds into the parent video this comment references; null if not anchored. */
+  video_ts_seconds: number | null;
   created_at: string;
   deleted_at: string | null;
 }
@@ -1946,6 +1968,50 @@ export interface CreateThreadInput {
   body: string;
   /** Optional draft video to attach to the root post. */
   attached_video_id?: number | null;
+  /** True when attached_video_id references an existing video (no reparent). */
+  attached_video_is_reference?: boolean | null;
+  /** Title override for a reference video that has no title yet. */
+  attached_video_title?: string | null;
+}
+
+// ============================================================
+// Video browse (Sillybus navigator)
+// ============================================================
+
+export interface BrowseParent {
+  id: number;
+  name: string;
+  video_count: number;
+}
+
+export interface BrowseVideo {
+  id: number;
+  title?: string | null;
+  duration_seconds?: number | null;
+  external_url?: string | null;
+  provenance: string;
+}
+
+export type BrowseResult =
+  | { kind: "parents"; parents: BrowseParent[] }
+  | { kind: "videos"; videos: BrowseVideo[] };
+
+export async function browseVideos(params: {
+  studentId: number;
+  source?: "library" | "camps" | "syllabuses";
+  parentId?: number;
+  q?: string;
+}): Promise<BrowseResult> {
+  const qs = new URLSearchParams();
+  qs.set("student_id", String(params.studentId));
+  if (params.source) qs.set("source", params.source);
+  if (params.parentId != null) qs.set("parent_id", String(params.parentId));
+  if (params.q) qs.set("q", params.q);
+  const res = await fetch(`/api/videos/browse?${qs.toString()}`, {
+    credentials: "include",
+  });
+  if (!res.ok) throw new Error(`Browse failed: ${res.statusText}`);
+  return res.json() as Promise<BrowseResult>;
 }
 
 export async function listThreads(
@@ -1980,6 +2046,8 @@ export async function createComment(
   body: string,
   parentCommentId?: number | null,
   videoId?: number | null,
+  videoIsReference?: boolean | null,
+  videoTsSeconds?: number | null,
 ): Promise<Response> {
   return fetch(`/api/threads/${threadId}/comments`, {
     method: "POST",
@@ -1989,6 +2057,8 @@ export async function createComment(
       body,
       parent_comment_id: parentCommentId ?? null,
       video_id: videoId ?? null,
+      video_is_reference: videoIsReference ?? false,
+      video_ts_seconds: videoTsSeconds ?? null,
     }),
   });
 }
@@ -2063,25 +2133,6 @@ export interface Camp {
   description: string | null;
   created_at: string;
   archived_at: string | null;
-  // The list endpoint (GET /api/camps) serializes the bare DB row, which only
-  // carries references_camp_id. references_camp_name is resolved and sent ONLY
-  // by the detail endpoint (CampDetail below).
-  references_camp_id: number | null;
-}
-
-export interface CampTechnique {
-  technique_id: number;
-  name: string;
-  description: string | null;
-  position: number;
-  tags: Tag[];
-  video_count: number;
-}
-
-export interface CampDetail extends Camp {
-  techniques: CampTechnique[];
-  /// Name of the camp this one builds on, resolved server-side.
-  references_camp_name: string | null;
 }
 
 /** Row from GET /api/camps (enriched list payload). */
@@ -2093,8 +2144,6 @@ export interface CampSummary {
   description: string | null;
   created_at: string;
   archived_at: string | null;
-  references_camp_id: number | null;
-  technique_count: number;
   video_count: number;
   last_activity_at: string | null;
 }
@@ -2107,17 +2156,16 @@ export async function getCampsForStudent(studentId: number): Promise<CampSummary
   return ((await res.json()) as { camps: CampSummary[] }).camps;
 }
 
-export async function getCamp(id: number): Promise<CampDetail> {
+export async function getCamp(id: number): Promise<Camp> {
   const res = await fetch(`/api/camps/${id}`, { credentials: "include" });
   if (!res.ok) throw res;
-  return (await res.json()) as CampDetail;
+  return (await res.json()) as Camp;
 }
 
 export async function createCamp(data: {
   student_id: number;
   name: string;
   description: string | null;
-  references_camp_id?: number | null;
 }): Promise<{ id: number }> {
   const res = await fetch("/api/camps", {
     method: "POST",
@@ -2150,31 +2198,7 @@ export async function updateCamp(
   if (!res.ok) throw res;
 }
 
-export async function addCampTechnique(
-  campId: number,
-  techniqueId: number,
-): Promise<void> {
-  const res = await fetch(`/api/camps/${campId}/techniques`, {
-    method: "POST",
-    credentials: "include",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ technique_id: techniqueId }),
-  });
-  if (!res.ok) throw res;
-}
-
-export async function removeCampTechnique(
-  campId: number,
-  techniqueId: number,
-): Promise<void> {
-  const res = await fetch(`/api/camps/${campId}/techniques/${techniqueId}`, {
-    method: "DELETE",
-    credentials: "include",
-  });
-  if (!res.ok) throw res;
-}
-
-/** CC-009/010: Create a brand-new technique inside a camp and add it there. */
+/** CC-009/010: Create a brand-new technique inside a camp. */
 export async function createCampTechnique(
   campId: number,
   data: { name: string; description: string; scope: "global" | "scoped" },
@@ -2189,21 +2213,53 @@ export async function createCampTechnique(
   return res.json();
 }
 
-export async function promotePinnedToCamp(
-  studentId: number,
-  techniqueId: number,
+// ============================================================
+// Camp search (Phase 4)
+// ============================================================
+
+/** A technique hit from camp search. */
+export interface CampTechniqueHit {
+  thread_id: number;
+  technique_id: number;
+  technique_name: string;
+}
+
+/** A video hit from camp search. */
+export interface CampVideoHit {
+  video_id: number;
+  title: string;
+  /** The thread whose attached_video_id points to this video, if any. */
+  thread_id: number | null;
+}
+
+/** A thread/comment body hit from camp search. */
+export interface CampThreadHit {
+  thread_id: number;
+  /** A snippet of the matching body (truncated at 200 chars). */
+  snippet: string;
+  /** true if the match came from a comment body rather than the root post. */
+  is_comment: boolean;
+}
+
+export interface CampSearchResult {
+  techniques: CampTechniqueHit[];
+  videos: CampVideoHit[];
+  threads: CampThreadHit[];
+}
+
+/** GET /api/camps/:id/search?q=&kind= */
+export async function searchCamp(
   campId: number,
-): Promise<void> {
-  const res = await fetch(
-    `/api/students/${studentId}/pinned/${techniqueId}/promote`,
-    {
-      method: "POST",
-      credentials: "include",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ camp_id: campId }),
-    },
-  );
+  q: string,
+  kind?: "technique" | "video" | "thread",
+): Promise<CampSearchResult> {
+  const params = new URLSearchParams({ q });
+  if (kind) params.set("kind", kind);
+  const res = await fetch(`/api/camps/${campId}/search?${params.toString()}`, {
+    credentials: "include",
+  });
   if (!res.ok) throw res;
+  return (await res.json()) as CampSearchResult;
 }
 
 export async function getCampVideos(campId: number): Promise<Video[]> {
@@ -2212,47 +2268,6 @@ export async function getCampVideos(campId: number): Promise<Video[]> {
   });
   if (!res.ok) throw res;
   return ((await res.json()) as { videos: Video[] }).videos;
-}
-
-/**
- * The camp-only reference videos attached to a technique within this camp.
- * Returns ONLY the camp-scoped refs; the technique's global videos come from
- * `getTechniqueVideos`. Readable by the coach or the camp's own student.
- */
-export async function getCampTechniqueVideos(
-  campId: number,
-  techniqueId: number,
-): Promise<Video[]> {
-  const res = await fetch(
-    `/api/camps/${campId}/techniques/${techniqueId}/videos`,
-    { credentials: "include" },
-  );
-  if (!res.ok) throw res;
-  return ((await res.json()) as { videos: Video[] }).videos;
-}
-
-/**
- * Attach one of this camp's footage videos to a technique within the camp.
- * `camp_only` keeps it as camp-scoped reference footage (surfaced only inside
- * this camp); `global` promotes it to a normal technique video visible
- * everywhere the technique appears. The backend rejects (404) any `video_id`
- * that isn't this camp's own footage. Returns 204 on success.
- */
-export async function addCampTechniqueVideo(
-  campId: number,
-  techniqueId: number,
-  data: { video_id: number; scope: "camp_only" | "global" },
-): Promise<void> {
-  const res = await fetch(
-    `/api/camps/${campId}/techniques/${techniqueId}/videos`,
-    {
-      method: "POST",
-      credentials: "include",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(data),
-    },
-  );
-  if (!res.ok) throw res;
 }
 
 export async function uploadCampVideo(

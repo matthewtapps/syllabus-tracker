@@ -1661,6 +1661,471 @@ pub async fn list_video_syllabus_overrides(
     Ok(map)
 }
 
+// ---------------------------------------------------------------------------
+// Browse helpers: power the "Choose from Sillybus" navigator.
+// All functions scope results to what a given student can actually see.
+// Coaches must pass the STUDENT's id so they see the same filtered view
+// (no-back-door rule).
+// ---------------------------------------------------------------------------
+
+/// A parent row returned by the browse-parents endpoints. Carries enough
+/// context to render a choosable entry in the navigator.
+#[derive(Debug, Clone)]
+pub struct BrowseParent {
+    pub id: i64,
+    pub name: String,
+    pub video_count: i64,
+}
+
+/// A video row returned by the browse-videos endpoints.
+#[derive(Debug, Clone)]
+pub struct BrowseVideo {
+    pub id: i64,
+    pub title: Option<String>,
+    pub duration_seconds: Option<i64>,
+    pub external_url: Option<String>,
+    /// Human-readable provenance label, e.g. "library · Armbar".
+    pub provenance: String,
+}
+
+/// Library source: returns globally-visible (hidden_at IS NULL, deleted_at IS
+/// NULL) technique rows that have at least one such video. The browse surface
+/// uses the global visibility rule for the library (same as
+/// `list_videos_for_technique_global_visible`); per-assignment overrides do
+/// not apply here.
+#[instrument(skip(pool))]
+pub async fn browse_library_parents(
+    pool: &Pool<Sqlite>,
+    student_id: i64,
+) -> Result<Vec<BrowseParent>, AppError> {
+    // Techniques with at least one globally-visible video. We ignore
+    // `student_id` deliberately: the library is public to all students.
+    // The parameter is kept so the call site is uniform and future
+    // per-student library gating can be added without a signature change.
+    let _ = student_id;
+    let rows = sqlx::query!(
+        r#"SELECT t.id AS "id!: i64", t.name AS "name!: String",
+                  COUNT(v.id) AS "video_count!: i64"
+           FROM techniques t
+           JOIN videos v ON v.technique_id = t.id
+                        AND v.parent_kind = 'technique'
+                        AND v.deleted_at IS NULL
+                        AND v.hidden_at IS NULL
+           WHERE t.is_global = 1
+           GROUP BY t.id
+           HAVING COUNT(v.id) > 0
+           ORDER BY t.name ASC"#
+    )
+    .fetch_all(pool)
+    .await?;
+    Ok(rows
+        .into_iter()
+        .map(|r| BrowseParent {
+            id: r.id,
+            name: r.name,
+            video_count: r.video_count,
+        })
+        .collect())
+}
+
+/// Library source drill-in: videos for a specific technique that are globally
+/// visible (hidden_at IS NULL). Mirrors `list_videos_for_technique_global_visible`.
+#[instrument(skip(pool))]
+pub async fn browse_library_videos_for_technique(
+    pool: &Pool<Sqlite>,
+    technique_id: i64,
+    student_id: i64,
+) -> Result<Vec<BrowseVideo>, AppError> {
+    // student_id kept for API symmetry; global lib doesn't narrow further.
+    let _ = student_id;
+    let technique_name: Option<String> = sqlx::query_scalar!(
+        r#"SELECT name FROM techniques WHERE id = ?"#,
+        technique_id,
+    )
+    .fetch_optional(pool)
+    .await?;
+    let label = technique_name.unwrap_or_else(|| "technique".into());
+    let rows = sqlx::query!(
+        r#"SELECT id AS "id!: i64", title AS "title?: String",
+                  duration_seconds AS "duration_seconds?: i64",
+                  external_url AS "external_url?: String"
+           FROM videos
+           WHERE technique_id = ?
+             AND parent_kind = 'technique'
+             AND deleted_at IS NULL
+             AND hidden_at IS NULL
+           ORDER BY position ASC, id ASC"#,
+        technique_id,
+    )
+    .fetch_all(pool)
+    .await?;
+    Ok(rows
+        .into_iter()
+        .map(|r| BrowseVideo {
+            id: r.id,
+            title: r.title,
+            duration_seconds: r.duration_seconds,
+            external_url: r.external_url,
+            provenance: format!("library · {label}"),
+        })
+        .collect())
+}
+
+/// Camps source: the student's own non-archived camps that have at least one
+/// student-visible video (applying camp-scope overrides).
+#[instrument(skip(pool))]
+pub async fn browse_camp_parents(
+    pool: &Pool<Sqlite>,
+    student_id: i64,
+) -> Result<Vec<BrowseParent>, AppError> {
+    // Count visible camp videos using the same visibility rule as
+    // `list_videos_for_camp`: camp-scope override present -> its value;
+    // otherwise hidden_at IS NULL.
+    let rows = sqlx::query!(
+        r#"SELECT c.id AS "id!: i64", c.name AS "name!: String",
+                  COUNT(v.id) AS "video_count!: i64"
+           FROM camps c
+           JOIN videos v ON v.camp_id = c.id
+                        AND v.deleted_at IS NULL
+           LEFT JOIN video_visibility_overrides ov
+                  ON ov.video_id = v.id
+                 AND ov.scope_kind = 'camp'
+                 AND ov.camp_id = c.id
+           WHERE c.student_id = ?
+             AND c.archived_at IS NULL
+             AND CASE
+                   WHEN ov.visible IS NOT NULL THEN ov.visible
+                   ELSE (v.hidden_at IS NULL)
+                 END = 1
+           GROUP BY c.id
+           HAVING COUNT(v.id) > 0
+           ORDER BY c.created_at DESC"#,
+        student_id,
+    )
+    .fetch_all(pool)
+    .await?;
+    Ok(rows
+        .into_iter()
+        .map(|r| BrowseParent {
+            id: r.id,
+            name: r.name,
+            video_count: r.video_count,
+        })
+        .collect())
+}
+
+/// Camps source drill-in: videos for a specific camp that are visible to the
+/// student (same rule as `list_videos_for_camp`). The camp must belong to
+/// `student_id`; otherwise returns empty (caller enforces ownership at the
+/// route layer but the DB function also guards so it cannot be misused).
+#[instrument(skip(pool))]
+pub async fn browse_camp_videos(
+    pool: &Pool<Sqlite>,
+    camp_id: i64,
+    student_id: i64,
+) -> Result<Vec<BrowseVideo>, AppError> {
+    // Verify the camp belongs to this student (no back door).
+    let camp_name: Option<String> = sqlx::query_scalar!(
+        r#"SELECT name FROM camps WHERE id = ? AND student_id = ? AND archived_at IS NULL"#,
+        camp_id,
+        student_id,
+    )
+    .fetch_optional(pool)
+    .await?;
+    let Some(camp_name) = camp_name else {
+        return Ok(Vec::new());
+    };
+    let rows = sqlx::query!(
+        r#"SELECT v.id AS "id!: i64", v.title AS "title?: String",
+                  v.duration_seconds AS "duration_seconds?: i64",
+                  v.external_url AS "external_url?: String"
+           FROM videos v
+           LEFT JOIN video_visibility_overrides ov
+                  ON ov.video_id = v.id
+                 AND ov.scope_kind = 'camp'
+                 AND ov.camp_id = ?1
+           WHERE v.camp_id = ?1
+             AND v.deleted_at IS NULL
+             AND CASE
+                   WHEN ov.visible IS NOT NULL THEN ov.visible
+                   ELSE (v.hidden_at IS NULL)
+                 END = 1
+           ORDER BY v.position ASC, v.id ASC"#,
+        camp_id,
+    )
+    .fetch_all(pool)
+    .await?;
+    Ok(rows
+        .into_iter()
+        .map(|r| BrowseVideo {
+            id: r.id,
+            title: r.title,
+            duration_seconds: r.duration_seconds,
+            external_url: r.external_url,
+            provenance: format!("camp · {camp_name}"),
+        })
+        .collect())
+}
+
+/// Syllabuses source: the student's active (non-unassigned) syllabuses that
+/// have at least one video visible to the student in that syllabus context.
+///
+/// The per-syllabus visibility model is complex (assignment > syllabus >
+/// student override, SST-hidden cascade). For the parent COUNT here we use a
+/// conservative proxy: count T1 globally-visible technique videos reachable
+/// via the assignment's SST ladder. Full `effective_video_visible` filtering
+/// happens at drill-in time. This may over-count if overrides hide some
+/// videos, but that is preferable to an expensive per-row call here.
+#[instrument(skip(pool))]
+pub async fn browse_syllabus_parents(
+    pool: &Pool<Sqlite>,
+    student_id: i64,
+) -> Result<Vec<BrowseParent>, AppError> {
+    let rows = sqlx::query!(
+        r#"SELECT sa.syllabus_id AS "id!: i64",
+                  s.name AS "name!: String",
+                  COUNT(DISTINCT v.id) AS "video_count!: i64"
+           FROM syllabus_assignments sa
+           JOIN syllabi s ON s.id = sa.syllabus_id
+           -- All SST rows for this assignment (technique membership).
+           JOIN student_syllabus_techniques sst ON sst.assignment_id = sa.id
+           -- T1 videos for those techniques that are globally visible.
+           JOIN videos v ON v.technique_id = sst.technique_id
+                        AND v.parent_kind = 'technique'
+                        AND v.deleted_at IS NULL
+                        AND v.hidden_at IS NULL
+           WHERE sa.student_id = ?
+             AND sa.unassigned_at IS NULL
+           GROUP BY sa.syllabus_id
+           HAVING COUNT(DISTINCT v.id) > 0
+           ORDER BY s.name ASC"#,
+        student_id,
+    )
+    .fetch_all(pool)
+    .await?;
+    Ok(rows
+        .into_iter()
+        .map(|r| BrowseParent {
+            id: r.id,
+            name: r.name,
+            video_count: r.video_count,
+        })
+        .collect())
+}
+
+/// Syllabuses source drill-in: videos visible to the student across all
+/// techniques in a given syllabus assignment.
+///
+/// Uses `list_videos_for_technique_in_syllabus_visible_to` (which calls
+/// `effective_video_visible`) per technique, so the full override precedence
+/// applies. This is N+1 by technique but the technique count is small for any
+/// single syllabus and correctness beats a single large query here.
+#[instrument(skip(pool))]
+pub async fn browse_syllabus_videos(
+    pool: &Pool<Sqlite>,
+    syllabus_id: i64,
+    student_id: i64,
+) -> Result<Vec<BrowseVideo>, AppError> {
+    // Verify the student has an active assignment for this syllabus.
+    let syllabus_name: Option<String> = sqlx::query_scalar!(
+        r#"SELECT s.name
+           FROM syllabus_assignments sa
+           JOIN syllabi s ON s.id = sa.syllabus_id
+           WHERE sa.student_id = ? AND sa.syllabus_id = ? AND sa.unassigned_at IS NULL
+           LIMIT 1"#,
+        student_id,
+        syllabus_id,
+    )
+    .fetch_optional(pool)
+    .await?;
+    let Some(syllabus_name) = syllabus_name else {
+        return Ok(Vec::new());
+    };
+
+    // Enumerate the techniques on this syllabus, ordered by SST position.
+    let technique_rows = sqlx::query!(
+        r#"SELECT DISTINCT sst.technique_id AS "technique_id!: i64",
+                  t.name AS "technique_name!: String"
+           FROM syllabus_assignments sa
+           JOIN student_syllabus_techniques sst ON sst.assignment_id = sa.id
+           JOIN techniques t ON t.id = sst.technique_id
+           WHERE sa.student_id = ? AND sa.syllabus_id = ? AND sa.unassigned_at IS NULL
+           ORDER BY t.name ASC"#,
+        student_id,
+        syllabus_id,
+    )
+    .fetch_all(pool)
+    .await?;
+
+    let mut results: Vec<BrowseVideo> = Vec::new();
+    for tech in technique_rows {
+        let videos = list_videos_for_technique_in_syllabus_visible_to(
+            pool,
+            tech.technique_id,
+            syllabus_id,
+            student_id,
+        )
+        .await?;
+        for v in videos {
+            let provenance = format!("{syllabus_name} · {}", tech.technique_name);
+            results.push(BrowseVideo {
+                id: v.id,
+                title: if v.title.is_empty() { None } else { Some(v.title) },
+                duration_seconds: v.duration_seconds,
+                external_url: v.external_url,
+                provenance,
+            });
+        }
+    }
+    Ok(results)
+}
+
+/// Flat text search across all student-visible videos: library (global),
+/// camps (camp-scope overrides), and syllabus (effective visibility).
+///
+/// For camp and library sources the SQL filter is applied inline. For
+/// syllabus videos the per-assignment effective visibility model is too
+/// complex to express cheaply in a single query, so we reuse the existing
+/// helpers and filter by title afterwards. The search term is lowercased
+/// for a case-insensitive LIKE match.
+#[instrument(skip(pool))]
+pub async fn search_videos_visible_to_student(
+    pool: &Pool<Sqlite>,
+    student_id: i64,
+    query: &str,
+) -> Result<Vec<BrowseVideo>, AppError> {
+    let pattern = format!("%{}%", query.to_lowercase());
+    let mut results: Vec<BrowseVideo> = Vec::new();
+
+    // --- Library (T1, globally visible) ---
+    let lib_rows = sqlx::query!(
+        r#"SELECT v.id AS "id!: i64", v.title AS "title?: String",
+                  v.duration_seconds AS "duration_seconds?: i64",
+                  v.external_url AS "external_url?: String",
+                  t.name AS "technique_name!: String"
+           FROM videos v
+           JOIN techniques t ON t.id = v.technique_id
+           WHERE v.parent_kind = 'technique'
+             AND v.deleted_at IS NULL
+             AND v.hidden_at IS NULL
+             AND LOWER(COALESCE(v.title, '')) LIKE ?
+           ORDER BY t.name ASC, v.position ASC, v.id ASC"#,
+        pattern,
+    )
+    .fetch_all(pool)
+    .await?;
+    for r in lib_rows {
+        results.push(BrowseVideo {
+            id: r.id,
+            title: r.title,
+            duration_seconds: r.duration_seconds,
+            external_url: r.external_url,
+            provenance: format!("library · {}", r.technique_name),
+        });
+    }
+
+    // --- Camps (student-owned, camp-scope visibility) ---
+    let camp_rows = sqlx::query!(
+        r#"SELECT v.id AS "id!: i64", v.title AS "title?: String",
+                  v.duration_seconds AS "duration_seconds?: i64",
+                  v.external_url AS "external_url?: String",
+                  c.name AS "camp_name!: String"
+           FROM videos v
+           JOIN camps c ON c.id = v.camp_id
+           LEFT JOIN video_visibility_overrides ov
+                  ON ov.video_id = v.id
+                 AND ov.scope_kind = 'camp'
+                 AND ov.camp_id = c.id
+           WHERE c.student_id = ?
+             AND c.archived_at IS NULL
+             AND v.deleted_at IS NULL
+             AND CASE
+                   WHEN ov.visible IS NOT NULL THEN ov.visible
+                   ELSE (v.hidden_at IS NULL)
+                 END = 1
+             AND LOWER(COALESCE(v.title, '')) LIKE ?
+           ORDER BY c.name ASC, v.position ASC, v.id ASC"#,
+        student_id,
+        pattern,
+    )
+    .fetch_all(pool)
+    .await?;
+    for r in camp_rows {
+        results.push(BrowseVideo {
+            id: r.id,
+            title: r.title,
+            duration_seconds: r.duration_seconds,
+            external_url: r.external_url,
+            provenance: format!("camp · {}", r.camp_name),
+        });
+    }
+
+    // --- Syllabuses (effective visibility per assignment) ---
+    // Enumerate the student's active assignments, then check each technique's
+    // T1 videos through effective_video_visible. We filter by title in Rust
+    // after the visibility check rather than adding another complex SQL query.
+    let assignments = sqlx::query!(
+        r#"SELECT sa.id AS "id!: i64", sa.syllabus_id AS "syllabus_id!: i64",
+                  s.name AS "syllabus_name!: String"
+           FROM syllabus_assignments sa
+           JOIN syllabi s ON s.id = sa.syllabus_id
+           WHERE sa.student_id = ? AND sa.unassigned_at IS NULL
+           ORDER BY s.name ASC"#,
+        student_id,
+    )
+    .fetch_all(pool)
+    .await?;
+
+    for assignment in assignments {
+        // Techniques in this assignment.
+        let techs = sqlx::query!(
+            r#"SELECT DISTINCT sst.technique_id AS "technique_id!: i64",
+                      t.name AS "technique_name!: String"
+               FROM student_syllabus_techniques sst
+               JOIN techniques t ON t.id = sst.technique_id
+               WHERE sst.assignment_id = ?
+               ORDER BY t.name ASC"#,
+            assignment.id,
+        )
+        .fetch_all(pool)
+        .await?;
+
+        for tech in techs {
+            let videos = list_videos_for_technique_in_syllabus_visible_to(
+                pool,
+                tech.technique_id,
+                assignment.syllabus_id,
+                student_id,
+            )
+            .await?;
+            for v in videos {
+                let title_lc = v.title.to_lowercase();
+                if !title_lc.contains(query.to_lowercase().as_str()) {
+                    continue;
+                }
+                let provenance = format!(
+                    "{} · {}",
+                    assignment.syllabus_name, tech.technique_name
+                );
+                results.push(BrowseVideo {
+                    id: v.id,
+                    title: if v.title.is_empty() { None } else { Some(v.title) },
+                    duration_seconds: v.duration_seconds,
+                    external_url: v.external_url,
+                    provenance,
+                });
+            }
+        }
+    }
+
+    // Deduplicate by video id (a video might appear in both library and
+    // syllabus context) - keep the first occurrence.
+    let mut seen = std::collections::HashSet::<i64>::new();
+    results.retain(|v| seen.insert(v.id));
+
+    Ok(results)
+}
+
 #[cfg(test)]
 mod parent_tests {
     use super::*;

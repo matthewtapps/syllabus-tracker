@@ -4,11 +4,12 @@ import {
   getAllUsers,
   getActivityDigest,
   getActivityFeed,
+  getCampFeed,
   getDashboardActivityFeed,
   getCamp,
   getCampVideos,
-  getCampTechniqueVideos,
   getCampsForStudent,
+  searchCamp,
   getStudentActivityFeed,
   getActivityFeedHeadId,
   getActivityUnreadCount,
@@ -457,6 +458,21 @@ export function useSyllabusAttemptHeatmap(studentId: number | undefined) {
   });
 }
 
+// ---- Camp feed ----
+
+/** Infinite (keyset-paginated) activity feed scoped to a single camp. */
+export function useInfiniteCampFeed(campId: number | undefined, limit = 20) {
+  const valid = typeof campId === "number" && Number.isFinite(campId);
+  return useInfiniteQuery({
+    queryKey: qk.campFeed(campId ?? 0, limit),
+    enabled: valid,
+    initialPageParam: undefined as FeedCursor,
+    queryFn: ({ pageParam }) =>
+      getCampFeed(campId as number, { limit, ...(pageParam ?? {}) }),
+    getNextPageParam: (lastPage) => nextFeedCursor(lastPage, limit),
+  });
+}
+
 // ---- Camps ----
 
 export function useCampsForStudent(studentId: number | undefined) {
@@ -480,20 +496,24 @@ export function useCampVideos(campId: number | undefined) {
   });
 }
 
-/** Camp-only reference videos for a (camp, technique). */
-export function useCampTechniqueVideos(
+/**
+ * Camp search query. Only fires when q.trim() is non-empty and campId is valid.
+ * Results are cached per (campId, q, kind) triple so flipping kind chips is
+ * instant on a warm cache.
+ */
+export function useCampSearch(
   campId: number | undefined,
-  techniqueId: number | undefined,
+  q: string,
+  kind?: "technique" | "video" | "thread",
 ) {
+  const trimmed = q.trim();
+  const valid =
+    typeof campId === "number" && Number.isFinite(campId) && trimmed.length > 0;
   return useQuery({
-    queryKey: qk.campTechniqueVideos(campId ?? 0, techniqueId ?? 0),
-    queryFn:
-      typeof campId === "number" &&
-      Number.isFinite(campId) &&
-      typeof techniqueId === "number" &&
-      Number.isFinite(techniqueId)
-        ? () => getCampTechniqueVideos(campId, techniqueId)
-        : skipToken,
+    queryKey: qk.campSearch(campId ?? 0, trimmed, kind),
+    queryFn: valid ? () => searchCamp(campId as number, trimmed, kind) : skipToken,
+    staleTime: 30_000,
+    placeholderData: keepPreviousData,
   });
 }
 

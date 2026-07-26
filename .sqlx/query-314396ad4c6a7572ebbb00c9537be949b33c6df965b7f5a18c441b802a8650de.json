@@ -1,0 +1,32 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT v.id AS \"video_id!: i64\",\n                  v.title,\n                  MIN(th.id) AS \"thread_id?: i64\"\n           FROM (\n               -- Branch 1: videos attached to a camp thread\n               SELECT v.id, v.title, th.id AS thread_id\n               FROM threads th\n               JOIN videos v ON v.id = th.attached_video_id\n               WHERE th.camp_id = ? AND th.deleted_at IS NULL\n                 AND v.deleted_at IS NULL\n                 AND lower(v.title) LIKE ?\n               UNION\n               -- Branch 2: camp-owned footage (parent_kind='camp')\n               SELECT v.id, v.title, NULL AS thread_id\n               FROM videos v\n               WHERE v.parent_kind = 'camp'\n                 AND v.camp_id = ?\n                 AND v.deleted_at IS NULL\n                 AND lower(v.title) LIKE ?\n           ) AS v\n           LEFT JOIN threads th ON th.attached_video_id = v.id AND th.camp_id = ? AND th.deleted_at IS NULL\n           GROUP BY v.id\n           ORDER BY v.title\n           LIMIT ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "video_id!: i64",
+        "ordinal": 0,
+        "type_info": "Integer"
+      },
+      {
+        "name": "title",
+        "ordinal": 1,
+        "type_info": "Text"
+      },
+      {
+        "name": "thread_id?: i64",
+        "ordinal": 2,
+        "type_info": "Null"
+      }
+    ],
+    "parameters": {
+      "Right": 6
+    },
+    "nullable": [
+      true,
+      false,
+      null
+    ]
+  },
+  "hash": "314396ad4c6a7572ebbb00c9537be949b33c6df965b7f5a18c441b802a8650de"
+}

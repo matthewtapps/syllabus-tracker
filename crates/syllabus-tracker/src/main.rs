@@ -54,10 +54,8 @@ use syllabi::{
     api_unassign_syllabus, api_update_sst, api_update_syllabus, api_update_syllabus_attempt,
 };
 use camps::{
-    api_add_camp_technique, api_add_camp_technique_video, api_archive_camp, api_create_camp,
-    api_create_camp_technique, api_get_camp, api_list_camps, api_list_camp_technique_videos,
-    api_list_camp_videos, api_promote_pinned_to_camp, api_remove_camp_technique, api_update_camp,
-    api_set_camp_video_visibility,
+    api_archive_camp, api_camp_feed, api_camp_search, api_create_camp, api_create_camp_technique,
+    api_get_camp, api_list_camps, api_list_camp_videos, api_update_camp, api_set_camp_video_visibility,
 };
 use threads::{
     api_create_thread, api_list_threads, api_create_comment, api_delete_thread, api_delete_comment,
@@ -67,8 +65,8 @@ use telemetry::init_tracing;
 use thiserror::Error;
 use videos::{
     CallbackSecret, RemoteProcessor, DynVideoProcessor, HostFfmpegProcessor,
-    api_admin_storage, api_camp_video_upload, api_dashboard_video_overview, api_delete_video,
-    api_list_technique_videos, api_my_watch_state, api_processing_result,
+    api_admin_storage, api_browse_videos, api_camp_video_upload, api_dashboard_video_overview,
+    api_delete_video, api_list_technique_videos, api_my_watch_state, api_processing_result,
     api_reorder_videos, api_replace_video, api_set_video_global_hidden,
     api_set_video_student_visibility, api_student_watch_activity, api_thread_reply_video_link,
     api_thread_reply_video_upload, api_update_video,
@@ -381,14 +379,12 @@ pub async fn init_rocket_with_callback_secret(
                 api_get_camp,
                 api_update_camp,
                 api_archive_camp,
-                api_add_camp_technique,
                 api_create_camp_technique,
-                api_remove_camp_technique,
-                api_add_camp_technique_video,
-                api_list_camp_technique_videos,
                 api_list_camp_videos,
                 api_set_camp_video_visibility,
-                api_promote_pinned_to_camp,
+                api_camp_feed,
+                api_camp_search,
+                api_browse_videos,
             ],
         )
         .register(

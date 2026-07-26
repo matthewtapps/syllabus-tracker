@@ -1,0 +1,32 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT sa.id AS \"id!: i64\", sa.syllabus_id AS \"syllabus_id!: i64\",\n                  s.name AS \"syllabus_name!: String\"\n           FROM syllabus_assignments sa\n           JOIN syllabi s ON s.id = sa.syllabus_id\n           WHERE sa.student_id = ? AND sa.unassigned_at IS NULL\n           ORDER BY s.name ASC",
+  "describe": {
+    "columns": [
+      {
+        "name": "id!: i64",
+        "ordinal": 0,
+        "type_info": "Integer"
+      },
+      {
+        "name": "syllabus_id!: i64",
+        "ordinal": 1,
+        "type_info": "Integer"
+      },
+      {
+        "name": "syllabus_name!: String",
+        "ordinal": 2,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "f188b6d83de363d267a37a23f3c5dd615ddd9dc0a33fb41e0be22680b8da0244"
+}

@@ -46,7 +46,7 @@ export function DiscussionBlock() {
           ? context.studentId
           : undefined;
 
-  async function start(body: string, videoId: number | null) {
+  async function start(body: string, attachment: import("@/components/threads/reply-composer").VideoAttachment | null) {
     if (scopeStudentId === undefined) return;
     await createThread.mutateAsync({
       anchor_kind: anchor.kind,
@@ -55,7 +55,9 @@ export function DiscussionBlock() {
       visibility: "private",
       scope_student_id: scopeStudentId,
       body,
-      attached_video_id: videoId,
+      attached_video_id: attachment?.videoId ?? null,
+      attached_video_is_reference: attachment?.isReference ?? null,
+      attached_video_title: attachment?.title ?? null,
     });
   }
 
@@ -133,6 +135,8 @@ export function DiscussionBlock() {
           anchorId={anchor.id}
           campId={campId}
           pending={createThread.isPending}
+          requireVideoTitle
+          scopeStudentId={context.kind === "camp" ? scopeStudentId : undefined}
           onSubmit={start}
         />
       )}

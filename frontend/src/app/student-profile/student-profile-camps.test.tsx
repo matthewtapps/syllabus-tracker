@@ -33,8 +33,6 @@ function stubFetch() {
               description: "block",
               created_at: new Date().toISOString(),
               archived_at: null,
-              references_camp_id: null,
-              technique_count: 12,
               video_count: 4,
               last_activity_at: new Date().toISOString(),
             },

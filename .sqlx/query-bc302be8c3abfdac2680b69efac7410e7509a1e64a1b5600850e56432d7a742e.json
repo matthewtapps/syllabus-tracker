@@ -1,0 +1,32 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT t.id AS \"id!: i64\", t.name AS \"name!: String\",\n                  COUNT(v.id) AS \"video_count!: i64\"\n           FROM techniques t\n           JOIN videos v ON v.technique_id = t.id\n                        AND v.parent_kind = 'technique'\n                        AND v.deleted_at IS NULL\n                        AND v.hidden_at IS NULL\n           WHERE t.is_global = 1\n           GROUP BY t.id\n           HAVING COUNT(v.id) > 0\n           ORDER BY t.name ASC",
+  "describe": {
+    "columns": [
+      {
+        "name": "id!: i64",
+        "ordinal": 0,
+        "type_info": "Integer"
+      },
+      {
+        "name": "name!: String",
+        "ordinal": 1,
+        "type_info": "Text"
+      },
+      {
+        "name": "video_count!: i64",
+        "ordinal": 2,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "bc302be8c3abfdac2680b69efac7410e7509a1e64a1b5600850e56432d7a742e"
+}

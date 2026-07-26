@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { MessageSquare } from "lucide-react";
 import { toast } from "sonner";
 import type { Video, ThreadView } from "@/lib/api";
+import type { TimestampedEntry } from "./timestamped-entry";
 import { useUser } from "@/lib/current-user-context";
 import { useThreadsForAnchor } from "@/lib/queries";
 import { useCreateThread } from "@/lib/mutations";
@@ -96,7 +97,7 @@ function ReviewInner({
   const threads: ThreadView[] = threadsQuery.data ?? [];
   const createThread = useCreateThread();
 
-  const [pinnedThread, setPinnedThread] = useState<ThreadView | null>(null);
+  const [pinnedThread, setPinnedThread] = useState<TimestampedEntry | null>(null);
   const [highlightThreadId, setHighlightThreadId] = useState<number | null>(null);
   // Feed mode only: whether the collapsed discussion (composer + non-focus
   // threads) is expanded.
@@ -125,7 +126,7 @@ function ReviewInner({
 
   // Toggle pin on re-click; otherwise set it. The overlay chip is transient:
   // auto-clear after 6 s; the feed stacked below the video is the durable view.
-  function focusPin(t: ThreadView) {
+  function focusPin(t: TimestampedEntry) {
     if (pinnedThread?.id === t.id) {
       setPinnedThread(null);
       if (pinTimerRef.current) {

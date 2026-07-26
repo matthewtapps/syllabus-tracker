@@ -1221,6 +1221,210 @@ pub async fn api_processing_result(
     }
 }
 
+// ---------------------------------------------------------------------------
+// Browse endpoint: "Choose from Sillybus" navigator
+// ---------------------------------------------------------------------------
+
+/// Query parameters for `GET /videos/browse`.
+#[derive(Debug, rocket::serde::Deserialize, rocket::form::FromForm)]
+pub struct BrowseParams {
+    /// The camp student whose visibility scopes all results. Required.
+    pub student_id: i64,
+    /// Optional source filter: `library` | `camps` | `syllabuses`.
+    pub source: Option<String>,
+    /// Drill into a specific parent (technique id, camp id, or syllabus id).
+    pub parent_id: Option<i64>,
+    /// Case-insensitive text search over video titles.
+    pub q: Option<String>,
+}
+
+/// A browsable parent (technique / camp / syllabus) returned when listing
+/// available parents for a source.
+#[derive(Serialize)]
+pub struct BrowseParentItem {
+    pub id: i64,
+    pub name: String,
+    pub video_count: i64,
+}
+
+/// A single video returned by the browse endpoint.
+#[derive(Serialize)]
+pub struct BrowseVideoItem {
+    pub id: i64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub duration_seconds: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub external_url: Option<String>,
+    pub provenance: String,
+}
+
+#[derive(Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum BrowseResponse {
+    Parents { parents: Vec<BrowseParentItem> },
+    Videos { videos: Vec<BrowseVideoItem> },
+}
+
+/// `GET /api/videos/browse?student_id=<id>[&source=<s>][&parent_id=<p>][&q=<q>]`
+///
+/// Returns videos (or browsable parents) scoped strictly to what `student_id`
+/// can see. Both coaches and the student themselves may call this; a coach
+/// gets the exact same filtered view (no widening).
+#[instrument(skip(pool))]
+#[get("/videos/browse?<params..>")]
+pub async fn api_browse_videos(
+    params: BrowseParams,
+    user: User,
+    pool: &State<Pool<Sqlite>>,
+) -> Result<Json<BrowseResponse>, Status> {
+    let pool = pool.inner();
+    let student_id = params.student_id;
+
+    // Authz: must be a coach (ManageCamps) or the student themselves.
+    let is_coach = user.has_permission(Permission::ManageCamps);
+    if !is_coach && user.id != student_id {
+        return Err(Status::Forbidden);
+    }
+
+    // Search mode: `q` present overrides source/parent_id.
+    if let Some(q) = &params.q {
+        let q = q.trim();
+        if q.is_empty() {
+            return Ok(Json(BrowseResponse::Videos { videos: vec![] }));
+        }
+        let results = db::search_videos_visible_to_student(pool, student_id, q)
+            .await
+            .map_err(Status::from)?;
+        let videos = results
+            .into_iter()
+            .map(|v| BrowseVideoItem {
+                id: v.id,
+                title: v.title,
+                duration_seconds: v.duration_seconds,
+                external_url: v.external_url,
+                provenance: v.provenance,
+            })
+            .collect();
+        return Ok(Json(BrowseResponse::Videos { videos }));
+    }
+
+    match (params.source.as_deref(), params.parent_id) {
+        // source=library, no parent_id -> list techniques with visible videos.
+        (Some("library"), None) => {
+            let parents = db::browse_library_parents(pool, student_id)
+                .await
+                .map_err(Status::from)?;
+            Ok(Json(BrowseResponse::Parents {
+                parents: parents
+                    .into_iter()
+                    .map(|p| BrowseParentItem {
+                        id: p.id,
+                        name: p.name,
+                        video_count: p.video_count,
+                    })
+                    .collect(),
+            }))
+        }
+
+        // source=library, parent_id -> list globally-visible videos for that technique.
+        (Some("library"), Some(technique_id)) => {
+            let videos = db::browse_library_videos_for_technique(pool, technique_id, student_id)
+                .await
+                .map_err(Status::from)?;
+            Ok(Json(BrowseResponse::Videos {
+                videos: videos
+                    .into_iter()
+                    .map(|v| BrowseVideoItem {
+                        id: v.id,
+                        title: v.title,
+                        duration_seconds: v.duration_seconds,
+                        external_url: v.external_url,
+                        provenance: v.provenance,
+                    })
+                    .collect(),
+            }))
+        }
+
+        // source=camps, no parent_id -> list the student's camps with visible videos.
+        (Some("camps"), None) => {
+            let parents = db::browse_camp_parents(pool, student_id)
+                .await
+                .map_err(Status::from)?;
+            Ok(Json(BrowseResponse::Parents {
+                parents: parents
+                    .into_iter()
+                    .map(|p| BrowseParentItem {
+                        id: p.id,
+                        name: p.name,
+                        video_count: p.video_count,
+                    })
+                    .collect(),
+            }))
+        }
+
+        // source=camps, parent_id -> list visible videos for that camp.
+        (Some("camps"), Some(camp_id)) => {
+            let videos = db::browse_camp_videos(pool, camp_id, student_id)
+                .await
+                .map_err(Status::from)?;
+            Ok(Json(BrowseResponse::Videos {
+                videos: videos
+                    .into_iter()
+                    .map(|v| BrowseVideoItem {
+                        id: v.id,
+                        title: v.title,
+                        duration_seconds: v.duration_seconds,
+                        external_url: v.external_url,
+                        provenance: v.provenance,
+                    })
+                    .collect(),
+            }))
+        }
+
+        // source=syllabuses, no parent_id -> list the student's active syllabuses
+        // that have at least one visible video.
+        (Some("syllabuses"), None) => {
+            let parents = db::browse_syllabus_parents(pool, student_id)
+                .await
+                .map_err(Status::from)?;
+            Ok(Json(BrowseResponse::Parents {
+                parents: parents
+                    .into_iter()
+                    .map(|p| BrowseParentItem {
+                        id: p.id,
+                        name: p.name,
+                        video_count: p.video_count,
+                    })
+                    .collect(),
+            }))
+        }
+
+        // source=syllabuses, parent_id -> list videos visible in that syllabus context.
+        (Some("syllabuses"), Some(syllabus_id)) => {
+            let videos = db::browse_syllabus_videos(pool, syllabus_id, student_id)
+                .await
+                .map_err(Status::from)?;
+            Ok(Json(BrowseResponse::Videos {
+                videos: videos
+                    .into_iter()
+                    .map(|v| BrowseVideoItem {
+                        id: v.id,
+                        title: v.title,
+                        duration_seconds: v.duration_seconds,
+                        external_url: v.external_url,
+                        provenance: v.provenance,
+                    })
+                    .collect(),
+            }))
+        }
+
+        // Unrecognised source or no params -> 400.
+        _ => Err(Status::BadRequest),
+    }
+}
+
 fn is_mp4(content_type: Option<&rocket::http::ContentType>) -> bool {
     match content_type {
         Some(ct) => {

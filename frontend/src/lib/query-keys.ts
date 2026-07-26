@@ -93,11 +93,10 @@ export const qk = {
     ["camps", "student", studentId] as const,
   camp: (id: number) => ["camps", id] as const,
   campVideos: (campId: number) => ["camps", campId, "videos"] as const,
-  // Camp-only reference videos for a (camp, technique). Distinct bucket from
-  // both `campVideos` (all of a camp's footage) and `techniqueVideos` (the
-  // technique's global videos).
-  campTechniqueVideos: (campId: number, techniqueId: number) =>
-    ["camps", campId, "techniques", techniqueId, "videos"] as const,
+  campFeed: (campId: number, limit: number) =>
+    ["camps", campId, "feed", limit] as const,
+  campSearch: (campId: number, q: string, kind?: string) =>
+    ["camps", campId, "search", q, kind ?? null] as const,
 
   // camp_technique lists are cached per (technique, camp) so a technique's
   // camp-scoped conversation never collides with its global-library one.

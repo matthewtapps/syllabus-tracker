@@ -1316,9 +1316,11 @@ export function useCreateComment(
       body: string;
       parentCommentId?: number | null;
       videoId?: number | null;
+      videoIsReference?: boolean | null;
+      videoTsSeconds?: number | null;
       authorId?: number;
       authorName?: string;
-    }) => unwrap(await createComment(v.threadId, v.body, v.parentCommentId, v.videoId)),
+    }) => unwrap(await createComment(v.threadId, v.body, v.parentCommentId, v.videoId, v.videoIsReference, v.videoTsSeconds)),
     // When the comment carries a video, optimistically drop it into the thread
     // (with the video in its "processing" state) so the author sees their reply
     // immediately; the thread query polls it to playable. Reconciled on settle.
@@ -1351,6 +1353,7 @@ export function useCreateComment(
           updated_at: now,
           hidden_at: null,
         },
+        video_ts_seconds: v.videoTsSeconds ?? null,
         created_at: now,
         deleted_at: null,
       };
@@ -1416,13 +1419,9 @@ export function useDeleteComment(
 // ============================================================
 
 import {
-  addCampTechnique,
-  addCampTechniqueVideo,
   archiveCamp,
   createCamp,
   createCampTechnique,
-  promotePinnedToCamp,
-  removeCampTechnique,
   setCampVideoVisibility,
   updateCamp,
 } from "./api";
@@ -1433,7 +1432,6 @@ export function useCreateCamp(studentId: number) {
     mutationFn: (data: {
       name: string;
       description: string | null;
-      references_camp_id?: number | null;
     }) => createCamp({ student_id: studentId, ...data }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: qk.campsForStudent(studentId) });
@@ -1464,16 +1462,6 @@ export function useUpdateCamp(campId: number, studentId: number) {
   });
 }
 
-export function useAddCampTechnique(campId: number) {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (techniqueId: number) => addCampTechnique(campId, techniqueId),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: qk.camp(campId) });
-    },
-  });
-}
-
 /** CC-009/010: Create a new technique inside a camp (global or scoped). */
 export function useCreateCampTechnique(campId: number) {
   const qc = useQueryClient();
@@ -1482,53 +1470,9 @@ export function useCreateCampTechnique(campId: number) {
       createCampTechnique(campId, vars),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: qk.camp(campId) });
+      qc.invalidateQueries({ queryKey: ["camps", campId, "feed"] });
       // A new global technique joins the library; refresh the pick-existing picker.
       qc.invalidateQueries({ queryKey: qk.libraryTechniques() });
-    },
-  });
-}
-
-export function useRemoveCampTechnique(campId: number) {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (techniqueId: number) =>
-      removeCampTechnique(campId, techniqueId),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: qk.camp(campId) });
-    },
-  });
-}
-
-/**
- * Attach a camp footage video to a technique as camp-only reference footage or
- * promote it globally. Invalidates every viewer's copy of the technique's video
- * list (`techniqueVideosAll` covers all `forStudent` buckets) so a global
- * promotion surfaces everywhere, plus the camp's own video list and camp detail
- * since the footage's role changed.
- */
-export function useAddCampTechniqueVideo(campId: number) {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (vars: {
-      techniqueId: number;
-      videoId: number;
-      scope: "camp_only" | "global";
-    }) =>
-      addCampTechniqueVideo(campId, vars.techniqueId, {
-        video_id: vars.videoId,
-        scope: vars.scope,
-      }),
-    onSuccess: (_d, vars) => {
-      qc.invalidateQueries({
-        queryKey: qk.techniqueVideosAll(vars.techniqueId),
-      });
-      qc.invalidateQueries({ queryKey: qk.campVideos(campId) });
-      qc.invalidateQueries({ queryKey: qk.camp(campId) });
-      // Refresh the camp-only section in the camp technique row so a
-      // `camp_only` add appears without a manual reload.
-      qc.invalidateQueries({
-        queryKey: qk.campTechniqueVideos(campId, vars.techniqueId),
-      });
     },
   });
 }
@@ -1641,14 +1585,3 @@ export function useApplyAssignmentDiff() {
   });
 }
 
-export function usePromotePinnedToCamp(studentId: number) {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (vars: { techniqueId: number; campId: number }) =>
-      promotePinnedToCamp(studentId, vars.techniqueId, vars.campId),
-    onSuccess: (_res, vars) => {
-      qc.invalidateQueries({ queryKey: qk.campsForStudent(studentId) });
-      qc.invalidateQueries({ queryKey: qk.camp(vars.campId) });
-    },
-  });
-}
