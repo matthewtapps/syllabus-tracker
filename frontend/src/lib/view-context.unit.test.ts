@@ -360,7 +360,7 @@ describe("camp deep links", () => {
       camp_id: 7,
     });
     expect(ctx).not.toBeNull();
-    expect(viewContextHref(ctx!)).toBe("/camps/7?focus=camp:7");
+    expect(viewContextHref(ctx!)).toBe("/camps/7");
   });
 
   it("routes a camp video_added row focused on the video", () => {
@@ -374,6 +374,6 @@ describe("camp deep links", () => {
       video_id: 12,
       camp_id: 7,
     });
-    expect(viewContextHref(ctx!)).toBe("/camps/7?focus=camp:7&video=12");
+    expect(viewContextHref(ctx!)).toBe("/camps/7?video=12");
   });
 });

@@ -759,7 +759,7 @@ describe("activityLine", () => {
     const result = activityLine(
       row({ verb: "camp_created", context_kind: "camp", camp_id: 9 }),
     );
-    expect(result.href).toBe("/camps/9?focus=camp:9");
+    expect(result.href).toBe("/camps/9");
   });
 
   test("camp_technique_added routes to the camp page", () => {
@@ -772,13 +772,13 @@ describe("activityLine", () => {
         technique_name: "Armbar",
       }),
     );
-    expect(result.href).toBe("/camps/9?focus=camp:9");
+    expect(result.href).toBe("/camps/9");
   });
 
   test("camp_archived routes to the camp page", () => {
     const result = activityLine(
       row({ verb: "camp_archived", context_kind: "camp", camp_id: 9 }),
     );
-    expect(result.href).toBe("/camps/9?focus=camp:9");
+    expect(result.href).toBe("/camps/9");
   });
 });

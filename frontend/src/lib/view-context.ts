@@ -41,8 +41,9 @@ export function viewContextHref(ctx: ViewContext): string {
       return `${base}?focus=${refToken(ctx.sst)}${video}`;
     }
     case "camp": {
-      const video = ctx.video ? `&video=${ctx.video.id}` : "";
-      return `/camps/${ctx.camp.id}?focus=${refToken(ctx.camp)}${video}`;
+      // No focus token: the camp page is its activity feed, with no rows to
+      // expand, and `focus=camp:<id>` on `/camps/<id>` said nothing anyway.
+      return ctx.video ? `/camps/${ctx.camp.id}?video=${ctx.video.id}` : `/camps/${ctx.camp.id}`;
     }
   }
 }
