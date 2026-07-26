@@ -378,6 +378,7 @@ function Detail({
                   value={value}
                   isOpen={nav.expandedValue === value}
                   scrollToVideoId={nav.expandedValue === value ? nav.videoId : null}
+                  resumeSeconds={nav.expandedValue === value ? nav.resumeSeconds : null}
                   onVideoScrolled={nav.consumeVideo}
                   ghost={ghostTechniqueIds.has(sst.technique_id)}
                 />

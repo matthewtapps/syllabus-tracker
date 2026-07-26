@@ -20,6 +20,8 @@ export interface TechniqueListNav<Row> {
   setExpandedValue: (value: string) => void;
   /** ?video= deep-link target inside the expanded row (null once consumed). */
   videoId: number | null;
+  /** ?t= seconds to resume that video at (null once consumed). */
+  resumeSeconds: number | null;
   consumeVideo: () => void;
 }
 
@@ -62,7 +64,7 @@ export function useTechniqueListNav<Row>({
   matchesSearch,
 }: Options<Row>): TechniqueListNav<Row> {
   const navType = useNavigationType();
-  const { search, setSearch, tags, setTags, focus, setFocus, videoId, anchor } =
+  const { search, setSearch, tags, setTags, focus, setFocus, videoId, resumeSeconds, anchor } =
     useListUrlState();
 
   const availableTags = useMemo(() => {
@@ -133,6 +135,7 @@ export function useTechniqueListNav<Row>({
     expandedValue,
     setExpandedValue,
     videoId: videoConsumed ? null : videoId,
+    resumeSeconds: videoConsumed ? null : resumeSeconds,
     consumeVideo: () => setVideoConsumed(true),
   };
 }

@@ -10,12 +10,14 @@ import { useTechniqueRow } from "./technique-row-context";
 interface VideosBlockProps {
   canManage: boolean;
   scrollToVideoId?: number | null;
+  resumeSeconds?: number | null;
   onVideoScrolled?: () => void;
 }
 
 export function VideosBlock({
   canManage,
   scrollToVideoId,
+  resumeSeconds,
   onVideoScrolled,
 }: VideosBlockProps) {
   const { context, technique, role } = useTechniqueRow();
@@ -131,6 +133,7 @@ export function VideosBlock({
         reloadKey={reloadKey}
         syllabus={syllabus}
         scrollToVideoId={scrollToVideoId}
+        resumeSeconds={resumeSeconds}
         onVideoScrolled={onVideoScrolled}
         watchContext={watchContext}
         contextLabel={contextLabel}

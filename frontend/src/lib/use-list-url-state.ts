@@ -9,6 +9,7 @@ import { parseFocusToken, refToken, type EntityRef } from "./entity-ref";
  *   - tags=<comma,separated>
  *   - focus=<type>:<id>  (the expanded row)
  *   - video=<id>         (deep-link to a video inside the expanded row)
+ *   - t=<seconds>        (resume that video here, from the feed player)
  *
  * All writes use `replace` so typing/expanding does not spam history. The
  * caller maps `focus` (an EntityRef) to/from its own accordion value.
@@ -21,6 +22,10 @@ export interface ListUrlState {
   focus: EntityRef | null;
   setFocus: (ref: EntityRef | null) => void;
   videoId: number | null;
+  /** ?t=, in whole seconds: open ?video= and start it here. Set when the
+   *  viewer was already watching in the feed, so the clip resumes rather than
+   *  restarting. `video` alone still just scrolls to the row. */
+  resumeSeconds: number | null;
   /** Top-most visible row (?at=), the shareable scroll anchor. */
   anchor: EntityRef | null;
 }
@@ -34,6 +39,9 @@ export function useListUrlState(): ListUrlState {
   const anchor = parseFocusToken(params.get("at"));
   const rawVideo = params.get("video");
   const videoId = rawVideo && /^\d+$/.test(rawVideo) ? Number.parseInt(rawVideo, 10) : null;
+  const rawResume = params.get("t");
+  const resumeSeconds =
+    rawResume && /^\d+$/.test(rawResume) ? Number.parseInt(rawResume, 10) : null;
 
   const update = useCallback(
     (mutate: (p: URLSearchParams) => void) => {
@@ -67,10 +75,11 @@ export function useListUrlState(): ListUrlState {
           p.delete("focus");
           // The video deep-link only makes sense alongside an expanded row.
           p.delete("video");
+          p.delete("t");
         }
       }),
     [update],
   );
 
-  return { search, setSearch, tags, setTags, focus, setFocus, videoId, anchor };
+  return { search, setSearch, tags, setTags, focus, setFocus, videoId, resumeSeconds, anchor };
 }
