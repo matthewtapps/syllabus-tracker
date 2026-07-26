@@ -83,7 +83,11 @@ function SheetContent({
       <SheetPrimitive.Content
         data-slot="sheet-content"
         className={cn(
-          "bg-background data-[state=open]:animate-in data-[state=closed]:animate-out fixed z-50 flex flex-col gap-4 shadow-lg transition ease-in-out data-[state=closed]:duration-300 data-[state=open]:duration-500",
+          // M3 emphasized easing, one curve per direction: decelerate on the
+          // way in, accelerate on the way out. Stock geometry and durations
+          // (500ms open, 300ms close) are unchanged. Reduce Motion turns the
+          // slide into a cross-fade, in index.css.
+          "bg-background data-[state=open]:animate-in data-[state=closed]:animate-out fixed z-50 flex flex-col gap-4 shadow-lg transition data-[state=closed]:duration-300 data-[state=open]:duration-500 data-[state=open]:ease-[cubic-bezier(0.05,0.7,0.1,1)] data-[state=closed]:ease-[cubic-bezier(0.3,0,0.8,0.15)]",
           side === "right" &&
             "data-[state=closed]:slide-out-to-right data-[state=open]:slide-in-from-right inset-y-0 right-0 h-full w-3/4 border-l sm:max-w-sm",
           side === "left" &&
