@@ -1606,6 +1606,82 @@ mod tests {
         assert_eq!(row.technique_id, Some(technique_id));
     }
 
+    /// Attaching the technique and talking about it are different events. The
+    /// camp_technique thread IS the attach, so it emits camp_technique_added and
+    /// the feed captions it "Added"; a reply on that same thread is a comment
+    /// and must still emit thread_comment_posted, or the camp feed would caption
+    /// every conversation on a technique as another attach.
+    #[rocket::async_test]
+    async fn camp_technique_attach_and_reply_emit_different_verbs() {
+        use crate::db::camps::{create_camp, NewCamp};
+        let db = TestDbBuilder::new()
+            .coach("coach_user", Some("Coach"))
+            .student("student_user", Some("Sam"))
+            .technique("Armbar", "an armbar", Some("coach_user"))
+            .build()
+            .await
+            .unwrap();
+        let coach_id = db.user_id("coach_user").unwrap();
+        let student_id = db.user_id("student_user").unwrap();
+        let technique_id = db.technique_id("Armbar").unwrap();
+
+        let camp_id = create_camp(
+            &db.pool,
+            NewCamp {
+                student_id,
+                coach_id,
+                name: "X-guard camp".to_string(),
+                description: None,
+            },
+        )
+        .await
+        .unwrap();
+
+        // The attach: an empty body, exactly as the camp page posts it.
+        let thread_id = create_thread(
+            &db.pool,
+            NewThread {
+                author_id: coach_id,
+                anchor: Anchor {
+                    kind: AnchorKind::CampTechnique,
+                    id: technique_id,
+                    video_ts_seconds: None,
+                    pinned_student_id: None,
+                    camp_id: Some(camp_id),
+                },
+                visibility: ThreadVisibility::Private,
+                scope_student_id: Some(student_id),
+                body: String::new(),
+                attached_video_id: None,
+                attached_video_is_reference: false,
+                attached_video_title: None,
+            },
+        )
+        .await
+        .unwrap();
+
+        create_comment(&db.pool, thread_id, None, student_id, "drilled it", None, None, false)
+            .await
+            .unwrap();
+
+        let verbs: Vec<String> = sqlx::query_scalar(
+            "SELECT verb FROM activity WHERE thread_id = ? ORDER BY id",
+        )
+        .bind(thread_id)
+        .fetch_all(&db.pool)
+        .await
+        .unwrap();
+
+        assert_eq!(
+            verbs,
+            vec![
+                "camp_technique_added".to_string(),
+                "thread_comment_posted".to_string()
+            ],
+            "the attach reads as added, the reply as a comment"
+        );
+    }
+
     /// Under the new feed model, posting a global library technique to a camp
     /// is the attach step itself. No prior camp_techniques membership is required:
     /// the anchor is valid as long as the camp exists and the technique is global

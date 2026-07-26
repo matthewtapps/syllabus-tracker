@@ -51,10 +51,11 @@ pub enum Verb {
     ThreadCommentPosted,
     CampCreated,
     CampArchived,
+    CampTechniqueAdded,
 }
 
 impl Verb {
-    pub const ALL: [Verb; 23] = [
+    pub const ALL: [Verb; 24] = [
         Verb::VideoWatched,
         Verb::AttemptLogged,
         Verb::AttemptEdited,
@@ -78,6 +79,7 @@ impl Verb {
         Verb::ThreadCommentPosted,
         Verb::CampCreated,
         Verb::CampArchived,
+        Verb::CampTechniqueAdded,
     ];
 
     pub fn as_str(self) -> &'static str {
@@ -105,6 +107,7 @@ impl Verb {
             Verb::ThreadCommentPosted => "thread_comment_posted",
             Verb::CampCreated => "camp_created",
             Verb::CampArchived => "camp_archived",
+            Verb::CampTechniqueAdded => "camp_technique_added",
         }
     }
 
@@ -132,10 +135,16 @@ impl Verb {
     /// Whether rows of this verb participate in the 30-second coalescing
     /// window. `ThreadCommentPosted` is non-coalescing: every comment is a
     /// discrete event and collapsing two comments into one would lose a message.
+    /// `CampTechniqueAdded` is non-coalescing for the same reason: attaching
+    /// several techniques at once fires them inside one window, and each one is
+    /// a separate card in the camp feed.
     pub fn coalesces(self) -> bool {
         !matches!(
             self,
-            Verb::ThreadCommentPosted | Verb::CampCreated | Verb::CampArchived
+            Verb::ThreadCommentPosted
+                | Verb::CampCreated
+                | Verb::CampArchived
+                | Verb::CampTechniqueAdded
         )
     }
 
@@ -154,9 +163,10 @@ impl Verb {
             | Verb::SstAdded
             | Verb::SstHidden
             | Verb::SstUnhidden => EntityKind::Sst,
-            Verb::TechniquePinned | Verb::TechniqueUnpinned | Verb::TechniqueEdited => {
-                EntityKind::Technique
-            }
+            Verb::TechniquePinned
+            | Verb::TechniqueUnpinned
+            | Verb::TechniqueEdited
+            | Verb::CampTechniqueAdded => EntityKind::Technique,
             Verb::SyllabusAssigned
             | Verb::SyllabusUnassigned
             | Verb::SyllabusGraduated

@@ -1583,7 +1583,7 @@ mod tests {
         let row = sqlx::query(
             "SELECT technique_id, camp_id, context_kind \
              FROM activity \
-             WHERE verb = 'thread_comment_posted' AND thread_id = ?",
+             WHERE verb = 'camp_technique_added' AND thread_id = ?",
         )
         .bind(camp_tech_thread_id)
         .fetch_one(&db.pool)
@@ -2088,11 +2088,12 @@ mod tests {
         assert_eq!(got_technique_id, technique_id);
         assert_eq!(got_camp_id, camp_id);
 
-        // The activity row carries technique_id and camp context.
+        // The activity row carries technique_id and camp context. The attach
+        // reads as camp_technique_added, not as a comment.
         let act = sqlx::query(
             "SELECT technique_id, camp_id, context_kind \
              FROM activity \
-             WHERE verb = 'thread_comment_posted' AND thread_id = ?",
+             WHERE verb = 'camp_technique_added' AND thread_id = ?",
         )
         .bind(thread_id)
         .fetch_one(&db.pool)
