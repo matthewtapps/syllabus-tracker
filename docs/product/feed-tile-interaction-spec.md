@@ -1,6 +1,55 @@
 # Feed tile interaction spec
 
-**Status:** locked, ready to build. Nothing in here is an open question.
+**Status:** built, then partly reversed. See the amendment below before reading §5.
+
+## Amendment, 2026-07-26: the detail sheet is withdrawn
+
+Slices 1-7 shipped as specced and were reviewed on device. The teaser tiles hold
+up and stay. **The full-screen detail sheet does not, and has been removed.** A
+tile now navigates to its subject in the surface that owns it, which is the same
+destination the row's own breadcrumb links to.
+
+What the sheet got wrong, in order of weight:
+
+1. **It strips context.** On a route the surface *is* the context: which
+   syllabus, whose library, which technique. A sheet has one `text-sm` title to
+   carry all of it, and for a thread with no video or technique noun that title
+   was literally `Discussion`. There is no title string that fixes this; the
+   page chrome is the context.
+2. **The scroll premise was wrong.** §3 and §5.1 justify the sheet with "scroll
+   position is preserved because nothing navigates", and #104 rejected
+   tap-to-navigate on the same grounds. But `ScrollManager` already restores
+   pixel-exact scroll on POP. Back from a pushed route returns you to the feed
+   where you left it, which is the thing the sheet existed to protect.
+3. **It duplicated a destination that already existed.** `viewContextHref` has
+   built deep links to exactly these targets all along, and the breadcrumb two
+   lines above each tile already used them. The sheet was a second, weaker
+   rendering of a page we already had.
+
+Consequently withdrawn: `FeedDetailSheet` (§5.1), the video player handoff and
+its accepted duplicate-watch cost (§5.2, §14), the pinned composer and
+`ThreadView composer` (§5.3), `TechniqueRowDetail` (§5.4), and `pause()` on the
+controller (§8), which existed only to serve the handoff.
+
+Kept in a different form: the player handoff. Navigating away from a clip you
+were watching restarts it, which is worse than the sheet was. A video teaser
+link now carries `?t=<seconds>` and the destination opens that clip in its
+player and seeks there once. One player, one watch event, and a shareable URL,
+which is what the sheet's two-player handoff was approximating. `?video=` on its
+own is unchanged and still only scrolls to the row, so the breadcrumb path
+behaves as before.
+
+Retained and still correct: the teaser anatomy (§4), the copy (§9), the
+accessibility floor (§10) with teaser regions now links rather than buttons,
+sheet motion (§7, which still governs every other sheet in the app), and the
+`useHistoryDismiss` overlay stack (§5.5), which remains a correctness fix even
+though the nesting that motivated it is gone.
+
+Everything below is the original spec as written and built. §5 is superseded.
+
+---
+
+**Status (original):** locked, ready to build. Nothing in here is an open question.
 
 **Source map:** wayfinder [#102 Feed tile UX uplift: interaction spec](https://github.com/matthewtapps/syllabus-tracker/issues/102).
 Decisions this doc assembles:
