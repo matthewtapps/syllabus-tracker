@@ -45,6 +45,52 @@ sheet motion (§7, which still governs every other sheet in the app), and the
 `useHistoryDismiss` overlay stack (§5.5), which remains a correctness fix even
 though the nesting that motivated it is gone.
 
+## Amendment, 2026-07-26 (second): a camp owns its content, so its items get routes
+
+The rule above ("a tile navigates to its subject in the surface that owns it")
+assumes a feed is a projection of content living elsewhere. For a camp that is
+false: #101 made the camp page BE an `ActivityTileFeed`, and the camp is the
+surface that owns everything in it. So every camp tile linked to `/camps/:id`,
+which on a camp page is the page you are already reading. A camp technique could
+not be expanded, a thread could not be read in full, and a video's whole comment
+list was unreachable.
+
+Fixed by making camp items addressable under the camp rather than by reviving the
+sheet:
+
+| Route | Body |
+| --- | --- |
+| `/camps/:campId/techniques/:techniqueId` | `TechniqueRowDetail` in camp `RowContext` |
+| `/camps/:campId/threads/:threadId` | `ThreadView` with its inline composer |
+
+- `viewContextHref` for a camp context returns the technique route when the row
+  names a technique, carrying `?video=` when it names a video too, because a camp
+  technique's clip lives in that technique's video list. A camp-owned video with
+  no technique keeps `/camps/:id?video=`, which scrolls to its tile in the feed
+  where it already plays.
+- `TechniqueRowDetail` (§5.4, withdrawn as a sheet body) is reinstated as a
+  **page** body. The sheet's defect was that it could not carry page context; a
+  route carries it by definition, and `AppBreadcrumbs` now renders the full
+  Students > Sam > Camps > X-guard > Scissor Sweep chain.
+- No new endpoints. Routes are keyed by anchor, not by activity row id, so
+  `useThreadsForAnchor("camp_technique", techniqueId, campId)` and
+  `useThreadsForAnchor("camp", campId)` already serve them. This also keeps
+  content identity out of the activity table, which records events, not content.
+- A third route for camp videos was considered and dropped: camp videos hang off
+  a thread or a technique's video list, both already covered, and
+  `list_videos_for_camp` only returns camp-parented videos.
+
+Known gap, pre-existing: a camp-**scoped** technique (`is_global = 0`) is absent
+from the library list query (`db/techniques.rs:56`), so neither the feed tile nor
+the new technique page can hydrate it. The page says so instead of rendering
+blank.
+
+Separately, attaching a technique to a camp posts a `camp_technique` thread with
+an empty body, which emitted `thread_comment_posted` and captioned as
+"Commented". #101 deleted the `CampTechniqueAdded` verb as dead while leaving the
+frontend cases for it in place; the verb is restored and the attach now reads
+"Added". Replies on that thread still emit `thread_comment_posted`.
+
 Everything below is the original spec as written and built. §5 is superseded.
 
 ---
