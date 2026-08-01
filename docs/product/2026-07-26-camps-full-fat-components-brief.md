@@ -1,7 +1,8 @@
 # Handoff: camps as full-fat components
 
-**Status:** handoff brief. The model and five decisions are settled; the design is
-not. Written 2026-07-26, updated 2026-07-27.
+**Status:** handoff brief. The model and six decisions are settled; the density
+question is answered (decision 6, variant A). Written 2026-07-26, updated
+2026-08-02.
 
 **Start here:** read this file, then
 [`feed-tile-interaction-spec.md`](./feed-tile-interaction-spec.md) (both
@@ -60,20 +61,56 @@ to design, and it is visual: prototype it.
    (description / tags / videos / discussion, plus edit-definition for a coach).
    No status, no attempts.
 5. **Any activity on a component is an update for ordering.** Not comments only.
+6. **Full-fat means fully expanded, not full-but-bounded.** Settled on device
+   2026-08-02 against the prototype below: variant A wins. No clamped
+   description, no collapsed clip strip, no comment budget. The written
+   recommendation (full-but-bounded, variant B) lost.
 
 ## Open questions
 
-1. **What is "full-fat" exactly, per component type?** Fully expanded, or
-   full-but-bounded with progressive disclosure (clamped description, video strip,
-   latest two replies)? Interaction is inline either way; the question is only what
-   is visible before you ask for more. Recommendation: full-but-bounded. Decide on
-   device, it is a density judgement.
-2. **Is a note-with-video one component or two?** See the taxonomy question below,
-   and whether `VideoParent::Camp` survives.
-3. **Where does a new component land**, given ordering is by last update? Top,
+1. **Is a note-with-video one component or two?** See the taxonomy question below,
+   and whether `VideoParent::Camp` survives. The prototype assumes ONE (it keys on
+   `thread_id` before `video_id`) and nothing about that read badly, but it was not
+   tested against a camp that actually holds a camp-owned video.
+2. **Where does a new component land**, given ordering is by last update? Top,
    presumably, but confirm against the composer's position.
-4. **Does an update by the viewer bump a component?** "Any activity" ordering
+3. **Does an update by the viewer bump a component?** "Any activity" ordering
    means your own reply re-sorts the page under you.
+4. **What does a long camp cost, now that nothing clamps?** Decision 6 was taken
+   against a camp holding five components. A camp with a dozen full techniques is
+   the case the bounded variant existed for, and it is now unguarded.
+
+## Prototype (primary source)
+
+Branch `proto/camp-full-fat-components`, commit `ef24843`, off
+`feat/technique-row-wrappers`. Throwaway, do not merge. Three variants of the
+camp page behind `?variant=`, plus today's teaser feed in the switcher ring as
+the baseline:
+
+| Key | Shape | Fate |
+| --- | --- | --- |
+| A | Everything open: full `TechniqueRowDetail`, full `ThreadView`, full `VideoReviewPanel`, nothing clamped | **Chosen** |
+| B | Full but bounded: clamped description, clips behind a strip, latest two comments plus "View all" | Rejected |
+| C | Index rail plus one component open at a time | Rejected |
+
+What the prototype also established, independent of the verdict:
+
+- `prototype/use-camp-components.ts` holds the collapse rule as running code:
+  `technique_id` then `thread_id` then `video_id`, one row per component,
+  ordered by last touch. It is the proposal for the component read, and it makes
+  defect 1 (the duplicate technique tile) disappear rather than needing the point
+  fix.
+- Composing blocks at camp altitude needs `TechniqueRowProvider`, which is
+  private to the `technique-row` folder today. Variant B had to reach past that
+  boundary. Variant A does not, because `TechniqueRowDetail` already mounts it.
+- Per-component hydration is real: A and B fetch per component, C hydrates the
+  whole camp in three list queries. The chosen variant is the expensive one, so
+  the `GET /api/camps/:id/components` endpoint is load-bearing, not an
+  optimisation.
+
+Dev-data note: camp membership in a local dev DB seeded before this branch lives
+in the dropped `camp_techniques` table, so every technique component reads as
+unavailable until `camp_technique` threads exist. The seed does not create them.
 
 ## Audit: what can be a base component in a camp
 
@@ -199,11 +236,9 @@ Backend, `crates/syllabus-tracker/src/`:
 
 ## Suggested order
 
-1. **Prototype the standalone tiles, throwaway.** Technique, discussion, and
-   whatever the video answer turns out to be. The standalone-presentation problem
-   will not resolve on paper. The `/prototype` skill exists for this; do not merge
-   the prototype (#102's lived on its own branch).
-2. **Decide open question 1 on device**, then 2.
+1. ~~**Prototype the standalone tiles, throwaway.**~~ Done, see above.
+2. ~~**Decide open question 1 on device.**~~ Done, decision 6. The taxonomy
+   question (now open question 1) is still open.
 3. **Spec the component read**, since everything else depends on its shape. Include
    dedupe (one row per component), ordering (last touch), pagination, and how much
    nested content it hydrates.
