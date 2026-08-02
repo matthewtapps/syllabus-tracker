@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { BrowseVideo, VideoKind } from "@/lib/api";
+import { isCoachOrAdmin } from "@/lib/api";
+import { useUser } from "@/lib/current-user-context";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -41,7 +43,8 @@ type Step = "source" | "link" | "sillybus" | "confirm" | null;
 interface AddOrSelectVideoSheetProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /** Scopes "Choose from Sillybus". Absent hides that source. */
+  /** Scopes "Choose from Sillybus" to one student. Absent browses everything,
+   *  which only a coach may do, so the source is hidden from anyone else. */
   browseStudentId?: number;
   /** "off" reports the source as soon as it is picked, with no confirm step. */
   titleMode?: "required" | "optional" | "off";
@@ -66,6 +69,7 @@ export function AddOrSelectVideoSheet({
   progressPct = null,
   onConfirm,
 }: AddOrSelectVideoSheetProps) {
+  const viewer = useUser();
   const [step, setStep] = useState<Step>(null);
   const [picked, setPicked] = useState<VideoSource | null>(null);
   const [url, setUrl] = useState("");
@@ -80,6 +84,9 @@ export function AddOrSelectVideoSheet({
   const pickedFromNavigatorRef = useRef(false);
 
   const needsConfirm = titleMode !== "off" || showScopeSwitch;
+  // Browsing with no student in context is a coach capability, so offering it
+  // to anyone else would only produce a 403 at the other end.
+  const canBrowse = browseStudentId != null || isCoachOrAdmin(viewer);
 
   useEffect(() => {
     if (open) {
@@ -245,7 +252,7 @@ export function AddOrSelectVideoSheet({
                 Paste a link
               </button>
             </li>
-            {browseStudentId != null && (
+            {canBrowse && (
               <li>
                 <button
                   type="button"
@@ -311,9 +318,10 @@ export function AddOrSelectVideoSheet({
         </SheetContent>
       </Sheet>
 
-      {browseStudentId != null && (
+      {canBrowse && (
         <SillybusVideoNavigator
           studentId={browseStudentId}
+          canBrowseOtherStudents={isCoachOrAdmin(viewer)}
           open={open && step === "sillybus"}
           onOpenChange={(o) => {
             // Closing the navigator to move on to the confirm step is not a

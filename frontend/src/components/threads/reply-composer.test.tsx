@@ -65,7 +65,7 @@ describe("ReplyComposer – source picker", () => {
     expect(screen.getByText("Choose from Sillybus")).toBeInTheDocument();
   });
 
-  test("Sillybus source is hidden when scopeStudentId is absent", async () => {
+  test("a coach can still browse with no student in context", async () => {
     const user = userEvent.setup();
     const onSubmit = vi.fn().mockResolvedValue(undefined);
 
@@ -77,6 +77,26 @@ describe("ReplyComposer – source picker", () => {
         onSubmit={onSubmit}
       />,
       { user: buildUser({ id: 1, role: "coach" }) },
+    );
+
+    await user.click(screen.getByRole("button", { name: /attach video/i }));
+
+    expect(screen.getByText("Record now")).toBeInTheDocument();
+    expect(screen.getByText("Choose from Sillybus")).toBeInTheDocument();
+  });
+
+  test("a student gets no studentless browse", async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn().mockResolvedValue(undefined);
+
+    renderWithProviders(
+      <ReplyComposer
+        anchorKind="camp"
+        anchorId={1}
+        pending={false}
+        onSubmit={onSubmit}
+      />,
+      { user: buildUser({ id: 1, role: "student" }) },
     );
 
     await user.click(screen.getByRole("button", { name: /attach video/i }));

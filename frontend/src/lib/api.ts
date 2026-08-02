@@ -2027,14 +2027,19 @@ export type BrowseResult =
   | { kind: "parents"; parents: BrowseParent[] }
   | { kind: "videos"; videos: BrowseVideo[] };
 
+/** Omitting `studentId` means no student is in context (the global library);
+ *  `allStudents` reaches past the student in context into everyone's camps.
+ *  Both are coach-only and the server refuses rather than quietly narrowing. */
 export async function browseVideos(params: {
-  studentId: number;
+  studentId?: number;
+  allStudents?: boolean;
   source?: "library" | "camps" | "syllabuses";
   parentId?: number;
   q?: string;
 }): Promise<BrowseResult> {
   const qs = new URLSearchParams();
-  qs.set("student_id", String(params.studentId));
+  if (params.studentId != null) qs.set("student_id", String(params.studentId));
+  if (params.allStudents) qs.set("all_students", "true");
   if (params.source) qs.set("source", params.source);
   if (params.parentId != null) qs.set("parent_id", String(params.parentId));
   if (params.q) qs.set("q", params.q);

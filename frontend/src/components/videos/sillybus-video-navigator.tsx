@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { ArrowLeft, BookOpen, GraduationCap, Search, Tent, Video as VideoIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import {
   Sheet,
   SheetContent,
@@ -36,7 +38,10 @@ interface LevelSearch {
 type NavLevel = Level | Level2 | Level3 | LevelSearch;
 
 interface SillybusVideoNavigatorProps {
-  studentId: number;
+  /** Absent means no student is in context, which only a coach may ask for. */
+  studentId?: number;
+  /** Offers the toggle that reaches into other students' camps. */
+  canBrowseOtherStudents?: boolean;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onPick: (video: BrowseVideo) => void;
@@ -49,6 +54,7 @@ function videoDisplayTitle(video: BrowseVideo): string {
 
 export function SillybusVideoNavigator({
   studentId,
+  canBrowseOtherStudents = false,
   open,
   onOpenChange,
   onPick,
@@ -60,6 +66,8 @@ export function SillybusVideoNavigator({
   const [error, setError] = useState<string | null>(null);
   const [searchInput, setSearchInput] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
+  // Without a student in context the browse is already as wide as it goes.
+  const [allStudents, setAllStudents] = useState(studentId == null);
 
   // Reset state when sheet opens
   useEffect(() => {
@@ -70,7 +78,8 @@ export function SillybusVideoNavigator({
     setError(null);
     setSearchInput("");
     setSearchQuery("");
-  }, [open]);
+    setAllStudents(studentId == null);
+  }, [open, studentId]);
 
   // Load data when level changes or search query changes
   useEffect(() => {
@@ -83,14 +92,18 @@ export function SillybusVideoNavigator({
       setError(null);
       try {
         if (level.kind === "search" || searchQuery.trim()) {
-          const result = await browseVideos({ studentId, q: searchQuery.trim() || undefined });
+          const result = await browseVideos({
+            studentId,
+            allStudents,
+            q: searchQuery.trim() || undefined,
+          });
           if (cancelled) return;
           if (result.kind === "videos") {
             setVideos(result.videos);
             setParents([]);
           }
         } else if (level.kind === "parents") {
-          const result = await browseVideos({ studentId, source: level.source });
+          const result = await browseVideos({ studentId, allStudents, source: level.source });
           if (cancelled) return;
           if (result.kind === "parents") {
             setParents(result.parents);
@@ -99,6 +112,7 @@ export function SillybusVideoNavigator({
         } else if (level.kind === "videos") {
           const result = await browseVideos({
             studentId,
+            allStudents,
             source: level.source,
             parentId: level.parent.id,
           });
@@ -123,7 +137,7 @@ export function SillybusVideoNavigator({
     return () => {
       cancelled = true;
     };
-  }, [open, level, searchQuery, studentId]);
+  }, [open, level, searchQuery, studentId, allStudents]);
 
   // Debounce search input
   useEffect(() => {
@@ -160,6 +174,8 @@ export function SillybusVideoNavigator({
     onOpenChange(false);
   }
 
+  // A syllabus video's visibility resolves per assignment, so that source has
+  // nothing to show without a student in context.
   const sourceItems: { source: Source; label: string; icon: React.ReactNode }[] = [
     {
       source: "library",
@@ -171,12 +187,26 @@ export function SillybusVideoNavigator({
       label: "Camps",
       icon: <Tent className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />,
     },
-    {
-      source: "syllabuses",
-      label: "Syllabuses",
-      icon: <GraduationCap className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />,
-    },
+    ...(studentId != null
+      ? [
+          {
+            source: "syllabuses" as const,
+            label: "Syllabuses",
+            icon: (
+              <GraduationCap className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+            ),
+          },
+        ]
+      : []),
   ];
+
+  // Only where widening changes the answer: camps and search.
+  const browsingCamps =
+    (level.kind === "parents" || level.kind === "videos") && level.source === "camps";
+  const showWidenToggle =
+    canBrowseOtherStudents &&
+    studentId != null &&
+    (browsingCamps || searchQuery.trim().length > 0);
 
   const showBack =
     level.kind !== "sources" || searchQuery.trim().length > 0;
@@ -232,6 +262,19 @@ export function SillybusVideoNavigator({
             />
           </div>
         </div>
+
+        {showWidenToggle && (
+          <div className="flex items-center justify-between gap-3 px-4 pb-3">
+            <Label htmlFor="browse-all-students" className="text-xs text-muted-foreground">
+              Include other students&apos; camps
+            </Label>
+            <Switch
+              id="browse-all-students"
+              checked={allStudents}
+              onCheckedChange={setAllStudents}
+            />
+          </div>
+        )}
 
         <div className="max-h-[50vh] overflow-y-auto px-4 pb-6">
           {loading && (
