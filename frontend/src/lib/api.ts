@@ -1010,6 +1010,9 @@ export interface Video {
   /** Set only on coach views of a specific student's technique page when an
    * explicit per-student override exists for this video. Omitted otherwise. */
   override_for_student?: "show" | "hide";
+  /** Set when this row is a clip referenced onto the surface rather than owned
+   * by it. `hidden_at` then belongs to the reference, not the clip. */
+  reference_id?: number;
   /** Number of comment threads on this video the viewer can see. Defaults to
    * 0 from list endpoints that don't annotate it. */
   comment_count?: number;
@@ -1177,6 +1180,36 @@ export async function linkVideo(
   });
   if (!response.ok) throw response;
   return (await response.json()) as Video;
+}
+
+/** Shows an existing clip on a technique (or, with a parent, a student's
+ *  syllabus technique) without moving it off its own parent. */
+export async function addVideoReference(
+  techniqueId: number,
+  videoId: number,
+  parent?: VideoParentInput,
+  title?: string,
+): Promise<{ reference_id: number }> {
+  const response = await fetch(`/api/techniques/${techniqueId}/videos/references`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify({
+      video_id: videoId,
+      title,
+      ...(parent ? { parent_kind: parent.kind, parent_id: parent.id } : {}),
+    }),
+  });
+  if (!response.ok) throw response;
+  return (await response.json()) as { reference_id: number };
+}
+
+export async function removeVideoReference(referenceId: number): Promise<void> {
+  const response = await fetch(`/api/video-references/${referenceId}`, {
+    method: "DELETE",
+    credentials: "include",
+  });
+  if (!response.ok) throw response;
 }
 
 export async function updateVideo(

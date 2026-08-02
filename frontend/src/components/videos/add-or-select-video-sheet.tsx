@@ -357,7 +357,7 @@ export function AddOrSelectVideoSheet({
               )}
             </div>
 
-            {showScopeSwitch && (
+            {showScopeSwitch && picked?.kind !== "existing" && (
               <div className="flex items-start justify-between gap-3 rounded-md border p-3">
                 <div className="space-y-0.5">
                   <Label htmlFor="add-video-also-global">

@@ -2,7 +2,7 @@ import { useState } from "react";
 import { PlusIcon } from "lucide-react";
 import { toast } from "sonner";
 import type { Video, VideoParentInput } from "@/lib/api";
-import { linkVideo, uploadVideo } from "@/lib/api";
+import { addVideoReference, linkVideo, uploadVideo } from "@/lib/api";
 import { isValidationErrorResponse } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import {
@@ -69,9 +69,11 @@ export function AddVideoButton({
         );
         onAdded(video);
       } else {
-        // Selecting an existing video needs the reference model (phase 3), so
-        // the sheet is not given a student to browse here yet.
-        throw new Error("Selecting an existing video is not supported here yet");
+        // A reference always lands on the technique: the scope switch chooses
+        // where an upload is stored, which a clip that already exists has.
+        await addVideoReference(techniqueId, source.video.id, undefined, title || undefined);
+        toast.success("Video added to this technique");
+        onAdded(source.video.id);
       }
     } catch (err) {
       toast.error(await describeError(err));
@@ -91,6 +93,7 @@ export function AddVideoButton({
       <AddOrSelectVideoSheet
         open={open}
         onOpenChange={setOpen}
+        browseStudentId={studentSyllabus?.studentId}
         titleMode="required"
         showScopeSwitch={studentSyllabus != null}
         progressPct={progressPct}
