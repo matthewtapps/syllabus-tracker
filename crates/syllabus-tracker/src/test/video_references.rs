@@ -154,6 +154,100 @@ mod tests {
     }
 
     #[rocket::async_test]
+    async fn a_students_syllabus_read_sees_a_reference_until_it_is_hidden() {
+        use crate::db::list_videos_for_technique_in_syllabus_visible_to;
+
+        let db = TestDbBuilder::new()
+            .coach("coach_user", Some("Coach"))
+            .student("alice", None)
+            .technique("Armbar", "", None)
+            .technique("Triangle", "", None)
+            .build()
+            .await
+            .unwrap();
+        let coach_id = db.user_id("coach_user").unwrap();
+        let alice = db.user_id("alice").unwrap();
+        let home = db.technique_id("Armbar").unwrap();
+        let away = db.technique_id("Triangle").unwrap();
+
+        let syllabus_id: i64 = sqlx::query_scalar!(
+            "INSERT INTO syllabi (name, created_by_id) VALUES ('Blue Belt', ?) RETURNING id AS \"id!\"",
+            coach_id
+        )
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+        sqlx::query!(
+            "INSERT INTO syllabus_techniques (syllabus_id, technique_id, position, added_by_id)
+             VALUES (?, ?, 0, ?)",
+            syllabus_id,
+            away,
+            coach_id
+        )
+        .execute(&db.pool)
+        .await
+        .unwrap();
+        let assignment_id: i64 = sqlx::query_scalar!(
+            "INSERT INTO syllabus_assignments (student_id, syllabus_id, assigned_by_id)
+             VALUES (?, ?, ?) RETURNING id AS \"id!\"",
+            alice,
+            syllabus_id,
+            coach_id
+        )
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+        sqlx::query!(
+            "INSERT INTO student_syllabus_techniques (assignment_id, technique_id)
+             VALUES (?, ?)",
+            assignment_id,
+            away
+        )
+        .execute(&db.pool)
+        .await
+        .unwrap();
+
+        // A clip owned by one technique, referenced onto the one she studies.
+        let video_id = create_processing_video(
+            &db.pool,
+            VideoParent::Technique(home),
+            "Demo",
+            None,
+            coach_id,
+        )
+        .await
+        .unwrap();
+        let reference_id = add_video_reference(
+            &db.pool,
+            video_id,
+            ReferenceParent::Technique(away),
+            None,
+            coach_id,
+        )
+        .await
+        .unwrap();
+
+        let visible =
+            list_videos_for_technique_in_syllabus_visible_to(&db.pool, away, syllabus_id, alice)
+                .await
+                .unwrap();
+        assert_eq!(
+            visible.iter().map(|v| v.id).collect::<Vec<_>>(),
+            vec![video_id],
+        );
+
+        set_video_reference_hidden(&db.pool, reference_id, true)
+            .await
+            .unwrap();
+
+        let visible =
+            list_videos_for_technique_in_syllabus_visible_to(&db.pool, away, syllabus_id, alice)
+                .await
+                .unwrap();
+        assert!(visible.is_empty(), "a hidden reference is not shown here");
+    }
+
+    #[rocket::async_test]
     async fn removing_a_reference_leaves_the_clip_in_place() {
         let (db, coach_id, _home, away, video_id) = fixture().await;
         let reference_id = add_video_reference(

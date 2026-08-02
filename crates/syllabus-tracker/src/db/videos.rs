@@ -570,6 +570,37 @@ pub async fn list_videos_for_technique_in_syllabus_visible_to(
             visible.push(video);
         }
     }
+
+    // Clips referenced onto the technique, and onto this assignment's row for
+    // it, list after the tiers that own their videos.
+    visible.extend(
+        crate::db::list_referenced_videos_visible_in_assignment(
+            pool,
+            crate::db::ReferenceParent::Technique(technique_id),
+            assignment_id,
+        )
+        .await?,
+    );
+    let sst_ids = sqlx::query_scalar!(
+        r#"SELECT id AS "id!: i64"
+           FROM student_syllabus_techniques
+           WHERE assignment_id = ? AND technique_id = ?"#,
+        assignment_id,
+        technique_id,
+    )
+    .fetch_all(pool)
+    .await?;
+    for sst_id in sst_ids {
+        visible.extend(
+            crate::db::list_referenced_videos_visible_in_assignment(
+                pool,
+                crate::db::ReferenceParent::StudentSyllabusTechnique(sst_id),
+                assignment_id,
+            )
+            .await?,
+        );
+    }
+
     Ok(visible)
 }
 

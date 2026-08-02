@@ -228,6 +228,64 @@ pub async fn list_referenced_videos(
         .collect())
 }
 
+/// Student-facing: clips referenced onto `parent` that the student behind
+/// `assignment_id` should see. The reference's own hidden flag decides the
+/// destination; the per-video overrides are shared with the clip, so the usual
+/// assignment > syllabus > student precedence still applies on top.
+#[instrument(skip(pool))]
+pub async fn list_referenced_videos_visible_in_assignment(
+    pool: &Pool<Sqlite>,
+    parent: ReferenceParent,
+    assignment_id: i64,
+) -> Result<Vec<Video>, AppError> {
+    let mut visible = Vec::new();
+    for referenced in list_referenced_videos(pool, parent).await? {
+        if referenced.hidden_at.is_some() {
+            continue;
+        }
+        if reference_override_allows(pool, referenced.video.id, assignment_id).await? {
+            visible.push(referenced.video);
+        }
+    }
+    Ok(visible)
+}
+
+/// The override half of a referenced clip's visibility. Absent a row at every
+/// scope the clip is visible: a reference is shown unless something says hide.
+async fn reference_override_allows(
+    pool: &Pool<Sqlite>,
+    video_id: i64,
+    assignment_id: i64,
+) -> Result<bool, AppError> {
+    let row = sqlx::query_scalar!(
+        r#"SELECT CASE
+                    WHEN ov_assignment.visible IS NOT NULL THEN ov_assignment.visible
+                    WHEN ov_syllabus.visible   IS NOT NULL THEN ov_syllabus.visible
+                    WHEN ov_student.visible    IS NOT NULL THEN ov_student.visible
+                    ELSE 1
+                  END AS "visible!: i64"
+           FROM syllabus_assignments sa
+           LEFT JOIN video_visibility_overrides ov_assignment
+                  ON ov_assignment.video_id = ?1
+                 AND ov_assignment.scope_kind = 'assignment'
+                 AND ov_assignment.assignment_id = sa.id
+           LEFT JOIN video_visibility_overrides ov_syllabus
+                  ON ov_syllabus.video_id = ?1
+                 AND ov_syllabus.scope_kind = 'syllabus'
+                 AND ov_syllabus.syllabus_id = sa.syllabus_id
+           LEFT JOIN video_visibility_overrides ov_student
+                  ON ov_student.video_id = ?1
+                 AND ov_student.scope_kind = 'student'
+                 AND ov_student.student_id = sa.student_id
+           WHERE sa.id = ?2"#,
+        video_id,
+        assignment_id,
+    )
+    .fetch_optional(pool)
+    .await?;
+    Ok(row.map(|v| v != 0).unwrap_or(false))
+}
+
 async fn find_reference(
     pool: &Pool<Sqlite>,
     video_id: i64,
