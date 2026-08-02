@@ -48,7 +48,7 @@ export function VideoProcessingTile({
         <span
           className={`text-xs ${failed ? "text-destructive" : "text-muted-foreground"}`}
         >
-          {failed ? "Processing failed. Re-upload to try again." : "Processing…"}
+          {failed ? "Processing failed. Re-upload to try again." : "Processing..."}
         </span>
       </div>
     </div>

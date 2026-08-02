@@ -104,7 +104,7 @@ describe("camp_technique tile rendering", () => {
       expect(screen.getByText("Scissor Sweep")).toBeInTheDocument();
     });
 
-    // The row must NOT have rendered as a plain text comment tile — no
+    // The row must NOT have rendered as a plain text comment tile, no
     // "discussion" heading is visible before the accordion is opened.
     expect(screen.queryByText(/discussion/i)).toBeNull();
   });
@@ -151,12 +151,12 @@ describe("camp_technique tile rendering", () => {
       expect(screen.getByText(/Great session today/)).toBeInTheDocument();
     });
 
-    // The technique name must NOT appear — no technique card was rendered.
+    // The technique name must NOT appear: no technique card was rendered.
     expect(screen.queryByText("Scissor Sweep")).toBeNull();
   });
 });
 
-describe("camp technique picker — attaching", () => {
+describe("camp technique picker, attaching", () => {
   let fetchSpy: ReturnType<typeof vi.spyOn> | null = null;
   afterEach(() => fetchSpy?.mockRestore());
 
