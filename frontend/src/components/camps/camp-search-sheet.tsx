@@ -96,9 +96,6 @@ function VideoRow({
         !hit.title.trim() && "text-muted-foreground",
       )}
       onClick={onSelect}
-      // Only jumpable when there's a thread; camp-only footage without a thread
-      // has no feed tile to scroll to (best-effort no-op).
-      disabled={hit.thread_id == null}
     >
       <span className="font-medium">{title}</span>
     </button>
@@ -144,6 +141,9 @@ export interface CampSearchSheetProps {
   onOpenChange: (open: boolean) => void;
   /** Called when the user taps a result. Sheet closes after this. */
   onJump: (threadId: number) => void;
+  /** Camp footage is its own component, so a clip hit with no thread still has
+   *  somewhere to land. */
+  onJumpVideo: (videoId: number) => void;
 }
 
 export function CampSearchSheet({
@@ -151,6 +151,7 @@ export function CampSearchSheet({
   open,
   onOpenChange,
   onJump,
+  onJumpVideo,
 }: CampSearchSheetProps) {
   const [rawQ, setRawQ] = useState("");
   const [kind, setKind] = useState<KindFilter>("all");
@@ -196,6 +197,12 @@ export function CampSearchSheet({
   function handleJump(threadId: number) {
     onOpenChange(false);
     onJump(threadId);
+  }
+
+  function handleJumpVideo(hit: CampVideoHit) {
+    onOpenChange(false);
+    if (hit.thread_id != null) onJump(hit.thread_id);
+    else onJumpVideo(hit.video_id);
   }
 
   return (
@@ -268,12 +275,7 @@ export function CampSearchSheet({
                   <SectionHeading>Videos</SectionHeading>
                   {videos.map((hit) => (
                     <li key={`video-${hit.video_id}`}>
-                      <VideoRow
-                        hit={hit}
-                        onSelect={() => {
-                          if (hit.thread_id != null) handleJump(hit.thread_id);
-                        }}
-                      />
+                      <VideoRow hit={hit} onSelect={() => handleJumpVideo(hit)} />
                     </li>
                   ))}
                 </>

@@ -55,6 +55,7 @@ describe("CampSearchSheet", () => {
         open={false}
         onOpenChange={() => {}}
         onJump={() => {}}
+        onJumpVideo={() => {}}
       />,
       { user: buildUser({ id: 2, role: "coach" }) },
     );
@@ -70,6 +71,7 @@ describe("CampSearchSheet", () => {
         open={true}
         onOpenChange={() => {}}
         onJump={() => {}}
+        onJumpVideo={() => {}}
       />,
     );
     expect(screen.getByRole("textbox", { name: /search query/i })).toBeTruthy();
@@ -83,6 +85,7 @@ describe("CampSearchSheet", () => {
         open={true}
         onOpenChange={() => {}}
         onJump={() => {}}
+        onJumpVideo={() => {}}
       />,
     );
     expect(screen.getByText("Start typing to search.")).toBeTruthy();
@@ -96,6 +99,7 @@ describe("CampSearchSheet", () => {
         open={true}
         onOpenChange={() => {}}
         onJump={() => {}}
+        onJumpVideo={() => {}}
       />,
     );
 
@@ -129,6 +133,7 @@ describe("CampSearchSheet", () => {
         open={true}
         onOpenChange={() => {}}
         onJump={() => {}}
+        onJumpVideo={() => {}}
       />,
     );
 
@@ -169,6 +174,7 @@ describe("CampSearchSheet", () => {
         open={true}
         onOpenChange={onOpenChange}
         onJump={onJump}
+        onJumpVideo={() => {}}
       />,
     );
 
@@ -196,6 +202,7 @@ describe("CampSearchSheet", () => {
         open={true}
         onOpenChange={() => {}}
         onJump={onJump}
+        onJumpVideo={() => {}}
       />,
     );
 
@@ -222,6 +229,7 @@ describe("CampSearchSheet", () => {
         open={true}
         onOpenChange={() => {}}
         onJump={() => {}}
+        onJumpVideo={() => {}}
       />,
     );
 
