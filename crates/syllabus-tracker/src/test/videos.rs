@@ -2058,7 +2058,7 @@ mod tests {
         }).await.unwrap();
 
         // A video-only comment (empty body) attaching that draft.
-        db::threads::create_comment(&db.pool, thread_id, None, coach_id, "", Some(vid), None, false)
+        db::threads::create_comment(&db.pool, thread_id, None, coach_id, "", Some(vid), None, false, None)
             .await.unwrap();
 
         let (pk, th): (String, Option<i64>) = sqlx::query_as(
@@ -2457,6 +2457,78 @@ mod tests {
             listed.map(|p| p.video_count),
             Some(1),
             "a camp reached only through its threads must be listed, counted once"
+        );
+    }
+
+    /// An untitled clip posted into a camp is named by the post that carried it,
+    /// so a picker shows something other than "camp . X" for every one of them.
+    #[rocket::async_test]
+    async fn browse_camps_names_an_untitled_clip_after_its_post() {
+        let f = setup_browse_fixture().await;
+
+        let untitled_id = insert_external_video_browse(
+            &f.pool, "loose", None, None, None, "", false, f.coach_id,
+        ).await;
+        let thread_id: i64 = sqlx::query_scalar(
+            "INSERT INTO threads
+                (anchor_kind, camp_id, created_by_id, visibility, scope_student_id,
+                 body, attached_video_id)
+             VALUES ('camp', ?, ?, 'private', ?, ?, ?)
+             RETURNING id",
+        )
+        .bind(f.camp1_id)
+        .bind(f.coach_id)
+        .bind(f.student1_id)
+        .bind("Half guard knee shield\nsecond line ignored")
+        .bind(untitled_id)
+        .fetch_one(&f.pool)
+        .await
+        .unwrap();
+        sqlx::query("UPDATE videos SET parent_kind = 'thread', thread_id = ? WHERE id = ?")
+            .bind(thread_id)
+            .bind(untitled_id)
+            .execute(&f.pool)
+            .await
+            .unwrap();
+
+        // A clip the author did name keeps its own name.
+        let named_id = insert_external_video_browse(
+            &f.pool, "loose", None, None, None, "Berimbolo entry", false, f.coach_id,
+        ).await;
+        let named_thread: i64 = sqlx::query_scalar(
+            "INSERT INTO threads
+                (anchor_kind, camp_id, created_by_id, visibility, scope_student_id,
+                 body, attached_video_id)
+             VALUES ('camp', ?, ?, 'private', ?, 'some chatter about it', ?)
+             RETURNING id",
+        )
+        .bind(f.camp1_id)
+        .bind(f.coach_id)
+        .bind(f.student1_id)
+        .bind(named_id)
+        .fetch_one(&f.pool)
+        .await
+        .unwrap();
+        sqlx::query("UPDATE videos SET parent_kind = 'thread', thread_id = ? WHERE id = ?")
+            .bind(named_thread)
+            .bind(named_id)
+            .execute(&f.pool)
+            .await
+            .unwrap();
+
+        let videos = crate::db::browse_camp_videos(&f.pool, f.camp1_id, f.student1_id)
+            .await
+            .unwrap();
+        let titled = |id: i64| videos.iter().find(|v| v.id == id).unwrap().title.clone();
+        assert_eq!(
+            titled(untitled_id).as_deref(),
+            Some("Half guard knee shield"),
+            "an untitled clip borrows the first line of its post"
+        );
+        assert_eq!(
+            titled(named_id).as_deref(),
+            Some("Berimbolo entry"),
+            "a named clip keeps its name"
         );
     }
 

@@ -54,6 +54,9 @@ pub struct CreateCommentRequest {
     /// Optional timestamp (seconds) into the thread's attached video that this
     /// comment is pinned to. NULL means a whole-video reply.
     pub video_ts_seconds: Option<i64>,
+    /// Optional name for the attached clip. Never renames a referenced clip
+    /// that already has one.
+    pub video_title: Option<String>,
 }
 
 fn parse_kind(s: &str) -> Result<AnchorKind, Status> {
@@ -238,6 +241,7 @@ pub async fn api_create_comment(
         req.video_id,
         req.video_ts_seconds,
         req.video_is_reference.unwrap_or(false),
+        req.video_title.as_deref(),
     )
     .await
     .map_err(|e: AppError| { e.log_and_record("api_create_comment"); e.status_code() })?;

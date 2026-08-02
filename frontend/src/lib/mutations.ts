@@ -1333,9 +1333,21 @@ export function useCreateComment(
       videoId?: number | null;
       videoIsReference?: boolean | null;
       videoTsSeconds?: number | null;
+      videoTitle?: string | null;
       authorId?: number;
       authorName?: string;
-    }) => unwrap(await createComment(v.threadId, v.body, v.parentCommentId, v.videoId, v.videoIsReference, v.videoTsSeconds)),
+    }) =>
+      unwrap(
+        await createComment(
+          v.threadId,
+          v.body,
+          v.parentCommentId,
+          v.videoId,
+          v.videoIsReference,
+          v.videoTsSeconds,
+          v.videoTitle,
+        ),
+      ),
     // When the comment carries a video, optimistically drop it into the thread
     // (with the video in its "processing" state) so the author sees their reply
     // immediately; the thread query polls it to playable. Reconciled on settle.
@@ -1368,7 +1380,7 @@ export function useCreateComment(
           student_id: null,
           thread_id: v.threadId,
           camp_id: null,
-          title: "",
+          title: v.videoTitle ?? "",
           position: 0,
           kind: "native",
           processing_status: "processing",

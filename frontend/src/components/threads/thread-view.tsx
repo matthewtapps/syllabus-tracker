@@ -63,6 +63,7 @@ export function ThreadView({ thread, anchorKind, anchorId, campId }: ThreadViewP
       body,
       videoId: attachment?.videoId ?? null,
       videoIsReference: attachment?.isReference ?? null,
+      videoTitle: attachment?.title ?? null,
       authorId: user.id,
       authorName: user.display_name,
       videoTsSeconds: videoTsSeconds ?? null,

@@ -360,7 +360,7 @@ mod tests {
 
         // A reply (create_comment) must carry the same camp deep-link context as
         // the root post, or the feed notification for the reply is un-clickable.
-        create_comment(&db.pool, thread_id, None, student, "Going well", None, None, false)
+        create_comment(&db.pool, thread_id, None, student, "Going well", None, None, false, None)
             .await
             .unwrap();
 
@@ -2284,7 +2284,7 @@ mod tests {
         )
         .await
         .unwrap();
-        create_comment(&db.pool, thread_id, None, student, "Got it.", None, None, false)
+        create_comment(&db.pool, thread_id, None, student, "Got it.", None, None, false, None)
             .await
             .unwrap();
 

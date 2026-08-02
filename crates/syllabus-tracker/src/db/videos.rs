@@ -1856,7 +1856,20 @@ pub async fn browse_camp_videos(
     let rows = sqlx::query!(
         r#"SELECT v.id AS "id!: i64", v.title AS "title?: String",
                   v.duration_seconds AS "duration_seconds?: i64",
-                  v.external_url AS "external_url?: String"
+                  v.external_url AS "external_url?: String",
+                  COALESCE(
+                      (SELECT th.body FROM threads th
+                        WHERE th.attached_video_id = v.id
+                          AND th.camp_id = ?1
+                          AND th.deleted_at IS NULL
+                        ORDER BY th.id LIMIT 1),
+                      (SELECT tc.body FROM thread_comments tc
+                        JOIN threads tt ON tt.id = tc.thread_id
+                       WHERE tc.video_id = v.id
+                         AND tt.camp_id = ?1
+                         AND tc.deleted_at IS NULL
+                       ORDER BY tc.id LIMIT 1)
+                  ) AS "post_body?: String"
            FROM videos v
            LEFT JOIN video_visibility_overrides ov
                   ON ov.video_id = v.id
@@ -1893,12 +1906,31 @@ pub async fn browse_camp_videos(
         .into_iter()
         .map(|r| BrowseVideo {
             id: r.id,
-            title: r.title,
+            title: name_or_post_opening(r.title.as_deref(), r.post_body.as_deref()),
             duration_seconds: r.duration_seconds,
             external_url: r.external_url,
             provenance: format!("camp · {camp_name}"),
         })
         .collect())
+}
+
+/// What to call a clip in a picker. An untitled clip posted into a camp borrows
+/// the opening of the post that carried it, which is the only thing anyone
+/// wrote about it.
+fn name_or_post_opening(title: Option<&str>, post_body: Option<&str>) -> Option<String> {
+    if let Some(t) = title.map(str::trim).filter(|t| !t.is_empty()) {
+        return Some(t.to_string());
+    }
+    let opening = post_body?.lines().find(|l| !l.trim().is_empty())?.trim();
+    if opening.is_empty() {
+        return None;
+    }
+    const MAX: usize = 60;
+    if opening.chars().count() <= MAX {
+        return Some(opening.to_string());
+    }
+    let cut: String = opening.chars().take(MAX).collect();
+    Some(format!("{}…", cut.trim_end()))
 }
 
 /// Syllabuses source: the student's active (non-unassigned) syllabuses that

@@ -1,0 +1,44 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT v.id AS \"id!: i64\", v.title AS \"title?: String\",\n                  v.duration_seconds AS \"duration_seconds?: i64\",\n                  v.external_url AS \"external_url?: String\",\n                  COALESCE(\n                      (SELECT th.body FROM threads th\n                        WHERE th.attached_video_id = v.id\n                          AND th.camp_id = ?1\n                          AND th.deleted_at IS NULL\n                        ORDER BY th.id LIMIT 1),\n                      (SELECT tc.body FROM thread_comments tc\n                        JOIN threads tt ON tt.id = tc.thread_id\n                       WHERE tc.video_id = v.id\n                         AND tt.camp_id = ?1\n                         AND tc.deleted_at IS NULL\n                       ORDER BY tc.id LIMIT 1)\n                  ) AS \"post_body?: String\"\n           FROM videos v\n           LEFT JOIN video_visibility_overrides ov\n                  ON ov.video_id = v.id\n                 AND ov.scope_kind = 'camp'\n                 AND ov.camp_id = ?1\n           WHERE v.id IN (\n                   SELECT vc.id FROM videos vc WHERE vc.camp_id = ?1\n                   UNION\n                   SELECT th.attached_video_id FROM threads th\n                    WHERE th.camp_id = ?1\n                      AND th.anchor_kind IN ('camp', 'camp_technique')\n                      AND th.deleted_at IS NULL\n                      AND th.attached_video_id IS NOT NULL\n                   UNION\n                   SELECT tc.video_id FROM thread_comments tc\n                    JOIN threads tt ON tt.id = tc.thread_id\n                    WHERE tt.camp_id = ?1\n                      AND tt.anchor_kind IN ('camp', 'camp_technique')\n                      AND tt.deleted_at IS NULL\n                      AND tc.deleted_at IS NULL\n                      AND tc.video_id IS NOT NULL\n                 )\n             AND v.deleted_at IS NULL\n             AND CASE\n                   WHEN ov.visible IS NOT NULL THEN ov.visible\n                   ELSE (v.hidden_at IS NULL)\n                 END = 1\n           ORDER BY v.position ASC, v.id ASC",
+  "describe": {
+    "columns": [
+      {
+        "name": "id!: i64",
+        "ordinal": 0,
+        "type_info": "Integer"
+      },
+      {
+        "name": "title?: String",
+        "ordinal": 1,
+        "type_info": "Text"
+      },
+      {
+        "name": "duration_seconds?: i64",
+        "ordinal": 2,
+        "type_info": "Integer"
+      },
+      {
+        "name": "external_url?: String",
+        "ordinal": 3,
+        "type_info": "Text"
+      },
+      {
+        "name": "post_body?: String",
+        "ordinal": 4,
+        "type_info": "Null"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      true,
+      false,
+      true,
+      true,
+      null
+    ]
+  },
+  "hash": "7b2117cf612dff649d200f596c02fe79c89c3a189f56f144dc4bb924656213e1"
+}

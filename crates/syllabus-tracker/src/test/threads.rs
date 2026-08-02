@@ -126,7 +126,7 @@ mod tests {
         .await
         .unwrap();
 
-        create_comment(&db.pool, thread_id, None, coach_id, "answer", None, None, false)
+        create_comment(&db.pool, thread_id, None, coach_id, "answer", None, None, false, None)
             .await
             .unwrap();
 
@@ -185,15 +185,15 @@ mod tests {
         .await
         .unwrap();
         let top =
-            create_comment(&db.pool, thread_id, None, student_id, "top", None, None, false).await.unwrap();
-        create_comment(&db.pool, thread_id, Some(top), student_id, "ok reply", None, None, false)
+            create_comment(&db.pool, thread_id, None, student_id, "top", None, None, false, None).await.unwrap();
+        create_comment(&db.pool, thread_id, Some(top), student_id, "ok reply", None, None, false, None)
             .await
             .unwrap();
         let nested = create_comment(
             &db.pool,
             thread_id,
             Some(
-                create_comment(&db.pool, thread_id, Some(top), student_id, "another reply", None, None, false)
+                create_comment(&db.pool, thread_id, Some(top), student_id, "another reply", None, None, false, None)
                     .await
                     .unwrap(),
             ),
@@ -202,6 +202,7 @@ mod tests {
             None,
             None,
             false,
+            None,
         )
         .await;
         assert!(nested.is_err(), "replying to a reply must be rejected");
@@ -234,7 +235,7 @@ mod tests {
         .await
         .unwrap();
         let comment_id =
-            create_comment(&db.pool, thread_id, None, student_id, "oops", None, None, false).await.unwrap();
+            create_comment(&db.pool, thread_id, None, student_id, "oops", None, None, false, None).await.unwrap();
         soft_delete_comment(&db.pool, comment_id, coach_id).await.unwrap();
 
         let view = get_thread(
@@ -1113,10 +1114,10 @@ mod tests {
         .await
         .unwrap();
 
-        create_comment(&db.pool, thread_id, None, coach_id, "first comment", None, None, false)
+        create_comment(&db.pool, thread_id, None, coach_id, "first comment", None, None, false, None)
             .await
             .unwrap();
-        create_comment(&db.pool, thread_id, None, coach_id, "second comment", None, None, false)
+        create_comment(&db.pool, thread_id, None, coach_id, "second comment", None, None, false, None)
             .await
             .unwrap();
 
@@ -1411,7 +1412,7 @@ mod tests {
         .await
         .unwrap();
 
-        create_comment(&db.pool, thread_id, None, coach_id, "a reply", None, None, false)
+        create_comment(&db.pool, thread_id, None, coach_id, "a reply", None, None, false, None)
             .await
             .unwrap();
 
@@ -1458,7 +1459,7 @@ mod tests {
             .bind(coach_id)
             .fetch_one(&db.pool).await.unwrap();
 
-        create_comment(&db.pool, thread_id, None, coach_id, "great clip", Some(video_id), None, false)
+        create_comment(&db.pool, thread_id, None, coach_id, "great clip", Some(video_id), None, false, None)
             .await.unwrap();
 
         let view = get_thread(&db.pool, thread_id,
@@ -1520,7 +1521,7 @@ mod tests {
         .await
         .unwrap();
 
-        create_comment(&db.pool, thread_id, None, coach_id, "check 12s", None, Some(12), false)
+        create_comment(&db.pool, thread_id, None, coach_id, "check 12s", None, Some(12), false, None)
             .await
             .unwrap();
 
@@ -1663,7 +1664,7 @@ mod tests {
         .await
         .unwrap();
 
-        create_comment(&db.pool, thread_id, None, student_id, "drilled it", None, None, false)
+        create_comment(&db.pool, thread_id, None, student_id, "drilled it", None, None, false, None)
             .await
             .unwrap();
 
@@ -1697,6 +1698,107 @@ mod tests {
             ],
             "the thread and its reply both read as comments"
         );
+    }
+
+    /// An unattached, nameless clip owned by `author_id`, as a composer upload
+    /// leaves it before the post that carries it is written.
+    async fn draft_video_for(pool: &sqlx::Pool<sqlx::Sqlite>, author_id: i64) -> i64 {
+        sqlx::query_scalar(
+            "INSERT INTO videos (parent_kind, title, kind, processing_status, uploaded_by_id)
+             VALUES ('loose', '', 'native', 'ready', ?) RETURNING id",
+        )
+        .bind(author_id)
+        .fetch_one(pool)
+        .await
+        .unwrap()
+    }
+
+    /// A clip uploaded through a composer is nameless until someone names it, so
+    /// the title the author typed has to land on the video the post carries.
+    #[rocket::async_test]
+    async fn an_attached_clip_takes_the_title_the_author_typed() {
+        let db = TestDbBuilder::new()
+            .coach("coach_user", Some("Coach"))
+            .student("student_user", Some("Sam"))
+            .build()
+            .await
+            .unwrap();
+        let coach_id = db.user_id("coach_user").unwrap();
+        let student_id = db.user_id("student_user").unwrap();
+
+        let draft = draft_video_for(&db.pool, coach_id).await;
+        let thread_id = create_thread(
+            &db.pool,
+            NewThread {
+                author_id: coach_id,
+                anchor: Anchor {
+                    kind: AnchorKind::StudentProfile,
+                    id: student_id,
+                    video_ts_seconds: None,
+                    pinned_student_id: None,
+                    camp_id: None,
+                },
+                visibility: ThreadVisibility::Private,
+                scope_student_id: Some(student_id),
+                body: "have a look".into(),
+                attached_video_id: Some(draft),
+                attached_video_is_reference: false,
+                attached_video_title: Some("  Knee slice pass  ".into()),
+            },
+        )
+        .await
+        .unwrap();
+
+        let title: String = sqlx::query_scalar("SELECT title FROM videos WHERE id = ?")
+            .bind(draft)
+            .fetch_one(&db.pool)
+            .await
+            .unwrap();
+        assert_eq!(title, "Knee slice pass", "the typed title lands, trimmed");
+
+        // Same for a clip on a reply.
+        let reply_draft = draft_video_for(&db.pool, coach_id).await;
+        create_comment(
+            &db.pool,
+            thread_id,
+            None,
+            coach_id,
+            "and this",
+            Some(reply_draft),
+            None,
+            false,
+            Some("Counter to the pass"),
+        )
+        .await
+        .unwrap();
+        let reply_title: String = sqlx::query_scalar("SELECT title FROM videos WHERE id = ?")
+            .bind(reply_draft)
+            .fetch_one(&db.pool)
+            .await
+            .unwrap();
+        assert_eq!(reply_title, "Counter to the pass");
+
+        // Leaving it blank keeps the clip nameless rather than erroring.
+        let unnamed_draft = draft_video_for(&db.pool, coach_id).await;
+        create_comment(
+            &db.pool,
+            thread_id,
+            None,
+            coach_id,
+            "no name",
+            Some(unnamed_draft),
+            None,
+            false,
+            Some("   "),
+        )
+        .await
+        .unwrap();
+        let blank: String = sqlx::query_scalar("SELECT title FROM videos WHERE id = ?")
+            .bind(unnamed_draft)
+            .fetch_one(&db.pool)
+            .await
+            .unwrap();
+        assert_eq!(blank, "", "a blank title is not an error and writes nothing");
     }
 
     /// Under the new feed model, posting a global library technique to a camp
@@ -2527,6 +2629,7 @@ mod tests {
             Some(ref_vid),
             None,
             true, // video_is_reference
+            None,
         )
         .await
         .unwrap();

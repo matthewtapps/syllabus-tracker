@@ -474,7 +474,7 @@ async fn seed_thread_with_replies(
 
     let mut last = started;
     for (reply_author, reply_body, hours_after) in replies {
-        let comment_id = create_comment(pool, thread_id, None, *reply_author, reply_body, None, None, false).await?;
+        let comment_id = create_comment(pool, thread_id, None, *reply_author, reply_body, None, None, false, None).await?;
         let comment_time = started + Duration::hours(*hours_after);
         sqlx::query("UPDATE thread_comments SET created_at = ? WHERE id = ?")
             .bind(comment_time)

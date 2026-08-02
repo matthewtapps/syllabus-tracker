@@ -347,7 +347,8 @@ pub async fn create_thread(pool: &Pool<Sqlite>, new: NewThread) -> Result<i64, A
             }
             // If the video already has a title, attached_video_title is silently ignored.
         } else {
-            // Draft path: reparent as before.
+            // Draft path: name it if the author did, then reparent.
+            set_video_title_if_given(&mut tx, vid, new.attached_video_title.as_deref()).await?;
             reparent_draft_to_thread(&mut tx, vid, thread_id).await?;
         }
     }
@@ -580,6 +581,26 @@ async fn validate_attachable_reference(
 
 /// Re-parents a draft (Loose) video onto a thread inside the caller's tx, so it
 /// inherits thread visibility/playback rules.
+/// Names a video the author just attached. A blank title leaves whatever the
+/// video already had, so skipping the field never wipes an existing name.
+async fn set_video_title_if_given(
+    tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
+    video_id: i64,
+    title: Option<&str>,
+) -> Result<(), AppError> {
+    let Some(title) = title.map(str::trim).filter(|t| !t.is_empty()) else {
+        return Ok(());
+    };
+    sqlx::query!(
+        "UPDATE videos SET title = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+        title,
+        video_id,
+    )
+    .execute(&mut **tx)
+    .await?;
+    Ok(())
+}
+
 async fn reparent_draft_to_thread(
     tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
     video_id: i64,
@@ -613,6 +634,8 @@ pub async fn cancel_for_failed_video(pool: &Pool<Sqlite>, video_id: i64) -> Resu
 /// `video_is_reference`: when `true`, link `video_id` by reference (no reparent).
 /// The video must be visible to the thread's scope student at write time.
 /// When `false` (default): treat it as a draft upload (existing behaviour).
+/// `video_title` names the clip; optional, and it never overwrites the name a
+/// referenced clip already carries.
 #[allow(clippy::too_many_arguments)]
 #[instrument(skip(pool, body))]
 pub async fn create_comment(
@@ -624,6 +647,7 @@ pub async fn create_comment(
     video_id: Option<i64>,
     video_ts_seconds: Option<i64>,
     video_is_reference: bool,
+    video_title: Option<&str>,
 ) -> Result<i64, AppError> {
     // A reply needs content: text, a video, or both.
     if body.trim().is_empty() && video_id.is_none() {
@@ -717,8 +741,18 @@ pub async fn create_comment(
     if let Some(vid) = video_id {
         if video_is_reference {
             // Reference path: the video stays where it lives; do NOT reparent.
+            // A referenced clip already belongs to someone else's surface, so a
+            // title here only fills a blank rather than renaming it under them.
+            let current: Option<String> = sqlx::query_scalar("SELECT title FROM videos WHERE id = ?")
+                .bind(vid)
+                .fetch_optional(&mut *tx)
+                .await?;
+            if current.as_deref().map(|t| t.trim().is_empty()).unwrap_or(true) {
+                set_video_title_if_given(&mut tx, vid, video_title).await?;
+            }
         } else {
-            // Draft path: reparent as before.
+            // Draft path: name it if the author did, then reparent.
+            set_video_title_if_given(&mut tx, vid, video_title).await?;
             reparent_draft_to_thread(&mut tx, vid, thread_id).await?;
         }
     }

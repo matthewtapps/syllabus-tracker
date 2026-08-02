@@ -268,7 +268,11 @@ export function ReplyComposer({
           title: refTitle.trim() || null,
         };
       } else {
-        attachment = { videoId: draftVideoId, isReference: false, title: null };
+        attachment = {
+          videoId: draftVideoId,
+          isReference: false,
+          title: refTitle.trim() || null,
+        };
       }
     }
 
@@ -307,10 +311,10 @@ export function ReplyComposer({
                 </button>
               </div>
             )}
-            {requireVideoTitle && draft?.state === "ready" && isReferenceDraft(draft) && (
+            {draft && draft.state !== "failed" && (
               <Input
                 className="h-8 w-full"
-                placeholder="Title for this video (required)"
+                placeholder={needsTitle ? "Name this video (required)" : "Name this video (optional)"}
                 value={refTitle}
                 onChange={(e) => setRefTitle(e.target.value)}
                 aria-label="Video title"

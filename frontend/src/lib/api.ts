@@ -2035,6 +2035,7 @@ export async function createComment(
   videoId?: number | null,
   videoIsReference?: boolean | null,
   videoTsSeconds?: number | null,
+  videoTitle?: string | null,
 ): Promise<Response> {
   return fetch(`/api/threads/${threadId}/comments`, {
     method: "POST",
@@ -2046,6 +2047,7 @@ export async function createComment(
       video_id: videoId ?? null,
       video_is_reference: videoIsReference ?? false,
       video_ts_seconds: videoTsSeconds ?? null,
+      video_title: videoTitle ?? null,
     }),
   });
 }
