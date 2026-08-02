@@ -270,4 +270,149 @@ mod tests {
         );
         assert!(get_video(&db.pool, video_id).await.unwrap().is_some());
     }
+
+    /// Two students studying the same technique on the same syllabus, so a
+    /// reference scoped to one student's row has somewhere to leak to.
+    struct TwoStudents {
+        db: crate::test::test_utils::TestDb,
+        coach_id: i64,
+        technique_id: i64,
+        syllabus_id: i64,
+        alice_sst_id: i64,
+        video_id: i64,
+    }
+
+    async fn two_students_one_technique() -> TwoStudents {
+        let db = TestDbBuilder::new()
+            .coach("coach_user", Some("Coach"))
+            .student("alice", None)
+            .student("bob", None)
+            .technique("Armbar", "", None)
+            .technique("Triangle", "", None)
+            .build()
+            .await
+            .unwrap();
+        let coach_id = db.user_id("coach_user").unwrap();
+        let home = db.technique_id("Armbar").unwrap();
+        let technique_id = db.technique_id("Triangle").unwrap();
+
+        let syllabus_id: i64 = sqlx::query_scalar!(
+            "INSERT INTO syllabi (name, created_by_id) VALUES ('Blue Belt', ?) RETURNING id AS \"id!\"",
+            coach_id
+        )
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+        sqlx::query!(
+            "INSERT INTO syllabus_techniques (syllabus_id, technique_id, position, added_by_id)
+             VALUES (?, ?, 0, ?)",
+            syllabus_id,
+            technique_id,
+            coach_id
+        )
+        .execute(&db.pool)
+        .await
+        .unwrap();
+
+        let mut sst_ids = Vec::new();
+        for username in ["alice", "bob"] {
+            let student_id = db.user_id(username).unwrap();
+            let assignment_id: i64 = sqlx::query_scalar!(
+                "INSERT INTO syllabus_assignments (student_id, syllabus_id, assigned_by_id)
+                 VALUES (?, ?, ?) RETURNING id AS \"id!\"",
+                student_id,
+                syllabus_id,
+                coach_id
+            )
+            .fetch_one(&db.pool)
+            .await
+            .unwrap();
+            let sst_id: i64 = sqlx::query_scalar!(
+                "INSERT INTO student_syllabus_techniques (assignment_id, technique_id)
+                 VALUES (?, ?) RETURNING id AS \"id!\"",
+                assignment_id,
+                technique_id
+            )
+            .fetch_one(&db.pool)
+            .await
+            .unwrap();
+            sst_ids.push(sst_id);
+        }
+
+        let video_id = create_processing_video(
+            &db.pool,
+            VideoParent::Technique(home),
+            "Demo",
+            None,
+            coach_id,
+        )
+        .await
+        .unwrap();
+
+        TwoStudents {
+            db,
+            coach_id,
+            technique_id,
+            syllabus_id,
+            alice_sst_id: sst_ids[0],
+            video_id,
+        }
+    }
+
+    /// The scope guarantee the "also add to global library" switch sells: with
+    /// the switch off, a coach adds an existing clip for one student and nobody
+    /// else gets it.
+    #[rocket::async_test]
+    async fn a_reference_scoped_to_one_student_reaches_only_that_student() {
+        use crate::db::list_videos_for_technique_in_syllabus_visible_to;
+
+        let f = two_students_one_technique().await;
+        let alice = f.db.user_id("alice").unwrap();
+        let bob = f.db.user_id("bob").unwrap();
+
+        add_video_reference(
+            &f.db.pool,
+            f.video_id,
+            ReferenceParent::StudentSyllabusTechnique(f.alice_sst_id),
+            None,
+            f.coach_id,
+        )
+        .await
+        .unwrap();
+
+        let alice_sees = list_videos_for_technique_in_syllabus_visible_to(
+            &f.db.pool,
+            f.technique_id,
+            f.syllabus_id,
+            alice,
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            alice_sees.iter().map(|v| v.id).collect::<Vec<_>>(),
+            vec![f.video_id],
+            "the student the reference was scoped to must see it"
+        );
+
+        let bob_sees = list_videos_for_technique_in_syllabus_visible_to(
+            &f.db.pool,
+            f.technique_id,
+            f.syllabus_id,
+            bob,
+        )
+        .await
+        .unwrap();
+        assert!(
+            bob_sees.is_empty(),
+            "another student on the same syllabus technique must not see it"
+        );
+
+        assert!(
+            list_referenced_videos(&f.db.pool, ReferenceParent::Technique(f.technique_id))
+                .await
+                .unwrap()
+                .is_empty(),
+            "a student-scoped reference must not reach the library technique list"
+        );
+    }
 }
