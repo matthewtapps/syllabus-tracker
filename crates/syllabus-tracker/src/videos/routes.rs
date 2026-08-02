@@ -154,7 +154,7 @@ pub async fn api_video_upload(
     )?;
 
     let metrics = video_metrics();
-    if !is_mp4(form.file.content_type()) {
+    if !is_video_upload(form.file.content_type()) {
         metrics.uploads_total.add(1, &[kv("result", "fail_format")]);
         return Err(Status::UnsupportedMediaType);
     }
@@ -245,7 +245,7 @@ pub async fn api_camp_video_upload(
     })?;
 
     let metrics = video_metrics();
-    if !is_mp4(form.file.content_type()) {
+    if !is_video_upload(form.file.content_type()) {
         metrics.uploads_total.add(1, &[kv("result", "fail_format")]);
         return Err(Status::UnsupportedMediaType);
     }
@@ -428,7 +428,7 @@ pub async fn api_thread_reply_video_upload(
         return Err(Status::Forbidden);
     }
     let metrics = video_metrics();
-    if !is_mp4(form.file.content_type()) {
+    if !is_video_upload(form.file.content_type()) {
         metrics.uploads_total.add(1, &[kv("result", "fail_format")]);
         return Err(Status::UnsupportedMediaType);
     }
@@ -709,7 +709,7 @@ pub async fn api_replace_video(
         Status::BadRequest
     })?;
 
-    if !is_mp4(form.file.content_type()) {
+    if !is_video_upload(form.file.content_type()) {
         return Err(Status::UnsupportedMediaType);
     }
     if form.file.len() > max_video_bytes() as u64 {
@@ -1425,12 +1425,12 @@ pub async fn api_browse_videos(
     }
 }
 
-fn is_mp4(content_type: Option<&rocket::http::ContentType>) -> bool {
+/// Any video container is accepted: the pipeline probes what actually arrived
+/// and transcodes anything that is not already an h264 mp4, so demanding mp4
+/// here would only turn iPhone recordings (`video/quicktime`) into a 415.
+fn is_video_upload(content_type: Option<&rocket::http::ContentType>) -> bool {
     match content_type {
-        Some(ct) => {
-            let mt = ct.media_type();
-            mt.top() == "video" && mt.sub() == "mp4"
-        }
+        Some(ct) => ct.media_type().top() == "video",
         None => false,
     }
 }

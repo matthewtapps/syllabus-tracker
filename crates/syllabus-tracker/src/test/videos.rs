@@ -158,6 +158,35 @@ mod tests {
     }
 
     #[rocket::async_test]
+    async fn upload_accepts_a_quicktime_recording() {
+        let test_db = create_standard_test_db().await;
+        let (client, db) = setup_test_client(test_db).await;
+        let tid = first_technique_id(&db).await;
+
+        login_as(&client, "coach_user").await;
+
+        // What an iPhone hands over: the pipeline transcodes it from here.
+        let body = format!(
+            "--{boundary}\r\n\
+             Content-Disposition: form-data; name=\"file\"; filename=\"clip.mov\"\r\n\
+             Content-Type: video/quicktime\r\n\r\n\
+             fake-mov-bytes\r\n\
+             --{boundary}\r\n\
+             Content-Disposition: form-data; name=\"title\"\r\n\r\n\
+             Demo\r\n\
+             --{boundary}--\r\n",
+            boundary = BOUNDARY
+        );
+        let response = client
+            .post(format!("/api/techniques/{}/videos/upload", tid))
+            .header(multipart_content_type())
+            .body(body)
+            .dispatch()
+            .await;
+        assert_eq!(response.status(), Status::Ok);
+    }
+
+    #[rocket::async_test]
     async fn upload_creates_row_then_processes() {
         let test_db = create_standard_test_db().await;
         let (client, db) = setup_test_client(test_db).await;
