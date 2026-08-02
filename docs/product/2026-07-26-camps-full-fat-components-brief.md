@@ -68,6 +68,10 @@ to design, and it is visual: prototype it.
 
 ## Open questions
 
+0. **Still open after the build:** the taxonomy question (1) and the long-camp
+   cost (4). Questions 2 and 3 are answered by the ordering: a new component
+   lands at the top, under the composer, and your own reply re-sorts the page.
+
 1. **Is a note-with-video one component or two?** See the taxonomy question below,
    and whether `VideoParent::Camp` survives. The prototype assumes ONE (it keys on
    `thread_id` before `video_id`) and nothing about that read badly, but it was not
@@ -239,13 +243,41 @@ Backend, `crates/syllabus-tracker/src/`:
 1. ~~**Prototype the standalone tiles, throwaway.**~~ Done, see above.
 2. ~~**Decide open question 1 on device.**~~ Done, decision 6. The taxonomy
    question (now open question 1) is still open.
-3. **Spec the component read**, since everything else depends on its shape. Include
-   dedupe (one row per component), ordering (last touch), pagination, and how much
-   nested content it hydrates.
-4. **Build the camp view against it**, replacing the teaser render path on the camp
-   page only.
-5. **Point `feedTileHref`'s camp branch at the anchored camp page** per decision 1,
-   keeping the item routes as permalinks.
+3. ~~**Spec the component read.**~~ Built instead, see below.
+4. ~~**Build the camp view against it.**~~ Done.
+5. ~~**Point `feedTileHref`'s camp branch at the anchored camp page.**~~ Done:
+   a camp tile now lands on `/camps/<id>?technique=|?video=`, and the item
+   routes are permalinks nothing links to.
+
+## What was built
+
+`GET /api/camps/:id/components` (`db/camp_components.rs`) reads the **entities**,
+not the activity log: attached techniques (via their `camp_technique` threads),
+camp notes, and camp-owned footage, one row per component, ordered by last
+touch, keyset-paginated on `(last_touch, kind, id)`.
+
+Reading entities rather than events was forced by the audit, and it pays twice:
+
+- A camp-owned video upload emits **no** activity row at all (only
+  `VideoParent::Technique` emits `video_added`), so an activity-derived read
+  could never have surfaced defect 2's orphan.
+- Defect 1 disappears structurally: the attach and its discussion are the same
+  technique, so they cannot be two rows.
+
+Each component carries its discussion (`threads`), which the frontend writes
+into the per-anchor thread caches. That, not the entity payload, is what makes
+the endpoint load-bearing: without it a dozen expanded techniques would each
+refetch their own conversation.
+
+Departures from the prototype worth knowing:
+
+- **No "who touched it last" strip.** Entity-derived rows have no actor, and
+  every kind already names its authors inside the component. The strip is the
+  kind, the title, and the relative time.
+- **The camp page no longer reads `GET /camps/:id/feed`.** The endpoint and its
+  tests are still there; nothing calls it.
+- Unread state is gone from the camp page, which never advanced the cursor
+  anyway.
 
 ## Test gates
 
