@@ -12,9 +12,10 @@ import {
 } from "./add-or-select-video-sheet";
 
 /** When the add-video flow runs on a student's syllabus technique, the sheet
- *  surfaces a "also add to global library" switch. When off, the new video is
+ *  surfaces a "also add to global library" switch. When off, the video is
  *  scoped to this student's syllabus technique (T3) rather than the global
- *  technique (T1). Absent in library/other contexts (no switch, T1 default). */
+ *  technique (T1), whether it is uploaded, linked, or referenced from a clip
+ *  that already exists. Absent in library/other contexts (no switch, T1). */
 export interface StudentSyllabusScope {
   studentId: number;
   syllabusId: number;
@@ -69,10 +70,10 @@ export function AddVideoButton({
         );
         onAdded(video);
       } else {
-        // A reference always lands on the technique: the scope switch chooses
-        // where an upload is stored, which a clip that already exists has.
-        await addVideoReference(techniqueId, source.video.id, undefined, title || undefined);
-        toast.success("Video added to this technique");
+        await addVideoReference(techniqueId, source.video.id, parent, title || undefined);
+        toast.success(
+          scoped ? "Video added for this student" : "Video added to this technique",
+        );
         onAdded(source.video.id);
       }
     } catch (err) {

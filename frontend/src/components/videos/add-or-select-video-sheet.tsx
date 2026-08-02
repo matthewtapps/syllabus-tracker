@@ -158,6 +158,13 @@ export function AddOrSelectVideoSheet({
 
   const detected = detectHost(url);
   const titleRequired = titleMode === "required";
+  // A clip already in the library exposes nothing new by being referenced
+  // again; one that lives on a single student's surface does.
+  const privateSource =
+    picked?.kind === "existing" && picked.video.source !== "library"
+      ? picked.video.source
+      : null;
+  const publishesPrivateClip = privateSource != null && alsoGlobal;
   const canSubmitConfirm =
     !submitting && picked != null && (!titleRequired || title.trim().length > 0);
 
@@ -364,7 +371,7 @@ export function AddOrSelectVideoSheet({
               )}
             </div>
 
-            {showScopeSwitch && picked?.kind !== "existing" && (
+            {showScopeSwitch && (
               <div className="flex items-start justify-between gap-3 rounded-md border p-3">
                 <div className="space-y-0.5">
                   <Label htmlFor="add-video-also-global">
@@ -381,6 +388,13 @@ export function AddOrSelectVideoSheet({
                   disabled={submitting}
                 />
               </div>
+            )}
+
+            {publishesPrivateClip && (
+              <p className="text-xs font-medium text-destructive">
+                This clip is on one student&apos;s {privateSource}. Adding it to the
+                global library shows it to every student.
+              </p>
             )}
 
             {progressPct !== null && (
@@ -404,7 +418,11 @@ export function AddOrSelectVideoSheet({
                 Back
               </Button>
               <Button type="submit" disabled={!canSubmitConfirm}>
-                {submitting ? "Saving..." : "Add video"}
+                {submitting
+                  ? "Saving..."
+                  : publishesPrivateClip
+                    ? "Publish to all students"
+                    : "Add video"}
               </Button>
             </div>
           </TracedForm>
