@@ -197,6 +197,7 @@ export function SillybusVideoNavigator({
       <SheetContent
         side="bottom"
         className="gap-0 rounded-t-xl pb-[env(safe-area-inset-bottom)]"
+        onOpenAutoFocus={(e) => e.preventDefault()}
       >
         <SheetHeader className="px-4 pb-3 pt-4 text-left">
           <div className="flex items-center gap-2">
