@@ -320,7 +320,7 @@ export function ReplyComposer({
             variant="ghost"
             size="icon"
             disabled={!stampable.canStamp}
-            onClick={() => setStampedTs(stampable.currentTime)}
+            onClick={() => setStampedTs(Math.max(0, Math.floor(stampable.currentTime)))}
             aria-label="Pin reply to current time"
             title={stampable.canStamp ? `Stamp at ${formatTimestamp(stampable.currentTime)}` : "Play the video to stamp a time"}
             className="shrink-0 rounded-full text-muted-foreground hover:text-foreground"
