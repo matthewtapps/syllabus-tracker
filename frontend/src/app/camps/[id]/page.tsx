@@ -705,53 +705,52 @@ function CampDetail({
   return (
     <div className="container mx-auto space-y-4 px-4 py-6 sm:px-6 md:py-8">
       {/* Camp header */}
-      <header className="space-y-1">
-        <div className="flex items-start justify-between gap-2">
-          <h1 className="text-base font-semibold">{camp.name}</h1>
-          <div className="flex shrink-0 items-center gap-2">
-            <Button
-              size="sm"
-              variant="ghost"
-              className="h-7 w-7 p-0"
-              aria-label="Search camp"
-              onClick={() => setSearchOpen(true)}
-            >
-              <Search className="h-3.5 w-3.5" aria-hidden />
-            </Button>
-            {isCoach && (
-              <>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="h-7 gap-1.5 text-xs"
-                  onClick={() => setRenameOpen(true)}
-                >
-                  <Pencil className="h-3.5 w-3.5" />
-                  Rename
-                </Button>
-                {!camp.archived_at && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="h-7 gap-1.5 text-xs"
-                    onClick={handleArchive}
-                    disabled={archiveCamp.isPending}
-                  >
-                    <Archive className="h-3.5 w-3.5" />
-                    Archive camp
-                  </Button>
-                )}
-              </>
-            )}
-          </div>
-        </div>
+      <header className="space-y-2">
+        <h1 className="text-2xl font-semibold tracking-tight">{camp.name}</h1>
         {camp.description && (
           <p className="text-sm text-muted-foreground">{camp.description}</p>
         )}
         {camp.archived_at && (
           <span className="text-xs text-muted-foreground">Archived</span>
         )}
+        {isCoach && (
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 gap-1.5 text-xs"
+              onClick={() => setRenameOpen(true)}
+            >
+              <Pencil className="h-3.5 w-3.5" />
+              Rename
+            </Button>
+            {!camp.archived_at && (
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7 gap-1.5 text-xs"
+                onClick={handleArchive}
+                disabled={archiveCamp.isPending}
+              >
+                <Archive className="h-3.5 w-3.5" />
+                Archive camp
+              </Button>
+            )}
+          </div>
+        )}
       </header>
+
+      {/* Search opens in a sheet, so this reads as an input but never takes focus
+          (a keyboard here would cover the sheet it opens). */}
+      <button
+        type="button"
+        onClick={() => setSearchOpen(true)}
+        aria-label="Search camp"
+        className="flex h-9 w-full items-center gap-2 rounded-md border border-input bg-transparent px-3 text-sm text-muted-foreground shadow-xs transition-colors hover:bg-muted/40 dark:bg-input/30"
+      >
+        <Search className="h-4 w-4 shrink-0" aria-hidden />
+        Search this camp
+      </button>
 
       {isCoach && (
         <Dialog open={renameOpen} onOpenChange={setRenameOpen}>
