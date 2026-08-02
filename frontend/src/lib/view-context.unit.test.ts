@@ -382,10 +382,9 @@ describe("camp deep links", () => {
     expect(viewContextHref(ctx!)).toBe("/camps/7?video=12");
   });
 
-  // The camp is the surface that owns its techniques, so a camp technique is
-  // addressable under the camp. Linking to /camps/7 instead would be a
-  // self-link on the camp page, which is the regression these routes fix.
-  it("routes a camp technique row to its page under the camp", () => {
+  // The camp renders its content in full, so a technique is addressed by
+  // anchoring the camp page at it. Its own route stays as a permalink.
+  it("anchors a camp technique row on the camp page", () => {
     const ctx = rowToViewContext({
       verb: "camp_technique_added",
       context_kind: "camp",
@@ -396,10 +395,10 @@ describe("camp deep links", () => {
       video_id: null,
       camp_id: 7,
     });
-    expect(viewContextHref(ctx!)).toBe("/camps/7/techniques/5");
+    expect(viewContextHref(ctx!)).toBe("/camps/7?technique=5");
   });
 
-  it("routes a camp technique's video to that technique's page", () => {
+  it("carries a camp technique's video into the anchor", () => {
     const ctx = rowToViewContext({
       verb: "video_added",
       context_kind: "camp",
@@ -410,10 +409,10 @@ describe("camp deep links", () => {
       video_id: 12,
       camp_id: 7,
     });
-    expect(viewContextHref(ctx!)).toBe("/camps/7/techniques/5?video=12");
+    expect(viewContextHref(ctx!)).toBe("/camps/7?technique=5&video=12");
   });
 
-  it("appends a thread target to a camp technique page", () => {
+  it("appends a thread target to a camp anchor", () => {
     const ctx = rowToViewContext({
       verb: "thread_comment_posted",
       context_kind: "camp",
@@ -424,6 +423,6 @@ describe("camp deep links", () => {
       video_id: null,
       camp_id: 7,
     });
-    expect(feedTileHref(ctx, null, 88)).toBe("/camps/7/techniques/5?thread=88");
+    expect(feedTileHref(ctx, null, 88)).toBe("/camps/7?technique=5&thread=88");
   });
 });

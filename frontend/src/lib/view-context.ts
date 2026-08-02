@@ -48,22 +48,15 @@ export function viewContextHref(ctx: ViewContext): string {
       return `${base}?focus=${refToken(ctx.sst)}${video}`;
     }
     case "camp": {
-      // A camp OWNS its content rather than projecting it from elsewhere, so
-      // each item is addressable under the camp. Without this, a camp tile
-      // linked to /camps/<id>, which on a camp page is the page you are
-      // already reading, and nothing could be opened.
-      if (ctx.technique) {
-        // A camp technique's video lives in that technique's video list, so the
-        // technique page is the surface that owns it; `?video=` scrolls to it
-        // there exactly as it does on a syllabus or library row.
-        const video = ctx.video ? `?video=${ctx.video.id}` : "";
-        return `/camps/${ctx.camp.id}/techniques/${ctx.technique.id}${video}`;
-      }
-      // A camp-owned video with no technique row to sit in plays in the feed
-      // itself, so `?video=` scrolls to its tile there.
-      if (ctx.video) return `/camps/${ctx.camp.id}?video=${ctx.video.id}`;
-      // Camp-level events (created/archived) name the camp itself.
-      return `/camps/${ctx.camp.id}`;
+      // A camp OWNS its content and renders it in full, so an item is
+      // addressed by anchoring the camp page at it rather than by a route of
+      // its own. `?video=` still scrolls to the clip inside whichever
+      // component holds it. The per-item routes survive as permalinks.
+      const params = new URLSearchParams();
+      if (ctx.technique) params.set("technique", String(ctx.technique.id));
+      if (ctx.video) params.set("video", String(ctx.video.id));
+      const query = params.toString();
+      return `/camps/${ctx.camp.id}${query ? `?${query}` : ""}`;
     }
   }
 }
