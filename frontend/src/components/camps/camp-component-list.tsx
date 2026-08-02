@@ -62,8 +62,8 @@ export function CampComponentList({
               highlightKey === key && "bg-muted/40 ring-2 ring-ring/60",
             )}
           >
-            <ComponentStrip component={component} />
-            <div className="px-4 pb-4">
+            {component.kind !== "note" && <ComponentStrip component={component} />}
+            <div className={cn("px-4 pb-4", component.kind === "note" && "pt-1")}>
               <ComponentBody
                 component={component}
                 campId={campId}
@@ -91,7 +91,8 @@ const KIND_ICON = {
 } as const;
 
 /** What this component is, and when it was last touched. No breadcrumb: the
- *  camp is the context, so there is nowhere else to send the reader. */
+ *  camp is the context, so there is nowhere else to send the reader. A note
+ *  carries no strip: its own body says everything a title would. */
 function ComponentStrip({ component }: { component: CampComponent }) {
   const Icon = KIND_ICON[component.kind];
   return (
@@ -107,11 +108,8 @@ function ComponentStrip({ component }: { component: CampComponent }) {
 
 function componentTitle(component: CampComponent): string {
   if (component.kind === "technique") return component.technique?.name ?? "Technique";
-  if (component.kind === "video") {
-    const title = component.video?.title.trim();
-    return title ? title : "Clip";
-  }
-  return "Note";
+  const title = component.video?.title.trim();
+  return title ? title : "Clip";
 }
 
 function ComponentBody({
