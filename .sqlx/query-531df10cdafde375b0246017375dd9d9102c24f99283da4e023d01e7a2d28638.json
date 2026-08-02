@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO video_references\n              (video_id, parent_kind, technique_id, student_syllabus_technique_id,\n               position, created_by_id)\n           VALUES (?, ?, ?, ?, ?, ?)\n           RETURNING id AS \"id!: i64\"",
+  "describe": {
+    "columns": [
+      {
+        "name": "id!: i64",
+        "ordinal": 0,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 6
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "531df10cdafde375b0246017375dd9d9102c24f99283da4e023d01e7a2d28638"
+}

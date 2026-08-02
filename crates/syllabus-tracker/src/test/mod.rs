@@ -13,6 +13,7 @@ pub mod syllabi;
 pub mod tags;
 pub mod threads;
 pub mod utils;
+pub mod video_references;
 pub mod videos;
 
 pub use utils::*;

@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT id AS \"id!: i64\"\n           FROM videos\n           WHERE id = ? AND parent_kind = ?\n             AND CASE parent_kind\n                   WHEN 'technique' THEN technique_id\n                   ELSE student_syllabus_technique_id\n                 END = ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "id!: i64",
+        "ordinal": 0,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "09af9a5feaa313b5f210b65900cdd37409e82dbe44a5a9532cb6b6878fb3038d"
+}

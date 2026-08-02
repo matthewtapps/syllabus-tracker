@@ -24,6 +24,7 @@ mod tags;
 mod techniques;
 mod users;
 pub mod threads;
+mod video_references;
 mod videos;
 mod watch;
 
@@ -50,6 +51,7 @@ pub use threads::{
     CommentView, NewThread, ThreadView, ThreadVisibility, Viewer,
 };
 pub use users::*;
+pub use video_references::*;
 pub use videos::*;
 pub use watch::*;
 

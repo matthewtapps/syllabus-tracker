@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT COALESCE(MAX(position), -1) AS \"max!: i64\"\n           FROM video_references\n           WHERE parent_kind = ?\n             AND CASE parent_kind\n                   WHEN 'technique' THEN technique_id\n                   ELSE student_syllabus_technique_id\n                 END = ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "max!: i64",
+        "ordinal": 0,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "35aee7cd1855168cdf0b1795e87a7a3ef9ad9d0da71f60b229b28c2e21cc20fd"
+}

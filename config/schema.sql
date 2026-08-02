@@ -398,6 +398,31 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_vvo_syllabus   ON video_visibility_overrid
 CREATE UNIQUE INDEX IF NOT EXISTS idx_vvo_assignment ON video_visibility_overrides (assignment_id, video_id) WHERE scope_kind='assignment';
 CREATE UNIQUE INDEX IF NOT EXISTS idx_vvo_camp       ON video_visibility_overrides (camp_id, video_id)       WHERE scope_kind='camp';
 
+-- A clip shown on a technique or a student's syllabus technique without being
+-- owned by it: the video keeps its own parent and only the pointer lives here.
+-- Exclusive-arc design mirroring videos.parent_kind. `hidden_at` belongs to the
+-- reference, so hiding a clip on one surface leaves it alone everywhere else;
+-- per-student overrides stay keyed on the video and so are shared.
+CREATE TABLE IF NOT EXISTS video_references (
+    id            INTEGER PRIMARY KEY,
+    video_id      INTEGER NOT NULL REFERENCES videos (id) ON DELETE CASCADE,
+    parent_kind   TEXT NOT NULL CHECK (parent_kind IN ('technique','student_syllabus_technique')),
+    technique_id  INTEGER REFERENCES techniques (id) ON DELETE CASCADE,
+    student_syllabus_technique_id INTEGER REFERENCES student_syllabus_techniques (id) ON DELETE CASCADE,
+    position      INTEGER NOT NULL DEFAULT 0,
+    hidden_at     TIMESTAMP,
+    created_by_id INTEGER NOT NULL REFERENCES users (id),
+    created_at    TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CHECK (
+      (parent_kind='technique'                   AND technique_id IS NOT NULL AND student_syllabus_technique_id IS NULL) OR
+      (parent_kind='student_syllabus_technique'  AND student_syllabus_technique_id IS NOT NULL AND technique_id IS NULL)
+    )
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_video_references_technique
+    ON video_references (technique_id, video_id) WHERE parent_kind='technique';
+CREATE UNIQUE INDEX IF NOT EXISTS idx_video_references_sst
+    ON video_references (student_syllabus_technique_id, video_id) WHERE parent_kind='student_syllabus_technique';
+
 CREATE TABLE IF NOT EXISTS activity (
     id                INTEGER PRIMARY KEY AUTOINCREMENT,
     occurred_at       TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,

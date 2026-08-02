@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT title AS \"title!: String\" FROM videos WHERE id = ? AND deleted_at IS NULL",
+  "describe": {
+    "columns": [
+      {
+        "name": "title!: String",
+        "ordinal": 0,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "aa92bdebc7c1a2a42e64ba1b2f4b7a13c204f45e594546b08aab888fd0c04d8f"
+}
