@@ -156,12 +156,13 @@ describe("camp_technique tile rendering", () => {
   });
 });
 
-describe("camp technique picker — thread posting", () => {
+describe("camp technique picker — attaching", () => {
   let fetchSpy: ReturnType<typeof vi.spyOn> | null = null;
   afterEach(() => fetchSpy?.mockRestore());
 
-  test("pick-existing submits a camp_technique thread with empty body", async () => {
+  test("pick-existing attaches the technique to the camp, starting no thread", async () => {
     const posted: unknown[] = [];
+    const threadPosts: unknown[] = [];
 
     fetchSpy = vi.spyOn(window, "fetch").mockImplementation(
       vi.fn().mockImplementation((url: string, init?: RequestInit) => {
@@ -174,9 +175,18 @@ describe("camp technique picker — thread posting", () => {
           );
         }
         if (url.includes("/api/threads") && init?.method === "POST") {
-          posted.push(JSON.parse(init.body as string));
+          threadPosts.push(JSON.parse(init.body as string));
           return Promise.resolve(
             new Response(JSON.stringify({ id: 101 }), {
+              status: 200,
+              headers: { "Content-Type": "application/json" },
+            }),
+          );
+        }
+        if (url.match(/\/api\/camps\/\d+\/techniques$/) && init?.method === "POST") {
+          posted.push(JSON.parse(init.body as string));
+          return Promise.resolve(
+            new Response(JSON.stringify({ added: [7] }), {
               status: 200,
               headers: { "Content-Type": "application/json" },
             }),
@@ -228,13 +238,11 @@ describe("camp technique picker — thread posting", () => {
       },
     );
 
-    // Wait for the camp to load.
-    await waitFor(() => {
-      expect(screen.getByText("Attach technique")).toBeInTheDocument();
+    // Wait for the camp to load, then open the picker dialog.
+    const attachButton = await screen.findByRole("button", {
+      name: /attach technique/i,
     });
-
-    // Open the picker dialog.
-    fireEvent.click(screen.getByRole("button", { name: /attach technique/i }));
+    fireEvent.click(attachButton);
 
     // Wait for the library techniques to load and the technique to appear.
     await waitFor(() => {
@@ -253,18 +261,11 @@ describe("camp technique picker — thread posting", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /add 1 technique/i }));
 
-    // After success, a POST to /api/threads should have been made with the
-    // camp_technique anchor and an empty body.
     await waitFor(() => {
       expect(posted.length).toBeGreaterThan(0);
     });
 
-    const payload = posted[0] as Record<string, unknown>;
-    expect(payload.anchor_kind).toBe("camp_technique");
-    expect(payload.anchor_id).toBe(7);
-    expect(payload.camp_id).toBe(3);
-    expect(payload.body).toBe("");
-    expect(payload.visibility).toBe("private");
-    expect(payload.scope_student_id).toBe(4);
+    expect(posted[0]).toEqual({ technique_ids: [7] });
+    expect(threadPosts).toEqual([]);
   });
 });

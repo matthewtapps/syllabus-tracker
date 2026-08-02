@@ -9,7 +9,8 @@ use crate::api::{ActivityFeedQuery, ACTIVITY_FEED_DEFAULT_LIMIT, ACTIVITY_FEED_M
 use crate::auth::{Permission, User};
 use crate::db::ActivityRow;
 use crate::db::camps::{
-    archive_camp, create_camp, create_camp_technique_new, get_camp, list_camp_summaries_for_student,
+    archive_camp, attach_camp_techniques, create_camp, create_camp_technique_new, get_camp,
+    list_camp_summaries_for_student,
     search_camp_techniques, search_camp_threads, search_camp_videos,
     update_camp, Camp, CampSummary, CampTechniqueHit, CampThreadHit, CampVideoHit, NewCamp, TechniqueScope,
 };
@@ -213,6 +214,50 @@ pub async fn api_create_camp_technique(
             })?;
 
     Ok(Json(CreatedResponse { id: technique_id }))
+}
+
+/// Body for `POST /api/camps/<id>/techniques`.
+#[derive(Deserialize)]
+pub struct AttachCampTechniquesRequest {
+    pub technique_ids: Vec<i64>,
+}
+
+#[derive(Serialize)]
+pub struct AttachedResponse {
+    /// The ids this call actually added; a technique already in the camp is
+    /// absent, so a repeat attach reports nothing new rather than failing.
+    pub added: Vec<i64>,
+}
+
+/// Attaches existing techniques to a camp. Idempotent, and starts no
+/// discussion: membership is not a post. Open to a coach or the camp's own
+/// student, matching who may post on the camp's surfaces.
+#[instrument(skip(req, pool, user))]
+#[post("/camps/<id>/techniques", data = "<req>")]
+pub async fn api_attach_camp_techniques(
+    id: i64,
+    user: User,
+    req: Json<AttachCampTechniquesRequest>,
+    pool: &State<Pool<Sqlite>>,
+) -> Result<Json<AttachedResponse>, Status> {
+    let pool = pool.inner();
+    let camp = get_camp(pool, id)
+        .await
+        .map_err(Status::from)?
+        .ok_or(Status::NotFound)?;
+    if !can_read(&user, &camp) {
+        return Err(Status::Forbidden);
+    }
+    if req.technique_ids.is_empty() {
+        return Err(Status::UnprocessableEntity);
+    }
+    let added = attach_camp_techniques(pool, id, &req.technique_ids, user.id)
+        .await
+        .map_err(|e| match e {
+            crate::error::AppError::NotFound(_) => Status::NotFound,
+            other => Status::from(other),
+        })?;
+    Ok(Json(AttachedResponse { added }))
 }
 
 #[derive(Serialize)]

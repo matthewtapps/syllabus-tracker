@@ -1,7 +1,7 @@
 //! The component read behind a camp page: the camp's content as one row per
 //! component, ordered by last touch. A component exists because the entity
 //! exists (an attached technique, a camp note, camp-owned footage), not because
-//! an event fired.
+//! an event fired, and a technique component exists with no discussion at all.
 
 use serde::Serialize;
 use sqlx::{Pool, Sqlite};
@@ -67,28 +67,48 @@ pub async fn list_camp_components(
     };
 
     let rows = sqlx::query!(
-        r#"WITH comps AS (
-               -- A technique is in the camp because a camp_technique thread
-               -- exists for it; several such threads collapse to one component.
-               -- Any activity on the technique inside this camp is a touch,
-               -- not just its conversation.
-               SELECT 'technique' AS kind,
-                      th.technique_id AS entity_id,
-                      MAX(
-                          MAX(th.last_activity_at),
-                          COALESCE(
-                              (SELECT MAX(act.occurred_at) FROM activity act
-                               WHERE act.camp_id = ?1
-                                 AND act.technique_id = th.technique_id),
-                              MAX(th.last_activity_at)
-                          )
-                      ) AS last_touch
+        r#"WITH member AS (
+               -- A technique is in the camp because it was attached to it.
+               -- Camps predating camp_techniques hold theirs through the
+               -- camp_technique threads that attaching used to post.
+               SELECT ct.technique_id AS technique_id, ct.added_at AS since
+               FROM camp_techniques ct
+               WHERE ct.camp_id = ?1
+
+               UNION
+
+               SELECT th.technique_id, MIN(th.last_activity_at)
                FROM threads th
                WHERE th.anchor_kind = 'camp_technique'
                  AND th.camp_id = ?1
                  AND th.deleted_at IS NULL
                  AND th.technique_id IS NOT NULL
                GROUP BY th.technique_id
+           ),
+           comps AS (
+               -- Any activity on the technique inside this camp is a touch,
+               -- not just its conversation.
+               SELECT 'technique' AS kind,
+                      m.technique_id AS entity_id,
+                      MAX(
+                          MAX(m.since),
+                          COALESCE(
+                              (SELECT MAX(th.last_activity_at) FROM threads th
+                               WHERE th.anchor_kind = 'camp_technique'
+                                 AND th.camp_id = ?1
+                                 AND th.deleted_at IS NULL
+                                 AND th.technique_id = m.technique_id),
+                              MAX(m.since)
+                          ),
+                          COALESCE(
+                              (SELECT MAX(act.occurred_at) FROM activity act
+                               WHERE act.camp_id = ?1
+                                 AND act.technique_id = m.technique_id),
+                              MAX(m.since)
+                          )
+                      ) AS last_touch
+               FROM member m
+               GROUP BY m.technique_id
 
                UNION ALL
 

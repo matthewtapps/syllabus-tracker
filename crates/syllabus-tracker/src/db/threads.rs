@@ -358,16 +358,7 @@ pub async fn create_thread(pool: &Pool<Sqlite>, new: NewThread) -> Result<i64, A
         ThreadVisibility::Private => new.scope_student_id,
         ThreadVisibility::Broadcast => None,
     };
-    // A camp_technique thread IS the technique's membership of the camp: the
-    // only caller posts one with an empty body to attach a technique. So it
-    // reads as "added", not "commented"; later replies on the same thread do
-    // emit ThreadCommentPosted and read as comments.
-    let verb = if new.anchor.kind == AnchorKind::CampTechnique {
-        Verb::CampTechniqueAdded
-    } else {
-        Verb::ThreadCommentPosted
-    };
-    let mut ev = NewActivity::new(verb, new.author_id).thread(thread_id);
+    let mut ev = NewActivity::new(Verb::ThreadCommentPosted, new.author_id).thread(thread_id);
     if let Some(t) = target {
         ev = ev.target_student(t);
     }

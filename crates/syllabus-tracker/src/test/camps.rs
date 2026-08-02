@@ -1668,10 +1668,8 @@ mod tests {
         .await
         .unwrap();
 
-        // In the new model, posting the camp_technique thread is the attach step.
-        // No prior camp_techniques membership is required.
-
-        // Create a camp_technique thread.
+        // Create a camp_technique thread. Membership is not required to talk
+        // about a technique inside a camp.
         let camp_tech_thread_id = create_thread(
             &db.pool,
             NewThread {
@@ -1699,7 +1697,7 @@ mod tests {
         let row = sqlx::query(
             "SELECT technique_id, camp_id, context_kind \
              FROM activity \
-             WHERE verb = 'camp_technique_added' AND thread_id = ?",
+             WHERE verb = 'thread_comment_posted' AND thread_id = ?",
         )
         .bind(camp_tech_thread_id)
         .fetch_one(&db.pool)
@@ -2204,12 +2202,11 @@ mod tests {
         assert_eq!(got_technique_id, technique_id);
         assert_eq!(got_camp_id, camp_id);
 
-        // The activity row carries technique_id and camp context. The attach
-        // reads as camp_technique_added, not as a comment.
+        // The activity row carries technique_id and camp context.
         let act = sqlx::query(
             "SELECT technique_id, camp_id, context_kind \
              FROM activity \
-             WHERE verb = 'camp_technique_added' AND thread_id = ?",
+             WHERE verb = 'thread_comment_posted' AND thread_id = ?",
         )
         .bind(thread_id)
         .fetch_one(&db.pool)
@@ -2334,6 +2331,107 @@ mod tests {
             components[0].video.as_ref().map(|v| v.title.as_str()),
             Some("Camp clip")
         );
+    }
+
+    /// Attaching is membership, not a post: it starts no thread, and attaching
+    /// the same technique again adds neither a second component nor a second
+    /// activity row.
+    #[rocket::async_test]
+    async fn attaching_a_technique_twice_starts_no_thread_and_no_duplicate() {
+        use crate::db::camps::attach_camp_techniques;
+        use crate::db::list_camp_components;
+
+        let (db, coach, _student, camp_id) = camp_fixture().await;
+        let technique_id = db.technique_id("Armbar").unwrap();
+
+        let added = attach_camp_techniques(&db.pool, camp_id, &[technique_id], coach)
+            .await
+            .unwrap();
+        assert_eq!(added, vec![technique_id]);
+
+        let again = attach_camp_techniques(&db.pool, camp_id, &[technique_id], coach)
+            .await
+            .unwrap();
+        assert!(again.is_empty(), "re-attaching adds nothing");
+
+        let threads: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM threads WHERE anchor_kind = 'camp_technique' AND camp_id = ?",
+        )
+        .bind(camp_id)
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+        assert_eq!(threads, 0, "attaching starts no discussion");
+
+        let attaches: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM activity WHERE verb = 'camp_technique_added' AND camp_id = ?",
+        )
+        .bind(camp_id)
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+        assert_eq!(attaches, 1, "only the attach that landed is announced");
+
+        let (components, _) =
+            list_camp_components(&db.pool, camp_id, coach_viewer(coach), None, 20)
+                .await
+                .unwrap();
+        assert_eq!(
+            components
+                .iter()
+                .filter(|c| c.kind == "technique")
+                .map(|c| c.id)
+                .collect::<Vec<_>>(),
+            vec![technique_id],
+            "the technique is one component, with no discussion behind it"
+        );
+    }
+
+    /// A camp's own student may attach; an unrelated student may not.
+    #[rocket::async_test]
+    async fn attach_technique_route_auth() {
+        use crate::test::test_utils::{create_standard_test_db, setup_test_client};
+        use rocket::http::{ContentType, Status};
+
+        let test_db = create_standard_test_db().await;
+        let coach_id = test_db.user_id("coach_user").unwrap();
+        let technique_id = test_db.technique_id("Armbar").unwrap();
+        let (client, db) = setup_test_client(test_db).await;
+
+        let other_student_id: i64 = sqlx::query_scalar(
+            "INSERT INTO users (username, role, password, display_name, approved_at, claimed_at)
+             SELECT 'other_student', 'student', password, 'Other Student', approved_at, claimed_at
+             FROM users WHERE username = 'student_user' RETURNING id",
+        )
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+        let camp_id: i64 = sqlx::query_scalar(
+            "INSERT INTO camps (student_id, coach_id, name) VALUES (?, ?, 'Other camp') RETURNING id",
+        )
+        .bind(other_student_id)
+        .bind(coach_id)
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+
+        login_as(&client, "student_user").await;
+        let resp = client
+            .post(format!("/api/camps/{}/techniques", camp_id))
+            .header(ContentType::JSON)
+            .body(format!(r#"{{"technique_ids": [{}]}}"#, technique_id))
+            .dispatch()
+            .await;
+        assert_eq!(resp.status(), Status::Forbidden, "non-owner student must get 403");
+
+        login_as(&client, "coach_user").await;
+        let resp = client
+            .post(format!("/api/camps/{}/techniques", camp_id))
+            .header(ContentType::JSON)
+            .body(format!(r#"{{"technique_ids": [{}]}}"#, technique_id))
+            .dispatch()
+            .await;
+        assert_eq!(resp.status(), Status::Ok);
     }
 
     /// Components sort by last touch, so a reply on an older note bumps it back

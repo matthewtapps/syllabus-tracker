@@ -26,11 +26,13 @@ import { useQueryClient } from "@tanstack/react-query";
 import { qk } from "@/lib/query-keys";
 import {
   useCamp,
+  useCampTechniques,
   useInfiniteCampComponents,
   useLibraryTechniques,
 } from "@/lib/queries";
 import {
   useArchiveCamp,
+  useAttachCampTechniques,
   useCreateCampTechnique,
   useCreateThread,
 } from "@/lib/mutations";
@@ -49,13 +51,20 @@ import type { VideoAttachment } from "@/components/threads/reply-composer";
 // ---------------------------------------------------------------------------
 
 function PickExistingPanel({
+  campId,
   onAttach,
   onDone,
 }: {
-  /** Posts a camp_technique thread for each selected technique id. */
+  campId: number;
+  /** Attaches each selected technique id to the camp. */
   onAttach: (techniqueIds: number[]) => Promise<void>;
   onDone: () => void;
 }) {
+  const attachedQuery = useCampTechniques(campId);
+  const attached = useMemo(
+    () => new Set((attachedQuery.data ?? []).map((t) => t.id)),
+    [attachedQuery.data],
+  );
   const libraryQuery = useLibraryTechniques();
   const techniques = useMemo(() => libraryQuery.data ?? [], [libraryQuery.data]);
   const [pending, setPending] = useState(false);
@@ -84,12 +93,16 @@ function PickExistingPanel({
     });
   }, [techniques, search, activeTags]);
 
+  const selectable = useMemo(
+    () => filtered.filter((t) => !attached.has(t.id)),
+    [filtered, attached],
+  );
   const visibleSelectedCount = useMemo(
-    () => filtered.filter((t) => selected.has(t.id)).length,
-    [filtered, selected],
+    () => selectable.filter((t) => selected.has(t.id)).length,
+    [selectable, selected],
   );
   const allVisibleSelected =
-    filtered.length > 0 && visibleSelectedCount === filtered.length;
+    selectable.length > 0 && visibleSelectedCount === selectable.length;
 
   function toggle(id: number) {
     setSelected((prev) => {
@@ -109,7 +122,7 @@ function PickExistingPanel({
   function selectAllVisible() {
     setSelected((prev) => {
       const next = new Set(prev);
-      filtered.forEach((t) => next.add(t.id));
+      selectable.forEach((t) => next.add(t.id));
       return next;
     });
   }
@@ -117,7 +130,7 @@ function PickExistingPanel({
   function deselectAllVisible() {
     setSelected((prev) => {
       const next = new Set(prev);
-      filtered.forEach((t) => next.delete(t.id));
+      selectable.forEach((t) => next.delete(t.id));
       return next;
     });
   }
@@ -186,7 +199,7 @@ function PickExistingPanel({
           variant="ghost"
           size="sm"
           className="h-6 px-2 text-xs"
-          disabled={filtered.length === 0}
+          disabled={selectable.length === 0}
           onClick={allVisibleSelected ? deselectAllVisible : selectAllVisible}
         >
           {allVisibleSelected ? "Deselect all visible" : "Select all visible"}
@@ -203,21 +216,35 @@ function PickExistingPanel({
         ) : (
           <ul className="divide-y divide-border">
             {filtered.map((t) => {
-              const checked = selected.has(t.id);
+              const inCamp = attached.has(t.id);
+              const checked = inCamp || selected.has(t.id);
               return (
                 <li key={t.id}>
                   <label
                     htmlFor={`add-camp-tech-${t.id}`}
-                    className="flex cursor-pointer items-start gap-3 px-3 py-2 transition-colors hover:bg-muted/40"
+                    className={cn(
+                      "flex items-start gap-3 px-3 py-2 transition-colors",
+                      inCamp
+                        ? "cursor-default opacity-60"
+                        : "cursor-pointer hover:bg-muted/40",
+                    )}
                   >
                     <Checkbox
                       id={`add-camp-tech-${t.id}`}
                       checked={checked}
+                      disabled={inCamp}
                       onCheckedChange={() => toggle(t.id)}
                       className="mt-0.5"
                     />
                     <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-medium">{t.name}</p>
+                      <p className="truncate text-sm font-medium">
+                        {t.name}
+                        {inCamp && (
+                          <span className="ml-2 text-xs font-normal text-muted-foreground">
+                            In camp
+                          </span>
+                        )}
+                      </p>
                       {t.tags.length > 0 && (
                         <div className="mt-1 flex flex-wrap gap-1">
                           {t.tags.map((tag) => (
@@ -309,7 +336,7 @@ function CreateNewPanel({
   onDone,
 }: {
   campId: number;
-  /** Posts a camp_technique thread for a newly-created technique. */
+  /** Attaches the newly-created technique to the camp. */
   onAttach: (techniqueIds: number[]) => Promise<void>;
   onDone: () => void;
 }) {
@@ -346,7 +373,6 @@ function CreateNewPanel({
       toast.error("Failed to create technique. Please try again.");
       return;
     }
-    // Post a camp_technique thread so the new technique appears in the feed.
     try {
       await onAttach([techniqueId]);
       toast.success("Technique created and added to camp.");
@@ -450,7 +476,7 @@ function AddCampTechniqueDialog({
   onOpenChange: (b: boolean) => void;
   campId: number;
   isCoach: boolean;
-  /** Posts a camp_technique thread for each attached technique id. */
+  /** Attaches each selected technique id to the camp. */
   onAttach: (techniqueIds: number[]) => Promise<void>;
 }) {
   const [tab, setTab] = useState<"pick" | "create">("pick");
@@ -482,6 +508,7 @@ function AddCampTechniqueDialog({
 
             <TabsContent value="pick" className="mt-3 flex min-h-0 flex-1 flex-col">
               <PickExistingPanel
+                campId={campId}
                 onAttach={onAttach}
                 onDone={() => onOpenChange(false)}
               />
@@ -498,6 +525,7 @@ function AddCampTechniqueDialog({
         ) : (
           <div className="flex min-h-0 flex-1 flex-col">
             <PickExistingPanel
+              campId={campId}
               onAttach={onAttach}
               onDone={() => onOpenChange(false)}
             />
@@ -613,31 +641,11 @@ function CampDetail({
   const anchors = useCampAnchors(components, componentsQuery.isLoading, listRef);
 
   const createThread = useCreateThread();
+  const attachTechniques = useAttachCampTechniques(campId);
   const archiveCamp = useArchiveCamp(camp?.student_id ?? 0);
 
-  /**
-   * Posts a camp_technique thread for each technique id. The technique IS the
-   * content, so the body is empty. After all threads are posted, the camp feed
-   * is refreshed so the new cards appear immediately.
-   */
-  async function attachTechniqueAsThread(techniqueIds: number[]) {
-    const studentId = camp!.student_id;
-    await Promise.all(
-      techniqueIds.map((techniqueId) =>
-        createThread.mutateAsync({
-          anchor_kind: "camp_technique",
-          anchor_id: techniqueId,
-          camp_id: campId,
-          visibility: "private",
-          scope_student_id: studentId,
-          body: "",
-        }),
-      ),
-    );
-    invalidateCampComponents();
-    // The attach IS the membership, so the camp's technique list changed too;
-    // the new card hydrates from it.
-    qc.invalidateQueries({ queryKey: qk.campTechniques(campId) });
+  async function attachToCamp(techniqueIds: number[]) {
+    await attachTechniques.mutateAsync(techniqueIds);
   }
 
   const [addPickerOpen, setAddPickerOpen] = useState(false);
@@ -774,7 +782,7 @@ function CampDetail({
         onOpenChange={setAddPickerOpen}
         campId={campId}
         isCoach={isCoach}
-        onAttach={attachTechniqueAsThread}
+        onAttach={attachToCamp}
       />
 
       {/* Camp search sheet */}

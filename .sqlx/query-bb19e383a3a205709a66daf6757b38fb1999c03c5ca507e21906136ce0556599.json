@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT OR IGNORE INTO camp_techniques (camp_id, technique_id, added_by_id)\n             VALUES (?, ?, ?)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": []
+  },
+  "hash": "bb19e383a3a205709a66daf6757b38fb1999c03c5ca507e21906136ce0556599"
+}

@@ -1462,6 +1462,7 @@ export function useDeleteComment(
 
 import {
   archiveCamp,
+  attachCampTechniques,
   createCamp,
   createCampTechnique,
   setCampVideoVisibility,
@@ -1515,6 +1516,18 @@ export function useCreateCampTechnique(campId: number) {
       qc.invalidateQueries({ queryKey: qk.campComponentsAll(campId) });
       // A new global technique joins the library; refresh the pick-existing picker.
       qc.invalidateQueries({ queryKey: qk.libraryTechniques() });
+    },
+  });
+}
+
+/** Attaches existing techniques to a camp. */
+export function useAttachCampTechniques(campId: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (techniqueIds: number[]) => attachCampTechniques(campId, techniqueIds),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: qk.campComponentsAll(campId) });
+      qc.invalidateQueries({ queryKey: qk.campTechniques(campId) });
     },
   });
 }

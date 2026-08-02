@@ -79,7 +79,11 @@ async fn list_techniques_scoped(
             (SELECT MAX(st.updated_at) FROM student_techniques st WHERE st.technique_id = t.id) AS "last_activity_at?: NaiveDateTime"
         FROM techniques t
         WHERE CASE WHEN ?1 IS NULL THEN t.is_global = 1
-                   ELSE t.id IN (SELECT th.technique_id
+                   ELSE t.id IN (SELECT ct.technique_id
+                                 FROM camp_techniques ct
+                                 WHERE ct.camp_id = ?1
+                                 UNION
+                                 SELECT th.technique_id
                                  FROM threads th
                                  WHERE th.anchor_kind = 'camp_technique'
                                    AND th.camp_id = ?1

@@ -2200,6 +2200,22 @@ export async function createCampTechnique(
   return res.json();
 }
 
+/** Attaches existing techniques to a camp. Idempotent; starts no discussion.
+ *  Returns the ids this call actually added. */
+export async function attachCampTechniques(
+  campId: number,
+  techniqueIds: number[],
+): Promise<{ added: number[] }> {
+  const res = await fetch(`/api/camps/${campId}/techniques`, {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ technique_ids: techniqueIds }),
+  });
+  if (!res.ok) throw res;
+  return res.json();
+}
+
 // ============================================================
 // Camp search (Phase 4)
 // ============================================================

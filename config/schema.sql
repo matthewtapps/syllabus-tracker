@@ -244,8 +244,20 @@ CREATE TABLE IF NOT EXISTS camps (
 CREATE INDEX IF NOT EXISTS idx_camps_student
     ON camps (student_id) WHERE archived_at IS NULL;
 
--- Techniques are "in" a camp when a camp_technique THREAD exists for them
--- (anchor_kind='camp_technique'); no separate ordered-list table is needed.
+-- A technique attached to a camp. Membership is its own fact: attaching a
+-- technique is not a post, so it starts no discussion, and re-attaching one
+-- already in the camp is a no-op rather than a second copy. Camps predating
+-- this table hold their techniques through camp_technique threads, which the
+-- membership reads still union in.
+CREATE TABLE IF NOT EXISTS camp_techniques (
+    camp_id      INTEGER NOT NULL REFERENCES camps (id) ON DELETE CASCADE,
+    technique_id INTEGER NOT NULL REFERENCES techniques (id) ON DELETE CASCADE,
+    added_at     TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    added_by_id  INTEGER REFERENCES users (id),
+    PRIMARY KEY (camp_id, technique_id)
+);
+CREATE INDEX IF NOT EXISTS idx_camp_techniques_technique
+    ON camp_techniques (technique_id);
 
 -- A thread that a camp explicitly references (e.g. an earlier coaching thread
 -- whose insights informed this camp).

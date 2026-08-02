@@ -1,7 +1,7 @@
 //! Camps: a generic camp is a coach-curated stretch of work for one student,
-//! holding camp-owned videos and camp threads. Techniques are "in" a camp when a
-//! camp_technique THREAD (anchor_kind='camp_technique') exists for them; there is
-//! no separate ordered-list table.
+//! holding camp-owned videos and camp threads. Techniques are "in" a camp
+//! through `camp_techniques`; camps predating that table hold theirs through
+//! camp_technique threads, which the membership reads still union in.
 
 use chrono::NaiveDateTime;
 use serde::Serialize;
@@ -236,6 +236,66 @@ pub async fn archive_camp(pool: &Pool<Sqlite>, id: i64, by_id: i64) -> Result<()
     }
     tx.commit().await?;
     Ok(())
+}
+
+/// Attaches techniques to a camp, returning the ids this call actually added.
+/// Re-attaching a technique already in the camp is a no-op, so the caller can
+/// send the same selection twice without producing duplicates or a second
+/// activity row.
+#[instrument(skip(pool))]
+pub async fn attach_camp_techniques(
+    pool: &Pool<Sqlite>,
+    camp_id: i64,
+    technique_ids: &[i64],
+    by_id: i64,
+) -> Result<Vec<i64>, AppError> {
+    let mut tx = pool.begin().await?;
+    let camp = sqlx::query!(
+        r#"SELECT student_id AS "student_id!: i64" FROM camps WHERE id = ?"#,
+        camp_id
+    )
+    .fetch_optional(&mut *tx)
+    .await?
+    .ok_or_else(|| AppError::NotFound(format!("camp #{camp_id} not found")))?;
+
+    let mut added = Vec::new();
+    for &technique_id in technique_ids {
+        let exists = sqlx::query_scalar!(
+            "SELECT 1 FROM techniques WHERE id = ?",
+            technique_id
+        )
+        .fetch_optional(&mut *tx)
+        .await?;
+        if exists.is_none() {
+            return Err(AppError::NotFound(format!("technique #{technique_id} not found")));
+        }
+        let inserted = sqlx::query!(
+            "INSERT OR IGNORE INTO camp_techniques (camp_id, technique_id, added_by_id)
+             VALUES (?, ?, ?)",
+            camp_id,
+            technique_id,
+            by_id,
+        )
+        .execute(&mut *tx)
+        .await?
+        .rows_affected();
+        if inserted == 0 {
+            continue;
+        }
+        added.push(technique_id);
+        emit(
+            &mut tx,
+            NewActivity::new(Verb::CampTechniqueAdded, by_id)
+                .target_student(camp.student_id)
+                .technique(technique_id)
+                .camp(camp_id)
+                .context_kind("camp"),
+        )
+        .await?;
+    }
+
+    tx.commit().await?;
+    Ok(added)
 }
 
 // ---------------------------------------------------------------------------

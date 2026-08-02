@@ -122,7 +122,7 @@ Established by reading the code on 2026-07-26.
 
 | Kind | How it is created | Rendered today? |
 | --- | --- | --- |
-| **Technique** | "Attach technique" on the camp: pick existing, or create global / camp-scoped. Posts a `camp_technique` thread, which IS the membership. | Yes, as `TechniqueTile`. |
+| **Technique** | "Attach technique" on the camp: pick existing, or create global / camp-scoped. Posted a `camp_technique` thread, which WAS the membership; superseded, see below. | Yes, as `TechniqueTile`. |
 | **Discussion (note)** | `CampComposer`, text with an optional attached video. Posts a `camp` thread. | Yes, as `ThreadTile`. |
 | **Camp-owned video** | `POST /api/camps/:id/videos/upload`, giving `VideoParent::Camp`. | **No. Orphaned.** |
 
@@ -343,3 +343,15 @@ seeded-but-unobserved cache entries: build a local `QueryClient` with
 Nothing needs reverting. What dies is narrow: the **teaser render path on the camp
 page** (`TechniqueRowTeaser` + `TeaserRegion` in camp context). Both stay alive for
 the dashboard and activity feed, which keep teaser-navigates.
+
+## Superseded: technique membership is its own table
+
+Attaching a technique used to post an empty `camp_technique` thread, and that
+thread was the membership. It made attaching indistinguishable from posting: every
+technique arrived with a discussion nobody wrote, and attaching one twice added a
+second thread. Membership is now `camp_techniques`, written by
+`POST /api/camps/:id/techniques` and idempotent. Camps predating the table still
+hold their techniques through their old threads, which both membership reads union
+in, so no backfill was needed. `camp_technique_added` now fires on the attach
+itself; a `camp_technique` thread is ordinary conversation and emits
+`thread_comment_posted`.

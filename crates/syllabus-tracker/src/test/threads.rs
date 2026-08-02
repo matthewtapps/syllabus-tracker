@@ -1606,14 +1606,14 @@ mod tests {
         assert_eq!(row.technique_id, Some(technique_id));
     }
 
-    /// Attaching the technique and talking about it are different events. The
-    /// camp_technique thread IS the attach, so it emits camp_technique_added and
-    /// the feed captions it "Added"; a reply on that same thread is a comment
-    /// and must still emit thread_comment_posted, or the camp feed would caption
-    /// every conversation on a technique as another attach.
+    /// Attaching the technique and talking about it are different events.
+    /// Attaching emits camp_technique_added and the feed captions it "Added";
+    /// a camp_technique thread and its replies are conversation and must emit
+    /// thread_comment_posted, or the camp feed would caption every discussion
+    /// on a technique as another attach.
     #[rocket::async_test]
     async fn camp_technique_attach_and_reply_emit_different_verbs() {
-        use crate::db::camps::{create_camp, NewCamp};
+        use crate::db::camps::{attach_camp_techniques, create_camp, NewCamp};
         let db = TestDbBuilder::new()
             .coach("coach_user", Some("Coach"))
             .student("student_user", Some("Sam"))
@@ -1637,7 +1637,10 @@ mod tests {
         .await
         .unwrap();
 
-        // The attach: an empty body, exactly as the camp page posts it.
+        attach_camp_techniques(&db.pool, camp_id, &[technique_id], coach_id)
+            .await
+            .unwrap();
+
         let thread_id = create_thread(
             &db.pool,
             NewThread {
@@ -1664,21 +1667,35 @@ mod tests {
             .await
             .unwrap();
 
-        let verbs: Vec<String> = sqlx::query_scalar(
+        let attach_verbs: Vec<String> = sqlx::query_scalar(
+            "SELECT verb FROM activity
+             WHERE camp_id = ? AND technique_id IS NOT NULL AND thread_id IS NULL
+             ORDER BY id",
+        )
+        .bind(camp_id)
+        .fetch_all(&db.pool)
+        .await
+        .unwrap();
+        assert_eq!(
+            attach_verbs,
+            vec!["camp_technique_added".to_string()],
+            "attaching emits its own row, with no thread behind it"
+        );
+
+        let thread_verbs: Vec<String> = sqlx::query_scalar(
             "SELECT verb FROM activity WHERE thread_id = ? ORDER BY id",
         )
         .bind(thread_id)
         .fetch_all(&db.pool)
         .await
         .unwrap();
-
         assert_eq!(
-            verbs,
+            thread_verbs,
             vec![
-                "camp_technique_added".to_string(),
+                "thread_comment_posted".to_string(),
                 "thread_comment_posted".to_string()
             ],
-            "the attach reads as added, the reply as a comment"
+            "the thread and its reply both read as comments"
         );
     }
 
