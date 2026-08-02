@@ -2564,16 +2564,26 @@ mod tests {
         let videos = crate::db::browse_camp_videos(&f.pool, f.camp1_id, narrow(f.student1_id))
             .await
             .unwrap();
-        let titled = |id: i64| videos.iter().find(|v| v.id == id).unwrap().title.clone();
+        let found = |id: i64| videos.iter().find(|v| v.id == id).unwrap().clone();
         assert_eq!(
-            titled(untitled_id).as_deref(),
+            found(untitled_id).display_title.as_deref(),
             Some("Half guard knee shield"),
             "an untitled clip borrows the first line of its post"
         );
         assert_eq!(
-            titled(named_id).as_deref(),
+            found(untitled_id).title, None,
+            "the borrowed name belongs to the post, so it must not read back as \
+             the clip's own title: one clip can be referenced from many places"
+        );
+        assert_eq!(
+            found(named_id).display_title.as_deref(),
             Some("Berimbolo entry"),
             "a named clip keeps its name"
+        );
+        assert_eq!(
+            found(named_id).title.as_deref(),
+            Some("Berimbolo entry"),
+            "a clip that has its own title reports it as both"
         );
     }
 

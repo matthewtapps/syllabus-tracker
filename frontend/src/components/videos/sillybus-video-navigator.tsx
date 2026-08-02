@@ -48,7 +48,8 @@ interface SillybusVideoNavigatorProps {
 }
 
 function videoDisplayTitle(video: BrowseVideo): string {
-  if (video.title && video.title.trim()) return video.title;
+  const shown = video.display_title ?? video.title;
+  if (shown && shown.trim()) return shown;
   return video.provenance;
 }
 

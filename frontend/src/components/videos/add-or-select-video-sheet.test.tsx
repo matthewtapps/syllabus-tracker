@@ -88,6 +88,44 @@ describe("AddOrSelectVideoSheet, picking a clip that already exists", () => {
     expect(screen.getByLabelText("Title")).toBeTruthy();
   });
 
+  test("does not offer a borrowed post title as the clip's name", async () => {
+    // An untitled clip shows the opening of the post that carried it, but that
+    // name belongs to the post: accepting it would bake one post's words into
+    // the clip everywhere else it is referenced.
+    const stub = vi.fn().mockImplementation((url: string) => {
+      const params = new URLSearchParams(url.split("?")[1] ?? "");
+      const body = params.get("parent_id")
+        ? {
+            kind: "videos",
+            videos: [
+              {
+                id: 42,
+                title: null,
+                display_title: "Half guard knee shield",
+                provenance: "camp - Camp A",
+                source: "camp",
+              },
+            ],
+          }
+        : { kind: "parents", parents: [CAMP_PARENT] };
+      return Promise.resolve({ ok: true, json: () => Promise.resolve(body) });
+    });
+    vi.stubGlobal("fetch", stub);
+
+    renderWithProviders(<Harness onConfirm={async () => {}} />, {
+      user: buildUser({ id: 2, role: "coach" }),
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Choose from Sillybus" }));
+    fireEvent.click(await screen.findByRole("button", { name: /Camps/ }));
+    fireEvent.click(await screen.findByRole("button", { name: /Camp A/ }));
+    // The borrowed name is what the picker shows.
+    fireEvent.click(await screen.findByRole("button", { name: /Half guard knee shield/ }));
+
+    const titleField = (await screen.findByLabelText("Title")) as HTMLInputElement;
+    expect(titleField.value).toBe("");
+  });
+
   test("warns before publishing a clip that lives on one student's camp", async () => {
     stubBrowseFetch("camp");
     await pickExistingClip(async () => {});

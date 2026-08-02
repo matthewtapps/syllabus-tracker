@@ -1757,7 +1757,13 @@ pub enum BrowseSource {
 #[derive(Debug, Clone)]
 pub struct BrowseVideo {
     pub id: i64,
+    /// The clip's own stored title, absent when it has none. A picker offering
+    /// to name the clip must offer this and not `display_title`, which may be
+    /// borrowed from a post and belongs to that post, not the clip.
     pub title: Option<String>,
+    /// What to show a reader, falling back to a borrowed name when the clip has
+    /// no title of its own.
+    pub display_title: Option<String>,
     pub duration_seconds: Option<i64>,
     pub external_url: Option<String>,
     /// Human-readable provenance label, e.g. "library · Armbar".
@@ -1829,7 +1835,8 @@ pub async fn browse_library_videos_for_technique(
         .into_iter()
         .map(|r| BrowseVideo {
             id: r.id,
-            title: r.title,
+            title: own_title(r.title.as_deref()),
+            display_title: r.title,
             duration_seconds: r.duration_seconds,
             external_url: r.external_url,
             provenance: format!("library · {label}"),
@@ -2004,13 +2011,23 @@ pub async fn browse_camp_videos(
         .into_iter()
         .map(|r| BrowseVideo {
             id: r.id,
-            title: name_or_post_opening(r.title.as_deref(), r.post_body.as_deref()),
+            title: own_title(r.title.as_deref()),
+            display_title: name_or_post_opening(r.title.as_deref(), r.post_body.as_deref()),
             duration_seconds: r.duration_seconds,
             external_url: r.external_url,
             provenance: format!("camp · {camp_name}"),
             source: BrowseSource::Camp,
         })
         .collect())
+}
+
+/// A clip's own title, absent when it has none. The column stores a blank
+/// rather than NULL for an untitled clip, and "" is not a name.
+fn own_title(title: Option<&str>) -> Option<String> {
+    title
+        .map(str::trim)
+        .filter(|t| !t.is_empty())
+        .map(str::to_string)
 }
 
 /// What to call a clip in a picker. An untitled clip posted into a camp borrows
@@ -2029,7 +2046,7 @@ fn name_or_post_opening(title: Option<&str>, post_body: Option<&str>) -> Option<
         return Some(opening.to_string());
     }
     let cut: String = opening.chars().take(MAX).collect();
-    Some(format!("{}…", cut.trim_end()))
+    Some(format!("{}...", cut.trim_end()))
 }
 
 /// Syllabuses source: the student's active (non-unassigned) syllabuses that
@@ -2135,7 +2152,8 @@ pub async fn browse_syllabus_videos(
             let provenance = format!("{syllabus_name} · {}", tech.technique_name);
             results.push(BrowseVideo {
                 id: v.id,
-                title: if v.title.is_empty() { None } else { Some(v.title) },
+                title: if v.title.is_empty() { None } else { Some(v.title.clone()) },
+                display_title: if v.title.is_empty() { None } else { Some(v.title) },
                 duration_seconds: v.duration_seconds,
                 external_url: v.external_url,
                 provenance,
@@ -2185,7 +2203,8 @@ pub async fn search_videos(
     for r in lib_rows {
         results.push(BrowseVideo {
             id: r.id,
-            title: r.title,
+            title: own_title(r.title.as_deref()),
+            display_title: r.title,
             duration_seconds: r.duration_seconds,
             external_url: r.external_url,
             provenance: format!("library · {}", r.technique_name),
@@ -2263,7 +2282,8 @@ pub async fn search_videos(
                 );
                 results.push(BrowseVideo {
                     id: v.id,
-                    title: if v.title.is_empty() { None } else { Some(v.title) },
+                    title: if v.title.is_empty() { None } else { Some(v.title.clone()) },
+                    display_title: if v.title.is_empty() { None } else { Some(v.title) },
                     duration_seconds: v.duration_seconds,
                     external_url: v.external_url,
                     provenance,

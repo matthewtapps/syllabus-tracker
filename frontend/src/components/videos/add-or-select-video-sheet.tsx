@@ -445,7 +445,7 @@ function sourceSummary(source: VideoSource): string {
     return `${source.file.name} - ${formatBytes(source.file.size)}`;
   }
   if (source.kind === "link") return source.url;
-  return source.video.title?.trim() || source.video.provenance;
+  return source.video.display_title?.trim() || source.video.provenance;
 }
 
 function detectHost(url: string): VideoKind | null {

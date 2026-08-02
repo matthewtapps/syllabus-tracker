@@ -1387,6 +1387,8 @@ pub struct BrowseVideoItem {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub display_title: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub duration_seconds: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub external_url: Option<String>,
@@ -1399,6 +1401,7 @@ impl From<db::BrowseVideo> for BrowseVideoItem {
         Self {
             id: v.id,
             title: v.title,
+            display_title: v.display_title,
             duration_seconds: v.duration_seconds,
             external_url: v.external_url,
             provenance: v.provenance,

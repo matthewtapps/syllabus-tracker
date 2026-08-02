@@ -2016,7 +2016,12 @@ export type BrowseSource = "library" | "camp" | "syllabus";
 
 export interface BrowseVideo {
   id: number;
+  /** The clip's own stored title, absent when it has none. Offer this, not
+   *  `display_title`, when asking someone to name the clip. */
   title?: string | null;
+  /** What to show a reader: may be borrowed from the post that carried an
+   *  untitled clip, and that name belongs to the post. */
+  display_title?: string | null;
   duration_seconds?: number | null;
   external_url?: string | null;
   provenance: string;
