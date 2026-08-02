@@ -1,3 +1,21 @@
+/**
+ * Poster frames grabbed from a local file, and the memory of which video each
+ * one belongs to. The server stores no thumbnails, so a still only exists for
+ * whoever picked the file, in the session they picked it in.
+ */
+
+const postersByVideoId = new Map<number, string>();
+
+/** Ties a poster to the video the upload became, so the posted card can show
+ *  the same still the composer did while the clip processes. */
+export function rememberPoster(videoId: number, poster: string): void {
+  postersByVideoId.set(videoId, poster);
+}
+
+export function posterFor(videoId: number): string | null {
+  return postersByVideoId.get(videoId) ?? null;
+}
+
 /** Grabs a still frame from a local video File so an attachment can show a
  *  thumbnail before the clip has been uploaded or processed. */
 export async function posterFromFile(file: File, size = 96): Promise<string | null> {

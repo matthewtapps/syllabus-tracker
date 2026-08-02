@@ -22,7 +22,7 @@ import {
 } from "@/lib/api";
 import type { BrowseVideo } from "@/lib/api";
 import { SillybusVideoNavigator } from "@/components/videos/sillybus-video-navigator";
-import { posterFromFile } from "@/components/videos/poster-frame";
+import { posterFromFile, rememberPoster } from "@/components/videos/poster-frame";
 
 export interface VideoAttachment {
   videoId: number;
@@ -173,13 +173,19 @@ export function ReplyComposer({
   async function pickFile(file: File) {
     setPickerSheet(null);
     setDraft({ state: "uploading" });
-    void posterFromFile(file).then(setPoster);
+    const posterPromise = posterFromFile(file);
+    void posterPromise.then(setPoster);
     try {
       const { video_id, processing_status } = await uploadDraftReplyVideo(
         anchorKind,
         effCampId,
         file,
       );
+      // Hand the still to the video it became, so the posted card can keep
+      // showing it while the clip processes.
+      void posterPromise.then((p) => {
+        if (p) rememberPoster(video_id, p);
+      });
       setDraft(
         processing_status === "ready"
           ? { state: "ready", videoId: video_id, isReference: false }
