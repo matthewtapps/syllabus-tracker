@@ -1,17 +1,10 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { SendHorizontal, Video as VideoIcon, X, Loader2, TriangleAlert, Clock } from "lucide-react";
 import { formatTimestamp } from "@/lib/dates";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-} from "@/components/ui/sheet";
 import { useUser } from "@/lib/current-user-context";
 import { isCoachOrAdmin } from "@/lib/api";
 import {
@@ -20,8 +13,10 @@ import {
   linkDraftReplyVideo,
   uploadDraftReplyVideo,
 } from "@/lib/api";
-import type { BrowseVideo } from "@/lib/api";
-import { SillybusVideoNavigator } from "@/components/videos/sillybus-video-navigator";
+import {
+  AddOrSelectVideoSheet,
+  type VideoSource,
+} from "@/components/videos/add-or-select-video-sheet";
 import { posterFromFile, rememberPoster } from "@/components/videos/poster-frame";
 
 export interface VideoAttachment {
@@ -68,8 +63,6 @@ type Draft =
   | { state: "ready"; videoId: number; isReference: true; title: string | null }
   | { state: "failed"; videoId: number | null };
 
-type PickerSheet = "source" | "link" | "sillybus" | null;
-
 /**
  * Universal thread composer: one bordered box holding the attachments, the text
  * area and an icon bar of everything you can attach, so what you are about to
@@ -101,18 +94,13 @@ export function ReplyComposer({
   const [body, setBody] = useState("");
   const [draft, setDraft] = useState<Draft | null>(null);
   const [poster, setPoster] = useState<string | null>(null);
-  const [pickerSheet, setPickerSheet] = useState<PickerSheet>(null);
-  const [url, setUrl] = useState("");
+  const [pickerOpen, setPickerOpen] = useState(false);
   const [refTitle, setRefTitle] = useState("");
   // Text + video id of the most recent send whose video was still processing,
   // so a later processing failure can restore the text for a retry.
   const [sentPending, setSentPending] = useState<{ body: string; videoId: number } | null>(null);
   // Stamped timestamp for video-post replies; null = whole-video reply.
   const [stampedTs, setStampedTs] = useState<number | null>(null);
-
-  // file input refs — one for camera capture, one for device pick
-  const cameraInputRef = useRef<HTMLInputElement>(null);
-  const deviceInputRef = useRef<HTMLInputElement>(null);
 
   // Poll a processing draft (pre-send) until it is playable or fails.
   useEffect(() => {
@@ -163,15 +151,7 @@ export function ReplyComposer({
     };
   }, [sentPending]);
 
-  /** Drops focus before a bottom sheet opens: an on-screen keyboard left up by
-   *  the composer sits over the sheet. */
-  function openPicker(sheet: PickerSheet) {
-    (document.activeElement as HTMLElement | null)?.blur();
-    setPickerSheet(sheet);
-  }
-
-  async function pickFile(file: File) {
-    setPickerSheet(null);
+  async function uploadPickedFile(file: File) {
     setDraft({ state: "uploading" });
     const posterPromise = posterFromFile(file);
     void posterPromise.then(setPoster);
@@ -197,15 +177,11 @@ export function ReplyComposer({
     }
   }
 
-  async function pasteLink() {
-    const u = url.trim();
-    if (!u) return;
-    setPickerSheet(null);
-    setUrl("");
+  async function attachLink(url: string) {
     setPoster(null);
     setDraft({ state: "uploading" });
     try {
-      const video = await linkDraftReplyVideo(anchorKind, effCampId, u);
+      const video = await linkDraftReplyVideo(anchorKind, effCampId, url);
       setDraft({ state: "ready", videoId: video.id, isReference: false });
     } catch {
       setDraft({ state: "failed", videoId: null });
@@ -213,15 +189,23 @@ export function ReplyComposer({
     }
   }
 
-  function pickSillybusVideo(video: BrowseVideo) {
-    setPoster(null);
-    setRefTitle(video.title ?? "");
-    setDraft({
-      state: "ready",
-      videoId: video.id,
-      isReference: true,
-      title: video.title ?? null,
-    });
+  /** Starts the attach and returns straight away: the clip uploads in the
+   *  background while the author keeps typing. */
+  function attachSource(source: VideoSource): Promise<void> {
+    if (source.kind === "file") void uploadPickedFile(source.file);
+    else if (source.kind === "link") void attachLink(source.url);
+    else {
+      const { video } = source;
+      setPoster(null);
+      setRefTitle(video.title ?? "");
+      setDraft({
+        state: "ready",
+        videoId: video.id,
+        isReference: true,
+        title: video.title ?? null,
+      });
+    }
+    return Promise.resolve();
   }
 
   function removeDraft() {
@@ -345,7 +329,12 @@ export function ReplyComposer({
               variant="ghost"
               size="icon"
               disabled={draft != null}
-              onClick={() => openPicker("source")}
+              onClick={() => {
+                // Drops focus first: an on-screen keyboard left up by the
+                // composer sits over the sheet.
+                (document.activeElement as HTMLElement | null)?.blur();
+                setPickerOpen(true);
+              }}
               aria-label="Attach video"
               className="h-8 w-8 rounded-full text-muted-foreground hover:text-foreground"
             >
@@ -381,137 +370,12 @@ export function ReplyComposer({
         </div>
       </div>
 
-      {/* Hidden file inputs */}
-      <input
-        ref={cameraInputRef}
-        type="file"
-        accept="video/*"
-        capture="environment"
-        className="sr-only"
-        aria-hidden
-        onChange={(e) => {
-          const f = e.target.files?.[0];
-          if (f) void pickFile(f);
-          // Reset so the same file can be re-selected
-          e.target.value = "";
-        }}
+      <AddOrSelectVideoSheet
+        open={pickerOpen}
+        onOpenChange={setPickerOpen}
+        browseStudentId={scopeStudentId}
+        onConfirm={attachSource}
       />
-      <input
-        ref={deviceInputRef}
-        type="file"
-        accept="video/mp4"
-        className="sr-only"
-        aria-hidden
-        onChange={(e) => {
-          const f = e.target.files?.[0];
-          if (f) void pickFile(f);
-          e.target.value = "";
-        }}
-      />
-
-      {/* Source picker sheet */}
-      <Sheet open={pickerSheet === "source"} onOpenChange={(o) => { if (!o) setPickerSheet(null); }}>
-        <SheetContent
-          side="bottom"
-          className="gap-4 rounded-t-xl pb-[env(safe-area-inset-bottom)]"
-          onOpenAutoFocus={(e) => e.preventDefault()}
-        >
-          <SheetHeader className="text-left">
-            <SheetTitle>Add a video</SheetTitle>
-            <SheetDescription className="sr-only">
-              Pick where the video comes from.
-            </SheetDescription>
-          </SheetHeader>
-          <ul className="divide-y divide-border px-4 pb-6" role="list">
-            <li>
-              <button
-                type="button"
-                className="flex w-full items-center gap-3 py-3 text-sm hover:text-foreground"
-                onClick={() => {
-                  setPickerSheet(null);
-                  // Defer to allow sheet close animation
-                  setTimeout(() => cameraInputRef.current?.click(), 50);
-                }}
-              >
-                Record now
-              </button>
-            </li>
-            <li>
-              <button
-                type="button"
-                className="flex w-full items-center gap-3 py-3 text-sm hover:text-foreground"
-                onClick={() => {
-                  setPickerSheet(null);
-                  setTimeout(() => deviceInputRef.current?.click(), 50);
-                }}
-              >
-                Choose from device
-              </button>
-            </li>
-            <li>
-              <button
-                type="button"
-                className="flex w-full items-center gap-3 py-3 text-sm hover:text-foreground"
-                onClick={() => setPickerSheet("link")}
-              >
-                Paste a link
-              </button>
-            </li>
-            {scopeStudentId != null && (
-              <li>
-                <button
-                  type="button"
-                  className="flex w-full items-center gap-3 py-3 text-sm hover:text-foreground"
-                  onClick={() => {
-                    // Close the source sheet first, then open the navigator, so
-                    // the two bottom sheets never overlap as stacked modals.
-                    setPickerSheet(null);
-                    setTimeout(() => setPickerSheet("sillybus"), 80);
-                  }}
-                >
-                  Choose from Sillybus
-                </button>
-              </li>
-            )}
-          </ul>
-        </SheetContent>
-      </Sheet>
-
-      {/* Paste link sheet */}
-      <Sheet open={pickerSheet === "link"} onOpenChange={(o) => { if (!o) setPickerSheet(null); }}>
-        <SheetContent
-          side="bottom"
-          className="gap-4 rounded-t-xl pb-[env(safe-area-inset-bottom)]"
-          onOpenAutoFocus={(e) => e.preventDefault()}
-        >
-          <SheetHeader className="text-left">
-            <SheetTitle>Paste a link</SheetTitle>
-            <SheetDescription className="sr-only">
-              Enter a YouTube, Vimeo, or Drive URL.
-            </SheetDescription>
-          </SheetHeader>
-          <div className="space-y-3 px-4 pb-6">
-            <Input
-              placeholder="YouTube / Vimeo / Drive URL"
-              value={url}
-              onChange={(e) => setUrl(e.target.value)}
-            />
-            <Button type="button" className="w-full" onClick={pasteLink} disabled={!url.trim()}>
-              Attach link
-            </Button>
-          </div>
-        </SheetContent>
-      </Sheet>
-
-      {/* Sillybus navigator */}
-      {scopeStudentId != null && (
-        <SillybusVideoNavigator
-          studentId={scopeStudentId}
-          open={pickerSheet === "sillybus"}
-          onOpenChange={(o) => { if (!o) setPickerSheet(null); }}
-          onPick={pickSillybusVideo}
-        />
-      )}
     </>
   );
 }
