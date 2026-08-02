@@ -2010,12 +2010,17 @@ export interface BrowseParent {
   video_count: number;
 }
 
+/** Which surface a browsed clip was found on. `provenance` says the same thing
+ *  for a reader; this says it for code. */
+export type BrowseSource = "library" | "camp" | "syllabus";
+
 export interface BrowseVideo {
   id: number;
   title?: string | null;
   duration_seconds?: number | null;
   external_url?: string | null;
   provenance: string;
+  source: BrowseSource;
 }
 
 export type BrowseResult =

@@ -2593,6 +2593,36 @@ mod tests {
         );
     }
 
+    /// Search is the only browse read that spans sources, so it is the only one
+    /// that has to work out where each hit came from. A picker uses this to
+    /// decide whether landing the clip somewhere public exposes anything.
+    #[rocket::async_test]
+    async fn browse_search_tags_each_hit_with_its_source() {
+        use crate::db::BrowseSource;
+        let f = setup_browse_fixture().await;
+
+        let expected = [
+            ("guard pass", f.visible_lib_video_id, BrowseSource::Library),
+            ("Camp A", f.camp_video_id, BrowseSource::Camp),
+            (
+                "Syllabus technique video",
+                f.syllabus_video_id,
+                BrowseSource::Syllabus,
+            ),
+        ];
+
+        for (query, video_id, source) in expected {
+            let results = crate::db::search_videos_visible_to_student(&f.pool, f.student1_id, query)
+                .await
+                .unwrap();
+            let hit = results
+                .iter()
+                .find(|v| v.id == video_id)
+                .unwrap_or_else(|| panic!("search for {query:?} must find video {video_id}"));
+            assert_eq!(hit.source, source, "wrong source for search hit {query:?}");
+        }
+    }
+
     /// 4. 403 when a different student (not the subject, not a coach) calls
     ///    the HTTP endpoint with another student's id.
     #[rocket::async_test]

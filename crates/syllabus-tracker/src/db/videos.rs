@@ -1708,6 +1708,17 @@ pub struct BrowseParent {
     pub video_count: i64,
 }
 
+/// Which surface a browsed clip was found on. `provenance` says the same thing
+/// for a reader; this says it for code, so a caller can tell a clip that is
+/// already public from one that lives on a single student's surface.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BrowseSource {
+    Library,
+    Camp,
+    Syllabus,
+}
+
 /// A video row returned by the browse-videos endpoints.
 #[derive(Debug, Clone)]
 pub struct BrowseVideo {
@@ -1717,6 +1728,7 @@ pub struct BrowseVideo {
     pub external_url: Option<String>,
     /// Human-readable provenance label, e.g. "library · Armbar".
     pub provenance: String,
+    pub source: BrowseSource,
 }
 
 /// Library source: returns globally-visible (hidden_at IS NULL, deleted_at IS
@@ -1798,6 +1810,7 @@ pub async fn browse_library_videos_for_technique(
             duration_seconds: r.duration_seconds,
             external_url: r.external_url,
             provenance: format!("library · {label}"),
+            source: BrowseSource::Library,
         })
         .collect())
 }
@@ -1941,6 +1954,7 @@ pub async fn browse_camp_videos(
             duration_seconds: r.duration_seconds,
             external_url: r.external_url,
             provenance: format!("camp · {camp_name}"),
+            source: BrowseSource::Camp,
         })
         .collect())
 }
@@ -2071,6 +2085,7 @@ pub async fn browse_syllabus_videos(
                 duration_seconds: v.duration_seconds,
                 external_url: v.external_url,
                 provenance,
+                source: BrowseSource::Syllabus,
             });
         }
     }
@@ -2118,6 +2133,7 @@ pub async fn search_videos_visible_to_student(
             duration_seconds: r.duration_seconds,
             external_url: r.external_url,
             provenance: format!("library · {}", r.technique_name),
+            source: BrowseSource::Library,
         });
     }
 
@@ -2154,6 +2170,7 @@ pub async fn search_videos_visible_to_student(
             duration_seconds: r.duration_seconds,
             external_url: r.external_url,
             provenance: format!("camp · {}", r.camp_name),
+            source: BrowseSource::Camp,
         });
     }
 
@@ -2210,6 +2227,7 @@ pub async fn search_videos_visible_to_student(
                     duration_seconds: v.duration_seconds,
                     external_url: v.external_url,
                     provenance,
+                    source: BrowseSource::Syllabus,
                 });
             }
         }

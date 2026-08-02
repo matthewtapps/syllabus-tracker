@@ -1377,6 +1377,20 @@ pub struct BrowseVideoItem {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub external_url: Option<String>,
     pub provenance: String,
+    pub source: db::BrowseSource,
+}
+
+impl From<db::BrowseVideo> for BrowseVideoItem {
+    fn from(v: db::BrowseVideo) -> Self {
+        Self {
+            id: v.id,
+            title: v.title,
+            duration_seconds: v.duration_seconds,
+            external_url: v.external_url,
+            provenance: v.provenance,
+            source: v.source,
+        }
+    }
 }
 
 #[derive(Serialize)]
@@ -1416,16 +1430,7 @@ pub async fn api_browse_videos(
         let results = db::search_videos_visible_to_student(pool, student_id, q)
             .await
             .map_err(Status::from)?;
-        let videos = results
-            .into_iter()
-            .map(|v| BrowseVideoItem {
-                id: v.id,
-                title: v.title,
-                duration_seconds: v.duration_seconds,
-                external_url: v.external_url,
-                provenance: v.provenance,
-            })
-            .collect();
+        let videos = results.into_iter().map(BrowseVideoItem::from).collect();
         return Ok(Json(BrowseResponse::Videos { videos }));
     }
 
@@ -1453,16 +1458,7 @@ pub async fn api_browse_videos(
                 .await
                 .map_err(Status::from)?;
             Ok(Json(BrowseResponse::Videos {
-                videos: videos
-                    .into_iter()
-                    .map(|v| BrowseVideoItem {
-                        id: v.id,
-                        title: v.title,
-                        duration_seconds: v.duration_seconds,
-                        external_url: v.external_url,
-                        provenance: v.provenance,
-                    })
-                    .collect(),
+                videos: videos.into_iter().map(BrowseVideoItem::from).collect(),
             }))
         }
 
@@ -1489,16 +1485,7 @@ pub async fn api_browse_videos(
                 .await
                 .map_err(Status::from)?;
             Ok(Json(BrowseResponse::Videos {
-                videos: videos
-                    .into_iter()
-                    .map(|v| BrowseVideoItem {
-                        id: v.id,
-                        title: v.title,
-                        duration_seconds: v.duration_seconds,
-                        external_url: v.external_url,
-                        provenance: v.provenance,
-                    })
-                    .collect(),
+                videos: videos.into_iter().map(BrowseVideoItem::from).collect(),
             }))
         }
 
@@ -1526,16 +1513,7 @@ pub async fn api_browse_videos(
                 .await
                 .map_err(Status::from)?;
             Ok(Json(BrowseResponse::Videos {
-                videos: videos
-                    .into_iter()
-                    .map(|v| BrowseVideoItem {
-                        id: v.id,
-                        title: v.title,
-                        duration_seconds: v.duration_seconds,
-                        external_url: v.external_url,
-                        provenance: v.provenance,
-                    })
-                    .collect(),
+                videos: videos.into_iter().map(BrowseVideoItem::from).collect(),
             }))
         }
 
