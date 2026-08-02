@@ -93,6 +93,7 @@ export function AddOrSelectVideoSheet({
     setTitle("");
     setAlsoGlobal(true);
     setFileError(null);
+    pickedFromNavigatorRef.current = false;
   }, [open]);
 
   async function commit(source: VideoSource, details: VideoDetails) {
@@ -108,12 +109,20 @@ export function AddOrSelectVideoSheet({
     }
   }
 
-  function take(source: VideoSource, presetTitle: string) {
+  /** `viaNavigator` lets the navigator finish closing before the confirm step
+   *  opens: two bottom sheets alive at once and the newer one is dismissed out
+   *  from under the pick. */
+  function take(source: VideoSource, presetTitle: string, viaNavigator = false) {
     if (needsConfirm) {
       setPicked(source);
       setTitle(presetTitle);
-      setStep("confirm");
       onOpenChange(true);
+      if (viaNavigator) {
+        setStep(null);
+        setTimeout(() => setStep("confirm"), 80);
+      } else {
+        setStep("confirm");
+      }
       return;
     }
     void commit(source, { title: presetTitle.trim() || null, alsoGlobal: true });
@@ -300,16 +309,14 @@ export function AddOrSelectVideoSheet({
           studentId={browseStudentId}
           open={open && step === "sillybus"}
           onOpenChange={(o) => {
-            if (o) return;
-            if (pickedFromNavigatorRef.current) {
-              pickedFromNavigatorRef.current = false;
-              return;
-            }
+            // Closing the navigator to move on to the confirm step is not a
+            // dismissal of the flow, and it gets signalled more than once.
+            if (o || pickedFromNavigatorRef.current) return;
             onOpenChange(false);
           }}
           onPick={(video) => {
             pickedFromNavigatorRef.current = true;
-            take({ kind: "existing", video }, video.title ?? "");
+            take({ kind: "existing", video }, video.title ?? "", true);
           }}
         />
       )}
@@ -388,6 +395,7 @@ export function AddOrSelectVideoSheet({
                 type="button"
                 variant="ghost"
                 onClick={() => {
+                  pickedFromNavigatorRef.current = false;
                   setPicked(null);
                   setStep("source");
                 }}
