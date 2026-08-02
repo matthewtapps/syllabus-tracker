@@ -2192,6 +2192,28 @@ mod tests {
         syllabus_video_id: i64,
     }
 
+    /// The fixture's users, as the login-capable handle the HTTP tests need.
+    fn browse_test_db(f: &BrowseFixture) -> crate::test::test_utils::TestDb {
+        use std::collections::HashMap;
+        crate::test::test_utils::TestDb {
+            pool: f.pool.clone(),
+            user_id_map: HashMap::from([
+                ("browse_coach".into(), f.coach_id),
+                ("browse_student1".into(), f.student1_id),
+                ("browse_student2".into(), f.student2_id),
+            ]),
+            technique_id_map: HashMap::new(),
+        }
+    }
+
+    /// One student in context, seeing only their own surfaces.
+    fn narrow(student_id: i64) -> crate::db::BrowseScope {
+        crate::db::BrowseScope::Student {
+            id: student_id,
+            include_other_students: false,
+        }
+    }
+
     async fn setup_browse_fixture() -> BrowseFixture {
         use crate::test::test_utils::TestDbBuilder;
         let db = TestDbBuilder::new()
@@ -2326,11 +2348,7 @@ mod tests {
     #[rocket::async_test]
     async fn browse_library_visible_video_appears_hidden_does_not_even_for_coach() {
         let f = setup_browse_fixture().await;
-        let results = crate::db::browse_library_videos_for_technique(
-            &f.pool,
-            f.technique_id,
-            f.student1_id,
-        )
+        let results = crate::db::browse_library_videos_for_technique(&f.pool, f.technique_id)
         .await
         .unwrap();
         let ids: Vec<i64> = results.iter().map(|v| v.id).collect();
@@ -2348,7 +2366,7 @@ mod tests {
     #[rocket::async_test]
     async fn browse_camps_another_students_camp_never_appears() {
         let f = setup_browse_fixture().await;
-        let parents = crate::db::browse_camp_parents(&f.pool, f.student1_id)
+        let parents = crate::db::browse_camp_parents(&f.pool, narrow(f.student1_id))
             .await
             .unwrap();
         let parent_ids: Vec<i64> = parents.iter().map(|p| p.id).collect();
@@ -2361,7 +2379,7 @@ mod tests {
             "another student's camp must NOT appear"
         );
         // Drilling into camp2 with student1's id must return empty (DB guard).
-        let camp2_videos = crate::db::browse_camp_videos(&f.pool, f.camp2_id, f.student1_id)
+        let camp2_videos = crate::db::browse_camp_videos(&f.pool, f.camp2_id, narrow(f.student1_id))
             .await
             .unwrap();
         assert!(
@@ -2369,9 +2387,7 @@ mod tests {
             "drilling into another student's camp must return empty (no back door)"
         );
         // Make sure camp2's video also does not surface in the search.
-        let search = crate::db::search_videos_visible_to_student(
-            &f.pool, f.student1_id, "Camp B"
-        )
+        let search = crate::db::search_videos(&f.pool, narrow(f.student1_id), "Camp B")
         .await
         .unwrap();
         let search_ids: Vec<i64> = search.iter().map(|v| v.id).collect();
@@ -2430,7 +2446,7 @@ mod tests {
         .await
         .unwrap();
 
-        let videos = crate::db::browse_camp_videos(&f.pool, f.camp1_id, f.student1_id)
+        let videos = crate::db::browse_camp_videos(&f.pool, f.camp1_id, narrow(f.student1_id))
             .await
             .unwrap();
         let ids: Vec<i64> = videos.iter().map(|v| v.id).collect();
@@ -2447,7 +2463,7 @@ mod tests {
         .fetch_one(&f.pool)
         .await
         .unwrap();
-        let parents = crate::db::browse_camp_parents(&f.pool, f.student1_id)
+        let parents = crate::db::browse_camp_parents(&f.pool, narrow(f.student1_id))
             .await
             .unwrap();
         let parent_ids: Vec<i64> = parents.iter().map(|p| p.id).collect();
@@ -2478,7 +2494,7 @@ mod tests {
             .await
             .unwrap();
 
-        let parents = crate::db::browse_camp_parents(&f.pool, f.student1_id)
+        let parents = crate::db::browse_camp_parents(&f.pool, narrow(f.student1_id))
             .await
             .unwrap();
         let listed = parents.iter().find(|p| p.id == empty_camp_id);
@@ -2545,7 +2561,7 @@ mod tests {
             .await
             .unwrap();
 
-        let videos = crate::db::browse_camp_videos(&f.pool, f.camp1_id, f.student1_id)
+        let videos = crate::db::browse_camp_videos(&f.pool, f.camp1_id, narrow(f.student1_id))
             .await
             .unwrap();
         let titled = |id: i64| videos.iter().find(|v| v.id == id).unwrap().title.clone();
@@ -2566,9 +2582,7 @@ mod tests {
     async fn browse_search_matches_title_and_respects_visibility() {
         let f = setup_browse_fixture().await;
         // "guard pass" should hit the visible library video but NOT the hidden one.
-        let results = crate::db::search_videos_visible_to_student(
-            &f.pool, f.student1_id, "guard pass"
-        )
+        let results = crate::db::search_videos(&f.pool, narrow(f.student1_id), "guard pass")
         .await
         .unwrap();
         let ids: Vec<i64> = results.iter().map(|v| v.id).collect();
@@ -2581,15 +2595,112 @@ mod tests {
             "search must NOT return hidden library video"
         );
         // "Camp A" should find the camp video.
-        let camp_results = crate::db::search_videos_visible_to_student(
-            &f.pool, f.student1_id, "Camp A"
-        )
+        let camp_results = crate::db::search_videos(&f.pool, narrow(f.student1_id), "Camp A")
         .await
         .unwrap();
         let camp_ids: Vec<i64> = camp_results.iter().map(|v| v.id).collect();
         assert!(
             camp_ids.contains(&f.camp_video_id),
             "search must find student1's camp video"
+        );
+    }
+
+    /// Widening is what lets a coach put another student's clip somewhere, so
+    /// the widened reads must reach camps the narrow ones deliberately hide,
+    /// and must say whose camp each one is.
+    #[rocket::async_test]
+    async fn browse_camps_widened_reaches_another_students_camp() {
+        use crate::db::BrowseScope;
+        let f = setup_browse_fixture().await;
+        let widened = BrowseScope::Student {
+            id: f.student1_id,
+            include_other_students: true,
+        };
+
+        let parents = crate::db::browse_camp_parents(&f.pool, widened).await.unwrap();
+        let camp2 = parents
+            .iter()
+            .find(|p| p.id == f.camp2_id)
+            .expect("a widened browse must reach another student's camp");
+        assert!(
+            camp2.name.contains("Camp B") && camp2.name.contains("browse_student2"),
+            "a widened camp must name its owner, got {:?}",
+            camp2.name
+        );
+
+        let videos = crate::db::browse_camp_videos(&f.pool, f.camp2_id, widened)
+            .await
+            .unwrap();
+        assert!(
+            videos.iter().any(|v| v.id == f.camp2_video_id),
+            "a widened drill-in must return the other student's camp footage"
+        );
+    }
+
+    /// The same reads, unwidened, keep the guarantee the narrow browse sells.
+    #[rocket::async_test]
+    async fn browse_camps_narrow_still_hides_another_students_camp() {
+        use crate::db::BrowseScope;
+        let f = setup_browse_fixture().await;
+        let narrow = BrowseScope::Student {
+            id: f.student1_id,
+            include_other_students: false,
+        };
+
+        let parents = crate::db::browse_camp_parents(&f.pool, narrow).await.unwrap();
+        assert!(
+            !parents.iter().any(|p| p.id == f.camp2_id),
+            "another student's camp must stay hidden without widening"
+        );
+        assert!(
+            crate::db::browse_camp_videos(&f.pool, f.camp2_id, narrow)
+                .await
+                .unwrap()
+                .is_empty(),
+            "drilling into another student's camp must stay empty without widening"
+        );
+        assert!(
+            !crate::db::search_videos(&f.pool, narrow, "Camp B")
+                .await
+                .unwrap()
+                .iter()
+                .any(|v| v.id == f.camp2_video_id),
+            "search must not leak another student's camp without widening"
+        );
+    }
+
+    /// The toggle widens search too: a search that hid what the toggle just
+    /// revealed would read as broken.
+    #[rocket::async_test]
+    async fn browse_search_widens_with_the_scope() {
+        use crate::db::BrowseScope;
+        let f = setup_browse_fixture().await;
+        let widened = BrowseScope::Student {
+            id: f.student1_id,
+            include_other_students: true,
+        };
+        let hits = crate::db::search_videos(&f.pool, widened, "Camp B")
+            .await
+            .unwrap();
+        assert!(
+            hits.iter().any(|v| v.id == f.camp2_video_id),
+            "a widened search must find another student's camp footage"
+        );
+    }
+
+    /// A studentless browse is the global library technique page: no student is
+    /// in context, so everything is on the table.
+    #[rocket::async_test]
+    async fn browse_without_a_student_sees_every_camp() {
+        use crate::db::BrowseScope;
+        let f = setup_browse_fixture().await;
+        let parents = crate::db::browse_camp_parents(&f.pool, BrowseScope::AllStudents)
+            .await
+            .unwrap();
+        let ids: Vec<i64> = parents.iter().map(|p| p.id).collect();
+        assert!(
+            ids.contains(&f.camp1_id) && ids.contains(&f.camp2_id),
+            "a studentless browse must see every camp"
         );
     }
 
@@ -2612,7 +2723,7 @@ mod tests {
         ];
 
         for (query, video_id, source) in expected {
-            let results = crate::db::search_videos_visible_to_student(&f.pool, f.student1_id, query)
+            let results = crate::db::search_videos(&f.pool, narrow(f.student1_id), query)
                 .await
                 .unwrap();
             let hit = results
@@ -2628,20 +2739,7 @@ mod tests {
     #[rocket::async_test]
     async fn browse_http_forbidden_for_wrong_student() {
         let f = setup_browse_fixture().await;
-        use std::collections::HashMap;
-        use crate::test::test_utils::TestDb;
-        let test_db = TestDb {
-            pool: f.pool.clone(),
-            user_id_map: {
-                let mut m = HashMap::new();
-                m.insert("browse_coach".into(), f.coach_id);
-                m.insert("browse_student1".into(), f.student1_id);
-                m.insert("browse_student2".into(), f.student2_id);
-                m
-            },
-            technique_id_map: HashMap::new(),
-        };
-        let (client, _db) = setup_test_client(test_db).await;
+        let (client, _db) = setup_test_client(browse_test_db(&f)).await;
         login_as(&client, "browse_student2").await;
         let response = client
             .get(format!(
@@ -2662,20 +2760,7 @@ mod tests {
     #[rocket::async_test]
     async fn browse_http_coach_sees_only_student_visibility() {
         let f = setup_browse_fixture().await;
-        use std::collections::HashMap;
-        use crate::test::test_utils::TestDb;
-        let test_db = TestDb {
-            pool: f.pool.clone(),
-            user_id_map: {
-                let mut m = HashMap::new();
-                m.insert("browse_coach".into(), f.coach_id);
-                m.insert("browse_student1".into(), f.student1_id);
-                m.insert("browse_student2".into(), f.student2_id);
-                m
-            },
-            technique_id_map: HashMap::new(),
-        };
-        let (client, _db) = setup_test_client(test_db).await;
+        let (client, _db) = setup_test_client(browse_test_db(&f)).await;
         login_as(&client, "browse_coach").await;
         let response = client
             .get(format!(
@@ -2697,6 +2782,73 @@ mod tests {
             !ids.contains(&f.hidden_lib_video_id),
             "coach must NOT see hidden video (student visibility, no back door)"
         );
+    }
+
+    /// Widening is a coach capability, and a student asking for it is refused
+    /// rather than quietly narrowed: a caller must never be told it saw
+    /// everything when it did not.
+    #[rocket::async_test]
+    async fn browse_http_widening_is_refused_for_a_student() {
+        let f = setup_browse_fixture().await;
+        let (client, _db) = setup_test_client(browse_test_db(&f)).await;
+
+        login_as(&client, "browse_student1").await;
+        for query in [
+            format!("student_id={}&all_students=true&source=camps", f.student1_id),
+            "source=camps".to_string(),
+        ] {
+            let response = client
+                .get(format!("/api/videos/browse?{query}"))
+                .dispatch()
+                .await;
+            assert_eq!(
+                response.status(),
+                Status::Forbidden,
+                "a student must not be able to widen the browse ({query})"
+            );
+        }
+    }
+
+    /// The global library technique page: no student in context, so a coach
+    /// browsing camps reaches every student's.
+    #[rocket::async_test]
+    async fn browse_http_coach_may_browse_without_a_student() {
+        let f = setup_browse_fixture().await;
+        let (client, _db) = setup_test_client(browse_test_db(&f)).await;
+
+        login_as(&client, "browse_coach").await;
+        let response = client
+            .get("/api/videos/browse?source=camps")
+            .dispatch()
+            .await;
+        assert_eq!(response.status(), Status::Ok);
+        let body: serde_json::Value =
+            serde_json::from_str(&response.into_string().await.unwrap()).unwrap();
+        let ids: Vec<i64> = body["parents"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|p| p["id"].as_i64().unwrap())
+            .collect();
+        assert!(
+            ids.contains(&f.camp1_id) && ids.contains(&f.camp2_id),
+            "a studentless browse must reach every student's camps"
+        );
+    }
+
+    /// A syllabus video's visibility resolves per assignment, so the source has
+    /// nothing to answer without a student in context.
+    #[rocket::async_test]
+    async fn browse_http_syllabuses_needs_a_student() {
+        let f = setup_browse_fixture().await;
+        let (client, _db) = setup_test_client(browse_test_db(&f)).await;
+
+        login_as(&client, "browse_coach").await;
+        let response = client
+            .get("/api/videos/browse?source=syllabuses")
+            .dispatch()
+            .await;
+        assert_eq!(response.status(), Status::BadRequest);
     }
 
     /// 6. Syllabus source parents list and drill-in work.

@@ -1694,10 +1694,44 @@ pub async fn list_video_syllabus_overrides(
 
 // ---------------------------------------------------------------------------
 // Browse helpers: power the "Choose from Sillybus" navigator.
-// All functions scope results to what a given student can actually see.
-// Coaches must pass the STUDENT's id so they see the same filtered view
-// (no-back-door rule).
 // ---------------------------------------------------------------------------
+
+/// Whose eyes a browse runs through.
+///
+/// A student caller can only ever be given `Student { include_other_students:
+/// false }` with their own id; the route enforces that, because widening is a
+/// coach capability. Both widened forms reach every student's camps, so the
+/// difference between them is only whether a student is in context at all: with
+/// one, the syllabuses source still means something.
+#[derive(Debug, Clone, Copy)]
+pub enum BrowseScope {
+    Student {
+        id: i64,
+        include_other_students: bool,
+    },
+    AllStudents,
+}
+
+impl BrowseScope {
+    /// The student whose own surfaces this browse is centred on, if any.
+    pub fn student_id(self) -> Option<i64> {
+        match self {
+            BrowseScope::Student { id, .. } => Some(id),
+            BrowseScope::AllStudents => None,
+        }
+    }
+
+    /// Whether camps and search reach past the student in context.
+    pub fn is_widened(self) -> bool {
+        !matches!(
+            self,
+            BrowseScope::Student {
+                include_other_students: false,
+                ..
+            }
+        )
+    }
+}
 
 /// A parent row returned by the browse-parents endpoints. Carries enough
 /// context to render a choosable entry in the navigator.
@@ -1737,15 +1771,7 @@ pub struct BrowseVideo {
 /// `list_videos_for_technique_global_visible`); per-assignment overrides do
 /// not apply here.
 #[instrument(skip(pool))]
-pub async fn browse_library_parents(
-    pool: &Pool<Sqlite>,
-    student_id: i64,
-) -> Result<Vec<BrowseParent>, AppError> {
-    // Techniques with at least one globally-visible video. We ignore
-    // `student_id` deliberately: the library is public to all students.
-    // The parameter is kept so the call site is uniform and future
-    // per-student library gating can be added without a signature change.
-    let _ = student_id;
+pub async fn browse_library_parents(pool: &Pool<Sqlite>) -> Result<Vec<BrowseParent>, AppError> {
     let rows = sqlx::query!(
         r#"SELECT t.id AS "id!: i64", t.name AS "name!: String",
                   COUNT(v.id) AS "video_count!: i64"
@@ -1777,10 +1803,7 @@ pub async fn browse_library_parents(
 pub async fn browse_library_videos_for_technique(
     pool: &Pool<Sqlite>,
     technique_id: i64,
-    student_id: i64,
 ) -> Result<Vec<BrowseVideo>, AppError> {
-    // student_id kept for API symmetry; global lib doesn't narrow further.
-    let _ = student_id;
     let technique_name: Option<String> = sqlx::query_scalar!(
         r#"SELECT name FROM techniques WHERE id = ?"#,
         technique_id,
@@ -1815,21 +1838,26 @@ pub async fn browse_library_videos_for_technique(
         .collect())
 }
 
-/// Camps source: the student's own non-archived camps that have at least one
-/// student-visible video (applying camp-scope overrides).
+/// Camps source: non-archived camps with at least one student-visible video
+/// (applying camp-scope overrides). Narrowed to the student in context unless
+/// the scope is widened, in which case each camp is labelled with its owner so
+/// two camps of the same name stay apart.
 #[instrument(skip(pool))]
 pub async fn browse_camp_parents(
     pool: &Pool<Sqlite>,
-    student_id: i64,
+    scope: BrowseScope,
 ) -> Result<Vec<BrowseParent>, AppError> {
+    let owner_filter = camp_owner_filter(scope);
     // A camp's videos are its own footage plus every clip posted into it, since
     // attaching a clip to a camp thread reparents it to that thread and clears
     // camp_id. Visibility follows `list_videos_for_camp`: camp-scope override
     // present -> its value; otherwise hidden_at IS NULL.
     let rows = sqlx::query!(
         r#"SELECT c.id AS "id!: i64", c.name AS "name!: String",
+                  COALESCE(u.display_name, u.username, '') AS "owner!: String",
                   COUNT(DISTINCT v.id) AS "video_count!: i64"
            FROM camps c
+           JOIN users u ON u.id = c.student_id
            JOIN videos v ON v.id IN (
                     SELECT vc.id FROM videos vc WHERE vc.camp_id = c.id
                     UNION
@@ -1852,7 +1880,7 @@ pub async fn browse_camp_parents(
                   ON ov.video_id = v.id
                  AND ov.scope_kind = 'camp'
                  AND ov.camp_id = c.id
-           WHERE c.student_id = ?
+           WHERE (?1 IS NULL OR c.student_id = ?1)
              AND c.archived_at IS NULL
              AND CASE
                    WHEN ov.visible IS NOT NULL THEN ov.visible
@@ -1861,7 +1889,7 @@ pub async fn browse_camp_parents(
            GROUP BY c.id
            HAVING COUNT(DISTINCT v.id) > 0
            ORDER BY c.created_at DESC"#,
-        student_id,
+        owner_filter,
     )
     .fetch_all(pool)
     .await?;
@@ -1869,34 +1897,60 @@ pub async fn browse_camp_parents(
         .into_iter()
         .map(|r| BrowseParent {
             id: r.id,
-            name: r.name,
+            name: camp_label(&r.name, &r.owner, scope),
             video_count: r.video_count,
         })
         .collect())
 }
 
+/// The `student_id` a camp query filters on, or `None` once widened.
+fn camp_owner_filter(scope: BrowseScope) -> Option<i64> {
+    if scope.is_widened() {
+        None
+    } else {
+        scope.student_id()
+    }
+}
+
+/// A widened browse shows camps belonging to several students, so the owner has
+/// to be on the label to tell two "Comp prep" camps apart.
+fn camp_label(camp_name: &str, owner: &str, scope: BrowseScope) -> String {
+    if scope.is_widened() && !owner.is_empty() {
+        format!("{camp_name} ({owner})")
+    } else {
+        camp_name.to_string()
+    }
+}
+
 /// Camps source drill-in: the camp's own footage plus every clip posted into
-/// its threads, filtered to what the student may see (same rule as
-/// `list_videos_for_camp`). The camp must belong to `student_id`; otherwise
-/// returns empty (caller enforces ownership at the route layer but the DB
-/// function also guards so it cannot be misused).
+/// its threads, filtered by the camp-scope overrides (same rule as
+/// `list_videos_for_camp`). Unwidened the camp must belong to the student in
+/// context, otherwise this returns empty; the route checks too, but the guard
+/// lives here so the function cannot be misused.
 #[instrument(skip(pool))]
 pub async fn browse_camp_videos(
     pool: &Pool<Sqlite>,
     camp_id: i64,
-    student_id: i64,
+    scope: BrowseScope,
 ) -> Result<Vec<BrowseVideo>, AppError> {
-    // Verify the camp belongs to this student (no back door).
-    let camp_name: Option<String> = sqlx::query_scalar!(
-        r#"SELECT name FROM camps WHERE id = ? AND student_id = ? AND archived_at IS NULL"#,
+    let owner_filter = camp_owner_filter(scope);
+    let camp = sqlx::query!(
+        r#"SELECT c.name AS "name!: String",
+                  COALESCE(u.display_name, u.username, '') AS "owner!: String"
+           FROM camps c
+           JOIN users u ON u.id = c.student_id
+           WHERE c.id = ?1
+             AND (?2 IS NULL OR c.student_id = ?2)
+             AND c.archived_at IS NULL"#,
         camp_id,
-        student_id,
+        owner_filter,
     )
     .fetch_optional(pool)
     .await?;
-    let Some(camp_name) = camp_name else {
+    let Some(camp) = camp else {
         return Ok(Vec::new());
     };
+    let camp_name = camp_label(&camp.name, &camp.owner, scope);
     let rows = sqlx::query!(
         r#"SELECT v.id AS "id!: i64", v.title AS "title?: String",
                   v.duration_seconds AS "duration_seconds?: i64",
@@ -2092,18 +2146,20 @@ pub async fn browse_syllabus_videos(
     Ok(results)
 }
 
-/// Flat text search across all student-visible videos: library (global),
+/// Flat text search across every video the scope can reach: library (global),
 /// camps (camp-scope overrides), and syllabus (effective visibility).
 ///
-/// For camp and library sources the SQL filter is applied inline. For
-/// syllabus videos the per-assignment effective visibility model is too
-/// complex to express cheaply in a single query, so we reuse the existing
-/// helpers and filter by title afterwards. The search term is lowercased
-/// for a case-insensitive LIKE match.
+/// Only the library filter is applied inline. Camps and syllabuses reuse the
+/// drill-in helpers and filter afterwards, because both apply rules too awkward
+/// to restate here: a camp's clips are reachable through its threads as well as
+/// its own footage, and a syllabus video's visibility resolves per assignment.
+/// Going through the helpers is also what gives an untitled camp clip the same
+/// borrowed name here that it has when browsing. The search term is lowercased
+/// for a case-insensitive match.
 #[instrument(skip(pool))]
-pub async fn search_videos_visible_to_student(
+pub async fn search_videos(
     pool: &Pool<Sqlite>,
-    student_id: i64,
+    scope: BrowseScope,
     query: &str,
 ) -> Result<Vec<BrowseVideo>, AppError> {
     let pattern = format!("%{}%", query.to_lowercase());
@@ -2137,47 +2193,31 @@ pub async fn search_videos_visible_to_student(
         });
     }
 
-    // --- Camps (student-owned, camp-scope visibility) ---
-    let camp_rows = sqlx::query!(
-        r#"SELECT v.id AS "id!: i64", v.title AS "title?: String",
-                  v.duration_seconds AS "duration_seconds?: i64",
-                  v.external_url AS "external_url?: String",
-                  c.name AS "camp_name!: String"
-           FROM videos v
-           JOIN camps c ON c.id = v.camp_id
-           LEFT JOIN video_visibility_overrides ov
-                  ON ov.video_id = v.id
-                 AND ov.scope_kind = 'camp'
-                 AND ov.camp_id = c.id
-           WHERE c.student_id = ?
-             AND c.archived_at IS NULL
-             AND v.deleted_at IS NULL
-             AND CASE
-                   WHEN ov.visible IS NOT NULL THEN ov.visible
-                   ELSE (v.hidden_at IS NULL)
-                 END = 1
-             AND LOWER(COALESCE(v.title, '')) LIKE ?
-           ORDER BY c.name ASC, v.position ASC, v.id ASC"#,
-        student_id,
-        pattern,
-    )
-    .fetch_all(pool)
-    .await?;
-    for r in camp_rows {
-        results.push(BrowseVideo {
-            id: r.id,
-            title: r.title,
-            duration_seconds: r.duration_seconds,
-            external_url: r.external_url,
-            provenance: format!("camp · {}", r.camp_name),
-            source: BrowseSource::Camp,
-        });
+    // --- Camps (camp-scope visibility, clips reachable via threads too) ---
+    let needle = query.to_lowercase();
+    for camp in browse_camp_parents(pool, scope).await? {
+        for video in browse_camp_videos(pool, camp.id, scope).await? {
+            let matches = video
+                .title
+                .as_deref()
+                .is_some_and(|t| t.to_lowercase().contains(&needle));
+            if matches {
+                results.push(video);
+            }
+        }
     }
 
     // --- Syllabuses (effective visibility per assignment) ---
     // Enumerate the student's active assignments, then check each technique's
     // T1 videos through effective_video_visible. We filter by title in Rust
     // after the visibility check rather than adding another complex SQL query.
+    // Skipped without a student: visibility here resolves per assignment, so
+    // "every student's syllabus" is not a thing this can answer.
+    let Some(student_id) = scope.student_id() else {
+        let mut seen = std::collections::HashSet::<i64>::new();
+        results.retain(|v| seen.insert(v.id));
+        return Ok(results);
+    };
     let assignments = sqlx::query!(
         r#"SELECT sa.id AS "id!: i64", sa.syllabus_id AS "syllabus_id!: i64",
                   s.name AS "syllabus_name!: String"

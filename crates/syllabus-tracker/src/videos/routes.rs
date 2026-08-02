@@ -1347,8 +1347,12 @@ pub async fn api_processing_result(
 /// Query parameters for `GET /videos/browse`.
 #[derive(Debug, rocket::serde::Deserialize, rocket::form::FromForm)]
 pub struct BrowseParams {
-    /// The camp student whose visibility scopes all results. Required.
-    pub student_id: i64,
+    /// The student whose visibility scopes the results. Absent means no student
+    /// is in context (the global library), which only a coach may ask for.
+    pub student_id: Option<i64>,
+    /// Reaches past the student in context into every student's camps. Coaches
+    /// only.
+    pub all_students: Option<bool>,
     /// Optional source filter: `library` | `camps` | `syllabuses`.
     pub source: Option<String>,
     /// Drill into a specific parent (technique id, camp id, or syllabus id).
@@ -1364,6 +1368,16 @@ pub struct BrowseParentItem {
     pub id: i64,
     pub name: String,
     pub video_count: i64,
+}
+
+impl From<db::BrowseParent> for BrowseParentItem {
+    fn from(p: db::BrowseParent) -> Self {
+        Self {
+            id: p.id,
+            name: p.name,
+            video_count: p.video_count,
+        }
+    }
 }
 
 /// A single video returned by the browse endpoint.
@@ -1400,11 +1414,12 @@ pub enum BrowseResponse {
     Videos { videos: Vec<BrowseVideoItem> },
 }
 
-/// `GET /api/videos/browse?student_id=<id>[&source=<s>][&parent_id=<p>][&q=<q>]`
+/// `GET /api/videos/browse?[student_id=<id>][&all_students][&source=<s>][&parent_id=<p>][&q=<q>]`
 ///
-/// Returns videos (or browsable parents) scoped strictly to what `student_id`
-/// can see. Both coaches and the student themselves may call this; a coach
-/// gets the exact same filtered view (no widening).
+/// Returns videos (or browsable parents) for a [`db::BrowseScope`]. A student
+/// only ever gets their own unwidened view; widening in either form is a coach
+/// capability, and asking for it without one is a 403 rather than a quiet
+/// narrowing, so a caller is never told it saw everything when it did not.
 #[instrument(skip(pool))]
 #[get("/videos/browse?<params..>")]
 pub async fn api_browse_videos(
@@ -1413,13 +1428,27 @@ pub async fn api_browse_videos(
     pool: &State<Pool<Sqlite>>,
 ) -> Result<Json<BrowseResponse>, Status> {
     let pool = pool.inner();
-    let student_id = params.student_id;
-
-    // Authz: must be a coach (ManageCamps) or the student themselves.
     let is_coach = user.has_permission(Permission::ManageCamps);
-    if !is_coach && user.id != student_id {
-        return Err(Status::Forbidden);
-    }
+    let all_students = params.all_students.unwrap_or(false);
+
+    let scope = match params.student_id {
+        Some(id) => {
+            if !is_coach && (user.id != id || all_students) {
+                return Err(Status::Forbidden);
+            }
+            db::BrowseScope::Student {
+                id,
+                include_other_students: all_students,
+            }
+        }
+        // No student in context is itself a widened view.
+        None => {
+            if !is_coach {
+                return Err(Status::Forbidden);
+            }
+            db::BrowseScope::AllStudents
+        }
+    };
 
     // Search mode: `q` present overrides source/parent_id.
     if let Some(q) = &params.q {
@@ -1427,7 +1456,7 @@ pub async fn api_browse_videos(
         if q.is_empty() {
             return Ok(Json(BrowseResponse::Videos { videos: vec![] }));
         }
-        let results = db::search_videos_visible_to_student(pool, student_id, q)
+        let results = db::search_videos(pool, scope, q)
             .await
             .map_err(Status::from)?;
         let videos = results.into_iter().map(BrowseVideoItem::from).collect();
@@ -1437,24 +1466,17 @@ pub async fn api_browse_videos(
     match (params.source.as_deref(), params.parent_id) {
         // source=library, no parent_id -> list techniques with visible videos.
         (Some("library"), None) => {
-            let parents = db::browse_library_parents(pool, student_id)
+            let parents = db::browse_library_parents(pool)
                 .await
                 .map_err(Status::from)?;
             Ok(Json(BrowseResponse::Parents {
-                parents: parents
-                    .into_iter()
-                    .map(|p| BrowseParentItem {
-                        id: p.id,
-                        name: p.name,
-                        video_count: p.video_count,
-                    })
-                    .collect(),
+                parents: parents.into_iter().map(BrowseParentItem::from).collect(),
             }))
         }
 
         // source=library, parent_id -> list globally-visible videos for that technique.
         (Some("library"), Some(technique_id)) => {
-            let videos = db::browse_library_videos_for_technique(pool, technique_id, student_id)
+            let videos = db::browse_library_videos_for_technique(pool, technique_id)
                 .await
                 .map_err(Status::from)?;
             Ok(Json(BrowseResponse::Videos {
@@ -1464,24 +1486,17 @@ pub async fn api_browse_videos(
 
         // source=camps, no parent_id -> list the student's camps with visible videos.
         (Some("camps"), None) => {
-            let parents = db::browse_camp_parents(pool, student_id)
+            let parents = db::browse_camp_parents(pool, scope)
                 .await
                 .map_err(Status::from)?;
             Ok(Json(BrowseResponse::Parents {
-                parents: parents
-                    .into_iter()
-                    .map(|p| BrowseParentItem {
-                        id: p.id,
-                        name: p.name,
-                        video_count: p.video_count,
-                    })
-                    .collect(),
+                parents: parents.into_iter().map(BrowseParentItem::from).collect(),
             }))
         }
 
         // source=camps, parent_id -> list visible videos for that camp.
         (Some("camps"), Some(camp_id)) => {
-            let videos = db::browse_camp_videos(pool, camp_id, student_id)
+            let videos = db::browse_camp_videos(pool, camp_id, scope)
                 .await
                 .map_err(Status::from)?;
             Ok(Json(BrowseResponse::Videos {
@@ -1490,25 +1505,21 @@ pub async fn api_browse_videos(
         }
 
         // source=syllabuses, no parent_id -> list the student's active syllabuses
-        // that have at least one visible video.
+        // that have at least one visible video. A syllabus video's visibility
+        // resolves per assignment, so this source needs a student in context.
         (Some("syllabuses"), None) => {
+            let student_id = scope.student_id().ok_or(Status::BadRequest)?;
             let parents = db::browse_syllabus_parents(pool, student_id)
                 .await
                 .map_err(Status::from)?;
             Ok(Json(BrowseResponse::Parents {
-                parents: parents
-                    .into_iter()
-                    .map(|p| BrowseParentItem {
-                        id: p.id,
-                        name: p.name,
-                        video_count: p.video_count,
-                    })
-                    .collect(),
+                parents: parents.into_iter().map(BrowseParentItem::from).collect(),
             }))
         }
 
         // source=syllabuses, parent_id -> list videos visible in that syllabus context.
         (Some("syllabuses"), Some(syllabus_id)) => {
+            let student_id = scope.student_id().ok_or(Status::BadRequest)?;
             let videos = db::browse_syllabus_videos(pool, syllabus_id, student_id)
                 .await
                 .map_err(Status::from)?;
