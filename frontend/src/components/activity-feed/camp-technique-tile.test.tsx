@@ -182,10 +182,10 @@ describe("camp technique picker — thread posting", () => {
             }),
           );
         }
-        // camp feed endpoint — must be checked before the general camp endpoint
-        if (url.includes("/api/camps/") && url.includes("/feed")) {
+        // camp components endpoint, checked before the general camp endpoint
+        if (url.includes("/api/camps/") && url.includes("/components")) {
           return Promise.resolve(
-            new Response(JSON.stringify([]), {
+            new Response(JSON.stringify({ components: [], next_cursor: null }), {
               status: 200,
               headers: { "Content-Type": "application/json" },
             }),

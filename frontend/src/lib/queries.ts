@@ -1,10 +1,17 @@
-import { keepPreviousData, skipToken, useInfiniteQuery, useQuery } from "@tanstack/react-query";
+import {
+  keepPreviousData,
+  skipToken,
+  useInfiniteQuery,
+  useQuery,
+  useQueryClient,
+  type QueryClient,
+} from "@tanstack/react-query";
 import {
   getAllTags,
   getAllUsers,
   getActivityDigest,
   getActivityFeed,
-  getCampFeed,
+  getCampComponents,
   getDashboardActivityFeed,
   getCamp,
   getCampVideos,
@@ -43,7 +50,7 @@ import {
   listThreads,
   getThread,
 } from "./api";
-import type { AnchorKind } from "./api";
+import type { AnchorKind, CampComponent, CampComponentCursor } from "./api";
 import type { ActivityRow } from "./activity-line";
 import { qk } from "./query-keys";
 
@@ -460,19 +467,41 @@ export function useSyllabusAttemptHeatmap(studentId: number | undefined) {
   });
 }
 
-// ---- Camp feed ----
-
-/** Infinite (keyset-paginated) activity feed scoped to a single camp. */
-export function useInfiniteCampFeed(campId: number | undefined, limit = 20) {
-  const valid = typeof campId === "number" && Number.isFinite(campId);
+/**
+ * The camp's content as components, newest touch first. Each component arrives
+ * with its discussion, which is written into the per-anchor thread caches so an
+ * expanded component reads it instead of fetching its own.
+ */
+export function useInfiniteCampComponents(campId: number | undefined, limit = 10) {
+  const qc = useQueryClient();
+  const id = campId ?? 0;
   return useInfiniteQuery({
-    queryKey: qk.campFeed(campId ?? 0, limit),
-    enabled: valid,
-    initialPageParam: undefined as FeedCursor,
-    queryFn: ({ pageParam }) =>
-      getCampFeed(campId as number, { limit, ...(pageParam ?? {}) }),
-    getNextPageParam: (lastPage) => nextFeedCursor(lastPage, limit),
+    queryKey: qk.campComponents(id, limit),
+    enabled: typeof campId === "number" && Number.isFinite(campId),
+    initialPageParam: null as CampComponentCursor | null,
+    queryFn: async ({ pageParam }) => {
+      const page = await getCampComponents(id, { before: pageParam, limit });
+      seedComponentThreads(qc, id, page.components);
+      return page;
+    },
+    getNextPageParam: (lastPage) => lastPage.next_cursor,
   });
+}
+
+function seedComponentThreads(
+  qc: QueryClient,
+  campId: number,
+  components: CampComponent[],
+): void {
+  for (const component of components) {
+    if (component.kind === "technique") {
+      qc.setQueryData(qk.threads("camp_technique", component.id, campId), component.threads);
+    } else if (component.kind === "video") {
+      qc.setQueryData(qk.threads("video", component.id), component.threads);
+    } else if (component.thread) {
+      qc.setQueryData(qk.thread(component.id), component.thread);
+    }
+  }
 }
 
 // ---- Camps ----

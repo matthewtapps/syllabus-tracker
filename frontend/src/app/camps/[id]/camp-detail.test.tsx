@@ -3,7 +3,7 @@
  *
  * Mounts the page at /camps/1 as a coach and verifies:
  * - Camp name renders from the stubbed GET /api/camps/1 response.
- * - Empty feed state text appears when the camp feed is empty.
+ * - Empty state text appears when the camp holds no components.
  * - Coaches see a Rename control; the builds-on display is gone.
  *
  * NOTE: .test.tsx files run in Chromium via vitest-browser and cannot execute
@@ -39,9 +39,9 @@ function makeStubFetch() {
         );
       }
 
-      if (/\/api\/camps\/\d+\/feed/.test(url)) {
+      if (/\/api\/camps\/\d+\/components/.test(url)) {
         return Promise.resolve(
-          new Response(JSON.stringify([]), {
+          new Response(JSON.stringify({ components: [], next_cursor: null }), {
             status: 200,
             headers: { "Content-Type": "application/json" },
           }),
@@ -95,7 +95,7 @@ describe("CampDetailPage", () => {
     fetchSpy.mockRestore();
   });
 
-  test("shows empty feed state when the camp feed is empty", async () => {
+  test("shows the empty state when the camp holds nothing", async () => {
     const fetchSpy = makeStubFetch();
 
     renderWithProviders(
@@ -138,9 +138,9 @@ describe("CampDetailPage", () => {
           );
         }
 
-        if (/\/api\/camps\/\d+\/feed/.test(url)) {
+        if (/\/api\/camps\/\d+\/components/.test(url)) {
           return Promise.resolve(
-            new Response(JSON.stringify([]), {
+            new Response(JSON.stringify({ components: [], next_cursor: null }), {
               status: 200,
               headers: { "Content-Type": "application/json" },
             }),

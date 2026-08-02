@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Navigate, useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
-import { Archive, Loader2, Pencil, Search } from "lucide-react";
+import { Archive, Pencil, Search } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -26,7 +26,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { qk } from "@/lib/query-keys";
 import {
   useCamp,
-  useInfiniteCampFeed,
+  useInfiniteCampComponents,
   useLibraryTechniques,
 } from "@/lib/queries";
 import {
@@ -38,9 +38,10 @@ import { RenameCampDialog } from "@/components/camps/rename-camp-dialog";
 import { CampSearchSheet } from "@/components/camps/camp-search-sheet";
 import { useConfirm } from "@/components/confirm-context";
 import { CampComposer } from "@/components/camps/camp-composer";
-import { ActivityTileFeed } from "@/components/activity-feed/activity-tile-feed";
-import { useThreadDeepLink } from "@/components/threads/use-thread-focus";
+import { CampComponentList } from "@/components/camps/camp-component-list";
+import { useCampAnchors, type CampAnchors } from "./use-camp-anchors";
 import { cn } from "@/lib/utils";
+import type { CampComponent } from "@/lib/api";
 import type { VideoAttachment } from "@/components/threads/reply-composer";
 
 // ---------------------------------------------------------------------------
@@ -509,33 +510,30 @@ function AddCampTechniqueDialog({
 
 
 // ---------------------------------------------------------------------------
-// Infinite feed body
+// Component body
 // ---------------------------------------------------------------------------
 
-function CampFeedBody({
+function CampComponentsBody({
   campId,
-  feedRef,
-  highlightThreadId,
-  onJump,
+  studentId,
+  listRef,
+  components,
+  isLoading,
+  anchors,
+  fetchNextPage,
+  hasNextPage,
+  isFetchingNextPage,
 }: {
   campId: number;
-  feedRef: React.RefObject<HTMLDivElement | null>;
-  highlightThreadId: number | null;
-  onJump: (threadId: number) => void;
+  studentId: number;
+  listRef: React.RefObject<HTMLDivElement | null>;
+  components: CampComponent[];
+  isLoading: boolean;
+  anchors: CampAnchors;
+  fetchNextPage: () => void;
+  hasNextPage: boolean;
+  isFetchingNextPage: boolean;
 }) {
-  const feed = useInfiniteCampFeed(campId);
-  const rows = useMemo(() => feed.data?.pages.flat() ?? [], [feed.data]);
-
-  // A thread teaser in the activity feed links here with ?thread=<id>. The
-  // camp's discussion is this feed, so the jump is the same scroll-and-
-  // highlight the search sheet already uses.
-  const hasThread = useCallback(
-    (threadId: number) => rows.some((row) => row.thread_id === threadId),
-    [rows],
-  );
-  useThreadDeepLink({ isLoading: feed.isLoading, has: hasThread, jump: onJump });
-
-  const { fetchNextPage, hasNextPage, isFetchingNextPage } = feed;
   const sentinelRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -554,31 +552,20 @@ function CampFeedBody({
   }, [fetchNextPage, hasNextPage, isFetchingNextPage]);
 
   return (
-    <div ref={feedRef}>
-      <ActivityTileFeed
-        rows={rows}
-        isLoading={feed.isLoading}
-        scope={{ kind: "gym" }}
-        showAvatar
-        emptyText="Post a technique, video, or note to start this camp."
-        getRowDataAttrs={(row) => {
-          if (row.thread_id == null) return {};
-          const isHighlighted = row.thread_id === highlightThreadId;
-          return {
-            "data-thread-id": String(row.thread_id),
-            ...(isHighlighted
-              ? { className: "ring-2 ring-ring/60 bg-muted/40" }
-              : {}),
-          };
-        }}
+    <div ref={listRef}>
+      <CampComponentList
+        campId={campId}
+        studentId={studentId}
+        components={components}
+        isLoading={isLoading}
+        highlightKey={anchors.highlightKey}
+        anchorKey={anchors.anchorKey}
+        videoId={anchors.videoId}
+        resumeSeconds={anchors.resumeSeconds}
+        isFetchingNextPage={isFetchingNextPage}
       />
       <div ref={sentinelRef} className="h-px" aria-hidden />
-      {isFetchingNextPage && (
-        <div className="flex justify-center py-4 text-muted-foreground">
-          <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
-        </div>
-      )}
-      {!hasNextPage && rows.length > 0 && (
+      {!hasNextPage && components.length > 0 && (
         <p className="py-4 text-center text-xs text-muted-foreground">
           You're all caught up.
         </p>
@@ -617,6 +604,14 @@ function CampDetail({
   const campQuery = useCamp(campId);
   const camp = campQuery.data;
 
+  const componentsQuery = useInfiniteCampComponents(campId);
+  const components = useMemo(
+    () => componentsQuery.data?.pages.flatMap((page) => page.components) ?? [],
+    [componentsQuery.data],
+  );
+  const listRef = useRef<HTMLDivElement>(null);
+  const anchors = useCampAnchors(components, componentsQuery.isLoading, listRef);
+
   const createThread = useCreateThread();
   const archiveCamp = useArchiveCamp(camp?.student_id ?? 0);
 
@@ -639,7 +634,7 @@ function CampDetail({
         }),
       ),
     );
-    invalidateCampFeed();
+    invalidateCampComponents();
     // The attach IS the membership, so the camp's technique list changed too;
     // the new card hydrates from it.
     qc.invalidateQueries({ queryKey: qk.campTechniques(campId) });
@@ -648,32 +643,10 @@ function CampDetail({
   const [addPickerOpen, setAddPickerOpen] = useState(false);
   const [renameOpen, setRenameOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
-  const [highlightThreadId, setHighlightThreadId] = useState<number | null>(null);
-  const feedRef = useRef<HTMLDivElement>(null);
 
-  // Invalidate the camp feed after any successful post so the new item appears.
-  function invalidateCampFeed() {
-    qc.invalidateQueries({ queryKey: ["camps", campId, "feed"] });
+  function invalidateCampComponents() {
+    qc.invalidateQueries({ queryKey: qk.campComponentsAll(campId) });
   }
-
-  /**
-   * Jump to a feed tile with the given thread_id by scrolling it into view
-   * and applying a brief highlight ring.
-   *
-   * If the tile isn't in the currently loaded feed pages (deeper in the
-   * infinite scroll), this is a best-effort no-op for now. A focused
-   * single-thread view would let us show any thread regardless of feed
-   * position, but that's a future enhancement.
-   */
-  const onJump = useCallback((threadId: number) => {
-    const el = feedRef.current?.querySelector<HTMLElement>(
-      `[data-thread-id="${threadId}"]`,
-    );
-    if (!el) return; // not loaded yet — best-effort no-op (see comment above)
-    el.scrollIntoView({ behavior: "smooth", block: "center" });
-    setHighlightThreadId(threadId);
-    setTimeout(() => setHighlightThreadId(null), 2200);
-  }, []);
 
   async function handleArchive() {
     const ok = await confirm({
@@ -705,7 +678,7 @@ function CampDetail({
       attached_video_is_reference: attachment?.isReference ?? null,
       attached_video_title: attachment?.title ?? null,
     });
-    invalidateCampFeed();
+    invalidateCampComponents();
   }
 
   if (campQuery.isError) return <Navigate to="/dashboard" replace />;
@@ -809,15 +782,21 @@ function CampDetail({
         campId={campId}
         open={searchOpen}
         onOpenChange={setSearchOpen}
-        onJump={onJump}
+        onJump={anchors.jumpToThread}
+        onJumpVideo={anchors.jumpToVideo}
       />
 
-      {/* Chronological activity feed */}
-      <CampFeedBody
+      {/* The camp's content, newest touch first */}
+      <CampComponentsBody
         campId={campId}
-        feedRef={feedRef}
-        highlightThreadId={highlightThreadId}
-        onJump={onJump}
+        studentId={camp.student_id}
+        listRef={listRef}
+        components={components}
+        isLoading={componentsQuery.isLoading}
+        anchors={anchors}
+        fetchNextPage={componentsQuery.fetchNextPage}
+        hasNextPage={componentsQuery.hasNextPage}
+        isFetchingNextPage={componentsQuery.isFetchingNextPage}
       />
     </div>
   );

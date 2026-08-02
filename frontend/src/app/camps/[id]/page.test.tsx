@@ -1,12 +1,13 @@
 /**
- * Camp detail page feed tests (browser project, CI-only).
+ * Camp detail page tests (browser project, CI-only).
  *
  * Verifies:
- *  - The feed renders activity rows from a stubbed `/api/camps/:id/feed`
+ *  - The page renders components from a stubbed `/api/camps/:id/components`
+ *  - A note component renders in full, not as a teaser
  *  - The composer renders with an "Attach technique" button
  *  - A student sees the "Attach technique" button but no "Create new" tab in the picker
  *  - A coach sees both "Pick existing" and "Create new" tabs
- *  - Empty-state hint renders when the feed is empty
+ *  - Empty-state hint renders when the camp holds nothing
  *
  * Stubs window.fetch; runs in Chromium (CI only, not bare Vitest on NixOS).
  */
@@ -16,7 +17,7 @@ import userEvent from "@testing-library/user-event";
 import { Routes, Route } from "react-router-dom";
 import { renderWithProviders, buildUser } from "@/test/render";
 import CampDetailPage from "./page";
-import type { ActivityRow } from "@/lib/activity-line";
+import type { CampComponent, ThreadView } from "@/lib/api";
 
 // Minimal camp detail response (matches backend CampDetailResponse / getCamp shape).
 function buildCamp(overrides: Record<string, unknown> = {}) {
@@ -32,43 +33,46 @@ function buildCamp(overrides: Record<string, unknown> = {}) {
   };
 }
 
-function buildFeedRow(overrides: Partial<ActivityRow> = {}): ActivityRow {
+function buildThread(overrides: Partial<ThreadView> = {}): ThreadView {
   return {
-    id: 1,
-    occurred_at: new Date().toISOString(),
-    verb: "thread_comment_posted",
-    actor_user_id: 2,
-    actor_name: "Coach Lee",
-    target_student_id: 5,
-    target_student_name: "Sam Khan",
-    technique_id: null,
-    technique_name: null,
-    syllabus_id: null,
-    syllabus_name: null,
-    sst_id: null,
-    video_id: null,
-    video_title: null,
-    payload_json: null,
-    unread: false,
-    context_kind: "camp",
-    thread_id: 42,
-    camp_id: 10,
-    camp_name: "Summer Camp 2026",
-    comment_count: 1,
+    id: 42,
+    anchor_kind: "camp",
+    author_id: 2,
+    author_name: "Coach Lee",
+    visibility: "private",
+    scope_student_id: 5,
+    video_ts_seconds: null,
+    body: "Drill the grip break every round.",
+    video: null,
+    created_at: "2026-06-02T00:00:00",
+    deleted_at: null,
+    comments: [],
     ...overrides,
+  };
+}
+
+function buildNoteComponent(thread = buildThread()): CampComponent {
+  return {
+    kind: "note",
+    id: thread.id,
+    last_touch: "2026-06-02 00:00:00",
+    technique: null,
+    thread,
+    video: null,
+    threads: [],
   };
 }
 
 /**
  * Stub window.fetch for the three endpoints the camp page always calls:
- *  - /api/camps/10  → camp detail
- *  - /api/camps/10/feed  → paginated activity rows
- *  - /api/threads  → empty thread list (for ActivityTile hydration)
+ *  - /api/camps/10  -> camp detail
+ *  - /api/camps/10/components  -> a page of camp components
+ *  - /api/threads  -> empty thread list
  * Any other URL returns 404.
  */
 function stubFetch({
   camp = buildCamp(),
-  feedRows = [] as ActivityRow[],
+  components = [] as CampComponent[],
 } = {}) {
   return vi.spyOn(window, "fetch").mockImplementation((input) => {
     const url =
@@ -78,9 +82,9 @@ function stubFetch({
           ? input.toString()
           : (input as Request).url;
 
-    if (url.includes("/api/camps/10/feed")) {
+    if (url.includes("/api/camps/10/components")) {
       return Promise.resolve(
-        new Response(JSON.stringify(feedRows), {
+        new Response(JSON.stringify({ components, next_cursor: null }), {
           status: 200,
           headers: { "Content-Type": "application/json" },
         }),
@@ -120,15 +124,15 @@ function renderCampPage(user: ReturnType<typeof buildUser>) {
   );
 }
 
-describe("CampDetailPage feed", () => {
+describe("CampDetailPage components", () => {
   let spy: ReturnType<typeof vi.spyOn> | null = null;
   afterEach(() => {
     spy?.mockRestore();
     spy = null;
   });
 
-  test("renders empty-state hint when the feed has no rows", async () => {
-    spy = stubFetch({ feedRows: [] });
+  test("renders empty-state hint when the camp holds nothing", async () => {
+    spy = stubFetch({ components: [] });
 
     renderCampPage(buildUser({ id: 5, role: "student" }));
 
@@ -139,16 +143,17 @@ describe("CampDetailPage feed", () => {
     });
   });
 
-  test("renders feed rows returned by the camp feed API", async () => {
-    spy = stubFetch({
-      feedRows: [buildFeedRow({ id: 77, actor_name: "Coach Lee" })],
-    });
+  test("renders a note component in full, body and all", async () => {
+    spy = stubFetch({ components: [buildNoteComponent()] });
 
     renderCampPage(buildUser({ id: 5, role: "student" }));
 
-    // ActivityTileHeader renders the actor name.
     await waitFor(() => {
       expect(screen.getByText("Coach Lee")).toBeInTheDocument();
+      // The whole thread renders here; a teaser would not carry the composer.
+      expect(
+        screen.getByText(/Drill the grip break every round/i),
+      ).toBeInTheDocument();
     });
   });
 
@@ -186,9 +191,9 @@ describe("CampDetailPage feed", () => {
           : input instanceof URL
             ? input.toString()
             : (input as Request).url;
-      if (url.includes("/api/camps/10/feed"))
+      if (url.includes("/api/camps/10/components"))
         return Promise.resolve(
-          new Response(JSON.stringify([]), {
+          new Response(JSON.stringify({ components: [], next_cursor: null }), {
             status: 200,
             headers: { "Content-Type": "application/json" },
           }),

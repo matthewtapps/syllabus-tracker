@@ -94,8 +94,11 @@ export const qk = {
   camp: (id: number) => ["camps", id] as const,
   campVideos: (campId: number) => ["camps", campId, "videos"] as const,
   campTechniques: (campId: number) => ["camps", campId, "techniques"] as const,
-  campFeed: (campId: number, limit: number) =>
-    ["camps", campId, "feed", limit] as const,
+  campComponents: (campId: number, limit: number) =>
+    ["camps", campId, "components", limit] as const,
+  /** Every per-limit components bucket for a camp. */
+  campComponentsAll: (campId: number) =>
+    ["camps", campId, "components"] as const,
   campSearch: (campId: number, q: string, kind?: string) =>
     ["camps", campId, "search", q, kind ?? null] as const,
 

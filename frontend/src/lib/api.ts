@@ -1889,26 +1889,6 @@ export async function getDashboardActivityFeed(limit = 30): Promise<ActivityRow[
   return (await response.json()) as ActivityRow[];
 }
 
-/** Keyset-paginated activity feed scoped to a single camp. */
-export async function getCampFeed(
-  campId: number,
-  params?: {
-    before_ts?: string;
-    before_id?: number;
-    limit?: number;
-  },
-): Promise<ActivityRow[]> {
-  const url = new URL(`/api/camps/${campId}/feed`, window.location.origin);
-  if (params?.before_ts) url.searchParams.set("before_ts", params.before_ts);
-  if (params?.before_id !== undefined)
-    url.searchParams.set("before_id", String(params.before_id));
-  if (params?.limit !== undefined)
-    url.searchParams.set("limit", String(params.limit));
-  const response = await fetch(url.toString(), { credentials: "include" });
-  if (!response.ok) throw response;
-  return (await response.json()) as ActivityRow[];
-}
-
 // ============================================================
 // Threads (PR 2, Task 1)
 // ============================================================
@@ -2281,6 +2261,52 @@ export async function getCampTechniques(campId: number): Promise<LibraryTechniqu
   });
   if (!res.ok) throw res;
   return ((await res.json()) as { techniques: LibraryTechniqueRow[] }).techniques;
+}
+
+/**
+ * One component of a camp: a technique, a note, or a camp-owned clip, hydrated
+ * deeply enough to render fully expanded. `threads` is the component's
+ * discussion (a technique's camp threads, a clip's comment threads); a note's
+ * own thread is the component, so it carries `thread` instead.
+ */
+export interface CampComponent {
+  kind: "technique" | "note" | "video";
+  /** The technique, thread or video id, per kind. */
+  id: number;
+  last_touch: string;
+  technique: LibraryTechniqueRow | null;
+  thread: ThreadView | null;
+  video: Video | null;
+  threads: ThreadView[];
+}
+
+/** Keyset cursor for the component read: ids only order within a kind. */
+export interface CampComponentCursor {
+  last_touch: string;
+  kind: string;
+  id: number;
+}
+
+export interface CampComponentsPage {
+  components: CampComponent[];
+  next_cursor: CampComponentCursor | null;
+}
+
+/** GET /api/camps/:id/components: the camp's content, newest touch first. */
+export async function getCampComponents(
+  campId: number,
+  params?: { before?: CampComponentCursor | null; limit?: number },
+): Promise<CampComponentsPage> {
+  const url = new URL(`/api/camps/${campId}/components`, window.location.origin);
+  if (params?.before) {
+    url.searchParams.set("before_ts", params.before.last_touch);
+    url.searchParams.set("before_kind", params.before.kind);
+    url.searchParams.set("before_id", String(params.before.id));
+  }
+  if (params?.limit !== undefined) url.searchParams.set("limit", String(params.limit));
+  const res = await fetch(url.toString(), { credentials: "include" });
+  if (!res.ok) throw res;
+  return (await res.json()) as CampComponentsPage;
 }
 
 export async function getCampVideos(campId: number): Promise<Video[]> {

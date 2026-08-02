@@ -1272,6 +1272,20 @@ export function useSetVideoSyllabusVisibility() {
 // Threads (PR 2, Task 1)
 // ============================================================
 
+/** A camp orders its components by last touch, so anything posted into one
+ *  re-sorts the camp page. `camp` threads anchor on the camp itself; a
+ *  `camp_technique` thread carries the camp separately. */
+function invalidateCampComponentsFor(
+  qc: ReturnType<typeof useQueryClient>,
+  anchorKind: string,
+  anchorId: number,
+  campId?: number,
+): void {
+  const id =
+    anchorKind === "camp" ? anchorId : anchorKind === "camp_technique" ? campId : undefined;
+  if (id !== undefined) qc.invalidateQueries({ queryKey: qk.campComponentsAll(id) });
+}
+
 export function useCreateThread() {
   const qc = useQueryClient();
   return useMutation({
@@ -1298,6 +1312,7 @@ export function useCreateThread() {
           queryKey: qk.threads("video", input.anchor_id),
         });
       }
+      invalidateCampComponentsFor(qc, input.anchor_kind, input.anchor_id, campId);
     },
   });
 }
@@ -1392,6 +1407,7 @@ export function useCreateComment(
       if (anchorKind === "video_timestamp" || anchorKind === "video") {
         qc.invalidateQueries({ queryKey: qk.threads("video", anchorId) });
       }
+      invalidateCampComponentsFor(qc, anchorKind, anchorId, campId);
     },
   });
 }
@@ -1412,6 +1428,7 @@ export function useDeleteThread(
       if (anchorKind === "video_timestamp" || anchorKind === "video") {
         qc.invalidateQueries({ queryKey: qk.threads("video", anchorId) });
       }
+      invalidateCampComponentsFor(qc, anchorKind, anchorId, campId);
     },
   });
 }
@@ -1434,6 +1451,7 @@ export function useDeleteComment(
       if (anchorKind === "video_timestamp" || anchorKind === "video") {
         qc.invalidateQueries({ queryKey: qk.threads("video", anchorId) });
       }
+      invalidateCampComponentsFor(qc, anchorKind, anchorId, campId);
     },
   });
 }
@@ -1494,7 +1512,7 @@ export function useCreateCampTechnique(campId: number) {
       createCampTechnique(campId, vars),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: qk.camp(campId) });
-      qc.invalidateQueries({ queryKey: ["camps", campId, "feed"] });
+      qc.invalidateQueries({ queryKey: qk.campComponentsAll(campId) });
       // A new global technique joins the library; refresh the pick-existing picker.
       qc.invalidateQueries({ queryKey: qk.libraryTechniques() });
     },
