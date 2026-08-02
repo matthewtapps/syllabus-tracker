@@ -69,7 +69,8 @@ use thiserror::Error;
 use videos::{
     CallbackSecret, RemoteProcessor, DynVideoProcessor, HostFfmpegProcessor,
     api_admin_storage, api_browse_videos, api_camp_video_upload, api_dashboard_video_overview,
-    api_delete_video, api_list_technique_videos, api_my_watch_state, api_processing_result,
+    api_add_video_reference, api_delete_video, api_list_technique_videos, api_my_watch_state,
+    api_processing_result, api_remove_video_reference,
     api_reorder_videos, api_replace_video, api_set_video_global_hidden,
     api_set_video_student_visibility, api_student_watch_activity, api_thread_reply_video_link,
     api_thread_reply_video_upload, api_update_video,
@@ -510,6 +511,8 @@ pub async fn init_rocket_with_callback_secret(
                     api_video_link,
                     api_thread_reply_video_link,
                     api_list_technique_videos,
+                    api_add_video_reference,
+                    api_remove_video_reference,
                     api_update_video,
                     api_reorder_videos,
                     api_replace_video,

@@ -405,6 +405,85 @@ pub struct DraftReplyUploadForm<'r> {
 }
 
 #[derive(Deserialize)]
+pub struct AddVideoReferenceRequest {
+    pub video_id: i64,
+    /// Names a clip that has none. Ignored when the clip is already named.
+    pub title: Option<String>,
+    /// Optional destination tier; see [`UploadForm::parent_kind`]. Defaults to
+    /// the technique in the URL path.
+    pub parent_kind: Option<String>,
+    pub parent_id: Option<i64>,
+}
+
+#[derive(Serialize)]
+pub struct AddVideoReferenceResponse {
+    pub reference_id: i64,
+}
+
+/// Resolves the destination a reference targets, enforcing the same permissions
+/// the create routes use for the equivalent tier.
+fn resolve_reference_parent(
+    user: &User,
+    technique_id: i64,
+    parent_kind: Option<&str>,
+    parent_id: Option<i64>,
+) -> Result<db::ReferenceParent, Status> {
+    user.require_permission(Permission::UploadVideos)?;
+
+    let parent = match (parent_kind, parent_id) {
+        (None, None) => db::ReferenceParent::Technique(technique_id),
+        (Some(kind), Some(id)) => {
+            db::ReferenceParent::from_kind_id(kind, id).ok_or(Status::BadRequest)?
+        }
+        _ => return Err(Status::BadRequest),
+    };
+
+    if matches!(parent, db::ReferenceParent::StudentSyllabusTechnique(_)) {
+        user.require_permission(Permission::ManageSyllabi)?;
+    }
+
+    Ok(parent)
+}
+
+#[instrument(skip(body, pool))]
+#[post("/techniques/<tid>/videos/references", data = "<body>")]
+pub async fn api_add_video_reference(
+    tid: i64,
+    user: User,
+    body: Json<AddVideoReferenceRequest>,
+    pool: &State<Pool<Sqlite>>,
+) -> Result<Json<AddVideoReferenceResponse>, Status> {
+    let req = body.into_inner();
+    let parent = resolve_reference_parent(&user, tid, req.parent_kind.as_deref(), req.parent_id)?;
+
+    let reference_id = db::add_video_reference(
+        pool.inner(),
+        req.video_id,
+        parent,
+        req.title.as_deref(),
+        user.id,
+    )
+    .await
+    .map_err(Status::from)?;
+
+    Ok(Json(AddVideoReferenceResponse { reference_id }))
+}
+
+#[instrument(skip(pool))]
+#[delete("/video-references/<rid>")]
+pub async fn api_remove_video_reference(
+    rid: i64,
+    user: User,
+    pool: &State<Pool<Sqlite>>,
+) -> Result<Status, Status> {
+    user.require_permission(Permission::UploadVideos)?;
+    db::remove_video_reference(pool.inner(), rid)
+        .await
+        .map_err(Status::from)?;
+    Ok(Status::NoContent)
+}
+
+#[derive(Deserialize)]
 pub struct DraftReplyLinkRequest {
     pub url: String,
     pub anchor_kind: String,
@@ -506,6 +585,11 @@ pub struct VideoListItem {
     /// or when the request didn't specify a `for_student` viewer.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub override_for_student: Option<String>,
+    /// Set when this row is a clip referenced onto the surface rather than
+    /// owned by it. Its `hidden_at` is the reference's, not the clip's, because
+    /// a reference obeys the visibility rules of where it is shown.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reference_id: Option<i64>,
 }
 
 /// Fills each video's `comment_count` with the number of threads on it the
@@ -559,6 +643,24 @@ pub async fn api_list_technique_videos(
             .await
             .map_err(Status::from)?
     };
+
+    // Clips referenced onto this technique list alongside its own. Each carries
+    // the reference's hidden state, not the clip's, so hiding one here says
+    // nothing about the surface the clip actually lives on.
+    let mut reference_ids: std::collections::HashMap<i64, i64> = std::collections::HashMap::new();
+    for referenced in db::list_referenced_videos(pool.inner(), db::ReferenceParent::Technique(tid))
+        .await
+        .map_err(Status::from)?
+    {
+        if !is_coach && referenced.hidden_at.is_some() {
+            continue;
+        }
+        let mut video = referenced.video;
+        video.hidden_at = referenced.hidden_at;
+        reference_ids.insert(video.id, referenced.reference_id);
+        videos.push(video);
+    }
+
     annotate_comment_counts(pool.inner(), &mut videos, is_coach, user.id)
         .await
         .map_err(Status::from)?;
@@ -580,6 +682,7 @@ pub async fn api_list_technique_videos(
                     }
                 });
                 VideoListItem {
+                    reference_id: reference_ids.get(&v.id).copied(),
                     video: v,
                     override_for_student,
                 }
@@ -589,6 +692,7 @@ pub async fn api_list_technique_videos(
         videos
             .into_iter()
             .map(|video| VideoListItem {
+                reference_id: reference_ids.get(&video.id).copied(),
                 video,
                 override_for_student: None,
             })
