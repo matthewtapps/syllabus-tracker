@@ -1204,6 +1204,19 @@ export async function addVideoReference(
   return (await response.json()) as { reference_id: number };
 }
 
+/** Hides or shows a referenced clip at this destination only. */
+export async function setVideoReferenceHidden(
+  referenceId: number,
+  hidden: boolean,
+): Promise<Response> {
+  return fetch(`/api/video-references/${referenceId}/hidden`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify({ hidden }),
+  });
+}
+
 export async function removeVideoReference(referenceId: number): Promise<void> {
   const response = await fetch(`/api/video-references/${referenceId}`, {
     method: "DELETE",

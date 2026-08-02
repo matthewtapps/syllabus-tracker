@@ -469,6 +469,21 @@ pub async fn api_add_video_reference(
     Ok(Json(AddVideoReferenceResponse { reference_id }))
 }
 
+#[instrument(skip(body, pool))]
+#[put("/video-references/<rid>/hidden", data = "<body>")]
+pub async fn api_set_video_reference_hidden(
+    rid: i64,
+    body: Json<SetGlobalHiddenRequest>,
+    user: User,
+    pool: &State<Pool<Sqlite>>,
+) -> Result<Status, Status> {
+    user.require_permission(Permission::ManageVideoVisibility)?;
+    db::set_video_reference_hidden(pool.inner(), rid, body.hidden)
+        .await
+        .map_err(Status::from)?;
+    Ok(Status::NoContent)
+}
+
 #[instrument(skip(pool))]
 #[delete("/video-references/<rid>")]
 pub async fn api_remove_video_reference(
