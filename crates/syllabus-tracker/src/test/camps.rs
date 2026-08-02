@@ -2223,4 +2223,349 @@ mod tests {
         assert_eq!(act_camp_id, camp_id, "activity must carry camp_id");
         assert_eq!(ctx, "camp", "activity context_kind must be 'camp'");
     }
+
+    // -----------------------------------------------------------------------
+    // Camp components: the camp's content, one row per component
+    // -----------------------------------------------------------------------
+
+    /// Helper: a camp with its owning student and coach.
+    async fn camp_fixture() -> (crate::test::test_utils::TestDb, i64, i64, i64) {
+        let db = TestDbBuilder::new()
+            .coach("coach_user", Some("Coach"))
+            .student("student_user", Some("Sam"))
+            .technique("Armbar", "an armbar", Some("coach_user"))
+            .build()
+            .await
+            .unwrap();
+        let coach = db.user_id("coach_user").unwrap();
+        let student = db.user_id("student_user").unwrap();
+        let camp_id = create_camp(
+            &db.pool,
+            NewCamp {
+                student_id: student,
+                coach_id: coach,
+                name: "X-guard camp".into(),
+                description: None,
+            },
+        )
+        .await
+        .unwrap();
+        (db, coach, student, camp_id)
+    }
+
+    fn coach_viewer(coach: i64) -> crate::db::Viewer {
+        crate::db::Viewer { user_id: coach, is_coach: true }
+    }
+
+    /// Attaching a technique and then discussing it produces ONE technique
+    /// component, hydrated with the technique and its camp discussion.
+    #[rocket::async_test]
+    async fn camp_components_collapse_a_technique_to_one_row() {
+        use crate::db::list_camp_components;
+
+        let (db, coach, student, camp_id) = camp_fixture().await;
+        let technique_id = db.technique_id("Armbar").unwrap();
+
+        let thread_id = create_thread(
+            &db.pool,
+            NewThread {
+                author_id: coach,
+                anchor: Anchor {
+                    kind: AnchorKind::CampTechnique,
+                    id: technique_id,
+                    video_ts_seconds: None,
+                    pinned_student_id: None,
+                    camp_id: Some(camp_id),
+                },
+                visibility: ThreadVisibility::Private,
+                scope_student_id: Some(student),
+                body: String::new(),
+                attached_video_id: None,
+                attached_video_is_reference: false,
+                attached_video_title: None,
+            },
+        )
+        .await
+        .unwrap();
+        create_comment(&db.pool, thread_id, None, student, "Got it.", None, None, false)
+            .await
+            .unwrap();
+
+        let (components, next) =
+            list_camp_components(&db.pool, camp_id, coach_viewer(coach), None, 20)
+                .await
+                .unwrap();
+
+        assert_eq!(components.len(), 1, "attach + comment is one component");
+        assert!(next.is_none(), "a short page has no cursor");
+        let c = &components[0];
+        assert_eq!(c.kind, "technique");
+        assert_eq!(c.id, technique_id);
+        assert_eq!(
+            c.technique.as_ref().map(|t| t.name.as_str()),
+            Some("Armbar"),
+            "the technique is hydrated"
+        );
+        assert_eq!(c.threads.len(), 1, "its camp discussion rides along");
+        assert_eq!(c.threads[0].comments.len(), 1);
+    }
+
+    /// A camp-owned video is a component even though its upload emits no
+    /// activity row.
+    #[rocket::async_test]
+    async fn camp_components_include_camp_owned_video() {
+        use crate::db::list_camp_components;
+
+        let (db, coach, _student, camp_id) = camp_fixture().await;
+        let video_id =
+            create_processing_video(&db.pool, VideoParent::Camp(camp_id), "Camp clip", None, coach)
+                .await
+                .unwrap();
+
+        let (components, _) =
+            list_camp_components(&db.pool, camp_id, coach_viewer(coach), None, 20)
+                .await
+                .unwrap();
+
+        assert_eq!(components.len(), 1);
+        assert_eq!(components[0].kind, "video");
+        assert_eq!(components[0].id, video_id);
+        assert_eq!(
+            components[0].video.as_ref().map(|v| v.title.as_str()),
+            Some("Camp clip")
+        );
+    }
+
+    /// Components sort by last touch, so a reply on an older note bumps it back
+    /// above a technique attached after it.
+    #[rocket::async_test]
+    async fn camp_components_order_by_last_touch() {
+        use crate::db::list_camp_components;
+
+        let (db, coach, student, camp_id) = camp_fixture().await;
+        let technique_id = db.technique_id("Armbar").unwrap();
+
+        let note_id = create_thread(
+            &db.pool,
+            NewThread {
+                author_id: coach,
+                anchor: Anchor {
+                    kind: AnchorKind::Camp,
+                    id: camp_id,
+                    video_ts_seconds: None,
+                    pinned_student_id: None,
+                    camp_id: None,
+                },
+                visibility: ThreadVisibility::Private,
+                scope_student_id: Some(student),
+                body: "Camp plan for the week.".into(),
+                attached_video_id: None,
+                attached_video_is_reference: false,
+                attached_video_title: None,
+            },
+        )
+        .await
+        .unwrap();
+        let tech_thread_id = create_thread(
+            &db.pool,
+            NewThread {
+                author_id: coach,
+                anchor: Anchor {
+                    kind: AnchorKind::CampTechnique,
+                    id: technique_id,
+                    video_ts_seconds: None,
+                    pinned_student_id: None,
+                    camp_id: Some(camp_id),
+                },
+                visibility: ThreadVisibility::Private,
+                scope_student_id: Some(student),
+                body: String::new(),
+                attached_video_id: None,
+                attached_video_is_reference: false,
+                attached_video_title: None,
+            },
+        )
+        .await
+        .unwrap();
+
+        set_last_activity(&db.pool, note_id, "2026-01-01 10:00:00").await;
+        set_last_activity(&db.pool, tech_thread_id, "2026-01-01 11:00:00").await;
+
+        let (components, _) =
+            list_camp_components(&db.pool, camp_id, coach_viewer(coach), None, 20)
+                .await
+                .unwrap();
+        assert_eq!(
+            components.iter().map(|c| c.kind.as_str()).collect::<Vec<_>>(),
+            vec!["technique", "note"],
+            "newest touch first"
+        );
+
+        set_last_activity(&db.pool, note_id, "2026-01-01 12:00:00").await;
+        let (components, _) =
+            list_camp_components(&db.pool, camp_id, coach_viewer(coach), None, 20)
+                .await
+                .unwrap();
+        assert_eq!(
+            components.iter().map(|c| c.kind.as_str()).collect::<Vec<_>>(),
+            vec!["note", "technique"],
+            "a reply bumps its component back to the top"
+        );
+    }
+
+    /// Move a thread's whole footprint (the thread and the activity it emitted)
+    /// to `at`, so a test can order touches apart: CURRENT_TIMESTAMP has second
+    /// resolution and same-second writes tie.
+    async fn set_last_activity(pool: &sqlx::Pool<sqlx::Sqlite>, thread_id: i64, at: &str) {
+        sqlx::query("UPDATE threads SET last_activity_at = ? WHERE id = ?")
+            .bind(at)
+            .bind(thread_id)
+            .execute(pool)
+            .await
+            .unwrap();
+        sqlx::query("UPDATE activity SET occurred_at = ? WHERE thread_id = ?")
+            .bind(at)
+            .bind(thread_id)
+            .execute(pool)
+            .await
+            .unwrap();
+    }
+
+    /// The keyset cursor walks the camp without repeating or dropping a
+    /// component.
+    #[rocket::async_test]
+    async fn camp_components_paginate_with_a_cursor() {
+        use crate::db::list_camp_components;
+
+        let (db, coach, student, camp_id) = camp_fixture().await;
+
+        let mut note_ids = Vec::new();
+        for i in 0..3 {
+            let id = create_thread(
+                &db.pool,
+                NewThread {
+                    author_id: coach,
+                    anchor: Anchor {
+                        kind: AnchorKind::Camp,
+                        id: camp_id,
+                        video_ts_seconds: None,
+                        pinned_student_id: None,
+                        camp_id: None,
+                    },
+                    visibility: ThreadVisibility::Private,
+                    scope_student_id: Some(student),
+                    body: format!("Note {i}"),
+                    attached_video_id: None,
+                    attached_video_is_reference: false,
+                    attached_video_title: None,
+                },
+            )
+            .await
+            .unwrap();
+            set_last_activity(&db.pool, id, &format!("2026-01-0{} 10:00:00", i + 1)).await;
+            note_ids.push(id);
+        }
+
+        let (first, cursor) =
+            list_camp_components(&db.pool, camp_id, coach_viewer(coach), None, 2)
+                .await
+                .unwrap();
+        assert_eq!(first.len(), 2);
+        let cursor = cursor.expect("a full page carries a cursor");
+
+        let (second, next) =
+            list_camp_components(&db.pool, camp_id, coach_viewer(coach), Some(cursor), 2)
+                .await
+                .unwrap();
+        assert_eq!(second.len(), 1, "the tail is one component");
+        assert!(next.is_none(), "the last page has no cursor");
+
+        let seen: Vec<i64> = first.iter().chain(second.iter()).map(|c| c.id).collect();
+        assert_eq!(
+            seen,
+            vec![note_ids[2], note_ids[1], note_ids[0]],
+            "every note once, newest first"
+        );
+    }
+
+    /// GET /api/camps/<id>/components: 200 for the owning student, 403 for
+    /// another student.
+    #[rocket::async_test]
+    async fn camp_components_route_auth_and_shape() {
+        use crate::test::test_utils::{create_standard_test_db, setup_test_client};
+        use rocket::http::Status;
+
+        let test_db = create_standard_test_db().await;
+        let coach_id = test_db.user_id("coach_user").unwrap();
+        let student_id = test_db.user_id("student_user").unwrap();
+        let (client, db) = setup_test_client(test_db).await;
+
+        let camp_id: i64 = sqlx::query_scalar(
+            "INSERT INTO camps (student_id, coach_id, name) VALUES (?, ?, 'Camp A') RETURNING id",
+        )
+        .bind(student_id)
+        .bind(coach_id)
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+
+        create_thread(
+            &db.pool,
+            NewThread {
+                author_id: coach_id,
+                anchor: Anchor {
+                    kind: AnchorKind::Camp,
+                    id: camp_id,
+                    video_ts_seconds: None,
+                    pinned_student_id: None,
+                    camp_id: None,
+                },
+                visibility: ThreadVisibility::Private,
+                scope_student_id: Some(student_id),
+                body: "A note in camp A".into(),
+                attached_video_id: None,
+                attached_video_is_reference: false,
+                attached_video_title: None,
+            },
+        )
+        .await
+        .unwrap();
+
+        login_as(&client, "student_user").await;
+        let resp = client
+            .get(format!("/api/camps/{}/components", camp_id))
+            .dispatch()
+            .await;
+        assert_eq!(resp.status(), Status::Ok);
+        let body: serde_json::Value =
+            serde_json::from_str(&resp.into_string().await.unwrap()).unwrap();
+        let components = body["components"].as_array().expect("components array");
+        assert_eq!(components.len(), 1);
+        assert_eq!(components[0]["kind"], "note");
+        assert_eq!(components[0]["thread"]["body"], "A note in camp A");
+        assert!(body["next_cursor"].is_null());
+
+        // A partial cursor is a client error, not a silently unpaginated page.
+        let resp = client
+            .get(format!("/api/camps/{}/components?before_ts=2026-01-01", camp_id))
+            .dispatch()
+            .await;
+        assert_eq!(resp.status(), Status::BadRequest);
+
+        sqlx::query(
+            "INSERT INTO users (username, role, password, display_name, approved_at, claimed_at)
+             SELECT 'other_student', 'student', password, 'Other Student', approved_at, claimed_at
+             FROM users WHERE username = 'student_user'",
+        )
+        .execute(&db.pool)
+        .await
+        .unwrap();
+
+        login_as(&client, "other_student").await;
+        let resp = client
+            .get(format!("/api/camps/{}/components", camp_id))
+            .dispatch()
+            .await;
+        assert_eq!(resp.status(), Status::Forbidden);
+    }
 }

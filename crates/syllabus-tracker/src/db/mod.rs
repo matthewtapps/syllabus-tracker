@@ -6,6 +6,7 @@
 
 mod activity;
 mod activity_read;
+mod camp_components;
 pub mod camps;
 pub mod dashboard;
 mod attempts;
@@ -28,6 +29,7 @@ mod watch;
 
 pub use activity::*;
 pub use activity_read::*;
+pub use camp_components::{list_camp_components, CampComponent, CampComponentCursor};
 pub use dashboard::{activity_digest, ActivityDigest, DigestMetric};
 pub use attempts::*;
 pub use collections::*;

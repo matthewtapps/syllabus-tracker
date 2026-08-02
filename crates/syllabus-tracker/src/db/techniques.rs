@@ -14,7 +14,7 @@ use crate::models::{AttemptBucket, Tag, Technique};
 /// One row in the library / full-techniques admin list. Aggregates collection
 /// membership count, how many students have the technique assigned, and the
 /// most recent activity on any of those assignments.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Clone)]
 pub struct LibraryTechniqueRow {
     pub id: i64,
     pub name: String,

@@ -14,8 +14,8 @@ use crate::db::camps::{
     update_camp, Camp, CampSummary, CampTechniqueHit, CampThreadHit, CampVideoHit, NewCamp, TechniqueScope,
 };
 use crate::db::{
-    feed, list_camp_techniques, list_videos_for_camp, set_video_camp_visibility,
-    LibraryTechniqueRow,
+    feed, list_camp_components, list_camp_techniques, list_videos_for_camp,
+    set_video_camp_visibility, CampComponent, CampComponentCursor, LibraryTechniqueRow, Viewer,
 };
 use crate::models::Video;
 
@@ -339,6 +339,76 @@ pub async fn api_camp_feed(
     .map_err(Status::from)?;
 
     Ok(Json(rows))
+}
+
+#[derive(FromForm)]
+pub struct CampComponentsQuery {
+    /// Keyset cursor: the previous page's last (last_touch, kind, id). All
+    /// three must be present or all absent.
+    pub before_ts: Option<String>,
+    pub before_kind: Option<String>,
+    pub before_id: Option<i64>,
+    pub limit: Option<i64>,
+}
+
+#[derive(Serialize)]
+pub struct CampComponentsResponse {
+    pub components: Vec<CampComponent>,
+    /// Cursor for the next page; null when this was the last one.
+    pub next_cursor: Option<CampComponentCursor>,
+}
+
+/// `GET /api/camps/<camp_id>/components?before_ts=&before_kind=&before_id=&limit=`
+///
+/// The camp's content, one row per component, newest touch first. Each
+/// component carries enough hydration for the camp page to render it fully
+/// expanded, so the page costs one request per page instead of one per
+/// component.
+///
+/// Authorized for the camp's own student OR any coach.
+#[instrument(skip(params, pool, user))]
+#[get("/camps/<camp_id>/components?<params..>")]
+pub async fn api_camp_components(
+    camp_id: i64,
+    params: CampComponentsQuery,
+    user: User,
+    pool: &State<Pool<Sqlite>>,
+) -> Result<Json<CampComponentsResponse>, Status> {
+    let pool = pool.inner();
+    let camp = get_camp(pool, camp_id)
+        .await
+        .map_err(Status::from)?
+        .ok_or(Status::NotFound)?;
+    let is_coach = user.has_permission(Permission::ViewAllStudents);
+    if !is_coach && user.id != camp.student_id {
+        return Err(Status::Forbidden);
+    }
+
+    let limit = params
+        .limit
+        .unwrap_or(ACTIVITY_FEED_DEFAULT_LIMIT)
+        .clamp(1, ACTIVITY_FEED_MAX_LIMIT);
+
+    let before = match (params.before_ts, params.before_kind, params.before_id) {
+        (Some(last_touch), Some(kind), Some(id)) => Some(CampComponentCursor { last_touch, kind, id }),
+        (None, None, None) => None,
+        _ => {
+            warn!(
+                "rejected camps/components: partial cursor (before_ts, before_kind and before_id must all be present or all absent)"
+            );
+            return Err(Status::BadRequest);
+        }
+    };
+
+    let viewer = Viewer { user_id: user.id, is_coach };
+    let (components, next_cursor) = list_camp_components(pool, camp_id, viewer, before, limit)
+        .await
+        .map_err(Status::from)?;
+
+    Ok(Json(CampComponentsResponse {
+        components,
+        next_cursor,
+    }))
 }
 
 /// CC-015: Set a per-camp visibility override for a video.
