@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { Dumbbell, Library, NotebookPen } from "lucide-react";
+import { Library, NotebookPen, Tent } from "lucide-react";
 import { StudentAvatar } from "@/components/student-avatar";
 import { useUser } from "@/lib/current-user-context";
 import { isCoachOrAdmin } from "@/lib/api";
@@ -164,7 +164,7 @@ function ActivityRowItem({
               {surface.kind === "syllabus" ? (
                 <NotebookPen className="h-3 w-3 shrink-0" aria-hidden />
               ) : surface.kind === "camp" ? (
-                <Dumbbell className="h-3 w-3 shrink-0" aria-hidden />
+                <Tent className="h-3 w-3 shrink-0" aria-hidden />
               ) : (
                 <Library className="h-3 w-3 shrink-0" aria-hidden />
               )}

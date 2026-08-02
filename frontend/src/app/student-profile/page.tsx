@@ -2,13 +2,13 @@ import { useMemo, useRef, useState } from "react";
 import { Link, Navigate, useNavigate, useParams } from "react-router-dom";
 import {
   Archive,
-  Dumbbell,
   History,
   MessageSquare,
   NotebookPen,
   Pin,
   Plus,
   Settings,
+  Tent,
 } from "lucide-react";
 import { toast } from "sonner";
 import { StudentAvatar } from "@/components/student-avatar";
@@ -201,7 +201,7 @@ function ProfileHub({
             to={`/student/${studentId}/camps`}
             className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-muted-foreground hover:text-foreground"
           >
-            <Dumbbell className="h-3.5 w-3.5" aria-hidden />
+            <Tent className="h-3.5 w-3.5" aria-hidden />
             Camps
           </Link>
           {canCreateCamp && (
