@@ -1778,14 +1778,31 @@ pub async fn browse_camp_parents(
     pool: &Pool<Sqlite>,
     student_id: i64,
 ) -> Result<Vec<BrowseParent>, AppError> {
-    // Count visible camp videos using the same visibility rule as
-    // `list_videos_for_camp`: camp-scope override present -> its value;
-    // otherwise hidden_at IS NULL.
+    // A camp's videos are its own footage plus every clip posted into it, since
+    // attaching a clip to a camp thread reparents it to that thread and clears
+    // camp_id. Visibility follows `list_videos_for_camp`: camp-scope override
+    // present -> its value; otherwise hidden_at IS NULL.
     let rows = sqlx::query!(
         r#"SELECT c.id AS "id!: i64", c.name AS "name!: String",
-                  COUNT(v.id) AS "video_count!: i64"
+                  COUNT(DISTINCT v.id) AS "video_count!: i64"
            FROM camps c
-           JOIN videos v ON v.camp_id = c.id
+           JOIN videos v ON v.id IN (
+                    SELECT vc.id FROM videos vc WHERE vc.camp_id = c.id
+                    UNION
+                    SELECT th.attached_video_id FROM threads th
+                     WHERE th.camp_id = c.id
+                       AND th.anchor_kind IN ('camp', 'camp_technique')
+                       AND th.deleted_at IS NULL
+                       AND th.attached_video_id IS NOT NULL
+                    UNION
+                    SELECT tc.video_id FROM thread_comments tc
+                     JOIN threads tt ON tt.id = tc.thread_id
+                     WHERE tt.camp_id = c.id
+                       AND tt.anchor_kind IN ('camp', 'camp_technique')
+                       AND tt.deleted_at IS NULL
+                       AND tc.deleted_at IS NULL
+                       AND tc.video_id IS NOT NULL
+                )
                         AND v.deleted_at IS NULL
            LEFT JOIN video_visibility_overrides ov
                   ON ov.video_id = v.id
@@ -1798,7 +1815,7 @@ pub async fn browse_camp_parents(
                    ELSE (v.hidden_at IS NULL)
                  END = 1
            GROUP BY c.id
-           HAVING COUNT(v.id) > 0
+           HAVING COUNT(DISTINCT v.id) > 0
            ORDER BY c.created_at DESC"#,
         student_id,
     )
@@ -1814,10 +1831,11 @@ pub async fn browse_camp_parents(
         .collect())
 }
 
-/// Camps source drill-in: videos for a specific camp that are visible to the
-/// student (same rule as `list_videos_for_camp`). The camp must belong to
-/// `student_id`; otherwise returns empty (caller enforces ownership at the
-/// route layer but the DB function also guards so it cannot be misused).
+/// Camps source drill-in: the camp's own footage plus every clip posted into
+/// its threads, filtered to what the student may see (same rule as
+/// `list_videos_for_camp`). The camp must belong to `student_id`; otherwise
+/// returns empty (caller enforces ownership at the route layer but the DB
+/// function also guards so it cannot be misused).
 #[instrument(skip(pool))]
 pub async fn browse_camp_videos(
     pool: &Pool<Sqlite>,
@@ -1844,7 +1862,23 @@ pub async fn browse_camp_videos(
                   ON ov.video_id = v.id
                  AND ov.scope_kind = 'camp'
                  AND ov.camp_id = ?1
-           WHERE v.camp_id = ?1
+           WHERE v.id IN (
+                   SELECT vc.id FROM videos vc WHERE vc.camp_id = ?1
+                   UNION
+                   SELECT th.attached_video_id FROM threads th
+                    WHERE th.camp_id = ?1
+                      AND th.anchor_kind IN ('camp', 'camp_technique')
+                      AND th.deleted_at IS NULL
+                      AND th.attached_video_id IS NOT NULL
+                   UNION
+                   SELECT tc.video_id FROM thread_comments tc
+                    JOIN threads tt ON tt.id = tc.thread_id
+                    WHERE tt.camp_id = ?1
+                      AND tt.anchor_kind IN ('camp', 'camp_technique')
+                      AND tt.deleted_at IS NULL
+                      AND tc.deleted_at IS NULL
+                      AND tc.video_id IS NOT NULL
+                 )
              AND v.deleted_at IS NULL
              AND CASE
                    WHEN ov.visible IS NOT NULL THEN ov.visible

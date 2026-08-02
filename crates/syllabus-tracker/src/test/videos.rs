@@ -2352,6 +2352,114 @@ mod tests {
         );
     }
 
+    /// A clip posted into a camp is reparented to the thread that carries it,
+    /// so `videos.camp_id` is null. Browsing the camps source must still find
+    /// it, or every video posted through a camp composer is unreachable.
+    #[rocket::async_test]
+    async fn browse_camps_finds_a_clip_posted_into_a_camp_thread() {
+        let f = setup_browse_fixture().await;
+
+        // A thread on camp1 carrying a clip, exactly as the composer leaves it.
+        let posted_video_id = insert_external_video_browse(
+            &f.pool, "loose", None, None, None,
+            "Posted into camp A", false, f.coach_id,
+        ).await;
+        let thread_id: i64 = sqlx::query_scalar(
+            "INSERT INTO threads
+                (anchor_kind, camp_id, created_by_id, visibility, scope_student_id,
+                 body, attached_video_id)
+             VALUES ('camp', ?, ?, 'private', ?, 'here you go', ?)
+             RETURNING id",
+        )
+        .bind(f.camp1_id)
+        .bind(f.coach_id)
+        .bind(f.student1_id)
+        .bind(posted_video_id)
+        .fetch_one(&f.pool)
+        .await
+        .unwrap();
+        sqlx::query("UPDATE videos SET parent_kind = 'thread', thread_id = ? WHERE id = ?")
+            .bind(thread_id)
+            .bind(posted_video_id)
+            .execute(&f.pool)
+            .await
+            .unwrap();
+
+        // And a clip attached to a reply on that thread.
+        let reply_video_id = insert_external_video_browse(
+            &f.pool, "loose", None, None, None,
+            "Replied into camp A", false, f.coach_id,
+        ).await;
+        sqlx::query(
+            "INSERT INTO thread_comments (thread_id, author_id, body, video_id)
+             VALUES (?, ?, 'and this one', ?)",
+        )
+        .bind(thread_id)
+        .bind(f.coach_id)
+        .bind(reply_video_id)
+        .execute(&f.pool)
+        .await
+        .unwrap();
+
+        let videos = crate::db::browse_camp_videos(&f.pool, f.camp1_id, f.student1_id)
+            .await
+            .unwrap();
+        let ids: Vec<i64> = videos.iter().map(|v| v.id).collect();
+        assert!(ids.contains(&f.camp_video_id), "camp footage still appears");
+        assert!(ids.contains(&posted_video_id), "a clip posted into the camp must appear");
+        assert!(ids.contains(&reply_video_id), "a clip replied into the camp must appear");
+
+        // A camp whose only videos arrived through threads must still be listed.
+        let empty_camp_id: i64 = sqlx::query_scalar(
+            "INSERT INTO camps (student_id, coach_id, name) VALUES (?, ?, 'Camp C') RETURNING id",
+        )
+        .bind(f.student1_id)
+        .bind(f.coach_id)
+        .fetch_one(&f.pool)
+        .await
+        .unwrap();
+        let parents = crate::db::browse_camp_parents(&f.pool, f.student1_id)
+            .await
+            .unwrap();
+        let parent_ids: Vec<i64> = parents.iter().map(|p| p.id).collect();
+        assert!(!parent_ids.contains(&empty_camp_id), "a camp with no videos stays out");
+
+        let camp_c_video_id = insert_external_video_browse(
+            &f.pool, "loose", None, None, None,
+            "Only clip in camp C", false, f.coach_id,
+        ).await;
+        let camp_c_thread: i64 = sqlx::query_scalar(
+            "INSERT INTO threads
+                (anchor_kind, camp_id, created_by_id, visibility, scope_student_id,
+                 body, attached_video_id)
+             VALUES ('camp', ?, ?, 'private', ?, '', ?)
+             RETURNING id",
+        )
+        .bind(empty_camp_id)
+        .bind(f.coach_id)
+        .bind(f.student1_id)
+        .bind(camp_c_video_id)
+        .fetch_one(&f.pool)
+        .await
+        .unwrap();
+        sqlx::query("UPDATE videos SET parent_kind = 'thread', thread_id = ? WHERE id = ?")
+            .bind(camp_c_thread)
+            .bind(camp_c_video_id)
+            .execute(&f.pool)
+            .await
+            .unwrap();
+
+        let parents = crate::db::browse_camp_parents(&f.pool, f.student1_id)
+            .await
+            .unwrap();
+        let listed = parents.iter().find(|p| p.id == empty_camp_id);
+        assert_eq!(
+            listed.map(|p| p.video_count),
+            Some(1),
+            "a camp reached only through its threads must be listed, counted once"
+        );
+    }
+
     /// 3. Text search matches by title and respects visibility.
     #[rocket::async_test]
     async fn browse_search_matches_title_and_respects_visibility() {

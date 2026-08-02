@@ -168,7 +168,7 @@ export function SillybusVideoNavigator({
     },
     {
       source: "camps",
-      label: "Other camps",
+      label: "Camps",
       icon: <Tent className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />,
     },
     {

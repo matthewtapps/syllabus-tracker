@@ -1,0 +1,32 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT c.id AS \"id!: i64\", c.name AS \"name!: String\",\n                  COUNT(DISTINCT v.id) AS \"video_count!: i64\"\n           FROM camps c\n           JOIN videos v ON v.id IN (\n                    SELECT vc.id FROM videos vc WHERE vc.camp_id = c.id\n                    UNION\n                    SELECT th.attached_video_id FROM threads th\n                     WHERE th.camp_id = c.id\n                       AND th.anchor_kind IN ('camp', 'camp_technique')\n                       AND th.deleted_at IS NULL\n                       AND th.attached_video_id IS NOT NULL\n                    UNION\n                    SELECT tc.video_id FROM thread_comments tc\n                     JOIN threads tt ON tt.id = tc.thread_id\n                     WHERE tt.camp_id = c.id\n                       AND tt.anchor_kind IN ('camp', 'camp_technique')\n                       AND tt.deleted_at IS NULL\n                       AND tc.deleted_at IS NULL\n                       AND tc.video_id IS NOT NULL\n                )\n                        AND v.deleted_at IS NULL\n           LEFT JOIN video_visibility_overrides ov\n                  ON ov.video_id = v.id\n                 AND ov.scope_kind = 'camp'\n                 AND ov.camp_id = c.id\n           WHERE c.student_id = ?\n             AND c.archived_at IS NULL\n             AND CASE\n                   WHEN ov.visible IS NOT NULL THEN ov.visible\n                   ELSE (v.hidden_at IS NULL)\n                 END = 1\n           GROUP BY c.id\n           HAVING COUNT(DISTINCT v.id) > 0\n           ORDER BY c.created_at DESC",
+  "describe": {
+    "columns": [
+      {
+        "name": "id!: i64",
+        "ordinal": 0,
+        "type_info": "Integer"
+      },
+      {
+        "name": "name!: String",
+        "ordinal": 1,
+        "type_info": "Text"
+      },
+      {
+        "name": "video_count!: i64",
+        "ordinal": 2,
+        "type_info": "Null"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      true,
+      false,
+      null
+    ]
+  },
+  "hash": "b57ac9f2a7abf8b91dba97751b9aeb0bf46868c0f3a80f09d4e2890b5dbaed81"
+}
