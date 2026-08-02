@@ -1,14 +1,7 @@
 /**
- * Unified composer for the camp feed page.
- *
- * Wraps ReplyComposer (which handles text + 4-source video) and adds a
- * Technique button that opens the AddCampTechniqueDialog. The layout is:
- *
- *   [ Technique btn ] [ ReplyComposer: text area + video btn + send ]
- *
- * ReplyComposer already gates the video attach button on camp surfaces
- * (`canAttach = ... anchorKind === "camp"`), so video attach works for
- * both coaches and the camp's own student.
+ * The camp page's composer: one ReplyComposer whose icon bar carries everything
+ * a camp accepts, so posting a note, a video and a technique are the same
+ * gesture rather than three unrelated controls.
  */
 import { Dumbbell } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -33,28 +26,26 @@ export function CampComposer({
   onOpenTechniquePicker,
 }: CampComposerProps) {
   return (
-    <div className="rounded-lg border border-border bg-card p-3 space-y-2">
-      <ReplyComposer
-        placeholder="Post a note or attach a video..."
-        anchorKind="camp"
-        anchorId={campId}
-        pending={pending}
-        requireVideoTitle
-        scopeStudentId={studentId}
-        onSubmit={(body, attachment) => onSubmit(body, attachment)}
-      />
-      <div className="flex">
+    <ReplyComposer
+      placeholder="Post a note, or attach a video or technique..."
+      anchorKind="camp"
+      anchorId={campId}
+      pending={pending}
+      requireVideoTitle
+      scopeStudentId={studentId}
+      onSubmit={(body, attachment) => onSubmit(body, attachment)}
+      extraActions={
         <Button
           type="button"
-          variant="outline"
-          size="sm"
-          className="h-7 gap-1.5 text-xs"
+          variant="ghost"
+          size="icon"
           onClick={onOpenTechniquePicker}
+          aria-label="Attach technique"
+          className="h-8 w-8 rounded-full text-muted-foreground hover:text-foreground"
         >
-          <Dumbbell className="h-3.5 w-3.5" aria-hidden />
-          Attach technique
+          <Dumbbell className="h-[18px] w-[18px]" aria-hidden />
         </Button>
-      </div>
-    </div>
+      }
+    />
   );
 }

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { SendHorizontal, Video as VideoIcon, X, Loader2, TriangleAlert, Clock } from "lucide-react";
 import { formatTimestamp } from "@/lib/dates";
 import { toast } from "sonner";
@@ -22,6 +22,7 @@ import {
 } from "@/lib/api";
 import type { BrowseVideo } from "@/lib/api";
 import { SillybusVideoNavigator } from "@/components/videos/sillybus-video-navigator";
+import { posterFromFile } from "@/components/videos/poster-frame";
 
 export interface VideoAttachment {
   videoId: number;
@@ -54,6 +55,8 @@ interface ReplyComposerProps {
    * moment in the video.
    */
   stampable?: { currentTime: number; canStamp: boolean };
+  /** Extra attach buttons for the icon bar, sitting beside the video button. */
+  extraActions?: ReactNode;
   /** Posts the reply/thread with an optional video attachment and optional timestamp. */
   onSubmit: (body: string, attachment: VideoAttachment | null, videoTsSeconds: number | null) => Promise<void>;
 }
@@ -68,12 +71,14 @@ type Draft =
 type PickerSheet = "source" | "link" | "sillybus" | null;
 
 /**
- * Universal thread composer: a pill input with an attach-video button parked
- * inline, plus a send button. Attaching opens a bottom sheet to pick from four
- * sources; the clip uploads in the background and shows a removable preview
- * while you keep typing. Send posts the text and the (possibly still-processing)
- * video as one unit. Attaching is offered only where the viewer may add a video
- * (coaches anywhere; a student only on their own camp surface).
+ * Universal thread composer: one bordered box holding the attachments, the text
+ * area and an icon bar of everything you can attach, so what you are about to
+ * post and the send button read as a single unit. Attaching a video opens a
+ * bottom sheet to pick from four sources; the clip uploads in the background and
+ * shows a removable thumbnail while you keep typing. Send posts the text and the
+ * (possibly still-processing) video as one unit. Attaching is offered only where
+ * the viewer may add a video (coaches anywhere; a student only on their own camp
+ * surface).
  */
 export function ReplyComposer({
   anchorKind,
@@ -84,6 +89,7 @@ export function ReplyComposer({
   requireVideoTitle = false,
   scopeStudentId,
   stampable,
+  extraActions,
   onSubmit,
 }: ReplyComposerProps) {
   const user = useUser();
@@ -94,6 +100,7 @@ export function ReplyComposer({
 
   const [body, setBody] = useState("");
   const [draft, setDraft] = useState<Draft | null>(null);
+  const [poster, setPoster] = useState<string | null>(null);
   const [pickerSheet, setPickerSheet] = useState<PickerSheet>(null);
   const [url, setUrl] = useState("");
   const [refTitle, setRefTitle] = useState("");
@@ -156,9 +163,17 @@ export function ReplyComposer({
     };
   }, [sentPending]);
 
+  /** Drops focus before a bottom sheet opens: an on-screen keyboard left up by
+   *  the composer sits over the sheet. */
+  function openPicker(sheet: PickerSheet) {
+    (document.activeElement as HTMLElement | null)?.blur();
+    setPickerSheet(sheet);
+  }
+
   async function pickFile(file: File) {
     setPickerSheet(null);
     setDraft({ state: "uploading" });
+    void posterFromFile(file).then(setPoster);
     try {
       const { video_id, processing_status } = await uploadDraftReplyVideo(
         anchorKind,
@@ -181,6 +196,7 @@ export function ReplyComposer({
     if (!u) return;
     setPickerSheet(null);
     setUrl("");
+    setPoster(null);
     setDraft({ state: "uploading" });
     try {
       const video = await linkDraftReplyVideo(anchorKind, effCampId, u);
@@ -192,6 +208,7 @@ export function ReplyComposer({
   }
 
   function pickSillybusVideo(video: BrowseVideo) {
+    setPoster(null);
     setRefTitle(video.title ?? "");
     setDraft({
       state: "ready",
@@ -206,6 +223,7 @@ export function ReplyComposer({
       void deleteVideo(draft.videoId).catch(() => {});
     }
     setDraft(null);
+    setPoster(null);
     setRefTitle("");
   }
 
@@ -252,6 +270,7 @@ export function ReplyComposer({
       await onSubmit(text, attachment, stampedTs);
       setBody("");
       setDraft(null);
+      setPoster(null);
       setRefTitle("");
       setStampedTs(null);
       setSentPending(stillProcessing != null ? { body: text, videoId: stillProcessing } : null);
@@ -262,82 +281,94 @@ export function ReplyComposer({
 
   return (
     <>
-      {draft && (
-        <DraftPreview
-          draft={draft}
-          refTitle={refTitle}
-          onRemove={removeDraft}
-          requireVideoTitle={requireVideoTitle}
-          onTitleChange={setRefTitle}
+      <div className="rounded-2xl border border-input bg-transparent px-2 py-1.5 shadow-xs transition-[color,box-shadow] focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/50 dark:bg-input/30">
+        {(draft || (stampable && stampedTs != null)) && (
+          <div className="flex flex-wrap items-center gap-2 px-1 pb-1 pt-0.5">
+            {draft && (
+              <DraftChip draft={draft} poster={poster} onRemove={removeDraft} />
+            )}
+            {stampable && stampedTs != null && (
+              <div className="flex h-8 items-center gap-1 rounded-full bg-primary/10 pl-2.5 pr-1 text-xs font-medium text-primary">
+                <Clock className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                <span>Replying at {formatTimestamp(stampedTs)}</span>
+                <button
+                  type="button"
+                  onClick={() => setStampedTs(null)}
+                  aria-label="Clear timestamp"
+                  className="flex h-6 w-6 items-center justify-center rounded-full hover:bg-primary/15"
+                >
+                  <X className="h-3.5 w-3.5" aria-hidden />
+                </button>
+              </div>
+            )}
+            {requireVideoTitle && draft?.state === "ready" && isReferenceDraft(draft) && (
+              <Input
+                className="h-8 w-full"
+                placeholder="Title for this video (required)"
+                value={refTitle}
+                onChange={(e) => setRefTitle(e.target.value)}
+                aria-label="Video title"
+              />
+            )}
+          </div>
+        )}
+
+        <Textarea
+          value={body}
+          onChange={(e) => setBody(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !e.shiftKey) {
+              e.preventDefault();
+              void send();
+            }
+          }}
+          placeholder={placeholder}
+          rows={1}
+          disabled={pending}
+          className="max-h-40 min-h-8 resize-none border-0 bg-transparent px-1 py-1.5 shadow-none focus-visible:border-0 focus-visible:ring-0 dark:bg-transparent"
         />
-      )}
-      {stampable && stampedTs != null && (
-        <div className="mb-1 flex items-center gap-1.5 text-xs text-primary">
-          <Clock className="h-3 w-3 shrink-0" aria-hidden />
-          <span>Replying at {formatTimestamp(stampedTs)}</span>
-          <button
-            type="button"
-            onClick={() => setStampedTs(null)}
-            aria-label="Clear timestamp"
-            className="ml-0.5 rounded-full p-0.5 hover:bg-muted"
-          >
-            <X className="h-3 w-3" aria-hidden />
-          </button>
-        </div>
-      )}
-      <div className="flex items-end gap-2">
-        <div className="relative flex-1">
-          <Textarea
-            value={body}
-            onChange={(e) => setBody(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
-                e.preventDefault();
-                void send();
-              }
-            }}
-            placeholder={placeholder}
-            rows={1}
-            disabled={pending}
-            className="max-h-40 min-h-9 resize-none rounded-2xl pr-11"
-          />
-          {canAttach && !draft && (
+
+        <div className="flex items-center gap-0.5">
+          {canAttach && (
             <Button
               type="button"
               variant="ghost"
               size="icon"
-              onClick={() => setPickerSheet("source")}
+              disabled={draft != null}
+              onClick={() => openPicker("source")}
               aria-label="Attach video"
-              className="absolute right-1 top-1/2 h-7 w-7 -translate-y-1/2 rounded-full text-muted-foreground hover:text-foreground"
+              className="h-8 w-8 rounded-full text-muted-foreground hover:text-foreground"
             >
-              <VideoIcon className="h-4 w-4" aria-hidden />
+              <VideoIcon className="h-[18px] w-[18px]" aria-hidden />
             </Button>
           )}
-        </div>
-        {stampable && stampedTs == null && (
+          {extraActions}
+          {stampable && stampedTs == null && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              disabled={!stampable.canStamp}
+              onClick={() => setStampedTs(Math.max(0, Math.floor(stampable.currentTime)))}
+              aria-label="Pin reply to current time"
+              title={stampable.canStamp ? `Stamp at ${formatTimestamp(stampable.currentTime)}` : "Play the video to stamp a time"}
+              className="h-8 w-8 rounded-full text-muted-foreground hover:text-foreground"
+            >
+              <Clock className="h-[18px] w-[18px]" aria-hidden />
+            </Button>
+          )}
+          <span className="flex-1" />
           <Button
             type="button"
-            variant="ghost"
             size="icon"
-            disabled={!stampable.canStamp}
-            onClick={() => setStampedTs(Math.max(0, Math.floor(stampable.currentTime)))}
-            aria-label="Pin reply to current time"
-            title={stampable.canStamp ? `Stamp at ${formatTimestamp(stampable.currentTime)}` : "Play the video to stamp a time"}
-            className="shrink-0 rounded-full text-muted-foreground hover:text-foreground"
+            onClick={send}
+            disabled={!canSend}
+            aria-label="Reply"
+            className="h-8 w-8 shrink-0 rounded-full"
           >
-            <Clock className="h-4 w-4" aria-hidden />
+            <SendHorizontal className="h-4 w-4" aria-hidden />
           </Button>
-        )}
-        <Button
-          type="button"
-          size="icon"
-          onClick={send}
-          disabled={!canSend}
-          aria-label="Reply"
-          className="shrink-0 rounded-full"
-        >
-          <SendHorizontal className="h-4 w-4" aria-hidden />
-        </Button>
+        </div>
       </div>
 
       {/* Hidden file inputs */}
@@ -373,10 +404,13 @@ export function ReplyComposer({
         <SheetContent
           side="bottom"
           className="gap-4 rounded-t-xl pb-[env(safe-area-inset-bottom)]"
+          onOpenAutoFocus={(e) => e.preventDefault()}
         >
           <SheetHeader className="text-left">
             <SheetTitle>Add a video</SheetTitle>
-            <SheetDescription>Choose how to attach a video.</SheetDescription>
+            <SheetDescription className="sr-only">
+              Pick where the video comes from.
+            </SheetDescription>
           </SheetHeader>
           <ul className="divide-y divide-border px-4 pb-6" role="list">
             <li>
@@ -438,10 +472,13 @@ export function ReplyComposer({
         <SheetContent
           side="bottom"
           className="gap-4 rounded-t-xl pb-[env(safe-area-inset-bottom)]"
+          onOpenAutoFocus={(e) => e.preventDefault()}
         >
           <SheetHeader className="text-left">
             <SheetTitle>Paste a link</SheetTitle>
-            <SheetDescription>Enter a YouTube, Vimeo, or Drive URL.</SheetDescription>
+            <SheetDescription className="sr-only">
+              Enter a YouTube, Vimeo, or Drive URL.
+            </SheetDescription>
           </SheetHeader>
           <div className="space-y-3 px-4 pb-6">
             <Input
@@ -469,20 +506,20 @@ export function ReplyComposer({
   );
 }
 
-function DraftPreview({
+/** The attached clip as a thumbnail tile that lives inside the composer box, so
+ *  a video reads as part of the post being written rather than a done action. */
+function DraftChip({
   draft,
-  refTitle,
+  poster,
   onRemove,
-  requireVideoTitle,
-  onTitleChange,
 }: {
   draft: Draft;
-  refTitle: string;
+  poster: string | null;
   onRemove: () => void;
-  requireVideoTitle: boolean;
-  onTitleChange: (t: string) => void;
 }) {
   const isRef = draft.state === "ready" && draft.isReference;
+  const busy = draft.state === "uploading" || draft.state === "processing";
+  const failed = draft.state === "failed";
   const label =
     draft.state === "uploading"
       ? "Uploading video…"
@@ -493,47 +530,41 @@ function DraftPreview({
             ? "Reference video attached"
             : "Video attached"
           : "Video failed to upload";
-  const failed = draft.state === "failed";
-
-  // Show the title input whenever we have a ready reference draft and the
-  // surface requires a title — regardless of whether refTitle is filled yet.
-  // (Gating on emptiness caused the input to unmount mid-typing.)
-  const showTitleInput = requireVideoTitle && isRef;
 
   return (
-    <div
-      className={`mb-2 rounded-lg border px-3 py-2 text-sm ${
-        failed ? "border-destructive/40 text-destructive" : "border-border text-muted-foreground"
-      }`}
-    >
-      <div className="flex items-center gap-2">
-        {draft.state === "uploading" || draft.state === "processing" ? (
-          <Loader2 className="h-4 w-4 shrink-0 animate-spin" aria-hidden />
-        ) : failed ? (
-          <TriangleAlert className="h-4 w-4 shrink-0" aria-hidden />
-        ) : (
-          <VideoIcon className="h-4 w-4 shrink-0" aria-hidden />
+    <div className="flex items-center gap-2">
+      <div
+        className={`relative h-12 w-12 shrink-0 overflow-hidden rounded-md border ${
+          failed ? "border-destructive/50 bg-destructive/10" : "border-border bg-muted"
+        }`}
+      >
+        {poster && !failed && (
+          <img src={poster} alt="" className="h-full w-full object-cover" />
         )}
-        <span className="flex-1">{label}</span>
+        <div className="absolute inset-0 flex items-center justify-center">
+          {busy ? (
+            <Loader2 className="h-4 w-4 animate-spin text-foreground/70" aria-hidden />
+          ) : failed ? (
+            <TriangleAlert className="h-4 w-4 text-destructive" aria-hidden />
+          ) : poster ? null : (
+            <VideoIcon className="h-4 w-4 text-muted-foreground" aria-hidden />
+          )}
+        </div>
         <Button
           type="button"
-          variant="ghost"
+          variant="secondary"
           size="icon"
           onClick={onRemove}
           aria-label="Remove video"
-          className="h-6 w-6 rounded-full"
+          className="absolute right-0 top-0 h-5 w-5 rounded-bl-md rounded-br-none rounded-tl-none rounded-tr-md border-l border-b border-border/60 shadow-none"
         >
-          <X className="h-4 w-4" aria-hidden />
+          <X className="h-3 w-3" aria-hidden />
         </Button>
       </div>
-      {showTitleInput && (
-        <Input
-          className="mt-2"
-          placeholder="Title for this video (required)"
-          value={refTitle}
-          onChange={(e) => onTitleChange(e.target.value)}
-          aria-label="Video title"
-        />
+      {failed ? (
+        <span className="text-xs text-destructive">{label}</span>
+      ) : (
+        <span className="sr-only">{label}</span>
       )}
     </div>
   );
