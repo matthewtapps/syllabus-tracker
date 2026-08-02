@@ -84,6 +84,47 @@ mod tests {
         assert_eq!(listed.len(), 1);
     }
 
+    /// Naming an untitled clip is part of adding it somewhere new, so a repeat
+    /// add must not rename it out from under the name it was given.
+    #[rocket::async_test]
+    async fn referencing_the_same_clip_twice_does_not_rename_it() {
+        let (db, coach_id, home, away, _first_video) = fixture().await;
+        let video_id = create_processing_video(
+            &db.pool,
+            VideoParent::Technique(home),
+            "",
+            None,
+            coach_id,
+        )
+        .await
+        .unwrap();
+
+        add_video_reference(
+            &db.pool,
+            video_id,
+            ReferenceParent::Technique(away),
+            Some("Named on the way in"),
+            coach_id,
+        )
+        .await
+        .unwrap();
+        add_video_reference(
+            &db.pool,
+            video_id,
+            ReferenceParent::Technique(away),
+            Some("A different name"),
+            coach_id,
+        )
+        .await
+        .unwrap();
+
+        let video = get_video(&db.pool, video_id).await.unwrap().unwrap();
+        assert_eq!(
+            video.title, "Named on the way in",
+            "a repeat reference must leave the clip's name alone"
+        );
+    }
+
     #[rocket::async_test]
     async fn a_clip_cannot_be_referenced_onto_its_own_parent() {
         let (db, coach_id, home, _away, video_id) = fixture().await;

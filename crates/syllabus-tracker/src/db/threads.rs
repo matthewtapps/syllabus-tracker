@@ -579,8 +579,6 @@ async fn validate_attachable_reference(
     Ok(())
 }
 
-/// Re-parents a draft (Loose) video onto a thread inside the caller's tx, so it
-/// inherits thread visibility/playback rules.
 /// Names a video the author just attached. A blank title leaves whatever the
 /// video already had, so skipping the field never wipes an existing name.
 async fn set_video_title_if_given(
@@ -601,6 +599,8 @@ async fn set_video_title_if_given(
     Ok(())
 }
 
+/// Re-parents a draft (Loose) video onto a thread inside the caller's tx, so it
+/// inherits thread visibility/playback rules.
 async fn reparent_draft_to_thread(
     tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
     video_id: i64,

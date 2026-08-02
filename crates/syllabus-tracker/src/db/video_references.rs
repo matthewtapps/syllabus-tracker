@@ -161,8 +161,7 @@ pub async fn set_video_reference_hidden(
 }
 
 /// Coach-facing: every clip referenced onto `parent`, hidden ones included.
-/// A clip soft-deleted at its source drops out, so the reference renders as
-/// unavailable rather than as a playable tile.
+/// A clip soft-deleted at its source drops out of the list entirely.
 #[instrument(skip(pool))]
 pub async fn list_referenced_videos(
     pool: &Pool<Sqlite>,
