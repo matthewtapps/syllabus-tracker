@@ -63,12 +63,15 @@ function BlockRenderer({
 }) {
   const { context, role } = useTechniqueRow();
   const isCoach = role === "coach" || role === "admin";
-  // Coaches/admins manage videos from the global library and, now, directly
-  // on a student's syllabus technique (where they can choose whether the
-  // video also lands in the global library or stays scoped to this student).
+  // Coaches/admins manage videos wherever the technique itself is being
+  // authored: the global library, a syllabus's technique list, and a
+  // student's syllabus technique (where they can choose whether the video
+  // also lands in the global library or stays scoped to this student).
   const canManageVideos =
     isCoach &&
-    (context.kind === "global-library" || context.kind === "student-syllabus");
+    (context.kind === "global-library" ||
+      context.kind === "syllabus-management" ||
+      context.kind === "student-syllabus");
 
   switch (id) {
     case "description":
