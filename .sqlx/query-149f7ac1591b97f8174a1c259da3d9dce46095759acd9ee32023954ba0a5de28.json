@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT COUNT(*) AS \"count!: i64\"\n           FROM syllabus_assignments a\n           JOIN users u ON u.id = a.student_id\n           WHERE a.syllabus_id = ?\n             AND a.unassigned_at IS NULL\n             AND (? = 0 OR lower(u.username) LIKE ?\n                        OR lower(COALESCE(u.display_name, '')) LIKE ?)",
+  "describe": {
+    "columns": [
+      {
+        "name": "count!: i64",
+        "ordinal": 0,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 4
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "149f7ac1591b97f8174a1c259da3d9dce46095759acd9ee32023954ba0a5de28"
+}

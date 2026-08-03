@@ -101,7 +101,7 @@ mod tests {
 
     #[rocket::async_test]
     async fn t3_video_does_not_inflate_technique_video_count() {
-        use crate::db::{create_processing_video, VideoParent};
+        use crate::db::{VideoParent, create_processing_video};
 
         let (_client, db, syllabus_id, student_id, coach_id, armbar_id, _triangle_id) =
             assign_syllabus_and_seed_techniques().await;
@@ -124,9 +124,15 @@ mod tests {
 
         // One T1 (technique-owned) video plus one T3 (per-SST) video on the
         // same technique. Only the T1 video should count toward video_count.
-        create_processing_video(&db.pool, VideoParent::Technique(armbar_id), "t1", None, coach_id)
-            .await
-            .unwrap();
+        create_processing_video(
+            &db.pool,
+            VideoParent::Technique(armbar_id),
+            "t1",
+            None,
+            coach_id,
+        )
+        .await
+        .unwrap();
         create_processing_video(
             &db.pool,
             VideoParent::StudentSyllabusTechnique(armbar_sst_id),
@@ -282,7 +288,7 @@ mod tests {
 
     #[rocket::async_test]
     async fn remove_technique_preserves_tier2_videos_as_soft_deleted() {
-        use crate::db::{create_processing_video, VideoParent};
+        use crate::db::{VideoParent, create_processing_video};
 
         let (_client, db, syllabus_id, _student_id, coach_id, armbar_id, _) =
             assign_syllabus_and_seed_techniques().await;
@@ -343,7 +349,10 @@ mod tests {
             row.deleted_at.is_some(),
             "video must be soft-deleted (deleted_at set)"
         );
-        assert_eq!(row.parent_kind, "loose", "video should be detached to loose");
+        assert_eq!(
+            row.parent_kind, "loose",
+            "video should be detached to loose"
+        );
         assert_eq!(
             row.syllabus_technique_id, None,
             "syllabus_technique_id must be nulled so the cascade can't take it"
@@ -621,10 +630,11 @@ mod soft_delete_tests {
         );
 
         // get_syllabus must return None.
-        let got = db::get_syllabus(&test_db.pool, syllabus_id)
-            .await
-            .unwrap();
-        assert!(got.is_none(), "get_syllabus must return None for soft-deleted");
+        let got = db::get_syllabus(&test_db.pool, syllabus_id).await.unwrap();
+        assert!(
+            got.is_none(),
+            "get_syllabus must return None for soft-deleted"
+        );
 
         // Open assignment must be closed.
         let open: i64 = sqlx::query_scalar!(
@@ -883,9 +893,7 @@ mod pr4_tests {
 
     #[rocket::async_test]
     async fn diff_lists_hidden_and_student_only_videos() {
-        use crate::db::{
-            create_processing_video, DiffVideoKind, VideoParent, VisibilityScope,
-        };
+        use crate::db::{DiffVideoKind, VideoParent, VisibilityScope, create_processing_video};
         // Two students on the same syllabus so we can assert no cross-bleed.
         let test_db = create_standard_test_db().await;
         let coach_id = test_db.user_id("coach_user").unwrap();
@@ -914,10 +922,15 @@ mod pr4_tests {
             .unwrap();
 
         // A T1 library video on Armbar, hidden for alice's assignment only.
-        let t1_video =
-            create_processing_video(&test_db.pool, VideoParent::Technique(armbar_id), "t1", None, coach_id)
-                .await
-                .unwrap();
+        let t1_video = create_processing_video(
+            &test_db.pool,
+            VideoParent::Technique(armbar_id),
+            "t1",
+            None,
+            coach_id,
+        )
+        .await
+        .unwrap();
         db::set_video_override(
             &test_db.pool,
             VisibilityScope::Assignment(alice_asgn),
@@ -972,16 +985,21 @@ mod pr4_tests {
 
     #[rocket::async_test]
     async fn apply_diff_restores_and_promotes_videos() {
-        use crate::db::{create_processing_video, VideoParent, VisibilityScope};
+        use crate::db::{VideoParent, VisibilityScope, create_processing_video};
         let (client, db, syllabus_id, student_id, coach_id, assignment_id, sst_id) =
             seed_active_assignment().await;
         let armbar_id = db.technique_id("Armbar").unwrap();
 
         // Hidden T1 video for this assignment.
-        let t1_video =
-            create_processing_video(&db.pool, VideoParent::Technique(armbar_id), "t1", None, coach_id)
-                .await
-                .unwrap();
+        let t1_video = create_processing_video(
+            &db.pool,
+            VideoParent::Technique(armbar_id),
+            "t1",
+            None,
+            coach_id,
+        )
+        .await
+        .unwrap();
         db::set_video_override(
             &db.pool,
             VisibilityScope::Assignment(assignment_id),
@@ -1286,5 +1304,141 @@ mod pr4_tests {
             name, "Original Name",
             "update_syllabus must be a no-op on a soft-deleted syllabus"
         );
+    }
+
+    #[rocket::async_test]
+    async fn syllabus_roster_rows_carry_progress_and_respect_paging() {
+        let (_client, db, syllabus_id, student_id, coach_id, _assignment_id, sst_id) =
+            seed_active_assignment().await;
+
+        let coach = db::get_user(&db.pool, coach_id).await.unwrap();
+        db::update_sst(
+            &db.pool,
+            sst_id,
+            &coach,
+            &db::SstUpdate {
+                status: Some("green".into()),
+                student_notes: None,
+                coach_notes: None,
+            },
+        )
+        .await
+        .unwrap();
+
+        let rows = db::list_syllabus_student_rows(&db.pool, syllabus_id, "", -1, 0)
+            .await
+            .unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].student_id, student_id);
+        assert_eq!(rows[0].green_count, 1);
+        assert_eq!(rows[0].total_count, 1);
+        assert!(rows[0].last_activity_at.is_some());
+
+        // Paging past the only row yields nothing, but the total still counts it.
+        let page_two = db::list_syllabus_student_rows(&db.pool, syllabus_id, "", 20, 20)
+            .await
+            .unwrap();
+        assert!(page_two.is_empty());
+        assert_eq!(
+            db::count_syllabus_students(&db.pool, syllabus_id, "")
+                .await
+                .unwrap(),
+            1
+        );
+
+        // Search matches on username and excludes non-matches.
+        assert_eq!(
+            db::list_syllabus_student_rows(&db.pool, syllabus_id, "student_user", -1, 0)
+                .await
+                .unwrap()
+                .len(),
+            1
+        );
+        assert!(
+            db::list_syllabus_student_rows(&db.pool, syllabus_id, "nobody", -1, 0)
+                .await
+                .unwrap()
+                .is_empty()
+        );
+    }
+
+    #[rocket::async_test]
+    async fn syllabus_stats_bucket_each_student_once() {
+        let test_db = TestDbBuilder::new()
+            .coach("coach", None)
+            .student("fresh", None)
+            .student("doing", None)
+            .student("ready", None)
+            .student("done", None)
+            .technique("Armbar", "", Some("coach"))
+            .build()
+            .await
+            .unwrap();
+        let coach_id = test_db.user_id("coach").unwrap();
+        let armbar_id = test_db.technique_id("Armbar").unwrap();
+        let syllabus_id = db::create_syllabus(&test_db.pool, "Fundamentals", None, coach_id)
+            .await
+            .unwrap();
+        db::add_technique_to_syllabus(
+            &test_db.pool,
+            syllabus_id,
+            armbar_id,
+            coach_id,
+            PropagationMode::SyllabusOnly,
+        )
+        .await
+        .unwrap();
+
+        let coach = db::get_user(&test_db.pool, coach_id).await.unwrap();
+        for (name, status) in [
+            ("fresh", None),
+            ("doing", Some("amber")),
+            ("ready", Some("green")),
+            ("done", Some("green")),
+        ] {
+            let student_id = test_db.user_id(name).unwrap();
+            let assignment_id = db::assign(&test_db.pool, coach_id, student_id, syllabus_id)
+                .await
+                .unwrap();
+            if let Some(status) = status {
+                let sst_id = db::get_sst_id(&test_db.pool, assignment_id, armbar_id)
+                    .await
+                    .unwrap()
+                    .unwrap();
+                db::update_sst(
+                    &test_db.pool,
+                    sst_id,
+                    &coach,
+                    &db::SstUpdate {
+                        status: Some(status.into()),
+                        student_notes: None,
+                        coach_notes: None,
+                    },
+                )
+                .await
+                .unwrap();
+            }
+            if name == "done" {
+                db::graduate(&test_db.pool, coach_id, assignment_id)
+                    .await
+                    .unwrap();
+            }
+        }
+
+        let (client, _db) = setup_test_client(test_db).await;
+        let cookies = login_test_user(&client, "coach", "password123").await;
+        let mut req = client.get(format!("/api/syllabi/{syllabus_id}/stats"));
+        for cookie in cookies {
+            req = req.cookie(cookie);
+        }
+        let response = req.dispatch().await;
+        assert_eq!(response.status(), Status::Ok);
+        let body: Value = serde_json::from_str(&response.into_string().await.unwrap()).unwrap();
+
+        assert_eq!(body["assigned_count"], 4);
+        assert_eq!(body["not_started"], 1);
+        assert_eq!(body["in_progress"], 1);
+        assert_eq!(body["ready_to_graduate"], 1);
+        assert_eq!(body["graduated"], 1);
     }
 }
