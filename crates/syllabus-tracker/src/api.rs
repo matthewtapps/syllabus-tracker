@@ -511,6 +511,45 @@ pub async fn api_get_students(
     Ok(Json(student_responses))
 }
 
+#[derive(FromForm)]
+pub struct StudentsPageParams {
+    limit: Option<i64>,
+    offset: Option<i64>,
+    q: Option<String>,
+    include_archived: Option<bool>,
+}
+
+#[derive(Serialize)]
+pub struct StudentsPageResponse {
+    pub items: Vec<UserData>,
+    pub total: i64,
+}
+
+#[get("/students/page?<params..>")]
+pub async fn api_get_students_page(
+    params: StudentsPageParams,
+    user: User,
+    db: &State<Pool<Sqlite>>,
+) -> ApiResult<Json<StudentsPageResponse>> {
+    user.require_permission(Permission::ViewAllStudents)?;
+
+    let limit = params.limit.unwrap_or(20).clamp(1, 100);
+    let offset = params.offset.unwrap_or(0).max(0);
+    let page = crate::db::list_students_page(
+        db,
+        params.include_archived.unwrap_or(false),
+        params.q.as_deref().unwrap_or_default(),
+        limit,
+        offset,
+    )
+    .await?;
+
+    Ok(Json(StudentsPageResponse {
+        items: page.items.into_iter().map(UserData::from).collect(),
+        total: page.total,
+    }))
+}
+
 #[get("/student/<id>/unassigned_techniques")]
 pub async fn api_get_unassigned_techniques(
     id: i64,

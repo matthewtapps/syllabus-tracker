@@ -47,7 +47,8 @@ import { ThreadView } from "@/components/threads/thread-view";
 import { ReplyComposer } from "@/components/threads/reply-composer";
 import { useThreadFocus } from "@/components/threads/use-thread-focus";
 import { cn } from "@/lib/utils";
-import { SyllabusAssignmentRow } from "@/app/student-syllabi/components/syllabus-assignment-row";
+import { SyllabusProgressCard } from "@/components/syllabus-progress-card";
+import { AssignSyllabusDialog } from "@/app/student-syllabi/components/assign-syllabus-dialog";
 import type { User } from "@/lib/api";
 
 export default function StudentProfilePage() {
@@ -80,6 +81,7 @@ function ProfileHub({
   // Coaches can create a camp for the student whose profile they're viewing.
   const canCreateCamp = isCoachOrAdmin(viewer) && !isOwnView;
   const [createCampOpen, setCreateCampOpen] = useState(false);
+  const [assignSyllabusOpen, setAssignSyllabusOpen] = useState(false);
   // For the owning student we already have the viewer; for coaches we
   // need to fetch the student by id. /api/me only returns the current
   // user, so coaches use the users list (cached, cheap) to resolve.
@@ -147,6 +149,10 @@ function ProfileHub({
 
   const displayName = student.display_name || student.username;
 
+  const canAssignSyllabus = isCoach && !isOwnView;
+  const assignedSyllabusIds = new Set(
+    (syllabiQuery.data ?? []).map((a) => a.syllabus_id),
+  );
   const previewSyllabi = (syllabiQuery.data ?? []).slice(0, 5);
   const previewPinned = (pinnedQuery.data ?? []).slice(0, 5);
   const previewCamps = (campsQuery.data ?? []).filter((c) => !c.archived_at).slice(0, 5);
@@ -204,24 +210,6 @@ function ProfileHub({
             <Tent className="h-3.5 w-3.5" aria-hidden />
             Camps
           </Link>
-          {canCreateCamp && (
-            <Dialog open={createCampOpen} onOpenChange={setCreateCampOpen}>
-              <DialogTrigger asChild>
-                <Button size="sm" variant="outline" className="gap-1.5">
-                  <Plus className="h-4 w-4" aria-hidden />
-                  <span>Add camp</span>
-                </Button>
-              </DialogTrigger>
-              <CreateCampDialog
-                studentId={studentId}
-                studentName={displayName}
-                onCreated={(id) => {
-                  setCreateCampOpen(false);
-                  navigate(`/camps/${id}`);
-                }}
-              />
-            </Dialog>
-          )}
         </div>
         {campsQuery.isLoading ? (
           <div className="rounded-lg border border-border bg-card px-4 py-4">
@@ -233,6 +221,24 @@ function ProfileHub({
               <CampSummaryCard key={c.id} camp={c} />
             ))}
           </div>
+        )}
+        {canCreateCamp && (
+          <Dialog open={createCampOpen} onOpenChange={setCreateCampOpen}>
+            <DialogTrigger asChild>
+              <Button variant="outline" className="w-full gap-1.5 border-dashed">
+                <Plus className="h-4 w-4" aria-hidden />
+                <span>Add camp</span>
+              </Button>
+            </DialogTrigger>
+            <CreateCampDialog
+              studentId={studentId}
+              studentName={displayName}
+              onCreated={(id) => {
+                setCreateCampOpen(false);
+                navigate(`/camps/${id}`);
+              }}
+            />
+          </Dialog>
         )}
       </section>
 
@@ -246,21 +252,31 @@ function ProfileHub({
             See all
           </Link>
         </div>
-        <div className="overflow-hidden rounded-lg border border-border bg-card">
-          {syllabiQuery.isLoading ? (
-            <div className="px-4 py-4"><div className="h-4 w-1/3 animate-pulse rounded bg-muted" /></div>
-          ) : previewSyllabi.length === 0 ? (
+        {syllabiQuery.isLoading ? (
+          <div className="rounded-lg border border-border bg-card px-4 py-4">
+            <div className="h-4 w-1/3 animate-pulse rounded bg-muted" />
+          </div>
+        ) : previewSyllabi.length === 0 ? (
+          <div className="overflow-hidden rounded-lg border border-border bg-card">
             <EmptyState compact icon={NotebookPen} title="No syllabi yet" description={isOwnView ? "A coach has not assigned you a syllabus yet." : "This student has no active syllabus assignments."} />
-          ) : (
-            <ul className="divide-y divide-border">
-              {previewSyllabi.map((a) => (
-                <li key={a.id}>
-                  <SyllabusAssignmentRow studentId={studentId} assignment={a} />
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {previewSyllabi.map((a) => (
+              <SyllabusProgressCard key={a.id} studentId={studentId} assignment={a} />
+            ))}
+          </div>
+        )}
+        {canAssignSyllabus && (
+          <Button
+            variant="outline"
+            className="w-full gap-1.5 border-dashed"
+            onClick={() => setAssignSyllabusOpen(true)}
+          >
+            <Plus className="h-4 w-4" aria-hidden />
+            Assign syllabus
+          </Button>
+        )}
       </section>
 
       <section className="space-y-2">
@@ -366,6 +382,16 @@ function ProfileHub({
         </div>
       </section>
         </>
+      )}
+
+      {canAssignSyllabus && (
+        <AssignSyllabusDialog
+          open={assignSyllabusOpen}
+          onOpenChange={setAssignSyllabusOpen}
+          studentId={studentId}
+          studentName={displayName}
+          assignedIds={assignedSyllabusIds}
+        />
       )}
 
       {canManageAccount && (

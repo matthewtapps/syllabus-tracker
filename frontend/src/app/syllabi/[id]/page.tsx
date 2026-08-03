@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link, Navigate, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { Navigate, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
   NotebookPen,
   Pencil,
@@ -39,12 +39,7 @@ import { EmptyState } from '@/components/empty-state';
 import { Accordion } from '@/components/ui/accordion';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { TechniqueRow } from '@/components/technique-row';
-import {
-  useLibraryTechniques,
-  useStudents,
-  useSyllabus,
-  useSyllabusStudents,
-} from '@/lib/queries';
+import { useLibraryTechniques, useSyllabus } from '@/lib/queries';
 import {
   useAddTechniqueToSyllabus,
   useDeleteSyllabus,
@@ -59,10 +54,11 @@ import type {
   LibraryTechniqueRow,
   PropagationMode,
   SyllabusTechniqueRow,
-  User,
 } from '@/lib/api';
 import { parseFocusToken } from '@/lib/entity-ref';
 import { AssignStudentDialog } from '../components/assign-student-dialog';
+import { SyllabusStatsPanel } from '../components/syllabus-stats-panel';
+import { SyllabusStudentList } from '../components/syllabus-student-list';
 
 const editSchema = z.object({
   name: z.string().min(1, 'Name is required').max(100, 'Name is too long'),
@@ -102,12 +98,7 @@ function SyllabusDetail({ syllabusId }: { syllabusId: number }) {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const syllabusQuery = useSyllabus(syllabusId);
-  const studentsQuery = useSyllabusStudents(syllabusId);
   const syllabus = syllabusQuery.data;
-  const assignedIds = useMemo(
-    () => studentsQuery.data ?? [],
-    [studentsQuery.data],
-  );
 
   const [editing, setEditing] = useState(false);
   const [removeTarget, setRemoveTarget] = useState<{ id: number; name: string } | null>(null);
@@ -117,7 +108,6 @@ function SyllabusDetail({ syllabusId }: { syllabusId: number }) {
   const [techSearch, setTechSearch] = useState('');
   const [techTags, setTechTags] = useState<string[]>([]);
   const [techExpanded, setTechExpanded] = useState<string>('');
-  const [studentSearch, setStudentSearch] = useState('');
 
   const deleteMutation = useDeleteSyllabus();
 
@@ -228,17 +218,30 @@ function SyllabusDetail({ syllabusId }: { syllabusId: number }) {
         )}
       </div>
 
-      <Tabs defaultValue="techniques" className="space-y-3">
+      <SyllabusStatsPanel syllabusId={syllabusId} />
+
+      <Tabs defaultValue="students" className="space-y-3">
         <TabsList className="grid w-full grid-cols-2">
-          <TabsTrigger value="techniques" className="gap-1.5">
-            <NotebookPen className="h-3.5 w-3.5" aria-hidden />
-            Techniques
-          </TabsTrigger>
           <TabsTrigger value="students" className="gap-1.5">
             <Users className="h-3.5 w-3.5" aria-hidden />
             Students
           </TabsTrigger>
+          <TabsTrigger value="techniques" className="gap-1.5">
+            <NotebookPen className="h-3.5 w-3.5" aria-hidden />
+            Techniques
+          </TabsTrigger>
         </TabsList>
+
+        <TabsContent value="students" className="mt-0 space-y-2">
+          <Button
+            className="w-full gap-1.5"
+            onClick={() => setAssignOpen(true)}
+          >
+            <UserPlus className="h-4 w-4" aria-hidden />
+            Assign student
+          </Button>
+          <SyllabusStudentList syllabusId={syllabusId} />
+        </TabsContent>
 
         <TabsContent value="techniques" className="mt-0">
           <TechniquesSection
@@ -253,43 +256,6 @@ function SyllabusDetail({ syllabusId }: { syllabusId: number }) {
             onAdd={() => setAddOpen(true)}
             onRemove={(id, name) => setRemoveTarget({ id, name })}
           />
-        </TabsContent>
-
-        <TabsContent value="students" className="mt-0 space-y-2">
-          {assignedIds.length > 0 && (
-            <div className="relative">
-              <Search
-                className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
-                aria-hidden
-              />
-              <Input
-                placeholder="Search students"
-                value={studentSearch}
-                onChange={(e) => setStudentSearch(e.target.value)}
-                className="pl-9"
-              />
-            </div>
-          )}
-          <Button
-            className="w-full gap-1.5"
-            onClick={() => setAssignOpen(true)}
-          >
-            <UserPlus className="h-4 w-4" aria-hidden />
-            Assign student
-          </Button>
-          <div className="overflow-hidden rounded-lg border border-border bg-card">
-            {assignedIds.length === 0 ? (
-              <p className="px-6 py-8 text-center text-sm text-muted-foreground">
-                Nobody is assigned yet.
-              </p>
-            ) : (
-              <AssignedStudentsList
-                studentIds={assignedIds}
-                syllabusId={syllabusId}
-                filterText={studentSearch}
-              />
-            )}
-          </div>
         </TabsContent>
       </Tabs>
 
@@ -764,69 +730,6 @@ function RemoveTechniqueDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
-  );
-}
-
-function AssignedStudentsList({
-  studentIds,
-  syllabusId,
-  filterText,
-}: {
-  studentIds: number[];
-  syllabusId: number;
-  filterText: string;
-}) {
-  const usersQuery = useStudents('alphabetical', false);
-  const studentsById = useMemo(() => {
-    const map = new Map<number, User>();
-    (usersQuery.data ?? []).forEach((u: User) => map.set(u.id, u));
-    return map;
-  }, [usersQuery.data]);
-
-  const filtered = useMemo(() => {
-    const needle = filterText.trim().toLowerCase();
-    if (!needle) return studentIds;
-    return studentIds.filter((id) => {
-      const u = studentsById.get(id);
-      if (!u) return false;
-      return (
-        (u.display_name?.toLowerCase().includes(needle) ?? false) ||
-        u.username.toLowerCase().includes(needle)
-      );
-    });
-  }, [studentIds, studentsById, filterText]);
-
-  if (filtered.length === 0) {
-    return (
-      <p className="px-6 py-8 text-center text-sm text-muted-foreground">
-        No students match the search.
-      </p>
-    );
-  }
-
-  return (
-    <ul className="divide-y divide-border">
-      {filtered.map((id) => {
-        const user = studentsById.get(id);
-        return (
-          <li key={id}>
-            <Link
-              to={`/student/${id}/syllabi/${syllabusId}`}
-              className="block px-4 py-3 transition-colors hover:bg-muted/40"
-            >
-              <p className="truncate text-sm font-medium">
-                {user?.display_name || user?.username || `Student ${id}`}
-              </p>
-              {user?.username && (
-                <p className="truncate text-xs text-muted-foreground">
-                  {user.username}
-                </p>
-              )}
-            </Link>
-          </li>
-        );
-      })}
-    </ul>
   );
 }
 

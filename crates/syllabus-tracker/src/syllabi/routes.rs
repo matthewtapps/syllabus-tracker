@@ -95,6 +95,107 @@ pub async fn api_list_syllabus_students(
     Ok(Json(ids))
 }
 
+#[derive(FromForm)]
+pub struct SyllabusStudentsParams {
+    limit: Option<i64>,
+    offset: Option<i64>,
+    q: Option<String>,
+}
+
+#[derive(Serialize)]
+pub struct SyllabusStudentsPage {
+    pub items: Vec<db::SyllabusStudentRow>,
+    pub total: i64,
+}
+
+#[get("/syllabi/<sid>/students/detail?<params..>")]
+pub async fn api_list_syllabus_student_rows(
+    sid: i64,
+    params: SyllabusStudentsParams,
+    user: User,
+    db: &State<Pool<Sqlite>>,
+) -> ApiResult<Json<SyllabusStudentsPage>> {
+    user.require_permission(Permission::ManageSyllabi)?;
+    let limit = params.limit.unwrap_or(20).clamp(1, 100);
+    let offset = params.offset.unwrap_or(0).max(0);
+    let q = params.q.unwrap_or_default();
+    let items = db::list_syllabus_student_rows(db, sid, &q, limit, offset).await?;
+    let total = db::count_syllabus_students(db, sid, &q).await?;
+    Ok(Json(SyllabusStudentsPage { items, total }))
+}
+
+#[derive(Serialize)]
+pub struct SyllabusStatsResponse {
+    pub assigned_count: i64,
+    /// Assigned, ungraduated, nothing off red yet.
+    pub not_started: i64,
+    /// Assigned, ungraduated, some but not all techniques green.
+    pub in_progress: i64,
+    /// Every visible technique green, not graduated yet.
+    pub ready_to_graduate: i64,
+    pub graduated: i64,
+    pub recently_updated: Vec<SyllabusRecentStudent>,
+}
+
+#[derive(Serialize)]
+pub struct SyllabusRecentStudent {
+    pub student_id: i64,
+    pub name: String,
+    pub at: String,
+}
+
+#[get("/syllabi/<sid>/stats")]
+pub async fn api_syllabus_stats(
+    sid: i64,
+    user: User,
+    db: &State<Pool<Sqlite>>,
+) -> ApiResult<Json<SyllabusStatsResponse>> {
+    user.require_permission(Permission::ManageSyllabi)?;
+    let rows = db::list_syllabus_student_rows(db, sid, "", -1, 0).await?;
+
+    let mut stats = SyllabusStatsResponse {
+        assigned_count: rows.len() as i64,
+        not_started: 0,
+        in_progress: 0,
+        ready_to_graduate: 0,
+        graduated: 0,
+        recently_updated: Vec::new(),
+    };
+    for row in &rows {
+        if row.graduated_at.is_some() {
+            stats.graduated += 1;
+        } else if row.total_count > 0 && row.green_count == row.total_count {
+            stats.ready_to_graduate += 1;
+        } else if row.green_count > 0 || row.amber_count > 0 {
+            stats.in_progress += 1;
+        } else {
+            stats.not_started += 1;
+        }
+    }
+
+    // Rows arrive freshest-first, so the first few with a timestamp are the
+    // most recently updated students.
+    stats.recently_updated = rows
+        .iter()
+        .filter_map(|row| {
+            row.last_activity_at
+                .as_ref()
+                .map(|at| SyllabusRecentStudent {
+                    student_id: row.student_id,
+                    name: if row.display_name.is_empty() {
+                        row.username.clone()
+                    } else {
+                        row.display_name.clone()
+                    },
+                    at: at.clone(),
+                })
+        })
+        .take(3)
+        .collect();
+
+    Ok(Json(stats))
+}
+
 #[get("/syllabi/<sid>")]
 pub async fn api_get_syllabus(
     sid: i64,

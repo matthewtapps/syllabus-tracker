@@ -28,6 +28,31 @@ pub struct SyllabusAssignment {
     pub amber_count: i64,
     pub green_count: i64,
     pub total_count: i64,
+    /// Most recent edit to any technique under this assignment, from either
+    /// side. Drives the "last touched" line on the profile syllabus cards.
+    pub last_activity_at: Option<String>,
+    /// Attempts logged against this assignment in the last 7 days.
+    pub recent_attempt_count: i64,
+}
+
+/// A student assigned to a syllabus, with their progress in it. Powers the
+/// coach-side syllabus page: the roster list and the stats header both read
+/// this row.
+#[derive(Debug, Serialize)]
+pub struct SyllabusStudentRow {
+    pub student_id: i64,
+    pub username: String,
+    pub display_name: String,
+    pub archived: bool,
+    pub assignment_id: i64,
+    pub assigned_at: String,
+    pub graduated_at: Option<String>,
+    pub red_count: i64,
+    pub amber_count: i64,
+    pub green_count: i64,
+    pub total_count: i64,
+    pub last_activity_at: Option<String>,
+    pub last_student_update_at: Option<String>,
 }
 
 fn rfc3339(dt: NaiveDateTime) -> String {
@@ -54,7 +79,15 @@ pub async fn list_assignments_for_student(
                   COALESCE(SUM(CASE WHEN sst.status = 'red'   AND sst.hidden_at IS NULL THEN 1 ELSE 0 END), 0) AS "red_count!: i64",
                   COALESCE(SUM(CASE WHEN sst.status = 'amber' AND sst.hidden_at IS NULL THEN 1 ELSE 0 END), 0) AS "amber_count!: i64",
                   COALESCE(SUM(CASE WHEN sst.status = 'green' AND sst.hidden_at IS NULL THEN 1 ELSE 0 END), 0) AS "green_count!: i64",
-                  COALESCE(SUM(CASE WHEN sst.hidden_at IS NULL THEN 1 ELSE 0 END), 0) AS "total_count!: i64"
+                  COALESCE(SUM(CASE WHEN sst.hidden_at IS NULL THEN 1 ELSE 0 END), 0) AS "total_count!: i64",
+                  MAX(sst.updated_at) AS "last_activity_at?: NaiveDateTime",
+                  (SELECT COUNT(*)
+                     FROM syllabus_attempts sat
+                     JOIN student_syllabus_techniques asst
+                       ON asst.id = sat.student_syllabus_technique_id
+                    WHERE asst.assignment_id = a.id
+                      AND sat.attempted_at >= datetime('now', '-6 days', 'start of day'))
+                    AS "recent_attempt_count!: i64"
            FROM syllabus_assignments a
            JOIN syllabi s ON s.id = a.syllabus_id
            LEFT JOIN student_syllabus_techniques sst ON sst.assignment_id = a.id
@@ -84,6 +117,8 @@ pub async fn list_assignments_for_student(
             amber_count: r.amber_count,
             green_count: r.green_count,
             total_count: r.total_count,
+            last_activity_at: r.last_activity_at.map(rfc3339),
+            recent_attempt_count: r.recent_attempt_count,
         })
         .collect())
 }
@@ -108,7 +143,15 @@ pub async fn get_assignment(
                   COALESCE(SUM(CASE WHEN sst.status = 'red'   AND sst.hidden_at IS NULL THEN 1 ELSE 0 END), 0) AS "red_count!: i64",
                   COALESCE(SUM(CASE WHEN sst.status = 'amber' AND sst.hidden_at IS NULL THEN 1 ELSE 0 END), 0) AS "amber_count!: i64",
                   COALESCE(SUM(CASE WHEN sst.status = 'green' AND sst.hidden_at IS NULL THEN 1 ELSE 0 END), 0) AS "green_count!: i64",
-                  COALESCE(SUM(CASE WHEN sst.hidden_at IS NULL THEN 1 ELSE 0 END), 0) AS "total_count!: i64"
+                  COALESCE(SUM(CASE WHEN sst.hidden_at IS NULL THEN 1 ELSE 0 END), 0) AS "total_count!: i64",
+                  MAX(sst.updated_at) AS "last_activity_at?: NaiveDateTime",
+                  (SELECT COUNT(*)
+                     FROM syllabus_attempts sat
+                     JOIN student_syllabus_techniques asst
+                       ON asst.id = sat.student_syllabus_technique_id
+                    WHERE asst.assignment_id = a.id
+                      AND sat.attempted_at >= datetime('now', '-6 days', 'start of day'))
+                    AS "recent_attempt_count!: i64"
            FROM syllabus_assignments a
            JOIN syllabi s ON s.id = a.syllabus_id
            LEFT JOIN student_syllabus_techniques sst ON sst.assignment_id = a.id
@@ -134,6 +177,8 @@ pub async fn get_assignment(
         amber_count: r.amber_count,
         green_count: r.green_count,
         total_count: r.total_count,
+        last_activity_at: r.last_activity_at.map(rfc3339),
+        recent_attempt_count: r.recent_attempt_count,
     }))
 }
 
@@ -152,6 +197,102 @@ pub async fn list_students_assigned_to_syllabus(
     .fetch_all(pool)
     .await?;
     Ok(ids)
+}
+
+/// Roster page for one syllabus, freshest activity first. `limit` of -1
+/// means no limit (SQLite semantics), which the stats caller uses to fold
+/// over every assigned student.
+#[instrument]
+pub async fn list_syllabus_student_rows(
+    pool: &Pool<Sqlite>,
+    syllabus_id: i64,
+    query: &str,
+    limit: i64,
+    offset: i64,
+) -> Result<Vec<SyllabusStudentRow>, AppError> {
+    let needle = query.trim().to_lowercase();
+    let has_query = !needle.is_empty();
+    let pattern = format!("%{needle}%");
+
+    let rows = sqlx::query!(
+        r#"SELECT a.id AS "assignment_id!: i64",
+                  u.id AS "student_id!: i64",
+                  u.username AS "username!: String",
+                  u.display_name AS "display_name!: String",
+                  u.archived AS "archived!: bool",
+                  a.assigned_at AS "assigned_at!: NaiveDateTime",
+                  a.graduated_at AS "graduated_at?: NaiveDateTime",
+                  COALESCE(SUM(CASE WHEN sst.status = 'red'   AND sst.hidden_at IS NULL THEN 1 ELSE 0 END), 0) AS "red_count!: i64",
+                  COALESCE(SUM(CASE WHEN sst.status = 'amber' AND sst.hidden_at IS NULL THEN 1 ELSE 0 END), 0) AS "amber_count!: i64",
+                  COALESCE(SUM(CASE WHEN sst.status = 'green' AND sst.hidden_at IS NULL THEN 1 ELSE 0 END), 0) AS "green_count!: i64",
+                  COALESCE(SUM(CASE WHEN sst.hidden_at IS NULL THEN 1 ELSE 0 END), 0) AS "total_count!: i64",
+                  MAX(sst.updated_at) AS "last_activity_at?: NaiveDateTime",
+                  MAX(sst.last_student_update_at) AS "last_student_update_at?: NaiveDateTime"
+           FROM syllabus_assignments a
+           JOIN users u ON u.id = a.student_id
+           LEFT JOIN student_syllabus_techniques sst ON sst.assignment_id = a.id
+           WHERE a.syllabus_id = ?
+             AND a.unassigned_at IS NULL
+             AND (? = 0 OR lower(u.username) LIKE ?
+                        OR lower(COALESCE(u.display_name, '')) LIKE ?)
+           GROUP BY a.id
+           ORDER BY MAX(datetime(sst.updated_at)) DESC NULLS LAST, a.id DESC
+           LIMIT ? OFFSET ?"#,
+        syllabus_id,
+        has_query,
+        pattern,
+        pattern,
+        limit,
+        offset,
+    )
+    .fetch_all(pool)
+    .await?;
+
+    Ok(rows
+        .into_iter()
+        .map(|r| SyllabusStudentRow {
+            student_id: r.student_id,
+            username: r.username,
+            display_name: r.display_name,
+            archived: r.archived,
+            assignment_id: r.assignment_id,
+            assigned_at: rfc3339(r.assigned_at),
+            graduated_at: r.graduated_at.map(rfc3339),
+            red_count: r.red_count,
+            amber_count: r.amber_count,
+            green_count: r.green_count,
+            total_count: r.total_count,
+            last_activity_at: r.last_activity_at.map(rfc3339),
+            last_student_update_at: r.last_student_update_at.map(rfc3339),
+        })
+        .collect())
+}
+
+#[instrument]
+pub async fn count_syllabus_students(
+    pool: &Pool<Sqlite>,
+    syllabus_id: i64,
+    query: &str,
+) -> Result<i64, AppError> {
+    let needle = query.trim().to_lowercase();
+    let has_query = !needle.is_empty();
+    let pattern = format!("%{needle}%");
+    let total = sqlx::query_scalar!(
+        r#"SELECT COUNT(*) AS "count!: i64"
+           FROM syllabus_assignments a
+           JOIN users u ON u.id = a.student_id
+           WHERE a.syllabus_id = ?
+             AND a.unassigned_at IS NULL
+             AND (? = 0 OR lower(u.username) LIKE ?
+                        OR lower(COALESCE(u.display_name, '')) LIKE ?)"#,
+        syllabus_id,
+        has_query,
+        pattern,
+        pattern,
+    )
+    .fetch_one(pool)
+    .await?;
+    Ok(total)
 }
 
 /// Assign (or re-activate) the (student, syllabus) pair. Re-assign clears

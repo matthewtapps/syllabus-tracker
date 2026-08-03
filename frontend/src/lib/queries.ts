@@ -38,10 +38,13 @@ import {
   getStudentTechniqueDetail,
   getStudentTechniques,
   getStudents,
+  getStudentsPage,
   getSyllabusDetail,
   getSyllabi,
   getSyllabusAttemptHeatmap,
   listSyllabusStudentsApi,
+  getSyllabusStudentRowsApi,
+  getSyllabusStatsApi,
   getTechniquesForAssignment,
   listSyllabusAttemptsApi,
   getVideoStats,
@@ -88,6 +91,21 @@ export function useStudents(sortBy?: string, includeArchived: boolean = false) {
   return useQuery({
     queryKey: qk.students(sortBy, includeArchived),
     queryFn: () => getStudents(sortBy, includeArchived),
+    placeholderData: keepPreviousData,
+  });
+}
+
+// Offset-paginated roster for the students list. The server orders by recent
+// activity and owns the search, so a page is a stable slice of one ordering.
+export function useInfiniteStudents(q: string, limit = 20) {
+  return useInfiniteQuery({
+    queryKey: qk.studentsPage(q, limit),
+    initialPageParam: 0,
+    queryFn: ({ pageParam }) => getStudentsPage({ limit, offset: pageParam, q }),
+    getNextPageParam: (lastPage, allPages) => {
+      const loaded = allPages.reduce((n, page) => n + page.items.length, 0);
+      return loaded < lastPage.total ? loaded : undefined;
+    },
     placeholderData: keepPreviousData,
   });
 }
@@ -311,6 +329,37 @@ export function useSyllabusAttempts(sstId: number | undefined) {
     queryFn:
       typeof sstId === "number" && Number.isFinite(sstId)
         ? () => listSyllabusAttemptsApi(sstId)
+        : skipToken,
+  });
+}
+
+// Assigned students with their progress in this syllabus, one page at a time.
+export function useInfiniteSyllabusStudents(
+  syllabusId: number | undefined,
+  q: string,
+  limit = 20,
+) {
+  const valid = typeof syllabusId === "number" && Number.isFinite(syllabusId);
+  return useInfiniteQuery({
+    queryKey: qk.syllabusStudentRows(syllabusId ?? 0, q, limit),
+    enabled: valid,
+    initialPageParam: 0,
+    queryFn: ({ pageParam }) =>
+      getSyllabusStudentRowsApi(syllabusId ?? 0, { limit, offset: pageParam, q }),
+    getNextPageParam: (lastPage, allPages) => {
+      const loaded = allPages.reduce((n, page) => n + page.items.length, 0);
+      return loaded < lastPage.total ? loaded : undefined;
+    },
+    placeholderData: keepPreviousData,
+  });
+}
+
+export function useSyllabusStats(syllabusId: number | undefined) {
+  return useQuery({
+    queryKey: qk.syllabusStats(syllabusId ?? 0),
+    queryFn:
+      typeof syllabusId === "number" && Number.isFinite(syllabusId)
+        ? () => getSyllabusStatsApi(syllabusId)
         : skipToken,
   });
 }

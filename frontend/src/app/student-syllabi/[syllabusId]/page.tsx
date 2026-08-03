@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Navigate, useNavigate, useParams } from 'react-router-dom';
+import { Link, Navigate, useNavigate, useParams } from 'react-router-dom';
 import { useTechniqueListNav } from '@/components/technique-row/use-technique-list-nav';
 import { TechniqueFilters } from '@/components/technique-row/technique-filters';
 import {
@@ -240,6 +240,15 @@ function Detail({
             </>
           )}
         </p>
+        {!isOwnView && (
+          <Link
+            to={`/syllabi/${syllabusId}`}
+            className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground"
+          >
+            <NotebookPen className="h-3.5 w-3.5" aria-hidden />
+            Open the {assignment.syllabus_name} overview
+          </Link>
+        )}
         {!isOwnView && (
           <div className="flex gap-2 pt-1">
             <Button

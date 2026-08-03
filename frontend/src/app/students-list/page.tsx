@@ -2,95 +2,16 @@ import { useMemo } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { NotebookPen, Search, UserPlus, Users, X } from 'lucide-react';
 import { type User } from '@/lib/api';
-import { useStudents } from '@/lib/queries';
-import { categorizeStudent, isStudentLed } from '@/lib/student-triage';
+import { useInfiniteStudents } from '@/lib/queries';
+import { useDebouncedValue } from '@/lib/use-debounced-value';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import { EmptyState } from '@/components/empty-state';
 import { SkeletonListRow } from '@/components/skeleton-row';
 import { StudentRow } from '@/components/student-row';
 
-type SortBy = 'recent_update' | 'alphabetical';
-
-// Top-level activity tabs. "Active" now gathers every student with recent
-// activity on either side (own or coach-led); the active/coach-led split lives
-// in the sub-tab pills below.
-type ActivityTab = 'active' | 'quiet';
-
-const ACTIVITY_TABS: { value: ActivityTab; label: string }[] = [
-  { value: 'active', label: 'Active' },
-  { value: 'quiet', label: 'Quiet' },
-];
-
-const ACTIVITY_TAB_VALUES = new Set<ActivityTab>(['active', 'quiet']);
-
-function isActivityTab(v: string | null): v is ActivityTab {
-  return v !== null && ACTIVITY_TAB_VALUES.has(v as ActivityTab);
-}
-
-// Sub-tab pills that refine the Active tab.
-type ActiveView = 'everyone' | 'student_led' | 'coach_led';
-
-const ACTIVE_VIEWS: { value: ActiveView; label: string }[] = [
-  { value: 'everyone', label: 'Everyone' },
-  { value: 'student_led', label: 'Student-led' },
-  { value: 'coach_led', label: 'Coach-led' },
-];
-
-const ACTIVE_VIEW_VALUES = new Set<ActiveView>([
-  'everyone',
-  'student_led',
-  'coach_led',
-]);
-
-function isActiveView(v: string | null): v is ActiveView {
-  return v !== null && ACTIVE_VIEW_VALUES.has(v as ActiveView);
-}
-
-function tsOf(v: string | null | undefined): number {
-  if (!v) return 0;
-  const t = Date.parse(v);
-  return Number.isFinite(t) ? t : 0;
-}
-
-// Most recent signal on a student, from any side. Quiet students have no
-// *recent* activity, so the backend's recency order leaves them mostly tied
-// at null; this surfaces the least-stale of them first.
-function recencyScore(s: User): number {
-  return Math.max(
-    tsOf(s.last_student_activity_at),
-    tsOf(s.last_coach_activity_at),
-    tsOf(s.last_update),
-    tsOf(s.last_coach_update_at),
-  );
-}
-
-function flavour(tab: ActivityTab, view: ActiveView): string {
-  if (tab === 'quiet') return 'No recent activity from either side.';
-  if (view === 'student_led')
-    return 'Active on their own, with no recent updates from you.';
-  if (view === 'coach_led')
-    return 'You\'ve updated them recently, with no recent activity from the student.';
-  return 'Students with activity lately, whether from them or from you.';
-}
-
 export default function StudentsList() {
   const navigate = useNavigate();
-  // Archived students are hidden here; unarchive lives on the admin page.
-  const studentsQuery = useStudents('recent_update', false);
-  const students = useMemo(() => studentsQuery.data ?? [], [studentsQuery.data]);
-  const loading = studentsQuery.isLoading;
-  const error = studentsQuery.error
-    ? 'Failed to load students. Please try again.'
-    : null;
   const [searchParams, setSearchParams] = useSearchParams();
   const filter = searchParams.get('q') ?? '';
   function setFilter(next: string) {
@@ -101,82 +22,19 @@ export default function StudentsList() {
       return params;
     }, { replace: true });
   }
-  const sortParam = searchParams.get('sort');
-  const sortBy: SortBy =
-    sortParam === 'alphabetical' ? 'alphabetical' : 'recent_update';
-  function setSortBy(next: SortBy) {
-    setSearchParams((prev) => {
-      const params = new URLSearchParams(prev);
-      if (next === 'recent_update') params.delete('sort');
-      else params.set('sort', next);
-      return params;
-    }, { replace: true });
-  }
-  const tabParam = searchParams.get('tab');
-  const activityTab: ActivityTab = isActivityTab(tabParam) ? tabParam : 'active';
-  // The sub-tab pill lives in its own param so it survives switching to the
-  // Quiet tab and back, and never blips through a reset on tab change.
-  const viewParam = searchParams.get('view');
-  const activeView: ActiveView = isActiveView(viewParam) ? viewParam : 'everyone';
-  function setActivityTab(next: ActivityTab) {
-    setSearchParams(
-      (prev) => {
-        const params = new URLSearchParams(prev);
-        if (next === 'active') params.delete('tab');
-        else params.set('tab', next);
-        return params;
-      },
-      { replace: true },
-    );
-  }
-  function setActiveView(next: ActiveView) {
-    setSearchParams(
-      (prev) => {
-        const params = new URLSearchParams(prev);
-        if (next === 'everyone') params.delete('view');
-        else params.set('view', next);
-        return params;
-      },
-      { replace: true },
-    );
-  }
 
-  const now = useMemo(() => Date.now(), []);
-
-  const counts = useMemo(() => {
-    let active = 0, studentLed = 0, coach = 0, quiet = 0;
-    for (const s of students) {
-      const c = categorizeStudent(s, now);
-      if (c === 'active') { active++; if (isStudentLed(s, now)) studentLed++; }
-      else if (c === 'coach_led') coach++;
-      else quiet++;
-    }
-    return { active, studentLed, coach, quiet, activeTotal: active + coach };
-  }, [students, now]);
-
-  const filteredStudents = useMemo(() => {
-    const needle = filter.trim().toLowerCase();
-    let result = students.filter((s) => {
-      if (needle) {
-        const name = s.display_name?.toLowerCase() || '';
-        return name.includes(needle) || s.username.toLowerCase().includes(needle);
-      }
-      const c = categorizeStudent(s, now);
-      if (activityTab === 'quiet') return c === 'quiet';
-      // Active tab: everyone with recent activity on either side, refined by pill.
-      if (c !== 'active' && c !== 'coach_led') return false;
-      if (activeView === 'student_led') return isStudentLed(s, now);
-      if (activeView === 'coach_led') return c === 'coach_led';
-      return true;
-    });
-    if (sortBy === 'alphabetical') {
-      result = [...result].sort((a, b) => (a.display_name || a.username).localeCompare(b.display_name || b.username));
-    } else if (activityTab === 'quiet') {
-      // Order quiet students by most recent activity too, freshest at top.
-      result = [...result].sort((a, b) => recencyScore(b) - recencyScore(a));
-    }
-    return result;
-  }, [students, filter, sortBy, activityTab, activeView, now]);
+  // Archived students are hidden here; unarchive lives on the admin page.
+  const debouncedFilter = useDebouncedValue(filter);
+  const studentsQuery = useInfiniteStudents(debouncedFilter);
+  const students: User[] = useMemo(
+    () => (studentsQuery.data?.pages ?? []).flatMap((page) => page.items),
+    [studentsQuery.data],
+  );
+  const total = studentsQuery.data?.pages[0]?.total ?? 0;
+  const loading = studentsQuery.isLoading;
+  const error = studentsQuery.error
+    ? 'Failed to load students. Please try again.'
+    : null;
 
   function rowActions(student: User) {
     return (
@@ -234,68 +92,13 @@ export default function StudentsList() {
         </Button>
       </div>
 
-      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div className="flex flex-col gap-2">
-          <Tabs value={activityTab} onValueChange={(v) => setActivityTab(v as ActivityTab)}>
-            <TabsList className="w-full sm:w-auto">
-              {ACTIVITY_TABS.map(({ value, label }) => (
-                <TabsTrigger
-                  key={value}
-                  value={value}
-                  className="flex-1 px-2 sm:flex-initial sm:px-3"
-                >
-                  {label}{' '}
-                  <span className="ml-1 rounded-full bg-muted px-1.5 py-0.5 text-xs font-medium text-muted-foreground tabular-nums">
-                    {value === 'active' ? counts.activeTotal : counts.quiet}
-                  </span>
-                </TabsTrigger>
-              ))}
-            </TabsList>
-          </Tabs>
-
-          {activityTab === 'active' && (
-            <Tabs value={activeView} onValueChange={(v) => setActiveView(v as ActiveView)}>
-              <TabsList className="h-8 w-full bg-muted/60 p-0.5 sm:w-auto">
-                {ACTIVE_VIEWS.map(({ value, label }) => (
-                  <TabsTrigger
-                    key={value}
-                    value={value}
-                    className="h-7 flex-1 gap-1 px-2.5 text-xs sm:flex-initial"
-                  >
-                    {label}
-                    <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground tabular-nums">
-                      {value === 'everyone'
-                        ? counts.activeTotal
-                        : value === 'student_led'
-                          ? counts.studentLed
-                          : counts.coach}
-                    </span>
-                  </TabsTrigger>
-                ))}
-              </TabsList>
-            </Tabs>
-          )}
-
-          {/* Reserve two lines only on narrow screens where the flavour text
-            * can wrap; at sm+ every string fits one line, so reserve one line
-            * and avoid an empty band under the copy. */}
-          <div className="mb-2 min-h-[2.5rem] sm:min-h-[1.25rem]">
-            <p className="text-xs leading-tight text-muted-foreground">
-              {flavour(activityTab, activeView)}
-            </p>
-          </div>
-        </div>
-
-        <Select value={sortBy} onValueChange={(v) => setSortBy(v as SortBy)}>
-          <SelectTrigger className="w-full sm:w-[180px]">
-            <SelectValue placeholder="Sort by..." />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="recent_update">Recently active</SelectItem>
-            <SelectItem value="alphabetical">Alphabetical</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
+      <p className="mb-2 text-xs text-muted-foreground">
+        {loading
+          ? 'Loading students'
+          : students.length === total
+            ? `${total} ${total === 1 ? 'student' : 'students'}, most recently active first`
+            : `${students.length} of ${total} students, most recently active first`}
+      </p>
 
       <div className="overflow-hidden rounded-lg border border-border bg-card">
         {loading ? (
@@ -311,9 +114,9 @@ export default function StudentsList() {
               Try again
             </Button>
           </div>
-        ) : filteredStudents.length > 0 ? (
+        ) : students.length > 0 ? (
           <div className="divide-y divide-border">
-            {filteredStudents.map((student) => (
+            {students.map((student) => (
               <StudentRow
                 key={student.id}
                 student={student}
@@ -322,7 +125,18 @@ export default function StudentsList() {
               />
             ))}
           </div>
-        ) : students.length === 0 ? (
+        ) : filter ? (
+          <EmptyState
+            icon={Users}
+            title="No matching students"
+            description="Try a different search or clear the filter."
+            action={
+              <Button variant="outline" onClick={() => setFilter('')}>
+                Clear filter
+              </Button>
+            }
+          />
+        ) : (
           <EmptyState
             icon={Users}
             title="No students yet"
@@ -334,25 +148,19 @@ export default function StudentsList() {
               </Button>
             }
           />
-        ) : (
-          <EmptyState
-            icon={Users}
-            title="No matching students"
-            description={
-              filter
-                ? 'Try a different search or clear the filter.'
-                : 'No students in this view.'
-            }
-            action={
-              filter && (
-                <Button variant="outline" onClick={() => setFilter('')}>
-                  Clear filter
-                </Button>
-              )
-            }
-          />
         )}
       </div>
+
+      {studentsQuery.hasNextPage && (
+        <Button
+          variant="outline"
+          className="mt-3 w-full"
+          disabled={studentsQuery.isFetchingNextPage}
+          onClick={() => studentsQuery.fetchNextPage()}
+        >
+          {studentsQuery.isFetchingNextPage ? 'Loading...' : 'Load more'}
+        </Button>
+      )}
     </div>
   );
 }

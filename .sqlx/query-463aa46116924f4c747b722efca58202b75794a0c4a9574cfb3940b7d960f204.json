@@ -1,0 +1,92 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT a.id AS \"assignment_id!: i64\",\n                  u.id AS \"student_id!: i64\",\n                  u.username AS \"username!: String\",\n                  u.display_name AS \"display_name!: String\",\n                  u.archived AS \"archived!: bool\",\n                  a.assigned_at AS \"assigned_at!: NaiveDateTime\",\n                  a.graduated_at AS \"graduated_at?: NaiveDateTime\",\n                  COALESCE(SUM(CASE WHEN sst.status = 'red'   AND sst.hidden_at IS NULL THEN 1 ELSE 0 END), 0) AS \"red_count!: i64\",\n                  COALESCE(SUM(CASE WHEN sst.status = 'amber' AND sst.hidden_at IS NULL THEN 1 ELSE 0 END), 0) AS \"amber_count!: i64\",\n                  COALESCE(SUM(CASE WHEN sst.status = 'green' AND sst.hidden_at IS NULL THEN 1 ELSE 0 END), 0) AS \"green_count!: i64\",\n                  COALESCE(SUM(CASE WHEN sst.hidden_at IS NULL THEN 1 ELSE 0 END), 0) AS \"total_count!: i64\",\n                  MAX(sst.updated_at) AS \"last_activity_at?: NaiveDateTime\",\n                  MAX(sst.last_student_update_at) AS \"last_student_update_at?: NaiveDateTime\"\n           FROM syllabus_assignments a\n           JOIN users u ON u.id = a.student_id\n           LEFT JOIN student_syllabus_techniques sst ON sst.assignment_id = a.id\n           WHERE a.syllabus_id = ?\n             AND a.unassigned_at IS NULL\n             AND (? = 0 OR lower(u.username) LIKE ?\n                        OR lower(COALESCE(u.display_name, '')) LIKE ?)\n           GROUP BY a.id\n           ORDER BY MAX(datetime(sst.updated_at)) DESC NULLS LAST, a.id DESC\n           LIMIT ? OFFSET ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "assignment_id!: i64",
+        "ordinal": 0,
+        "type_info": "Integer"
+      },
+      {
+        "name": "student_id!: i64",
+        "ordinal": 1,
+        "type_info": "Integer"
+      },
+      {
+        "name": "username!: String",
+        "ordinal": 2,
+        "type_info": "Text"
+      },
+      {
+        "name": "display_name!: String",
+        "ordinal": 3,
+        "type_info": "Text"
+      },
+      {
+        "name": "archived!: bool",
+        "ordinal": 4,
+        "type_info": "Bool"
+      },
+      {
+        "name": "assigned_at!: NaiveDateTime",
+        "ordinal": 5,
+        "type_info": "Datetime"
+      },
+      {
+        "name": "graduated_at?: NaiveDateTime",
+        "ordinal": 6,
+        "type_info": "Datetime"
+      },
+      {
+        "name": "red_count!: i64",
+        "ordinal": 7,
+        "type_info": "Integer"
+      },
+      {
+        "name": "amber_count!: i64",
+        "ordinal": 8,
+        "type_info": "Integer"
+      },
+      {
+        "name": "green_count!: i64",
+        "ordinal": 9,
+        "type_info": "Integer"
+      },
+      {
+        "name": "total_count!: i64",
+        "ordinal": 10,
+        "type_info": "Integer"
+      },
+      {
+        "name": "last_activity_at?: NaiveDateTime",
+        "ordinal": 11,
+        "type_info": "Datetime"
+      },
+      {
+        "name": "last_student_update_at?: NaiveDateTime",
+        "ordinal": 12,
+        "type_info": "Datetime"
+      }
+    ],
+    "parameters": {
+      "Right": 6
+    },
+    "nullable": [
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true
+    ]
+  },
+  "hash": "463aa46116924f4c747b722efca58202b75794a0c4a9574cfb3940b7d960f204"
+}
