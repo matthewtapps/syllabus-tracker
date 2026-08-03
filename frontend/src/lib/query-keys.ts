@@ -10,6 +10,8 @@ export const qk = {
 
   students: (sort?: string, includeArchived?: boolean) =>
     ["students", { sort: sort ?? null, includeArchived: !!includeArchived }] as const,
+  studentsPage: (q: string, limit: number) =>
+    ["students", "page", { q, limit }] as const,
 
   student: (id: number) => ["student", id] as const,
   studentTechniques: (id: number) => ["student", id, "techniques"] as const,
@@ -38,6 +40,9 @@ export const qk = {
   syllabus: (sid: number) => ["syllabus", sid] as const,
   syllabusTechniques: (sid: number) => ["syllabus", sid, "techniques"] as const,
   syllabusStudents: (sid: number) => ["syllabus", sid, "students"] as const,
+  syllabusStudentRows: (sid: number, q: string, limit: number) =>
+    ["syllabus", sid, "students", "rows", { q, limit }] as const,
+  syllabusStats: (sid: number) => ["syllabus", sid, "stats"] as const,
   studentSyllabi: (studentId: number) =>
     ["student", studentId, "syllabi"] as const,
   studentSyllabusTechniques: (studentId: number, syllabusId: number) =>

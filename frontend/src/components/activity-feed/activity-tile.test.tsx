@@ -89,6 +89,8 @@ function assignment(overrides: Partial<SyllabusAssignment> = {}): SyllabusAssign
     amber_count: 1,
     green_count: 0,
     total_count: 2,
+    last_activity_at: null,
+    recent_attempt_count: 0,
     ...overrides,
   };
 }

@@ -425,6 +425,31 @@ export async function updateTechnique(
   return response; // Return raw response instead of throwing
 }
 
+export interface StudentsPage {
+  items: User[];
+  total: number;
+}
+
+export async function getStudentsPage(params: {
+  limit: number;
+  offset: number;
+  q: string;
+  includeArchived?: boolean;
+}): Promise<StudentsPage> {
+  const search = new URLSearchParams({
+    limit: String(params.limit),
+    offset: String(params.offset),
+  });
+  if (params.q) search.set("q", params.q);
+  if (params.includeArchived) search.set("include_archived", "true");
+
+  const response = await fetch(`/api/students/page?${search.toString()}`, {
+    credentials: "include",
+  });
+  if (!response.ok) throw new Error("Failed to fetch students");
+  return await response.json();
+}
+
 export async function getStudents(
   sortBy?: string,
   includeArchived: boolean = false,
@@ -1337,6 +1362,71 @@ export interface SyllabusAssignment {
   amber_count: number;
   green_count: number;
   total_count: number;
+  last_activity_at: string | null;
+  recent_attempt_count: number;
+}
+
+export interface SyllabusStudentRow {
+  student_id: number;
+  username: string;
+  display_name: string;
+  archived: boolean;
+  assignment_id: number;
+  assigned_at: string;
+  graduated_at: string | null;
+  red_count: number;
+  amber_count: number;
+  green_count: number;
+  total_count: number;
+  last_activity_at: string | null;
+  last_student_update_at: string | null;
+}
+
+export interface SyllabusStudentsPage {
+  items: SyllabusStudentRow[];
+  total: number;
+}
+
+export interface SyllabusRecentStudent {
+  student_id: number;
+  name: string;
+  at: string;
+}
+
+export interface SyllabusStats {
+  assigned_count: number;
+  not_started: number;
+  in_progress: number;
+  ready_to_graduate: number;
+  graduated: number;
+  recently_updated: SyllabusRecentStudent[];
+}
+
+export async function getSyllabusStudentRowsApi(
+  syllabusId: number,
+  params: { limit: number; offset: number; q: string },
+): Promise<SyllabusStudentsPage> {
+  const search = new URLSearchParams({
+    limit: String(params.limit),
+    offset: String(params.offset),
+  });
+  if (params.q) search.set("q", params.q);
+  const response = await fetch(
+    `/api/syllabi/${syllabusId}/students/detail?${search.toString()}`,
+    { credentials: "include" },
+  );
+  if (!response.ok) throw response;
+  return await response.json();
+}
+
+export async function getSyllabusStatsApi(
+  syllabusId: number,
+): Promise<SyllabusStats> {
+  const response = await fetch(`/api/syllabi/${syllabusId}/stats`, {
+    credentials: "include",
+  });
+  if (!response.ok) throw response;
+  return await response.json();
 }
 
 export interface SstRow {
