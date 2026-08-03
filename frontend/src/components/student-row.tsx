@@ -1,6 +1,6 @@
 import { type ReactNode } from "react";
 import { Link } from "react-router-dom";
-import { Activity, Archive, ChevronRight, Clock, GraduationCap, Pin, PlayCircle } from "lucide-react";
+import { Activity, Archive, ChevronRight, Clock, GraduationCap, Pin, PlayCircle, Zap } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import type { User } from "@/lib/api";
@@ -60,6 +60,14 @@ export function StudentRow({
         <div className="min-w-0 flex-1 space-y-1.5">
           <div className="flex items-center gap-2">
             <span className="truncate font-medium">{displayName}</span>
+            {recentActivity > 0 && (
+              <span
+                className="shrink-0 text-amber-500"
+                title={`${recentActivity} student action${recentActivity === 1 ? "" : "s"} in the last 7 days`}
+              >
+                <Zap className="h-3.5 w-3.5" aria-label="Working on their own this week" />
+              </span>
+            )}
             {student.archived && (
               <Badge variant="outline" className="shrink-0 gap-1 text-muted-foreground">
                 <Archive className="h-3 w-3" aria-hidden />
