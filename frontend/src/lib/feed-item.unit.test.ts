@@ -102,15 +102,13 @@ describe("resolveFeedItem subject", () => {
       row({ verb: "camp_technique_added", context_kind: "camp", camp_id: 9, camp_name: "Winter Prep", sst_id: null }),
     );
     expect(item.subject).toEqual({ kind: "technique", thread: null });
-    expect(item.gated).toBe(true);
   });
 
-  it("is header-only and gated for camp_created", () => {
+  it("is header-only for camp_created", () => {
     const item = resolveFeedItem(
       row({ verb: "camp_created", context_kind: "camp", camp_id: 9, technique_id: null, sst_id: null }),
     );
     expect(item.subject).toEqual({ kind: "none" });
-    expect(item.gated).toBe(true);
   });
 });
 
@@ -209,13 +207,13 @@ describe("every activity verb surfaces correctly", () => {
     { name: "comment on video", verb: "thread_comment_posted", over: { thread_id: 7, video_id: 11, video_title: "Drill", context_kind: "library", sst_id: null }, subject: video(7), caption: "Commented", surface: LIBRARY },
     { name: "comment on profile", verb: "thread_comment_posted", over: { thread_id: 7, context_kind: null, technique_id: null, sst_id: null }, subject: { kind: "thread", anchorKind: "student_profile", anchorId: 4, threadId: 7 }, caption: "Commented", surface: null },
 
-    // --- camp epic (gated) ---
-    { name: "camp_created", verb: "camp_created", over: { context_kind: "camp", camp_id: 9, camp_name: "Winter Prep", technique_id: null, sst_id: null }, subject: { kind: "none" }, caption: "Started", surface: { label: "Winter Prep", href: "/camps/9" }, gated: true },
-    { name: "camp_technique_added", verb: "camp_technique_added", over: { context_kind: "camp", camp_id: 9, camp_name: "Winter Prep", sst_id: null }, subject: technique, caption: "Added", surface: { label: "Winter Prep", href: "/camps/9" }, gated: true },
-    { name: "camp_archived", verb: "camp_archived", over: { context_kind: "camp", camp_id: 9, camp_name: "Winter Prep", technique_id: null, sst_id: null }, subject: { kind: "none" }, caption: "Archived", surface: { label: "Winter Prep", href: "/camps/9" }, gated: true },
+    // --- camp epic ---
+    { name: "camp_created", verb: "camp_created", over: { context_kind: "camp", camp_id: 9, camp_name: "Winter Prep", technique_id: null, sst_id: null }, subject: { kind: "none" }, caption: "Started", surface: { label: "Winter Prep", href: "/camps/9" } },
+    { name: "camp_technique_added", verb: "camp_technique_added", over: { context_kind: "camp", camp_id: 9, camp_name: "Winter Prep", sst_id: null }, subject: technique, caption: "Added", surface: { label: "Winter Prep", href: "/camps/9" } },
+    { name: "camp_archived", verb: "camp_archived", over: { context_kind: "camp", camp_id: 9, camp_name: "Winter Prep", technique_id: null, sst_id: null }, subject: { kind: "none" }, caption: "Archived", surface: { label: "Winter Prep", href: "/camps/9" } },
   ];
 
-  it.each(cases)("$name", ({ verb, over, subject, caption, surface, gated }) => {
+  it.each(cases)("$name", ({ verb, over, subject, caption, surface }) => {
     const item = resolveFeedItem(row({ verb, ...over }));
     expect(item.subject).toEqual(subject);
     expect(item.caption.text).toBe(caption);
@@ -224,6 +222,5 @@ describe("every activity verb surfaces correctly", () => {
     } else {
       expect(item.path).toEqual([]);
     }
-    expect(item.gated).toBe(gated ?? false);
   });
 });

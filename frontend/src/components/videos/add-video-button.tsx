@@ -1,22 +1,21 @@
 import { useState } from "react";
 import { PlusIcon } from "lucide-react";
-import type { Video } from "@/lib/api";
+import { toast } from "sonner";
+import type { Video, VideoParentInput } from "@/lib/api";
+import { addVideoReference, linkVideo, uploadVideo } from "@/lib/api";
+import { isValidationErrorResponse } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-} from "@/components/ui/sheet";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { LinkVideoForm } from "./link-video-form";
-import { UploadVideoForm } from "./upload-video-form";
+  AddOrSelectVideoSheet,
+  type VideoDetails,
+  type VideoSource,
+} from "./add-or-select-video-sheet";
 
-/** When the add-video flow runs on a student's syllabus technique, the forms
- *  surface a "also add to global library" switch. When off, the new video is
+/** When the add-video flow runs on a student's syllabus technique, the sheet
+ *  surfaces a "also add to global library" switch. When off, the video is
  *  scoped to this student's syllabus technique (T3) rather than the global
- *  technique (T1). Absent in library/other contexts (no switch, T1 default). */
+ *  technique (T1), whether it is uploaded, linked, or referenced from a clip
+ *  that already exists. Absent in library/other contexts (no switch, T1). */
 export interface StudentSyllabusScope {
   studentId: number;
   syllabusId: number;
@@ -35,71 +34,90 @@ export function AddVideoButton({
   onAdded,
 }: AddVideoButtonProps) {
   const [open, setOpen] = useState(false);
-  const [tab, setTab] = useState<"upload" | "link">("upload");
+  const [progressPct, setProgressPct] = useState<number | null>(null);
 
-  function close() {
-    setOpen(false);
+  async function commit(source: VideoSource, details: VideoDetails) {
+    const title = details.title ?? "";
+    // In the library context there's no switch: parent stays undefined (T1).
+    // In a student-syllabus context, switching off scopes to this student's
+    // syllabus technique (T3).
+    const parent: VideoParentInput | undefined =
+      studentSyllabus && !details.alsoGlobal
+        ? { kind: "student_syllabus_technique", id: studentSyllabus.sstId }
+        : undefined;
+    const scoped = studentSyllabus && !details.alsoGlobal;
+
+    try {
+      if (source.kind === "file") {
+        setProgressPct(0);
+        const result = await uploadVideo(
+          techniqueId,
+          source.file,
+          { title },
+          (loaded, total) => {
+            if (total > 0) setProgressPct(Math.round((loaded / total) * 100));
+          },
+          parent,
+        );
+        toast.success(
+          scoped ? "Video added for this student" : "Upload received. Processing now...",
+        );
+        onAdded(result.video_id);
+      } else if (source.kind === "link") {
+        const video = await linkVideo(techniqueId, { title, url: source.url }, parent);
+        toast.success(
+          scoped ? "Video added for this student" : "Video added to the library",
+        );
+        onAdded(video);
+      } else {
+        await addVideoReference(techniqueId, source.video.id, parent, title || undefined);
+        toast.success(
+          scoped ? "Video added for this student" : "Video added to this technique",
+        );
+        onAdded(source.video.id);
+      }
+    } catch (err) {
+      toast.error(await describeError(err));
+      throw err;
+    } finally {
+      setProgressPct(null);
+    }
   }
 
   return (
     <>
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        onClick={() => setOpen(true)}
-      >
+      <Button type="button" variant="outline" size="sm" onClick={() => setOpen(true)}>
         <PlusIcon className="mr-1.5 h-4 w-4" aria-hidden />
         Add video
       </Button>
 
-      <Sheet open={open} onOpenChange={setOpen}>
-        <SheetContent
-          side="right"
-          className="flex w-full flex-col gap-4 overflow-y-auto p-4 sm:max-w-md sm:p-6"
-        >
-          <SheetHeader className="space-y-1 p-0 text-left">
-            <SheetTitle>Add video</SheetTitle>
-            <SheetDescription>
-              Upload a clip from your device or paste a link from YouTube,
-              Vimeo, or Google Drive.
-            </SheetDescription>
-          </SheetHeader>
-
-          <Tabs value={tab} onValueChange={(value) => setTab(value as "upload" | "link")}>
-            <TabsList className="w-full">
-              <TabsTrigger value="upload" className="flex-1">
-                Upload file
-              </TabsTrigger>
-              <TabsTrigger value="link" className="flex-1">
-                Paste link
-              </TabsTrigger>
-            </TabsList>
-            <TabsContent value="upload" className="pt-4">
-              <UploadVideoForm
-                techniqueId={techniqueId}
-                studentSyllabus={studentSyllabus}
-                onCancel={close}
-                onUploaded={(videoId) => {
-                  close();
-                  onAdded(videoId);
-                }}
-              />
-            </TabsContent>
-            <TabsContent value="link" className="pt-4">
-              <LinkVideoForm
-                techniqueId={techniqueId}
-                studentSyllabus={studentSyllabus}
-                onCancel={close}
-                onLinked={(video) => {
-                  close();
-                  onAdded(video);
-                }}
-              />
-            </TabsContent>
-          </Tabs>
-        </SheetContent>
-      </Sheet>
+      <AddOrSelectVideoSheet
+        open={open}
+        onOpenChange={setOpen}
+        browseStudentId={studentSyllabus?.studentId}
+        titleMode="required"
+        showScopeSwitch={studentSyllabus != null}
+        progressPct={progressPct}
+        onConfirm={commit}
+      />
     </>
   );
+}
+
+/** The upload and link calls both reject with the raw Response, so a server
+ *  validation message beats the generic failure text when there is one. */
+async function describeError(err: unknown): Promise<string> {
+  if (err instanceof Response) {
+    try {
+      const body: unknown = await err.json();
+      if (isValidationErrorResponse(body)) {
+        const first = Object.values(body.errors).flat()[0];
+        if (typeof first === "string") return first;
+      }
+    } catch {
+      /* not a validation envelope */
+    }
+    return "Failed to add video";
+  }
+  return err instanceof Error ? err.message : "Failed to add video";
 }

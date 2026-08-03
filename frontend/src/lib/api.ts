@@ -1010,6 +1010,9 @@ export interface Video {
   /** Set only on coach views of a specific student's technique page when an
    * explicit per-student override exists for this video. Omitted otherwise. */
   override_for_student?: "show" | "hide";
+  /** Set when this row is a clip referenced onto the surface rather than owned
+   * by it. `hidden_at` then belongs to the reference, not the clip. */
+  reference_id?: number;
   /** Number of comment threads on this video the viewer can see. Defaults to
    * 0 from list endpoints that don't annotate it. */
   comment_count?: number;
@@ -1177,6 +1180,49 @@ export async function linkVideo(
   });
   if (!response.ok) throw response;
   return (await response.json()) as Video;
+}
+
+/** Shows an existing clip on a technique (or, with a parent, a student's
+ *  syllabus technique) without moving it off its own parent. */
+export async function addVideoReference(
+  techniqueId: number,
+  videoId: number,
+  parent?: VideoParentInput,
+  title?: string,
+): Promise<{ reference_id: number }> {
+  const response = await fetch(`/api/techniques/${techniqueId}/videos/references`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify({
+      video_id: videoId,
+      title,
+      ...(parent ? { parent_kind: parent.kind, parent_id: parent.id } : {}),
+    }),
+  });
+  if (!response.ok) throw response;
+  return (await response.json()) as { reference_id: number };
+}
+
+/** Hides or shows a referenced clip at this destination only. */
+export async function setVideoReferenceHidden(
+  referenceId: number,
+  hidden: boolean,
+): Promise<Response> {
+  return fetch(`/api/video-references/${referenceId}/hidden`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify({ hidden }),
+  });
+}
+
+export async function removeVideoReference(referenceId: number): Promise<void> {
+  const response = await fetch(`/api/video-references/${referenceId}`, {
+    method: "DELETE",
+    credentials: "include",
+  });
+  if (!response.ok) throw response;
 }
 
 export async function updateVideo(
@@ -1913,6 +1959,8 @@ export interface CommentView {
   body: string | null;
   /** Optional video attached to this comment, rendered under the text. */
   video: Video | null;
+  /** Seconds into the parent video this comment references; null if not anchored. */
+  video_ts_seconds: number | null;
   created_at: string;
   deleted_at: string | null;
 }
@@ -1946,6 +1994,72 @@ export interface CreateThreadInput {
   body: string;
   /** Optional draft video to attach to the root post. */
   attached_video_id?: number | null;
+  /** True when attached_video_id references an existing video (no reparent). */
+  attached_video_is_reference?: boolean | null;
+  /** Title override for a reference video that has no title yet. */
+  attached_video_title?: string | null;
+}
+
+// ============================================================
+// Video browse (Sillybus navigator)
+// ============================================================
+
+export interface BrowseParent {
+  id: number;
+  name: string;
+  video_count: number;
+}
+
+/** Which surface a browsed clip was found on. `provenance` says the same thing
+ *  for a reader; this says it for code. */
+export type BrowseSource = "library" | "camp" | "syllabus";
+
+export interface BrowseVideo {
+  id: number;
+  /** The clip's own stored title, absent when it has none. Offer this, not
+   *  `display_title`, when asking someone to name the clip. */
+  title?: string | null;
+  /** What to show a reader: may be borrowed from the post that carried an
+   *  untitled clip, and that name belongs to the post. */
+  display_title?: string | null;
+  duration_seconds?: number | null;
+  external_url?: string | null;
+  provenance: string;
+  source: BrowseSource;
+}
+
+export type BrowseResult =
+  | { kind: "parents"; parents: BrowseParent[] }
+  | { kind: "videos"; videos: BrowseVideo[] };
+
+/** Omitting `studentId` means no student is in context (the global library);
+ *  `allStudents` reaches past the student in context into everyone's camps.
+ *  Both are coach-only and the server refuses rather than quietly narrowing. */
+export async function browseVideos(params: {
+  studentId?: number;
+  allStudents?: boolean;
+  source?: "library" | "camps" | "syllabuses";
+  parentId?: number;
+  q?: string;
+}): Promise<BrowseResult> {
+  const qs = new URLSearchParams();
+  if (params.studentId != null) qs.set("student_id", String(params.studentId));
+  if (params.allStudents) qs.set("all_students", "true");
+  if (params.source) qs.set("source", params.source);
+  if (params.parentId != null) qs.set("parent_id", String(params.parentId));
+  if (params.q) qs.set("q", params.q);
+  const res = await fetch(`/api/videos/browse?${qs.toString()}`, {
+    credentials: "include",
+  });
+  if (!res.ok) throw new Error(`Browse failed: ${res.statusText}`);
+  return res.json() as Promise<BrowseResult>;
+}
+
+/** One thread with its comments. 404s when the viewer may not read it. */
+export async function getThread(threadId: number): Promise<ThreadView> {
+  const res = await fetch(`/api/threads/${threadId}`, { credentials: "include" });
+  if (!res.ok) throw new Error(`Failed to load thread: ${res.statusText}`);
+  return (await res.json()) as ThreadView;
 }
 
 export async function listThreads(
@@ -1980,6 +2094,9 @@ export async function createComment(
   body: string,
   parentCommentId?: number | null,
   videoId?: number | null,
+  videoIsReference?: boolean | null,
+  videoTsSeconds?: number | null,
+  videoTitle?: string | null,
 ): Promise<Response> {
   return fetch(`/api/threads/${threadId}/comments`, {
     method: "POST",
@@ -1989,6 +2106,9 @@ export async function createComment(
       body,
       parent_comment_id: parentCommentId ?? null,
       video_id: videoId ?? null,
+      video_is_reference: videoIsReference ?? false,
+      video_ts_seconds: videoTsSeconds ?? null,
+      video_title: videoTitle ?? null,
     }),
   });
 }
@@ -2063,25 +2183,6 @@ export interface Camp {
   description: string | null;
   created_at: string;
   archived_at: string | null;
-  // The list endpoint (GET /api/camps) serializes the bare DB row, which only
-  // carries references_camp_id. references_camp_name is resolved and sent ONLY
-  // by the detail endpoint (CampDetail below).
-  references_camp_id: number | null;
-}
-
-export interface CampTechnique {
-  technique_id: number;
-  name: string;
-  description: string | null;
-  position: number;
-  tags: Tag[];
-  video_count: number;
-}
-
-export interface CampDetail extends Camp {
-  techniques: CampTechnique[];
-  /// Name of the camp this one builds on, resolved server-side.
-  references_camp_name: string | null;
 }
 
 /** Row from GET /api/camps (enriched list payload). */
@@ -2093,8 +2194,6 @@ export interface CampSummary {
   description: string | null;
   created_at: string;
   archived_at: string | null;
-  references_camp_id: number | null;
-  technique_count: number;
   video_count: number;
   last_activity_at: string | null;
 }
@@ -2107,17 +2206,16 @@ export async function getCampsForStudent(studentId: number): Promise<CampSummary
   return ((await res.json()) as { camps: CampSummary[] }).camps;
 }
 
-export async function getCamp(id: number): Promise<CampDetail> {
+export async function getCamp(id: number): Promise<Camp> {
   const res = await fetch(`/api/camps/${id}`, { credentials: "include" });
   if (!res.ok) throw res;
-  return (await res.json()) as CampDetail;
+  return (await res.json()) as Camp;
 }
 
 export async function createCamp(data: {
   student_id: number;
   name: string;
   description: string | null;
-  references_camp_id?: number | null;
 }): Promise<{ id: number }> {
   const res = await fetch("/api/camps", {
     method: "POST",
@@ -2150,31 +2248,7 @@ export async function updateCamp(
   if (!res.ok) throw res;
 }
 
-export async function addCampTechnique(
-  campId: number,
-  techniqueId: number,
-): Promise<void> {
-  const res = await fetch(`/api/camps/${campId}/techniques`, {
-    method: "POST",
-    credentials: "include",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ technique_id: techniqueId }),
-  });
-  if (!res.ok) throw res;
-}
-
-export async function removeCampTechnique(
-  campId: number,
-  techniqueId: number,
-): Promise<void> {
-  const res = await fetch(`/api/camps/${campId}/techniques/${techniqueId}`, {
-    method: "DELETE",
-    credentials: "include",
-  });
-  if (!res.ok) throw res;
-}
-
-/** CC-009/010: Create a brand-new technique inside a camp and add it there. */
+/** CC-009/010: Create a brand-new technique inside a camp. */
 export async function createCampTechnique(
   campId: number,
   data: { name: string; description: string; scope: "global" | "scoped" },
@@ -2189,21 +2263,129 @@ export async function createCampTechnique(
   return res.json();
 }
 
-export async function promotePinnedToCamp(
-  studentId: number,
-  techniqueId: number,
+/** Attaches existing techniques to a camp. Idempotent; starts no discussion.
+ *  Returns the ids this call actually added. */
+export async function attachCampTechniques(
   campId: number,
-): Promise<void> {
-  const res = await fetch(
-    `/api/students/${studentId}/pinned/${techniqueId}/promote`,
-    {
-      method: "POST",
-      credentials: "include",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ camp_id: campId }),
-    },
-  );
+  techniqueIds: number[],
+): Promise<{ added: number[] }> {
+  const res = await fetch(`/api/camps/${campId}/techniques`, {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ technique_ids: techniqueIds }),
+  });
   if (!res.ok) throw res;
+  return res.json();
+}
+
+// ============================================================
+// Camp search (Phase 4)
+// ============================================================
+
+/** A technique hit from camp search. */
+export interface CampTechniqueHit {
+  thread_id: number;
+  technique_id: number;
+  technique_name: string;
+}
+
+/** A video hit from camp search. */
+export interface CampVideoHit {
+  video_id: number;
+  title: string;
+  /** The thread whose attached_video_id points to this video, if any. */
+  thread_id: number | null;
+}
+
+/** A thread/comment body hit from camp search. */
+export interface CampThreadHit {
+  thread_id: number;
+  /** A snippet of the matching body (truncated at 200 chars). */
+  snippet: string;
+  /** true if the match came from a comment body rather than the root post. */
+  is_comment: boolean;
+}
+
+export interface CampSearchResult {
+  techniques: CampTechniqueHit[];
+  videos: CampVideoHit[];
+  threads: CampThreadHit[];
+}
+
+/** GET /api/camps/:id/search?q=&kind= */
+export async function searchCamp(
+  campId: number,
+  q: string,
+  kind?: "technique" | "video" | "thread",
+): Promise<CampSearchResult> {
+  const params = new URLSearchParams({ q });
+  if (kind) params.set("kind", kind);
+  const res = await fetch(`/api/camps/${campId}/search?${params.toString()}`, {
+    credentials: "include",
+  });
+  if (!res.ok) throw res;
+  return (await res.json()) as CampSearchResult;
+}
+
+/**
+ * The techniques attached to a camp, in the library row shape.
+ *
+ * Not the library list: that one filters to `is_global`, so a camp-scoped
+ * technique created inside the camp is missing from it.
+ */
+export async function getCampTechniques(campId: number): Promise<LibraryTechniqueRow[]> {
+  const res = await fetch(`/api/camps/${campId}/techniques`, {
+    credentials: "include",
+  });
+  if (!res.ok) throw res;
+  return ((await res.json()) as { techniques: LibraryTechniqueRow[] }).techniques;
+}
+
+/**
+ * One component of a camp: a technique, a note, or a camp-owned clip, hydrated
+ * deeply enough to render fully expanded. `threads` is the component's
+ * discussion (a technique's camp threads, a clip's comment threads); a note's
+ * own thread is the component, so it carries `thread` instead.
+ */
+export interface CampComponent {
+  kind: "technique" | "note" | "video";
+  /** The technique, thread or video id, per kind. */
+  id: number;
+  last_touch: string;
+  technique: LibraryTechniqueRow | null;
+  thread: ThreadView | null;
+  video: Video | null;
+  threads: ThreadView[];
+}
+
+/** Keyset cursor for the component read: ids only order within a kind. */
+export interface CampComponentCursor {
+  last_touch: string;
+  kind: string;
+  id: number;
+}
+
+export interface CampComponentsPage {
+  components: CampComponent[];
+  next_cursor: CampComponentCursor | null;
+}
+
+/** GET /api/camps/:id/components: the camp's content, newest touch first. */
+export async function getCampComponents(
+  campId: number,
+  params?: { before?: CampComponentCursor | null; limit?: number },
+): Promise<CampComponentsPage> {
+  const url = new URL(`/api/camps/${campId}/components`, window.location.origin);
+  if (params?.before) {
+    url.searchParams.set("before_ts", params.before.last_touch);
+    url.searchParams.set("before_kind", params.before.kind);
+    url.searchParams.set("before_id", String(params.before.id));
+  }
+  if (params?.limit !== undefined) url.searchParams.set("limit", String(params.limit));
+  const res = await fetch(url.toString(), { credentials: "include" });
+  if (!res.ok) throw res;
+  return (await res.json()) as CampComponentsPage;
 }
 
 export async function getCampVideos(campId: number): Promise<Video[]> {
@@ -2212,47 +2394,6 @@ export async function getCampVideos(campId: number): Promise<Video[]> {
   });
   if (!res.ok) throw res;
   return ((await res.json()) as { videos: Video[] }).videos;
-}
-
-/**
- * The camp-only reference videos attached to a technique within this camp.
- * Returns ONLY the camp-scoped refs; the technique's global videos come from
- * `getTechniqueVideos`. Readable by the coach or the camp's own student.
- */
-export async function getCampTechniqueVideos(
-  campId: number,
-  techniqueId: number,
-): Promise<Video[]> {
-  const res = await fetch(
-    `/api/camps/${campId}/techniques/${techniqueId}/videos`,
-    { credentials: "include" },
-  );
-  if (!res.ok) throw res;
-  return ((await res.json()) as { videos: Video[] }).videos;
-}
-
-/**
- * Attach one of this camp's footage videos to a technique within the camp.
- * `camp_only` keeps it as camp-scoped reference footage (surfaced only inside
- * this camp); `global` promotes it to a normal technique video visible
- * everywhere the technique appears. The backend rejects (404) any `video_id`
- * that isn't this camp's own footage. Returns 204 on success.
- */
-export async function addCampTechniqueVideo(
-  campId: number,
-  techniqueId: number,
-  data: { video_id: number; scope: "camp_only" | "global" },
-): Promise<void> {
-  const res = await fetch(
-    `/api/camps/${campId}/techniques/${techniqueId}/videos`,
-    {
-      method: "POST",
-      credentials: "include",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(data),
-    },
-  );
-  if (!res.ok) throw res;
 }
 
 export async function uploadCampVideo(

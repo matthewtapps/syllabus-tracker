@@ -102,7 +102,7 @@ mod tests {
         tx.commit().await.unwrap();
 
         // While the video exists, the watch row is in the feed with its title.
-        let before = feed(&db.pool, alice, Role::Student, None, 50).await.unwrap();
+        let before = feed(&db.pool, alice, Role::Student, None, 50, None).await.unwrap();
         let watched = before
             .iter()
             .find(|r| r.video_id == Some(video_id))
@@ -112,7 +112,7 @@ mod tests {
         // Soft-delete the video: its activity row must drop out of the feed
         // rather than render as a dead "watched a video" line.
         assert!(delete_video(&db.pool, video_id).await.unwrap());
-        let after = feed(&db.pool, alice, Role::Student, None, 50).await.unwrap();
+        let after = feed(&db.pool, alice, Role::Student, None, 50, None).await.unwrap();
         assert!(
             !after.iter().any(|r| r.video_id == Some(video_id)),
             "orphaned video activity must be hidden once the video is deleted"
@@ -406,7 +406,7 @@ mod tests {
         tx.commit().await.unwrap();
 
         // alice's feed (student role) should include both rows.
-        let rows = feed(&db.pool, alice, Role::Student, None, 50)
+        let rows = feed(&db.pool, alice, Role::Student, None, 50, None)
             .await
             .unwrap();
         assert_eq!(rows.len(), 2, "both rows appear in alice's feed");
@@ -453,7 +453,7 @@ mod tests {
         .unwrap();
         tx.commit().await.unwrap();
 
-        let rows = feed(&db.pool, coach, Role::Coach, None, 50).await.unwrap();
+        let rows = feed(&db.pool, coach, Role::Coach, None, 50, None).await.unwrap();
         let own = rows
             .iter()
             .find(|r| r.verb == "syllabus_assigned" && r.actor_user_id == coach);
@@ -493,7 +493,7 @@ mod tests {
         }
 
         // Page 1: limit 3, no before.
-        let page1 = feed(&db.pool, alice, Role::Student, None, 3).await.unwrap();
+        let page1 = feed(&db.pool, alice, Role::Student, None, 3, None).await.unwrap();
         assert_eq!(page1.len(), 3, "page 1 has 3 rows");
 
         // Extract the keyset cursor from the last row of page 1.
@@ -517,6 +517,7 @@ mod tests {
             Role::Student,
             Some((before_ts, before_id)),
             3,
+            None,
         )
         .await
         .unwrap();
@@ -574,7 +575,7 @@ mod tests {
         .unwrap();
         tx.commit().await.unwrap();
 
-        let rows = feed(&db.pool, coach, Role::Coach, None, 50).await.unwrap();
+        let rows = feed(&db.pool, coach, Role::Coach, None, 50, None).await.unwrap();
 
         // Both rows appear: the coach's own and alice's.
         assert_eq!(rows.len(), 2, "gym feed lists own and other-actor rows");
@@ -717,13 +718,13 @@ mod tests {
         .unwrap();
         tx.commit().await.unwrap();
 
-        let alice_rows = feed(&db.pool, alice, Role::Student, None, 50)
+        let alice_rows = feed(&db.pool, alice, Role::Student, None, 50, None)
             .await
             .unwrap();
         assert_eq!(alice_rows.len(), 1, "alice sees only her own row");
         assert_eq!(alice_rows[0].verb, "syllabus_assigned");
 
-        let bob_rows = feed(&db.pool, bob, Role::Student, None, 50).await.unwrap();
+        let bob_rows = feed(&db.pool, bob, Role::Student, None, 50, None).await.unwrap();
         assert_eq!(bob_rows.len(), 1, "bob sees only his own row");
         assert_eq!(bob_rows[0].verb, "syllabus_graduated");
     }
@@ -1213,11 +1214,11 @@ mod tests {
         let has_edit = |rows: &[crate::db::ActivityRow]| {
             rows.iter().any(|r| r.verb == "technique_edited")
         };
-        assert!(has_edit(&feed(&db.pool, alice, Role::Student, None, 50).await.unwrap()), "assigned student sees it");
-        assert!(has_edit(&feed(&db.pool, bob, Role::Student, None, 50).await.unwrap()), "pinned student sees it");
-        assert!(!has_edit(&feed(&db.pool, carol, Role::Student, None, 50).await.unwrap()), "unrelated student does not");
+        assert!(has_edit(&feed(&db.pool, alice, Role::Student, None, 50, None).await.unwrap()), "assigned student sees it");
+        assert!(has_edit(&feed(&db.pool, bob, Role::Student, None, 50, None).await.unwrap()), "pinned student sees it");
+        assert!(!has_edit(&feed(&db.pool, carol, Role::Student, None, 50, None).await.unwrap()), "unrelated student does not");
 
-        let coach_rows = feed(&db.pool, coach, Role::Coach, None, 50).await.unwrap();
+        let coach_rows = feed(&db.pool, coach, Role::Coach, None, 50, None).await.unwrap();
         assert_eq!(
             coach_rows.iter().filter(|r| r.verb == "technique_edited").count(),
             1,
@@ -1268,13 +1269,13 @@ mod tests {
         let sees = |rows: &[crate::db::ActivityRow]| {
             rows.iter().any(|r| r.verb == "syllabus_technique_added")
         };
-        assert!(sees(&feed(&db.pool, alice, Role::Student, None, 50).await.unwrap()), "assigned student sees it");
-        assert!(!sees(&feed(&db.pool, carol, Role::Student, None, 50).await.unwrap()), "unassigned student does not");
+        assert!(sees(&feed(&db.pool, alice, Role::Student, None, 50, None).await.unwrap()), "assigned student sees it");
+        assert!(!sees(&feed(&db.pool, carol, Role::Student, None, 50, None).await.unwrap()), "unassigned student does not");
 
         // Unassign alice; the broadcast drops off her live feed.
         crate::db::unassign(&db.pool, coach, aid).await.unwrap();
         assert!(
-            !sees(&feed(&db.pool, alice, Role::Student, None, 50).await.unwrap()),
+            !sees(&feed(&db.pool, alice, Role::Student, None, 50, None).await.unwrap()),
             "after unassign the broadcast is no longer relevant"
         );
     }

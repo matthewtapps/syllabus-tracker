@@ -1,4 +1,10 @@
-import { useAllUsers, useCamp, useSyllabi, useStudentSyllabi } from "@/lib/queries";
+import {
+  useAllUsers,
+  useCamp,
+  useCampTechniques,
+  useSyllabi,
+  useStudentSyllabi,
+} from "@/lib/queries";
 import type { DynamicKey, RawCrumb } from "./breadcrumb-config";
 
 /**
@@ -19,12 +25,15 @@ export function useBreadcrumbLabels(chain: RawCrumb[]): (crumb: RawCrumb) => str
     ?.params.syllabusId;
   const globalSyllabusIdRaw = chain.find((c) => c.params.id !== undefined && c.pattern === "/syllabi/:id")?.params.id;
   const campIdRaw = chain.find((c) => c.params.campId !== undefined)?.params.campId;
+  const techniqueIdRaw = chain.find((c) => c.params.techniqueId !== undefined)?.params
+    .techniqueId;
 
   const studentId = studentIdRaw !== undefined ? Number(studentIdRaw) : undefined;
   const syllabusId = syllabusIdRaw !== undefined ? Number(syllabusIdRaw) : undefined;
   const globalSyllabusId =
     globalSyllabusIdRaw !== undefined ? Number(globalSyllabusIdRaw) : undefined;
   const campId = campIdRaw !== undefined ? Number(campIdRaw) : undefined;
+  const techniqueId = techniqueIdRaw !== undefined ? Number(techniqueIdRaw) : undefined;
 
   // --- studentName: look up from the all-users list ---
   const allUsersQuery = useAllUsers();
@@ -62,11 +71,25 @@ export function useBreadcrumbLabels(chain: RawCrumb[]): (crumb: RawCrumb) => str
   );
   const campName = campQuery.data?.name ?? "Camp";
 
+  // --- campTechniqueName: the technique a camp item route addresses. Read from
+  // the camp's own technique list, the same query the tile and the page use, so
+  // this shares their cache entry and resolves camp-scoped techniques too.
+  const validTechniqueId =
+    typeof techniqueId === "number" && Number.isFinite(techniqueId) ? techniqueId : undefined;
+  const campTechniquesQuery = useCampTechniques(
+    validTechniqueId !== undefined ? campId : undefined,
+  );
+  const campTechniqueName =
+    (validTechniqueId !== undefined
+      ? (campTechniquesQuery.data ?? []).find((t) => t.id === validTechniqueId)?.name
+      : undefined) ?? "Technique";
+
   const resolvers: Record<DynamicKey, string> = {
     studentName,
     studentSyllabusName,
     globalSyllabusName,
     campName,
+    campTechniqueName,
   };
 
   return (crumb: RawCrumb): string => {

@@ -14,7 +14,6 @@ import type { AnchorKind } from "./api";
 import { activityCaption, type ActivityCaption } from "./activity-caption";
 import {
   activitySurface,
-  isGatedEpicRow,
   rowToViewContext,
   viewContextHref,
   viewContextSurfaceHref,
@@ -69,8 +68,6 @@ export interface FeedItem {
   caption: ActivityCaption;
   /** Surface → noun crumbs, after the actor/target the header renders itself. */
   path: Crumb[];
-  /** True for the camp epic that is hidden on production. */
-  gated: boolean;
 }
 
 /** The one place the row's meaning is decided. Pure; never throws. */
@@ -80,7 +77,6 @@ export function resolveFeedItem(row: ActivityRow): FeedItem {
     subject: resolveSubject(row, context),
     caption: activityCaption(row),
     path: buildPath(row, context),
-    gated: isGatedEpicRow(row),
   };
 }
 
@@ -104,6 +100,19 @@ function resolveSubject(row: ActivityRow, context: ViewContext | null): Subject 
   //    collapsed technique row plus that one thread.
   if (isComment) {
     if (row.thread_id == null) return { kind: "none" };
+    // A camp_technique comment: camp + technique together mean "render the
+    // technique card inside this camp". Must be checked BEFORE the generic
+    // camp branch so it doesn't collapse to a plain camp thread tile.
+    if (row.camp_id != null && row.technique_id != null && row.context_kind === "camp") {
+      return {
+        kind: "technique",
+        thread: {
+          anchorKind: "camp_technique",
+          anchorId: row.technique_id,
+          threadId: row.thread_id,
+        },
+      };
+    }
     if (row.camp_id != null) {
       return { kind: "thread", anchorKind: "camp", anchorId: row.camp_id, threadId: row.thread_id };
     }

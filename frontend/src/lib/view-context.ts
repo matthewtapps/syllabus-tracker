@@ -21,7 +21,14 @@ export type ViewContext =
       sst?: EntityRef;
       video?: EntityRef;
     }
-  | { kind: "camp"; camp: EntityRef; video?: EntityRef };
+  | {
+      kind: "camp";
+      camp: EntityRef;
+      /** The camp technique this row acted on. Addresses its own page under the
+       *  camp; omitted for camp-level events (created/archived). */
+      technique?: EntityRef;
+      video?: EntityRef;
+    };
 
 /** The one place deep-link routing lives. Pure. */
 export function viewContextHref(ctx: ViewContext): string {
@@ -41,8 +48,15 @@ export function viewContextHref(ctx: ViewContext): string {
       return `${base}?focus=${refToken(ctx.sst)}${video}`;
     }
     case "camp": {
-      const video = ctx.video ? `&video=${ctx.video.id}` : "";
-      return `/camps/${ctx.camp.id}?focus=${refToken(ctx.camp)}${video}`;
+      // A camp OWNS its content and renders it in full, so an item is
+      // addressed by anchoring the camp page at it rather than by a route of
+      // its own. `?video=` still scrolls to the clip inside whichever
+      // component holds it. The per-item routes survive as permalinks.
+      const params = new URLSearchParams();
+      if (ctx.technique) params.set("technique", String(ctx.technique.id));
+      if (ctx.video) params.set("video", String(ctx.video.id));
+      const query = params.toString();
+      return `/camps/${ctx.camp.id}${query ? `?${query}` : ""}`;
     }
   }
 }
@@ -62,6 +76,28 @@ export function viewContextSurfaceHref(ctx: ViewContext): string {
     case "camp":
       return `/camps/${ctx.camp.id}`;
   }
+}
+
+/**
+ * Where a feed tile navigates: the same destination the row's breadcrumb links
+ * to, optionally targeting one thread inside it with `?thread=`.
+ *
+ * A tile with no resolvable surface falls back to the technique in the global
+ * library, which is where a technique with no other home lives. Null means the
+ * row names nothing addressable, and the tile renders no link at all.
+ */
+export function feedTileHref(
+  ctx: ViewContext | null,
+  fallbackTechniqueId: number | null,
+  threadId?: number | null,
+): string | null {
+  const base = ctx
+    ? viewContextHref(ctx)
+    : fallbackTechniqueId != null
+      ? `/library?focus=${refToken({ type: "technique", id: fallbackTechniqueId })}`
+      : null;
+  if (base == null) return null;
+  return threadId != null ? `${base}${base.includes("?") ? "&" : "?"}thread=${threadId}` : base;
 }
 
 /** Minimal structural view of an ActivityRow, so this module does not depend
@@ -136,6 +172,7 @@ export function rowToViewContext(row: ViewContextRow): ViewContext | null {
     return {
       kind: "camp",
       camp: { type: "camp", id: row.camp_id },
+      technique: row.technique_id != null ? { type: "technique", id: row.technique_id } : undefined,
       video: row.video_id != null ? { type: "video", id: row.video_id } : undefined,
     };
   }
@@ -230,15 +267,4 @@ export function activitySurface(
     return { kind: "camp", label: row.camp_name ?? "Camp" };
   }
   return { kind: "library", label: "Global Technique Library" };
-}
-
-/**
- * Whether a row belongs to the camp epic that is hidden on production until the
- * epic ships. The single predicate both feeds use, so the gate can never drift
- * between them.
- */
-export function isGatedEpicRow(
-  row: ViewContextRow & { syllabus_name: string | null; camp_name?: string | null },
-): boolean {
-  return activitySurface(row)?.kind === "camp";
 }

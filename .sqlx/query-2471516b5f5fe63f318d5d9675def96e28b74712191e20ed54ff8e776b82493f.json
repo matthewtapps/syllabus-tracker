@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT s.name\n           FROM syllabus_assignments sa\n           JOIN syllabi s ON s.id = sa.syllabus_id\n           WHERE sa.student_id = ? AND sa.syllabus_id = ? AND sa.unassigned_at IS NULL\n           LIMIT 1",
+  "describe": {
+    "columns": [
+      {
+        "name": "name",
+        "ordinal": 0,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "2471516b5f5fe63f318d5d9675def96e28b74712191e20ed54ff8e776b82493f"
+}

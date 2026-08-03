@@ -13,6 +13,8 @@ import type { VideoThreadSurface } from "@/lib/thread-visibility";
 
 interface VideoPlayerDialogProps {
   video: Video | null;
+  /** Resume the clip here rather than starting it from the top. */
+  startAtSeconds?: number | null;
   onClose: () => void;
   surface: VideoThreadSurface;
   watchContext?: WatchContext;
@@ -28,6 +30,7 @@ interface VideoPlayerDialogProps {
 
 export function VideoPlayerDialog({
   video,
+  startAtSeconds,
   onClose,
   surface,
   watchContext,
@@ -48,6 +51,7 @@ export function VideoPlayerDialog({
         {video && (
           <ViewerShell
             video={video}
+            startAtSeconds={startAtSeconds}
             surface={surface}
             watchContext={watchContext}
             context={context}
@@ -62,6 +66,7 @@ export function VideoPlayerDialog({
 
 function ViewerShell({
   video,
+  startAtSeconds,
   surface,
   watchContext,
   context,
@@ -69,6 +74,7 @@ function ViewerShell({
   composerAction,
 }: {
   video: Video;
+  startAtSeconds?: number | null;
   surface: VideoThreadSurface;
   watchContext?: WatchContext;
   context?: { label: string };
@@ -132,6 +138,7 @@ function ViewerShell({
         <VideoReviewPanel
           video={video}
           surface={surface}
+          startAtSeconds={startAtSeconds}
           watchEvents={events}
           composerAction={
             canDownload || composerAction ? (

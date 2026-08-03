@@ -1,5 +1,10 @@
 import { describe, expect, it, test } from "vitest";
-import { viewContextHref, rowToViewContext, activitySurface } from "./view-context";
+import {
+  viewContextHref,
+  rowToViewContext,
+  activitySurface,
+  feedTileHref,
+} from "./view-context";
 import { parseFocusToken, refToken } from "./entity-ref";
 
 describe("viewContextHref", () => {
@@ -360,10 +365,10 @@ describe("camp deep links", () => {
       camp_id: 7,
     });
     expect(ctx).not.toBeNull();
-    expect(viewContextHref(ctx!)).toBe("/camps/7?focus=camp:7");
+    expect(viewContextHref(ctx!)).toBe("/camps/7");
   });
 
-  it("routes a camp video_added row focused on the video", () => {
+  it("routes a camp video_added row with no technique to the feed tile", () => {
     const ctx = rowToViewContext({
       verb: "video_added",
       context_kind: "camp",
@@ -374,6 +379,50 @@ describe("camp deep links", () => {
       video_id: 12,
       camp_id: 7,
     });
-    expect(viewContextHref(ctx!)).toBe("/camps/7?focus=camp:7&video=12");
+    expect(viewContextHref(ctx!)).toBe("/camps/7?video=12");
+  });
+
+  // The camp renders its content in full, so a technique is addressed by
+  // anchoring the camp page at it. Its own route stays as a permalink.
+  it("anchors a camp technique row on the camp page", () => {
+    const ctx = rowToViewContext({
+      verb: "camp_technique_added",
+      context_kind: "camp",
+      target_student_id: 3,
+      syllabus_id: null,
+      sst_id: null,
+      technique_id: 5,
+      video_id: null,
+      camp_id: 7,
+    });
+    expect(viewContextHref(ctx!)).toBe("/camps/7?technique=5");
+  });
+
+  it("carries a camp technique's video into the anchor", () => {
+    const ctx = rowToViewContext({
+      verb: "video_added",
+      context_kind: "camp",
+      target_student_id: 3,
+      syllabus_id: null,
+      sst_id: null,
+      technique_id: 5,
+      video_id: 12,
+      camp_id: 7,
+    });
+    expect(viewContextHref(ctx!)).toBe("/camps/7?technique=5&video=12");
+  });
+
+  it("appends a thread target to a camp anchor", () => {
+    const ctx = rowToViewContext({
+      verb: "thread_comment_posted",
+      context_kind: "camp",
+      target_student_id: 3,
+      syllabus_id: null,
+      sst_id: null,
+      technique_id: 5,
+      video_id: null,
+      camp_id: 7,
+    });
+    expect(feedTileHref(ctx, null, 88)).toBe("/camps/7?technique=5&thread=88");
   });
 });

@@ -1,0 +1,44 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT v.id AS \"id!: i64\", v.title AS \"title?: String\",\n                  v.duration_seconds AS \"duration_seconds?: i64\",\n                  v.external_url AS \"external_url?: String\",\n                  t.name AS \"technique_name!: String\"\n           FROM videos v\n           JOIN techniques t ON t.id = v.technique_id\n           WHERE v.parent_kind = 'technique'\n             AND v.deleted_at IS NULL\n             AND v.hidden_at IS NULL\n             AND LOWER(COALESCE(v.title, '')) LIKE ?\n           ORDER BY t.name ASC, v.position ASC, v.id ASC",
+  "describe": {
+    "columns": [
+      {
+        "name": "id!: i64",
+        "ordinal": 0,
+        "type_info": "Integer"
+      },
+      {
+        "name": "title?: String",
+        "ordinal": 1,
+        "type_info": "Text"
+      },
+      {
+        "name": "duration_seconds?: i64",
+        "ordinal": 2,
+        "type_info": "Integer"
+      },
+      {
+        "name": "external_url?: String",
+        "ordinal": 3,
+        "type_info": "Text"
+      },
+      {
+        "name": "technique_name!: String",
+        "ordinal": 4,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      true,
+      false,
+      true,
+      true,
+      false
+    ]
+  },
+  "hash": "9431048ea50c9e19afdfa37a3b826602445710afe8dd3fe13d4c2410f18786e4"
+}

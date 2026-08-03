@@ -55,6 +55,9 @@ interface VideoListProps {
    * Used by the dashboard "recently watched" link to land on the specific
    * video the user tapped. */
   scrollToVideoId?: number | null;
+  /** Seconds to resume `scrollToVideoId` at. Set, the video opens straight into
+   *  the player at that point; unset, arriving only scrolls to its row. */
+  resumeSeconds?: number | null;
   onVideoScrolled?: () => void;
   /** Where this video is being watched from, for activity context tracking. */
   watchContext?: WatchContext;
@@ -72,6 +75,7 @@ export function VideoList({
   studentDisplayName,
   syllabus,
   scrollToVideoId,
+  resumeSeconds,
   onVideoScrolled,
   watchContext,
   contextLabel,
@@ -101,14 +105,23 @@ export function VideoList({
     if (!serverVideos) return;
     if (!serverVideos.some((v) => v.id === scrollToVideoId)) return;
     didScrollToVideoRef.current = scrollToVideoId;
+    const target = serverVideos.find((v) => v.id === scrollToVideoId)!;
     requestAnimationFrame(() => {
       const el = document.getElementById(`video-row-${scrollToVideoId}`);
       el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      if (resumeSeconds != null && resumeSeconds > 0) {
+        setResumeFor({ videoId: target.id, seconds: resumeSeconds });
+        setPlaying(target);
+      }
       onVideoScrolled?.();
     });
-  }, [scrollToVideoId, serverVideos, onVideoScrolled]);
+  }, [scrollToVideoId, resumeSeconds, serverVideos, onVideoScrolled]);
 
   const [playing, setPlaying] = useState<Video | null>(null);
+  // Resuming means the viewer was already watching this clip in the feed, so
+  // open it rather than making them find and tap the row again. Cleared on
+  // close so reopening from the list starts clean.
+  const [resumeFor, setResumeFor] = useState<{ videoId: number; seconds: number } | null>(null);
   // Optimistic local order during DnD; falls back to server data otherwise.
   const [localOrder, setLocalOrder] = useState<number[] | null>(null);
 
@@ -257,7 +270,11 @@ export function VideoList({
 
       <VideoPlayerDialog
         video={playing}
-        onClose={() => setPlaying(null)}
+        startAtSeconds={playing && resumeFor?.videoId === playing.id ? resumeFor.seconds : null}
+        onClose={() => {
+          setPlaying(null);
+          setResumeFor(null);
+        }}
         surface={surface}
         watchContext={watchContext}
         context={contextLabel ? { label: contextLabel } : undefined}

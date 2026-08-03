@@ -1,20 +1,20 @@
 import { formatTimestamp } from "@/lib/dates";
 import { cn } from "@/lib/utils";
-import type { ThreadView } from "@/lib/api";
+import type { TimestampedEntry } from "./timestamped-entry";
 
 export interface PinGroup {
   /** Position along the track, 0..1. */
   position: number;
-  threads: ThreadView[];
+  threads: TimestampedEntry[];
 }
 
 /**
- * Group timestamped threads into pins, merging any whose track positions are
+ * Group timestamped entries into pins, merging any whose track positions are
  * within `gapFraction` of each other (so dense comments do not overlap).
- * Threads without seconds, and any input when duration <= 0, yield no pins.
+ * Entries without seconds, and any input when duration <= 0, yield no pins.
  */
 export function clusterPins(
-  threads: ThreadView[],
+  threads: TimestampedEntry[],
   duration: number,
   gapFraction: number,
 ): PinGroup[] {
@@ -37,11 +37,11 @@ export function clusterPins(
 }
 
 interface ScrubberPinsProps {
-  threads: ThreadView[];
+  threads: TimestampedEntry[];
   duration: number;
   activeThreadId: number | null;
-  onPinClick: (thread: ThreadView) => void;
-  onClusterClick: (threads: ThreadView[]) => void;
+  onPinClick: (thread: TimestampedEntry) => void;
+  onClusterClick: (threads: TimestampedEntry[]) => void;
 }
 
 export function ScrubberPins({

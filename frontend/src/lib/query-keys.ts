@@ -93,11 +93,14 @@ export const qk = {
     ["camps", "student", studentId] as const,
   camp: (id: number) => ["camps", id] as const,
   campVideos: (campId: number) => ["camps", campId, "videos"] as const,
-  // Camp-only reference videos for a (camp, technique). Distinct bucket from
-  // both `campVideos` (all of a camp's footage) and `techniqueVideos` (the
-  // technique's global videos).
-  campTechniqueVideos: (campId: number, techniqueId: number) =>
-    ["camps", campId, "techniques", techniqueId, "videos"] as const,
+  campTechniques: (campId: number) => ["camps", campId, "techniques"] as const,
+  campComponents: (campId: number, limit: number) =>
+    ["camps", campId, "components", limit] as const,
+  /** Every per-limit components bucket for a camp. */
+  campComponentsAll: (campId: number) =>
+    ["camps", campId, "components"] as const,
+  campSearch: (campId: number, q: string, kind?: string) =>
+    ["camps", campId, "search", q, kind ?? null] as const,
 
   // camp_technique lists are cached per (technique, camp) so a technique's
   // camp-scoped conversation never collides with its global-library one.

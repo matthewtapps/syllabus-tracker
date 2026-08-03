@@ -16,7 +16,6 @@ import { RequireAdmin, RequireAuth, RequireCoach } from './components/route-guar
 import { TelemetryProvider } from './context/telemetry';
 import { CapabilitiesProvider } from './context/capabilities';
 import { CurrentUserProvider } from './lib/current-user';
-import { campsUiEnabled } from './lib/features';
 import { ConfirmProvider } from './components/confirm-dialog';
 import { useCapabilities, useCurrentUser } from './lib/queries';
 import { usePointerEventsWatchdog } from './lib/use-pointer-events-watchdog';
@@ -55,6 +54,10 @@ const StudentSyllabusDetailPage = lazy(
 const StudentActivityPage = lazy(() => import('./app/student-activity/page'));
 const StudentCampsPage = lazy(() => import('./app/student-camps/page'));
 const CampDetailPage = lazy(() => import('./app/camps/[id]/page'));
+const CampTechniquePage = lazy(
+  () => import('./app/camps/[id]/techniques/[techniqueId]/page'),
+);
+const CampThreadPage = lazy(() => import('./app/camps/[id]/threads/[threadId]/page'));
 const InvitePage = lazy(() => import('./app/invite/page'));
 const RegisterPage = lazy(() => import('./app/register/page'));
 const PendingApprovalPage = lazy(() => import('./app/pending/page'));
@@ -360,31 +363,36 @@ function AuthedRoutes() {
           </RequireAuth>
         }
       />
-      {/* Camps: in-progress epic, gated off on prod (campsUiEnabled). When
-          disabled the routes redirect to the dashboard so direct navigation
-          can't reach the half-built surfaces. */}
       <Route
         path="/student/:id/camps"
         element={
-          campsUiEnabled ? (
-            <RequireAuth>
-              <StudentCampsPage />
-            </RequireAuth>
-          ) : (
-            <Navigate to="/dashboard" replace />
-          )
+          <RequireAuth>
+            <StudentCampsPage />
+          </RequireAuth>
         }
       />
       <Route
         path="/camps/:id"
         element={
-          campsUiEnabled ? (
-            <RequireAuth>
-              <CampDetailPage />
-            </RequireAuth>
-          ) : (
-            <Navigate to="/dashboard" replace />
-          )
+          <RequireAuth>
+            <CampDetailPage />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/camps/:id/techniques/:techniqueId"
+        element={
+          <RequireAuth>
+            <CampTechniquePage />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/camps/:id/threads/:threadId"
+        element={
+          <RequireAuth>
+            <CampThreadPage />
+          </RequireAuth>
         }
       />
       <Route path="/" element={<Navigate to="/dashboard" replace />} />

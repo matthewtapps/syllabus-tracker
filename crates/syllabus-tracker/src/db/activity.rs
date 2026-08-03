@@ -50,8 +50,8 @@ pub enum Verb {
     TechniqueEdited,
     ThreadCommentPosted,
     CampCreated,
-    CampTechniqueAdded,
     CampArchived,
+    CampTechniqueAdded,
 }
 
 impl Verb {
@@ -78,8 +78,8 @@ impl Verb {
         Verb::TechniqueEdited,
         Verb::ThreadCommentPosted,
         Verb::CampCreated,
-        Verb::CampTechniqueAdded,
         Verb::CampArchived,
+        Verb::CampTechniqueAdded,
     ];
 
     pub fn as_str(self) -> &'static str {
@@ -106,8 +106,8 @@ impl Verb {
             Verb::TechniqueEdited => "technique_edited",
             Verb::ThreadCommentPosted => "thread_comment_posted",
             Verb::CampCreated => "camp_created",
-            Verb::CampTechniqueAdded => "camp_technique_added",
             Verb::CampArchived => "camp_archived",
+            Verb::CampTechniqueAdded => "camp_technique_added",
         }
     }
 
@@ -135,13 +135,16 @@ impl Verb {
     /// Whether rows of this verb participate in the 30-second coalescing
     /// window. `ThreadCommentPosted` is non-coalescing: every comment is a
     /// discrete event and collapsing two comments into one would lose a message.
+    /// `CampTechniqueAdded` is non-coalescing for the same reason: attaching
+    /// several techniques at once fires them inside one window, and each one is
+    /// a separate card in the camp feed.
     pub fn coalesces(self) -> bool {
         !matches!(
             self,
             Verb::ThreadCommentPosted
                 | Verb::CampCreated
-                | Verb::CampTechniqueAdded
                 | Verb::CampArchived
+                | Verb::CampTechniqueAdded
         )
     }
 
@@ -160,16 +163,17 @@ impl Verb {
             | Verb::SstAdded
             | Verb::SstHidden
             | Verb::SstUnhidden => EntityKind::Sst,
-            Verb::TechniquePinned | Verb::TechniqueUnpinned | Verb::TechniqueEdited => {
-                EntityKind::Technique
-            }
+            Verb::TechniquePinned
+            | Verb::TechniqueUnpinned
+            | Verb::TechniqueEdited
+            | Verb::CampTechniqueAdded => EntityKind::Technique,
             Verb::SyllabusAssigned
             | Verb::SyllabusUnassigned
             | Verb::SyllabusGraduated
             | Verb::SyllabusTechniqueAdded
             | Verb::SyllabusTechniqueRemoved => EntityKind::Syllabus,
             Verb::ThreadCommentPosted => EntityKind::Thread,
-            Verb::CampCreated | Verb::CampTechniqueAdded | Verb::CampArchived => EntityKind::Camp,
+            Verb::CampCreated | Verb::CampArchived => EntityKind::Camp,
         }
     }
 }

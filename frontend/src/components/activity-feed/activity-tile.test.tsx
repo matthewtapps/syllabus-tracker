@@ -1,10 +1,11 @@
 /**
  * ActivityTile rendering tests (browser project).
  *
- * Stubs window.fetch to hydrate the embedded tiles. Verifies that a syllabus
- * technique activity embeds the technique row (with no curation chrome), a
- * comment activity embeds the thread, and a non-noun activity renders nothing
- * (header-only fallback). Runs in CI's Chromium project only.
+ * One model for every tile kind: a teaser tile that never mutates on
+ * interaction, linking to the subject in its real surface. Per kind, this
+ * asserts that the teaser content renders, that it links to the right place,
+ * and (for a technique) that the row does not expand in the feed. Stubs
+ * window.fetch to hydrate the tiles; runs in CI's Chromium project only.
  */
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { screen, waitFor } from "@testing-library/react";
@@ -16,6 +17,7 @@ import type {
   SstRow,
   SyllabusAssignment,
   ThreadView as ThreadViewModel,
+  Video,
 } from "@/lib/api";
 
 function row(overrides: Partial<ActivityRow> = {}): ActivityRow {
@@ -109,11 +111,43 @@ function thread(overrides: Partial<ThreadViewModel> = {}): ThreadViewModel {
   };
 }
 
+function video(overrides: Partial<Video> = {}): Video {
+  return {
+    id: 11,
+    parent_kind: "technique",
+    technique_id: 5,
+    student_id: null,
+    thread_id: null,
+    camp_id: null,
+    title: "Armbar drill, round 2",
+    description: null,
+    position: 0,
+    kind: "link",
+    processing_status: "ready",
+    processing_error: null,
+    bytes: null,
+    duration_seconds: null,
+    width: null,
+    height: null,
+    external_url: "https://example.com/clip",
+    external_host: "example.com",
+    external_video_id: null,
+    uploaded_by_id: 2,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+    hidden_at: null,
+    ...overrides,
+  };
+}
+
+// First match wins, so list the narrower paths first. Everything unmatched
+// answers an empty array, which is what the panel's other blocks expect from
+// their list endpoints.
 function stubFetch(handlers: { match: string; json: unknown }[]) {
   return vi.fn().mockImplementation((url: string) => {
     const hit = handlers.find((h) => url.includes(h.match));
     return Promise.resolve(
-      new Response(JSON.stringify(hit ? hit.json : {}), {
+      new Response(JSON.stringify(hit ? hit.json : []), {
         status: 200,
         headers: { "Content-Type": "application/json" },
       }),
@@ -121,17 +155,43 @@ function stubFetch(handlers: { match: string; json: unknown }[]) {
   });
 }
 
-describe("ActivityTile", () => {
+describe("ActivityTile: technique kind", () => {
   let fetchSpy: ReturnType<typeof vi.spyOn> | null = null;
   afterEach(() => fetchSpy?.mockRestore());
 
-  test("embeds the technique row for a syllabus activity, without curation chrome", async () => {
-    const detail: StudentSyllabusDetailResponse = {
-      assignment: assignment(),
-      techniques: [sst()],
-    };
+  const detail: StudentSyllabusDetailResponse = {
+    assignment: assignment(),
+    techniques: [sst()],
+  };
+
+  test("teases the row without expanding it in the feed", async () => {
     fetchSpy = vi.spyOn(window, "fetch").mockImplementation(
-      stubFetch([{ match: "/api/student/4/syllabi/2/techniques", json: detail }]),
+      stubFetch([
+        { match: "/videos", json: { videos: [] } },
+        { match: "/api/student/4/syllabi/2/techniques", json: detail },
+      ]),
+    );
+
+    const { container } = renderWithProviders(<ActivityTile row={row()} />, {
+      user: buildUser({ id: 2, role: "coach" }),
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("Armbar")).toBeInTheDocument();
+    });
+    // Nothing expands here, so nothing claims it can.
+    expect(container.querySelector("[aria-expanded]")).toBeNull();
+    // A teaser is a preview, not a curation control panel.
+    expect(screen.queryByRole("button", { name: /add to camp/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /remove/i })).toBeNull();
+  });
+
+  test("links the row to the technique in its syllabus, opening no overlay", async () => {
+    fetchSpy = vi.spyOn(window, "fetch").mockImplementation(
+      stubFetch([
+        { match: "/videos", json: { videos: [] } },
+        { match: "/api/student/4/syllabi/2/techniques", json: detail },
+      ]),
     );
 
     renderWithProviders(<ActivityTile row={row()} />, {
@@ -141,12 +201,59 @@ describe("ActivityTile", () => {
     await waitFor(() => {
       expect(screen.getByText("Armbar")).toBeInTheDocument();
     });
-    // Embedded mode hides the curation chrome.
-    expect(screen.queryByRole("button", { name: /add to camp/i })).toBeNull();
-    expect(screen.queryByRole("button", { name: /remove/i })).toBeNull();
+
+    expect(screen.getByText("Armbar").closest("a")).toHaveAttribute(
+      "href",
+      "/student/4/syllabi/2?focus=sst:42",
+    );
+    expect(screen.queryByRole("dialog")).toBeNull();
   });
 
-  test("embeds the thread for a profile comment (no technique noun)", async () => {
+  test("a technique comment adds a comment teaser that targets the thread", async () => {
+    fetchSpy = vi.spyOn(window, "fetch").mockImplementation(
+      stubFetch([
+        { match: "/videos", json: { videos: [] } },
+        { match: "/api/threads", json: { threads: [thread({ comments: [] })] } },
+        { match: "/api/student/4/syllabi/2/techniques", json: detail },
+      ]),
+    );
+
+    renderWithProviders(
+      <ActivityTile
+        row={row({ verb: "thread_comment_posted", thread_id: 7, comment_count: 1 })}
+      />,
+      { user: buildUser({ id: 2, role: "coach" }) },
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("Nice work on this one.")).toBeInTheDocument();
+    });
+    // One comment in the conversation, so there is nothing more to view.
+    expect(screen.queryByText(/View all/)).toBeNull();
+
+    // Same destination as the row, with the thread targeted inside it.
+    expect(screen.getByText("Nice work on this one.").closest("a")).toHaveAttribute(
+      "href",
+      "/student/4/syllabi/2?focus=sst:42&thread=7",
+    );
+  });
+});
+
+describe("ActivityTile: thread kind", () => {
+  let fetchSpy: ReturnType<typeof vi.spyOn> | null = null;
+  afterEach(() => fetchSpy?.mockRestore());
+
+  const profileRow = row({
+    verb: "thread_comment_posted",
+    thread_id: 7,
+    technique_id: null,
+    technique_name: null,
+    sst_id: null,
+    context_kind: null,
+    target_student_id: 4,
+  });
+
+  test("teases the conversation", async () => {
     fetchSpy = vi.spyOn(window, "fetch").mockImplementation(
       stubFetch([
         { match: "/api/threads", json: { threads: [thread({ anchor_kind: "student_profile" })] } },
@@ -155,26 +262,92 @@ describe("ActivityTile", () => {
 
     // A profile-anchored comment has no technique/video noun, so it renders the
     // thread directly (technique/video comments surface the noun instead).
-    renderWithProviders(
-      <ActivityTile
-        row={row({
-          verb: "thread_comment_posted",
-          thread_id: 7,
-          technique_id: null,
-          sst_id: null,
-          context_kind: null,
-          target_student_id: 4,
-        })}
-      />,
-      { user: buildUser({ id: 2, role: "coach" }) },
-    );
+    renderWithProviders(<ActivityTile row={profileRow} />, {
+      user: buildUser({ id: 2, role: "coach" }),
+    });
 
     await waitFor(() => {
-      expect(screen.getByText(/Nice work on this one/)).toBeInTheDocument();
+      expect(screen.getByText("Nice work on this one.")).toBeInTheDocument();
     });
   });
 
-  test("renders nothing for a non-noun activity (header-only fallback)", () => {
+  test("links the teaser to the thread on the profile that hosts it", async () => {
+    fetchSpy = vi.spyOn(window, "fetch").mockImplementation(
+      stubFetch([
+        { match: "/api/threads", json: { threads: [thread({ anchor_kind: "student_profile" })] } },
+      ]),
+    );
+
+    renderWithProviders(<ActivityTile row={profileRow} />, {
+      user: buildUser({ id: 2, role: "coach" }),
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("Nice work on this one.")).toBeInTheDocument();
+    });
+
+    expect(screen.getByText("Nice work on this one.").closest("a")).toHaveAttribute(
+      "href",
+      "/student/4?thread=7",
+    );
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+});
+
+describe("ActivityTile: video kind", () => {
+  let fetchSpy: ReturnType<typeof vi.spyOn> | null = null;
+  afterEach(() => fetchSpy?.mockRestore());
+
+  const videoRow = row({ verb: "video_watched", video_id: 11, video_title: "Armbar drill" });
+
+  test("teases the conversation under the player and links to the video", async () => {
+    fetchSpy = vi.spyOn(window, "fetch").mockImplementation(
+      stubFetch([
+        { match: "/videos", json: { videos: [video()] } },
+        {
+          match: "/api/threads",
+          json: { threads: [thread({ id: 8, anchor_kind: "video", body: "elbow tight" })] },
+        },
+      ]),
+    );
+
+    renderWithProviders(<ActivityTile row={videoRow} />, {
+      user: buildUser({ id: 2, role: "coach" }),
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("elbow tight")).toBeInTheDocument();
+    });
+
+    // The video in its surface (this row carries a syllabus context), with the
+    // video itself focused so the surface scrolls to it.
+    expect(screen.getByText("elbow tight").closest("a")).toHaveAttribute(
+      "href",
+      "/student/4/syllabi/2?focus=sst:42&video=11",
+    );
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  test("a video with no threads still offers the tap target", async () => {
+    fetchSpy = vi.spyOn(window, "fetch").mockImplementation(
+      stubFetch([
+        { match: "/videos", json: { videos: [video()] } },
+        { match: "/api/threads", json: { threads: [] } },
+      ]),
+    );
+
+    renderWithProviders(<ActivityTile row={videoRow} />, {
+      user: buildUser({ id: 2, role: "coach" }),
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("No comments yet")).toBeInTheDocument();
+    });
+  });
+});
+
+describe("ActivityTile: header-only kinds", () => {
+  test("renders nothing for a non-noun activity", () => {
     const { container } = renderWithProviders(
       <ActivityTile
         row={row({ verb: "syllabus_assigned", technique_id: null, sst_id: null })}

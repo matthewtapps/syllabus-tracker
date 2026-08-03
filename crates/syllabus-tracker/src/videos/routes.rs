@@ -154,7 +154,7 @@ pub async fn api_video_upload(
     )?;
 
     let metrics = video_metrics();
-    if !is_mp4(form.file.content_type()) {
+    if !is_video_upload(form.file.content_type()) {
         metrics.uploads_total.add(1, &[kv("result", "fail_format")]);
         return Err(Status::UnsupportedMediaType);
     }
@@ -245,7 +245,7 @@ pub async fn api_camp_video_upload(
     })?;
 
     let metrics = video_metrics();
-    if !is_mp4(form.file.content_type()) {
+    if !is_video_upload(form.file.content_type()) {
         metrics.uploads_total.add(1, &[kv("result", "fail_format")]);
         return Err(Status::UnsupportedMediaType);
     }
@@ -405,6 +405,100 @@ pub struct DraftReplyUploadForm<'r> {
 }
 
 #[derive(Deserialize)]
+pub struct AddVideoReferenceRequest {
+    pub video_id: i64,
+    /// Names a clip that has none. Ignored when the clip is already named.
+    pub title: Option<String>,
+    /// Optional destination tier; see [`UploadForm::parent_kind`]. Defaults to
+    /// the technique in the URL path.
+    pub parent_kind: Option<String>,
+    pub parent_id: Option<i64>,
+}
+
+#[derive(Serialize)]
+pub struct AddVideoReferenceResponse {
+    pub reference_id: i64,
+}
+
+/// Resolves the destination a reference targets, enforcing the same permissions
+/// the create routes use for the equivalent tier.
+fn resolve_reference_parent(
+    user: &User,
+    technique_id: i64,
+    parent_kind: Option<&str>,
+    parent_id: Option<i64>,
+) -> Result<db::ReferenceParent, Status> {
+    user.require_permission(Permission::UploadVideos)?;
+
+    let parent = match (parent_kind, parent_id) {
+        (None, None) => db::ReferenceParent::Technique(technique_id),
+        (Some(kind), Some(id)) => {
+            db::ReferenceParent::from_kind_id(kind, id).ok_or(Status::BadRequest)?
+        }
+        _ => return Err(Status::BadRequest),
+    };
+
+    if matches!(parent, db::ReferenceParent::StudentSyllabusTechnique(_)) {
+        user.require_permission(Permission::ManageSyllabi)?;
+    }
+
+    Ok(parent)
+}
+
+#[instrument(skip(body, pool))]
+#[post("/techniques/<tid>/videos/references", data = "<body>")]
+pub async fn api_add_video_reference(
+    tid: i64,
+    user: User,
+    body: Json<AddVideoReferenceRequest>,
+    pool: &State<Pool<Sqlite>>,
+) -> Result<Json<AddVideoReferenceResponse>, Status> {
+    let req = body.into_inner();
+    let parent = resolve_reference_parent(&user, tid, req.parent_kind.as_deref(), req.parent_id)?;
+
+    let reference_id = db::add_video_reference(
+        pool.inner(),
+        req.video_id,
+        parent,
+        req.title.as_deref(),
+        user.id,
+    )
+    .await
+    .map_err(Status::from)?;
+
+    Ok(Json(AddVideoReferenceResponse { reference_id }))
+}
+
+#[instrument(skip(body, pool))]
+#[put("/video-references/<rid>/hidden", data = "<body>")]
+pub async fn api_set_video_reference_hidden(
+    rid: i64,
+    body: Json<SetGlobalHiddenRequest>,
+    user: User,
+    pool: &State<Pool<Sqlite>>,
+) -> Result<Status, Status> {
+    user.require_permission(Permission::ManageVideoVisibility)?;
+    db::set_video_reference_hidden(pool.inner(), rid, body.hidden)
+        .await
+        .map_err(Status::from)?;
+    Ok(Status::NoContent)
+}
+
+#[instrument(skip(pool))]
+#[delete("/video-references/<rid>")]
+pub async fn api_remove_video_reference(
+    rid: i64,
+    user: User,
+    pool: &State<Pool<Sqlite>>,
+) -> Result<Status, Status> {
+    user.require_permission(Permission::UploadVideos)?;
+    db::remove_video_reference(pool.inner(), rid)
+        .await
+        .map_err(Status::from)?;
+    Ok(Status::NoContent)
+}
+
+#[derive(Deserialize)]
 pub struct DraftReplyLinkRequest {
     pub url: String,
     pub anchor_kind: String,
@@ -428,7 +522,7 @@ pub async fn api_thread_reply_video_upload(
         return Err(Status::Forbidden);
     }
     let metrics = video_metrics();
-    if !is_mp4(form.file.content_type()) {
+    if !is_video_upload(form.file.content_type()) {
         metrics.uploads_total.add(1, &[kv("result", "fail_format")]);
         return Err(Status::UnsupportedMediaType);
     }
@@ -506,6 +600,11 @@ pub struct VideoListItem {
     /// or when the request didn't specify a `for_student` viewer.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub override_for_student: Option<String>,
+    /// Set when this row is a clip referenced onto the surface rather than
+    /// owned by it. Its `hidden_at` is the reference's, not the clip's, because
+    /// a reference obeys the visibility rules of where it is shown.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reference_id: Option<i64>,
 }
 
 /// Fills each video's `comment_count` with the number of threads on it the
@@ -559,6 +658,24 @@ pub async fn api_list_technique_videos(
             .await
             .map_err(Status::from)?
     };
+
+    // Clips referenced onto this technique list alongside its own. Each carries
+    // the reference's hidden state, not the clip's, so hiding one here says
+    // nothing about the surface the clip actually lives on.
+    let mut reference_ids: std::collections::HashMap<i64, i64> = std::collections::HashMap::new();
+    for referenced in db::list_referenced_videos(pool.inner(), db::ReferenceParent::Technique(tid))
+        .await
+        .map_err(Status::from)?
+    {
+        if !is_coach && referenced.hidden_at.is_some() {
+            continue;
+        }
+        let mut video = referenced.video;
+        video.hidden_at = referenced.hidden_at;
+        reference_ids.insert(video.id, referenced.reference_id);
+        videos.push(video);
+    }
+
     annotate_comment_counts(pool.inner(), &mut videos, is_coach, user.id)
         .await
         .map_err(Status::from)?;
@@ -580,6 +697,7 @@ pub async fn api_list_technique_videos(
                     }
                 });
                 VideoListItem {
+                    reference_id: reference_ids.get(&v.id).copied(),
                     video: v,
                     override_for_student,
                 }
@@ -589,6 +707,7 @@ pub async fn api_list_technique_videos(
         videos
             .into_iter()
             .map(|video| VideoListItem {
+                reference_id: reference_ids.get(&video.id).copied(),
                 video,
                 override_for_student: None,
             })
@@ -709,7 +828,7 @@ pub async fn api_replace_video(
         Status::BadRequest
     })?;
 
-    if !is_mp4(form.file.content_type()) {
+    if !is_video_upload(form.file.content_type()) {
         return Err(Status::UnsupportedMediaType);
     }
     if form.file.len() > max_video_bytes() as u64 {
@@ -1221,12 +1340,208 @@ pub async fn api_processing_result(
     }
 }
 
-fn is_mp4(content_type: Option<&rocket::http::ContentType>) -> bool {
-    match content_type {
-        Some(ct) => {
-            let mt = ct.media_type();
-            mt.top() == "video" && mt.sub() == "mp4"
+// ---------------------------------------------------------------------------
+// Browse endpoint: "Choose from Sillybus" navigator
+// ---------------------------------------------------------------------------
+
+/// Query parameters for `GET /videos/browse`.
+#[derive(Debug, rocket::serde::Deserialize, rocket::form::FromForm)]
+pub struct BrowseParams {
+    /// The student whose visibility scopes the results. Absent means no student
+    /// is in context (the global library), which only a coach may ask for.
+    pub student_id: Option<i64>,
+    /// Reaches past the student in context into every student's camps. Coaches
+    /// only.
+    pub all_students: Option<bool>,
+    /// Optional source filter: `library` | `camps` | `syllabuses`.
+    pub source: Option<String>,
+    /// Drill into a specific parent (technique id, camp id, or syllabus id).
+    pub parent_id: Option<i64>,
+    /// Case-insensitive text search over video titles.
+    pub q: Option<String>,
+}
+
+/// A browsable parent (technique / camp / syllabus) returned when listing
+/// available parents for a source.
+#[derive(Serialize)]
+pub struct BrowseParentItem {
+    pub id: i64,
+    pub name: String,
+    pub video_count: i64,
+}
+
+impl From<db::BrowseParent> for BrowseParentItem {
+    fn from(p: db::BrowseParent) -> Self {
+        Self {
+            id: p.id,
+            name: p.name,
+            video_count: p.video_count,
         }
+    }
+}
+
+/// A single video returned by the browse endpoint.
+#[derive(Serialize)]
+pub struct BrowseVideoItem {
+    pub id: i64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub display_title: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub duration_seconds: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub external_url: Option<String>,
+    pub provenance: String,
+    pub source: db::BrowseSource,
+}
+
+impl From<db::BrowseVideo> for BrowseVideoItem {
+    fn from(v: db::BrowseVideo) -> Self {
+        Self {
+            id: v.id,
+            title: v.title,
+            display_title: v.display_title,
+            duration_seconds: v.duration_seconds,
+            external_url: v.external_url,
+            provenance: v.provenance,
+            source: v.source,
+        }
+    }
+}
+
+#[derive(Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum BrowseResponse {
+    Parents { parents: Vec<BrowseParentItem> },
+    Videos { videos: Vec<BrowseVideoItem> },
+}
+
+/// `GET /api/videos/browse?[student_id=<id>][&all_students][&source=<s>][&parent_id=<p>][&q=<q>]`
+///
+/// Returns videos (or browsable parents) for a [`db::BrowseScope`]. A student
+/// only ever gets their own unwidened view; widening in either form is a coach
+/// capability, and asking for it without one is a 403 rather than a quiet
+/// narrowing, so a caller is never told it saw everything when it did not.
+#[instrument(skip(pool))]
+#[get("/videos/browse?<params..>")]
+pub async fn api_browse_videos(
+    params: BrowseParams,
+    user: User,
+    pool: &State<Pool<Sqlite>>,
+) -> Result<Json<BrowseResponse>, Status> {
+    let pool = pool.inner();
+    let is_coach = user.has_permission(Permission::ManageCamps);
+    let all_students = params.all_students.unwrap_or(false);
+
+    let scope = match params.student_id {
+        Some(id) => {
+            if !is_coach && (user.id != id || all_students) {
+                return Err(Status::Forbidden);
+            }
+            db::BrowseScope::Student {
+                id,
+                include_other_students: all_students,
+            }
+        }
+        // No student in context is itself a widened view.
+        None => {
+            if !is_coach {
+                return Err(Status::Forbidden);
+            }
+            db::BrowseScope::AllStudents
+        }
+    };
+
+    // Search mode: `q` present overrides source/parent_id.
+    if let Some(q) = &params.q {
+        let q = q.trim();
+        if q.is_empty() {
+            return Ok(Json(BrowseResponse::Videos { videos: vec![] }));
+        }
+        let results = db::search_videos(pool, scope, q)
+            .await
+            .map_err(Status::from)?;
+        let videos = results.into_iter().map(BrowseVideoItem::from).collect();
+        return Ok(Json(BrowseResponse::Videos { videos }));
+    }
+
+    match (params.source.as_deref(), params.parent_id) {
+        // source=library, no parent_id -> list techniques with visible videos.
+        (Some("library"), None) => {
+            let parents = db::browse_library_parents(pool)
+                .await
+                .map_err(Status::from)?;
+            Ok(Json(BrowseResponse::Parents {
+                parents: parents.into_iter().map(BrowseParentItem::from).collect(),
+            }))
+        }
+
+        // source=library, parent_id -> list globally-visible videos for that technique.
+        (Some("library"), Some(technique_id)) => {
+            let videos = db::browse_library_videos_for_technique(pool, technique_id)
+                .await
+                .map_err(Status::from)?;
+            Ok(Json(BrowseResponse::Videos {
+                videos: videos.into_iter().map(BrowseVideoItem::from).collect(),
+            }))
+        }
+
+        // source=camps, no parent_id -> list the student's camps with visible videos.
+        (Some("camps"), None) => {
+            let parents = db::browse_camp_parents(pool, scope)
+                .await
+                .map_err(Status::from)?;
+            Ok(Json(BrowseResponse::Parents {
+                parents: parents.into_iter().map(BrowseParentItem::from).collect(),
+            }))
+        }
+
+        // source=camps, parent_id -> list visible videos for that camp.
+        (Some("camps"), Some(camp_id)) => {
+            let videos = db::browse_camp_videos(pool, camp_id, scope)
+                .await
+                .map_err(Status::from)?;
+            Ok(Json(BrowseResponse::Videos {
+                videos: videos.into_iter().map(BrowseVideoItem::from).collect(),
+            }))
+        }
+
+        // source=syllabuses, no parent_id -> list the student's active syllabuses
+        // that have at least one visible video. A syllabus video's visibility
+        // resolves per assignment, so this source needs a student in context.
+        (Some("syllabuses"), None) => {
+            let student_id = scope.student_id().ok_or(Status::BadRequest)?;
+            let parents = db::browse_syllabus_parents(pool, student_id)
+                .await
+                .map_err(Status::from)?;
+            Ok(Json(BrowseResponse::Parents {
+                parents: parents.into_iter().map(BrowseParentItem::from).collect(),
+            }))
+        }
+
+        // source=syllabuses, parent_id -> list videos visible in that syllabus context.
+        (Some("syllabuses"), Some(syllabus_id)) => {
+            let student_id = scope.student_id().ok_or(Status::BadRequest)?;
+            let videos = db::browse_syllabus_videos(pool, syllabus_id, student_id)
+                .await
+                .map_err(Status::from)?;
+            Ok(Json(BrowseResponse::Videos {
+                videos: videos.into_iter().map(BrowseVideoItem::from).collect(),
+            }))
+        }
+
+        // Unrecognised source or no params -> 400.
+        _ => Err(Status::BadRequest),
+    }
+}
+
+/// Any video container is accepted: the pipeline probes what actually arrived
+/// and transcodes anything that is not already an h264 mp4, so demanding mp4
+/// here would only turn iPhone recordings (`video/quicktime`) into a 415.
+fn is_video_upload(content_type: Option<&rocket::http::ContentType>) -> bool {
+    match content_type {
+        Some(ct) => ct.media_type().top() == "video",
         None => false,
     }
 }

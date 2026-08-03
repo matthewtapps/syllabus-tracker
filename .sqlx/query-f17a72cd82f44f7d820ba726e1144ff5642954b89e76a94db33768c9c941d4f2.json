@@ -1,0 +1,32 @@
+{
+  "db_name": "SQLite",
+  "query": "WITH member AS (\n               -- A technique is in the camp because it was attached to it.\n               -- Camps predating camp_techniques hold theirs through the\n               -- camp_technique threads that attaching used to post.\n               SELECT ct.technique_id AS technique_id, ct.added_at AS since\n               FROM camp_techniques ct\n               WHERE ct.camp_id = ?1\n\n               UNION\n\n               SELECT th.technique_id, MIN(th.last_activity_at)\n               FROM threads th\n               WHERE th.anchor_kind = 'camp_technique'\n                 AND th.camp_id = ?1\n                 AND th.deleted_at IS NULL\n                 AND th.technique_id IS NOT NULL\n               GROUP BY th.technique_id\n           ),\n           comps AS (\n               -- Any activity on the technique inside this camp is a touch,\n               -- not just its conversation.\n               SELECT 'technique' AS kind,\n                      m.technique_id AS entity_id,\n                      MAX(\n                          MAX(m.since),\n                          COALESCE(\n                              (SELECT MAX(th.last_activity_at) FROM threads th\n                               WHERE th.anchor_kind = 'camp_technique'\n                                 AND th.camp_id = ?1\n                                 AND th.deleted_at IS NULL\n                                 AND th.technique_id = m.technique_id),\n                              MAX(m.since)\n                          ),\n                          COALESCE(\n                              (SELECT MAX(act.occurred_at) FROM activity act\n                               WHERE act.camp_id = ?1\n                                 AND act.technique_id = m.technique_id),\n                              MAX(m.since)\n                          )\n                      ) AS last_touch\n               FROM member m\n               GROUP BY m.technique_id\n\n               UNION ALL\n\n               SELECT 'note', th.id, th.last_activity_at\n               FROM threads th\n               WHERE th.anchor_kind = 'camp'\n                 AND th.camp_id = ?1\n                 AND th.deleted_at IS NULL\n\n               UNION ALL\n\n               -- Camp-owned footage, bumped by any conversation on the clip.\n               -- CC-015 visibility is applied by the hydration step, which\n               -- reads the camp's video list.\n               SELECT 'video', v.id,\n                      MAX(\n                          v.created_at,\n                          COALESCE(\n                              (SELECT MAX(vt.last_activity_at) FROM threads vt\n                               WHERE vt.video_id = v.id AND vt.deleted_at IS NULL),\n                              v.created_at\n                          )\n                      )\n               FROM videos v\n               WHERE v.parent_kind = 'camp'\n                 AND v.camp_id = ?1\n                 AND v.deleted_at IS NULL\n           )\n           SELECT kind AS \"kind!: String\",\n                  entity_id AS \"entity_id!: i64\",\n                  last_touch AS \"last_touch!: String\"\n           FROM comps\n           WHERE (?2 IS NULL OR (last_touch, kind, entity_id) < (?2, ?3, ?4))\n           ORDER BY last_touch DESC, kind DESC, entity_id DESC\n           LIMIT ?5",
+  "describe": {
+    "columns": [
+      {
+        "name": "kind!: String",
+        "ordinal": 0,
+        "type_info": "Null"
+      },
+      {
+        "name": "entity_id!: i64",
+        "ordinal": 1,
+        "type_info": "Integer"
+      },
+      {
+        "name": "last_touch!: String",
+        "ordinal": 2,
+        "type_info": "Null"
+      }
+    ],
+    "parameters": {
+      "Right": 5
+    },
+    "nullable": [
+      null,
+      true,
+      null
+    ]
+  },
+  "hash": "f17a72cd82f44f7d820ba726e1144ff5642954b89e76a94db33768c9c941d4f2"
+}

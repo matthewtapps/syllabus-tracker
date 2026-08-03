@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Navigate, useParams, Link, useNavigate } from 'react-router-dom';
-import { Dumbbell, ChevronRight, Plus } from 'lucide-react';
+import { Tent, ChevronRight, Plus } from 'lucide-react';
 import { useUser } from '@/lib/current-user-context';
 import { isCoachOrAdmin } from '@/lib/api';
 import { useAllUsers, useCampsForStudent } from '@/lib/queries';
@@ -144,7 +144,7 @@ function CampsSection({
                 .filter(Boolean)
                 .join(' ')}
             >
-              <Dumbbell
+              <Tent
                 className="h-4 w-4 shrink-0 text-muted-foreground"
                 aria-hidden
               />

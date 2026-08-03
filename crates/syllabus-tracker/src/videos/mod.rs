@@ -12,9 +12,12 @@ pub use pipeline::{PipelineContext, ProcessingJobs, apply_processing_result};
 pub use processor::{RemoteProcessor, DynVideoProcessor, HostFfmpegProcessor, HostJob, VideoProcessor};
 pub use routes::{
     CallbackSecret, SigHeader,
-    api_admin_storage, api_camp_video_upload, api_dashboard_video_overview, api_delete_video,
-    api_list_technique_videos, api_my_watch_state, api_processing_result,
-    api_reorder_videos, api_replace_video, api_set_video_global_hidden,
+    api_add_video_reference, api_admin_storage, api_browse_videos, api_camp_video_upload,
+    api_dashboard_video_overview,
+    api_delete_video, api_list_technique_videos, api_my_watch_state, api_processing_result,
+    api_remove_video_reference, api_reorder_videos, api_replace_video,
+    api_set_video_reference_hidden,
+    api_set_video_global_hidden,
     api_set_video_student_visibility, api_student_watch_activity, api_thread_reply_video_link,
     api_thread_reply_video_upload, api_update_video,
     api_video_download_url, api_video_link, api_video_playback_url, api_video_privacy_ack,

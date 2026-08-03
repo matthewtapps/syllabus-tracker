@@ -43,6 +43,9 @@ function buildCampDetailChain(
   campId: number,
   studentId: number | undefined,
   role: string,
+  /** A camp item route (`/camps/:id/techniques/:techniqueId`, `.../threads/:threadId`)
+   *  appends one more crumb under the camp; absent on the camp page itself. */
+  item?: RawCrumb,
 ): RawCrumb[] {
   const campIdStr = String(campId);
   const dashboard: RawCrumb = {
@@ -60,7 +63,7 @@ function buildCampDetailChain(
 
   if (studentId === undefined) {
     // Camp not loaded yet: shallow fallback, no (wrong) student links.
-    return [dashboard, campCurrent];
+    return item ? [dashboard, campCurrent, item] : [dashboard, campCurrent];
   }
 
   const sid = String(studentId);
@@ -90,6 +93,7 @@ function buildCampDetailChain(
     },
     campCurrent,
   );
+  if (item) chain.push(item);
 
   return chain;
 }
@@ -113,15 +117,47 @@ export function AppBreadcrumbs() {
   // data, not the URL. Detect it and parse the camp id. `useCamp` is called
   // UNCONDITIONALLY (gated on a valid id) so rules of hooks hold on every route;
   // off the camp route the id is undefined and the query is disabled.
+  //
+  // The camp's item routes (a technique or a thread inside the camp) hang off
+  // the same chain with one crumb appended, so a camp item page carries the
+  // whole path back to the camp and the student.
   const campMatch = matchPath({ path: "/camps/:id", end: true }, location.pathname);
-  const campIdRaw = campMatch?.params.id;
+  const campTechniqueMatch = matchPath(
+    { path: "/camps/:id/techniques/:techniqueId", end: true },
+    location.pathname,
+  );
+  const campThreadMatch = matchPath(
+    { path: "/camps/:id/threads/:threadId", end: true },
+    location.pathname,
+  );
+  const campIdRaw =
+    campMatch?.params.id ?? campTechniqueMatch?.params.id ?? campThreadMatch?.params.id;
   const campId =
     campIdRaw !== undefined && /^\d+$/.test(campIdRaw) ? Number(campIdRaw) : undefined;
   const campQuery = useCamp(campId);
 
+  let campItem: RawCrumb | undefined;
+  if (campId !== undefined && campTechniqueMatch?.params.techniqueId !== undefined) {
+    const techniqueId = campTechniqueMatch.params.techniqueId;
+    campItem = {
+      pattern: "/camps/:id/techniques/:techniqueId",
+      params: { campId: String(campId), techniqueId },
+      to: `/camps/${campId}/techniques/${techniqueId}`,
+      dynamic: "campTechniqueName",
+    };
+  } else if (campId !== undefined && campThreadMatch?.params.threadId !== undefined) {
+    const threadId = campThreadMatch.params.threadId;
+    campItem = {
+      pattern: "/camps/:id/threads/:threadId",
+      params: { campId: String(campId) },
+      to: `/camps/${campId}/threads/${threadId}`,
+      staticLabel: "Discussion",
+    };
+  }
+
   const chain =
     campId !== undefined
-      ? buildCampDetailChain(campId, campQuery.data?.student_id, user.role)
+      ? buildCampDetailChain(campId, campQuery.data?.student_id, user.role, campItem)
       : buildCrumbChain(location.pathname, user.role);
 
   // All resolver hooks must be called unconditionally (rules of hooks),

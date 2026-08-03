@@ -4,6 +4,7 @@ import type { PlayerEvents } from "./player-events";
 import { DriveEmbed } from "./drive-embed";
 import { ExternalLinkCard } from "./external-link-card";
 import { VidstackPlayer } from "./vidstack-player";
+import { VideoProcessingTile } from "./video-processing-tile";
 import { VimeoLiteEmbed } from "./vimeo-lite-embed";
 import { YouTubeLiteEmbed } from "./youtube-lite-embed";
 
@@ -22,19 +23,10 @@ export function VideoPlayerPanel({
   sliderMarkers,
 }: VideoPlayerPanelProps) {
   if (video.processing_status === "processing") {
-    return (
-      <p className="rounded-md border border-border bg-muted/30 p-3 text-sm text-muted-foreground">
-        This video is still processing. It will be playable once the upload
-        finishes.
-      </p>
-    );
+    return <VideoProcessingTile video={video} state="processing" />;
   }
   if (video.processing_status === "failed") {
-    return (
-      <p className="rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive">
-        Processing failed for this video. Re-upload to try again.
-      </p>
-    );
+    return <VideoProcessingTile video={video} state="failed" />;
   }
 
   switch (video.kind) {

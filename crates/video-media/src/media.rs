@@ -27,11 +27,16 @@ pub struct ProbeResult {
     pub duration_seconds: f64,
     pub video_codec: Option<String>,
     pub container: Option<String>,
+    pub major_brand: Option<String>,
     pub width: Option<i64>,
     pub height: Option<i64>,
 }
 
 impl ProbeResult {
+    /// True only when the file can be served as-is. ffprobe reports one shared
+    /// `format_name` for the whole mp4 family, so a QuickTime `.mov` (what an
+    /// iPhone records) is told apart by its `qt` major brand and sent to the
+    /// transcoder like any other foreign container.
     pub fn is_h264_mp4(&self) -> bool {
         let codec_ok = self.video_codec.as_deref() == Some("h264");
         let container_ok = self
@@ -39,7 +44,14 @@ impl ProbeResult {
             .as_deref()
             .map(|c| c.split(',').any(|f| f.trim() == "mp4"))
             .unwrap_or(false);
-        codec_ok && container_ok
+        codec_ok && container_ok && !self.is_quicktime_brand()
+    }
+
+    fn is_quicktime_brand(&self) -> bool {
+        self.major_brand
+            .as_deref()
+            .map(|b| b.trim() == "qt")
+            .unwrap_or(false)
     }
 }
 
@@ -79,6 +91,12 @@ struct FfprobeOutput {
 struct FfprobeFormat {
     duration: Option<String>,
     format_name: Option<String>,
+    tags: Option<FfprobeFormatTags>,
+}
+
+#[derive(Debug, Deserialize)]
+struct FfprobeFormatTags {
+    major_brand: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -140,6 +158,7 @@ impl MediaProbe for FfprobeMediaProbe {
             duration_seconds: duration,
             video_codec,
             container: format.format_name,
+            major_brand: format.tags.and_then(|t| t.major_brand),
             width,
             height,
         })
@@ -204,7 +223,34 @@ impl MediaTranscode for FfmpegMediaTranscode {
 
 #[cfg(test)]
 mod tests {
-    use super::scale_filter;
+    use super::{ProbeResult, scale_filter};
+
+    fn probe(codec: &str, brand: Option<&str>) -> ProbeResult {
+        ProbeResult {
+            duration_seconds: 10.0,
+            video_codec: Some(codec.to_string()),
+            container: Some("mov,mp4,m4a,3gp,3g2,mj2".to_string()),
+            major_brand: brand.map(|b| b.to_string()),
+            width: Some(320),
+            height: Some(240),
+        }
+    }
+
+    #[test]
+    fn h264_mp4_is_served_as_is() {
+        assert!(probe("h264", Some("isom")).is_h264_mp4());
+        assert!(probe("h264", None).is_h264_mp4());
+    }
+
+    #[test]
+    fn h264_quicktime_is_transcoded() {
+        assert!(!probe("h264", Some("qt  ")).is_h264_mp4());
+    }
+
+    #[test]
+    fn hevc_is_transcoded() {
+        assert!(!probe("hevc", Some("mp42")).is_h264_mp4());
+    }
 
     #[test]
     fn scale_filter_caps_720_both_orientations() {
@@ -234,10 +280,18 @@ pub mod test_support {
                     duration_seconds,
                     video_codec: Some("h264".to_string()),
                     container: Some("mov,mp4,m4a,3gp,3g2,mj2".to_string()),
+                    major_brand: Some("isom".to_string()),
                     width: Some(320),
                     height: Some(240),
                 },
             }
+        }
+
+        /// An iPhone recording: h264, same ffprobe container, QuickTime brand.
+        pub fn ok_h264_quicktime(duration_seconds: f64) -> Self {
+            let mut probe = Self::ok_h264(duration_seconds);
+            probe.result.major_brand = Some("qt  ".to_string());
+            probe
         }
     }
 

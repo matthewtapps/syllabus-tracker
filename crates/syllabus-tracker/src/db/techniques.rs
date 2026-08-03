@@ -14,7 +14,7 @@ use crate::models::{AttemptBucket, Tag, Technique};
 /// One row in the library / full-techniques admin list. Aggregates collection
 /// membership count, how many students have the technique assigned, and the
 /// most recent activity on any of those assignments.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Clone)]
 pub struct LibraryTechniqueRow {
     pub id: i64,
     pub name: String,
@@ -36,12 +36,37 @@ pub struct LibraryTechniqueRow {
     pub is_pinned: bool,
 }
 
+/// The shared library: every global technique.
 #[instrument]
 pub async fn list_library_techniques(
     pool: &Pool<Sqlite>,
 ) -> Result<Vec<LibraryTechniqueRow>, AppError> {
     info!("Listing library techniques with usage aggregates");
+    list_techniques_scoped(pool, None).await
+}
 
+/// The techniques attached to one camp, in the same row shape the library uses.
+///
+/// A technique is "in" a camp when a `camp_technique` thread exists for it, so
+/// this reads the membership from threads. Unlike the library list it does NOT
+/// filter on `is_global`, because a camp-scoped technique (`is_global = 0`,
+/// created inside the camp) is exactly the case the library list cannot serve.
+#[instrument]
+pub async fn list_camp_techniques(
+    pool: &Pool<Sqlite>,
+    camp_id: i64,
+) -> Result<Vec<LibraryTechniqueRow>, AppError> {
+    info!("Listing camp techniques with usage aggregates");
+    list_techniques_scoped(pool, Some(camp_id)).await
+}
+
+/// One query behind both lists: `None` selects the global library, `Some(camp)`
+/// selects that camp's attached techniques. Kept as a single code path so the
+/// tag / collection assembly below cannot drift between the two surfaces.
+async fn list_techniques_scoped(
+    pool: &Pool<Sqlite>,
+    camp_id: Option<i64>,
+) -> Result<Vec<LibraryTechniqueRow>, AppError> {
     let rows = sqlx::query!(
         r#"
         SELECT
@@ -53,9 +78,21 @@ pub async fn list_library_techniques(
             COALESCE((SELECT COUNT(*) FROM videos v WHERE v.technique_id = t.id AND v.deleted_at IS NULL), 0) AS "video_count!: i64",
             (SELECT MAX(st.updated_at) FROM student_techniques st WHERE st.technique_id = t.id) AS "last_activity_at?: NaiveDateTime"
         FROM techniques t
-        WHERE t.is_global = 1
+        WHERE CASE WHEN ?1 IS NULL THEN t.is_global = 1
+                   ELSE t.id IN (SELECT ct.technique_id
+                                 FROM camp_techniques ct
+                                 WHERE ct.camp_id = ?1
+                                 UNION
+                                 SELECT th.technique_id
+                                 FROM threads th
+                                 WHERE th.anchor_kind = 'camp_technique'
+                                   AND th.camp_id = ?1
+                                   AND th.technique_id IS NOT NULL
+                                   AND th.deleted_at IS NULL)
+              END
         ORDER BY t.name
-        "#
+        "#,
+        camp_id,
     )
     .fetch_all(pool)
     .await?;

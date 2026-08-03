@@ -1,37 +1,24 @@
+use rocket::FromForm;
 use rocket::State;
 use rocket::http::Status;
 use rocket::serde::{Deserialize, Serialize, json::Json};
 use sqlx::{Pool, Sqlite};
-use tracing::instrument;
+use tracing::{instrument, warn};
 
+use crate::api::{ActivityFeedQuery, ACTIVITY_FEED_DEFAULT_LIMIT, ACTIVITY_FEED_MAX_LIMIT, parse_before_ts};
 use crate::auth::{Permission, User};
+use crate::db::ActivityRow;
 use crate::db::camps::{
-    add_camp_technique, add_camp_technique_video, archive_camp, attach_video_to_technique,
-    create_camp, create_camp_technique_new, get_camp, list_camp_summaries_for_student,
-    list_camp_technique_videos, list_camp_techniques, remove_camp_technique, update_camp, Camp,
-    CampSummary, CampTechnique, NewCamp, TechniqueScope,
+    archive_camp, attach_camp_techniques, create_camp, create_camp_technique_new, get_camp,
+    list_camp_summaries_for_student,
+    search_camp_techniques, search_camp_threads, search_camp_videos,
+    update_camp, Camp, CampSummary, CampTechniqueHit, CampThreadHit, CampVideoHit, NewCamp, TechniqueScope,
 };
-use crate::db::{list_videos_for_camp, set_video_camp_visibility};
+use crate::db::{
+    feed, list_camp_components, list_camp_techniques, list_videos_for_camp,
+    set_video_camp_visibility, CampComponent, CampComponentCursor, LibraryTechniqueRow, Viewer,
+};
 use crate::models::Video;
-
-/// Guard query: is the given technique pinned for the given student?
-async fn is_technique_pinned(
-    pool: &Pool<Sqlite>,
-    student_id: i64,
-    technique_id: i64,
-) -> Result<bool, Status> {
-    let count = sqlx::query_scalar!(
-        r#"SELECT COUNT(*) AS "c!: i64"
-           FROM student_pinned_techniques
-           WHERE student_id = ? AND technique_id = ?"#,
-        student_id,
-        technique_id,
-    )
-    .fetch_one(pool)
-    .await
-    .map_err(|_| Status::InternalServerError)?;
-    Ok(count > 0)
-}
 
 fn require_camps(user: &User) -> Result<(), Status> {
     user.require_permission(Permission::ManageCamps)
@@ -48,19 +35,12 @@ pub struct CreateCampRequest {
     pub student_id: i64,
     pub name: String,
     pub description: Option<String>,
-    /// Optional id of an earlier camp this new camp builds on ("builds-on" lineage).
-    pub references_camp_id: Option<i64>,
 }
 
 #[derive(Deserialize)]
 pub struct UpdateCampRequest {
     pub name: String,
     pub description: Option<String>,
-}
-
-#[derive(Deserialize)]
-pub struct AddTechniqueRequest {
-    pub technique_id: i64,
 }
 
 /// Body for `POST /api/camps/<id>/techniques/create` (CC-009/010).
@@ -92,12 +72,6 @@ pub struct CampDetailResponse {
     pub description: Option<String>,
     pub created_at: chrono::NaiveDateTime,
     pub archived_at: Option<chrono::NaiveDateTime>,
-    pub techniques: Vec<CampTechnique>,
-    /// Id of the camp this camp builds on, if any.
-    pub references_camp_id: Option<i64>,
-    /// Name of the referenced camp, resolved eagerly. Present only when
-    /// references_camp_id is set.
-    pub references_camp_name: Option<String>,
 }
 
 #[instrument(skip(req, pool, user))]
@@ -115,7 +89,6 @@ pub async fn api_create_camp(
             coach_id: user.id,
             name: req.name.clone(),
             description: req.description.clone(),
-            references_camp_id: req.references_camp_id,
         },
     )
     .await
@@ -155,19 +128,6 @@ pub async fn api_get_camp(
     if !can_read(&user, &camp) {
         return Err(Status::Forbidden);
     }
-    let techniques = list_camp_techniques(pool, id)
-        .await
-        .map_err(Status::from)?;
-
-    // Resolve the referenced camp name when this camp builds on a prior one.
-    let references_camp_name = if let Some(ref_id) = camp.references_camp_id {
-        get_camp(pool, ref_id)
-            .await
-            .map_err(Status::from)?
-            .map(|c| c.name)
-    } else {
-        None
-    };
 
     Ok(Json(CampDetailResponse {
         id: camp.id,
@@ -177,9 +137,6 @@ pub async fn api_get_camp(
         description: camp.description,
         created_at: camp.created_at,
         archived_at: camp.archived_at,
-        techniques,
-        references_camp_id: camp.references_camp_id,
-        references_camp_name,
     }))
 }
 
@@ -218,30 +175,14 @@ pub async fn api_archive_camp(
     Ok(Status::NoContent)
 }
 
-#[instrument(skip(req, pool, user))]
-#[post("/camps/<id>/techniques", data = "<req>")]
-pub async fn api_add_camp_technique(
-    id: i64,
-    user: User,
-    req: Json<AddTechniqueRequest>,
-    pool: &State<Pool<Sqlite>>,
-) -> Result<Status, Status> {
-    require_camps(&user)?;
-    add_camp_technique(pool.inner(), id, req.technique_id, user.id)
-        .await
-        .map_err(|e| match e {
-            crate::error::AppError::NotFound(_) => Status::NotFound,
-            other => Status::from(other),
-        })?;
-    Ok(Status::NoContent)
-}
-
-/// CC-009/010: Create a brand-new technique and immediately add it to the camp.
+/// CC-009/010: Create a brand-new technique and return its id.
 ///
 /// `scope = "global"` → technique joins the global library (CC-009).
 /// `scope = "scoped"` → technique is visible only inside this camp (CC-010).
 ///
-/// Returns `{id: <technique_id>}` on success. Requires `ManageCamps`.
+/// Returns `{id: <technique_id>}` on success. The caller must separately post
+/// a camp_technique THREAD so the technique appears in the camp feed.
+/// Requires `ManageCamps`.
 #[instrument(skip(req, pool, user))]
 #[post("/camps/<id>/techniques/create", data = "<req>")]
 pub async fn api_create_camp_technique(
@@ -275,118 +216,80 @@ pub async fn api_create_camp_technique(
     Ok(Json(CreatedResponse { id: technique_id }))
 }
 
-#[instrument(skip(pool, user))]
-#[delete("/camps/<id>/techniques/<technique_id>")]
-pub async fn api_remove_camp_technique(
-    id: i64,
-    technique_id: i64,
-    user: User,
-    pool: &State<Pool<Sqlite>>,
-) -> Result<Status, Status> {
-    require_camps(&user)?;
-    remove_camp_technique(pool.inner(), id, technique_id)
-        .await
-        .map_err(Status::from)?;
-    Ok(Status::NoContent)
-}
-
-/// Body for `POST /api/camps/<camp_id>/techniques/<technique_id>/videos`.
+/// Body for `POST /api/camps/<id>/techniques`.
 #[derive(Deserialize)]
-pub struct AddCampTechniqueVideoRequest {
-    pub video_id: i64,
-    /// `"camp_only"` → reference footage surfaced only inside this camp's view
-    /// of the technique (does not leak to the global technique list).
-    /// `"global"`    → attach as a normal technique video, visible everywhere
-    /// the technique appears.
-    pub scope: String,
+pub struct AttachCampTechniquesRequest {
+    pub technique_ids: Vec<i64>,
 }
 
-/// Coach-only: add a video to a technique WITHIN a camp.
-///
-/// `scope = "camp_only"` → pin the (existing) video as camp-only reference
-///   footage via `camp_technique_referenced_videos` (idempotent). The video is
-///   NOT added to the global technique-video list.
-/// `scope = "global"`    → attach the video to the technique as a normal
-///   technique video (parent_kind='technique'); it then appears everywhere the
-///   technique appears. No camp_technique_referenced_videos row is written.
-///
-/// Requires `ManageCamps` (technique authoring is coach-only; students upload
-/// to the camp itself via the separate camp-upload route). The technique must
-/// be attached to the camp.
+#[derive(Serialize)]
+pub struct AttachedResponse {
+    /// The ids this call actually added; a technique already in the camp is
+    /// absent, so a repeat attach reports nothing new rather than failing.
+    pub added: Vec<i64>,
+}
+
+/// Attaches existing techniques to a camp. Idempotent, and starts no
+/// discussion: membership is not a post. Open to a coach or the camp's own
+/// student, matching who may post on the camp's surfaces.
 #[instrument(skip(req, pool, user))]
-#[post("/camps/<camp_id>/techniques/<technique_id>/videos", data = "<req>")]
-pub async fn api_add_camp_technique_video(
-    camp_id: i64,
-    technique_id: i64,
+#[post("/camps/<id>/techniques", data = "<req>")]
+pub async fn api_attach_camp_techniques(
+    id: i64,
     user: User,
-    req: Json<AddCampTechniqueVideoRequest>,
+    req: Json<AttachCampTechniquesRequest>,
     pool: &State<Pool<Sqlite>>,
-) -> Result<Status, Status> {
-    require_camps(&user)?;
+) -> Result<Json<AttachedResponse>, Status> {
     let pool = pool.inner();
-
-    // The technique must be a member of this camp. This also implicitly
-    // confirms the camp exists (no membership row otherwise).
-    let is_member = sqlx::query_scalar!(
-        r#"SELECT EXISTS(
-              SELECT 1 FROM camp_techniques
-              WHERE camp_id = ? AND technique_id = ?
-           ) AS "e!: i64""#,
-        camp_id,
-        technique_id,
-    )
-    .fetch_one(pool)
-    .await
-    .map_err(|_| Status::InternalServerError)?;
-    if is_member == 0 {
-        return Err(Status::NotFound);
-    }
-
-    match req.scope.as_str() {
-        "camp_only" => {
-            add_camp_technique_video(pool, camp_id, technique_id, req.video_id)
-                .await
-                .map_err(Status::from)?;
-        }
-        "global" => {
-            attach_video_to_technique(pool, camp_id, req.video_id, technique_id)
-                .await
-                .map_err(Status::from)?;
-        }
-        _ => return Err(Status::UnprocessableEntity),
-    }
-
-    Ok(Status::NoContent)
-}
-
-/// Lists the camp-only reference videos pinned to a technique within a camp:
-/// the `videos` rows joined via `camp_technique_referenced_videos`. This returns
-/// ONLY the camp-only refs (NOT the global technique videos, which the frontend
-/// fetches separately). Soft-deleted videos are excluded.
-///
-/// Readable by a coach OR the camp's own student (same `can_read` rule as the
-/// other camp reads). The technique need not be a member: a non-member simply
-/// has no referenced-video rows and yields an empty list.
-#[instrument(skip(pool, user))]
-#[get("/camps/<camp_id>/techniques/<technique_id>/videos")]
-pub async fn api_list_camp_technique_videos(
-    camp_id: i64,
-    technique_id: i64,
-    user: User,
-    pool: &State<Pool<Sqlite>>,
-) -> Result<Json<CampVideosResponse>, Status> {
-    let pool = pool.inner();
-    let camp = get_camp(pool, camp_id)
+    let camp = get_camp(pool, id)
         .await
         .map_err(Status::from)?
         .ok_or(Status::NotFound)?;
     if !can_read(&user, &camp) {
         return Err(Status::Forbidden);
     }
-    let videos = list_camp_technique_videos(pool, camp_id, technique_id)
+    if req.technique_ids.is_empty() {
+        return Err(Status::UnprocessableEntity);
+    }
+    let added = attach_camp_techniques(pool, id, &req.technique_ids, user.id)
+        .await
+        .map_err(|e| match e {
+            crate::error::AppError::NotFound(_) => Status::NotFound,
+            other => Status::from(other),
+        })?;
+    Ok(Json(AttachedResponse { added }))
+}
+
+#[derive(Serialize)]
+pub struct CampTechniquesResponse {
+    pub techniques: Vec<LibraryTechniqueRow>,
+}
+
+/// Lists the techniques attached to a camp, in the library row shape.
+///
+/// The camp surfaces cannot read the library list for this: it filters on
+/// `is_global = 1`, so a camp-scoped technique created inside the camp is absent
+/// from it and neither the feed tile nor the technique page could hydrate one.
+/// Accessible to the camp's student and to any coach.
+#[instrument(skip(pool, user))]
+#[get("/camps/<id>/techniques")]
+pub async fn api_list_camp_techniques(
+    id: i64,
+    user: User,
+    pool: &State<Pool<Sqlite>>,
+) -> Result<Json<CampTechniquesResponse>, Status> {
+    let pool = pool.inner();
+    let camp = get_camp(pool, id)
+        .await
+        .map_err(Status::from)?
+        .ok_or(Status::NotFound)?;
+    if !can_read(&user, &camp) {
+        return Err(Status::Forbidden);
+    }
+    let techniques = list_camp_techniques(pool, id)
         .await
         .map_err(Status::from)?;
-    Ok(Json(CampVideosResponse { videos }))
+    Ok(Json(CampTechniquesResponse { techniques }))
 }
 
 #[derive(Serialize)]
@@ -415,6 +318,142 @@ pub async fn api_list_camp_videos(
         .await
         .map_err(Status::from)?;
     Ok(Json(CampVideosResponse { videos }))
+}
+
+/// `GET /api/camps/<camp_id>/feed?before_ts=&before_id=&limit=`
+///
+/// Returns the activity feed sliced to the given camp. Authorized for the
+/// camp's own student OR any coach (ManageCamps). Does NOT advance the
+/// viewer's activity cursor (read-only scoped view; the student's global
+/// cursor is advanced by the main `/api/activity/feed` endpoint).
+#[instrument(skip(params, pool, user))]
+#[get("/camps/<camp_id>/feed?<params..>")]
+pub async fn api_camp_feed(
+    camp_id: i64,
+    params: ActivityFeedQuery,
+    user: User,
+    pool: &State<Pool<Sqlite>>,
+) -> Result<Json<Vec<ActivityRow>>, Status> {
+    let pool = pool.inner();
+    let camp = get_camp(pool, camp_id)
+        .await
+        .map_err(Status::from)?
+        .ok_or(Status::NotFound)?;
+    let is_coach = user.has_permission(Permission::ManageCamps);
+    if !is_coach && user.id != camp.student_id {
+        return Err(Status::Forbidden);
+    }
+
+    let limit = params
+        .limit
+        .unwrap_or(ACTIVITY_FEED_DEFAULT_LIMIT)
+        .clamp(1, ACTIVITY_FEED_MAX_LIMIT);
+
+    let before = match (&params.before_ts, params.before_id) {
+        (Some(ts_str), Some(id)) => {
+            let ts = parse_before_ts(ts_str).ok_or_else(|| {
+                warn!(
+                    raw = ts_str,
+                    "rejected camps/feed: unparseable before_ts"
+                );
+                Status::BadRequest
+            })?;
+            Some((ts, id))
+        }
+        (None, None) => None,
+        _ => {
+            warn!(
+                "rejected camps/feed: partial cursor (before_ts and before_id must both be present or both absent)"
+            );
+            return Err(Status::BadRequest);
+        }
+    };
+
+    // Use the student role so the feed query is scoped to the camp's student
+    // (target_student_id = camp.student_id). The camp_id filter then narrows
+    // it further to only rows for this specific camp.
+    let rows = feed(
+        pool,
+        camp.student_id,
+        crate::auth::Role::Student,
+        before,
+        limit,
+        Some(camp_id),
+    )
+    .await
+    .map_err(Status::from)?;
+
+    Ok(Json(rows))
+}
+
+#[derive(FromForm)]
+pub struct CampComponentsQuery {
+    /// Keyset cursor: the previous page's last (last_touch, kind, id). All
+    /// three must be present or all absent.
+    pub before_ts: Option<String>,
+    pub before_kind: Option<String>,
+    pub before_id: Option<i64>,
+    pub limit: Option<i64>,
+}
+
+#[derive(Serialize)]
+pub struct CampComponentsResponse {
+    pub components: Vec<CampComponent>,
+    /// Cursor for the next page; null when this was the last one.
+    pub next_cursor: Option<CampComponentCursor>,
+}
+
+/// `GET /api/camps/<camp_id>/components?before_ts=&before_kind=&before_id=&limit=`
+///
+/// The camp's content, one row per component, newest touch first. Each
+/// component carries enough hydration for the camp page to render it fully
+/// expanded, so the page costs one request per page instead of one per
+/// component.
+///
+/// Authorized for the camp's own student OR any coach.
+#[instrument(skip(params, pool, user))]
+#[get("/camps/<camp_id>/components?<params..>")]
+pub async fn api_camp_components(
+    camp_id: i64,
+    params: CampComponentsQuery,
+    user: User,
+    pool: &State<Pool<Sqlite>>,
+) -> Result<Json<CampComponentsResponse>, Status> {
+    let pool = pool.inner();
+    let camp = get_camp(pool, camp_id)
+        .await
+        .map_err(Status::from)?
+        .ok_or(Status::NotFound)?;
+    let is_coach = user.has_permission(Permission::ViewAllStudents);
+    if !is_coach && user.id != camp.student_id {
+        return Err(Status::Forbidden);
+    }
+
+    let limit = params
+        .limit
+        .unwrap_or(ACTIVITY_FEED_DEFAULT_LIMIT)
+        .clamp(1, ACTIVITY_FEED_MAX_LIMIT);
+
+    let before = match (params.before_ts, params.before_kind, params.before_id) {
+        (Some(last_touch), Some(kind), Some(id)) => Some(CampComponentCursor { last_touch, kind, id }),
+        (None, None, None) => None,
+        _ => {
+            warn!(
+                "rejected camps/components: partial cursor (before_ts, before_kind and before_id must all be present or all absent)"
+            );
+            return Err(Status::BadRequest);
+        }
+    };
+
+    let viewer = Viewer { user_id: user.id, is_coach };
+    let (components, next_cursor) = list_camp_components(pool, camp_id, viewer, before, limit)
+        .await
+        .map_err(Status::from)?;
+
+    Ok(Json(CampComponentsResponse {
+        components,
+        next_cursor,
+    }))
 }
 
 /// CC-015: Set a per-camp visibility override for a video.
@@ -447,47 +486,91 @@ pub async fn api_set_camp_video_visibility(
     Ok(Status::NoContent)
 }
 
-#[derive(Deserialize)]
-pub struct PromotePinnedToCampRequest {
-    pub camp_id: i64,
+// ---------------------------------------------------------------------------
+// Camp search (Phase 4)
+// ---------------------------------------------------------------------------
+
+#[derive(FromForm)]
+pub struct CampSearchParams {
+    pub q: Option<String>,
+    /// Narrow to one group: `technique` | `video` | `thread`.
+    pub kind: Option<String>,
 }
 
-/// Coach-only: promote a pinned technique into one of the student's camps.
-/// Verifies:
-///   - the technique is actually pinned for `student_id` (404 if not)
-///   - the camp belongs to `student_id` (400 if not)
-/// Then calls `add_camp_technique` (idempotent) and returns 204.
-/// Notes are already shared by (student, technique) so they surface in the
-/// camp automatically; no thread/comment relinking is needed for Slice 3.
-#[instrument(skip(req, pool, user))]
-#[post("/students/<student_id>/pinned/<technique_id>/promote", data = "<req>")]
-pub async fn api_promote_pinned_to_camp(
-    student_id: i64,
-    technique_id: i64,
+#[derive(Serialize)]
+pub struct CampSearchResponse {
+    pub techniques: Vec<CampTechniqueHit>,
+    pub videos: Vec<CampVideoHit>,
+    pub threads: Vec<CampThreadHit>,
+}
+
+/// `GET /api/camps/<camp_id>/search?q=<str>&kind=<optional>`
+///
+/// Searches within a single camp across three surfaces:
+/// - `techniques`: camp_technique threads whose anchored technique name matches.
+/// - `videos`: camp-owned footage or thread-attached videos whose title matches.
+/// - `threads`: root-post and comment bodies that match.
+///
+/// Authorization: coach (`ManageCamps`) OR the camp's own student.
+/// Empty `q` → returns empty groups.
+#[instrument(skip(params, pool, user))]
+#[get("/camps/<camp_id>/search?<params..>")]
+pub async fn api_camp_search(
+    camp_id: i64,
+    params: CampSearchParams,
     user: User,
-    req: Json<PromotePinnedToCampRequest>,
     pool: &State<Pool<Sqlite>>,
-) -> Result<Status, Status> {
-    require_camps(&user)?;
+) -> Result<Json<CampSearchResponse>, Status> {
     let pool = pool.inner();
-
-    // Guard 1: technique must be pinned for this student.
-    if !is_technique_pinned(pool, student_id, technique_id).await? {
-        return Err(Status::NotFound);
-    }
-
-    // Guard 2: the target camp must belong to this student.
-    let camp = get_camp(pool, req.camp_id)
+    let camp = get_camp(pool, camp_id)
         .await
         .map_err(Status::from)?
         .ok_or(Status::NotFound)?;
-    if camp.student_id != student_id {
-        return Err(Status::BadRequest);
+    let is_coach = user.has_permission(Permission::ManageCamps);
+    if !is_coach && user.id != camp.student_id {
+        return Err(Status::Forbidden);
     }
 
-    add_camp_technique(pool, req.camp_id, technique_id, user.id)
-        .await
-        .map_err(Status::from)?;
+    let q = params.q.as_deref().unwrap_or("").trim().to_lowercase();
 
-    Ok(Status::NoContent)
+    // Empty query — return empty groups immediately.
+    if q.is_empty() {
+        return Ok(Json(CampSearchResponse {
+            techniques: vec![],
+            videos: vec![],
+            threads: vec![],
+        }));
+    }
+
+    let kind = params.kind.as_deref();
+
+    let techniques = if kind.is_none() || kind == Some("technique") {
+        search_camp_techniques(pool, camp_id, &q)
+            .await
+            .map_err(Status::from)?
+    } else {
+        vec![]
+    };
+
+    let videos = if kind.is_none() || kind == Some("video") {
+        search_camp_videos(pool, camp_id, &q)
+            .await
+            .map_err(Status::from)?
+    } else {
+        vec![]
+    };
+
+    let threads = if kind.is_none() || kind == Some("thread") {
+        search_camp_threads(pool, camp_id, &q)
+            .await
+            .map_err(Status::from)?
+    } else {
+        vec![]
+    };
+
+    Ok(Json(CampSearchResponse {
+        techniques,
+        videos,
+        threads,
+    }))
 }

@@ -6,6 +6,7 @@
 
 mod activity;
 mod activity_read;
+mod camp_components;
 pub mod camps;
 pub mod dashboard;
 mod attempts;
@@ -23,11 +24,13 @@ mod tags;
 mod techniques;
 mod users;
 pub mod threads;
+mod video_references;
 mod videos;
 mod watch;
 
 pub use activity::*;
 pub use activity_read::*;
+pub use camp_components::{list_camp_components, CampComponent, CampComponentCursor};
 pub use dashboard::{activity_digest, ActivityDigest, DigestMetric};
 pub use attempts::*;
 pub use collections::*;
@@ -48,6 +51,7 @@ pub use threads::{
     CommentView, NewThread, ThreadView, ThreadVisibility, Viewer,
 };
 pub use users::*;
+pub use video_references::*;
 pub use videos::*;
 pub use watch::*;
 

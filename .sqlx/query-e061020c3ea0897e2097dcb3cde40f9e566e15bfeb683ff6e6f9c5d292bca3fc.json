@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "DELETE FROM video_references WHERE id = ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": []
+  },
+  "hash": "e061020c3ea0897e2097dcb3cde40f9e566e15bfeb683ff6e6f9c5d292bca3fc"
+}

@@ -1,7 +1,6 @@
-import { useState } from "react";
-import { resolveFeedItem, type FocusThread } from "@/lib/feed-item";
+import { resolveFeedItem } from "@/lib/feed-item";
 import { TechniqueTile } from "./technique-tile";
-import { CommentTile } from "./comment-tile";
+import { ThreadTile } from "./thread-tile";
 import { VideoTile } from "./video-tile";
 import type { ActivityRow } from "@/lib/activity-line";
 
@@ -17,10 +16,10 @@ export function ActivityTile({ row }: { row: ActivityRow }) {
     case "video":
       return <VideoTile subject={subject} />;
     case "technique":
-      return <TechniqueSubjectTile row={row} thread={subject.thread} />;
+      return <TechniqueTile row={row} focusThread={subject.thread} />;
     case "thread":
       return (
-        <CommentTile
+        <ThreadTile
           row={row}
           anchorKind={subject.anchorKind}
           anchorId={subject.anchorId}
@@ -30,27 +29,4 @@ export function ActivityTile({ row }: { row: ActivityRow }) {
     case "none":
       return null;
   }
-}
-
-/**
- * A technique comment: the collapsed technique row plus just the relevant thread
- * below it. Once the row is expanded its own discussion shows the thread, so the
- * sibling focus thread hides to avoid rendering it twice.
- */
-function TechniqueSubjectTile({ row, thread }: { row: ActivityRow; thread: FocusThread | null }) {
-  const [expanded, setExpanded] = useState(false);
-  return (
-    <>
-      <TechniqueTile row={row} onExpandedChange={setExpanded} />
-      {thread && !expanded && (
-        <CommentTile
-          row={row}
-          anchorKind={thread.anchorKind}
-          anchorId={thread.anchorId}
-          threadId={thread.threadId}
-          hideAnchorChip
-        />
-      )}
-    </>
-  );
 }

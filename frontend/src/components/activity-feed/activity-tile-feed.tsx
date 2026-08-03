@@ -1,9 +1,8 @@
 import { Fragment } from "react";
 import { ActivityTileHeader } from "./activity-tile-header";
 import { ActivityTile } from "./activity-tile";
-import { isGatedEpicRow } from "@/lib/view-context";
 import { suppressHideUnhide } from "@/lib/activity-hide-unhide";
-import { campsUiEnabled } from "@/lib/features";
+import { cn } from "@/lib/utils";
 import type { ActivityRow, ActivityScope } from "@/lib/activity-line";
 
 /**
@@ -20,12 +19,17 @@ export function ActivityTileFeed({
   scope,
   showAvatar = true,
   emptyText = "No activity yet.",
+  getRowDataAttrs,
 }: {
   rows: ActivityRow[];
   isLoading: boolean;
   scope: ActivityScope;
   showAvatar?: boolean;
   emptyText?: string;
+  /** Optional callback to inject extra props on each row's <li>.
+   *  Used by surfaces that need per-row anchors or highlight classes
+   *  (e.g. camp jump-to-feed). Values that are undefined are omitted. */
+  getRowDataAttrs?: (row: ActivityRow) => Record<string, string | undefined>;
 }) {
   if (isLoading) {
     return (
@@ -43,12 +47,8 @@ export function ActivityTileFeed({
     );
   }
 
-  // Drop hide/unhide curation noise (net-visibility rule) before gating.
-  const deNoised = suppressHideUnhide(rows);
-
-  // Camps are gated off on prod; drop their rows so the feed never links into
-  // half-built surfaces (mirrors ActivityFeedList).
-  const visible = campsUiEnabled ? deNoised : deNoised.filter((row) => !isGatedEpicRow(row));
+  // Drop hide/unhide curation noise (net-visibility rule).
+  const visible = suppressHideUnhide(rows);
 
   if (visible.length === 0) {
     return (
@@ -76,15 +76,26 @@ export function ActivityTileFeed({
   return (
     <ul className="space-y-4">
       {caughtUp && <Fragment key="caught-up">{divider}</Fragment>}
-      {visible.map((row, i) => (
-        <Fragment key={`${row.id}-${row.occurred_at}`}>
-          <li className="overflow-hidden rounded-lg border border-border bg-card">
-            <ActivityTileHeader row={row} scope={scope} showAvatar={showAvatar} />
-            <ActivityTile row={row} />
-          </li>
-          {i === lastUnreadIdx && i < visible.length - 1 && divider}
-        </Fragment>
-      ))}
+      {visible.map((row, i) => {
+        const { className: extraClassName, ...extraAttrs } = getRowDataAttrs
+          ? getRowDataAttrs(row)
+          : ({} as Record<string, string | undefined>);
+        return (
+          <Fragment key={`${row.id}-${row.occurred_at}`}>
+            <li
+              className={cn(
+                "overflow-hidden rounded-lg border border-border bg-card transition-shadow",
+                extraClassName,
+              )}
+              {...extraAttrs}
+            >
+              <ActivityTileHeader row={row} scope={scope} showAvatar={showAvatar} />
+              <ActivityTile row={row} />
+            </li>
+            {i === lastUnreadIdx && i < visible.length - 1 && divider}
+          </Fragment>
+        );
+      })}
     </ul>
   );
 }

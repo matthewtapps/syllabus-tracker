@@ -1272,6 +1272,20 @@ export function useSetVideoSyllabusVisibility() {
 // Threads (PR 2, Task 1)
 // ============================================================
 
+/** A camp orders its components by last touch, so anything posted into one
+ *  re-sorts the camp page. `camp` threads anchor on the camp itself; a
+ *  `camp_technique` thread carries the camp separately. */
+function invalidateCampComponentsFor(
+  qc: ReturnType<typeof useQueryClient>,
+  anchorKind: string,
+  anchorId: number,
+  campId?: number,
+): void {
+  const id =
+    anchorKind === "camp" ? anchorId : anchorKind === "camp_technique" ? campId : undefined;
+  if (id !== undefined) qc.invalidateQueries({ queryKey: qk.campComponentsAll(id) });
+}
+
 export function useCreateThread() {
   const qc = useQueryClient();
   return useMutation({
@@ -1298,6 +1312,7 @@ export function useCreateThread() {
           queryKey: qk.threads("video", input.anchor_id),
         });
       }
+      invalidateCampComponentsFor(qc, input.anchor_kind, input.anchor_id, campId);
     },
   });
 }
@@ -1316,16 +1331,39 @@ export function useCreateComment(
       body: string;
       parentCommentId?: number | null;
       videoId?: number | null;
+      videoIsReference?: boolean | null;
+      videoTsSeconds?: number | null;
+      videoTitle?: string | null;
       authorId?: number;
       authorName?: string;
-    }) => unwrap(await createComment(v.threadId, v.body, v.parentCommentId, v.videoId)),
+    }) =>
+      unwrap(
+        await createComment(
+          v.threadId,
+          v.body,
+          v.parentCommentId,
+          v.videoId,
+          v.videoIsReference,
+          v.videoTsSeconds,
+          v.videoTitle,
+        ),
+      ),
     // When the comment carries a video, optimistically drop it into the thread
     // (with the video in its "processing" state) so the author sees their reply
     // immediately; the thread query polls it to playable. Reconciled on settle.
     onMutate: async (v) => {
       if (v.videoId == null || v.authorId == null) return;
-      await qc.cancelQueries({ queryKey: key });
+      // Both cache shapes hold this thread: the anchor's list, and the single
+      // thread a by-id surface reads (a camp's thread page). Write the optimistic
+      // comment into both, or the reply appears instantly on one surface and only
+      // after a refetch on the other.
+      const byIdKey = qk.thread(v.threadId);
+      await Promise.all([
+        qc.cancelQueries({ queryKey: key }),
+        qc.cancelQueries({ queryKey: byIdKey }),
+      ]);
       const previous = qc.getQueryData<ThreadView[]>(key);
+      const previousById = qc.getQueryData<ThreadView>(byIdKey);
       const now = new Date().toISOString();
       const tempId = -Date.now();
       const optimistic: CommentView = {
@@ -1342,7 +1380,7 @@ export function useCreateComment(
           student_id: null,
           thread_id: v.threadId,
           camp_id: null,
-          title: "",
+          title: v.videoTitle ?? "",
           position: 0,
           kind: "native",
           processing_status: "processing",
@@ -1351,6 +1389,7 @@ export function useCreateComment(
           updated_at: now,
           hidden_at: null,
         },
+        video_ts_seconds: v.videoTsSeconds ?? null,
         created_at: now,
         deleted_at: null,
       };
@@ -1359,16 +1398,28 @@ export function useCreateComment(
           t.id === v.threadId ? { ...t, comments: [...t.comments, optimistic] } : t,
         ),
       );
-      return { previous };
+      qc.setQueryData<ThreadView>(byIdKey, (prev) =>
+        prev && prev.id === v.threadId
+          ? { ...prev, comments: [...prev.comments, optimistic] }
+          : prev,
+      );
+      return { previous, previousById, byIdKey };
     },
     onError: (_err, _v, ctx) => {
       if (ctx?.previous) qc.setQueryData(key, ctx.previous);
+      if (ctx?.previousById && ctx.byIdKey) {
+        qc.setQueryData(ctx.byIdKey, ctx.previousById);
+      }
     },
-    onSettled: () => {
+    onSettled: (_data, _err, v) => {
       qc.invalidateQueries({ queryKey: key });
+      // A surface reading this thread by id (a camp's thread page) holds a
+      // separate cache entry that the anchor list's key does not cover.
+      qc.invalidateQueries({ queryKey: qk.thread(v.threadId) });
       if (anchorKind === "video_timestamp" || anchorKind === "video") {
         qc.invalidateQueries({ queryKey: qk.threads("video", anchorId) });
       }
+      invalidateCampComponentsFor(qc, anchorKind, anchorId, campId);
     },
   });
 }
@@ -1383,11 +1434,13 @@ export function useDeleteThread(
   return useMutation({
     mutationFn: async (threadId: number) =>
       unwrap(await deleteThread(threadId)),
-    onSuccess: () => {
+    onSuccess: (_data, threadId) => {
       qc.invalidateQueries({ queryKey: qk.threads(anchorKind, anchorId, keyCampId) });
+      qc.invalidateQueries({ queryKey: qk.thread(threadId) });
       if (anchorKind === "video_timestamp" || anchorKind === "video") {
         qc.invalidateQueries({ queryKey: qk.threads("video", anchorId) });
       }
+      invalidateCampComponentsFor(qc, anchorKind, anchorId, campId);
     },
   });
 }
@@ -1404,9 +1457,13 @@ export function useDeleteComment(
       unwrap(await deleteComment(commentId)),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: qk.threads(anchorKind, anchorId, keyCampId) });
+      // Only the comment id is known here, so refresh every by-id thread entry
+      // rather than guess which one held it.
+      qc.invalidateQueries({ queryKey: ["thread"] });
       if (anchorKind === "video_timestamp" || anchorKind === "video") {
         qc.invalidateQueries({ queryKey: qk.threads("video", anchorId) });
       }
+      invalidateCampComponentsFor(qc, anchorKind, anchorId, campId);
     },
   });
 }
@@ -1416,13 +1473,10 @@ export function useDeleteComment(
 // ============================================================
 
 import {
-  addCampTechnique,
-  addCampTechniqueVideo,
   archiveCamp,
+  attachCampTechniques,
   createCamp,
   createCampTechnique,
-  promotePinnedToCamp,
-  removeCampTechnique,
   setCampVideoVisibility,
   updateCamp,
 } from "./api";
@@ -1433,7 +1487,6 @@ export function useCreateCamp(studentId: number) {
     mutationFn: (data: {
       name: string;
       description: string | null;
-      references_camp_id?: number | null;
     }) => createCamp({ student_id: studentId, ...data }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: qk.campsForStudent(studentId) });
@@ -1464,16 +1517,6 @@ export function useUpdateCamp(campId: number, studentId: number) {
   });
 }
 
-export function useAddCampTechnique(campId: number) {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (techniqueId: number) => addCampTechnique(campId, techniqueId),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: qk.camp(campId) });
-    },
-  });
-}
-
 /** CC-009/010: Create a new technique inside a camp (global or scoped). */
 export function useCreateCampTechnique(campId: number) {
   const qc = useQueryClient();
@@ -1482,53 +1525,21 @@ export function useCreateCampTechnique(campId: number) {
       createCampTechnique(campId, vars),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: qk.camp(campId) });
+      qc.invalidateQueries({ queryKey: qk.campComponentsAll(campId) });
       // A new global technique joins the library; refresh the pick-existing picker.
       qc.invalidateQueries({ queryKey: qk.libraryTechniques() });
     },
   });
 }
 
-export function useRemoveCampTechnique(campId: number) {
+/** Attaches existing techniques to a camp. */
+export function useAttachCampTechniques(campId: number) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (techniqueId: number) =>
-      removeCampTechnique(campId, techniqueId),
+    mutationFn: (techniqueIds: number[]) => attachCampTechniques(campId, techniqueIds),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: qk.camp(campId) });
-    },
-  });
-}
-
-/**
- * Attach a camp footage video to a technique as camp-only reference footage or
- * promote it globally. Invalidates every viewer's copy of the technique's video
- * list (`techniqueVideosAll` covers all `forStudent` buckets) so a global
- * promotion surfaces everywhere, plus the camp's own video list and camp detail
- * since the footage's role changed.
- */
-export function useAddCampTechniqueVideo(campId: number) {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (vars: {
-      techniqueId: number;
-      videoId: number;
-      scope: "camp_only" | "global";
-    }) =>
-      addCampTechniqueVideo(campId, vars.techniqueId, {
-        video_id: vars.videoId,
-        scope: vars.scope,
-      }),
-    onSuccess: (_d, vars) => {
-      qc.invalidateQueries({
-        queryKey: qk.techniqueVideosAll(vars.techniqueId),
-      });
-      qc.invalidateQueries({ queryKey: qk.campVideos(campId) });
-      qc.invalidateQueries({ queryKey: qk.camp(campId) });
-      // Refresh the camp-only section in the camp technique row so a
-      // `camp_only` add appears without a manual reload.
-      qc.invalidateQueries({
-        queryKey: qk.campTechniqueVideos(campId, vars.techniqueId),
-      });
+      qc.invalidateQueries({ queryKey: qk.campComponentsAll(campId) });
+      qc.invalidateQueries({ queryKey: qk.campTechniques(campId) });
     },
   });
 }
@@ -1641,14 +1652,3 @@ export function useApplyAssignmentDiff() {
   });
 }
 
-export function usePromotePinnedToCamp(studentId: number) {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (vars: { techniqueId: number; campId: number }) =>
-      promotePinnedToCamp(studentId, vars.techniqueId, vars.campId),
-    onSuccess: (_res, vars) => {
-      qc.invalidateQueries({ queryKey: qk.campsForStudent(studentId) });
-      qc.invalidateQueries({ queryKey: qk.camp(vars.campId) });
-    },
-  });
-}

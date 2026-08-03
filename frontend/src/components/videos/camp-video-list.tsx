@@ -61,6 +61,9 @@ interface CampVideoListProps {
   canUpload?: boolean;
   /** When set, scroll this video into view once the list loads. */
   scrollToVideoId?: number | null;
+  /** Seconds to resume `scrollToVideoId` at. Set, the video opens straight into
+   *  the player at that point; unset, arriving only scrolls to its row. */
+  resumeSeconds?: number | null;
   onVideoScrolled?: () => void;
 }
 
@@ -70,12 +73,16 @@ export function CampVideoList({
   canManage,
   canUpload = canManage,
   scrollToVideoId,
+  resumeSeconds,
   onVideoScrolled,
 }: CampVideoListProps) {
   const qc = useQueryClient();
   const videosQuery = useCampVideos(campId);
   const videos = videosQuery.data ?? null;
   const [playing, setPlaying] = useState<Video | null>(null);
+  // Resuming means the viewer was already watching this clip in the feed, so
+  // open it rather than making them find and tap the row again.
+  const [resumeFor, setResumeFor] = useState<{ videoId: number; seconds: number } | null>(null);
   const [uploadOpen, setUploadOpen] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
 
@@ -87,12 +94,17 @@ export function CampVideoList({
     if (!videos) return;
     if (!videos.some((v) => v.id === scrollToVideoId)) return;
     didScrollRef.current = scrollToVideoId;
+    const target = videos.find((v) => v.id === scrollToVideoId)!;
     requestAnimationFrame(() => {
       const el = document.getElementById(`video-row-${scrollToVideoId}`);
       el?.scrollIntoView({ behavior: "smooth", block: "center" });
+      if (resumeSeconds != null && resumeSeconds > 0) {
+        setResumeFor({ videoId: target.id, seconds: resumeSeconds });
+        setPlaying(target);
+      }
       onVideoScrolled?.();
     });
-  }, [scrollToVideoId, videos, onVideoScrolled]);
+  }, [scrollToVideoId, resumeSeconds, videos, onVideoScrolled]);
 
   function handleDeleted(videoId: number) {
     qc.setQueryData(
@@ -180,7 +192,11 @@ export function CampVideoList({
 
       <VideoPlayerDialog
         video={playing}
-        onClose={() => setPlaying(null)}
+        startAtSeconds={playing && resumeFor?.videoId === playing.id ? resumeFor.seconds : null}
+        onClose={() => {
+          setPlaying(null);
+          setResumeFor(null);
+        }}
         surface={{ kind: "student", studentId }}
         context={{ label: "Camp video" }}
       />

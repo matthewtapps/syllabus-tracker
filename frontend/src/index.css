@@ -92,6 +92,28 @@
   }
 }
 
+/* Reduce Motion: a bottom sheet cross-fades instead of sliding, ~150ms both
+   directions. Nothing informational is lost, it is full-screen with a header
+   and a close affordance.
+
+   Deliberately not the usual global `animation-duration: 0.01ms !important`
+   reset: Radix drives unmount off animation completion, so collapsing every
+   animation risks content that never leaves the DOM. Overriding tw-animate-css's
+   enter/exit vars keeps the animation running and only takes the travel out of
+   it. Unlayered on purpose, so it outranks the layered `slide-in-from-*` and
+   `duration-*` utilities on the same element whatever their specificity. */
+@media (prefers-reduced-motion: reduce) {
+  [data-slot="sheet-content"] {
+    --tw-enter-translate-x: 0;
+    --tw-enter-translate-y: 0;
+    --tw-exit-translate-x: 0;
+    --tw-exit-translate-y: 0;
+    --tw-enter-opacity: 0;
+    --tw-exit-opacity: 0;
+    --tw-duration: 150ms;
+  }
+}
+
 /* Indeterminate progress bar: slides a short pill across the track,
    used along the bottom border of a still-processing video row. */
 @keyframes processingBar {

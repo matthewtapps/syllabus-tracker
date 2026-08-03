@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { StudentAvatar } from "@/components/student-avatar";
 import { formatTimestamp } from "@/lib/dates";
 import { cn } from "@/lib/utils";
-import type { ThreadView } from "@/lib/api";
+import type { TimestampedEntry } from "./timestamped-entry";
 
 const FADE_MS = 300;
 
@@ -10,12 +10,12 @@ const LEAD_IN = 3;
 const LEAD_OUT = 3;
 
 /**
- * The timestamped thread whose display window [t-LEAD_IN, t+LEAD_OUT] contains
+ * The timestamped entry whose display window [t-LEAD_IN, t+LEAD_OUT] contains
  * `currentTime`. When several overlap, the one whose anchor is nearest to
  * `currentTime` wins. Returns null when none are active.
  */
-export function activeMoment(threads: ThreadView[], currentTime: number, leadIn = LEAD_IN, leadOut = LEAD_OUT): ThreadView | null {
-  let best: ThreadView | null = null;
+export function activeMoment(threads: TimestampedEntry[], currentTime: number, leadIn = LEAD_IN, leadOut = LEAD_OUT): TimestampedEntry | null {
+  let best: TimestampedEntry | null = null;
   let bestDist = Infinity;
   for (const t of threads) {
     if (t.video_ts_seconds == null) continue;
@@ -32,11 +32,11 @@ export function activeMoment(threads: ThreadView[], currentTime: number, leadIn 
 }
 
 interface MomentOverlayProps {
-  threads: ThreadView[];
+  threads: TimestampedEntry[];
   currentTime: number;
-  /** A pin/feed selection forces this thread to show, overriding the window. */
-  pinnedThread: ThreadView | null;
-  onOpen: (thread: ThreadView) => void;
+  /** A pin/feed selection forces this entry to show, overriding the window. */
+  pinnedThread: TimestampedEntry | null;
+  onOpen: (thread: TimestampedEntry) => void;
 }
 
 export function MomentOverlay({ threads, currentTime, pinnedThread, onOpen }: MomentOverlayProps) {
@@ -45,7 +45,7 @@ export function MomentOverlay({ threads, currentTime, pinnedThread, onOpen }: Mo
 
   // Keep the last comment mounted through the fade-out so it animates away
   // instead of vanishing.
-  const [shown, setShown] = useState<ThreadView | null>(active);
+  const [shown, setShown] = useState<TimestampedEntry | null>(active);
   const [visible, setVisible] = useState(false);
 
   useEffect(() => {

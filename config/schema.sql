@@ -230,37 +230,34 @@ CREATE TABLE IF NOT EXISTS student_pinned_techniques (
 CREATE INDEX IF NOT EXISTS idx_spt_student ON student_pinned_techniques (student_id);
 
 -- A camp: a stretch of intentional work between one coach and one student,
--- holding techniques, videos, and discussion. Slice 1 = generic camp only.
--- references_camp_id added in C-Slice 3 to capture "builds on" lineage (a new
--- camp that continues from a prior one).
+-- holding techniques, videos, and discussion.
 CREATE TABLE IF NOT EXISTS camps (
-    id                 INTEGER PRIMARY KEY,
-    student_id         INTEGER NOT NULL REFERENCES users (id) ON DELETE CASCADE,
-    coach_id           INTEGER NOT NULL REFERENCES users (id),
-    name               TEXT NOT NULL,
-    description        TEXT,
-    created_at         TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    archived_at        TIMESTAMP,
-    archived_by_id     INTEGER REFERENCES users (id),
-    references_camp_id INTEGER REFERENCES camps(id)
+    id             INTEGER PRIMARY KEY,
+    student_id     INTEGER NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+    coach_id       INTEGER NOT NULL REFERENCES users (id),
+    name           TEXT NOT NULL,
+    description    TEXT,
+    created_at     TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    archived_at    TIMESTAMP,
+    archived_by_id INTEGER REFERENCES users (id)
 );
 CREATE INDEX IF NOT EXISTS idx_camps_student
     ON camps (student_id) WHERE archived_at IS NULL;
 
--- Membership of (global library) techniques in a camp, with display order.
+-- A technique attached to a camp. Membership is its own fact: attaching a
+-- technique is not a post, so it starts no discussion, and re-attaching one
+-- already in the camp is a no-op rather than a second copy. Camps predating
+-- this table hold their techniques through camp_technique threads, which the
+-- membership reads still union in.
 CREATE TABLE IF NOT EXISTS camp_techniques (
     camp_id      INTEGER NOT NULL REFERENCES camps (id) ON DELETE CASCADE,
     technique_id INTEGER NOT NULL REFERENCES techniques (id) ON DELETE CASCADE,
-    position     INTEGER NOT NULL DEFAULT 0,
     added_at     TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     added_by_id  INTEGER REFERENCES users (id),
     PRIMARY KEY (camp_id, technique_id)
 );
-CREATE INDEX IF NOT EXISTS idx_camp_techniques_position
-    ON camp_techniques (camp_id, position);
-
--- Referenced-footage link tables (C-Slice 3). Pure join tables with no extra
--- columns; ON DELETE CASCADE cleans up automatically.
+CREATE INDEX IF NOT EXISTS idx_camp_techniques_technique
+    ON camp_techniques (technique_id);
 
 -- A thread that a camp explicitly references (e.g. an earlier coaching thread
 -- whose insights informed this camp).
@@ -268,16 +265,6 @@ CREATE TABLE IF NOT EXISTS camp_referenced_threads (
     camp_id   INTEGER NOT NULL REFERENCES camps (id) ON DELETE CASCADE,
     thread_id INTEGER NOT NULL REFERENCES threads (id) ON DELETE CASCADE,
     PRIMARY KEY (camp_id, thread_id)
-);
-
--- A specific video on a camp technique that has been pinned as reference
--- footage for that technique in this camp (e.g. the student's footage that
--- first identified the gap this technique addresses).
-CREATE TABLE IF NOT EXISTS camp_technique_referenced_videos (
-    camp_id      INTEGER NOT NULL REFERENCES camps (id) ON DELETE CASCADE,
-    technique_id INTEGER NOT NULL REFERENCES techniques (id) ON DELETE CASCADE,
-    video_id     INTEGER NOT NULL REFERENCES videos (id) ON DELETE CASCADE,
-    PRIMARY KEY (camp_id, technique_id, video_id)
 );
 
 -- New "syllabus" stack (PR 3). Parallel to legacy collections /
@@ -411,6 +398,31 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_vvo_syllabus   ON video_visibility_overrid
 CREATE UNIQUE INDEX IF NOT EXISTS idx_vvo_assignment ON video_visibility_overrides (assignment_id, video_id) WHERE scope_kind='assignment';
 CREATE UNIQUE INDEX IF NOT EXISTS idx_vvo_camp       ON video_visibility_overrides (camp_id, video_id)       WHERE scope_kind='camp';
 
+-- A clip shown on a technique or a student's syllabus technique without being
+-- owned by it: the video keeps its own parent and only the pointer lives here.
+-- Exclusive-arc design mirroring videos.parent_kind. `hidden_at` belongs to the
+-- reference, so hiding a clip on one surface leaves it alone everywhere else;
+-- per-student overrides stay keyed on the video and so are shared.
+CREATE TABLE IF NOT EXISTS video_references (
+    id            INTEGER PRIMARY KEY,
+    video_id      INTEGER NOT NULL REFERENCES videos (id) ON DELETE CASCADE,
+    parent_kind   TEXT NOT NULL CHECK (parent_kind IN ('technique','student_syllabus_technique')),
+    technique_id  INTEGER REFERENCES techniques (id) ON DELETE CASCADE,
+    student_syllabus_technique_id INTEGER REFERENCES student_syllabus_techniques (id) ON DELETE CASCADE,
+    position      INTEGER NOT NULL DEFAULT 0,
+    hidden_at     TIMESTAMP,
+    created_by_id INTEGER NOT NULL REFERENCES users (id),
+    created_at    TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CHECK (
+      (parent_kind='technique'                   AND technique_id IS NOT NULL AND student_syllabus_technique_id IS NULL) OR
+      (parent_kind='student_syllabus_technique'  AND student_syllabus_technique_id IS NOT NULL AND technique_id IS NULL)
+    )
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_video_references_technique
+    ON video_references (technique_id, video_id) WHERE parent_kind='technique';
+CREATE UNIQUE INDEX IF NOT EXISTS idx_video_references_sst
+    ON video_references (student_syllabus_technique_id, video_id) WHERE parent_kind='student_syllabus_technique';
+
 CREATE TABLE IF NOT EXISTS activity (
     id                INTEGER PRIMARY KEY AUTOINCREMENT,
     occurred_at       TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -526,6 +538,9 @@ CREATE TABLE IF NOT EXISTS thread_comments (
     -- Optional single video attached to this comment (a thread-reply video).
     -- The comment is the unit; the clip renders underneath its text.
     video_id          INTEGER REFERENCES videos(id),
+    -- Optional timestamp (seconds) into THIS comment's thread's attached video,
+    -- for a reply pinned to a moment of the post's video. NULL = whole-video reply.
+    video_ts_seconds  INTEGER,
     created_at        TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     edited_at         TIMESTAMP,
     deleted_at        TIMESTAMP,

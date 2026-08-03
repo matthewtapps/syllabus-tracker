@@ -14,7 +14,9 @@ import { useQueryClient } from "@tanstack/react-query";
 import type { Video } from "@/lib/api";
 import {
   deleteVideo,
+  removeVideoReference,
   setVideoGlobalHidden,
+  setVideoReferenceHidden,
   setVideoStudentVisibility,
   updateVideo,
 } from "@/lib/api";
@@ -114,8 +116,14 @@ export function VideoRow({
   async function handleDelete() {
     setDeleting(true);
     try {
-      await deleteVideo(video.id);
-      toast.success("Video deleted");
+      // A referenced clip lives somewhere else: drop the pointer, not the clip.
+      if (video.reference_id != null) {
+        await removeVideoReference(video.reference_id);
+        toast.success("Video removed from here");
+      } else {
+        await deleteVideo(video.id);
+        toast.success("Video deleted");
+      }
       onDeleted(video.id);
     } catch (err) {
       console.error(err);
@@ -524,7 +532,10 @@ function VisibilityMenuItems({
 
   // Library context: single global hide/show toggle, with an undo toast.
   async function applyGlobal(hidden: boolean): Promise<boolean> {
-    const response = await setVideoGlobalHidden(video.id, hidden);
+    const response =
+      video.reference_id != null
+        ? await setVideoReferenceHidden(video.reference_id, hidden)
+        : await setVideoGlobalHidden(video.id, hidden);
     if (!response.ok) return false;
     invalidateVideos();
     return true;
@@ -592,7 +603,10 @@ function StudentVisibilityEditor({
   // Direct API calls (not the mutation hooks) so the undo button's closure
   // doesn't depend on a re-rendered mutation reference.
   async function applyGlobal(hidden: boolean): Promise<boolean> {
-    const response = await setVideoGlobalHidden(video.id, hidden);
+    const response =
+      video.reference_id != null
+        ? await setVideoReferenceHidden(video.reference_id, hidden)
+        : await setVideoGlobalHidden(video.id, hidden);
     if (!response.ok) return false;
     invalidateVideos();
     return true;

@@ -1,0 +1,26 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT c.name AS \"name!: String\",\n                  COALESCE(u.display_name, u.username, '') AS \"owner!: String\"\n           FROM camps c\n           JOIN users u ON u.id = c.student_id\n           WHERE c.id = ?1\n             AND (?2 IS NULL OR c.student_id = ?2)\n             AND c.archived_at IS NULL",
+  "describe": {
+    "columns": [
+      {
+        "name": "name!: String",
+        "ordinal": 0,
+        "type_info": "Text"
+      },
+      {
+        "name": "owner!: String",
+        "ordinal": 1,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "0af70f315c4535b684d107a08f1becc1f7d12bc3fc1a983ef1cfcd7d35ba8fb7"
+}

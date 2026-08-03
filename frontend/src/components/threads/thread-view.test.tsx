@@ -13,6 +13,7 @@ function buildComment(overrides: Partial<CommentView> = {}): CommentView {
     author_name: "Bob B",
     body: "Great technique!",
     video: null,
+    video_ts_seconds: null,
     created_at: new Date().toISOString(),
     deleted_at: null,
     ...overrides,

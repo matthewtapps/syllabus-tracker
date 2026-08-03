@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT EXISTS(\n                      SELECT 1 FROM techniques t\n                      JOIN camps c ON c.id = ?\n                      WHERE t.id = ?\n                        AND (t.scoped_camp_id IS NULL OR t.scoped_camp_id = ?)\n                   ) AS \"e!: i64\"",
+  "describe": {
+    "columns": [
+      {
+        "name": "e!: i64",
+        "ordinal": 0,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "33b52b959d57dc20320e40d091407bcec9616549c07f1bb5eaadf98d7ae42ac4"
+}

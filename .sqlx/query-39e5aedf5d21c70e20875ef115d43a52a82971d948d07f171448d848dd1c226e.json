@@ -1,0 +1,56 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT id AS \"id!: i64\", student_id AS \"student_id!: i64\",\n                  coach_id AS \"coach_id!: i64\", name, description,\n                  created_at AS \"created_at!: NaiveDateTime\",\n                  archived_at AS \"archived_at?: NaiveDateTime\"\n           FROM camps\n           WHERE student_id = ? AND (? OR archived_at IS NULL)\n           ORDER BY (archived_at IS NOT NULL), created_at DESC",
+  "describe": {
+    "columns": [
+      {
+        "name": "id!: i64",
+        "ordinal": 0,
+        "type_info": "Integer"
+      },
+      {
+        "name": "student_id!: i64",
+        "ordinal": 1,
+        "type_info": "Integer"
+      },
+      {
+        "name": "coach_id!: i64",
+        "ordinal": 2,
+        "type_info": "Integer"
+      },
+      {
+        "name": "name",
+        "ordinal": 3,
+        "type_info": "Text"
+      },
+      {
+        "name": "description",
+        "ordinal": 4,
+        "type_info": "Text"
+      },
+      {
+        "name": "created_at!: NaiveDateTime",
+        "ordinal": 5,
+        "type_info": "Datetime"
+      },
+      {
+        "name": "archived_at?: NaiveDateTime",
+        "ordinal": 6,
+        "type_info": "Datetime"
+      }
+    ],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      true
+    ]
+  },
+  "hash": "39e5aedf5d21c70e20875ef115d43a52a82971d948d07f171448d848dd1c226e"
+}

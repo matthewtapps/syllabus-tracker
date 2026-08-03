@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE video_references SET hidden_at = CURRENT_TIMESTAMP WHERE id = ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": []
+  },
+  "hash": "cf6b140dc4aa064743c5cf6f2442409de03528be8832e4c659422bfe0b947fe6"
+}

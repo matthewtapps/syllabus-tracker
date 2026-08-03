@@ -1,14 +1,23 @@
-import { keepPreviousData, skipToken, useInfiniteQuery, useQuery } from "@tanstack/react-query";
+import {
+  keepPreviousData,
+  skipToken,
+  useInfiniteQuery,
+  useQuery,
+  useQueryClient,
+  type QueryClient,
+} from "@tanstack/react-query";
 import {
   getAllTags,
   getAllUsers,
   getActivityDigest,
   getActivityFeed,
+  getCampComponents,
   getDashboardActivityFeed,
   getCamp,
   getCampVideos,
-  getCampTechniqueVideos,
+  getCampTechniques,
   getCampsForStudent,
+  searchCamp,
   getStudentActivityFeed,
   getActivityFeedHeadId,
   getActivityUnreadCount,
@@ -39,8 +48,9 @@ import {
   listAttempts,
   listVideos,
   listThreads,
+  getThread,
 } from "./api";
-import type { AnchorKind } from "./api";
+import type { AnchorKind, CampComponent, CampComponentCursor } from "./api";
 import type { ActivityRow } from "./activity-line";
 import { qk } from "./query-keys";
 
@@ -457,6 +467,43 @@ export function useSyllabusAttemptHeatmap(studentId: number | undefined) {
   });
 }
 
+/**
+ * The camp's content as components, newest touch first. Each component arrives
+ * with its discussion, which is written into the per-anchor thread caches so an
+ * expanded component reads it instead of fetching its own.
+ */
+export function useInfiniteCampComponents(campId: number | undefined, limit = 10) {
+  const qc = useQueryClient();
+  const id = campId ?? 0;
+  return useInfiniteQuery({
+    queryKey: qk.campComponents(id, limit),
+    enabled: typeof campId === "number" && Number.isFinite(campId),
+    initialPageParam: null as CampComponentCursor | null,
+    queryFn: async ({ pageParam }) => {
+      const page = await getCampComponents(id, { before: pageParam, limit });
+      seedComponentThreads(qc, id, page.components);
+      return page;
+    },
+    getNextPageParam: (lastPage) => lastPage.next_cursor,
+  });
+}
+
+function seedComponentThreads(
+  qc: QueryClient,
+  campId: number,
+  components: CampComponent[],
+): void {
+  for (const component of components) {
+    if (component.kind === "technique") {
+      qc.setQueryData(qk.threads("camp_technique", component.id, campId), component.threads);
+    } else if (component.kind === "video") {
+      qc.setQueryData(qk.threads("video", component.id), component.threads);
+    } else if (component.thread) {
+      qc.setQueryData(qk.thread(component.id), component.thread);
+    }
+  }
+}
+
 // ---- Camps ----
 
 export function useCampsForStudent(studentId: number | undefined) {
@@ -473,6 +520,18 @@ export function useCamp(id: number | undefined) {
   });
 }
 
+/**
+ * The camp's attached techniques. Separate from the library list because a
+ * camp-scoped technique (is_global = 0) never appears there, so camp surfaces
+ * that read the library alone cannot hydrate one.
+ */
+export function useCampTechniques(campId: number | undefined) {
+  return useQuery({
+    queryKey: qk.campTechniques(campId ?? 0),
+    queryFn: whenId(campId, getCampTechniques),
+  });
+}
+
 export function useCampVideos(campId: number | undefined) {
   return useQuery({
     queryKey: qk.campVideos(campId ?? 0),
@@ -480,24 +539,48 @@ export function useCampVideos(campId: number | undefined) {
   });
 }
 
-/** Camp-only reference videos for a (camp, technique). */
-export function useCampTechniqueVideos(
+/**
+ * Camp search query. Only fires when q.trim() is non-empty and campId is valid.
+ * Results are cached per (campId, q, kind) triple so flipping kind chips is
+ * instant on a warm cache.
+ */
+export function useCampSearch(
   campId: number | undefined,
-  techniqueId: number | undefined,
+  q: string,
+  kind?: "technique" | "video" | "thread",
 ) {
+  const trimmed = q.trim();
+  const valid =
+    typeof campId === "number" && Number.isFinite(campId) && trimmed.length > 0;
   return useQuery({
-    queryKey: qk.campTechniqueVideos(campId ?? 0, techniqueId ?? 0),
-    queryFn:
-      typeof campId === "number" &&
-      Number.isFinite(campId) &&
-      typeof techniqueId === "number" &&
-      Number.isFinite(techniqueId)
-        ? () => getCampTechniqueVideos(campId, techniqueId)
-        : skipToken,
+    queryKey: qk.campSearch(campId ?? 0, trimmed, kind),
+    queryFn: valid ? () => searchCamp(campId as number, trimmed, kind) : skipToken,
+    staleTime: 30_000,
+    placeholderData: keepPreviousData,
   });
 }
 
 // ---- Threads ----
+
+/**
+ * One thread by id, for a surface addressing a single thread by URL (a camp's
+ * thread page). Polls a processing clip to playable on the same rule the anchor
+ * list uses, so a video reply behaves the same whichever surface shows it.
+ */
+export function useThread(threadId: number | undefined) {
+  return useQuery({
+    queryKey: qk.thread(threadId ?? 0),
+    queryFn: whenId(threadId, getThread),
+    refetchInterval: (query) => {
+      const data = query.state.data;
+      if (!data) return false;
+      const processing =
+        data.video?.processing_status === "processing" ||
+        data.comments.some((c) => c.video?.processing_status === "processing");
+      return processing ? 1500 : false;
+    },
+  });
+}
 
 export function useThreadsForAnchor(
   anchorKind: AnchorKind,

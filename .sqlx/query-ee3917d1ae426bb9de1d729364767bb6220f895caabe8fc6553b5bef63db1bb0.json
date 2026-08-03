@@ -1,0 +1,32 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT t.id AS \"technique_id!: i64\",\n                  t.name AS technique_name,\n                  th.id AS \"thread_id!: i64\"\n           FROM threads th\n           JOIN techniques t ON t.id = th.technique_id\n           WHERE th.anchor_kind = 'camp_technique'\n             AND th.camp_id = ?\n             AND th.deleted_at IS NULL\n             AND lower(t.name) LIKE ?\n           ORDER BY t.name\n           LIMIT ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "technique_id!: i64",
+        "ordinal": 0,
+        "type_info": "Integer"
+      },
+      {
+        "name": "technique_name",
+        "ordinal": 1,
+        "type_info": "Text"
+      },
+      {
+        "name": "thread_id!: i64",
+        "ordinal": 2,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": [
+      true,
+      false,
+      true
+    ]
+  },
+  "hash": "ee3917d1ae426bb9de1d729364767bb6220f895caabe8fc6553b5bef63db1bb0"
+}

@@ -3,8 +3,7 @@
  *
  * Mounts the page at /camps/1 as a coach and verifies:
  * - Camp name renders from the stubbed GET /api/camps/1 response.
- * - Empty technique state text appears when techniques: [].
- * - Empty discussion state text appears when threads: [].
+ * - Empty state text appears when the camp holds no components.
  * - Coaches see a Rename control; the builds-on display is gone.
  *
  * NOTE: .test.tsx files run in Chromium via vitest-browser and cannot execute
@@ -34,10 +33,18 @@ function makeStubFetch() {
               description: "Focus on guard passing",
               created_at: "2026-06-16T00:00:00Z",
               archived_at: null,
-              techniques: [],
             }),
             { status: 200, headers: { "Content-Type": "application/json" } },
           ),
+        );
+      }
+
+      if (/\/api\/camps\/\d+\/components/.test(url)) {
+        return Promise.resolve(
+          new Response(JSON.stringify({ components: [], next_cursor: null }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          }),
         );
       }
 
@@ -88,7 +95,7 @@ describe("CampDetailPage", () => {
     fetchSpy.mockRestore();
   });
 
-  test("shows empty technique state when techniques list is empty", async () => {
+  test("shows the empty state when the camp holds nothing", async () => {
     const fetchSpy = makeStubFetch();
 
     renderWithProviders(
@@ -102,26 +109,9 @@ describe("CampDetailPage", () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByText(/no techniques yet/i)).toBeInTheDocument();
-    });
-    fetchSpy.mockRestore();
-  });
-
-  test("shows empty discussion state when threads list is empty", async () => {
-    const fetchSpy = makeStubFetch();
-
-    renderWithProviders(
-      <Routes>
-        <Route path="/camps/:id" element={<CampDetailPage />} />
-      </Routes>,
-      {
-        user: buildUser({ id: 1, role: "coach" }),
-        initialEntries: ["/camps/1"],
-      },
-    );
-
-    await waitFor(() => {
-      expect(screen.getByText(/no discussion yet/i)).toBeInTheDocument();
+      expect(
+        screen.getByText(/post a technique, video, or note to start this camp/i),
+      ).toBeInTheDocument();
     });
     fetchSpy.mockRestore();
   });
@@ -142,13 +132,18 @@ describe("CampDetailPage", () => {
                 description: null,
                 created_at: "2026-06-16T00:00:00Z",
                 archived_at: null,
-                // Even when a prior camp is referenced, the builds-on UI is gone.
-                references_camp_id: 7,
-                references_camp_name: "Foundation camp",
-                techniques: [],
               }),
               { status: 200, headers: { "Content-Type": "application/json" } },
             ),
+          );
+        }
+
+        if (/\/api\/camps\/\d+\/components/.test(url)) {
+          return Promise.resolve(
+            new Response(JSON.stringify({ components: [], next_cursor: null }), {
+              status: 200,
+              headers: { "Content-Type": "application/json" },
+            }),
           );
         }
 

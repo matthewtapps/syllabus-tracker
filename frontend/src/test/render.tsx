@@ -22,18 +22,24 @@ export function renderWithProviders(
   {
     user = buildUser(),
     initialEntries = ["/"],
+    queryClient,
     ...options
   }: RenderOptions & {
     user?: User | null;
     initialEntries?: string[];
+    /** Supply one to test cache behaviour: the default collects seeded but
+     *  unobserved entries (gcTime: 0) and refetches on mount (staleTime: 0). */
+    queryClient?: QueryClient;
   } = {},
 ) {
-  const client = new QueryClient({
-    defaultOptions: {
-      queries: { retry: false, gcTime: 0, staleTime: 0 },
-      mutations: { retry: false },
-    },
-  });
+  const client =
+    queryClient ??
+    new QueryClient({
+      defaultOptions: {
+        queries: { retry: false, gcTime: 0, staleTime: 0 },
+        mutations: { retry: false },
+      },
+    });
 
   const Wrapper = ({ children }: { children: React.ReactNode }) => (
     <QueryClientProvider client={client}>

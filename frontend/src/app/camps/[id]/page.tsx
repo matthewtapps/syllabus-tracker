@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Navigate, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { Navigate, useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
-import { Archive, Pencil, Plus } from "lucide-react";
-import { Accordion } from "@/components/ui/accordion";
+import { Archive, Pencil, Search } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Dialog,
   DialogContent,
@@ -13,8 +14,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import {
   Tabs,
   TabsContent,
@@ -23,67 +22,52 @@ import {
 } from "@/components/ui/tabs";
 import { useUser } from "@/lib/current-user-context";
 import { isCoachOrAdmin } from "@/lib/api";
-import type { CampTechnique, LibraryTechniqueRow } from "@/lib/api";
+import { useQueryClient } from "@tanstack/react-query";
+import { qk } from "@/lib/query-keys";
 import {
   useCamp,
+  useCampTechniques,
+  useInfiniteCampComponents,
   useLibraryTechniques,
-  useThreadsForAnchor,
 } from "@/lib/queries";
 import {
-  useAddCampTechnique,
   useArchiveCamp,
+  useAttachCampTechniques,
   useCreateCampTechnique,
   useCreateThread,
-  useRemoveCampTechnique,
 } from "@/lib/mutations";
 import { RenameCampDialog } from "@/components/camps/rename-camp-dialog";
+import { CampSearchSheet } from "@/components/camps/camp-search-sheet";
 import { useConfirm } from "@/components/confirm-context";
-import { TechniqueRow } from "@/components/technique-row/technique-row";
-import { ThreadView } from "@/components/threads/thread-view";
-import { ReplyComposer } from "@/components/threads/reply-composer";
-import { CampVideoList } from "@/components/videos/camp-video-list";
-import { useListUrlState } from "@/lib/use-list-url-state";
+import { CampComposer } from "@/components/camps/camp-composer";
+import { CampComponentList } from "@/components/camps/camp-component-list";
+import { useCampAnchors, type CampAnchors } from "./use-camp-anchors";
 import { cn } from "@/lib/utils";
-
-/**
- * Adapt a CampTechnique into the LibraryTechniqueRow shape that TechniqueRow
- * expects. Tags and video_count come from the backend payload. Aggregates not
- * shown on the camp surface (collection_count, student_count) are zeroed.
- */
-function toCampLibraryShape(t: CampTechnique): LibraryTechniqueRow {
-  return {
-    id: t.technique_id,
-    name: t.name,
-    description: t.description ?? "",
-    tags: t.tags,
-    collection_ids: [],
-    collection_count: 0,
-    student_count: 0,
-    video_count: t.video_count,
-    last_activity_at: null,
-    is_pinned: false,
-  };
-}
+import type { CampComponent } from "@/lib/api";
+import type { VideoAttachment } from "@/components/threads/reply-composer";
 
 // ---------------------------------------------------------------------------
-// Pick-existing sub-panel (original behaviour)
+// Pick-existing sub-panel
 // ---------------------------------------------------------------------------
 
 function PickExistingPanel({
   campId,
-  existingTechniqueIds,
+  onAttach,
   onDone,
 }: {
   campId: number;
-  existingTechniqueIds: Set<number>;
+  /** Attaches each selected technique id to the camp. */
+  onAttach: (techniqueIds: number[]) => Promise<void>;
   onDone: () => void;
 }) {
-  const libraryQuery = useLibraryTechniques();
-  const techniques = useMemo(
-    () => (libraryQuery.data ?? []).filter((t) => !existingTechniqueIds.has(t.id)),
-    [libraryQuery.data, existingTechniqueIds],
+  const attachedQuery = useCampTechniques(campId);
+  const attached = useMemo(
+    () => new Set((attachedQuery.data ?? []).map((t) => t.id)),
+    [attachedQuery.data],
   );
-  const addMutation = useAddCampTechnique(campId);
+  const libraryQuery = useLibraryTechniques();
+  const techniques = useMemo(() => libraryQuery.data ?? [], [libraryQuery.data]);
+  const [pending, setPending] = useState(false);
   const [search, setSearch] = useState("");
   const [activeTags, setActiveTags] = useState<string[]>([]);
   const [selected, setSelected] = useState<Set<number>>(new Set());
@@ -109,12 +93,16 @@ function PickExistingPanel({
     });
   }, [techniques, search, activeTags]);
 
+  const selectable = useMemo(
+    () => filtered.filter((t) => !attached.has(t.id)),
+    [filtered, attached],
+  );
   const visibleSelectedCount = useMemo(
-    () => filtered.filter((t) => selected.has(t.id)).length,
-    [filtered, selected],
+    () => selectable.filter((t) => selected.has(t.id)).length,
+    [selectable, selected],
   );
   const allVisibleSelected =
-    filtered.length > 0 && visibleSelectedCount === filtered.length;
+    selectable.length > 0 && visibleSelectedCount === selectable.length;
 
   function toggle(id: number) {
     setSelected((prev) => {
@@ -134,7 +122,7 @@ function PickExistingPanel({
   function selectAllVisible() {
     setSelected((prev) => {
       const next = new Set(prev);
-      filtered.forEach((t) => next.add(t.id));
+      selectable.forEach((t) => next.add(t.id));
       return next;
     });
   }
@@ -142,7 +130,7 @@ function PickExistingPanel({
   function deselectAllVisible() {
     setSelected((prev) => {
       const next = new Set(prev);
-      filtered.forEach((t) => next.delete(t.id));
+      selectable.forEach((t) => next.delete(t.id));
       return next;
     });
   }
@@ -150,14 +138,17 @@ function PickExistingPanel({
   async function handleAdd() {
     if (selected.size === 0) return;
     const ids = Array.from(selected);
+    setPending(true);
     try {
-      await Promise.all(ids.map((id) => addMutation.mutateAsync(id)));
+      await onAttach(ids);
       toast.success(
         ids.length === 1 ? "Added 1 technique" : `Added ${ids.length} techniques`,
       );
       onDone();
     } catch {
       toast.error("Failed to add techniques. Please try again.");
+    } finally {
+      setPending(false);
     }
   }
 
@@ -208,7 +199,7 @@ function PickExistingPanel({
           variant="ghost"
           size="sm"
           className="h-6 px-2 text-xs"
-          disabled={filtered.length === 0}
+          disabled={selectable.length === 0}
           onClick={allVisibleSelected ? deselectAllVisible : selectAllVisible}
         >
           {allVisibleSelected ? "Deselect all visible" : "Select all visible"}
@@ -219,27 +210,41 @@ function PickExistingPanel({
         {filtered.length === 0 ? (
           <p className="px-4 py-6 text-center text-xs text-muted-foreground">
             {techniques.length === 0
-              ? "Every library technique is already in this camp."
+              ? "No techniques in the library yet."
               : "No techniques match the current filters."}
           </p>
         ) : (
           <ul className="divide-y divide-border">
             {filtered.map((t) => {
-              const checked = selected.has(t.id);
+              const inCamp = attached.has(t.id);
+              const checked = inCamp || selected.has(t.id);
               return (
                 <li key={t.id}>
                   <label
                     htmlFor={`add-camp-tech-${t.id}`}
-                    className="flex cursor-pointer items-start gap-3 px-3 py-2 transition-colors hover:bg-muted/40"
+                    className={cn(
+                      "flex items-start gap-3 px-3 py-2 transition-colors",
+                      inCamp
+                        ? "cursor-default opacity-60"
+                        : "cursor-pointer hover:bg-muted/40",
+                    )}
                   >
                     <Checkbox
                       id={`add-camp-tech-${t.id}`}
                       checked={checked}
+                      disabled={inCamp}
                       onCheckedChange={() => toggle(t.id)}
                       className="mt-0.5"
                     />
                     <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-medium">{t.name}</p>
+                      <p className="truncate text-sm font-medium">
+                        {t.name}
+                        {inCamp && (
+                          <span className="ml-2 text-xs font-normal text-muted-foreground">
+                            In camp
+                          </span>
+                        )}
+                      </p>
                       {t.tags.length > 0 && (
                         <div className="mt-1 flex flex-wrap gap-1">
                           {t.tags.map((tag) => (
@@ -266,17 +271,17 @@ function PickExistingPanel({
         <Button
           variant="outline"
           onClick={onDone}
-          disabled={addMutation.isPending}
+          disabled={pending}
           className="w-full"
         >
           Cancel
         </Button>
         <Button
           onClick={handleAdd}
-          disabled={selected.size === 0 || addMutation.isPending}
+          disabled={selected.size === 0 || pending}
           className="w-full"
         >
-          {addMutation.isPending
+          {pending
             ? "Adding..."
             : selected.size === 0
               ? "Add"
@@ -290,13 +295,9 @@ function PickExistingPanel({
 }
 
 // ---------------------------------------------------------------------------
-// Create-new sub-panel (CC-009/010)
+// Create-new sub-panel (coach-only)
 // ---------------------------------------------------------------------------
 
-/**
- * Scope option displayed as a selectable card. No default is pre-selected so
- * the coach must make an explicit choice (per the CC-010 concept doc).
- */
 function ScopeOption({
   value,
   selected,
@@ -331,9 +332,12 @@ function ScopeOption({
 
 function CreateNewPanel({
   campId,
+  onAttach,
   onDone,
 }: {
   campId: number;
+  /** Attaches the newly-created technique to the camp. */
+  onAttach: (techniqueIds: number[]) => Promise<void>;
   onDone: () => void;
 }) {
   const createMutation = useCreateCampTechnique(campId);
@@ -357,12 +361,26 @@ function CreateNewPanel({
     }
     if (hasError || !scope) return;
 
+    let techniqueId: number;
     try {
-      await createMutation.mutateAsync({ name: name.trim(), description: description.trim(), scope });
+      const result = await createMutation.mutateAsync({
+        name: name.trim(),
+        description: description.trim(),
+        scope,
+      });
+      techniqueId = result.id;
+    } catch {
+      toast.error("Failed to create technique. Please try again.");
+      return;
+    }
+    try {
+      await onAttach([techniqueId]);
       toast.success("Technique created and added to camp.");
       onDone();
     } catch {
-      toast.error("Failed to create technique. Please try again.");
+      toast.error(
+        "Technique created, but couldn't add it to the camp. Try attaching it from Pick existing.",
+      );
     }
   }
 
@@ -444,19 +462,22 @@ function CreateNewPanel({
 }
 
 // ---------------------------------------------------------------------------
-// Combined dialog: tab between "Pick existing" and "Create new"
+// Combined technique picker dialog
 // ---------------------------------------------------------------------------
 
 function AddCampTechniqueDialog({
   open,
   onOpenChange,
   campId,
-  existingTechniqueIds,
+  isCoach,
+  onAttach,
 }: {
   open: boolean;
   onOpenChange: (b: boolean) => void;
   campId: number;
-  existingTechniqueIds: Set<number>;
+  isCoach: boolean;
+  /** Attaches each selected technique id to the camp. */
+  onAttach: (techniqueIds: number[]) => Promise<void>;
 }) {
   const [tab, setTab] = useState<"pick" | "create">("pick");
 
@@ -471,36 +492,113 @@ function AddCampTechniqueDialog({
         aria-describedby={undefined}
       >
         <DialogHeader>
-          <DialogTitle>Add technique</DialogTitle>
+          <DialogTitle>Attach technique</DialogTitle>
         </DialogHeader>
 
-        <Tabs
-          value={tab}
-          onValueChange={(v) => setTab(v as "pick" | "create")}
-          className="flex min-h-0 flex-1 flex-col"
-        >
-          <TabsList className="w-full">
-            <TabsTrigger value="pick" className="flex-1">Pick existing</TabsTrigger>
-            <TabsTrigger value="create" className="flex-1">Create new</TabsTrigger>
-          </TabsList>
+        {isCoach ? (
+          <Tabs
+            value={tab}
+            onValueChange={(v) => setTab(v as "pick" | "create")}
+            className="flex min-h-0 flex-1 flex-col"
+          >
+            <TabsList className="w-full">
+              <TabsTrigger value="pick" className="flex-1">Pick existing</TabsTrigger>
+              <TabsTrigger value="create" className="flex-1">Create new</TabsTrigger>
+            </TabsList>
 
-          <TabsContent value="pick" className="mt-3 flex min-h-0 flex-1 flex-col">
+            <TabsContent value="pick" className="mt-3 flex min-h-0 flex-1 flex-col">
+              <PickExistingPanel
+                campId={campId}
+                onAttach={onAttach}
+                onDone={() => onOpenChange(false)}
+              />
+            </TabsContent>
+
+            <TabsContent value="create" className="mt-3">
+              <CreateNewPanel
+                campId={campId}
+                onAttach={onAttach}
+                onDone={() => onOpenChange(false)}
+              />
+            </TabsContent>
+          </Tabs>
+        ) : (
+          <div className="flex min-h-0 flex-1 flex-col">
             <PickExistingPanel
               campId={campId}
-              existingTechniqueIds={existingTechniqueIds}
+              onAttach={onAttach}
               onDone={() => onOpenChange(false)}
             />
-          </TabsContent>
-
-          <TabsContent value="create" className="mt-3">
-            <CreateNewPanel
-              campId={campId}
-              onDone={() => onOpenChange(false)}
-            />
-          </TabsContent>
-        </Tabs>
+          </div>
+        )}
       </DialogContent>
     </Dialog>
+  );
+}
+
+
+// ---------------------------------------------------------------------------
+// Component body
+// ---------------------------------------------------------------------------
+
+function CampComponentsBody({
+  campId,
+  studentId,
+  listRef,
+  components,
+  isLoading,
+  anchors,
+  fetchNextPage,
+  hasNextPage,
+  isFetchingNextPage,
+}: {
+  campId: number;
+  studentId: number;
+  listRef: React.RefObject<HTMLDivElement | null>;
+  components: CampComponent[];
+  isLoading: boolean;
+  anchors: CampAnchors;
+  fetchNextPage: () => void;
+  hasNextPage: boolean;
+  isFetchingNextPage: boolean;
+}) {
+  const sentinelRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const el = sentinelRef.current;
+    if (!el) return;
+    const io = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting && hasNextPage && !isFetchingNextPage) {
+          fetchNextPage();
+        }
+      },
+      { rootMargin: "600px" },
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, [fetchNextPage, hasNextPage, isFetchingNextPage]);
+
+  return (
+    <div ref={listRef}>
+      <CampComponentList
+        campId={campId}
+        studentId={studentId}
+        components={components}
+        isLoading={isLoading}
+        highlightKey={anchors.highlightKey}
+        anchorKey={anchors.anchorKey}
+        videoId={anchors.videoId}
+        resumeSeconds={anchors.resumeSeconds}
+        isFetchingNextPage={isFetchingNextPage}
+      />
+      <div ref={sentinelRef} className="h-px" aria-hidden />
+      {!hasNextPage && components.length > 0 && (
+        <p className="py-4 text-center text-xs text-muted-foreground">
+          You're all caught up.
+        </p>
+      )}
+    </div>
   );
 }
 
@@ -527,46 +625,36 @@ function CampDetail({
   viewerId: number;
   isCoach: boolean;
 }) {
-  // URL-backed focus state: opening/closing a row writes ?focus=technique:<id>
-  // back to the URL, matching the library/syllabus pages. Deep-link IN (reading
-  // ?focus on mount) still works because useListUrlState reads it on first render.
-  const { focus, setFocus, videoId: urlVideoId } = useListUrlState();
-
-  // ?video=<id> targets camp-level videos when ?focus is absent.
-  // When ?focus=technique:<id>&video=<id> is present, the video is inside
-  // a technique row and handled by TechniqueRow's scrollToVideoId.
-  const focusVideoId = urlVideoId;
-  const campVideoId = !focus && focusVideoId != null ? focusVideoId : null;
-
-  // Derive accordion open value from the URL focus token.
-  const openValue = focus?.type === "technique" ? `tech-${focus.id}` : "";
-
-  function setOpenValue(value: string) {
-    if (!value) {
-      setFocus(null);
-      return;
-    }
-    // accordion values are "tech-<id>"
-    const id = Number(value.replace(/^tech-/, ""));
-    if (Number.isFinite(id)) setFocus({ type: "technique", id });
-  }
-
   const navigate = useNavigate();
   const confirm = useConfirm();
+  const qc = useQueryClient();
 
   const campQuery = useCamp(campId);
   const camp = campQuery.data;
 
-  const threadsQuery = useThreadsForAnchor("camp", campId);
-  const createThread = useCreateThread();
-  const removeTechnique = useRemoveCampTechnique(campId);
+  const componentsQuery = useInfiniteCampComponents(campId);
+  const components = useMemo(
+    () => componentsQuery.data?.pages.flatMap((page) => page.components) ?? [],
+    [componentsQuery.data],
+  );
+  const listRef = useRef<HTMLDivElement>(null);
+  const anchors = useCampAnchors(components, componentsQuery.isLoading, listRef);
 
-  // studentId is stable once camp loads; the hook is curried for cache invalidation.
-  // We pass 0 as a placeholder until camp loads — the button is hidden until then anyway.
+  const createThread = useCreateThread();
+  const attachTechniques = useAttachCampTechniques(campId);
   const archiveCamp = useArchiveCamp(camp?.student_id ?? 0);
+
+  async function attachToCamp(techniqueIds: number[]) {
+    await attachTechniques.mutateAsync(techniqueIds);
+  }
 
   const [addPickerOpen, setAddPickerOpen] = useState(false);
   const [renameOpen, setRenameOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+
+  function invalidateCampComponents() {
+    qc.invalidateQueries({ queryKey: qk.campComponentsAll(campId) });
+  }
 
   async function handleArchive() {
     const ok = await confirm({
@@ -587,46 +675,19 @@ function CampDetail({
     }
   }
 
-  // Consumed flag: only scroll to the focus video once so re-opening a row
-  // doesn't re-trigger the scroll.
-  const [videoConsumed, setVideoConsumed] = useState(false);
-  const [campVideoConsumed, setCampVideoConsumed] = useState(false);
-
-  // B3: ?thread=<id> deep-link — scroll to and briefly highlight that thread.
-  // Mirrors the logic in discussion-block.tsx for technique-row discussion tabs.
-  const [searchParams, setSearchParams] = useSearchParams();
-  const discussionListRef = useRef<HTMLDivElement>(null);
-  const [highlightThreadId, setHighlightThreadId] = useState<number | null>(null);
-  const threadFocusConsumed = useRef(false);
-  const targetThreadId = (() => {
-    const raw = searchParams.get("thread");
-    if (!raw) return null;
-    const parsed = Number.parseInt(raw, 10);
-    return Number.isFinite(parsed) ? parsed : null;
-  })();
-  const threads = useMemo(() => threadsQuery.data ?? [], [threadsQuery.data]);
-
-  useEffect(() => {
-    if (threadFocusConsumed.current || targetThreadId == null || threadsQuery.isLoading) return;
-    if (!threads.some((t) => t.id === targetThreadId)) return;
-    const el = discussionListRef.current?.querySelector<HTMLElement>(
-      `[data-thread-id="${targetThreadId}"]`,
-    );
-    if (!el) return;
-    threadFocusConsumed.current = true;
-    el.scrollIntoView({ behavior: "smooth", block: "center" });
-    setHighlightThreadId(targetThreadId);
-    const timer = setTimeout(() => setHighlightThreadId(null), 2200);
-    setSearchParams(
-      (prev) => {
-        const next = new URLSearchParams(prev);
-        next.delete("thread");
-        return next;
-      },
-      { replace: true },
-    );
-    return () => clearTimeout(timer);
-  }, [targetThreadId, threadsQuery.isLoading, threads, setSearchParams]);
+  async function startThread(body: string, attachment: VideoAttachment | null) {
+    await createThread.mutateAsync({
+      anchor_kind: "camp",
+      anchor_id: campId,
+      visibility: "private",
+      scope_student_id: camp!.student_id,
+      body,
+      attached_video_id: attachment?.videoId ?? null,
+      attached_video_is_reference: attachment?.isReference ?? null,
+      attached_video_title: attachment?.title ?? null,
+    });
+    invalidateCampComponents();
+  }
 
   if (campQuery.isError) return <Navigate to="/dashboard" replace />;
 
@@ -641,55 +702,55 @@ function CampDetail({
   const viewerIsOwner = viewerId === camp.student_id;
   if (!viewerIsOwner && !isCoach) return <Navigate to="/dashboard" replace />;
 
-  async function startThread(body: string, videoId: number | null) {
-    await createThread.mutateAsync({
-      anchor_kind: "camp",
-      anchor_id: campId,
-      visibility: "private",
-      scope_student_id: camp!.student_id,
-      body,
-      attached_video_id: videoId,
-    });
-  }
-
   return (
-    <div className="container mx-auto space-y-6 px-4 py-6 sm:px-6 md:py-8">
-      <header className="space-y-1">
-        <div className="flex items-start justify-between gap-2">
-          <h1 className="text-base font-semibold">{camp.name}</h1>
-          {isCoach && (
-            <div className="flex shrink-0 items-center gap-2">
-              <Button
-                size="sm"
-                variant="outline"
-                className="h-7 gap-1.5 text-xs"
-                onClick={() => setRenameOpen(true)}
-              >
-                <Pencil className="h-3.5 w-3.5" />
-                Rename
-              </Button>
-              {!camp.archived_at && (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="h-7 gap-1.5 text-xs"
-                  onClick={handleArchive}
-                  disabled={archiveCamp.isPending}
-                >
-                  <Archive className="h-3.5 w-3.5" />
-                  Archive camp
-                </Button>
-              )}
-            </div>
-          )}
-        </div>
+    <div className="container mx-auto space-y-4 px-4 py-6 sm:px-6 md:py-8">
+      {/* Camp header */}
+      <header className="space-y-2">
+        <h1 className="text-2xl font-semibold tracking-tight">{camp.name}</h1>
         {camp.description && (
           <p className="text-sm text-muted-foreground">{camp.description}</p>
         )}
         {camp.archived_at && (
           <span className="text-xs text-muted-foreground">Archived</span>
         )}
+        {isCoach && (
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 gap-1.5 text-xs"
+              onClick={() => setRenameOpen(true)}
+            >
+              <Pencil className="h-3.5 w-3.5" />
+              Rename
+            </Button>
+            {!camp.archived_at && (
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7 gap-1.5 text-xs"
+                onClick={handleArchive}
+                disabled={archiveCamp.isPending}
+              >
+                <Archive className="h-3.5 w-3.5" />
+                Archive camp
+              </Button>
+            )}
+          </div>
+        )}
       </header>
+
+      {/* Search opens in a sheet, so this reads as an input but never takes focus
+          (a keyboard here would cover the sheet it opens). */}
+      <button
+        type="button"
+        onClick={() => setSearchOpen(true)}
+        aria-label="Search camp"
+        className="flex h-9 w-full items-center gap-2 rounded-md border border-input bg-transparent px-3 text-sm text-muted-foreground shadow-xs transition-colors hover:bg-muted/40 dark:bg-input/30"
+      >
+        <Search className="h-4 w-4 shrink-0" aria-hidden />
+        Search this camp
+      </button>
 
       {isCoach && (
         <Dialog open={renameOpen} onOpenChange={setRenameOpen}>
@@ -703,128 +764,47 @@ function CampDetail({
         </Dialog>
       )}
 
-      {/* Techniques section */}
-      <section className="space-y-2">
-        <div className="flex items-center justify-between">
-          <h2 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-            Techniques
-          </h2>
-          {isCoach && (
-            <Button
-              size="sm"
-              variant="outline"
-              className="h-7 gap-1.5 text-xs"
-              onClick={() => setAddPickerOpen(true)}
-            >
-              <Plus className="h-3.5 w-3.5" />
-              Add techniques
-            </Button>
-          )}
-        </div>
-        {isCoach && (
-          <AddCampTechniqueDialog
-            open={addPickerOpen}
-            onOpenChange={setAddPickerOpen}
-            campId={campId}
-            existingTechniqueIds={
-              new Set(camp.techniques.map((t) => t.technique_id))
-            }
-          />
-        )}
-        {camp.techniques.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No techniques yet.</p>
-        ) : (
-          <div className="overflow-hidden rounded-lg border border-border bg-card">
-            <Accordion
-              type="single"
-              collapsible
-              value={openValue}
-              onValueChange={setOpenValue}
-            >
-              {camp.techniques.map((t) => {
-                const value = `tech-${t.technique_id}`;
-                const isOpen = value === openValue;
-                return (
-                  <TechniqueRow
-                    key={t.technique_id}
-                    technique={toCampLibraryShape(t)}
-                    context={{
-                      kind: "camp",
-                      campId,
-                      studentId: camp.student_id,
-                      onRemove: isCoach
-                        ? () => removeTechnique.mutate(t.technique_id)
-                        : undefined,
-                    }}
-                    value={value}
-                    isOpen={isOpen}
-                    scrollToVideoId={
-                      isOpen && !videoConsumed && focusVideoId != null
-                        ? focusVideoId
-                        : null
-                    }
-                    onVideoScrolled={() => setVideoConsumed(true)}
-                  />
-                );
-              })}
-            </Accordion>
-          </div>
-        )}
-      </section>
-
-      {/* Camp-level videos */}
-      <section className="space-y-2">
-        <h2 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-          Videos
-        </h2>
-        <CampVideoList
+      {/* Unified composer pinned at the top */}
+      {(viewerIsOwner || isCoach) && (
+        <CampComposer
           campId={campId}
           studentId={camp.student_id}
-          canManage={isCoach}
-          canUpload={isCoach || viewerIsOwner}
-          scrollToVideoId={campVideoConsumed ? null : campVideoId}
-          onVideoScrolled={() => setCampVideoConsumed(true)}
+          onSubmit={startThread}
+          pending={createThread.isPending}
+          onOpenTechniquePicker={() => setAddPickerOpen(true)}
         />
-      </section>
+      )}
 
-      <section className="space-y-2">
-        <h2 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-          Discussion
-        </h2>
-        <div className="space-y-4 rounded-lg border border-border bg-card p-4">
-          {threadsQuery.isLoading ? (
-            <div className="h-4 w-1/3 animate-pulse rounded bg-muted" />
-          ) : threads.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No discussion yet.</p>
-          ) : (
-            <div ref={discussionListRef} className="divide-y divide-border">
-              {threads.map((t) => (
-                <div
-                  key={t.id}
-                  data-thread-id={t.id}
-                  className={cn(
-                    "rounded-md py-4 transition-colors first:pt-0 last:pb-0",
-                    highlightThreadId === t.id && "bg-muted/60 ring-2 ring-ring/50",
-                  )}
-                >
-                  <ThreadView
-                    thread={t}
-                    anchorKind="camp"
-                    anchorId={campId}
-                  />
-                </div>
-              ))}
-            </div>
-          )}
-          <ReplyComposer
-            placeholder="Start a thread…"
-            anchorKind="camp"
-            anchorId={campId}
-            pending={createThread.isPending}
-            onSubmit={startThread}
-          />
-        </div>
-      </section>
+      {/* Technique picker dialog (triggered from composer) */}
+      <AddCampTechniqueDialog
+        open={addPickerOpen}
+        onOpenChange={setAddPickerOpen}
+        campId={campId}
+        isCoach={isCoach}
+        onAttach={attachToCamp}
+      />
+
+      {/* Camp search sheet */}
+      <CampSearchSheet
+        campId={campId}
+        open={searchOpen}
+        onOpenChange={setSearchOpen}
+        onJump={anchors.jumpToThread}
+        onJumpVideo={anchors.jumpToVideo}
+      />
+
+      {/* The camp's content, newest touch first */}
+      <CampComponentsBody
+        campId={campId}
+        studentId={camp.student_id}
+        listRef={listRef}
+        components={components}
+        isLoading={componentsQuery.isLoading}
+        anchors={anchors}
+        fetchNextPage={componentsQuery.fetchNextPage}
+        hasNextPage={componentsQuery.hasNextPage}
+        isFetchingNextPage={componentsQuery.isFetchingNextPage}
+      />
     </div>
   );
 }

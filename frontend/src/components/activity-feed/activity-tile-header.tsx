@@ -1,6 +1,6 @@
 import { Fragment } from "react";
 import { Link } from "react-router-dom";
-import { ChevronRight, Dumbbell, Library, NotebookPen } from "lucide-react";
+import { ChevronRight, Library, NotebookPen, Tent } from "lucide-react";
 import { StudentAvatar } from "@/components/student-avatar";
 import { useUser } from "@/lib/current-user-context";
 import { isCoachOrAdmin } from "@/lib/api";
@@ -13,7 +13,7 @@ import { cn } from "@/lib/utils";
 
 function CrumbIcon({ kind }: { kind: Crumb["surfaceKind"] }) {
   if (kind === "syllabus") return <NotebookPen className="h-3 w-3 shrink-0" aria-hidden />;
-  if (kind === "camp") return <Dumbbell className="h-3 w-3 shrink-0" aria-hidden />;
+  if (kind === "camp") return <Tent className="h-3 w-3 shrink-0" aria-hidden />;
   if (kind) return <Library className="h-3 w-3 shrink-0" aria-hidden />;
   return null;
 }

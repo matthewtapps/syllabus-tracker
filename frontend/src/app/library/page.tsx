@@ -131,6 +131,7 @@ export default function LibraryPage() {
                   value={value}
                   isOpen={isOpen}
                   scrollToVideoId={isOpen ? nav.videoId : null}
+                  resumeSeconds={isOpen ? nav.resumeSeconds : null}
                   onVideoScrolled={nav.consumeVideo}
                 />
               );

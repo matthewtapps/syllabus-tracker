@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO student_syllabus_techniques (assignment_id, technique_id)\n                 VALUES (?, ?) RETURNING id AS \"id!\"",
+  "describe": {
+    "columns": [
+      {
+        "name": "id!",
+        "ordinal": 0,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "44a82ca6c9a79a9c20a31b50dfb5ab8de6968a6365519fd63d26ef2a4cd53f90"
+}
