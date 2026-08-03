@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT COUNT(*) AS \"count!: i64\"\n           FROM users u\n           WHERE u.role = 'student'\n             AND (? = 1 OR u.archived = 0)\n             AND (? = 0 OR lower(u.username) LIKE ?\n                        OR lower(COALESCE(u.display_name, '')) LIKE ?)",
+  "describe": {
+    "columns": [
+      {
+        "name": "count!: i64",
+        "ordinal": 0,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 4
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "e25ebb1f21b4a11562a5b047b80df4280307308f48ced106d1d837290d5578a3"
+}

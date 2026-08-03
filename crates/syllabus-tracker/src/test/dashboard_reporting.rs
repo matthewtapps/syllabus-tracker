@@ -3,7 +3,7 @@ mod tests {
     use crate::auth::{Role, User};
     use crate::db::{
         SstUpdate, add_technique_to_assignment, assign, create_syllabus,
-        get_students_by_recent_updates, update_sst,
+        get_students_by_recent_updates, list_students_page, update_sst,
     };
     use crate::test::test_utils::TestDbBuilder;
 
@@ -103,7 +103,9 @@ mod tests {
 
         // Graduated syllabus with one technique drops out of the counts and is
         // tallied via completed_syllabus_count instead.
-        let done = create_syllabus(&db.pool, "Done", None, coach).await.unwrap();
+        let done = create_syllabus(&db.pool, "Done", None, coach)
+            .await
+            .unwrap();
         let done_aid = assign(&db.pool, coach, alice, done).await.unwrap();
         add_technique_to_assignment(&db.pool, done_aid, triangle, coach)
             .await
@@ -284,14 +286,36 @@ mod tests {
         let armbar = db.technique_id("Armbar").unwrap();
 
         let mut tx = db.pool.begin().await.unwrap();
-        emit(&mut tx, NewActivity::new(Verb::AttemptLogged, alice).target_student(alice).technique(armbar)).await.unwrap();
-        emit(&mut tx, NewActivity::new(Verb::SstCoachNotesEdited, coach).target_student(alice).technique(armbar)).await.unwrap();
+        emit(
+            &mut tx,
+            NewActivity::new(Verb::AttemptLogged, alice)
+                .target_student(alice)
+                .technique(armbar),
+        )
+        .await
+        .unwrap();
+        emit(
+            &mut tx,
+            NewActivity::new(Verb::SstCoachNotesEdited, coach)
+                .target_student(alice)
+                .technique(armbar),
+        )
+        .await
+        .unwrap();
         tx.commit().await.unwrap();
 
-        let students = get_students_by_recent_updates(&db.pool, true, coach).await.unwrap();
+        let students = get_students_by_recent_updates(&db.pool, true, coach)
+            .await
+            .unwrap();
         let alice_row = students.iter().find(|u| u.id == alice).unwrap();
-        assert!(alice_row.last_student_activity_at.is_some(), "student-actor activity present");
-        assert!(alice_row.last_coach_activity_at.is_some(), "coach-actor activity present");
+        assert!(
+            alice_row.last_student_activity_at.is_some(),
+            "student-actor activity present"
+        );
+        assert!(
+            alice_row.last_coach_activity_at.is_some(),
+            "coach-actor activity present"
+        );
     }
 
     #[rocket::async_test]
@@ -312,11 +336,27 @@ mod tests {
         // attempt. A coach note on the same student must NOT inflate the count.
         pin_technique(&db.pool, alice, armbar).await.unwrap();
         let mut tx = db.pool.begin().await.unwrap();
-        emit(&mut tx, NewActivity::new(Verb::AttemptLogged, alice).target_student(alice).technique(armbar)).await.unwrap();
-        emit(&mut tx, NewActivity::new(Verb::SstCoachNotesEdited, coach).target_student(alice).technique(armbar)).await.unwrap();
+        emit(
+            &mut tx,
+            NewActivity::new(Verb::AttemptLogged, alice)
+                .target_student(alice)
+                .technique(armbar),
+        )
+        .await
+        .unwrap();
+        emit(
+            &mut tx,
+            NewActivity::new(Verb::SstCoachNotesEdited, coach)
+                .target_student(alice)
+                .technique(armbar),
+        )
+        .await
+        .unwrap();
         tx.commit().await.unwrap();
 
-        let students = get_students_by_recent_updates(&db.pool, true, coach).await.unwrap();
+        let students = get_students_by_recent_updates(&db.pool, true, coach)
+            .await
+            .unwrap();
         let alice_row = students.iter().find(|u| u.id == alice).unwrap();
         assert_eq!(alice_row.pinned_count, Some(1), "one technique pinned");
         // Student-actor events in window: the pin + the attempt. Coach note excluded.
@@ -342,13 +382,25 @@ mod tests {
         let triangle = db.technique_id("Triangle").unwrap();
 
         let mut tx = db.pool.begin().await.unwrap();
-        emit(&mut tx, NewActivity::new(Verb::AttemptLogged, bob).target_student(bob).technique(triangle)).await.unwrap();
+        emit(
+            &mut tx,
+            NewActivity::new(Verb::AttemptLogged, bob)
+                .target_student(bob)
+                .technique(triangle),
+        )
+        .await
+        .unwrap();
         tx.commit().await.unwrap();
 
-        let students = get_students_by_recent_updates(&db.pool, true, coach2).await.unwrap();
+        let students = get_students_by_recent_updates(&db.pool, true, coach2)
+            .await
+            .unwrap();
         let bob_row = students.iter().find(|u| u.id == bob).unwrap();
         assert!(bob_row.last_student_activity_at.is_some());
-        assert!(bob_row.last_coach_activity_at.is_none(), "coach field must be None when only student acted");
+        assert!(
+            bob_row.last_coach_activity_at.is_none(),
+            "coach field must be None when only student acted"
+        );
     }
 
     #[rocket::async_test]
@@ -436,5 +488,88 @@ mod tests {
             .unwrap();
         let alice_row = students.iter().find(|u| u.id == alice).unwrap();
         assert_eq!(alice_row.has_unseen_activity, Some(true));
+    }
+
+    #[rocket::async_test]
+    async fn roster_page_slices_the_list_and_reports_the_full_total() {
+        let db = TestDbBuilder::new()
+            .coach("coach", None)
+            .student("alice", None)
+            .student("bob", None)
+            .student("carol", None)
+            .build()
+            .await
+            .unwrap();
+
+        let first = list_students_page(&db.pool, false, "", 2, 0).await.unwrap();
+        assert_eq!(first.items.len(), 2);
+        assert_eq!(first.total, 3);
+
+        let second = list_students_page(&db.pool, false, "", 2, 2).await.unwrap();
+        assert_eq!(second.items.len(), 1);
+        assert_eq!(second.total, 3);
+
+        // Pages must not overlap.
+        let mut seen: Vec<i64> = first.items.iter().map(|u| u.id).collect();
+        seen.extend(second.items.iter().map(|u| u.id));
+        seen.sort_unstable();
+        seen.dedup();
+        assert_eq!(seen.len(), 3);
+    }
+
+    #[rocket::async_test]
+    async fn roster_search_matches_username_and_display_name() {
+        let db = TestDbBuilder::new()
+            .coach("coach", None)
+            .student("alice", Some("Alice Anderson"))
+            .student("bob", Some("Bob Brown"))
+            .build()
+            .await
+            .unwrap();
+        let alice = db.user_id("alice").unwrap();
+
+        let by_username = list_students_page(&db.pool, false, "ALI", -1, 0)
+            .await
+            .unwrap();
+        assert_eq!(by_username.total, 1);
+        assert_eq!(by_username.items[0].id, alice);
+
+        let by_display = list_students_page(&db.pool, false, "anderson", -1, 0)
+            .await
+            .unwrap();
+        assert_eq!(by_display.total, 1);
+        assert_eq!(by_display.items[0].id, alice);
+
+        assert_eq!(
+            list_students_page(&db.pool, false, "zzz", -1, 0)
+                .await
+                .unwrap()
+                .total,
+            0
+        );
+    }
+
+    #[rocket::async_test]
+    async fn roster_hides_archived_students_unless_asked() {
+        let db = TestDbBuilder::new()
+            .coach("coach", None)
+            .student("alice", None)
+            .student("bob", None)
+            .build()
+            .await
+            .unwrap();
+        let bob = db.user_id("bob").unwrap();
+        crate::db::set_user_archived(&db.pool, bob, true)
+            .await
+            .unwrap();
+
+        let active = list_students_page(&db.pool, false, "", -1, 0)
+            .await
+            .unwrap();
+        assert_eq!(active.total, 1);
+        assert!(active.items.iter().all(|u| u.id != bob));
+
+        let all = list_students_page(&db.pool, true, "", -1, 0).await.unwrap();
+        assert_eq!(all.total, 2);
     }
 }

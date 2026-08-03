@@ -53,6 +53,13 @@ struct UserWithActivityDto {
     pub completed_syllabus_count: Option<i64>,
 }
 
+/// One page of the coach roster plus the unpaginated total, so the caller
+/// can render "showing N of M" and decide whether another page exists.
+pub struct StudentPage {
+    pub items: Vec<User>,
+    pub total: i64,
+}
+
 #[instrument(skip(pool))]
 pub async fn get_students_by_recent_updates(
     pool: &Pool<Sqlite>,
@@ -60,6 +67,41 @@ pub async fn get_students_by_recent_updates(
     // viewer_id retained for signature stability; the unseen rule no longer uses per-coach view state.
     _viewer_id: i64,
 ) -> Result<Vec<User>, AppError> {
+    Ok(list_students_page(pool, include_archived, "", -1, 0)
+        .await?
+        .items)
+}
+
+/// Roster page ordered by most recent activity on the student, from either
+/// side. `limit` of -1 means no limit (SQLite semantics), which is how the
+/// unpaginated callers reuse this query.
+#[instrument(skip(pool))]
+pub async fn list_students_page(
+    pool: &Pool<Sqlite>,
+    include_archived: bool,
+    query: &str,
+    limit: i64,
+    offset: i64,
+) -> Result<StudentPage, AppError> {
+    let needle = query.trim().to_lowercase();
+    let has_query = !needle.is_empty();
+    let pattern = format!("%{needle}%");
+
+    let total = sqlx::query_scalar!(
+        r#"SELECT COUNT(*) AS "count!: i64"
+           FROM users u
+           WHERE u.role = 'student'
+             AND (? = 1 OR u.archived = 0)
+             AND (? = 0 OR lower(u.username) LIKE ?
+                        OR lower(COALESCE(u.display_name, '')) LIKE ?)"#,
+        include_archived,
+        has_query,
+        pattern,
+        pattern,
+    )
+    .fetch_one(pool)
+    .await?;
+
     let dtos = sqlx::query_as!(
         UserWithActivityDto,
         r#"
@@ -158,9 +200,29 @@ pub async fn get_students_by_recent_updates(
         LEFT JOIN student_syllabus_techniques sst
                ON sst.assignment_id = sa.id AND sst.hidden_at IS NULL
         WHERE u.role = 'student'
+          AND (? = 1 OR u.archived = 0)
+          AND (? = 0 OR lower(u.username) LIKE ?
+                     OR lower(COALESCE(u.display_name, '')) LIKE ?)
         GROUP BY u.id
-        ORDER BY MAX(sst.updated_at) DESC NULLS LAST
+        -- Recency across both sides: any activity row naming the student,
+        -- falling back to raw SST edits for rows predating the activity log.
+        -- The id tiebreak keeps paging stable when timestamps collide.
+        ORDER BY COALESCE(
+                     (SELECT MAX(datetime(a.occurred_at))
+                        FROM activity a
+                       WHERE a.target_student_id = u.id),
+                     MAX(datetime(sst.updated_at)),
+                     ''
+                 ) DESC,
+                 u.id DESC
+        LIMIT ? OFFSET ?
         "#,
+        include_archived,
+        has_query,
+        pattern,
+        pattern,
+        limit,
+        offset,
     )
     .fetch_all(pool)
     .await?;
@@ -218,11 +280,10 @@ pub async fn get_students_by_recent_updates(
         })
         .collect();
 
-    if include_archived {
-        Ok(users)
-    } else {
-        Ok(users.into_iter().filter(|user| !user.archived).collect())
-    }
+    Ok(StudentPage {
+        items: users,
+        total,
+    })
 }
 
 #[instrument(skip(pool))]
