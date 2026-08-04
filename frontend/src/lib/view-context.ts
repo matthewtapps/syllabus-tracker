@@ -24,8 +24,8 @@ export type ViewContext =
   | {
       kind: "camp";
       camp: EntityRef;
-      /** The camp technique this row acted on. Addresses its own page under the
-       *  camp; omitted for camp-level events (created/archived). */
+      /** The camp technique this row acted on. Anchors the camp page at that
+       *  component; omitted for camp-level events (created/archived). */
       technique?: EntityRef;
       video?: EntityRef;
     };
@@ -51,7 +51,7 @@ export function viewContextHref(ctx: ViewContext): string {
       // A camp OWNS its content and renders it in full, so an item is
       // addressed by anchoring the camp page at it rather than by a route of
       // its own. `?video=` still scrolls to the clip inside whichever
-      // component holds it. The per-item routes survive as permalinks.
+      // component holds it.
       const params = new URLSearchParams();
       if (ctx.technique) params.set("technique", String(ctx.technique.id));
       if (ctx.video) params.set("video", String(ctx.video.id));
