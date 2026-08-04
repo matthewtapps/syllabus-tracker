@@ -2325,6 +2325,14 @@ export async function archiveCamp(id: number): Promise<void> {
   if (!res.ok) throw res;
 }
 
+export async function unarchiveCamp(id: number): Promise<void> {
+  const res = await fetch(`/api/camps/${id}/unarchive`, {
+    method: "POST",
+    credentials: "include",
+  });
+  if (!res.ok) throw res;
+}
+
 export async function updateCamp(
   campId: number,
   body: { name: string; description: string | null },

@@ -1482,6 +1482,7 @@ import {
   createCamp,
   createCampTechnique,
   setCampVideoVisibility,
+  unarchiveCamp,
   updateCamp,
 } from "./api";
 
@@ -1498,14 +1499,34 @@ export function useCreateCamp(studentId: number) {
   });
 }
 
+// Archiving pulls the camp's activity out of every cross-surface feed, so the
+// feeds are refetched alongside the camp itself. Unarchiving puts it back.
+function invalidateAfterCampArchiveChange(
+  qc: ReturnType<typeof useQueryClient>,
+  studentId: number,
+  campId: number,
+) {
+  qc.invalidateQueries({ queryKey: qk.campsForStudent(studentId) });
+  qc.invalidateQueries({ queryKey: qk.camp(campId) });
+  qc.invalidateQueries({ queryKey: qk.activityFeed() });
+  qc.invalidateQueries({ queryKey: qk.activityUnreadCount() });
+  qc.invalidateQueries({ queryKey: qk.dashboardActivityFeed() });
+  qc.invalidateQueries({ queryKey: qk.studentActivityFeedAll(studentId) });
+}
+
 export function useArchiveCamp(studentId: number) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (id: number) => archiveCamp(id),
-    onSuccess: (_d, id) => {
-      qc.invalidateQueries({ queryKey: qk.campsForStudent(studentId) });
-      qc.invalidateQueries({ queryKey: qk.camp(id) });
-    },
+    onSuccess: (_d, id) => invalidateAfterCampArchiveChange(qc, studentId, id),
+  });
+}
+
+export function useUnarchiveCamp(studentId: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) => unarchiveCamp(id),
+    onSuccess: (_d, id) => invalidateAfterCampArchiveChange(qc, studentId, id),
   });
 }
 

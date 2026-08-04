@@ -317,6 +317,12 @@ export function activityLine(row: ActivityRow, scope: ActivityScope = { kind: "g
         ? { verb: "archived", subject: camp, href: deep }
         : { verb: "archived a camp", href: deep };
     }
+    case "camp_unarchived": {
+      const camp = row.camp_name ?? undefined;
+      return camp
+        ? { verb: "unarchived", subject: camp, href: deep }
+        : { verb: "unarchived a camp", href: deep };
+    }
 
     default:
       return { verb: "performed an action" };

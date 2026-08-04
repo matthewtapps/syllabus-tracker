@@ -97,6 +97,8 @@ export function activityCaption(row: ActivityRow): ActivityCaption {
       return { text: "Started" };
     case "camp_archived":
       return { text: "Archived" };
+    case "camp_unarchived":
+      return { text: "Unarchived" };
     default:
       // Plain narrative verb fallback for any verb without a tailored caption.
       return { text: activityLine(row).verb };
