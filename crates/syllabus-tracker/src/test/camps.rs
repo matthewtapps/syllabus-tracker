@@ -800,6 +800,54 @@ mod tests {
         assert_eq!(listed.len(), 1);
     }
 
+    #[rocket::async_test]
+    async fn camp_unarchive_restores_the_camp_once() {
+        use crate::db::camps::unarchive_camp;
+
+        let db = TestDbBuilder::new()
+            .coach("coach_user", Some("Coach"))
+            .student("student_user", Some("Sam"))
+            .build()
+            .await
+            .unwrap();
+
+        let coach = db.user_id("coach_user").unwrap();
+        let student = db.user_id("student_user").unwrap();
+
+        let camp_id = create_camp(
+            &db.pool,
+            NewCamp {
+                student_id: student,
+                coach_id: coach,
+                name: "Worlds prep".into(),
+                description: None,
+            },
+        )
+        .await
+        .unwrap();
+        archive_camp(&db.pool, camp_id, coach).await.unwrap();
+
+        unarchive_camp(&db.pool, camp_id, coach).await.unwrap();
+        assert!(
+            get_camp(&db.pool, camp_id).await.unwrap().unwrap().archived_at.is_none()
+        );
+        // A second call is a no-op and must not emit a second history row.
+        unarchive_camp(&db.pool, camp_id, coach).await.unwrap();
+
+        let emitted = sqlx::query_scalar!(
+            r#"SELECT COUNT(*) AS "n!: i64" FROM activity
+               WHERE verb = 'camp_unarchived' AND camp_id = ?"#,
+            camp_id,
+        )
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+        assert_eq!(emitted, 1);
+
+        let active = list_camps_for_student(&db.pool, student, false).await.unwrap();
+        assert_eq!(active.len(), 1, "the camp is active again");
+    }
+
     // -----------------------------------------------------------------------
     // CC-015: per-camp video visibility override tests
     // -----------------------------------------------------------------------

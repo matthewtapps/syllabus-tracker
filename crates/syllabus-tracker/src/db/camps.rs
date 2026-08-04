@@ -238,6 +238,39 @@ pub async fn archive_camp(pool: &Pool<Sqlite>, id: i64, by_id: i64) -> Result<()
     Ok(())
 }
 
+#[instrument(skip(pool))]
+pub async fn unarchive_camp(pool: &Pool<Sqlite>, id: i64, by_id: i64) -> Result<(), AppError> {
+    let mut tx = pool.begin().await?;
+    let camp = sqlx::query!(
+        r#"SELECT student_id AS "student_id!: i64" FROM camps WHERE id = ?"#,
+        id
+    )
+    .fetch_optional(&mut *tx)
+    .await?
+    .ok_or_else(|| AppError::NotFound("camp not found".into()))?;
+    let updated = sqlx::query!(
+        "UPDATE camps SET archived_at = NULL, archived_by_id = NULL
+         WHERE id = ? AND archived_at IS NOT NULL",
+        id,
+    )
+    .execute(&mut *tx)
+    .await?
+    .rows_affected();
+    // Mirrors archive_camp: only a call that actually flipped the state emits.
+    if updated > 0 {
+        emit(
+            &mut tx,
+            NewActivity::new(Verb::CampUnarchived, by_id)
+                .target_student(camp.student_id)
+                .camp(id)
+                .context_kind("camp"),
+        )
+        .await?;
+    }
+    tx.commit().await?;
+    Ok(())
+}
+
 /// Attaches techniques to a camp, returning the ids this call actually added.
 /// Re-attaching a technique already in the camp is a no-op, so the caller can
 /// send the same selection twice without producing duplicates or a second

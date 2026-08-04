@@ -58,7 +58,8 @@ use syllabi::{
 use camps::{
     api_archive_camp, api_attach_camp_techniques, api_camp_components, api_camp_feed,
     api_camp_search, api_create_camp, api_create_camp_technique,
-    api_get_camp, api_list_camps, api_list_camp_techniques, api_list_camp_videos, api_update_camp,
+    api_get_camp, api_list_camps, api_list_camp_techniques, api_list_camp_videos,
+    api_unarchive_camp, api_update_camp,
     api_set_camp_video_visibility,
 };
 use threads::{
@@ -389,6 +390,7 @@ pub async fn init_rocket_with_callback_secret(
                 api_get_camp,
                 api_update_camp,
                 api_archive_camp,
+                api_unarchive_camp,
                 api_create_camp_technique,
                 api_attach_camp_techniques,
                 api_list_camp_techniques,
