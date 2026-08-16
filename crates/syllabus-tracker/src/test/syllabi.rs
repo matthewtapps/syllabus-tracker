@@ -1608,4 +1608,40 @@ mod order_tests {
             .await;
         assert_eq!(resp.status(), Status::Forbidden);
     }
+    #[rocket::async_test]
+    async fn sst_rows_carry_syllabus_position_and_null_for_student_only_extras() {
+        let (_client, db, syllabus_id, student_id, coach_id, armbar_id, triangle_id) =
+            assign_syllabus_and_seed_techniques().await;
+        let assignment_id = db::assign(&db.pool, coach_id, student_id, syllabus_id)
+            .await
+            .unwrap();
+
+        db::reorder_syllabus_techniques(&db.pool, syllabus_id, &[triangle_id, armbar_id])
+            .await
+            .unwrap();
+
+        // Added straight to this student's assignment, so it never joins
+        // `syllabus_techniques` and has no position.
+        let extra_id = db::create_technique(&db.pool, "Kimura", "extra", coach_id, true)
+            .await
+            .unwrap();
+        db::add_technique_to_assignment(&db.pool, assignment_id, extra_id, coach_id)
+            .await
+            .unwrap();
+
+        let user = crate::db::get_user(&db.pool, coach_id).await.unwrap();
+        let rows = db::list_for_assignment(&db.pool, assignment_id, &user)
+            .await
+            .unwrap();
+        let position_of = |tid: i64| {
+            rows.iter()
+                .find(|r| r.technique_id == tid)
+                .unwrap_or_else(|| panic!("technique {tid} missing from the assignment"))
+                .syllabus_position
+        };
+
+        assert_eq!(position_of(triangle_id), Some(0));
+        assert_eq!(position_of(armbar_id), Some(1));
+        assert_eq!(position_of(extra_id), None);
+    }
 }

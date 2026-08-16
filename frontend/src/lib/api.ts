@@ -1451,6 +1451,8 @@ export interface SstRow {
   last_attempt_at: string | null;
   /** Alive videos on the technique (global library; student-specific is future). */
   video_count: number;
+  /** Place in the syllabus order; null when added straight to this assignment. */
+  syllabus_position: number | null;
 }
 
 export interface StudentSyllabusDetailResponse {

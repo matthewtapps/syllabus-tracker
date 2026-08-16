@@ -69,6 +69,7 @@ function sst(overrides: Partial<SstRow> = {}): SstRow {
     attempt_count: 3,
     last_attempt_at: null,
     video_count: 2,
+    syllabus_position: null,
     ...overrides,
   };
 }

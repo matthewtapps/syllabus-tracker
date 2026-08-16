@@ -38,6 +38,9 @@ pub struct SstRow {
     /// Alive videos on the technique (global library). Student-syllabus-specific
     /// videos are a future feature; when added they will count here too.
     pub video_count: i64,
+    /// The technique's place in the syllabus order. `None` when the technique
+    /// was added straight to this assignment and so has no membership row.
+    pub syllabus_position: Option<i64>,
 }
 
 #[derive(Debug, Default)]
@@ -78,9 +81,14 @@ pub async fn list_for_assignment(
                   sst.last_student_update_by_id,
                   COALESCE((SELECT COUNT(*) FROM syllabus_attempts WHERE student_syllabus_technique_id = sst.id), 0) AS "attempt_count!: i64",
                   COALESCE((SELECT COUNT(*) FROM videos v WHERE v.technique_id = sst.technique_id AND v.parent_kind = 'technique' AND v.deleted_at IS NULL), 0) AS "video_count!: i64",
-                  (SELECT MAX(attempted_at) FROM syllabus_attempts WHERE student_syllabus_technique_id = sst.id) AS "last_attempt_at?: NaiveDateTime"
+                  (SELECT MAX(attempted_at) FROM syllabus_attempts WHERE student_syllabus_technique_id = sst.id) AS "last_attempt_at?: NaiveDateTime",
+                  st.position AS "syllabus_position?: i64"
            FROM student_syllabus_techniques sst
            JOIN techniques t ON t.id = sst.technique_id
+           JOIN syllabus_assignments sa ON sa.id = sst.assignment_id
+           LEFT JOIN syllabus_techniques st
+                  ON st.syllabus_id = sa.syllabus_id
+                 AND st.technique_id = sst.technique_id
            WHERE sst.assignment_id = ?
              AND (? = 1 OR sst.hidden_at IS NULL)
            ORDER BY t.name"#,
@@ -134,6 +142,7 @@ pub async fn list_for_assignment(
             attempt_count: r.attempt_count,
             last_attempt_at: r.last_attempt_at.map(rfc3339),
             video_count: r.video_count,
+            syllabus_position: r.syllabus_position,
         })
         .collect())
 }
