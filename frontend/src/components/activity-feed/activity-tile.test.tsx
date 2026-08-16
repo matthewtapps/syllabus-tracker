@@ -294,6 +294,38 @@ describe("ActivityTile: thread kind", () => {
     );
     expect(screen.queryByRole("dialog")).toBeNull();
   });
+
+  test("links a camp discussion to the camp page, anchored at the thread", async () => {
+    fetchSpy = vi.spyOn(window, "fetch").mockImplementation(
+      stubFetch([
+        { match: "/api/threads", json: { threads: [thread({ anchor_kind: "camp" })] } },
+      ]),
+    );
+
+    const campRow = row({
+      verb: "thread_comment_posted",
+      thread_id: 7,
+      technique_id: null,
+      technique_name: null,
+      sst_id: null,
+      context_kind: "camp",
+      camp_id: 9,
+      camp_name: "Worlds prep",
+    });
+
+    renderWithProviders(<ActivityTile row={campRow} />, {
+      user: buildUser({ id: 2, role: "coach" }),
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("Nice work on this one.")).toBeInTheDocument();
+    });
+
+    expect(screen.getByText("Nice work on this one.").closest("a")).toHaveAttribute(
+      "href",
+      "/camps/9?thread=7",
+    );
+  });
 });
 
 describe("ActivityTile: video kind", () => {

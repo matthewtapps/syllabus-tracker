@@ -51,11 +51,12 @@ pub enum Verb {
     ThreadCommentPosted,
     CampCreated,
     CampArchived,
+    CampUnarchived,
     CampTechniqueAdded,
 }
 
 impl Verb {
-    pub const ALL: [Verb; 24] = [
+    pub const ALL: [Verb; 25] = [
         Verb::VideoWatched,
         Verb::AttemptLogged,
         Verb::AttemptEdited,
@@ -79,6 +80,7 @@ impl Verb {
         Verb::ThreadCommentPosted,
         Verb::CampCreated,
         Verb::CampArchived,
+        Verb::CampUnarchived,
         Verb::CampTechniqueAdded,
     ];
 
@@ -107,6 +109,7 @@ impl Verb {
             Verb::ThreadCommentPosted => "thread_comment_posted",
             Verb::CampCreated => "camp_created",
             Verb::CampArchived => "camp_archived",
+            Verb::CampUnarchived => "camp_unarchived",
             Verb::CampTechniqueAdded => "camp_technique_added",
         }
     }
@@ -129,6 +132,7 @@ impl Verb {
                 | Verb::SyllabusTechniqueRemoved
                 | Verb::VideoVisibilitySet
                 | Verb::CampArchived
+                | Verb::CampUnarchived
         )
     }
 
@@ -144,6 +148,7 @@ impl Verb {
             Verb::ThreadCommentPosted
                 | Verb::CampCreated
                 | Verb::CampArchived
+                | Verb::CampUnarchived
                 | Verb::CampTechniqueAdded
         )
     }
@@ -173,7 +178,7 @@ impl Verb {
             | Verb::SyllabusTechniqueAdded
             | Verb::SyllabusTechniqueRemoved => EntityKind::Syllabus,
             Verb::ThreadCommentPosted => EntityKind::Thread,
-            Verb::CampCreated | Verb::CampArchived => EntityKind::Camp,
+            Verb::CampCreated | Verb::CampArchived | Verb::CampUnarchived => EntityKind::Camp,
         }
     }
 }
@@ -814,6 +819,7 @@ mod registry_tests {
             "syllabus_technique_removed",
             "video_visibility_set",
             "camp_archived",
+            "camp_unarchived",
         ];
         want.sort_unstable();
         assert_eq!(got, want);

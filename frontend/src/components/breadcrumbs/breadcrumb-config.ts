@@ -6,8 +6,7 @@ export type DynamicKey =
   | "studentName"
   | "studentSyllabusName"
   | "globalSyllabusName"
-  | "campName"
-  | "campTechniqueName";
+  | "campName";
 
 export interface CrumbDef {
   pattern: string;

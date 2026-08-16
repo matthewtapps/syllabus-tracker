@@ -32,14 +32,11 @@ export function ThreadTile({
 
   // This tile only ever handles the two anchors with no technique or video
   // noun (resolveFeedItem routes the rest to the technique and video tiles):
-  // a camp's own discussion, and a student profile's.
-  //
-  // A profile projects its threads from elsewhere, so it takes `?thread=` and
-  // scrolls its list. A camp OWNS the conversation, and its feed is the
-  // original, so the thread has its own page under the camp.
+  // a camp's own discussion, and a student profile's. Both surfaces render the
+  // conversation in place, so both take `?thread=` and scroll their list.
   const href =
     anchorKind === "camp"
-      ? `/camps/${anchorId}/threads/${threadId}`
+      ? `/camps/${anchorId}?thread=${threadId}`
       : `/student/${anchorId}?thread=${threadId}`;
 
   const anchorLabel = row.video_title ?? row.technique_name ?? row.camp_name ?? null;

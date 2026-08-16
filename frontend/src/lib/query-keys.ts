@@ -85,6 +85,9 @@ export const qk = {
   dashboardActivityFeed: () => ["activity", "dashboard-feed"] as const,
   studentActivityFeed: (studentId: number, limit: number) =>
     ["student", studentId, "activityFeed", limit] as const,
+  // Prefix matcher for a student's feed in every shape (paged and infinite).
+  studentActivityFeedAll: (studentId: number) =>
+    ["student", studentId, "activityFeed"] as const,
   // Infinite (paginated) feeds for the social feed surface.
   activityFeedInfinite: (limit: number) =>
     ["activity", "feed", "infinite", limit] as const,

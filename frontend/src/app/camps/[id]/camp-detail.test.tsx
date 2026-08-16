@@ -5,6 +5,7 @@
  * - Camp name renders from the stubbed GET /api/camps/1 response.
  * - Empty state text appears when the camp holds no components.
  * - Coaches see a Rename control; the builds-on display is gone.
+ * - An archived camp swaps the Archive control for Unarchive.
  *
  * NOTE: .test.tsx files run in Chromium via vitest-browser and cannot execute
  * on this NixOS dev box (Chromium shared-lib dependencies are absent). This
@@ -17,7 +18,7 @@ import { Route, Routes } from "react-router-dom";
 import CampDetailPage from "./page";
 import { buildUser, renderWithProviders } from "@/test/render";
 
-function makeStubFetch() {
+function makeStubFetch(campOverrides: Record<string, unknown> = {}) {
   return vi.spyOn(window, "fetch").mockImplementation(
     (input: RequestInfo | URL) => {
       const url = typeof input === "string" ? input : input.toString();
@@ -33,6 +34,7 @@ function makeStubFetch() {
               description: "Focus on guard passing",
               created_at: "2026-06-16T00:00:00Z",
               archived_at: null,
+              ...campOverrides,
             }),
             { status: 200, headers: { "Content-Type": "application/json" } },
           ),
@@ -218,6 +220,38 @@ describe("CampDetailPage", () => {
     expect(
       screen.queryByRole("button", { name: /rename/i }),
     ).not.toBeInTheDocument();
+
+    fetchSpy.mockRestore();
+  });
+
+  test("an archived camp offers Unarchive in place of Archive", async () => {
+    const fetchSpy = makeStubFetch({ archived_at: "2026-08-01T00:00:00Z" });
+
+    renderWithProviders(
+      <Routes>
+        <Route path="/camps/:id" element={<CampDetailPage />} />
+      </Routes>,
+      {
+        user: buildUser({ id: 1, role: "coach" }),
+        initialEntries: ["/camps/1"],
+      },
+    );
+
+    const unarchive = await waitFor(() =>
+      screen.getByRole("button", { name: /unarchive camp/i }),
+    );
+    expect(
+      screen.queryByRole("button", { name: /^archive camp$/i }),
+    ).not.toBeInTheDocument();
+
+    unarchive.click();
+
+    await waitFor(() => {
+      expect(fetchSpy).toHaveBeenCalledWith(
+        "/api/camps/1/unarchive",
+        expect.objectContaining({ method: "POST" }),
+      );
+    });
 
     fetchSpy.mockRestore();
   });

@@ -12,7 +12,7 @@ use crate::db::camps::{
     archive_camp, attach_camp_techniques, create_camp, create_camp_technique_new, get_camp,
     list_camp_summaries_for_student,
     search_camp_techniques, search_camp_threads, search_camp_videos,
-    update_camp, Camp, CampSummary, CampTechniqueHit, CampThreadHit, CampVideoHit, NewCamp, TechniqueScope,
+    unarchive_camp, update_camp, Camp, CampSummary, CampTechniqueHit, CampThreadHit, CampVideoHit, NewCamp, TechniqueScope,
 };
 use crate::db::{
     feed, list_camp_components, list_camp_techniques, list_videos_for_camp,
@@ -167,6 +167,23 @@ pub async fn api_archive_camp(
 ) -> Result<Status, Status> {
     require_camps(&user)?;
     archive_camp(pool.inner(), id, user.id)
+        .await
+        .map_err(|e| match e {
+            crate::error::AppError::NotFound(_) => Status::NotFound,
+            other => Status::from(other),
+        })?;
+    Ok(Status::NoContent)
+}
+
+#[instrument(skip(pool, user))]
+#[post("/camps/<id>/unarchive")]
+pub async fn api_unarchive_camp(
+    id: i64,
+    user: User,
+    pool: &State<Pool<Sqlite>>,
+) -> Result<Status, Status> {
+    require_camps(&user)?;
+    unarchive_camp(pool.inner(), id, user.id)
         .await
         .map_err(|e| match e {
             crate::error::AppError::NotFound(_) => Status::NotFound,

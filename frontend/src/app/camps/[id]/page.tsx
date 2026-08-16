@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Navigate, useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
-import { Archive, Pencil, Search } from "lucide-react";
+import { Archive, ArchiveRestore, Pencil, Search } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -32,6 +32,7 @@ import {
 } from "@/lib/queries";
 import {
   useArchiveCamp,
+  useUnarchiveCamp,
   useAttachCampTechniques,
   useCreateCampTechnique,
   useCreateThread,
@@ -643,6 +644,7 @@ function CampDetail({
   const createThread = useCreateThread();
   const attachTechniques = useAttachCampTechniques(campId);
   const archiveCamp = useArchiveCamp(camp?.student_id ?? 0);
+  const unarchiveCamp = useUnarchiveCamp(camp?.student_id ?? 0);
 
   async function attachToCamp(techniqueIds: number[]) {
     await attachTechniques.mutateAsync(techniqueIds);
@@ -660,7 +662,7 @@ function CampDetail({
     const ok = await confirm({
       title: "Archive this camp?",
       description:
-        "The camp stays referenceable but drops out of active views. This cannot be undone.",
+        "The camp drops out of active views and its activity leaves the feed. You can unarchive it later.",
       confirmLabel: "Archive",
       cancelLabel: "Cancel",
       destructive: true,
@@ -672,6 +674,15 @@ function CampDetail({
       navigate(`/student/${camp!.student_id}/camps`);
     } catch {
       toast.error("Failed to archive the camp. Please try again.");
+    }
+  }
+
+  async function handleUnarchive() {
+    try {
+      await unarchiveCamp.mutateAsync(campId);
+      toast.success("Camp unarchived.");
+    } catch {
+      toast.error("Failed to unarchive the camp. Please try again.");
     }
   }
 
@@ -724,7 +735,18 @@ function CampDetail({
               <Pencil className="h-3.5 w-3.5" />
               Rename
             </Button>
-            {!camp.archived_at && (
+            {camp.archived_at ? (
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7 gap-1.5 text-xs"
+                onClick={handleUnarchive}
+                disabled={unarchiveCamp.isPending}
+              >
+                <ArchiveRestore className="h-3.5 w-3.5" />
+                Unarchive camp
+              </Button>
+            ) : (
               <Button
                 size="sm"
                 variant="outline"

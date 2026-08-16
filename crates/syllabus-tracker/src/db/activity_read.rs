@@ -314,6 +314,9 @@ pub async fn feed(
                      AND (act.verb != 'thread_comment_posted' OR tr.rn = 1)
                      -- Optional camp filter: when non-NULL, restrict to that camp only.
                      AND (? IS NULL OR act.camp_id = ?)
+                     -- An archived camp's activity leaves the cross-surface feed;
+                     -- the camp's own feed (camp filter set) still shows it.
+                     AND (? IS NOT NULL OR act.camp_id IS NULL OR cp.archived_at IS NULL)
                      AND (? IS NULL OR (act.occurred_at, act.id) < (?, ?))
                    ORDER BY act.occurred_at DESC, act.id DESC
                    LIMIT ?"#,
@@ -323,6 +326,7 @@ pub async fn feed(
                 viewer,
                 viewer,
                 viewer,
+                camp_id,
                 camp_id,
                 camp_id,
                 before_ts,
@@ -432,11 +436,15 @@ pub async fn feed(
                      AND (act.verb != 'thread_comment_posted' OR tr.rn = 1)
                      -- Optional camp filter: when non-NULL, restrict to that camp only.
                      AND (? IS NULL OR act.camp_id = ?)
+                     -- An archived camp's activity leaves the cross-surface feed;
+                     -- the camp's own feed (camp filter set) still shows it.
+                     AND (? IS NOT NULL OR act.camp_id IS NULL OR cp.archived_at IS NULL)
                      AND (? IS NULL OR (act.occurred_at, act.id) < (?, ?))
                    ORDER BY act.occurred_at DESC, act.id DESC
                    LIMIT ?"#,
                 viewer,
                 viewer,
+                camp_id,
                 camp_id,
                 camp_id,
                 before_ts,
@@ -534,7 +542,11 @@ pub async fn dashboard_activity_feed(
            LEFT JOIN techniques t ON t.id = act.technique_id
            LEFT JOIN syllabi s    ON s.id = act.syllabus_id
            LEFT JOIN videos v     ON v.id = act.video_id
+           LEFT JOIN camps cp     ON cp.id = act.camp_id
            WHERE (act.video_id IS NULL OR (v.id IS NOT NULL AND v.deleted_at IS NULL))
+             -- Same rule as feed(): an archived camp's activity leaves the
+             -- cross-surface surfaces and stays readable only inside the camp.
+             AND (act.camp_id IS NULL OR cp.archived_at IS NULL)
              AND (
                    -- Student-originated positive engagement verbs. This is a tight
                    -- allow-list (a subset of the notifiable verbs in db/activity.rs),
@@ -551,7 +563,8 @@ pub async fn dashboard_activity_feed(
                    OR ( u.role != 'student' AND act.verb NOT IN (
                      'attempt_deleted', 'technique_unpinned', 'syllabus_unassigned',
                      'sst_hidden', 'sst_unhidden', 'syllabus_technique_removed',
-                     'video_visibility_set', 'thread_comment_posted', 'camp_archived'
+                     'video_visibility_set', 'thread_comment_posted', 'camp_archived',
+                     'camp_unarchived'
                    ) )
                    -- Graduation milestone surfaces regardless of who fired it.
                    OR act.verb = 'syllabus_graduated'
@@ -653,6 +666,7 @@ pub async fn unread_count(pool: &Pool<Sqlite>, viewer: i64, role: Role) -> Resul
         r#"SELECT COUNT(*) FROM activity act
            LEFT JOIN videos v   ON v.id = act.video_id
            LEFT JOIN threads th ON th.id = act.thread_id
+           LEFT JOIN camps cp   ON cp.id = act.camp_id
            LEFT JOIN activity_cursors c
                   ON c.viewer_user_id = ?
            LEFT JOIN activity_seen_overrides ov
@@ -660,6 +674,9 @@ pub async fn unread_count(pool: &Pool<Sqlite>, viewer: i64, role: Role) -> Resul
            WHERE {feed_predicate}
              AND (act.video_id IS NULL OR (v.id IS NOT NULL AND v.deleted_at IS NULL))
              AND (act.thread_id IS NULL OR (th.id IS NOT NULL AND th.deleted_at IS NULL))
+             -- Keep in sync with feed(): an archived camp's rows are not in the
+             -- feed, so they must not drive the unread badge either.
+             AND (act.camp_id IS NULL OR cp.archived_at IS NULL)
              AND act.actor_user_id != ?
              AND act.verb IN ({placeholders})
              AND CASE

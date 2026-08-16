@@ -1323,4 +1323,71 @@ mod tests {
             "unrelated student has nothing unread"
         );
     }
+
+    #[rocket::async_test]
+    async fn archived_camp_activity_is_hidden_from_the_feed_but_not_the_camp() {
+        use crate::db::camps::{archive_camp, create_camp, unarchive_camp, NewCamp};
+
+        let db = TestDbBuilder::new()
+            .coach("coach", None)
+            .student("alice", None)
+            .build()
+            .await
+            .unwrap();
+        let coach = db.user_id("coach").unwrap();
+        let alice = db.user_id("alice").unwrap();
+
+        let camp_id = create_camp(
+            &db.pool,
+            NewCamp {
+                student_id: alice,
+                coach_id: coach,
+                name: "Worlds prep".into(),
+                description: None,
+            },
+        )
+        .await
+        .unwrap();
+
+        let mut tx = db.pool.begin().await.unwrap();
+        emit(
+            &mut tx,
+            NewActivity::new(Verb::CampTechniqueAdded, coach)
+                .target_student(alice)
+                .camp(camp_id)
+                .context_kind("camp"),
+        )
+        .await
+        .unwrap();
+        tx.commit().await.unwrap();
+
+        let in_camp = |rows: &[crate::db::ActivityRow]| {
+            rows.iter().filter(|r| r.camp_id == Some(camp_id)).count()
+        };
+
+        let before = feed(&db.pool, coach, Role::Coach, None, 50, None).await.unwrap();
+        assert!(in_camp(&before) > 0, "an active camp's rows are in the feed");
+        let unread_before = unread_count(&db.pool, alice, Role::Student).await.unwrap();
+
+        archive_camp(&db.pool, camp_id, coach).await.unwrap();
+
+        let after = feed(&db.pool, coach, Role::Coach, None, 50, None).await.unwrap();
+        assert_eq!(in_camp(&after), 0, "an archived camp's rows leave the feed");
+        assert!(
+            unread_count(&db.pool, alice, Role::Student).await.unwrap() < unread_before,
+            "hidden rows must not drive the unread badge"
+        );
+
+        let camp_feed = feed(&db.pool, coach, Role::Coach, None, 50, Some(camp_id))
+            .await
+            .unwrap();
+        assert!(
+            in_camp(&camp_feed) > 0,
+            "the camp's own feed still shows its rows while archived"
+        );
+
+        unarchive_camp(&db.pool, camp_id, coach).await.unwrap();
+        let restored = feed(&db.pool, coach, Role::Coach, None, 50, None).await.unwrap();
+        assert!(in_camp(&restored) > 0, "unarchiving puts the rows back in the feed");
+    }
 }
