@@ -1447,7 +1447,7 @@ mod pr4_tests {
 #[cfg(test)]
 mod order_tests {
     use rocket::http::{ContentType, Status};
-    use serde_json::json;
+    use serde_json::{Value, json};
 
     use crate::db;
     use crate::db::PropagationMode;
@@ -1539,6 +1539,24 @@ mod order_tests {
             positions_by_technique(&test_db.pool, syllabus_id).await,
             vec![(triangle_id, 0), (armbar_id, 1)],
         );
+
+        let third_id = db::create_technique(&test_db.pool, "Kimura", "", coach_id, true)
+            .await
+            .unwrap();
+        db::add_technique_to_syllabus(
+            &test_db.pool,
+            syllabus_id,
+            third_id,
+            coach_id,
+            PropagationMode::SyllabusOnly,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(
+            positions_by_technique(&test_db.pool, syllabus_id).await,
+            vec![(triangle_id, 0), (armbar_id, 1), (third_id, 2)],
+        );
     }
 
     #[rocket::async_test]
@@ -1560,14 +1578,24 @@ mod order_tests {
             vec![(triangle_id, 0), (armbar_id, 1)],
         );
 
-        // Triangle now leads despite sorting after Armbar by name.
-        let listed = db::list_syllabus_techniques(&db.pool, syllabus_id)
-            .await
-            .unwrap();
-        assert_eq!(
-            listed.iter().map(|t| t.technique_id).collect::<Vec<_>>(),
-            vec![triangle_id, armbar_id],
-        );
+        // Triangle leads only if position beats the name tie-break.
+        let body: Value = serde_json::from_str(
+            &client
+                .get(format!("/api/syllabi/{syllabus_id}"))
+                .dispatch()
+                .await
+                .into_string()
+                .await
+                .unwrap(),
+        )
+        .unwrap();
+        let listed: Vec<i64> = body["techniques"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|t| t["technique_id"].as_i64().unwrap())
+            .collect();
+        assert_eq!(listed, vec![triangle_id, armbar_id]);
     }
 
     #[rocket::async_test]
@@ -1620,8 +1648,6 @@ mod order_tests {
             .await
             .unwrap();
 
-        // Added straight to this student's assignment, so it never joins
-        // `syllabus_techniques` and has no position.
         let extra_id = db::create_technique(&db.pool, "Kimura", "extra", coach_id, true)
             .await
             .unwrap();
