@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Navigate, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
+  GripVerticalIcon,
   NotebookPen,
   Pencil,
   Plus,
@@ -9,6 +10,23 @@ import {
   UserPlus,
   Users,
 } from 'lucide-react';
+import {
+  DndContext,
+  type DragEndEvent,
+  KeyboardSensor,
+  PointerSensor,
+  closestCenter,
+  useSensor,
+  useSensors,
+} from '@dnd-kit/core';
+import {
+  SortableContext,
+  arrayMove,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { toast } from 'sonner';
@@ -37,6 +55,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { TracedForm } from '@/components/traced-form';
 import { EmptyState } from '@/components/empty-state';
 import { Accordion } from '@/components/ui/accordion';
+import { cn } from '@/lib/utils';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { TechniqueRow } from '@/components/technique-row';
 import { useLibraryTechniques, useSyllabus } from '@/lib/queries';
@@ -44,6 +63,7 @@ import {
   useAddTechniqueToSyllabus,
   useDeleteSyllabus,
   useRemoveTechniqueFromSyllabus,
+  useReorderSyllabusTechniques,
   useUpdateSyllabus,
 } from '@/lib/mutations';
 import {
@@ -783,6 +803,57 @@ function TechniquesSection({
     );
   }
 
+  // A drag renumbers by array index, so it needs the whole membership. While a
+  // filter hides rows, dropping one would renumber only what's on screen and
+  // scramble the rest.
+  const filtersActive = techSearch.trim() !== '' || techTags.length > 0;
+
+  const reorderMutation = useReorderSyllabusTechniques(syllabusId);
+  const [localOrder, setLocalOrder] = useState<number[] | null>(null);
+
+  const ordered = useMemo(() => {
+    if (!localOrder) return techniques;
+    const byId = new Map(techniques.map((t) => [t.technique_id, t]));
+    const next: SyllabusTechniqueRow[] = [];
+    for (const id of localOrder) {
+      const t = byId.get(id);
+      if (t) {
+        next.push(t);
+        byId.delete(id);
+      }
+    }
+    for (const t of byId.values()) next.push(t);
+    return next;
+  }, [techniques, localOrder]);
+
+  const visible = useMemo(() => {
+    const keep = new Set(filtered.map((t) => t.technique_id));
+    return ordered.filter((t) => keep.has(t.technique_id));
+  }, [ordered, filtered]);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
+
+  function handleDragEnd(event: DragEndEvent) {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const ids = ordered.map((t) => t.technique_id);
+    const oldIndex = ids.indexOf(Number(active.id));
+    const newIndex = ids.indexOf(Number(over.id));
+    if (oldIndex < 0 || newIndex < 0) return;
+    const next = arrayMove(ids, oldIndex, newIndex);
+    setLocalOrder(next);
+    reorderMutation.mutate(next, {
+      onError: () => {
+        toast.error('Could not save the new order');
+        setLocalOrder(null);
+      },
+      onSuccess: () => setLocalOrder(null),
+    });
+  }
+
   return (
     <section className="space-y-2">
       <h2 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
@@ -836,6 +907,9 @@ function TechniquesSection({
                   techniques.length === 1 ? 'technique' : 'techniques'
                 }`
               : `${filtered.length} of ${techniques.length} techniques`}
+            {filtersActive && techniques.length > 1 && (
+              <> (clear filters to reorder)</>
+            )}
           </p>
         </div>
       )}
@@ -855,32 +929,104 @@ function TechniquesSection({
             No techniques match the current filters.
           </p>
         ) : (
-          <Accordion
-            type="single"
-            collapsible
-            value={techExpanded}
-            onValueChange={setTechExpanded}
+          <DndContext
+            sensors={sensors}
+            collisionDetection={closestCenter}
+            onDragEnd={handleDragEnd}
           >
-            {filtered.map((t) => {
-              const value = String(t.technique_id);
-              return (
-                <TechniqueRow
-                  key={t.technique_id}
-                  technique={toLibraryShape(t)}
-                  context={{
-                    kind: 'syllabus-management',
-                    syllabusId,
-                    onRemove: (tech) => onRemove(tech.id, tech.name),
-                  }}
-                  value={value}
-                  isOpen={techExpanded === value}
-                />
-              );
-            })}
-          </Accordion>
+            <SortableContext
+              items={visible.map((t) => t.technique_id)}
+              strategy={verticalListSortingStrategy}
+            >
+              <Accordion
+                type="single"
+                collapsible
+                value={techExpanded}
+                onValueChange={setTechExpanded}
+              >
+                {visible.map((t) => (
+                  <SortableTechniqueRow
+                    key={t.technique_id}
+                    technique={t}
+                    syllabusId={syllabusId}
+                    isOpen={techExpanded === String(t.technique_id)}
+                    reorderDisabled={filtersActive}
+                    onRemove={onRemove}
+                  />
+                ))}
+              </Accordion>
+            </SortableContext>
+          </DndContext>
         )}
       </div>
     </section>
+  );
+}
+
+function SortableTechniqueRow({
+  technique,
+  syllabusId,
+  isOpen,
+  reorderDisabled,
+  onRemove,
+}: {
+  technique: SyllabusTechniqueRow;
+  syllabusId: number;
+  isOpen: boolean;
+  reorderDisabled: boolean;
+  onRemove: (techniqueId: number, name: string) => void;
+}) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    setActivatorNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: technique.technique_id, disabled: reorderDisabled });
+
+  const handle = (
+    <button
+      type="button"
+      ref={setActivatorNodeRef}
+      {...attributes}
+      {...listeners}
+      disabled={reorderDisabled}
+      className={cn(
+        'touch-none rounded p-1 text-muted-foreground',
+        reorderDisabled
+          ? 'cursor-not-allowed opacity-30'
+          : 'hover:bg-muted/60 hover:text-foreground',
+      )}
+      aria-label={
+        reorderDisabled
+          ? `Clear filters to reorder ${technique.name}`
+          : `Reorder ${technique.name}`
+      }
+    >
+      <GripVerticalIcon className="h-4 w-4" aria-hidden />
+    </button>
+  );
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={{ transform: CSS.Transform.toString(transform), transition }}
+      className={cn(isDragging && 'opacity-60')}
+    >
+      <TechniqueRow
+        technique={toLibraryShape(technique)}
+        context={{
+          kind: 'syllabus-management',
+          syllabusId,
+          onRemove: (tech) => onRemove(tech.id, tech.name),
+        }}
+        value={String(technique.technique_id)}
+        isOpen={isOpen}
+        dragHandle={handle}
+      />
+    </div>
   );
 }
 

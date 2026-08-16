@@ -1,0 +1,26 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT technique_id AS \"technique_id!: i64\", position AS \"position!: i64\"\n               FROM syllabus_techniques WHERE syllabus_id = ?\n               ORDER BY position",
+  "describe": {
+    "columns": [
+      {
+        "name": "technique_id!: i64",
+        "ordinal": 0,
+        "type_info": "Integer"
+      },
+      {
+        "name": "position!: i64",
+        "ordinal": 1,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "55fb1e1c6050b4dd2a8cc5ae68084137ac9edfcd80bff54def71f02aafdf94b4"
+}

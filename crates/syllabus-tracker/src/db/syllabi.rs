@@ -263,6 +263,33 @@ pub async fn list_syllabus_techniques(
         .collect())
 }
 
+/// Rewrite the display order of a syllabus's techniques. Positions come from
+/// each id's index, so callers must send the full membership; a subset
+/// renumbers only those rows and leaves the rest where they were.
+#[instrument(skip(pool))]
+pub async fn reorder_syllabus_techniques(
+    pool: &Pool<Sqlite>,
+    syllabus_id: i64,
+    ordered_technique_ids: &[i64],
+) -> Result<(), AppError> {
+    let mut tx = pool.begin().await?;
+    for (index, technique_id) in ordered_technique_ids.iter().enumerate() {
+        let position = index as i64;
+        sqlx::query!(
+            "UPDATE syllabus_techniques
+             SET position = ?
+             WHERE syllabus_id = ? AND technique_id = ?",
+            position,
+            syllabus_id,
+            technique_id,
+        )
+        .execute(&mut *tx)
+        .await?;
+    }
+    tx.commit().await?;
+    Ok(())
+}
+
 /// Add a technique to a syllabus. When `mode = Cascade`, eager-fill SST
 /// rows for every active, non-graduated assignment of this syllabus.
 /// Wraps the whole op in a single transaction so a partial fan-out
@@ -279,10 +306,18 @@ pub async fn add_technique_to_syllabus(
 
     sqlx::query!(
         "INSERT OR IGNORE INTO syllabus_techniques
-            (syllabus_id, technique_id, added_by_id)
-         VALUES (?, ?, ?)",
+            (syllabus_id, technique_id, position, added_by_id)
+         VALUES (
+            ?, ?,
+            COALESCE(
+                (SELECT MAX(position) + 1 FROM syllabus_techniques WHERE syllabus_id = ?),
+                0
+            ),
+            ?
+         )",
         syllabus_id,
         technique_id,
+        syllabus_id,
         coach_id,
     )
     .execute(&mut *tx)

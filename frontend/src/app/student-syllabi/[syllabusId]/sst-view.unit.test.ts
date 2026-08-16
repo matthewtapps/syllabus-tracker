@@ -71,3 +71,26 @@ describe('sortSsts', () => {
     expect(sortSsts([a, b], 'alphabetical').map((r) => r.id)).toEqual([2, 1]);
   });
 });
+
+describe('sortSsts syllabus order', () => {
+  const first = row({ id: 1, technique_name: 'Zebra', syllabus_position: 0 });
+  const second = row({ id: 2, technique_name: 'Alpha', syllabus_position: 1 });
+  const extraY = row({ id: 3, technique_name: 'Yak', syllabus_position: null });
+  const extraB = row({ id: 4, technique_name: 'Bear', syllabus_position: null });
+
+  test('orders by position, ignoring name', () => {
+    expect(sortSsts([second, first], 'syllabus').map((r) => r.id)).toEqual([1, 2]);
+  });
+
+  test('puts position-less rows last, alphabetical among themselves', () => {
+    expect(
+      sortSsts([extraY, second, extraB, first], 'syllabus').map((r) => r.id),
+    ).toEqual([1, 2, 4, 3]);
+  });
+
+  test('breaks ties on position by name', () => {
+    const tieZ = row({ id: 5, technique_name: 'Zebra', syllabus_position: 0 });
+    const tieA = row({ id: 6, technique_name: 'Alpha', syllabus_position: 0 });
+    expect(sortSsts([tieZ, tieA], 'syllabus').map((r) => r.id)).toEqual([6, 5]);
+  });
+});

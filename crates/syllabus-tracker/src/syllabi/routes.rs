@@ -268,6 +268,23 @@ pub async fn api_add_technique_to_syllabus(
     Ok(Status::NoContent)
 }
 
+#[derive(Deserialize)]
+pub struct ReorderSyllabusTechniquesRequest {
+    pub ordered_technique_ids: Vec<i64>,
+}
+
+#[post("/syllabi/<sid>/techniques/reorder", data = "<body>")]
+pub async fn api_reorder_syllabus_techniques(
+    sid: i64,
+    user: User,
+    body: Json<ReorderSyllabusTechniquesRequest>,
+    db: &State<Pool<Sqlite>>,
+) -> ApiResult<Status> {
+    user.require_permission(Permission::ManageSyllabi)?;
+    db::reorder_syllabus_techniques(db, sid, &body.into_inner().ordered_technique_ids).await?;
+    Ok(Status::NoContent)
+}
+
 #[delete("/syllabi/<sid>/techniques/<tid>?<propagation>")]
 pub async fn api_remove_technique_from_syllabus(
     sid: i64,

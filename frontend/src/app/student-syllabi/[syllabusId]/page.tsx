@@ -133,7 +133,7 @@ function Detail({
       : tab === 'custom'
         ? custom
         : hidden;
-  const [sort, setSort] = useState<SstSort>('recent');
+  const [sort, setSort] = useState<SstSort>('syllabus');
   const techniques = useMemo(
     () => sortSsts(activeRows, sort),
     [activeRows, sort],
@@ -323,6 +323,7 @@ function Detail({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
+                <SelectItem value="syllabus">Syllabus order</SelectItem>
                 <SelectItem value="recent">Recently active</SelectItem>
                 <SelectItem value="alphabetical">Alphabetical</SelectItem>
               </SelectContent>

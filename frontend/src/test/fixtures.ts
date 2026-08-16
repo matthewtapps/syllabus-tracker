@@ -40,6 +40,7 @@ export function buildSst(overrides: Partial<SstRow> = {}): SstRow {
     attempt_count: 0,
     last_attempt_at: null,
     video_count: 0,
+    syllabus_position: null,
     ...overrides,
   };
 }

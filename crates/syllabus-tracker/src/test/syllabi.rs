@@ -1441,4 +1441,233 @@ mod pr4_tests {
         assert_eq!(body["ready_to_graduate"], 1);
         assert_eq!(body["graduated"], 1);
     }
+
+}
+
+#[cfg(test)]
+mod order_tests {
+    use rocket::http::{ContentType, Status};
+    use serde_json::{Value, json};
+
+    use crate::db;
+    use crate::db::PropagationMode;
+    use crate::test::test_utils::{create_standard_test_db, login_test_user, setup_test_client};
+
+    async fn assign_syllabus_and_seed_techniques() -> (
+        rocket::local::asynchronous::Client,
+        crate::test::test_utils::TestDb,
+        i64, // syllabus_id
+        i64, // student_id
+        i64, // coach_id
+        i64, // armbar_id
+        i64, // triangle_id
+    ) {
+        let test_db = create_standard_test_db().await;
+        let coach_id = test_db.user_id("coach_user").unwrap();
+        let student_id = test_db.user_id("student_user").unwrap();
+        let armbar_id = test_db.technique_id("Armbar").unwrap();
+        let triangle_id = test_db.technique_id("Triangle").unwrap();
+        let syllabus_id = db::create_syllabus(&test_db.pool, "Fundamentals", None, coach_id)
+            .await
+            .unwrap();
+        for tid in [armbar_id, triangle_id] {
+            db::add_technique_to_syllabus(
+                &test_db.pool,
+                syllabus_id,
+                tid,
+                coach_id,
+                PropagationMode::SyllabusOnly,
+            )
+            .await
+            .unwrap();
+        }
+        let (client, db) = setup_test_client(test_db).await;
+        (
+            client,
+            db,
+            syllabus_id,
+            student_id,
+            coach_id,
+            armbar_id,
+            triangle_id,
+        )
+    }
+
+    async fn positions_by_technique(
+        pool: &sqlx::Pool<sqlx::Sqlite>,
+        syllabus_id: i64,
+    ) -> Vec<(i64, i64)> {
+        sqlx::query!(
+            r#"SELECT technique_id AS "technique_id!: i64", position AS "position!: i64"
+               FROM syllabus_techniques WHERE syllabus_id = ?
+               ORDER BY position"#,
+            syllabus_id,
+        )
+        .fetch_all(pool)
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|r| (r.technique_id, r.position))
+        .collect()
+    }
+
+    #[rocket::async_test]
+    async fn adding_techniques_appends_at_the_end() {
+        let test_db = create_standard_test_db().await;
+        let coach_id = test_db.user_id("coach_user").unwrap();
+        let armbar_id = test_db.technique_id("Armbar").unwrap();
+        let triangle_id = test_db.technique_id("Triangle").unwrap();
+        let syllabus_id = db::create_syllabus(&test_db.pool, "Fundamentals", None, coach_id)
+            .await
+            .unwrap();
+
+        // Triangle first, so an append-at-end rule and an alphabetical one
+        // produce different answers.
+        for tid in [triangle_id, armbar_id] {
+            db::add_technique_to_syllabus(
+                &test_db.pool,
+                syllabus_id,
+                tid,
+                coach_id,
+                PropagationMode::SyllabusOnly,
+            )
+            .await
+            .unwrap();
+        }
+
+        assert_eq!(
+            positions_by_technique(&test_db.pool, syllabus_id).await,
+            vec![(triangle_id, 0), (armbar_id, 1)],
+        );
+
+        let third_id = db::create_technique(&test_db.pool, "Kimura", "", coach_id, true)
+            .await
+            .unwrap();
+        db::add_technique_to_syllabus(
+            &test_db.pool,
+            syllabus_id,
+            third_id,
+            coach_id,
+            PropagationMode::SyllabusOnly,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(
+            positions_by_technique(&test_db.pool, syllabus_id).await,
+            vec![(triangle_id, 0), (armbar_id, 1), (third_id, 2)],
+        );
+    }
+
+    #[rocket::async_test]
+    async fn reorder_persists_positions_and_drives_the_listing() {
+        let (client, db, syllabus_id, _student_id, _coach_id, armbar_id, triangle_id) =
+            assign_syllabus_and_seed_techniques().await;
+
+        let _ = login_test_user(&client, "coach_user", "password123").await;
+        let resp = client
+            .post(format!("/api/syllabi/{syllabus_id}/techniques/reorder"))
+            .header(ContentType::JSON)
+            .body(json!({ "ordered_technique_ids": [triangle_id, armbar_id] }).to_string())
+            .dispatch()
+            .await;
+        assert_eq!(resp.status(), Status::NoContent);
+
+        assert_eq!(
+            positions_by_technique(&db.pool, syllabus_id).await,
+            vec![(triangle_id, 0), (armbar_id, 1)],
+        );
+
+        // Triangle leads only if position beats the name tie-break.
+        let body: Value = serde_json::from_str(
+            &client
+                .get(format!("/api/syllabi/{syllabus_id}"))
+                .dispatch()
+                .await
+                .into_string()
+                .await
+                .unwrap(),
+        )
+        .unwrap();
+        let listed: Vec<i64> = body["techniques"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|t| t["technique_id"].as_i64().unwrap())
+            .collect();
+        assert_eq!(listed, vec![triangle_id, armbar_id]);
+    }
+
+    #[rocket::async_test]
+    async fn reorder_ignores_technique_ids_outside_the_syllabus() {
+        let (_client, db, syllabus_id, _student_id, coach_id, armbar_id, triangle_id) =
+            assign_syllabus_and_seed_techniques().await;
+        let outsider_id = db::create_technique(&db.pool, "Kimura", "outside", coach_id, true)
+            .await
+            .unwrap();
+
+        db::reorder_syllabus_techniques(
+            &db.pool,
+            syllabus_id,
+            &[triangle_id, outsider_id, armbar_id],
+        )
+        .await
+        .unwrap();
+
+        // The outsider consumed index 1 without joining the syllabus, so the
+        // members keep their relative order across the gap it left.
+        assert_eq!(
+            positions_by_technique(&db.pool, syllabus_id).await,
+            vec![(triangle_id, 0), (armbar_id, 2)],
+        );
+    }
+
+    #[rocket::async_test]
+    async fn reorder_is_denied_to_students() {
+        let (client, _db, syllabus_id, _student_id, _coach_id, armbar_id, triangle_id) =
+            assign_syllabus_and_seed_techniques().await;
+
+        let _ = login_test_user(&client, "student_user", "password123").await;
+        let resp = client
+            .post(format!("/api/syllabi/{syllabus_id}/techniques/reorder"))
+            .header(ContentType::JSON)
+            .body(json!({ "ordered_technique_ids": [triangle_id, armbar_id] }).to_string())
+            .dispatch()
+            .await;
+        assert_eq!(resp.status(), Status::Forbidden);
+    }
+    #[rocket::async_test]
+    async fn sst_rows_carry_syllabus_position_and_null_for_student_only_extras() {
+        let (_client, db, syllabus_id, student_id, coach_id, armbar_id, triangle_id) =
+            assign_syllabus_and_seed_techniques().await;
+        let assignment_id = db::assign(&db.pool, coach_id, student_id, syllabus_id)
+            .await
+            .unwrap();
+
+        db::reorder_syllabus_techniques(&db.pool, syllabus_id, &[triangle_id, armbar_id])
+            .await
+            .unwrap();
+
+        let extra_id = db::create_technique(&db.pool, "Kimura", "extra", coach_id, true)
+            .await
+            .unwrap();
+        db::add_technique_to_assignment(&db.pool, assignment_id, extra_id, coach_id)
+            .await
+            .unwrap();
+
+        let user = crate::db::get_user(&db.pool, coach_id).await.unwrap();
+        let rows = db::list_for_assignment(&db.pool, assignment_id, &user)
+            .await
+            .unwrap();
+        let position_of = |tid: i64| {
+            rows.iter()
+                .find(|r| r.technique_id == tid)
+                .unwrap_or_else(|| panic!("technique {tid} missing from the assignment"))
+                .syllabus_position
+        };
+
+        assert_eq!(position_of(triangle_id), Some(0));
+        assert_eq!(position_of(armbar_id), Some(1));
+        assert_eq!(position_of(extra_id), None);
+    }
 }
