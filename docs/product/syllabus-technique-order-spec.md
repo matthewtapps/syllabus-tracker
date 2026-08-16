@@ -73,7 +73,7 @@ VALUES (?, ?, COALESCE((SELECT MAX(position) + 1 FROM syllabus_techniques WHERE 
 `assignment_id`, so it reaches the membership row through the assignment:
 
 ```sql
-LEFT JOIN syllabus_assignments sa ON sa.id = sst.assignment_id
+JOIN syllabus_assignments sa ON sa.id = sst.assignment_id
 LEFT JOIN syllabus_techniques st
        ON st.syllabus_id = sa.syllabus_id AND st.technique_id = sst.technique_id
 ```
@@ -115,8 +115,7 @@ Dragging is disabled when `techSearch.trim() !== '' || techTags.length > 0`. The
 handles render dimmed and the list shows a hint to clear filters to reorder.
 
 Reordering under an active filter is the one interaction this design forbids, and
-the disabled handle is how a coach finds that out. Worth watching once it is on
-screen.
+the disabled handle is how a coach finds that out.
 
 ## Out of scope
 

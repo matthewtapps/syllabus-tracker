@@ -263,11 +263,9 @@ pub async fn list_syllabus_techniques(
         .collect())
 }
 
-/// Rewrite the display order of a syllabus's techniques. Positions are
-/// assigned from the index of each id, so callers must send the syllabus's
-/// full membership; sending a subset renumbers only those rows and leaves
-/// the rest where they were. Ids naming no member match no row and are
-/// skipped, leaving a gap in the numbering that the ordering ignores.
+/// Rewrite the display order of a syllabus's techniques. Positions come from
+/// each id's index, so callers must send the full membership; a subset
+/// renumbers only those rows and leaves the rest where they were.
 #[instrument(skip(pool))]
 pub async fn reorder_syllabus_techniques(
     pool: &Pool<Sqlite>,

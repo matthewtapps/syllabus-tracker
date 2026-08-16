@@ -10,9 +10,9 @@ independently of any student; assigning it is a separate act.
 
 ## Syllabus technique
 
-A technique's membership in a syllabus. Membership is its own fact, distinct from
-the technique itself, which lives in the global library and can belong to many
-syllabi.
+A technique's membership in a syllabus. The technique itself lives in the global
+library and can belong to many syllabi; the membership is a separate fact that
+records one such belonging.
 
 ## Syllabus order
 
@@ -30,5 +30,5 @@ survives.
 ## Student syllabus technique
 
 One student's progress against one technique within one assignment: status, notes,
-attempts, and per-student visibility. Distinct from [[syllabus-technique]], which
-records only that the technique belongs to the syllabus.
+attempts, and per-student visibility. Where [[syllabus-technique]] records that a
+technique belongs to a syllabus, this records how one student is doing at it.

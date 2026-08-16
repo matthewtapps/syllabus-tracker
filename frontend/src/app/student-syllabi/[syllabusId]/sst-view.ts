@@ -51,8 +51,6 @@ export function sortSsts(rows: SstRow[], sort: SstSort): SstRow[] {
   }
   if (sort === 'syllabus') {
     return copy.sort((a, b) => {
-      // Techniques added straight to one student's assignment have no place
-      // in the syllabus order, so they trail the ones the coach sequenced.
       if (a.syllabus_position == null || b.syllabus_position == null) {
         if (a.syllabus_position != null) return -1;
         if (b.syllabus_position != null) return 1;
