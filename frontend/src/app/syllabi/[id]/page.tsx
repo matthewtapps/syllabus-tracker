@@ -822,8 +822,6 @@ function TechniquesSection({
         byId.delete(id);
       }
     }
-    // Anything the server grew since the drag (e.g. a just-added technique)
-    // appends at the end, matching where the backend puts it.
     for (const t of byId.values()) next.push(t);
     return next;
   }, [techniques, localOrder]);
@@ -910,7 +908,7 @@ function TechniquesSection({
                 }`
               : `${filtered.length} of ${techniques.length} techniques`}
             {filtersActive && techniques.length > 1 && (
-              <> · clear filters to reorder</>
+              <> (clear filters to reorder)</>
             )}
           </p>
         </div>
