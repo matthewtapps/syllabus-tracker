@@ -769,8 +769,7 @@ export function useReorderSyllabusTechniques(syllabusId: number) {
     mutationFn: async (orderedTechniqueIds: number[]) => {
       await reorderSyllabusTechniques(syllabusId, orderedTechniqueIds);
     },
-    onSuccess: () =>
-      qc.invalidateQueries({ queryKey: qk.syllabusTechniques(syllabusId) }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: qk.syllabus(syllabusId) }),
   });
 }
 
