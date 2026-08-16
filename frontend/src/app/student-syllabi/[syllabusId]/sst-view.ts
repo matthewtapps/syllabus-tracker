@@ -35,7 +35,7 @@ export function matchHiddenByName(
   );
 }
 
-export type SstSort = 'recent' | 'alphabetical';
+export type SstSort = 'syllabus' | 'recent' | 'alphabetical';
 
 function recencyScore(s: SstRow): number {
   const ts = [s.last_attempt_at, s.last_coach_update_at, s.last_student_update_at]
@@ -48,6 +48,21 @@ export function sortSsts(rows: SstRow[], sort: SstSort): SstRow[] {
   const copy = [...rows];
   if (sort === 'alphabetical') {
     return copy.sort((a, b) => a.technique_name.localeCompare(b.technique_name));
+  }
+  if (sort === 'syllabus') {
+    return copy.sort((a, b) => {
+      // Techniques added straight to one student's assignment have no place
+      // in the syllabus order, so they trail the ones the coach sequenced.
+      if (a.syllabus_position == null || b.syllabus_position == null) {
+        if (a.syllabus_position != null) return -1;
+        if (b.syllabus_position != null) return 1;
+        return a.technique_name.localeCompare(b.technique_name);
+      }
+      return (
+        a.syllabus_position - b.syllabus_position ||
+        a.technique_name.localeCompare(b.technique_name)
+      );
+    });
   }
   return copy.sort((a, b) => recencyScore(b) - recencyScore(a));
 }
