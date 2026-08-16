@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE syllabus_techniques\n             SET position = ?\n             WHERE syllabus_id = ? AND technique_id = ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": []
+  },
+  "hash": "e806572fa3261bb3e3c731ab8d5ae6234fc03959096068f8d70399f924504c74"
+}

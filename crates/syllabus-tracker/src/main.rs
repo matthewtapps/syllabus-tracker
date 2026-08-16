@@ -51,7 +51,8 @@ use syllabi::{
     api_get_syllabus, api_list_student_syllabi, api_list_student_syllabus_techniques,
     api_list_syllabi, api_list_syllabus_attempts, api_list_syllabus_student_rows,
     api_list_syllabus_students, api_list_syllabus_technique_videos,
-    api_remove_technique_from_syllabus, api_set_assignment_graduated, api_set_sst_hidden,
+    api_remove_technique_from_syllabus, api_reorder_syllabus_techniques,
+    api_set_assignment_graduated, api_set_sst_hidden,
     api_set_video_syllabus_visibility, api_syllabus_stats, api_unassign_syllabus, api_update_sst,
     api_update_syllabus, api_update_syllabus_attempt,
 };
@@ -351,6 +352,7 @@ pub async fn init_rocket_with_callback_secret(
                 api_delete_syllabus,
                 api_add_technique_to_syllabus,
                 api_remove_technique_from_syllabus,
+                api_reorder_syllabus_techniques,
                 api_assign_syllabus,
                 api_unassign_syllabus,
                 api_set_assignment_graduated,

@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT OR IGNORE INTO syllabus_techniques\n            (syllabus_id, technique_id, position, added_by_id)\n         VALUES (\n            ?, ?,\n            COALESCE(\n                (SELECT MAX(position) + 1 FROM syllabus_techniques WHERE syllabus_id = ?),\n                0\n            ),\n            ?\n         )",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 4
+    },
+    "nullable": []
+  },
+  "hash": "a9f020508239b4a4588f8efdadc4227d193955aa5b5031083bea430861c8e476"
+}
