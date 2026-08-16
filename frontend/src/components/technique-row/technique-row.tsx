@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import * as AccordionPrimitive from "@radix-ui/react-accordion";
 import { ChevronDownIcon, FolderPlus } from "lucide-react";
 import type { LibraryTechniqueRow } from "@/lib/api";
@@ -36,6 +36,9 @@ interface TechniqueRowProps {
    *  student-syllabus surface to keep a just-hidden row lingering in the
    *  Main tab for the rest of the visit. */
   ghost?: boolean;
+  /** Drag handle rendered ahead of the title, supplied by a sortable parent.
+   *  Sits outside the Accordion trigger so grabbing it doesn't expand the row. */
+  dragHandle?: ReactNode;
 }
 
 // Keeps the expanded panel mounted through the AccordionContent close
@@ -69,6 +72,7 @@ export function TechniqueRow({
   resumeSeconds,
   onVideoScrolled,
   ghost,
+  dragHandle,
 }: TechniqueRowProps) {
   return (
     <TechniqueRowProvider technique={technique} context={context}>
@@ -79,6 +83,7 @@ export function TechniqueRow({
         resumeSeconds={resumeSeconds}
         onVideoScrolled={onVideoScrolled}
         ghost={ghost}
+        dragHandle={dragHandle}
       />
     </TechniqueRowProvider>
   );
@@ -100,6 +105,7 @@ function RowItem({
   resumeSeconds,
   onVideoScrolled,
   ghost,
+  dragHandle,
 }: Omit<TechniqueRowProps, "technique" | "context">) {
   const { context, technique, role, viewerIsOwner } = useTechniqueRow();
   const renderContent = useDelayedFalse(isOpen);
@@ -158,6 +164,9 @@ function RowItem({
             "hover:bg-muted/40 group-data-[state=open]:bg-muted/30",
           )}
         >
+          {dragHandle && (
+            <div className="flex shrink-0 items-center pl-2">{dragHandle}</div>
+          )}
           <AccordionPrimitive.Trigger
             className={cn(
               "flex min-w-0 flex-1 items-start gap-3 px-4 py-3 text-left text-sm font-medium outline-none",

@@ -22,6 +22,7 @@ import {
   promoteTechniqueToGlobal,
   removeTagFromTechnique,
   removeTechniqueFromCollection,
+  reorderSyllabusTechniques,
   reorderVideos,
   resetUserClaim,
   setStudentGraduated,
@@ -759,6 +760,17 @@ export function useReorderVideos(techniqueId: number) {
     },
     onSuccess: () =>
       qc.invalidateQueries({ queryKey: qk.techniqueVideosAll(techniqueId) }),
+  });
+}
+
+export function useReorderSyllabusTechniques(syllabusId: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (orderedTechniqueIds: number[]) => {
+      await reorderSyllabusTechniques(syllabusId, orderedTechniqueIds);
+    },
+    onSuccess: () =>
+      qc.invalidateQueries({ queryKey: qk.syllabusTechniques(syllabusId) }),
   });
 }
 

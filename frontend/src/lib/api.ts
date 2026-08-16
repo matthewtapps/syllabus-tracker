@@ -1276,6 +1276,22 @@ export async function reorderVideos(
   if (!response.ok) throw response;
 }
 
+export async function reorderSyllabusTechniques(
+  syllabusId: number,
+  orderedTechniqueIds: number[],
+): Promise<void> {
+  const response = await fetch(
+    `/api/syllabi/${syllabusId}/techniques/reorder`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ ordered_technique_ids: orderedTechniqueIds }),
+    },
+  );
+  if (!response.ok) throw response;
+}
+
 export async function deleteVideo(videoId: number): Promise<void> {
   const response = await fetch(`/api/videos/${videoId}`, {
     method: "DELETE",
