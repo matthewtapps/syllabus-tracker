@@ -1,6 +1,6 @@
 import type { PlayerEvents } from "./player-events";
 
-/** Minimal slice of Vidstack player state the bridge needs. */
+/** Minimal slice of player state the bridge needs. */
 export interface PlayerSnapshot {
   currentTime: number;
   duration: number;

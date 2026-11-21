@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { applySnapshot, type PlayerSnapshot } from "./vidstack-bridge";
+import { applySnapshot, type PlayerSnapshot } from "./player-bridge";
 import type { PlayerEvents } from "./player-events";
 
 function mkEvents() {

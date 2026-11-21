@@ -1,24 +1,21 @@
-import { useEffect, useRef, type ReactNode } from "react";
+import { useEffect, useRef, type ReactNode, type RefObject } from "react";
 import {
-  MediaPlayer,
-  MediaProvider,
-  Gesture,
-  PlayButton,
-  MuteButton,
+  Container,
   FullscreenButton,
+  Gesture,
+  MuteButton,
+  PlayButton,
   TimeSlider,
-  useMediaState,
-  type MediaPlayerInstance,
-} from "@vidstack/react";
+} from "@videojs/react";
+import { Video as VideoMedia, VideoPlayer, usePlayer } from "@videojs/react/video";
 import { Play, Pause, Volume2, VolumeX, Maximize, Minimize } from "lucide-react";
-import "@vidstack/react/player/styles/base.css";
 import type { Video } from "@/lib/api";
 import { formatTimestamp } from "@/lib/dates";
 import type { PlayerEvents } from "./player-events";
 import { useSignedPlaybackUrl } from "./useSignedPlaybackUrl";
-import { applySnapshot } from "./vidstack-bridge";
+import { applySnapshot } from "./player-bridge";
 
-interface VidstackPlayerProps {
+interface NativeVideoPlayerProps {
   video: Video;
   events?: PlayerEvents;
   /** Rendered over the video, above the control bar (e.g. the comment overlay). */
@@ -27,14 +24,14 @@ interface VidstackPlayerProps {
   sliderMarkers?: ReactNode;
 }
 
-export function VidstackPlayer({
+export function NativeVideoPlayer({
   video,
   events,
   overlay,
   sliderMarkers,
-}: VidstackPlayerProps) {
+}: NativeVideoPlayerProps) {
   const { url, loading, error, refresh } = useSignedPlaybackUrl(video.id, true);
-  const playerRef = useRef<MediaPlayerInstance>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
 
   // Size the player to the video's real aspect ratio so portrait clips are not
   // letterboxed into a 16:9 box. Fall back to 16:9 when dimensions are unknown.
@@ -51,28 +48,13 @@ export function VidstackPlayer({
     startedRef.current = false;
   }, [video.id]);
 
-  // Bridge Vidstack player state to PlayerEvents.
-  useEffect(() => {
-    const player = playerRef.current;
-    if (!player || !url) return;
-    events?.registerSeek?.((seconds) => {
-      player.currentTime = Math.max(0, seconds);
-    });
-    events?.registerEnterFullscreen?.(() => {
-      player.enterFullscreen?.().catch(() => {});
-    });
-    events?.registerExitFullscreen?.(() => {
-      player.exitFullscreen?.().catch(() => {});
-    });
-    const unsubscribe = player.subscribe((state) => {
-      startedRef.current = applySnapshot(
-        { currentTime: state.currentTime, duration: state.duration, paused: state.paused },
-        events,
-        startedRef.current,
-      );
-    });
-    return unsubscribe;
-  }, [events, url]);
+  const report = (el: HTMLVideoElement) => {
+    startedRef.current = applySnapshot(
+      { currentTime: el.currentTime, duration: el.duration, paused: el.paused },
+      events,
+      startedRef.current,
+    );
+  };
 
   if (error) {
     return (
@@ -94,73 +76,107 @@ export function VidstackPlayer({
   }
 
   return (
-    <MediaPlayer
-      ref={playerRef}
-      src={{ src: url, type: "video/mp4" }}
-      playsInline
-      onEnded={() => events?.onEnded?.()}
-      style={{ aspectRatio }}
-      className={
-        isPortrait
-          ? "relative mx-auto h-[78svh] w-auto max-w-full overflow-hidden bg-black"
-          : "relative w-full overflow-hidden bg-black"
-      }
-    >
-      <MediaProvider />
-      <FullscreenReporter onChange={events?.onFullscreenChange} />
-      {/* On a landscape clip, lock to landscape while fullscreen so phones rotate
-          (Android shows its native rotate prompt when auto-rotate is off). */}
-      <OrientationLock enabled={!isPortrait} />
+    <VideoPlayer>
+      <Container
+        style={{ aspectRatio }}
+        className={
+          isPortrait
+            ? "relative mx-auto h-[78svh] w-auto max-w-full overflow-hidden bg-black"
+            : "relative w-full overflow-hidden bg-black"
+        }
+      >
+        <VideoMedia
+          ref={videoRef}
+          src={url}
+          playsInline
+          className="h-full w-full"
+          onEnded={() => events?.onEnded?.()}
+          onTimeUpdate={(e) => report(e.currentTarget)}
+          onDurationChange={(e) => report(e.currentTarget)}
+          onPlay={(e) => report(e.currentTarget)}
+          onPause={(e) => report(e.currentTarget)}
+        />
+        <EventRegistrar events={events} videoRef={videoRef} />
+        <FullscreenReporter onChange={events?.onFullscreenChange} />
+        {/* On a landscape clip, lock to landscape while fullscreen so phones rotate
+            (Android shows its native rotate prompt when auto-rotate is off). */}
+        <OrientationLock enabled={!isPortrait} />
 
-      {/* Tap anywhere on the frame to play/pause. Sits below the controls and
-          the comment chip in the DOM, so taps on those still hit them. */}
-      <Gesture className="absolute inset-0 block" event="pointerup" action="toggle:paused" />
+        {/* Tap anywhere on the frame to play/pause. Gestures skip buttons and
+            anything marked data-interactive, such as the control bar. */}
+        <Gesture type="tap" action="togglePaused" />
 
-      {/* Discoverability affordance: a play badge while paused. */}
-      <CenterPlayBadge />
+        {/* Discoverability affordance: a play badge while paused. */}
+        <CenterPlayBadge />
 
-      {/* Overlay layer: the comment scrim spans the full frame so it blends into
-          the control-bar gradient; only the chip inside it is interactive. */}
-      {overlay && <div className="pointer-events-none absolute inset-0">{overlay}</div>}
+        {/* Overlay layer: the comment scrim spans the full frame so it blends into
+            the control-bar gradient; only the chip inside it is interactive. */}
+        {overlay && <div className="pointer-events-none absolute inset-0">{overlay}</div>}
 
-      {/* Always-visible custom control bar. */}
-      <div className="absolute inset-x-0 bottom-0 flex h-12 items-center gap-3 bg-gradient-to-t from-black/80 to-transparent px-3">
-        <PlayButton className="text-white">
-          <PlayPauseIcon />
-        </PlayButton>
-        <MuteButton className="text-white">
-          <MuteIcon />
-        </MuteButton>
+        {/* Always-visible custom control bar. */}
+        <div
+          data-interactive
+          className="absolute inset-x-0 bottom-0 flex h-12 items-center gap-3 bg-gradient-to-t from-black/80 to-transparent px-3"
+        >
+          <PlayButton className="text-white">
+            <PlayPauseIcon />
+          </PlayButton>
+          <MuteButton className="text-white">
+            <MuteIcon />
+          </MuteButton>
 
-        <TimeSlider.Root className="group relative inline-flex h-5 flex-1 cursor-pointer items-center">
-          <TimeSlider.Track className="absolute top-1/2 h-1 w-full -translate-y-1/2 rounded-full bg-white/25">
-            <TimeSlider.Progress className="absolute h-full w-[var(--slider-progress)] rounded-full bg-white/40" />
-            <TimeSlider.TrackFill className="absolute h-full w-[var(--slider-fill)] rounded-full bg-primary" />
-          </TimeSlider.Track>
-          <TimeSlider.Thumb className="absolute top-1/2 left-[var(--slider-fill)] size-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white shadow ring-1 ring-black/20" />
-          {/* Comment pins: positioned in the slider's 0..1 track space. */}
-          {sliderMarkers && (
-            <div className="pointer-events-none absolute inset-0">{sliderMarkers}</div>
-          )}
-        </TimeSlider.Root>
+          <TimeSlider.Root className="group relative inline-flex h-5 flex-1 cursor-pointer items-center">
+            <TimeSlider.Track className="absolute top-1/2 h-1 w-full -translate-y-1/2 rounded-full bg-white/25">
+              <TimeSlider.Buffer className="absolute h-full w-[var(--media-slider-buffer)] rounded-full bg-white/40" />
+              <TimeSlider.Fill className="absolute h-full w-[var(--media-slider-fill)] rounded-full bg-primary" />
+            </TimeSlider.Track>
+            <TimeSlider.Thumb className="absolute top-1/2 left-[var(--media-slider-fill)] size-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white shadow ring-1 ring-black/20" />
+            {/* Comment pins: positioned in the slider's 0..1 track space. */}
+            {sliderMarkers && (
+              <div className="pointer-events-none absolute inset-0">{sliderMarkers}</div>
+            )}
+          </TimeSlider.Root>
 
-        <TimeReadout />
+          <TimeReadout />
 
-        <FullscreenButton className="text-white">
-          <FullscreenIcon />
-        </FullscreenButton>
-      </div>
-    </MediaPlayer>
+          <FullscreenButton className="text-white">
+            <FullscreenIcon />
+          </FullscreenButton>
+        </div>
+      </Container>
+    </VideoPlayer>
   );
 }
 
+function EventRegistrar({
+  events,
+  videoRef,
+}: {
+  events?: PlayerEvents;
+  videoRef: RefObject<HTMLVideoElement | null>;
+}) {
+  const store = usePlayer();
+  useEffect(() => {
+    events?.registerSeek?.((seconds) => {
+      if (videoRef.current) videoRef.current.currentTime = Math.max(0, seconds);
+    });
+    events?.registerEnterFullscreen?.(() => {
+      store.requestFullscreen().catch(() => {});
+    });
+    events?.registerExitFullscreen?.(() => {
+      store.exitFullscreen().catch(() => {});
+    });
+  }, [events, store, videoRef]);
+  return null;
+}
+
 function PlayPauseIcon() {
-  const paused = useMediaState("paused");
+  const paused = usePlayer((s) => s.paused);
   return paused ? <Play className="h-5 w-5" /> : <Pause className="h-5 w-5" />;
 }
 
 function CenterPlayBadge() {
-  const paused = useMediaState("paused");
+  const paused = usePlayer((s) => s.paused);
   if (!paused) return null;
   return (
     <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
@@ -172,18 +188,18 @@ function CenterPlayBadge() {
 }
 
 function MuteIcon() {
-  const muted = useMediaState("muted");
-  const volume = useMediaState("volume");
+  const muted = usePlayer((s) => s.muted);
+  const volume = usePlayer((s) => s.volume);
   return muted || volume === 0 ? <VolumeX className="h-5 w-5" /> : <Volume2 className="h-5 w-5" />;
 }
 
 function FullscreenIcon() {
-  const fullscreen = useMediaState("fullscreen");
+  const fullscreen = usePlayer((s) => s.isFullscreen);
   return fullscreen ? <Minimize className="h-5 w-5" /> : <Maximize className="h-5 w-5" />;
 }
 
 function FullscreenReporter({ onChange }: { onChange?: (fullscreen: boolean) => void }) {
-  const fullscreen = useMediaState("fullscreen");
+  const fullscreen = usePlayer((s) => s.isFullscreen);
   useEffect(() => {
     onChange?.(fullscreen);
   }, [fullscreen, onChange]);
@@ -197,7 +213,7 @@ function FullscreenReporter({ onChange }: { onChange?: (fullscreen: boolean) => 
  * iOS Safari (no `orientation.lock`), where the lock call is simply skipped.
  */
 function OrientationLock({ enabled }: { enabled: boolean }) {
-  const fullscreen = useMediaState("fullscreen");
+  const fullscreen = usePlayer((s) => s.isFullscreen);
   useEffect(() => {
     if (!enabled || !fullscreen) return;
     const orientation = window.screen?.orientation as
@@ -211,8 +227,8 @@ function OrientationLock({ enabled }: { enabled: boolean }) {
 }
 
 function TimeReadout() {
-  const currentTime = useMediaState("currentTime");
-  const duration = useMediaState("duration");
+  const currentTime = usePlayer((s) => s.currentTime);
+  const duration = usePlayer((s) => s.duration);
   return (
     <span className="whitespace-nowrap text-xs tabular-nums text-white">
       {Number.isFinite(currentTime) ? formatTimestamp(currentTime) : "0:00"} / {Number.isFinite(duration) ? formatTimestamp(duration) : "0:00"}
