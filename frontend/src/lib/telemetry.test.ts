@@ -3,8 +3,9 @@ import { context, trace } from "@opentelemetry/api";
 import {
   InMemorySpanExporter,
   SimpleSpanProcessor,
-  WebTracerProvider,
-} from "@opentelemetry/sdk-trace-web";
+  TracerProvider,
+} from "@opentelemetry/sdk-trace";
+import { ZoneContextManager } from "@opentelemetry/context-zone";
 import { runInFormSpan } from "./telemetry";
 
 // A real provider so spans actually record and we can read parent/child
@@ -14,10 +15,11 @@ import { runInFormSpan } from "./telemetry";
 const exporter = new InMemorySpanExporter();
 
 beforeAll(() => {
-  const provider = new WebTracerProvider({
-    spanProcessors: [new SimpleSpanProcessor(exporter)],
+  const provider = new TracerProvider({
+    spanProcessors: [new SimpleSpanProcessor({ exporter })],
   });
-  provider.register();
+  context.setGlobalContextManager(new ZoneContextManager().enable());
+  trace.setGlobalTracerProvider(provider);
 });
 
 describe("runInFormSpan", () => {

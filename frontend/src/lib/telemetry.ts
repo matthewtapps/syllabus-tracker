@@ -1,17 +1,22 @@
 import {
   context,
+  propagation,
   SpanStatusCode,
   type Context,
   type Span,
   type Tracer,
   trace,
 } from "@opentelemetry/api";
-import { WebTracerProvider } from "@opentelemetry/sdk-trace-web";
+import { BatchSpanProcessor, TracerProvider } from "@opentelemetry/sdk-trace";
+import {
+  CompositePropagator,
+  W3CBaggagePropagator,
+  W3CTraceContextPropagator,
+} from "@opentelemetry/core";
 import { getWebAutoInstrumentations } from "@opentelemetry/auto-instrumentations-web";
 import { ZoneContextManager } from "@opentelemetry/context-zone";
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http";
 import { registerInstrumentations } from "@opentelemetry/instrumentation";
-import { BatchSpanProcessor } from "@opentelemetry/sdk-trace-web";
 import { resourceFromAttributes } from "@opentelemetry/resources";
 import { ATTR_SERVICE_NAME } from "@opentelemetry/semantic-conventions";
 
@@ -42,8 +47,8 @@ export function initTelemetry(): void {
     },
   });
 
-  const provider = new WebTracerProvider({
-    spanProcessors: [new BatchSpanProcessor(exporter)],
+  const provider = new TracerProvider({
+    spanProcessors: [new BatchSpanProcessor({ exporter })],
     resource: resourceFromAttributes({
       [ATTR_SERVICE_NAME]: "syllabus-tracker-frontend",
       "deployment.environment.name": import.meta.env.VITE_ENVIRONMENT || "unknown",
@@ -52,9 +57,13 @@ export function initTelemetry(): void {
     }),
   });
 
-  provider.register({
-    contextManager: new ZoneContextManager(),
-  });
+  context.setGlobalContextManager(new ZoneContextManager().enable());
+  propagation.setGlobalPropagator(
+    new CompositePropagator({
+      propagators: [new W3CTraceContextPropagator(), new W3CBaggagePropagator()],
+    }),
+  );
+  trace.setGlobalTracerProvider(provider);
 
   // Only propagate W3C trace context to our own backend (same-origin `/api`),
   // so browser spans link to the backend trace. Never propagate to third
