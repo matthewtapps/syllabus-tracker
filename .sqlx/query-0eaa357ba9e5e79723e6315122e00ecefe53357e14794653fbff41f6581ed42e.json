@@ -1,0 +1,21 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT COUNT(*) AS \"count!: i64\" FROM activity act\n           LEFT JOIN videos v   ON v.id = act.video_id\n           LEFT JOIN threads th ON th.id = act.thread_id\n           LEFT JOIN camps cp   ON cp.id = act.camp_id\n           LEFT JOIN activity_cursors c\n                  ON c.viewer_user_id = ?1\n           LEFT JOIN activity_seen_overrides ov\n                  ON ov.viewer_user_id = ?1 AND ov.activity_id = act.id\n           WHERE (NOT ?3 OR (\n                   act.target_student_id = ?1\n                   OR (\n                     act.target_student_id IS NULL\n                     AND (\n                       ( act.verb IN ('video_added','video_visibility_set','technique_edited')\n                         AND act.technique_id IS NOT NULL\n                         AND EXISTS (\n                           SELECT 1 FROM syllabus_assignments a\n                             JOIN student_syllabus_techniques sst ON sst.assignment_id = a.id\n                             WHERE a.student_id = ?1 AND a.unassigned_at IS NULL\n                               AND sst.technique_id = act.technique_id AND sst.hidden_at IS NULL\n                           UNION\n                           SELECT 1 FROM student_pinned_techniques p\n                             WHERE p.student_id = ?1 AND p.technique_id = act.technique_id\n                         ) )\n                       OR\n                       ( act.verb IN ('syllabus_technique_added','syllabus_technique_removed')\n                         AND act.syllabus_id IS NOT NULL\n                         AND EXISTS (\n                           SELECT 1 FROM syllabus_assignments a\n                             WHERE a.student_id = ?1 AND a.unassigned_at IS NULL\n                               AND a.syllabus_id = act.syllabus_id\n                         ) )\n                     )\n                   )\n                 ))\n             AND (act.video_id IS NULL OR (v.id IS NOT NULL AND v.deleted_at IS NULL))\n             AND (act.thread_id IS NULL OR (th.id IS NOT NULL AND th.deleted_at IS NULL))\n             -- Keep in sync with feed(): an archived camp's rows are not in the\n             -- feed, so they must not drive the unread badge either.\n             AND (act.camp_id IS NULL OR cp.archived_at IS NULL)\n             AND act.actor_user_id != ?1\n             AND act.verb IN (SELECT value FROM json_each(?2))\n             AND CASE\n                   WHEN ov.seen = 1 THEN 0\n                   WHEN ov.seen = 0 THEN 1\n                   WHEN act.id <= COALESCE(c.max_seen_id, 0) THEN 0\n                   ELSE 1\n                 END = 1",
+  "describe": {
+    "columns": [
+      {
+        "name": "count!: i64",
+        "ordinal": 0,
+        "type_info": "Integer",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "0eaa357ba9e5e79723e6315122e00ecefe53357e14794653fbff41f6581ed42e"
+}

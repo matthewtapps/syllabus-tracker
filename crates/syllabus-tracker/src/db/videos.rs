@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use chrono::Utc;
-use sqlx::{AssertSqlSafe, Pool, Sqlite};
+use sqlx::{Pool, Sqlite};
 use tracing::{info, instrument};
 
 use crate::db::activity::{
@@ -1402,22 +1402,16 @@ pub async fn list_video_student_overrides(
     if video_ids.is_empty() {
         return Ok(HashMap::new());
     }
-    // sqlx can't bind a Vec directly into IN (...); build a CSV placeholder
-    // list. Inputs are i64 read from our own DB, so the format is safe.
-    let placeholders = video_ids
-        .iter()
-        .map(|id| id.to_string())
-        .collect::<Vec<_>>()
-        .join(",");
-    let sql = format!(
+    let rows = sqlx::query!(
         "SELECT video_id, visible FROM video_visibility_overrides
-         WHERE scope_kind = 'student' AND student_id = ? AND video_id IN ({placeholders})"
-    );
-    let rows: Vec<(i64, bool)> = sqlx::query_as(AssertSqlSafe(sql))
-        .bind(student_id)
-        .fetch_all(pool)
-        .await?;
-    Ok(rows.into_iter().collect())
+         WHERE scope_kind = 'student' AND student_id = ?1
+           AND video_id IN (SELECT value FROM json_each(?2))",
+        student_id,
+        serde_json::Value::from(video_ids).to_string(),
+    )
+    .fetch_all(pool)
+    .await?;
+    Ok(rows.into_iter().map(|r| (r.video_id, r.visible)).collect())
 }
 
 #[instrument(skip(pool))]

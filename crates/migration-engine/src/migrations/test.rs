@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod tests {
-    use sqlx::{AssertSqlSafe, Row, SqlitePool};
+    use sqlx::{Row, SqlitePool};
 
     use crate::migrations::{migrate_database_declaratively, normalize_sql};
 
@@ -83,14 +83,6 @@ mod tests {
             .collect()
     }
 
-    async fn get_pragma_value(pool: &SqlitePool, pragma: &str) -> i64 {
-        sqlx::query(AssertSqlSafe(format!("PRAGMA {}", pragma)))
-            .fetch_one(pool)
-            .await
-            .expect("Failed to get pragma")
-            .get::<i64, _>(0)
-    }
-
     #[tokio::test]
     async fn test_brand_new_db_pragma() {
         let pool = SqlitePool::connect("sqlite::memory:")
@@ -121,7 +113,11 @@ mod tests {
         let tables = get_table_names(&pool).await;
         assert!(tables.is_empty());
 
-        assert_eq!(get_pragma_value(&pool, "foreign_keys").await, 1);
+        let foreign_keys: i64 = sqlx::query_scalar("PRAGMA foreign_keys")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(foreign_keys, 1);
     }
 
     #[tokio::test]

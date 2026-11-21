@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use chrono::Utc;
-use sqlx::{AssertSqlSafe, Pool, Sqlite};
+use sqlx::{Pool, Sqlite};
 use tracing::instrument;
 
 use crate::db::activity::{NewActivity, Verb, emit, payload};
@@ -170,25 +170,22 @@ pub async fn get_my_watch_state(
     if video_ids.is_empty() {
         return Ok(result);
     }
-    let placeholders = vec!["?"; video_ids.len()].join(",");
-    let query = format!(
+    let rows = sqlx::query!(
         "SELECT video_id, play_count, completed_count, total_seconds_watched
          FROM video_watch_aggregates
-         WHERE user_id = ? AND video_id IN ({})",
-        placeholders
-    );
-    let mut q = sqlx::query_as::<_, (i64, i64, i64, i64)>(AssertSqlSafe(query)).bind(user_id);
-    for id in video_ids {
-        q = q.bind(*id);
-    }
-    let rows = q.fetch_all(pool).await?;
-    for (video_id, play_count, completed_count, total_seconds_watched) in rows {
+         WHERE user_id = ?1 AND video_id IN (SELECT value FROM json_each(?2))",
+        user_id,
+        serde_json::Value::from(video_ids).to_string(),
+    )
+    .fetch_all(pool)
+    .await?;
+    for r in rows {
         result.insert(
-            video_id,
+            r.video_id,
             WatchAggregateRow {
-                play_count,
-                completed_count,
-                total_seconds_watched,
+                play_count: r.play_count,
+                completed_count: r.completed_count,
+                total_seconds_watched: r.total_seconds_watched,
             },
         );
     }

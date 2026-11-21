@@ -372,6 +372,31 @@ mod tests {
 
     // Task 21 tests
 
+    #[rkt::async_test]
+    async fn coach_unread_count_counts_others_notifiable_rows_only() {
+        let db = TestDbBuilder::new()
+            .coach("coach", None)
+            .student("alice", None)
+            .build()
+            .await
+            .unwrap();
+        let coach = db.user_id("coach").unwrap();
+        let alice = db.user_id("alice").unwrap();
+
+        let mut tx = db.pool.begin().await.unwrap();
+        for activity in [
+            NewActivity::new(Verb::AttemptLogged, alice).target_student(alice),
+            NewActivity::new(Verb::AttemptDeleted, alice).target_student(alice),
+            NewActivity::new(Verb::SyllabusAssigned, coach).target_student(alice),
+        ] {
+            emit(&mut tx, activity).await.unwrap();
+        }
+        tx.commit().await.unwrap();
+
+        let count = unread_count(&db.pool, coach, Role::Coach).await.unwrap();
+        assert_eq!(count, 1, "only alice's notifiable row counts for the coach");
+    }
+
     /// Own actions and non-notifiable verbs are excluded from unread_count but
     /// still appear in the feed.
     #[rkt::async_test]

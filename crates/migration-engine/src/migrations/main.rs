@@ -591,15 +591,11 @@ impl DeclarativeMigrator {
         executor: impl sqlx::Executor<'_, Database = Sqlite>,
         table_name: &str,
     ) -> Result<Vec<ColumnInfo>, MigrationError> {
-        let rows = sqlx::query(AssertSqlSafe(format!("PRAGMA table_info({})", table_name)))
+        let names: Vec<String> = sqlx::query_scalar("SELECT name FROM pragma_table_info(?1)")
+            .bind(table_name)
             .fetch_all(executor)
             .await?;
-
-        let mut columns = Vec::new();
-        for row in rows {
-            columns.push(ColumnInfo { name: row.get(1) });
-        }
-        Ok(columns)
+        Ok(names.into_iter().map(|name| ColumnInfo { name }).collect())
     }
 
     #[instrument(skip(self, pool))]

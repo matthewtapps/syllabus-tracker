@@ -1,0 +1,62 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT video_id, play_count, completed_count, total_seconds_watched\n         FROM video_watch_aggregates\n         WHERE user_id = ?1 AND video_id IN (SELECT value FROM json_each(?2))",
+  "describe": {
+    "columns": [
+      {
+        "name": "video_id",
+        "ordinal": 0,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "video_watch_aggregates",
+            "name": "video_id"
+          }
+        }
+      },
+      {
+        "name": "play_count",
+        "ordinal": 1,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "video_watch_aggregates",
+            "name": "play_count"
+          }
+        }
+      },
+      {
+        "name": "completed_count",
+        "ordinal": 2,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "video_watch_aggregates",
+            "name": "completed_count"
+          }
+        }
+      },
+      {
+        "name": "total_seconds_watched",
+        "ordinal": 3,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "video_watch_aggregates",
+            "name": "total_seconds_watched"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "13b49ba1b41f626e616950422c08f852653bd8cc73dd652ca866a8c3e81bf1c5"
+}
