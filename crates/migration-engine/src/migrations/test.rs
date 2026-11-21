@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod tests {
-    use sqlx::{Row, SqlitePool};
+    use sqlx::{AssertSqlSafe, Row, SqlitePool};
 
     use crate::migrations::{migrate_database_declaratively, normalize_sql};
 
@@ -84,7 +84,7 @@ mod tests {
     }
 
     async fn get_pragma_value(pool: &SqlitePool, pragma: &str) -> i64 {
-        sqlx::query(&format!("PRAGMA {}", pragma))
+        sqlx::query(AssertSqlSafe(format!("PRAGMA {}", pragma)))
             .fetch_one(pool)
             .await
             .expect("Failed to get pragma")

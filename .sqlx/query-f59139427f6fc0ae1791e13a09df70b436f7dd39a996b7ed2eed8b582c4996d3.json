@@ -6,14 +6,20 @@
       {
         "name": "id!: i64",
         "ordinal": 0,
-        "type_info": "Integer"
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "student_syllabus_techniques",
+            "name": "id"
+          }
+        }
       }
     ],
     "parameters": {
       "Right": 2
     },
     "nullable": [
-      true
+      false
     ]
   },
   "hash": "f59139427f6fc0ae1791e13a09df70b436f7dd39a996b7ed2eed8b582c4996d3"

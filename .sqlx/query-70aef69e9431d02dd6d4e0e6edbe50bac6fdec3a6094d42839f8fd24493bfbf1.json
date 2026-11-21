@@ -6,144 +6,236 @@
       {
         "name": "id",
         "ordinal": 0,
-        "type_info": "Integer"
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "id"
+          }
+        }
       },
       {
         "name": "username",
         "ordinal": 1,
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "username"
+          }
+        }
       },
       {
         "name": "display_name",
         "ordinal": 2,
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "display_name"
+          }
+        }
       },
       {
         "name": "role",
         "ordinal": 3,
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "role"
+          }
+        }
       },
       {
         "name": "archived",
         "ordinal": 4,
-        "type_info": "Bool"
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "archived"
+          }
+        }
       },
       {
         "name": "graduated_at?: NaiveDateTime",
         "ordinal": 5,
-        "type_info": "Datetime"
+        "type_info": "Datetime",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "graduated_at"
+          }
+        }
       },
       {
         "name": "email",
         "ordinal": 6,
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "email"
+          }
+        }
       },
       {
         "name": "claimed_at?: NaiveDateTime",
         "ordinal": 7,
-        "type_info": "Datetime"
+        "type_info": "Datetime",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "claimed_at"
+          }
+        }
       },
       {
         "name": "approved_at?: NaiveDateTime",
         "ordinal": 8,
-        "type_info": "Datetime"
+        "type_info": "Datetime",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "approved_at"
+          }
+        }
       },
       {
         "name": "first_name",
         "ordinal": 9,
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "first_name"
+          }
+        }
       },
       {
         "name": "last_name",
         "ordinal": 10,
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "last_name"
+          }
+        }
       },
       {
         "name": "reset_requested_at?: NaiveDateTime",
         "ordinal": 11,
-        "type_info": "Datetime"
+        "type_info": "Datetime",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "reset_requested_at"
+          }
+        }
       },
       {
         "name": "last_update?: NaiveDateTime",
         "ordinal": 12,
-        "type_info": "Null"
+        "type_info": "Null",
+        "origin": "Expression"
       },
       {
         "name": "last_coach_update_at?: NaiveDateTime",
         "ordinal": 13,
-        "type_info": "Null"
+        "type_info": "Null",
+        "origin": "Expression"
       },
       {
         "name": "total_techniques?: i64",
         "ordinal": 14,
-        "type_info": "Null"
+        "type_info": "Null",
+        "origin": "Expression"
       },
       {
         "name": "red_count?: i64",
         "ordinal": 15,
-        "type_info": "Null"
+        "type_info": "Null",
+        "origin": "Expression"
       },
       {
         "name": "amber_count?: i64",
         "ordinal": 16,
-        "type_info": "Null"
+        "type_info": "Null",
+        "origin": "Expression"
       },
       {
         "name": "green_count?: i64",
         "ordinal": 17,
-        "type_info": "Null"
+        "type_info": "Null",
+        "origin": "Expression"
       },
       {
         "name": "completed_syllabus_count?: i64",
         "ordinal": 18,
-        "type_info": "Null"
+        "type_info": "Null",
+        "origin": "Expression"
       },
       {
         "name": "has_unseen_activity?: i64",
         "ordinal": 19,
-        "type_info": "Null"
+        "type_info": "Null",
+        "origin": "Expression"
       },
       {
         "name": "latest_student_note_at?: NaiveDateTime",
         "ordinal": 20,
-        "type_info": "Null"
+        "type_info": "Null",
+        "origin": "Expression"
       },
       {
         "name": "latest_watch_at?: NaiveDateTime",
         "ordinal": 21,
-        "type_info": "Null"
+        "type_info": "Null",
+        "origin": "Expression"
       },
       {
         "name": "latest_watch_video_title?: String",
         "ordinal": 22,
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "videos",
+            "name": "title"
+          }
+        }
       },
       {
         "name": "last_student_activity_at?: NaiveDateTime",
         "ordinal": 23,
-        "type_info": "Null"
+        "type_info": "Null",
+        "origin": "Expression"
       },
       {
         "name": "last_coach_activity_at?: NaiveDateTime",
         "ordinal": 24,
-        "type_info": "Null"
+        "type_info": "Null",
+        "origin": "Expression"
       },
       {
         "name": "pinned_count?: i64",
         "ordinal": 25,
-        "type_info": "Null"
+        "type_info": "Null",
+        "origin": "Expression"
       },
       {
         "name": "recent_activity_count?: i64",
         "ordinal": 26,
-        "type_info": "Null"
+        "type_info": "Null",
+        "origin": "Expression"
       }
     ],
     "parameters": {
       "Right": 6
     },
     "nullable": [
-      true,
+      null,
       true,
       true,
       false,

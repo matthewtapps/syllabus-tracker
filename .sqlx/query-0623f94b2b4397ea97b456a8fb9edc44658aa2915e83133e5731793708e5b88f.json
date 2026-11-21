@@ -6,82 +6,148 @@
       {
         "name": "id!: i64",
         "ordinal": 0,
-        "type_info": "Integer"
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "syllabus_assignments",
+            "name": "id"
+          }
+        }
       },
       {
         "name": "student_id!: i64",
         "ordinal": 1,
-        "type_info": "Integer"
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "syllabus_assignments",
+            "name": "student_id"
+          }
+        }
       },
       {
         "name": "syllabus_id!: i64",
         "ordinal": 2,
-        "type_info": "Integer"
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "syllabus_assignments",
+            "name": "syllabus_id"
+          }
+        }
       },
       {
         "name": "syllabus_name!: String",
         "ordinal": 3,
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "syllabi",
+            "name": "name"
+          }
+        }
       },
       {
         "name": "assigned_at!: NaiveDateTime",
         "ordinal": 4,
-        "type_info": "Datetime"
+        "type_info": "Datetime",
+        "origin": {
+          "Table": {
+            "table": "syllabus_assignments",
+            "name": "assigned_at"
+          }
+        }
       },
       {
         "name": "assigned_by_id",
         "ordinal": 5,
-        "type_info": "Integer"
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "syllabus_assignments",
+            "name": "assigned_by_id"
+          }
+        }
       },
       {
         "name": "unassigned_at?: NaiveDateTime",
         "ordinal": 6,
-        "type_info": "Datetime"
+        "type_info": "Datetime",
+        "origin": {
+          "Table": {
+            "table": "syllabus_assignments",
+            "name": "unassigned_at"
+          }
+        }
       },
       {
         "name": "unassigned_by_id",
         "ordinal": 7,
-        "type_info": "Integer"
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "syllabus_assignments",
+            "name": "unassigned_by_id"
+          }
+        }
       },
       {
         "name": "graduated_at?: NaiveDateTime",
         "ordinal": 8,
-        "type_info": "Datetime"
+        "type_info": "Datetime",
+        "origin": {
+          "Table": {
+            "table": "syllabus_assignments",
+            "name": "graduated_at"
+          }
+        }
       },
       {
         "name": "graduated_by_id",
         "ordinal": 9,
-        "type_info": "Integer"
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "syllabus_assignments",
+            "name": "graduated_by_id"
+          }
+        }
       },
       {
         "name": "red_count!: i64",
         "ordinal": 10,
-        "type_info": "Null"
+        "type_info": "Integer",
+        "origin": "Expression"
       },
       {
         "name": "amber_count!: i64",
         "ordinal": 11,
-        "type_info": "Null"
+        "type_info": "Integer",
+        "origin": "Expression"
       },
       {
         "name": "green_count!: i64",
         "ordinal": 12,
-        "type_info": "Null"
+        "type_info": "Integer",
+        "origin": "Expression"
       },
       {
         "name": "total_count!: i64",
         "ordinal": 13,
-        "type_info": "Null"
+        "type_info": "Integer",
+        "origin": "Expression"
       },
       {
         "name": "last_activity_at?: NaiveDateTime",
         "ordinal": 14,
-        "type_info": "Null"
+        "type_info": "Datetime",
+        "origin": "Expression"
       },
       {
         "name": "recent_attempt_count!: i64",
         "ordinal": 15,
-        "type_info": "Null"
+        "type_info": "Integer",
+        "origin": "Expression"
       }
     ],
     "parameters": {
@@ -89,21 +155,21 @@
     },
     "nullable": [
       true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
       false,
       false,
       false,
       false,
       true,
-      true,
-      true,
-      true,
-      true,
-      null,
-      null,
-      null,
-      null,
-      null,
-      null
+      false
     ]
   },
   "hash": "0623f94b2b4397ea97b456a8fb9edc44658aa2915e83133e5731793708e5b88f"

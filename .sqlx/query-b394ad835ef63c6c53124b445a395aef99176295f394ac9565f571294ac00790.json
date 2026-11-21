@@ -6,20 +6,22 @@
       {
         "name": "week_start!: String",
         "ordinal": 0,
-        "type_info": "Null"
+        "type_info": "Text",
+        "origin": "Expression"
       },
       {
         "name": "count!: i64",
         "ordinal": 1,
-        "type_info": "Null"
+        "type_info": "Integer",
+        "origin": "Expression"
       }
     ],
     "parameters": {
       "Right": 2
     },
     "nullable": [
-      null,
-      null
+      true,
+      false
     ]
   },
   "hash": "b394ad835ef63c6c53124b445a395aef99176295f394ac9565f571294ac00790"

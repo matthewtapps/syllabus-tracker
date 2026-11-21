@@ -128,7 +128,7 @@ pub async fn authenticate_user(
                     chrono::DateTime::<Utc>::from_naive_utc_and_offset(dt, Utc).to_rfc3339()
                 };
                 Ok(Some(User {
-                    id: user.id.unwrap(),
+                    id: user.id,
                     username: user.username.clone().unwrap_or_default(),
                     role: Role::from_str(&user.role)?,
                     display_name: user.display_name.unwrap_or_default(),

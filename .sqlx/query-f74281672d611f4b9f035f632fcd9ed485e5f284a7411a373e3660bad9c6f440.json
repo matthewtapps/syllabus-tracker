@@ -6,20 +6,22 @@
       {
         "name": "date!: String",
         "ordinal": 0,
-        "type_info": "Null"
+        "type_info": "Text",
+        "origin": "Expression"
       },
       {
         "name": "count!: i64",
         "ordinal": 1,
-        "type_info": "Null"
+        "type_info": "Integer",
+        "origin": "Expression"
       }
     ],
     "parameters": {
       "Right": 3
     },
     "nullable": [
-      null,
-      null
+      true,
+      false
     ]
   },
   "hash": "f74281672d611f4b9f035f632fcd9ed485e5f284a7411a373e3660bad9c6f440"

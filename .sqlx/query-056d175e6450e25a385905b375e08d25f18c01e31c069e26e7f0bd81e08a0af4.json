@@ -6,7 +6,13 @@
       {
         "name": "m!: i64",
         "ordinal": 0,
-        "type_info": "Integer"
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "activity_cursors",
+            "name": "max_seen_id"
+          }
+        }
       }
     ],
     "parameters": {

@@ -6,14 +6,20 @@
       {
         "name": "id!: i64",
         "ordinal": 0,
-        "type_info": "Integer"
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "videos",
+            "name": "id"
+          }
+        }
       }
     ],
     "parameters": {
       "Right": 2
     },
     "nullable": [
-      true
+      null
     ]
   },
   "hash": "ca9f4d54b4a223b981632fc19b4796902bf5dbcd57a2c34420a7d06840845816"

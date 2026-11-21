@@ -6,12 +6,24 @@
       {
         "name": "unassigned_at?: chrono::NaiveDateTime",
         "ordinal": 0,
-        "type_info": "Datetime"
+        "type_info": "Datetime",
+        "origin": {
+          "Table": {
+            "table": "syllabus_assignments",
+            "name": "unassigned_at"
+          }
+        }
       },
       {
         "name": "graduated_at?: chrono::NaiveDateTime",
         "ordinal": 1,
-        "type_info": "Datetime"
+        "type_info": "Datetime",
+        "origin": {
+          "Table": {
+            "table": "syllabus_assignments",
+            "name": "graduated_at"
+          }
+        }
       }
     ],
     "parameters": {

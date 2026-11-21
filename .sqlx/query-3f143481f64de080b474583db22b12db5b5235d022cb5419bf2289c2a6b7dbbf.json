@@ -6,12 +6,24 @@
       {
         "name": "author_id!: i64",
         "ordinal": 0,
-        "type_info": "Integer"
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "thread_comments",
+            "name": "author_id"
+          }
+        }
       },
       {
         "name": "thread_id!: i64",
         "ordinal": 1,
-        "type_info": "Integer"
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "thread_comments",
+            "name": "thread_id"
+          }
+        }
       }
     ],
     "parameters": {

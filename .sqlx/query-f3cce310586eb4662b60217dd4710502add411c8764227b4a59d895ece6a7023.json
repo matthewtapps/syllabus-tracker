@@ -6,14 +6,20 @@
       {
         "name": "id!: i64",
         "ordinal": 0,
-        "type_info": "Integer"
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "activity",
+            "name": "id"
+          }
+        }
       }
     ],
     "parameters": {
       "Right": 5
     },
     "nullable": [
-      true
+      false
     ]
   },
   "hash": "f3cce310586eb4662b60217dd4710502add411c8764227b4a59d895ece6a7023"

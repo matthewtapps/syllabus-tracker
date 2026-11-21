@@ -6,12 +6,19 @@
       {
         "name": "name!: String",
         "ordinal": 0,
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "camps",
+            "name": "name"
+          }
+        }
       },
       {
         "name": "owner!: String",
         "ordinal": 1,
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": "Expression"
       }
     ],
     "parameters": {

@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use chrono::Utc;
-use sqlx::{Pool, Sqlite};
+use sqlx::{AssertSqlSafe, Pool, Sqlite};
 use tracing::{info, instrument};
 
 use crate::db::activity::{
@@ -1413,7 +1413,7 @@ pub async fn list_video_student_overrides(
         "SELECT video_id, visible FROM video_visibility_overrides
          WHERE scope_kind = 'student' AND student_id = ? AND video_id IN ({placeholders})"
     );
-    let rows: Vec<(i64, bool)> = sqlx::query_as(&sql)
+    let rows: Vec<(i64, bool)> = sqlx::query_as(AssertSqlSafe(sql))
         .bind(student_id)
         .fetch_all(pool)
         .await?;

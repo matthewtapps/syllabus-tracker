@@ -6,12 +6,24 @@
       {
         "name": "processing_status",
         "ordinal": 0,
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "videos",
+            "name": "processing_status"
+          }
+        }
       },
       {
         "name": "processing_error",
         "ordinal": 1,
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "videos",
+            "name": "processing_error"
+          }
+        }
       }
     ],
     "parameters": {

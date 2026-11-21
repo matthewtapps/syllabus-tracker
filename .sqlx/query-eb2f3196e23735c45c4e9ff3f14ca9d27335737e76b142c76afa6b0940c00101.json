@@ -6,7 +6,13 @@
       {
         "name": "seen_at?: NaiveDateTime",
         "ordinal": 0,
-        "type_info": "Datetime"
+        "type_info": "Datetime",
+        "origin": {
+          "Table": {
+            "table": "student_technique_views",
+            "name": "seen_at"
+          }
+        }
       }
     ],
     "parameters": {

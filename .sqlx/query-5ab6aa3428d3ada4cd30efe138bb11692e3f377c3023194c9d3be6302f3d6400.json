@@ -6,14 +6,20 @@
       {
         "name": "id!",
         "ordinal": 0,
-        "type_info": "Integer"
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "syllabus_assignments",
+            "name": "id"
+          }
+        }
       }
     ],
     "parameters": {
       "Right": 3
     },
     "nullable": [
-      true
+      null
     ]
   },
   "hash": "5ab6aa3428d3ada4cd30efe138bb11692e3f377c3023194c9d3be6302f3d6400"

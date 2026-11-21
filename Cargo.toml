@@ -9,7 +9,7 @@ version = "1.0.0"
 rust-version = "1.100"
 
 [workspace.dependencies]
-sqlx = { version = "0.8.5", features = ["runtime-async-std", "sqlite", "chrono"] }
+sqlx = { version = "0.9.1", features = ["runtime-tokio", "sqlite", "chrono", "macros"] }
 tokio = { version = "1.45.0", features = ["process", "fs", "io-util", "macros", "rt", "rt-multi-thread", "time", "sync"] }
 anyhow = "1.0"
 dotenvy = "0.15.7"

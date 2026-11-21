@@ -1,5 +1,7 @@
 use regex::Regex;
-use sqlx::{Connection, Pool, Row, Sqlite, SqlitePool};
+// Dynamic SQL here comes from config/schema.sql or sqlite_master, never user
+// input, so it is asserted safe for sqlx's injection guard.
+use sqlx::{AssertSqlSafe, Connection, Pool, Row, Sqlite, SqlitePool};
 use std::{
     collections::{HashMap, HashSet},
     fmt, fs,
@@ -84,7 +86,7 @@ impl DeclarativeMigrator {
     pub async fn get_changes(self) -> Result<ChangesNeeded, MigrationError> {
         let pristine_pool = SqlitePool::connect("sqlite::memory:").await?;
         if !self.target_schema.trim().is_empty() {
-            sqlx::raw_sql(&self.target_schema)
+            sqlx::raw_sql(AssertSqlSafe(self.target_schema.clone()))
                 .execute(&pristine_pool)
                 .await
                 .map_err(|e| MigrationError {
@@ -104,7 +106,7 @@ impl DeclarativeMigrator {
         // Create pristine database with target schema
         let pristine_pool = SqlitePool::connect("sqlite::memory:").await?;
         if !self.target_schema.trim().is_empty() {
-            sqlx::raw_sql(&self.target_schema)
+            sqlx::raw_sql(AssertSqlSafe(self.target_schema.clone()))
                 .execute(&pristine_pool)
                 .await
                 .map_err(|e| MigrationError {
@@ -506,7 +508,7 @@ impl DeclarativeMigrator {
     ) -> Result<(), MigrationError> {
         self.reporter.step_started(description);
         debug!("Database migration: {} with SQL:\n{}", description, sql);
-        sqlx::query(sql).execute(executor).await?;
+        sqlx::query(AssertSqlSafe(sql.to_owned())).execute(executor).await?;
         self.schema_changes_made += 1;
         self.reporter.step_finished();
         Ok(())
@@ -524,7 +526,7 @@ impl DeclarativeMigrator {
         executor: impl sqlx::Executor<'_, Database = Sqlite>,
     ) -> Result<(), MigrationError> {
         debug!("Database migration: {} with SQL:\n{}", description, sql);
-        sqlx::query(sql).execute(executor).await?;
+        sqlx::query(AssertSqlSafe(sql.to_owned())).execute(executor).await?;
         self.schema_changes_made += 1;
         Ok(())
     }
@@ -589,7 +591,7 @@ impl DeclarativeMigrator {
         executor: impl sqlx::Executor<'_, Database = Sqlite>,
         table_name: &str,
     ) -> Result<Vec<ColumnInfo>, MigrationError> {
-        let rows = sqlx::query(&format!("PRAGMA table_info({})", table_name))
+        let rows = sqlx::query(AssertSqlSafe(format!("PRAGMA table_info({})", table_name)))
             .fetch_all(executor)
             .await?;
 

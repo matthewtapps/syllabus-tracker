@@ -6,129 +6,273 @@
       {
         "name": "id",
         "ordinal": 0,
-        "type_info": "Integer"
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "videos",
+            "name": "id"
+          }
+        }
       },
       {
         "name": "parent_kind",
         "ordinal": 1,
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "videos",
+            "name": "parent_kind"
+          }
+        }
       },
       {
         "name": "technique_id",
         "ordinal": 2,
-        "type_info": "Integer"
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "videos",
+            "name": "technique_id"
+          }
+        }
       },
       {
         "name": "student_id",
         "ordinal": 3,
-        "type_info": "Integer"
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "videos",
+            "name": "student_id"
+          }
+        }
       },
       {
         "name": "thread_id",
         "ordinal": 4,
-        "type_info": "Integer"
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "videos",
+            "name": "thread_id"
+          }
+        }
       },
       {
         "name": "camp_id?: i64",
         "ordinal": 5,
-        "type_info": "Integer"
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "videos",
+            "name": "camp_id"
+          }
+        }
       },
       {
         "name": "title",
         "ordinal": 6,
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "videos",
+            "name": "title"
+          }
+        }
       },
       {
         "name": "description",
         "ordinal": 7,
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "videos",
+            "name": "description"
+          }
+        }
       },
       {
         "name": "position",
         "ordinal": 8,
-        "type_info": "Integer"
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "videos",
+            "name": "position"
+          }
+        }
       },
       {
         "name": "kind",
         "ordinal": 9,
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "videos",
+            "name": "kind"
+          }
+        }
       },
       {
         "name": "processing_status",
         "ordinal": 10,
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "videos",
+            "name": "processing_status"
+          }
+        }
       },
       {
         "name": "processing_error",
         "ordinal": 11,
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "videos",
+            "name": "processing_error"
+          }
+        }
       },
       {
         "name": "storage_key",
         "ordinal": 12,
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "videos",
+            "name": "storage_key"
+          }
+        }
       },
       {
         "name": "bytes",
         "ordinal": 13,
-        "type_info": "Integer"
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "videos",
+            "name": "bytes"
+          }
+        }
       },
       {
         "name": "duration_seconds",
         "ordinal": 14,
-        "type_info": "Integer"
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "videos",
+            "name": "duration_seconds"
+          }
+        }
       },
       {
         "name": "width",
         "ordinal": 15,
-        "type_info": "Integer"
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "videos",
+            "name": "width"
+          }
+        }
       },
       {
         "name": "height",
         "ordinal": 16,
-        "type_info": "Integer"
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "videos",
+            "name": "height"
+          }
+        }
       },
       {
         "name": "external_url",
         "ordinal": 17,
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "videos",
+            "name": "external_url"
+          }
+        }
       },
       {
         "name": "external_host",
         "ordinal": 18,
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "videos",
+            "name": "external_host"
+          }
+        }
       },
       {
         "name": "external_video_id",
         "ordinal": 19,
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "videos",
+            "name": "external_video_id"
+          }
+        }
       },
       {
         "name": "uploaded_by_id",
         "ordinal": 20,
-        "type_info": "Integer"
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "videos",
+            "name": "uploaded_by_id"
+          }
+        }
       },
       {
         "name": "created_at",
         "ordinal": 21,
-        "type_info": "Datetime"
+        "type_info": "Datetime",
+        "origin": {
+          "Table": {
+            "table": "videos",
+            "name": "created_at"
+          }
+        }
       },
       {
         "name": "updated_at",
         "ordinal": 22,
-        "type_info": "Datetime"
+        "type_info": "Datetime",
+        "origin": {
+          "Table": {
+            "table": "videos",
+            "name": "updated_at"
+          }
+        }
       },
       {
         "name": "hidden_at",
         "ordinal": 23,
-        "type_info": "Datetime"
+        "type_info": "Datetime",
+        "origin": {
+          "Table": {
+            "table": "videos",
+            "name": "hidden_at"
+          }
+        }
       }
     ],
     "parameters": {
       "Right": 1
     },
     "nullable": [
-      true,
+      false,
       false,
       true,
       true,

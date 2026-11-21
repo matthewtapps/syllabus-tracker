@@ -4,7 +4,7 @@
 
 use chrono::NaiveDateTime;
 use serde::Serialize;
-use sqlx::{Pool, Sqlite};
+use sqlx::{AssertSqlSafe, Pool, Sqlite};
 
 use crate::auth::Role;
 use crate::db::activity::Verb;
@@ -692,7 +692,7 @@ pub async fn unread_count(pool: &Pool<Sqlite>, viewer: i64, role: Role) -> Resul
     // Bind order: cursor join (viewer), override join (viewer),
     // feed predicate (viewer x predicate_viewer_binds), actor != viewer (viewer),
     // then one bind per notifiable verb.
-    let mut q = sqlx::query_scalar::<_, i64>(&query).bind(viewer).bind(viewer);
+    let mut q = sqlx::query_scalar::<_, i64>(AssertSqlSafe(query)).bind(viewer).bind(viewer);
     for _ in 0..predicate_viewer_binds {
         q = q.bind(viewer);
     }

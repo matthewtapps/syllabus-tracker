@@ -6,42 +6,80 @@
       {
         "name": "id!: i64",
         "ordinal": 0,
-        "type_info": "Integer"
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "syllabi",
+            "name": "id"
+          }
+        }
       },
       {
         "name": "name!: String",
         "ordinal": 1,
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "syllabi",
+            "name": "name"
+          }
+        }
       },
       {
         "name": "description",
         "ordinal": 2,
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "syllabi",
+            "name": "description"
+          }
+        }
       },
       {
         "name": "created_at!: NaiveDateTime",
         "ordinal": 3,
-        "type_info": "Datetime"
+        "type_info": "Datetime",
+        "origin": {
+          "Table": {
+            "table": "syllabi",
+            "name": "created_at"
+          }
+        }
       },
       {
         "name": "created_by_id",
         "ordinal": 4,
-        "type_info": "Integer"
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "syllabi",
+            "name": "created_by_id"
+          }
+        }
       },
       {
         "name": "updated_at!: NaiveDateTime",
         "ordinal": 5,
-        "type_info": "Datetime"
+        "type_info": "Datetime",
+        "origin": {
+          "Table": {
+            "table": "syllabi",
+            "name": "updated_at"
+          }
+        }
       },
       {
         "name": "technique_count!: i64",
         "ordinal": 6,
-        "type_info": "Integer"
+        "type_info": "Integer",
+        "origin": "Expression"
       },
       {
         "name": "active_assignment_count!: i64",
         "ordinal": 7,
-        "type_info": "Integer"
+        "type_info": "Integer",
+        "origin": "Expression"
       }
     ],
     "parameters": {

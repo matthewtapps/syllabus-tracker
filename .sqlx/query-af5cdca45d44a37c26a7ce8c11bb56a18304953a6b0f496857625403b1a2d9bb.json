@@ -6,12 +6,24 @@
       {
         "name": "technique_id!: i64",
         "ordinal": 0,
-        "type_info": "Integer"
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "collection_techniques",
+            "name": "technique_id"
+          }
+        }
       },
       {
         "name": "collection_id!: i64",
         "ordinal": 1,
-        "type_info": "Integer"
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "collection_techniques",
+            "name": "collection_id"
+          }
+        }
       }
     ],
     "parameters": {

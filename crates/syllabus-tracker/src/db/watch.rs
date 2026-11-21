@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use chrono::Utc;
-use sqlx::{Pool, Sqlite};
+use sqlx::{AssertSqlSafe, Pool, Sqlite};
 use tracing::instrument;
 
 use crate::db::activity::{NewActivity, Verb, emit, payload};
@@ -177,7 +177,7 @@ pub async fn get_my_watch_state(
          WHERE user_id = ? AND video_id IN ({})",
         placeholders
     );
-    let mut q = sqlx::query_as::<_, (i64, i64, i64, i64)>(&query).bind(user_id);
+    let mut q = sqlx::query_as::<_, (i64, i64, i64, i64)>(AssertSqlSafe(query)).bind(user_id);
     for id in video_ids {
         q = q.bind(*id);
     }

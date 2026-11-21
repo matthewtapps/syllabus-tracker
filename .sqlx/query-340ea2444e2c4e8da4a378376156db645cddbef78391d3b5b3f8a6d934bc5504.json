@@ -6,56 +6,84 @@
       {
         "name": "id!: i64",
         "ordinal": 0,
-        "type_info": "Integer"
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "techniques",
+            "name": "id"
+          }
+        }
       },
       {
         "name": "name",
         "ordinal": 1,
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "techniques",
+            "name": "name"
+          }
+        }
       },
       {
         "name": "description",
         "ordinal": 2,
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "techniques",
+            "name": "description"
+          }
+        }
       },
       {
         "name": "pinned_at!: NaiveDateTime",
         "ordinal": 3,
-        "type_info": "Datetime"
+        "type_info": "Datetime",
+        "origin": {
+          "Table": {
+            "table": "student_pinned_techniques",
+            "name": "pinned_at"
+          }
+        }
       },
       {
         "name": "collection_count!: i64",
         "ordinal": 4,
-        "type_info": "Null"
+        "type_info": "Integer",
+        "origin": "Expression"
       },
       {
         "name": "student_count!: i64",
         "ordinal": 5,
-        "type_info": "Null"
+        "type_info": "Integer",
+        "origin": "Expression"
       },
       {
         "name": "video_count!: i64",
         "ordinal": 6,
-        "type_info": "Null"
+        "type_info": "Integer",
+        "origin": "Expression"
       },
       {
         "name": "last_activity_at?: NaiveDateTime",
         "ordinal": 7,
-        "type_info": "Null"
+        "type_info": "Datetime",
+        "origin": "Expression"
       }
     ],
     "parameters": {
       "Right": 1
     },
     "nullable": [
-      true,
+      false,
       false,
       true,
       false,
-      null,
-      null,
-      null,
-      null
+      false,
+      false,
+      false,
+      true
     ]
   },
   "hash": "340ea2444e2c4e8da4a378376156db645cddbef78391d3b5b3f8a6d934bc5504"
