@@ -158,13 +158,10 @@ impl Fairing for TelemetryFairing {
         // The request's single wide-event "main" span. We mint our own rather
         // than reuse Rocket's "request" span because (a) we need a dynamic name
         // and (b) tracing span names are static. It is created as a registry
-        // root (`parent: None`); the magic `otel.name` field is what
-        // tracing-opentelemetry maps onto the exported OTel span name. The name
-        // is declared empty here and recorded in `on_response`: request fairings
+        // root (`parent: None`) and renamed in `on_response`: request fairings
         // run BEFORE routing, so `request.route()` is always `None` at this
         // point (the name + http.route depend on the matched route).
-        let span =
-            tracing::info_span!(parent: None, "http.request", otel.name = tracing::field::Empty);
+        let span = tracing::info_span!(parent: None, "http.request");
 
         // Wire the trace graph: incoming distributed-trace context -> our main
         // span -> Rocket's request span (the registry ancestor of all
@@ -257,7 +254,7 @@ impl Fairing for TelemetryFairing {
                 Some(route) => format!("{} {}", request.method().as_str(), route.uri),
                 None => format!("{} <unmatched>", request.method().as_str()),
             };
-            span.record("otel.name", span_name.as_str());
+            name_request_span(&span, span_name);
             if let Some(route) = request.route() {
                 span.set_attribute(HTTP_ROUTE, route.uri.to_string());
                 if let Some(name) = &route.name {
@@ -557,6 +554,13 @@ where
         .with_context_activation(false)
 }
 
+/// The main span has already started (see `link_request_spans`), and a started
+/// span ignores a recorded `otel.name`, so rename it through the OTel API.
+fn name_request_span(span: &tracing::Span, name: String) {
+    use opentelemetry::trace::TraceContextExt as _;
+    span.context().span().update_name(name);
+}
+
 /// Parents `main` on the incoming distributed-trace context and reparents
 /// Rocket's already-entered `request` span under `main`.
 fn link_request_spans(main: &tracing::Span, request: &tracing::Span, incoming: opentelemetry::Context) {
@@ -573,7 +577,8 @@ mod tests {
     use super::*;
     use tracing_subscriber::layer::SubscriberExt;
 
-    /// Handler spans must land in the caller's trace, under the main span.
+    /// Handler spans must land in the caller's trace, under the main span, and
+    /// the main span must export under its route name.
     #[test]
     fn request_spans_join_the_incoming_trace() {
         use opentelemetry::trace::{
@@ -602,13 +607,14 @@ mod tests {
             let _r = request.enter();
             let main = tracing::info_span!(parent: None, "http.request");
             link_request_spans(&main, &request, incoming);
+            name_request_span(&main, "POST /api/login".to_string());
             let handler = tracing::info_span!("handler");
             let _h = handler.enter();
         });
 
         let spans = exporter.get_finished_spans().unwrap();
         let by_name = |n: &str| spans.iter().find(|s| s.name == n).unwrap();
-        let (main, request, handler) = (by_name("http.request"), by_name("request"), by_name("handler"));
+        let (main, request, handler) = (by_name("POST /api/login"), by_name("request"), by_name("handler"));
         for s in [main, request, handler] {
             assert_eq!(s.span_context.trace_id(), trace_id, "{} left the trace", s.name);
         }
