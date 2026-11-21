@@ -37,7 +37,7 @@ opentelemetry-otlp = { version = "0.29.0", features = ["metrics", "trace", "grpc
 opentelemetry = { version = "0.29.1", features = ["trace"] }
 opentelemetry-semantic-conventions = { version = "0.29.0", features = ["semconv_experimental"] }
 tracing-core = "0.1.33"
-tracing-opentelemetry = "0.30.0"
+tracing-opentelemetry = "0.34.0"
 tonic = { version = "0.12.3", features = ["transport", "tls", "tls-roots", "tls-webpki-roots"] }
 once_cell = "1.21.3"
 opentelemetry-http = "0.29.0"
