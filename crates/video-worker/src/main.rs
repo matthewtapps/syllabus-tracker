@@ -197,7 +197,9 @@ async fn run() -> anyhow::Result<()> {
 
     // One wide span per transcode job, continuing the backend's trace.
     let span = tracing::info_span!("transcode_job");
-    span.set_parent(telemetry::parent_context(cfg.traceparent.as_deref()));
+    if let Err(e) = span.set_parent(telemetry::parent_context(cfg.traceparent.as_deref())) {
+        tracing::warn!(error = ?e, "could not parent the transcode span");
+    }
     span.set_attribute("video.id", cfg.video_id);
     span.set_attribute("video.source_key", cfg.source_key.clone());
 

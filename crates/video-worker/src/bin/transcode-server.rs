@@ -150,7 +150,9 @@ async fn handle_job(
     // its context we mint the traceparent the child worker continues from, so
     // the worker's transcode_job span nests under this one (no gap).
     let span = tracing::info_span!("transcode_relay", video.id = job.video_id);
-    span.set_parent(telemetry::parent_context(job.traceparent.as_deref()));
+    if let Err(e) = span.set_parent(telemetry::parent_context(job.traceparent.as_deref())) {
+        tracing::warn!(error = ?e, "could not parent the relay span");
+    }
 
     async move {
         let relay_tp = telemetry::current_traceparent();
