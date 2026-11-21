@@ -30,7 +30,7 @@ anyhow = { workspace = true }
 bcrypt = "0.15.0"  # For password hashing
 
 # Otel
-opentelemetry_sdk = { version = "0.29.0", features = ["logs", "trace", "rt-tokio"] }
+opentelemetry_sdk = { version = "0.32.1", features = ["logs", "trace", "rt-tokio"] }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 opentelemetry-otlp = { version = "0.29.0", features = ["metrics", "trace", "grpc-tonic", "tls", "tls-roots", "tls-webpki-roots"] }
