@@ -54,7 +54,7 @@ describe("TechniqueRow / student-syllabus context", () => {
     // StatusToggle has aria-label "Technique status" on the group; only
     // coaches see it.
     expect(
-      screen.getByRole("group", { name: /technique status/i }),
+      screen.getByRole("radiogroup", { name: /technique status/i }),
     ).toBeInTheDocument();
     expect(
       screen.getByRole("heading", { name: /attempts/i }),
@@ -91,7 +91,7 @@ describe("TechniqueRow / student-syllabus context", () => {
 
     // Status is coach-controlled; the toggle never renders for students.
     expect(
-      screen.queryByRole("group", { name: /technique status/i }),
+      screen.queryByRole("radiogroup", { name: /technique status/i }),
     ).toBeNull();
     // 'My notes' is the student-facing label on the student-notes block.
     expect(
@@ -125,7 +125,7 @@ describe("TechniqueRow / student-syllabus context", () => {
     // The status dot is purely decorative aria-label; assertions on
     // headings: expanded panel should not be mounted.
     expect(screen.queryByRole("heading", { name: /attempts/i })).toBeNull();
-    expect(screen.queryByRole("group", { name: /technique status/i })).toBeNull();
+    expect(screen.queryByRole("radiogroup", { name: /technique status/i })).toBeNull();
   });
 
   test("expanded syllabus row fetches threads on the sst anchor, not the technique anchor", async () => {
