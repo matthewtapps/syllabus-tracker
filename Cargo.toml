@@ -6,7 +6,7 @@ resolver = "3"
 [workspace.package]
 edition = "2024"
 version = "1.0.0"
-rust-version = "1.86"
+rust-version = "1.100"
 
 [workspace.dependencies]
 sqlx = { version = "0.8.5", features = ["runtime-async-std", "sqlite", "chrono"] }

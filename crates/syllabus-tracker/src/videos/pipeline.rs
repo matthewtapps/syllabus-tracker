@@ -81,11 +81,10 @@ impl TempCleanup {
 impl Drop for TempCleanup {
     fn drop(&mut self) {
         for path in self.paths.drain(..) {
-            if let Err(e) = std::fs::remove_file(&path) {
-                if e.kind() != std::io::ErrorKind::NotFound {
+            if let Err(e) = std::fs::remove_file(&path)
+                && e.kind() != std::io::ErrorKind::NotFound {
                     warn!("failed to clean temp file {}: {}", path.display(), e);
                 }
-            }
         }
     }
 }

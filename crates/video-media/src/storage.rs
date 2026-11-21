@@ -142,7 +142,7 @@ fn build_client(config: &S3Config, endpoint: &str) -> S3Client {
 /// Flatten an error and its `source()` chain into one string. The aws-sdk
 /// `SdkError` Display is just "service error"; the real status and message live
 /// in the source chain, so surface them for diagnosis.
-fn error_chain(err: &(dyn std::error::Error)) -> String {
+fn error_chain(err: &dyn std::error::Error) -> String {
     let mut out = err.to_string();
     let mut source = err.source();
     while let Some(inner) = source {

@@ -861,8 +861,8 @@ async fn run() -> Result<()> {
         let syl_idx = 0usize;
         if let Some(&assignment_id) = assignment_map.get(&(student_id, syl_idx)) {
             let (_, _, member_names) = SYLLABUS_DEFS[syl_idx];
-            if let Some(first_name) = member_names.first() {
-                if let Some(&tid) = technique_by_name.get(*first_name) {
+            if let Some(first_name) = member_names.first()
+                && let Some(&tid) = technique_by_name.get(*first_name) {
                     let hidden_time = now - Duration::days(5);
                     // Only hide if not already hidden.
                     let already: i64 = sqlx::query_as::<_, (i64,)>(
@@ -893,7 +893,6 @@ async fn run() -> Result<()> {
                     }
                     continue;
                 }
-            }
         }
         reporter.phase_item(ItemOutcome::Existed);
     }
@@ -935,7 +934,7 @@ async fn run() -> Result<()> {
                     "green" => 4 + ((student_id + sst_id) as usize % 5), // 4..=8
                     "amber" => 1 + ((student_id + sst_id) as usize % 3), // 1..=3
                     _ => {
-                        if (student_id as usize + row_idx) % 6 == 0 {
+                        if (student_id as usize + row_idx).is_multiple_of(6) {
                             1
                         } else {
                             0
@@ -963,8 +962,8 @@ async fn run() -> Result<()> {
                         coach_id
                     };
 
-                    let has_my_note = (*sst_id as usize + n) % 3 == 0;
-                    let has_cross_note = (*sst_id as usize + n) % 7 == 0;
+                    let has_my_note = (*sst_id as usize + n).is_multiple_of(3);
+                    let has_cross_note = (*sst_id as usize + n).is_multiple_of(7);
 
                     let student_note_text: Option<&str> = if recorder == student_id && has_my_note {
                         Some(student_notes_pool[(*sst_id as usize + n) % student_notes_pool.len()])
@@ -1514,8 +1513,8 @@ async fn run() -> Result<()> {
 
     // Referenced footage links (pure join rows; no helper, so raw INSERT).
     // Alex's camp references the RNC discussion thread.
-    if let Some(&alex_camp) = camp_by_student.get(&0) {
-        if let Some(thread_id) = rnc_thread {
+    if let Some(&alex_camp) = camp_by_student.get(&0)
+        && let Some(thread_id) = rnc_thread {
             sqlx::query(
                 "INSERT OR IGNORE INTO camp_referenced_threads (camp_id, thread_id) VALUES (?, ?)",
             )
@@ -1525,7 +1524,6 @@ async fn run() -> Result<()> {
             .await?;
             reporter.phase_item(ItemOutcome::Created);
         }
-    }
     reporter.phase_finished();
 
     // 17. Refresh cursors so the new social activity is accounted for: mark all

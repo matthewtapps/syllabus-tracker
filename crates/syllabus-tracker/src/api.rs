@@ -846,15 +846,14 @@ pub async fn api_update_profile(
             // Field-level uniqueness check so the frontend can highlight the
             // username input. `update_username` does its own check, but its
             // error type collapses to a generic 500 here.
-            if let Some(other) = find_user_by_username(db, trimmed).await? {
-                if other.id != user.id {
+            if let Some(other) = find_user_by_username(db, trimmed).await?
+                && other.id != user.id {
                     let mut errors = validator::ValidationErrors::new();
                     let mut err = validator::ValidationError::new("unique");
                     err.message = Some("That username is already taken".into());
                     errors.add("username", err);
                     return Err(errors.into());
                 }
-            }
             update_username(db, user.id, trimmed).await?;
         }
     }

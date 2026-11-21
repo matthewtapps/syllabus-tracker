@@ -196,7 +196,7 @@ impl DeclarativeMigrator {
                     })
                     .collect();
                 if !introduced.is_empty() {
-                    introduced.sort_by(|a, b| b.2.cmp(&a.2));
+                    introduced.sort_by_key(|&(_, _, n)| std::cmp::Reverse(n));
                     let total: usize = introduced.iter().map(|(_, _, n)| n).sum();
                     let breakdown = introduced
                         .iter()
@@ -279,7 +279,7 @@ impl DeclarativeMigrator {
                     return Err(MigrationError {
                         message: format!(
                             "Migration requires deleting columns {:?} from table {}, but allow_deletions=false. Set allow_deletions=true to permit this.",
-                            removed_columns, &table.name
+                            removed_columns, table.name
                         ),
                     });
                 }

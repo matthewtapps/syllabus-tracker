@@ -383,13 +383,11 @@ async fn user_can_attach_thread_video(
     if user.has_permission(Permission::UploadVideos) {
         return Ok(true);
     }
-    if matches!(anchor_kind, "camp" | "camp_technique") {
-        if let Some(cid) = camp_id {
-            if let Some(camp) = db::camps::get_camp(pool, cid).await.map_err(Status::from)? {
+    if matches!(anchor_kind, "camp" | "camp_technique")
+        && let Some(cid) = camp_id
+            && let Some(camp) = db::camps::get_camp(pool, cid).await.map_err(Status::from)? {
                 return Ok(camp.student_id == user.id);
             }
-        }
-    }
     Ok(false)
 }
 

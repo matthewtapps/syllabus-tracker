@@ -182,7 +182,7 @@ pub async fn get_student_techniques(
     }
 
     let mut techniques: Vec<StudentTechnique> = techniques_map.into_values().collect();
-    techniques.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
+    techniques.sort_by_key(|t| std::cmp::Reverse(t.updated_at));
 
     Ok(techniques)
 }

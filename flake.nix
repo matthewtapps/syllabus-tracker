@@ -27,7 +27,7 @@
         # `stable.latest` so the toolchain doesn't silently drift when the
         # flake inputs update. CI consumes this exact toolchain via the `ci`
         # devShell, so dev and CI compile with the same rustc.
-        rust = pkgs.rust-bin.stable."1.86.0".default.override {
+        rust = pkgs.rust-bin.stable."1.100.0".default.override {
           extensions = [
             "rust-src"
             "rust-analyzer"

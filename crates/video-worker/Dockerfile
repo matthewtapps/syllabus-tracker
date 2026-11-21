@@ -2,7 +2,7 @@
 # Build context is the REPO ROOT (the full workspace is needed).
 # Invoke as:
 #   docker build -f crates/video-worker/Dockerfile -t video-worker .
-FROM rust:1.86-slim-bookworm AS builder
+FROM rust:1.100.0-slim-bookworm AS builder
 WORKDIR /app
 
 # Build-time system deps:

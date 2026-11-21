@@ -284,12 +284,10 @@ impl Fairing for TelemetryFairing {
                 .local_cache(|| RocketRequestSpan(None))
                 .0
                 .as_ref()
-            {
-                if let Some((count, nanos)) = read_db_stats(rocket_span) {
+                && let Some((count, nanos)) = read_db_stats(rocket_span) {
                     span.set_attribute("db.query.count", count as i64);
                     span.set_attribute("db.query.duration_ms", nanos as f64 / 1_000_000.0);
                 }
-            }
 
             if code >= 400 {
                 let error_category = if code >= 500 {
@@ -342,8 +340,8 @@ impl Fairing for ErrorTelemetryFairing {
     async fn on_response<'r>(&self, request: &'r Request<'_>, response: &mut Response<'r>) {
         let status = response.status();
 
-        if status.code >= 500 {
-            if let Some(span) = request
+        if status.code >= 500
+            && let Some(span) = request
                 .local_cache(|| TracingSpan::<Option<Span>>(None))
                 .0
                 .to_owned()
@@ -358,7 +356,6 @@ impl Fairing for ErrorTelemetryFairing {
 
                 span.set_status(OtelStatus::error(format!("HTTP Error: {}", status.code)));
             }
-        }
     }
 }
 
@@ -409,13 +406,11 @@ where
     }
 
     fn get_stats_fn(dispatch: &Dispatch, id: &span::Id, f: &mut dyn FnMut(&DbCallStats)) {
-        if let Some(subscriber) = dispatch.downcast_ref::<S>() {
-            if let Some(span) = subscriber.span(id) {
-                if let Some(stats) = span.extensions().get::<DbCallStats>() {
+        if let Some(subscriber) = dispatch.downcast_ref::<S>()
+            && let Some(span) = subscriber.span(id)
+                && let Some(stats) = span.extensions().get::<DbCallStats>() {
                     f(stats);
                 }
-            }
-        }
     }
 }
 

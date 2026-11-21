@@ -161,8 +161,8 @@ fn done_style() -> ProgressStyle {
 }
 
 fn label_for_step(description: &str, changes: &ChangesNeeded) -> String {
-    if let Some(table_name) = description.strip_prefix("Modifying table ") {
-        if let Some(table) = changes
+    if let Some(table_name) = description.strip_prefix("Modifying table ")
+        && let Some(table) = changes
             .modified_tables
             .iter()
             .find(|t| t.name == table_name)
@@ -182,7 +182,6 @@ fn label_for_step(description: &str, changes: &ChangesNeeded) -> String {
                 return format!("{} ({})", description, parts.join(", "));
             }
         }
-    }
     description.to_string()
 }
 
