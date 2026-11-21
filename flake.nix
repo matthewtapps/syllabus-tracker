@@ -39,9 +39,9 @@
         # format the workspace's `sqlx` 0.8 macros cannot read. Pin to the
         # 0.8 series so the CLI that writes .sqlx/ matches the library that
         # reads it. Dev and CI both take this exact build, which is what
-        # makes `sqlx prepare` reproducible (the CLI statically bundles its
-        # own SQLite; a version skew here produced nondeterministic
-        # sqlx-check failures). Hashes mirror the nixpkgs 0.8.6 derivation.
+        # makes `sqlx prepare` reproducible (a SQLite version skew here
+        # produced nondeterministic sqlx-check failures). Hashes mirror the
+        # nixpkgs 0.8.6 derivation.
         sqlx-cli = pkgs.rustPlatform.buildRustPackage rec {
           pname = "sqlx-cli";
           version = "0.8.6";
@@ -60,14 +60,17 @@
           doCheck = false;
           cargoBuildFlags = [ "--package sqlx-cli" ];
           nativeBuildInputs = [ pkgs.pkg-config ];
-          buildInputs = [ pkgs.openssl ];
+          buildInputs = [
+            pkgs.openssl
+            pkgs.sqlite
+          ];
         };
 
         # The toolchain that the CI correctness gates (lint / test /
         # sqlx-check) run against. CI enters this shell via `nix develop .#ci`
         # so it uses byte-identical tool versions to local dev. This is what
-        # makes the .sqlx offline cache reproducible: `sqlx-cli` bundles its
-        # own SQLite, and a version skew between the dev box and CI was the
+        # makes the .sqlx offline cache reproducible: `sqlx-cli` links the
+        # same nixpkgs SQLite, and a version skew between the dev box and CI was the
         # source of nondeterministic `sqlx prepare --check` failures (a bare
         # `MAX(col)` aggregate inferred `Null` under one sqlite and `Text`
         # under another). Keep this list lean: only what compiling the
