@@ -1,5 +1,5 @@
 use chrono::{NaiveDateTime, Utc};
-use rand::{Rng, distr::Alphanumeric, rng};
+use rand::{RngExt, distr::Alphanumeric, rng};
 use rkt::http::Status;
 use serde::Serialize;
 use std::str::FromStr;

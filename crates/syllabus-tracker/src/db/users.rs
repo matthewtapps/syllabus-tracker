@@ -453,3 +453,15 @@ pub async fn update_user_role(
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    /// Stored password hashes outlive any bcrypt crate upgrade. This one was made
+    /// by Python's bcrypt, so it pins the on-disk format, not this crate's output.
+    #[test]
+    fn verifies_hashes_from_another_bcrypt_implementation() {
+        let hash = "$2b$04$lopKZ5iZEBNjtYDTbIHxFOTjPYDNOqnD43sZfq5fgV3dyAyQSRXQ2";
+        assert!(bcrypt::verify("compat-check", hash).unwrap());
+        assert!(!bcrypt::verify("wrong-password", hash).unwrap());
+    }
+}

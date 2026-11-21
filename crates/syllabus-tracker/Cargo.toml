@@ -19,7 +19,7 @@ sqlx = { workspace = true }
 
 # web framework
 rkt = { version = "=1.3.0", features = ["trace", "json", "secrets", "tls"] }
-validator = { version = "0.20.0", features = ["derive"] }
+validator = { version = "0.21.0", features = ["derive"] }
 serde = { version = "1.0.219", features = ["derive"] }
 chrono = { workspace = true }
 serde_json = "1.0.140"
@@ -27,7 +27,7 @@ serde_json = "1.0.140"
 # auth
 thiserror = "1.0"
 anyhow = { workspace = true }
-bcrypt = "0.15.0"  # For password hashing
+bcrypt = "0.19.3"  # For password hashing
 
 # Otel
 opentelemetry_sdk = { version = "0.33.1", features = ["logs", "trace", "rt-tokio"] }
@@ -41,7 +41,7 @@ tracing-opentelemetry = "0.34.0"
 once_cell = "1.21.3"
 either = "1.15.0"
 env_logger = "0.11.8"
-rand = "0.9.1"
+rand = "0.10.3"
 uuid = { version = "1.16.0", features = ["v4"] }
 regex = { workspace = true }
 tokio = { workspace = true }

@@ -1,4 +1,4 @@
-use hmac::{Hmac, Mac};
+use hmac::{Hmac, KeyInit, Mac};
 use serde::{Deserialize, Serialize};
 use sha2::Sha256;
 use subtle::ConstantTimeEq;
@@ -86,6 +86,16 @@ pub fn verify(secret: &[u8], body: &[u8], sig_hex: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// RFC 4231 test case 2: the backend and worker deploy separately, so the
+    /// signature must stay byte-identical across crate versions.
+    #[test]
+    fn sign_matches_rfc4231_vector() {
+        assert_eq!(
+            sign(b"Jefe", b"what do ya want for nothing?"),
+            "5bdcc146bf60754e6a042426089575c75a003f089d2739839dec58b964ec3843"
+        );
+    }
 
     #[test]
     fn sign_verify_roundtrip() {
