@@ -9,7 +9,7 @@ pub use syllabus_tracker::{
 #[cfg(test)]
 mod test;
 
-use api::api_get_all_users;
+use api::{api_get_all_users, api_get_user};
 use api::{
     api_activity_digest, api_activity_feed, api_activity_feed_head_id, api_activity_mark_all_read,
     api_activity_mark_one_read, api_activity_mark_one_unread, api_activity_unread_count,
@@ -303,6 +303,7 @@ pub async fn init_rocket_with_callback_secret(
                 api_remove_tag_from_technique,
                 api_get_technique_tags,
                 api_get_all_users,
+                api_get_user,
                 api_library_stats,
                 api_list_library_techniques,
                 api_create_library_technique,

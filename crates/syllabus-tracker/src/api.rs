@@ -1191,6 +1191,14 @@ pub async fn api_get_all_users(
     Ok(Json(user_responses))
 }
 
+#[get("/users/<id>")]
+pub async fn api_get_user(id: i64, user: User, db: &State<Pool<Sqlite>>) -> ApiResult<Json<UserData>> {
+    if user.id != id && !user.has_permission(Permission::ViewAllStudents) {
+        return Err(Status::Forbidden.into());
+    }
+    Ok(Json(UserData::from(get_user(db, id).await?)))
+}
+
 // ---- Invite / claim flow ----
 
 #[derive(Deserialize, Validate, Clone)]

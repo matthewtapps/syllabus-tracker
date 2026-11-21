@@ -112,6 +112,44 @@ mod tests {
     }
 
     #[rkt::async_test]
+    async fn get_user_allows_coaches_and_self_only() {
+        let test_db = TestDbBuilder::new()
+            .coach("coach_user", Some("Coach User"))
+            .student("student_user", Some("Student User"))
+            .student("other_student", Some("Other Student"))
+            .build()
+            .await
+            .unwrap();
+        let student_id = test_db.user_id("student_user").unwrap();
+        let other_id = test_db.user_id("other_student").unwrap();
+        let (client, _) = setup_test_client(test_db).await;
+
+        let coach = login_test_user(&client, "coach_user", "password123").await;
+        let response = client
+            .get(format!("/api/users/{student_id}"))
+            .cookies(coach)
+            .dispatch()
+            .await;
+        assert_eq!(response.status(), Status::Ok);
+        let user: UserData = serde_json::from_str(&response.into_string().await.unwrap()).unwrap();
+        assert_eq!(user.username, "student_user");
+
+        let student = login_test_user(&client, "student_user", "password123").await;
+        let own = client
+            .get(format!("/api/users/{student_id}"))
+            .cookies(student.clone())
+            .dispatch()
+            .await;
+        assert_eq!(own.status(), Status::Ok);
+        let other = client
+            .get(format!("/api/users/{other_id}"))
+            .cookies(student)
+            .dispatch()
+            .await;
+        assert_eq!(other.status(), Status::Forbidden);
+    }
+
+    #[rkt::async_test]
     async fn test_me_api() {
         let test_db = create_standard_test_db().await;
         let (client, _) = setup_test_client(test_db).await;
