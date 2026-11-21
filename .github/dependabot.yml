@@ -86,10 +86,9 @@ updates:
       minor-and-patch:
         patterns: ["*"]
         update-types: [minor, patch]
-    # The Rust builder images move in lockstep with the flake toolchain and
+    # The Rust builder image moves in lockstep with the flake toolchain and
     # workspace rust-version, which Dependabot cannot bump together.
     ignore:
-      - dependency-name: rust
       - dependency-name: lukemathwalker/cargo-chef
 
   - package-ecosystem: docker-compose
