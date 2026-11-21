@@ -68,15 +68,12 @@ function makeStubFetch(feedRows: ActivityRow[]) {
         }),
       );
     }
-    // Coaches resolve the profiled student from the users list
-    // (getAllUsers -> /api/admin/users, which is .map()-ed, so it must be an
-    // array or the whole render throws).
-    if (url.includes("/api/admin/users")) {
+    if (url.includes("/api/users/42")) {
       return Promise.resolve(
         new Response(
-          JSON.stringify([
+          JSON.stringify(
             { id: 42, username: "jon", display_name: "Jon Sharp", role: "student", archived: false },
-          ]),
+          ),
           { status: 200, headers: { "Content-Type": "application/json" } },
         ),
       );

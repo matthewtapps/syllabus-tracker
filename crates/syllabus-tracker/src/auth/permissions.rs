@@ -1,6 +1,6 @@
 use anyhow::Error;
 use once_cell::sync::Lazy;
-use rocket::serde::Serialize;
+use rkt::serde::Serialize;
 use std::collections::HashSet;
 use std::fmt;
 use std::str::FromStr;

@@ -6,77 +6,167 @@
       {
         "name": "id",
         "ordinal": 0,
-        "type_info": "Integer"
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "student_techniques",
+            "name": "id"
+          }
+        }
       },
       {
         "name": "technique_id",
         "ordinal": 1,
-        "type_info": "Integer"
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "student_techniques",
+            "name": "technique_id"
+          }
+        }
       },
       {
         "name": "technique_name",
         "ordinal": 2,
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "student_techniques",
+            "name": "technique_name"
+          }
+        }
       },
       {
         "name": "technique_description",
         "ordinal": 3,
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "student_techniques",
+            "name": "technique_description"
+          }
+        }
       },
       {
         "name": "student_id",
         "ordinal": 4,
-        "type_info": "Integer"
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "student_techniques",
+            "name": "student_id"
+          }
+        }
       },
       {
         "name": "status",
         "ordinal": 5,
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "student_techniques",
+            "name": "status"
+          }
+        }
       },
       {
         "name": "student_notes",
         "ordinal": 6,
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "student_techniques",
+            "name": "student_notes"
+          }
+        }
       },
       {
         "name": "coach_notes",
         "ordinal": 7,
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "student_techniques",
+            "name": "coach_notes"
+          }
+        }
       },
       {
         "name": "created_at",
         "ordinal": 8,
-        "type_info": "Datetime"
+        "type_info": "Datetime",
+        "origin": {
+          "Table": {
+            "table": "student_techniques",
+            "name": "created_at"
+          }
+        }
       },
       {
         "name": "updated_at",
         "ordinal": 9,
-        "type_info": "Datetime"
+        "type_info": "Datetime",
+        "origin": {
+          "Table": {
+            "table": "student_techniques",
+            "name": "updated_at"
+          }
+        }
       },
       {
         "name": "last_coach_update_at",
         "ordinal": 10,
-        "type_info": "Datetime"
+        "type_info": "Datetime",
+        "origin": {
+          "Table": {
+            "table": "student_techniques",
+            "name": "last_coach_update_at"
+          }
+        }
       },
       {
         "name": "last_coach_update_by_id",
         "ordinal": 11,
-        "type_info": "Integer"
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "student_techniques",
+            "name": "last_coach_update_by_id"
+          }
+        }
       },
       {
         "name": "last_student_update_at",
         "ordinal": 12,
-        "type_info": "Datetime"
+        "type_info": "Datetime",
+        "origin": {
+          "Table": {
+            "table": "student_techniques",
+            "name": "last_student_update_at"
+          }
+        }
       },
       {
         "name": "last_student_update_by_id",
         "ordinal": 13,
-        "type_info": "Integer"
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "student_techniques",
+            "name": "last_student_update_by_id"
+          }
+        }
       },
       {
         "name": "collection_id",
         "ordinal": 14,
-        "type_info": "Integer"
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "student_techniques",
+            "name": "collection_id"
+          }
+        }
       }
     ],
     "parameters": {

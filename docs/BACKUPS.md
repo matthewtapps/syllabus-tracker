@@ -101,17 +101,13 @@ Litestream organizes objects under the configured prefix (`db/` here):
 
 ```
 db/
-  generations/
-    <generation-id>/
-      snapshots/
-        ...
-      wal/
-        ...
+  ltx/            # Litestream 0.5+ (LTX files)
+  generations/    # Litestream 0.3 backups, read-only since the 0.5 upgrade
 ```
 
-Generations are 16-character hex IDs. A new generation is cut whenever Litestream detects a break in WAL continuity (a crash, a restart, a manual restore). Each generation is self-contained: one snapshot plus its tail of WAL frames is enough to restore.
+Litestream 0.5 restores from whichever format holds the newer backup, so the `generations/` tree still works as a fallback for point-in-time restores from before the upgrade. Restoring with 0.3 after the upgrade silently returns that stale data, so every restore must use 0.5.
 
-You should never need to poke at these files directly. `litestream restore` and `litestream snapshots` are the tools for inspecting state.
+You should never need to poke at these files directly. `litestream restore` and `litestream ltx` are the tools for inspecting state.
 
 ## Cost
 

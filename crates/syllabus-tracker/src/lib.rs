@@ -1,5 +1,5 @@
 #[macro_use]
-extern crate rocket;
+extern crate rkt;
 
 pub mod api;
 pub mod auth;

@@ -96,8 +96,8 @@ jobs:
       vm_ip:              ${{ steps.read.outputs.vm_ip }}
       host_age_recipient: ${{ steps.read.outputs.host_age_recipient }}
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-      - uses: cachix/install-nix-action@v27
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: cachix/install-nix-action@ba0dd844c9180cbf77aa72a116d6fbc515d0e87b # v27
         with:
           extra_nix_config: |
             experimental-features = nix-command flakes
@@ -135,8 +135,8 @@ jobs:
       LITESTREAM_PATH:     ${{ github.event.inputs.litestream_path }}
       ALLOW_DESTRUCTIVE_MIGRATIONS: ${{ github.event.inputs.allow_destructive_migrations }}
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-      - uses: cachix/install-nix-action@v27
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: cachix/install-nix-action@ba0dd844c9180cbf77aa72a116d6fbc515d0e87b # v27
         with:
           extra_nix_config: |
             experimental-features = nix-command flakes
@@ -318,21 +318,21 @@ jobs:
             cat > /srv/$SIBLING_NAME/config/litestream-restore.yml <<INNER
           dbs:
             - path: /data/sqlite.db
-              replicas:
-                - type: s3
-                  bucket: $SOURCE_BUCKET
-                  path: $LITESTREAM_PATH
-                  endpoint: https://ea9e8573831e597fc41f865267b8fd35.r2.cloudflarestorage.com
-                  region: auto
-                  access-key-id: \\\${LITESTREAM_ACCESS_KEY_ID}
-                  secret-access-key: \\\${LITESTREAM_SECRET_ACCESS_KEY}
+              replica:
+                type: s3
+                bucket: $SOURCE_BUCKET
+                path: $LITESTREAM_PATH
+                endpoint: https://ea9e8573831e597fc41f865267b8fd35.r2.cloudflarestorage.com
+                region: auto
+                access-key-id: \\\${LITESTREAM_ACCESS_KEY_ID}
+                secret-access-key: \\\${LITESTREAM_SECRET_ACCESS_KEY}
           INNER
             set -a; . /run/runtime-secrets/$SIBLING_NAME.env; set +a
             docker run --rm \
               -v ${SIBLING_NAME}_app-data:/data \
               -v /srv/$SIBLING_NAME/config/litestream-restore.yml:/etc/litestream.yml:ro \
               -e LITESTREAM_ACCESS_KEY_ID -e LITESTREAM_SECRET_ACCESS_KEY \
-              litestream/litestream:0.3.13 \
+              litestream/litestream:0.5.18 \
               restore -config /etc/litestream.yml /data/sqlite.db
             echo 'litestream restore complete'
             ls -la /var/lib/docker/volumes/${SIBLING_NAME}_app-data/_data/

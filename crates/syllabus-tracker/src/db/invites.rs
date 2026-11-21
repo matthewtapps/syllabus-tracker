@@ -61,7 +61,7 @@ pub async fn find_valid_invite_token(
     }
 
     Ok(Some(InviteToken {
-        id: row.id.unwrap_or_default(),
+        id: row.id,
         user_id: row.user_id,
     }))
 }

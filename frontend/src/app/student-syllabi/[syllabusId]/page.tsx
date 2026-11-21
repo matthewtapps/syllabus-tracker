@@ -38,7 +38,7 @@ import { AccountDialog } from '@/components/account-dialog';
 import { EmptyState } from '@/components/empty-state';
 import { TechniqueRow } from '@/components/technique-row';
 import { partitionSsts, sortSsts, type SstSort } from './sst-view';
-import { useAllUsers, useStudentSyllabusTechniques } from '@/lib/queries';
+import { useUserById, useStudentSyllabusTechniques } from '@/lib/queries';
 import {
   useSetAssignmentGraduated,
   useUnassignSyllabusFromStudent,
@@ -84,17 +84,17 @@ function Detail({
   const navigate = useNavigate();
   const user = useUser();
   const query = useStudentSyllabusTechniques(studentId, syllabusId);
-  const usersQuery = useAllUsers();
+  const userQuery = useUserById(studentId);
   const assignment = query.data?.assignment;
   const studentName = useMemo(() => {
     if (isOwnView) return null;
-    const u = (usersQuery.data ?? []).find((u) => u.id === studentId);
+    const u = userQuery.data;
     return u ? u.display_name || u.username : null;
-  }, [isOwnView, usersQuery.data, studentId]);
+  }, [isOwnView, userQuery.data]);
   const viewerIsAdmin = isAdmin(user);
   const managedStudent = useMemo(
-    () => (usersQuery.data ?? []).find((u) => u.id === studentId) ?? null,
-    [usersQuery.data, studentId],
+    () => userQuery.data ?? null,
+    [userQuery.data],
   );
   const [accountOpen, setAccountOpen] = useState(false);
   const allSsts = useMemo(

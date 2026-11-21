@@ -3,9 +3,9 @@
 //! mutation, syllabus attempts, per-syllabus video reads.
 
 use chrono::{DateTime, NaiveDateTime, Utc};
-use rocket::State;
-use rocket::http::Status;
-use rocket::serde::json::Json;
+use rkt::State;
+use rkt::http::Status;
+use rkt::serde::json::Json;
 use serde::{Deserialize, Serialize};
 use sqlx::{Pool, Sqlite};
 use validator::Validate;
@@ -645,11 +645,10 @@ pub async fn api_update_sst(
     db: &State<Pool<Sqlite>>,
 ) -> ApiResult<Status> {
     body.validate()?;
-    if let Some(ref s) = body.status {
-        if !matches!(s.as_str(), "red" | "amber" | "green") {
+    if let Some(ref s) = body.status
+        && !matches!(s.as_str(), "red" | "amber" | "green") {
             return Err(Status::BadRequest.into());
         }
-    }
     let owner = db::get_owner(db, sst_id).await?.ok_or(Status::NotFound)?;
 
     let viewer_is_owning_student = user.id == owner.student_id;
@@ -660,13 +659,11 @@ pub async fn api_update_sst(
 
     // Graduated assignments are read-only for students; coach writes
     // proceed (frontend prompts for confirmation per mutation).
-    if !viewer_is_coach {
-        if let Some(flags) = db::get_assignment_lifecycle(db, owner.assignment_id).await? {
-            if flags.graduated_at.is_some() {
+    if !viewer_is_coach
+        && let Some(flags) = db::get_assignment_lifecycle(db, owner.assignment_id).await?
+            && flags.graduated_at.is_some() {
                 return Err(Status::Forbidden.into());
             }
-        }
-    }
 
     // Per-field permission policy. Any disallowed field present in the
     // request fails the whole request with 403; no silent field drops.
@@ -723,11 +720,10 @@ pub async fn api_create_syllabus_attempt(
     // Students can't log attempts against a graduated assignment.
     if !viewer_is_coach {
         let owner = db::get_owner(db, sst_id).await?.ok_or(Status::NotFound)?;
-        if let Some(flags) = db::get_assignment_lifecycle(db, owner.assignment_id).await? {
-            if flags.graduated_at.is_some() {
+        if let Some(flags) = db::get_assignment_lifecycle(db, owner.assignment_id).await?
+            && flags.graduated_at.is_some() {
                 return Err(Status::Forbidden.into());
             }
-        }
     }
     let input = db::CreateSyllabusAttempt {
         attempted_at,

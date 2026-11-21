@@ -1,5 +1,5 @@
-use rocket::State;
-use rocket::serde::{Deserialize, Serialize, json::Json};
+use rkt::State;
+use rkt::serde::{Deserialize, Serialize, json::Json};
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct Capabilities {

@@ -6,14 +6,20 @@
       {
         "name": "id!: i64",
         "ordinal": 0,
-        "type_info": "Integer"
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "threads",
+            "name": "id"
+          }
+        }
       }
     ],
     "parameters": {
       "Right": 12
     },
     "nullable": [
-      true
+      null
     ]
   },
   "hash": "7fc918a7452c794a677ac74e2bd87b913cd23cc4997f1a9a4fb0de5616b9903a"

@@ -384,11 +384,10 @@ pub async fn create_thread(pool: &Pool<Sqlite>, new: NewThread) -> Result<i64, A
     if new.anchor.kind == AnchorKind::Camp {
         ev = ev.camp(new.anchor.id).context_kind("camp");
     }
-    if new.anchor.kind == AnchorKind::CampTechnique {
-        if let Some(camp_id) = new.anchor.camp_id {
+    if new.anchor.kind == AnchorKind::CampTechnique
+        && let Some(camp_id) = new.anchor.camp_id {
             ev = ev.camp(camp_id).context_kind("camp");
         }
-    }
     emit(&mut tx, ev).await?;
 
     tx.commit().await?;
@@ -688,8 +687,8 @@ pub async fn create_comment(
 
     // Now that we have the thread's scope_student_id we can validate a reference
     // attachment. (Draft validation happened before the fetch above.)
-    if let Some(vid) = video_id {
-        if video_is_reference {
+    if let Some(vid) = video_id
+        && video_is_reference {
             let scope_student_id = thread_row.scope_student_id.ok_or_else(|| {
                 AppError::Validation(
                     "cannot reference a video on a broadcast thread (no scope student)".to_string(),
@@ -697,7 +696,6 @@ pub async fn create_comment(
             })?;
             validate_attachable_reference(pool, vid, scope_student_id).await?;
         }
-    }
 
     // One level of nesting: the parent (if any) must belong to THIS thread and
     // must itself be a top-level comment.
@@ -887,11 +885,10 @@ pub async fn get_thread(
         Some(vid) => crate::db::get_video(pool, vid).await?,
         None => None,
     };
-    if let Some(v) = &root_video {
-        if v.processing_status != ProcessingStatus::Ready && row.author_id != viewer.user_id {
+    if let Some(v) = &root_video
+        && v.processing_status != ProcessingStatus::Ready && row.author_id != viewer.user_id {
             return Ok(None);
         }
-    }
 
     let comment_rows = sqlx::query!(
         r#"SELECT c.id AS "id!: i64",
@@ -923,11 +920,10 @@ pub async fn get_thread(
         };
         // Author-only-until-ready: a comment whose video is still processing
         // (or failed) is hidden from everyone but the author.
-        if let Some(v) = &video {
-            if v.processing_status != ProcessingStatus::Ready && c.author_id != viewer.user_id {
+        if let Some(v) = &video
+            && v.processing_status != ProcessingStatus::Ready && c.author_id != viewer.user_id {
                 continue;
             }
-        }
         comments.push(CommentView {
             id: c.id,
             thread_id: c.thread_id,

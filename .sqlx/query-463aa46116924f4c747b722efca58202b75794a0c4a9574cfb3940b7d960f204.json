@@ -6,67 +6,115 @@
       {
         "name": "assignment_id!: i64",
         "ordinal": 0,
-        "type_info": "Integer"
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "syllabus_assignments",
+            "name": "id"
+          }
+        }
       },
       {
         "name": "student_id!: i64",
         "ordinal": 1,
-        "type_info": "Integer"
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "id"
+          }
+        }
       },
       {
         "name": "username!: String",
         "ordinal": 2,
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "username"
+          }
+        }
       },
       {
         "name": "display_name!: String",
         "ordinal": 3,
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "display_name"
+          }
+        }
       },
       {
         "name": "archived!: bool",
         "ordinal": 4,
-        "type_info": "Bool"
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "archived"
+          }
+        }
       },
       {
         "name": "assigned_at!: NaiveDateTime",
         "ordinal": 5,
-        "type_info": "Datetime"
+        "type_info": "Datetime",
+        "origin": {
+          "Table": {
+            "table": "syllabus_assignments",
+            "name": "assigned_at"
+          }
+        }
       },
       {
         "name": "graduated_at?: NaiveDateTime",
         "ordinal": 6,
-        "type_info": "Datetime"
+        "type_info": "Datetime",
+        "origin": {
+          "Table": {
+            "table": "syllabus_assignments",
+            "name": "graduated_at"
+          }
+        }
       },
       {
         "name": "red_count!: i64",
         "ordinal": 7,
-        "type_info": "Integer"
+        "type_info": "Integer",
+        "origin": "Expression"
       },
       {
         "name": "amber_count!: i64",
         "ordinal": 8,
-        "type_info": "Integer"
+        "type_info": "Integer",
+        "origin": "Expression"
       },
       {
         "name": "green_count!: i64",
         "ordinal": 9,
-        "type_info": "Integer"
+        "type_info": "Integer",
+        "origin": "Expression"
       },
       {
         "name": "total_count!: i64",
         "ordinal": 10,
-        "type_info": "Integer"
+        "type_info": "Integer",
+        "origin": "Expression"
       },
       {
         "name": "last_activity_at?: NaiveDateTime",
         "ordinal": 11,
-        "type_info": "Datetime"
+        "type_info": "Datetime",
+        "origin": "Expression"
       },
       {
         "name": "last_student_update_at?: NaiveDateTime",
         "ordinal": 12,
-        "type_info": "Datetime"
+        "type_info": "Datetime",
+        "origin": "Expression"
       }
     ],
     "parameters": {

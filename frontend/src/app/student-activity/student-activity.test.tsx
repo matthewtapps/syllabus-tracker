@@ -51,12 +51,12 @@ function makeStubFetch(feedRows: ActivityRow[]) {
         }),
       );
     }
-    if (url.includes("/api/admin/users") || url.includes("/api/me")) {
+    if (url.includes("/api/users/4") || url.includes("/api/me")) {
       return Promise.resolve(
         new Response(
-          JSON.stringify([
+          JSON.stringify(
             buildUser({ id: 4, role: "student", display_name: "Jordan Smith" }),
-          ]),
+          ),
           { status: 200, headers: { "Content-Type": "application/json" } },
         ),
       );

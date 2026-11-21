@@ -1,4 +1,4 @@
-import { useAllUsers, useCamp, useSyllabi, useStudentSyllabi } from "@/lib/queries";
+import { useUserById, useCamp, useSyllabus, useStudentSyllabi } from "@/lib/queries";
 import type { DynamicKey, RawCrumb } from "./breadcrumb-config";
 
 /**
@@ -26,12 +26,7 @@ export function useBreadcrumbLabels(chain: RawCrumb[]): (crumb: RawCrumb) => str
     globalSyllabusIdRaw !== undefined ? Number(globalSyllabusIdRaw) : undefined;
   const campId = campIdRaw !== undefined ? Number(campIdRaw) : undefined;
 
-  // --- studentName: look up from the all-users list ---
-  const allUsersQuery = useAllUsers();
-  const studentUser =
-    typeof studentId === "number" && Number.isFinite(studentId)
-      ? (allUsersQuery.data ?? []).find((u) => u.id === studentId)
-      : undefined;
+  const studentUser = useUserById(studentId).data;
   const studentName = studentUser
     ? studentUser.display_name || studentUser.username
     : "Student";
@@ -46,12 +41,7 @@ export function useBreadcrumbLabels(chain: RawCrumb[]): (crumb: RawCrumb) => str
     ? studentSyllabusEntry.syllabus_name
     : "Syllabus";
 
-  // --- globalSyllabusName: look up from the global syllabi list ---
-  const syllabiQuery = useSyllabi();
-  const globalSyllabusEntry =
-    typeof globalSyllabusId === "number" && Number.isFinite(globalSyllabusId)
-      ? (syllabiQuery.data ?? []).find((s) => s.id === globalSyllabusId)
-      : undefined;
+  const globalSyllabusEntry = useSyllabus(globalSyllabusId).data;
   const globalSyllabusName = globalSyllabusEntry
     ? globalSyllabusEntry.name
     : "Syllabus";

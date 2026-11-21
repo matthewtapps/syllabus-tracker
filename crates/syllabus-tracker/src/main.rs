@@ -1,5 +1,5 @@
 #[macro_use]
-extern crate rocket;
+extern crate rkt;
 
 pub use syllabus_tracker::{
     api, auth, camps, capabilities, catchers, db, env, error, models,
@@ -9,7 +9,7 @@ pub use syllabus_tracker::{
 #[cfg(test)]
 mod test;
 
-use api::api_get_all_users;
+use api::{api_get_all_users, api_get_user};
 use api::{
     api_activity_digest, api_activity_feed, api_activity_feed_head_id, api_activity_mark_all_read,
     api_activity_mark_one_read, api_activity_mark_one_unread, api_activity_unread_count,
@@ -43,7 +43,7 @@ use catchers::{
 use db::clean_expired_sessions;
 use error::AppError;
 use migration_engine::migrations::{get_schema_changes, read_schema_file_to_string};
-use rocket::{Build, Rocket, tokio};
+use rkt::{Build, Rocket, tokio};
 use syllabi::{
     api_add_technique_to_student_syllabus, api_add_technique_to_syllabus,
     api_apply_assignment_diff, api_assign_syllabus, api_assignment_diff, api_create_syllabus,
@@ -93,7 +93,7 @@ pub enum Error {
     #[error("{0}")]
     Anyhow(anyhow::Error),
     #[error("{0}")]
-    Figment(rocket::figment::Error),
+    Figment(rkt::figment::Error),
     #[error("{0}")]
     Sqlx(#[from] sqlx::Error),
     #[error("Application error: {0}")]
@@ -106,8 +106,8 @@ impl From<anyhow::Error> for Error {
     }
 }
 
-impl From<rocket::figment::Error> for Error {
-    fn from(value: rocket::figment::Error) -> Self {
+impl From<rkt::figment::Error> for Error {
+    fn from(value: rkt::figment::Error) -> Self {
         Error::Figment(value)
     }
 }
@@ -253,7 +253,7 @@ pub async fn init_rocket_with_callback_secret(
     let videos_enabled = video_stack.is_some();
 
     let upload_limit = videos::routes::upload_byte_limit();
-    let limits = rocket::data::Limits::default()
+    let limits = rkt::data::Limits::default()
         .limit("file", upload_limit)
         .limit("data-form", upload_limit);
 
@@ -270,11 +270,11 @@ pub async fn init_rocket_with_callback_secret(
         );
     }
 
-    let figment = rocket::Config::figment()
+    let figment = rkt::Config::figment()
         .merge(("limits", limits))
         .merge(("temp_dir", &temp_dir));
 
-    let mut rocket = rocket::custom(figment)
+    let mut rocket = rkt::custom(figment)
         .manage(Capabilities {
             videos: videos_enabled,
         })
@@ -303,6 +303,7 @@ pub async fn init_rocket_with_callback_secret(
                 api_remove_tag_from_technique,
                 api_get_technique_tags,
                 api_get_all_users,
+                api_get_user,
                 api_library_stats,
                 api_list_library_techniques,
                 api_create_library_technique,

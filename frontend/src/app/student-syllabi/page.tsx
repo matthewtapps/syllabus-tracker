@@ -3,7 +3,7 @@ import { Navigate, useParams } from 'react-router-dom';
 import { NotebookPen, Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/empty-state';
-import { useAllUsers, useStudentSyllabi } from '@/lib/queries';
+import { useUserById, useStudentSyllabi } from '@/lib/queries';
 import { useUser } from '@/lib/current-user-context';
 import { isCoachOrAdmin } from '@/lib/api';
 import { AssignSyllabusDialog } from './components/assign-syllabus-dialog';
@@ -35,13 +35,13 @@ function StudentSyllabiList({
   isOwnView: boolean;
 }) {
   const query = useStudentSyllabi(studentId);
-  const usersQuery = useAllUsers();
+  const userQuery = useUserById(studentId);
   const assignments = useMemo(() => query.data ?? [], [query.data]);
   const studentName = useMemo(() => {
     if (isOwnView) return null;
-    const u = (usersQuery.data ?? []).find((u) => u.id === studentId);
+    const u = userQuery.data;
     return u ? u.display_name || u.username : null;
-  }, [isOwnView, usersQuery.data, studentId]);
+  }, [isOwnView, userQuery.data]);
   const assignedIds = useMemo(
     () => new Set(assignments.map((a) => a.syllabus_id)),
     [assignments],

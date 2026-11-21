@@ -3,7 +3,7 @@ mod tests {
     use crate::db::{NewActivity, Verb, WatchContext, WatchEventInput, emit, ingest_watch_events, run_backfill};
     use crate::test::test_utils::TestDbBuilder;
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn emit_inserts_one_row() {
         let db = TestDbBuilder::new()
             .coach("coach", None)
@@ -37,7 +37,7 @@ mod tests {
         assert_eq!(row.target_student_id, Some(alice));
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn two_same_key_emits_within_window_coalesce_to_one_row() {
         let db = TestDbBuilder::new()
             .coach("coach", None)
@@ -69,7 +69,7 @@ mod tests {
         assert_eq!(count, 1, "same-key emits within 30s coalesce");
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn different_target_does_not_coalesce() {
         let db = TestDbBuilder::new()
             .coach("coach", None)
@@ -104,7 +104,7 @@ mod tests {
         assert_eq!(count, 2, "different target_student_id does not coalesce");
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn status_change_coalesce_keeps_original_from_takes_latest_to() {
         use crate::db::payload;
         let db = TestDbBuilder::new()
@@ -155,7 +155,7 @@ mod tests {
 
     /// Broadcast events write a single row with no target student (pull model):
     /// feeds resolve who sees it at read time.
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn emit_broadcast_writes_one_null_target_row() {
         use crate::db::emit_broadcast;
         let db = TestDbBuilder::new()
@@ -196,7 +196,7 @@ mod tests {
         assert_eq!(targets, vec![None], "one broadcast row, no target student");
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn attempt_log_emits_attempt_logged() {
         use crate::auth::{Role, User};
         use chrono::Utc;
@@ -288,7 +288,7 @@ mod tests {
         assert_eq!(payload["attempt_id"], attempt_id);
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn pin_emits_technique_pinned() {
         let db = TestDbBuilder::new()
             .coach("coach", None)
@@ -318,7 +318,7 @@ mod tests {
         assert_eq!(row.tech, Some(armbar));
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn global_hide_fans_out_visibility_set() {
         let db = TestDbBuilder::new()
             .coach("coach", None)
@@ -387,7 +387,7 @@ mod tests {
         assert_eq!(rows[0].t, None, "broadcast row has no target student");
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn update_sst_status_emits_status_changed_with_from_to() {
         use crate::auth::{Role, User};
         use crate::db::SstUpdate;
@@ -484,7 +484,7 @@ mod tests {
         assert_eq!(payload["to"], "green");
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn assign_emits_syllabus_assigned() {
         let db = TestDbBuilder::new()
             .coach("coach", None)
@@ -518,7 +518,7 @@ mod tests {
         assert_eq!(row.syl, Some(sid));
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn syllabus_technique_added_emits_one_broadcast_row() {
         let db = TestDbBuilder::new()
             .coach("coach", None)
@@ -568,7 +568,7 @@ mod tests {
         assert_eq!(targets, vec![None], "one broadcast row, no target student");
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn video_added_emits_one_broadcast_row() {
         let db = TestDbBuilder::new()
             .coach("coach", None)
@@ -626,7 +626,7 @@ mod tests {
         assert_eq!(targets, vec![None], "one broadcast row, no target student");
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn video_added_empty_set_writes_null_target_row() {
         let db = TestDbBuilder::new()
             .coach("coach", None)
@@ -668,7 +668,7 @@ mod tests {
         assert_eq!(row.t, None, "empty fan-out writes a single null-target row");
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn update_technique_emits_technique_edited_with_field_delta() {
         let db = TestDbBuilder::new()
             .coach("coach", None)
@@ -721,7 +721,7 @@ mod tests {
         );
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn emit_persists_context_kind() {
         let db = TestDbBuilder::new()
             .coach("coach", None)
@@ -771,7 +771,7 @@ mod tests {
         assert_eq!(kind.as_deref(), Some("library"));
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn crossing_watch_threshold_emits_video_watched_once() {
         let db = TestDbBuilder::new()
             .coach("coach", None)
@@ -879,7 +879,7 @@ mod tests {
         );
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn backfill_is_idempotent_and_seeds_expected_counts() {
         use crate::auth::{Role, User};
         use chrono::Utc;
@@ -985,7 +985,7 @@ mod tests {
         assert_eq!(total2, total, "row count unchanged on second run");
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn update_sst_multiple_fields_emits_one_row_per_field() {
         use crate::auth::{Role, User};
         use crate::db::SstUpdate;
@@ -1073,7 +1073,7 @@ mod tests {
         let _ = sst_id;
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn watch_in_syllabus_sets_syllabus_context() {
         let db = TestDbBuilder::new()
             .coach("coach", None)
@@ -1157,7 +1157,7 @@ mod tests {
         assert!(row.sst_id.is_some());
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn watch_in_library_sets_library_context() {
         let db = TestDbBuilder::new()
             .coach("coach", None)

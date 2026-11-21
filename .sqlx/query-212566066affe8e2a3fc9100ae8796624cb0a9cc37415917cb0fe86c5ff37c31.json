@@ -6,12 +6,24 @@
       {
         "name": "target_student_id?: i64",
         "ordinal": 0,
-        "type_info": "Integer"
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "activity",
+            "name": "target_student_id"
+          }
+        }
       },
       {
         "name": "technique_id?: i64",
         "ordinal": 1,
-        "type_info": "Integer"
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "activity",
+            "name": "technique_id"
+          }
+        }
       }
     ],
     "parameters": {

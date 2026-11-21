@@ -142,7 +142,7 @@ pub async fn get_collection(
     let techniques: Vec<Technique> = technique_rows
         .into_iter()
         .map(|r| Technique {
-            id: r.id.unwrap_or_default(),
+            id: r.id,
             name: r.name,
             description: r.description.unwrap_or_default(),
             coach_id: r.coach_id.unwrap_or_default(),

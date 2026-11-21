@@ -11,7 +11,7 @@ name: sillybus
 
 services:
   nginx:
-    image: nginx:1.31-alpine-otel
+    image: nginx:1.31.9-alpine-otel
     restart: unless-stopped
     # `load_module` must live in nginx's main context; -g injects it
     # before the bundled nginx.conf is parsed.
@@ -30,7 +30,8 @@ services:
     ports:
       - "127.0.0.1:${NGINX_HOST_PORT:-8001}:80"
     volumes:
-      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+      # A directory mount so a replaced config file is visible to nginx -s reload.
+      - ./nginx:/etc/nginx/conf.d:ro
     depends_on:
       app:
         condition: service_started
@@ -83,7 +84,7 @@ services:
         condition: service_started
 
   litestream:
-    image: litestream/litestream:0.3.13
+    image: litestream/litestream:0.5.18
     container_name: sillybus-litestream
     restart: unless-stopped
     command: ["replicate", "-config", "/etc/litestream.yml"]
@@ -105,7 +106,7 @@ services:
       - internal
 
   otel-collector:
-    image: otel/opentelemetry-collector-contrib:0.151.0
+    image: otel/opentelemetry-collector-contrib:0.165.0
     command: ["--config=/etc/otel-collector-config.yaml"]
     group_add:
       - "131"

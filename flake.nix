@@ -27,7 +27,7 @@
         # `stable.latest` so the toolchain doesn't silently drift when the
         # flake inputs update. CI consumes this exact toolchain via the `ci`
         # devShell, so dev and CI compile with the same rustc.
-        rust = pkgs.rust-bin.stable."1.86.0".default.override {
+        rust = pkgs.rust-bin.stable."1.100.0".default.override {
           extensions = [
             "rust-src"
             "rust-analyzer"
@@ -35,39 +35,11 @@
           targets = [ "x86_64-unknown-linux-gnu" ];
         };
 
-        # nixpkgs tracks sqlx-cli 0.9.x, whose CLI can emit an offline-cache
-        # format the workspace's `sqlx` 0.8 macros cannot read. Pin to the
-        # 0.8 series so the CLI that writes .sqlx/ matches the library that
-        # reads it. Dev and CI both take this exact build, which is what
-        # makes `sqlx prepare` reproducible (the CLI statically bundles its
-        # own SQLite; a version skew here produced nondeterministic
-        # sqlx-check failures). Hashes mirror the nixpkgs 0.8.6 derivation.
-        sqlx-cli = pkgs.rustPlatform.buildRustPackage rec {
-          pname = "sqlx-cli";
-          version = "0.8.6";
-          src = pkgs.fetchFromGitHub {
-            owner = "launchbadge";
-            repo = "sqlx";
-            rev = "v${version}";
-            hash = "sha256-Trnyrc17KWhX8QizKyBvXhTM7HHEqtywWgNqvQNMOAY=";
-          };
-          cargoHash = "sha256-FxvzCe+dRfMUcPWA4lp4L6FJaSpMiXTqEyhzk+Dv1B8=";
-          buildNoDefaultFeatures = true;
-          buildFeatures = [
-            "native-tls"
-            "sqlite"
-          ];
-          doCheck = false;
-          cargoBuildFlags = [ "--package sqlx-cli" ];
-          nativeBuildInputs = [ pkgs.pkg-config ];
-          buildInputs = [ pkgs.openssl ];
-        };
-
         # The toolchain that the CI correctness gates (lint / test /
         # sqlx-check) run against. CI enters this shell via `nix develop .#ci`
         # so it uses byte-identical tool versions to local dev. This is what
-        # makes the .sqlx offline cache reproducible: `sqlx-cli` bundles its
-        # own SQLite, and a version skew between the dev box and CI was the
+        # makes the .sqlx offline cache reproducible: `sqlx-cli` links the
+        # same nixpkgs SQLite, and a version skew between the dev box and CI was the
         # source of nondeterministic `sqlx prepare --check` failures (a bare
         # `MAX(col)` aggregate inferred `Null` under one sqlite and `Text`
         # under another). Keep this list lean: only what compiling the
@@ -147,19 +119,19 @@
           fontconfig
           freetype
           systemd
-          xorg.libX11
-          xorg.libXcomposite
-          xorg.libXdamage
-          xorg.libXext
-          xorg.libXfixes
-          xorg.libXrandr
-          xorg.libXrender
-          xorg.libXtst
-          xorg.libXcursor
-          xorg.libXi
-          xorg.libXScrnSaver
-          xorg.libxcb
-          xorg.libxshmfence
+          libx11
+          libxcomposite
+          libxdamage
+          libxext
+          libxfixes
+          libxrandr
+          libxrender
+          libxtst
+          libxcursor
+          libxi
+          libxscrnsaver
+          libxcb
+          libxshmfence
         ];
       in
       {

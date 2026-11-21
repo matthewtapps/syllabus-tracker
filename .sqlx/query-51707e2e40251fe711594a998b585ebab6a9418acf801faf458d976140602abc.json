@@ -6,7 +6,13 @@
       {
         "name": "student_id",
         "ordinal": 0,
-        "type_info": "Integer"
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "camps",
+            "name": "student_id"
+          }
+        }
       }
     ],
     "parameters": {

@@ -38,9 +38,7 @@ const camp = {
   archived_at: null,
 };
 
-const users = [
-  { id: 4, username: "jane_doe", display_name: "Jane Doe", role: "student", archived: false },
-];
+const student = { id: 4, username: "jane_doe", display_name: "Jane Doe", role: "student", archived: false };
 
 /** Reads the desktop (full-trail) breadcrumb nav. */
 function desktopNav() {
@@ -62,7 +60,7 @@ describe("AppBreadcrumbs camp detail (/camps/:id)", () => {
     fetchSpy = vi.spyOn(window, "fetch").mockImplementation(
       stubFetch({
         "/api/camps/7": { status: 200, body: camp },
-        "/api/admin/users": { status: 200, body: users },
+        "/api/users/4": { status: 200, body: student },
       }),
     );
 
@@ -96,7 +94,7 @@ describe("AppBreadcrumbs camp detail (/camps/:id)", () => {
     fetchSpy = vi.spyOn(window, "fetch").mockImplementation(
       stubFetch({
         "/api/camps/7": { status: 200, body: camp },
-        "/api/admin/users": { status: 200, body: users },
+        "/api/users/4": { status: 200, body: student },
       }),
     );
 

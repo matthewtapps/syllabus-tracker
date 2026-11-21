@@ -6,128 +6,233 @@
       {
         "name": "id!: i64",
         "ordinal": 0,
-        "type_info": "Integer"
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "student_syllabus_techniques",
+            "name": "id"
+          }
+        }
       },
       {
         "name": "assignment_id!: i64",
         "ordinal": 1,
-        "type_info": "Integer"
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "student_syllabus_techniques",
+            "name": "assignment_id"
+          }
+        }
       },
       {
         "name": "technique_id!: i64",
         "ordinal": 2,
-        "type_info": "Integer"
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "student_syllabus_techniques",
+            "name": "technique_id"
+          }
+        }
       },
       {
         "name": "technique_name!: String",
         "ordinal": 3,
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "techniques",
+            "name": "name"
+          }
+        }
       },
       {
         "name": "technique_description!: String",
         "ordinal": 4,
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "techniques",
+            "name": "description"
+          }
+        }
       },
       {
         "name": "is_global!: bool",
         "ordinal": 5,
-        "type_info": "Integer"
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "techniques",
+            "name": "is_global"
+          }
+        }
       },
       {
         "name": "status!: String",
         "ordinal": 6,
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "student_syllabus_techniques",
+            "name": "status"
+          }
+        }
       },
       {
         "name": "student_notes",
         "ordinal": 7,
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "student_syllabus_techniques",
+            "name": "student_notes"
+          }
+        }
       },
       {
         "name": "coach_notes",
         "ordinal": 8,
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "student_syllabus_techniques",
+            "name": "coach_notes"
+          }
+        }
       },
       {
         "name": "hidden_at?: NaiveDateTime",
         "ordinal": 9,
-        "type_info": "Datetime"
+        "type_info": "Datetime",
+        "origin": {
+          "Table": {
+            "table": "student_syllabus_techniques",
+            "name": "hidden_at"
+          }
+        }
       },
       {
         "name": "created_at!: NaiveDateTime",
         "ordinal": 10,
-        "type_info": "Datetime"
+        "type_info": "Datetime",
+        "origin": {
+          "Table": {
+            "table": "student_syllabus_techniques",
+            "name": "created_at"
+          }
+        }
       },
       {
         "name": "updated_at!: NaiveDateTime",
         "ordinal": 11,
-        "type_info": "Datetime"
+        "type_info": "Datetime",
+        "origin": {
+          "Table": {
+            "table": "student_syllabus_techniques",
+            "name": "updated_at"
+          }
+        }
       },
       {
         "name": "last_coach_update_at?: NaiveDateTime",
         "ordinal": 12,
-        "type_info": "Datetime"
+        "type_info": "Datetime",
+        "origin": {
+          "Table": {
+            "table": "student_syllabus_techniques",
+            "name": "last_coach_update_at"
+          }
+        }
       },
       {
         "name": "last_coach_update_by_id",
         "ordinal": 13,
-        "type_info": "Integer"
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "student_syllabus_techniques",
+            "name": "last_coach_update_by_id"
+          }
+        }
       },
       {
         "name": "last_student_update_at?: NaiveDateTime",
         "ordinal": 14,
-        "type_info": "Datetime"
+        "type_info": "Datetime",
+        "origin": {
+          "Table": {
+            "table": "student_syllabus_techniques",
+            "name": "last_student_update_at"
+          }
+        }
       },
       {
         "name": "last_student_update_by_id",
         "ordinal": 15,
-        "type_info": "Integer"
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "student_syllabus_techniques",
+            "name": "last_student_update_by_id"
+          }
+        }
       },
       {
         "name": "attempt_count!: i64",
         "ordinal": 16,
-        "type_info": "Null"
+        "type_info": "Integer",
+        "origin": "Expression"
       },
       {
         "name": "video_count!: i64",
         "ordinal": 17,
-        "type_info": "Null"
+        "type_info": "Integer",
+        "origin": "Expression"
       },
       {
         "name": "last_attempt_at?: NaiveDateTime",
         "ordinal": 18,
-        "type_info": "Null"
+        "type_info": "Datetime",
+        "origin": "Expression"
       },
       {
         "name": "syllabus_position?: i64",
         "ordinal": 19,
-        "type_info": "Integer"
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "syllabus_techniques",
+            "name": "position"
+          }
+        }
       }
     ],
     "parameters": {
       "Right": 2
     },
     "nullable": [
-      true,
       false,
       false,
       false,
-      true,
       false,
-      false,
-      true,
-      true,
       true,
       false,
       false,
       true,
       true,
       true,
+      false,
+      false,
       true,
-      null,
-      null,
-      null,
-      false
+      true,
+      true,
+      true,
+      false,
+      false,
+      true,
+      true
     ]
   },
   "hash": "fe500b5e1aff854faf372762d6a055ccf2f1426172b09eb37f6b5337fbf590be"

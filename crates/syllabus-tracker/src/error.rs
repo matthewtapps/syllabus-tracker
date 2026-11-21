@@ -1,6 +1,6 @@
 use migration_engine::migrations::MigrationError;
 use opentelemetry_semantic_conventions::attribute::ERROR_TYPE;
-use rocket::http::Status;
+use rkt::http::Status;
 use thiserror::Error;
 use tracing::{Span, error, warn};
 use tracing_opentelemetry::OpenTelemetrySpanExt;
@@ -99,8 +99,8 @@ impl AppError {
     }
 }
 
-impl<'r> rocket::response::Responder<'r, 'static> for AppError {
-    fn respond_to(self, req: &'r rocket::Request<'_>) -> rocket::response::Result<'static> {
+impl<'r> rkt::response::Responder<'r, 'static> for AppError {
+    fn respond_to(self, req: &'r rkt::Request<'_>) -> rkt::response::Result<'static> {
         self.to_status_with_log(&format!("Request to {} {}", req.method(), req.uri()))
             .respond_to(req)
     }

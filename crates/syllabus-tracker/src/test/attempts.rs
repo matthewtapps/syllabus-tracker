@@ -32,7 +32,7 @@ mod tests {
         (test_db, st_id)
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn first_attempt_on_red_returns_amber_suggestion() {
         let (db, st_id) = standard_setup_red().await;
         let student = fetch_user(&db.pool, db.user_id("student_user").unwrap()).await;
@@ -47,7 +47,7 @@ mod tests {
         assert!(res.attempt.student_note.is_none());
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn second_attempt_on_red_has_no_suggestion() {
         let (db, st_id) = standard_setup_red().await;
         let student = fetch_user(&db.pool, db.user_id("student_user").unwrap()).await;
@@ -61,7 +61,7 @@ mod tests {
         assert_eq!(res.suggestion, AttemptSuggestion::None);
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn first_attempt_on_amber_has_no_suggestion() {
         let test_db = TestDbBuilder::new()
             .coach("coach_user", Some("Coach User"))
@@ -83,7 +83,7 @@ mod tests {
         assert_eq!(res.suggestion, AttemptSuggestion::None);
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn student_note_lands_in_student_slot() {
         let (db, st_id) = standard_setup_red().await;
         let student = fetch_user(&db.pool, db.user_id("student_user").unwrap()).await;
@@ -97,7 +97,7 @@ mod tests {
         assert!(res.attempt.student_note_at.is_some());
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn coach_note_lands_in_coach_slot_with_attribution() {
         let (db, st_id) = standard_setup_red().await;
         let coach = fetch_user(&db.pool, db.user_id("coach_user").unwrap()).await;
@@ -111,7 +111,7 @@ mod tests {
         assert!(res.attempt.student_note.is_none());
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn student_cannot_create_attempt_for_someone_else() {
         let test_db = TestDbBuilder::new()
             .coach("coach_user", Some("Coach User"))
@@ -132,7 +132,7 @@ mod tests {
         assert!(res.is_err());
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn student_can_delete_own_attempt_but_not_coach_attempt() {
         let (db, st_id) = standard_setup_red().await;
         let coach = fetch_user(&db.pool, db.user_id("coach_user").unwrap()).await;
@@ -158,7 +158,7 @@ mod tests {
             .expect("Coach should delete own attempt");
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn coach_can_delete_student_attempt() {
         let (db, st_id) = standard_setup_red().await;
         let coach = fetch_user(&db.pool, db.user_id("coach_user").unwrap()).await;
@@ -171,7 +171,7 @@ mod tests {
             .expect("Coach should delete student attempt");
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn update_note_writes_only_actor_slot() {
         let (db, st_id) = standard_setup_red().await;
         let coach = fetch_user(&db.pool, db.user_id("coach_user").unwrap()).await;
@@ -195,7 +195,7 @@ mod tests {
         assert_eq!(refreshed.student_note.as_deref(), Some("here's what I did"));
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn empty_note_clears_actor_slot() {
         let (db, st_id) = standard_setup_red().await;
         let student = fetch_user(&db.pool, db.user_id("student_user").unwrap()).await;
@@ -209,7 +209,7 @@ mod tests {
         assert!(refreshed.student_note.is_none());
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn student_cannot_backdate_someone_elses_attempt() {
         let (db, st_id) = standard_setup_red().await;
         let coach = fetch_user(&db.pool, db.user_id("coach_user").unwrap()).await;
@@ -223,7 +223,7 @@ mod tests {
         assert!(forbidden.is_err());
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn coach_can_backdate_any_attempt() {
         let (db, st_id) = standard_setup_red().await;
         let coach = fetch_user(&db.pool, db.user_id("coach_user").unwrap()).await;
@@ -237,7 +237,7 @@ mod tests {
             .expect("coach can backdate");
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn list_attempts_orders_newest_first() {
         let (db, st_id) = standard_setup_red().await;
         let student = fetch_user(&db.pool, db.user_id("student_user").unwrap()).await;
@@ -263,7 +263,7 @@ mod tests {
         assert_eq!(list[2].student_note.as_deref(), Some("a"));
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn cascade_delete_when_student_technique_removed() {
         let (db, st_id) = standard_setup_red().await;
         let student = fetch_user(&db.pool, db.user_id("student_user").unwrap()).await;
@@ -280,7 +280,7 @@ mod tests {
         assert!(after.is_empty());
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn summary_counts_within_windows() {
         let (db, st_id) = standard_setup_red().await;
         let student = fetch_user(&db.pool, db.user_id("student_user").unwrap()).await;
@@ -326,7 +326,7 @@ mod tests {
         assert_eq!(summary.this_month, 3);
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn recent_attempts_returns_with_technique_name() {
         let (db, st_id) = standard_setup_red().await;
         let student = fetch_user(&db.pool, db.user_id("student_user").unwrap()).await;
@@ -341,7 +341,7 @@ mod tests {
         assert_eq!(recent[0].student_note.as_deref(), Some("note"));
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn heatmap_buckets_by_day() {
         let (db, st_id) = standard_setup_red().await;
         let student = fetch_user(&db.pool, db.user_id("student_user").unwrap()).await;
@@ -373,7 +373,7 @@ mod tests {
         assert_eq!(map.get(&yesterday).copied(), Some(1));
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn sparkline_buckets_by_week() {
         let (db, st_id) = standard_setup_red().await;
         let student = fetch_user(&db.pool, db.user_id("student_user").unwrap()).await;
@@ -397,7 +397,7 @@ mod tests {
         assert_eq!(total, 2);
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn create_attempt_bumps_student_technique_activity() {
         let (db, st_id) = standard_setup_red().await;
         let student = fetch_user(&db.pool, db.user_id("student_user").unwrap()).await;
@@ -423,7 +423,7 @@ mod tests {
         assert!(after_coach.updated_at >= after_student.updated_at);
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn backdated_attempt_does_not_backdate_activity() {
         let (db, st_id) = standard_setup_red().await;
         let student = fetch_user(&db.pool, db.user_id("student_user").unwrap()).await;
@@ -442,7 +442,7 @@ mod tests {
         );
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn update_attempt_note_bumps_activity() {
         let (db, st_id) = standard_setup_red().await;
         let student = fetch_user(&db.pool, db.user_id("student_user").unwrap()).await;
@@ -470,7 +470,7 @@ mod tests {
         assert!(after.last_student_update_at.unwrap() > baseline);
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn get_student_techniques_includes_attempt_count() {
         let (db, st_id) = standard_setup_red().await;
         let student = fetch_user(&db.pool, db.user_id("student_user").unwrap()).await;

@@ -8,7 +8,7 @@ mod tests {
     use crate::db::{create_processing_video, VideoParent};
     use crate::test::test_utils::TestDbBuilder;
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn schema_creates_camp_tables() {
         let db = TestDbBuilder::new()
             .coach("coach_user", Some("Coach"))
@@ -90,7 +90,7 @@ mod tests {
         .unwrap();
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn competition_and_match_tables_are_gone() {
         use crate::test::test_utils::TestDbBuilder;
         let db = TestDbBuilder::new()
@@ -115,7 +115,7 @@ mod tests {
         assert_eq!(video_match_col, 0, "videos.match_id should be dropped");
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn create_video_with_camp_parent() {
         let db = TestDbBuilder::new()
             .coach("coach_user", Some("Coach"))
@@ -157,7 +157,7 @@ mod tests {
         assert_eq!(got_camp, camp_id);
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn camp_thread_is_private_scoped_to_camp_student() {
         let db = TestDbBuilder::new()
             .coach("coach_user", Some("Coach"))
@@ -213,7 +213,7 @@ mod tests {
         assert_eq!(got_camp, camp_id);
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn camp_created_activity_targets_camp_student() {
         let db = TestDbBuilder::new()
             .coach("coach_user", Some("Coach"))
@@ -259,7 +259,7 @@ mod tests {
         assert_eq!(ctx, "camp");
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn camp_thread_activity_has_camp_context() {
         let db = TestDbBuilder::new()
             .coach("coach_user", Some("Coach"))
@@ -315,7 +315,7 @@ mod tests {
         assert_eq!(ctx, "camp");
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn camp_thread_reply_activity_has_camp_context() {
         let db = TestDbBuilder::new()
             .coach("coach_user", Some("Coach"))
@@ -382,14 +382,14 @@ mod tests {
     // HTTP-level tests (Task 6)
     // -----------------------------------------------------------------------
 
-    async fn login_as(client: &rocket::local::asynchronous::Client, username: &str) {
+    async fn login_as(client: &rkt::local::asynchronous::Client, username: &str) {
         let _ = crate::test::test_utils::login_test_user(client, username, "password123").await;
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn coach_creates_camp_student_cannot() {
         use crate::test::test_utils::{create_standard_test_db, setup_test_client};
-        use rocket::http::{ContentType, Status};
+        use rkt::http::{ContentType, Status};
 
         let test_db = create_standard_test_db().await;
         // student_user is the third inserted user (admin=1, coach=2, student=3).
@@ -423,10 +423,10 @@ mod tests {
         assert_eq!(resp.status(), Status::Forbidden);
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn coach_uploads_video_to_camp() {
         use crate::test::test_utils::{create_standard_test_db, setup_test_client};
-        use rocket::http::Status;
+        use rkt::http::Status;
 
         const BOUNDARY: &str = "----testboundarycamp";
 
@@ -451,8 +451,8 @@ mod tests {
             body
         }
 
-        fn multipart_ct() -> rocket::http::ContentType {
-            rocket::http::ContentType::parse_flexible(&format!(
+        fn multipart_ct() -> rkt::http::ContentType {
+            rkt::http::ContentType::parse_flexible(&format!(
                 "multipart/form-data; boundary={}",
                 BOUNDARY
             ))
@@ -501,10 +501,10 @@ mod tests {
         assert_eq!(got_camp, camp_id);
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn student_uploads_video_to_own_camp() {
         use crate::test::test_utils::{create_standard_test_db, setup_test_client};
-        use rocket::http::Status;
+        use rkt::http::Status;
 
         const BOUNDARY: &str = "----testboundarycampstudent";
 
@@ -529,8 +529,8 @@ mod tests {
             body
         }
 
-        fn multipart_ct() -> rocket::http::ContentType {
-            rocket::http::ContentType::parse_flexible(&format!(
+        fn multipart_ct() -> rkt::http::ContentType {
+            rkt::http::ContentType::parse_flexible(&format!(
                 "multipart/form-data; boundary={}",
                 BOUNDARY
             ))
@@ -581,10 +581,10 @@ mod tests {
         assert_eq!(got_camp, camp_id);
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn student_cannot_upload_to_another_students_camp() {
         use crate::test::test_utils::{create_standard_test_db, setup_test_client};
-        use rocket::http::Status;
+        use rkt::http::Status;
 
         const BOUNDARY: &str = "----testboundarycampotherstudent";
 
@@ -609,8 +609,8 @@ mod tests {
             body
         }
 
-        fn multipart_ct() -> rocket::http::ContentType {
-            rocket::http::ContentType::parse_flexible(&format!(
+        fn multipart_ct() -> rkt::http::ContentType {
+            rkt::http::ContentType::parse_flexible(&format!(
                 "multipart/form-data; boundary={}",
                 BOUNDARY
             ))
@@ -658,7 +658,7 @@ mod tests {
         assert_eq!(resp.status(), Status::Forbidden);
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn list_camp_videos_returns_camp_owned_videos_with_camp_id() {
         use crate::db::list_videos_for_camp;
 
@@ -699,10 +699,10 @@ mod tests {
         assert_eq!(videos[0].parent_kind, "camp");
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn get_camp_videos_route_coach_and_owner_can_read_other_student_gets_403() {
         use crate::test::test_utils::{create_standard_test_db, setup_test_client};
-        use rocket::http::Status;
+        use rkt::http::Status;
 
         let test_db = create_standard_test_db().await;
         let coach_id = test_db.user_id("coach_user").unwrap();
@@ -765,7 +765,7 @@ mod tests {
         assert_eq!(resp.status(), Status::Forbidden);
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn camp_create_and_archive() {
         let db = TestDbBuilder::new()
             .coach("coach_user", Some("Coach"))
@@ -800,7 +800,7 @@ mod tests {
         assert_eq!(listed.len(), 1);
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn camp_unarchive_restores_the_camp_once() {
         use crate::db::camps::unarchive_camp;
 
@@ -854,7 +854,7 @@ mod tests {
 
     /// Camp-scope `visible=0` hides a video from `list_videos_for_camp`
     /// but does NOT affect the same video in the library or technique list.
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn camp_visibility_override_hides_video_from_camp_list_only() {
         use crate::db::{
             create_processing_video, VideoParent,
@@ -955,7 +955,7 @@ mod tests {
 
     /// A camp-scope `visible=1` override force-shows a globally-hidden video
     /// in the camp list.
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn camp_visibility_override_force_shows_globally_hidden_video() {
         use crate::db::{
             create_processing_video, VideoParent,
@@ -1010,10 +1010,10 @@ mod tests {
     }
 
     /// Non-coach (student) gets 403 on the visibility route.
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn camp_video_visibility_route_rejects_student() {
         use crate::test::test_utils::{create_standard_test_db, setup_test_client};
-        use rocket::http::{ContentType, Status};
+        use rkt::http::{ContentType, Status};
 
         let test_db = create_standard_test_db().await;
         let coach_id = test_db.user_id("coach_user").unwrap();
@@ -1051,10 +1051,10 @@ mod tests {
     }
 
     /// Coach gets 204 on the visibility route.
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn camp_video_visibility_route_coach_gets_204() {
         use crate::test::test_utils::{create_standard_test_db, setup_test_client};
-        use rocket::http::{ContentType, Status};
+        use rkt::http::{ContentType, Status};
 
         let test_db = create_standard_test_db().await;
         let coach_id = test_db.user_id("coach_user").unwrap();
@@ -1109,7 +1109,7 @@ mod tests {
     /// A scoped technique appears in the camp technique list but NOT in the
     /// global library list (`list_library_techniques`) and NOT in the
     /// assignable-techniques list for a student.
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn scoped_technique_not_in_library_or_assignable() {
         use crate::db::camps::{create_camp_technique_new, TechniqueScope};
         use crate::db::{list_library_techniques, get_unassigned_techniques};
@@ -1173,10 +1173,10 @@ mod tests {
 
     /// `POST /api/camps/<id>/techniques/create` returns 403 for a student
     /// and 200 for a coach (global scope).
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn create_camp_technique_route_auth() {
         use crate::test::test_utils::{create_standard_test_db, setup_test_client};
-        use rocket::http::{ContentType, Status};
+        use rkt::http::{ContentType, Status};
 
         let test_db = create_standard_test_db().await;
         let coach_id = test_db.user_id("coach_user").unwrap();
@@ -1220,7 +1220,7 @@ mod tests {
     // Task 1: enriched camp-summary list query
     // -----------------------------------------------------------------------
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn camp_summary_carries_video_count_and_last_activity() {
         use crate::db::camps::{create_camp, list_camp_summaries_for_student, NewCamp};
         use crate::db::{create_processing_video, VideoParent};
@@ -1273,10 +1273,10 @@ mod tests {
 
     /// `POST /api/camps/<id>/techniques/create` with `scope=scoped` creates a
     /// camp-only technique that is absent from the library route.
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn create_camp_technique_route_scoped_not_in_library() {
         use crate::test::test_utils::{create_standard_test_db, setup_test_client};
-        use rocket::http::{ContentType, Status};
+        use rkt::http::{ContentType, Status};
 
         let test_db = create_standard_test_db().await;
         let coach_id = test_db.user_id("coach_user").unwrap();
@@ -1339,10 +1339,10 @@ mod tests {
     /// technique page hydrate from, so it MUST include a camp-scoped technique
     /// the global library route deliberately omits. Without this the scoped
     /// technique renders nowhere.
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn camp_techniques_route_includes_scoped_technique() {
         use crate::test::test_utils::{create_standard_test_db, setup_test_client};
-        use rocket::http::{ContentType, Status};
+        use rkt::http::{ContentType, Status};
 
         let test_db = create_standard_test_db().await;
         let coach_id = test_db.user_id("coach_user").unwrap();
@@ -1413,10 +1413,10 @@ mod tests {
     }
 
     /// A student may not read another student's camp technique list.
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn camp_techniques_route_forbids_other_students() {
         use crate::test::test_utils::{create_standard_test_db, setup_test_client};
-        use rocket::http::Status;
+        use rkt::http::Status;
 
         let test_db = create_standard_test_db().await;
         let coach_id = test_db.user_id("coach_user").unwrap();
@@ -1457,10 +1457,10 @@ mod tests {
 
     /// GET /api/camps/<A>/feed as the owning student returns only activity rows
     /// whose camp_id = A. Rows from camp B are absent.
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn camp_feed_returns_only_this_camps_activity() {
         use crate::test::test_utils::{create_standard_test_db, setup_test_client};
-        use rocket::http::Status;
+        use rkt::http::Status;
 
         let test_db = create_standard_test_db().await;
         let coach_id = test_db.user_id("coach_user").unwrap();
@@ -1560,10 +1560,10 @@ mod tests {
 
     /// GET /api/camps/<id>/feed as a student who does NOT own the camp returns
     /// 403 Forbidden.
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn camp_feed_forbidden_for_other_student() {
         use crate::test::test_utils::{create_standard_test_db, setup_test_client};
-        use rocket::http::Status;
+        use rkt::http::Status;
 
         let test_db = create_standard_test_db().await;
         let coach_id = test_db.user_id("coach_user").unwrap();
@@ -1603,10 +1603,10 @@ mod tests {
 
     /// GET /api/camps/<id>/feed as the COACH who created the camp returns 200
     /// and includes the coach's own authored thread row.
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn camp_feed_accessible_to_coach_and_includes_coach_authored_rows() {
         use crate::test::test_utils::{create_standard_test_db, setup_test_client};
-        use rocket::http::Status;
+        use rkt::http::Status;
 
         let test_db = create_standard_test_db().await;
         let coach_id = test_db.user_id("coach_user").unwrap();
@@ -1688,7 +1688,7 @@ mod tests {
     /// A camp_technique thread's activity row must carry both technique_id and
     /// camp_id, with context_kind="camp". A plain camp thread must have
     /// technique_id IS NULL (the two kinds must stay distinct).
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn camp_technique_thread_activity_carries_technique_and_camp() {
         use crate::db::camps::{create_camp, NewCamp};
 
@@ -1830,10 +1830,10 @@ mod tests {
     }
 
     /// Technique search: a camp_technique thread for "Heel Hook" returns in `techniques`.
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn camp_search_finds_technique_by_name() {
         use crate::test::test_utils::{create_standard_test_db, setup_test_client};
-        use rocket::http::Status;
+        use rkt::http::Status;
 
         let test_db = create_standard_test_db().await;
         let coach_id = test_db.user_id("coach_user").unwrap();
@@ -1892,10 +1892,10 @@ mod tests {
     }
 
     /// Video search: a camp thread with attached video titled "GI Round 2" returns in `videos`.
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn camp_search_finds_video_by_title() {
         use crate::test::test_utils::{create_standard_test_db, setup_test_client};
-        use rocket::http::Status;
+        use rkt::http::Status;
 
         let test_db = create_standard_test_db().await;
         let coach_id = test_db.user_id("coach_user").unwrap();
@@ -1952,10 +1952,10 @@ mod tests {
     }
 
     /// Thread body + comment body search.
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn camp_search_finds_thread_and_comment_body() {
         use crate::test::test_utils::{create_standard_test_db, setup_test_client};
-        use rocket::http::Status;
+        use rkt::http::Status;
 
         let test_db = create_standard_test_db().await;
         let coach_id = test_db.user_id("coach_user").unwrap();
@@ -2022,10 +2022,10 @@ mod tests {
     }
 
     /// Content in a different camp (same student) does NOT appear in search results.
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn camp_search_scoped_to_camp() {
         use crate::test::test_utils::{create_standard_test_db, setup_test_client};
-        use rocket::http::Status;
+        use rkt::http::Status;
 
         let test_db = create_standard_test_db().await;
         let coach_id = test_db.user_id("coach_user").unwrap();
@@ -2082,10 +2082,10 @@ mod tests {
     }
 
     /// A student who does not own the camp gets 403.
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn camp_search_forbidden_for_other_student() {
         use crate::test::test_utils::{create_standard_test_db, setup_test_client};
-        use rocket::http::Status;
+        use rkt::http::Status;
 
         let test_db = create_standard_test_db().await;
         let coach_id = test_db.user_id("coach_user").unwrap();
@@ -2112,10 +2112,10 @@ mod tests {
     }
 
     /// `kind=technique` returns only the techniques group (videos and threads are empty).
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn camp_search_kind_filter() {
         use crate::test::test_utils::{create_standard_test_db, setup_test_client};
-        use rocket::http::Status;
+        use rkt::http::Status;
 
         let test_db = create_standard_test_db().await;
         let coach_id = test_db.user_id("coach_user").unwrap();
@@ -2185,7 +2185,7 @@ mod tests {
 
     /// A `camp_technique` thread whose body is empty (and has no attached video)
     /// must succeed — the technique anchor IS the content; no body is required.
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn camp_technique_thread_allows_empty_body() {
         use sqlx::Row;
         let db = TestDbBuilder::new()
@@ -2304,7 +2304,7 @@ mod tests {
 
     /// Attaching a technique and then discussing it produces ONE technique
     /// component, hydrated with the technique and its camp discussion.
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn camp_components_collapse_a_technique_to_one_row() {
         use crate::db::list_camp_components;
 
@@ -2357,7 +2357,7 @@ mod tests {
 
     /// A camp-owned video is a component even though its upload emits no
     /// activity row.
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn camp_components_include_camp_owned_video() {
         use crate::db::list_camp_components;
 
@@ -2384,7 +2384,7 @@ mod tests {
     /// Attaching is membership, not a post: it starts no thread, and attaching
     /// the same technique again adds neither a second component nor a second
     /// activity row.
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn attaching_a_technique_twice_starts_no_thread_and_no_duplicate() {
         use crate::db::camps::attach_camp_techniques;
         use crate::db::list_camp_components;
@@ -2436,10 +2436,10 @@ mod tests {
     }
 
     /// A camp's own student may attach; an unrelated student may not.
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn attach_technique_route_auth() {
         use crate::test::test_utils::{create_standard_test_db, setup_test_client};
-        use rocket::http::{ContentType, Status};
+        use rkt::http::{ContentType, Status};
 
         let test_db = create_standard_test_db().await;
         let coach_id = test_db.user_id("coach_user").unwrap();
@@ -2484,7 +2484,7 @@ mod tests {
 
     /// Components sort by last touch, so a reply on an older note bumps it back
     /// above a technique attached after it.
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn camp_components_order_by_last_touch() {
         use crate::db::list_camp_components;
 
@@ -2579,7 +2579,7 @@ mod tests {
 
     /// The keyset cursor walks the camp without repeating or dropping a
     /// component.
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn camp_components_paginate_with_a_cursor() {
         use crate::db::list_camp_components;
 
@@ -2636,10 +2636,10 @@ mod tests {
 
     /// GET /api/camps/<id>/components: 200 for the owning student, 403 for
     /// another student.
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn camp_components_route_auth_and_shape() {
         use crate::test::test_utils::{create_standard_test_db, setup_test_client};
-        use rocket::http::Status;
+        use rkt::http::Status;
 
         let test_db = create_standard_test_db().await;
         let coach_id = test_db.user_id("coach_user").unwrap();

@@ -1,0 +1,38 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT video_id, visible FROM video_visibility_overrides\n         WHERE scope_kind = 'student' AND student_id = ?1\n           AND video_id IN (SELECT value FROM json_each(?2))",
+  "describe": {
+    "columns": [
+      {
+        "name": "video_id",
+        "ordinal": 0,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "video_visibility_overrides",
+            "name": "video_id"
+          }
+        }
+      },
+      {
+        "name": "visible",
+        "ordinal": 1,
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "video_visibility_overrides",
+            "name": "visible"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "e3e52a435f9a97c4bf252e68c11861db5c6121eacf867eec5eb3a2b9f3ca3ce9"
+}

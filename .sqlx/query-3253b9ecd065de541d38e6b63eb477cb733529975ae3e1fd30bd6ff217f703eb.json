@@ -6,32 +6,68 @@
       {
         "name": "v!: String",
         "ordinal": 0,
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "activity",
+            "name": "verb"
+          }
+        }
       },
       {
         "name": "p?",
         "ordinal": 1,
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "activity",
+            "name": "payload_json"
+          }
+        }
       },
       {
         "name": "sst?: i64",
         "ordinal": 2,
-        "type_info": "Integer"
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "activity",
+            "name": "sst_id"
+          }
+        }
       },
       {
         "name": "tech?: i64",
         "ordinal": 3,
-        "type_info": "Integer"
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "activity",
+            "name": "technique_id"
+          }
+        }
       },
       {
         "name": "syl?: i64",
         "ordinal": 4,
-        "type_info": "Integer"
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "activity",
+            "name": "syllabus_id"
+          }
+        }
       },
       {
         "name": "t?: i64",
         "ordinal": 5,
-        "type_info": "Integer"
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "activity",
+            "name": "target_student_id"
+          }
+        }
       }
     ],
     "parameters": {

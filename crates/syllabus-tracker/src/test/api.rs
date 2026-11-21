@@ -1,4 +1,4 @@
-use rocket::http::{ContentType, Status};
+use rkt::http::{ContentType, Status};
 use serde_json::json;
 
 use crate::{
@@ -13,10 +13,10 @@ mod tests {
     use crate::test::test_utils::{
         TestDbBuilder, create_standard_test_db, login_test_user, setup_test_client,
     };
-    use rocket::http::{ContentType, Cookie, Status};
+    use rkt::http::{ContentType, Cookie, Status};
     use serde_json::json;
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn test_login_api() {
         let test_db = create_standard_test_db().await;
         let (client, _) = setup_test_client(test_db).await;
@@ -65,7 +65,7 @@ mod tests {
         assert!(login_response.error.is_some());
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn test_auth_required_apis() {
         let test_db = create_standard_test_db().await;
         let (client, _) = setup_test_client(test_db).await;
@@ -82,7 +82,7 @@ mod tests {
         }
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn test_api_session_security() {
         let test_db = create_standard_test_db().await;
         let (client, _) = setup_test_client(test_db).await;
@@ -111,7 +111,45 @@ mod tests {
         assert_eq!(response.status(), Status::Ok);
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
+    async fn get_user_allows_coaches_and_self_only() {
+        let test_db = TestDbBuilder::new()
+            .coach("coach_user", Some("Coach User"))
+            .student("student_user", Some("Student User"))
+            .student("other_student", Some("Other Student"))
+            .build()
+            .await
+            .unwrap();
+        let student_id = test_db.user_id("student_user").unwrap();
+        let other_id = test_db.user_id("other_student").unwrap();
+        let (client, _) = setup_test_client(test_db).await;
+
+        let coach = login_test_user(&client, "coach_user", "password123").await;
+        let response = client
+            .get(format!("/api/users/{student_id}"))
+            .cookies(coach)
+            .dispatch()
+            .await;
+        assert_eq!(response.status(), Status::Ok);
+        let user: UserData = serde_json::from_str(&response.into_string().await.unwrap()).unwrap();
+        assert_eq!(user.username, "student_user");
+
+        let student = login_test_user(&client, "student_user", "password123").await;
+        let own = client
+            .get(format!("/api/users/{student_id}"))
+            .cookies(student.clone())
+            .dispatch()
+            .await;
+        assert_eq!(own.status(), Status::Ok);
+        let other = client
+            .get(format!("/api/users/{other_id}"))
+            .cookies(student)
+            .dispatch()
+            .await;
+        assert_eq!(other.status(), Status::Forbidden);
+    }
+
+    #[rkt::async_test]
     async fn test_me_api() {
         let test_db = create_standard_test_db().await;
         let (client, _) = setup_test_client(test_db).await;
@@ -130,7 +168,7 @@ mod tests {
         assert_eq!(user_data.role.to_lowercase(), "coach");
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn test_students_api() {
         let test_db = create_standard_test_db().await;
         let (client, _) = setup_test_client(test_db).await;
@@ -161,7 +199,7 @@ mod tests {
         assert_eq!(student.role.to_lowercase(), "student");
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn test_student_techniques_api() {
         let test_db = create_standard_test_db().await;
         let (client, test_db) = setup_test_client(test_db).await;
@@ -190,7 +228,7 @@ mod tests {
         assert_eq!(technique.student_notes, "Student notes");
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn test_update_technique_api() {
         let test_db = TestDbBuilder::new()
             .coach("coach_user", Some("Coach User"))
@@ -242,7 +280,7 @@ mod tests {
         assert_eq!(updated_technique.student_notes, "Updated student notes");
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn test_create_library_technique_api() {
         let test_db = TestDbBuilder::new()
             .coach("coach_user", Some("Coach User"))
@@ -279,7 +317,7 @@ mod tests {
         assert!(body.contains("Kimura from side control"));
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn test_create_library_technique_rejects_blank_name() {
         let test_db = TestDbBuilder::new()
             .coach("coach_user", Some("Coach User"))
@@ -301,7 +339,7 @@ mod tests {
         assert_eq!(response.status(), Status::UnprocessableEntity);
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn test_create_library_technique_forbidden_for_student() {
         let test_db = TestDbBuilder::new()
             .student("student_user", Some("Student User"))
@@ -323,7 +361,7 @@ mod tests {
         assert_eq!(response.status(), Status::Forbidden);
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn create_student_only_technique_is_excluded_from_library() {
         let test_db = TestDbBuilder::new()
             .coach("coach_user", Some("Coach User"))
@@ -351,7 +389,7 @@ mod tests {
         );
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn promote_makes_student_only_technique_global() {
         let test_db = TestDbBuilder::new()
             .coach("coach_user", Some("Coach User"))
@@ -381,7 +419,7 @@ mod tests {
         assert!(rows.iter().any(|r| r.name == "Promote Me"));
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn test_assign_techniques_api() {
         let test_db = TestDbBuilder::new()
             .coach("coach_user", Some("Coach User"))
@@ -433,7 +471,7 @@ mod tests {
         assert!(has_triangle, "Triangle technique was not assigned");
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn test_coach_update_bumps_coach_columns() {
         let test_db = TestDbBuilder::new()
             .coach("coach_user", Some("Coach User"))
@@ -477,7 +515,7 @@ mod tests {
         );
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn test_student_update_bumps_student_columns() {
         let test_db = TestDbBuilder::new()
             .coach("coach_user", Some("Coach User"))
@@ -528,7 +566,7 @@ mod tests {
         );
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn test_has_unseen_activity_coach_view_after_student_edit() {
         let test_db = TestDbBuilder::new()
             .coach("coach_user", Some("Coach User"))
@@ -596,7 +634,7 @@ mod tests {
     /// Helper: fetch the techniques list as the given user and pull out the
     /// flag for a specific student_technique id.
     async fn fetch_unseen_flag(
-        client: &rocket::local::asynchronous::Client,
+        client: &rkt::local::asynchronous::Client,
         cookies: Vec<Cookie<'static>>,
         student_id: i64,
         student_technique_id: i64,
@@ -616,7 +654,7 @@ mod tests {
             .has_unseen_activity
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn test_student_does_not_see_dot_for_own_edits() {
         let test_db = TestDbBuilder::new()
             .coach("coach_user", Some("Coach User"))
@@ -655,7 +693,7 @@ mod tests {
         assert!(!flag, "student should not see a dot for their own edit");
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn test_student_sees_dot_for_coach_edit_cleared_by_mark_seen() {
         let test_db = TestDbBuilder::new()
             .coach("coach_user", Some("Coach User"))
@@ -714,7 +752,7 @@ mod tests {
         );
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn test_coach_sees_dot_for_student_edit_cleared_by_mark_seen() {
         let test_db = TestDbBuilder::new()
             .coach("coach_user", Some("Coach User"))
@@ -766,7 +804,7 @@ mod tests {
         );
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn test_mark_seen_is_per_coach() {
         let test_db = TestDbBuilder::new()
             .coach("coach_a", Some("Coach A"))
@@ -820,7 +858,7 @@ mod tests {
         );
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn test_brand_new_assignment_dots_for_student() {
         let test_db = TestDbBuilder::new()
             .coach("coach_user", Some("Coach User"))
@@ -850,7 +888,7 @@ mod tests {
     /// Helper: fetch `/api/students` as the given coach, return the parsed
     /// `last_student_initiative_at` (chrono) for one student. None if absent.
     async fn fetch_initiative(
-        client: &rocket::local::asynchronous::Client,
+        client: &rkt::local::asynchronous::Client,
         cookies: Vec<Cookie<'static>>,
         student_username: &str,
     ) -> Option<chrono::DateTime<chrono::Utc>> {
@@ -871,7 +909,7 @@ mod tests {
             .map(|raw| chrono::DateTime::parse_from_rfc3339(raw).unwrap().to_utc())
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn test_taking_initiative_recent_student_note_update() {
         // Initiative is now sourced from the syllabus stack (SST rows), so we
         // need a syllabus assignment before the student note triggers a signal.
@@ -927,7 +965,7 @@ mod tests {
         );
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn test_taking_initiative_recent_watch() {
         let test_db = TestDbBuilder::new()
             .coach("coach_user", Some("Coach User"))
@@ -981,7 +1019,7 @@ mod tests {
         );
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn test_taking_initiative_max_across_signals() {
         let test_db = TestDbBuilder::new()
             .coach("coach_user", Some("Coach User"))
@@ -1050,7 +1088,7 @@ mod tests {
         );
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn test_taking_initiative_null_when_no_activity() {
         let test_db = TestDbBuilder::new()
             .coach("coach_user", Some("Coach User"))
@@ -1072,7 +1110,7 @@ mod tests {
         );
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn test_mark_seen_permission_denied_for_other_student() {
         let test_db = TestDbBuilder::new()
             .coach("coach_user", Some("Coach User"))
@@ -1099,7 +1137,7 @@ mod tests {
         assert_eq!(response.status(), Status::Forbidden);
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn test_graduate_student_keeps_edit_access() {
         let test_db = TestDbBuilder::new()
             .coach("coach_user", Some("Coach User"))
@@ -1179,7 +1217,7 @@ mod tests {
         assert!(s.graduated_at.is_none(), "graduated_at should be cleared");
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn test_coach_can_archive_student() {
         let test_db = TestDbBuilder::new()
             .coach("coach_user", Some("Coach User"))
@@ -1237,7 +1275,7 @@ mod tests {
         assert!(!s.archived, "archived flag should be cleared");
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn test_coach_cannot_archive_non_student() {
         let test_db = TestDbBuilder::new()
             .coach("coach_user", Some("Coach User"))
@@ -1262,7 +1300,7 @@ mod tests {
 
     // ---- Invite / claim flow ----
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn test_invite_user_and_claim() {
         use crate::api::{InviteInfoResponse, InviteResponse, UserData};
 
@@ -1344,7 +1382,7 @@ mod tests {
         assert_eq!(login_response.status(), Status::Ok);
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn test_stub_user_cannot_log_in() {
         use crate::api::InviteResponse;
 
@@ -1387,7 +1425,7 @@ mod tests {
         assert!(!login.success);
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn test_reset_claim_invalidates_credentials() {
         use crate::api::InviteResponse;
 
@@ -1436,7 +1474,7 @@ mod tests {
     }
 }
 
-#[rocket::async_test]
+#[rkt::async_test]
 async fn test_tag_apis() {
     let test_db = create_standard_test_db().await;
     let (client, test_db) = setup_test_client(test_db).await;
@@ -1555,7 +1593,7 @@ async fn test_tag_apis() {
     assert!(!tags_response.tags.iter().any(|t| t.name == "Test Tag"));
 }
 
-#[rocket::async_test]
+#[rkt::async_test]
 async fn dashboard_digest_route_returns_metrics_for_coach() {
     use crate::test::test_utils::{create_standard_test_db, login_test_user, setup_test_client};
     let db = create_standard_test_db().await;
@@ -1567,13 +1605,13 @@ async fn dashboard_digest_route_returns_metrics_for_coach() {
         .cookies(cookies)
         .dispatch()
         .await;
-    assert_eq!(resp.status(), rocket::http::Status::Ok);
+    assert_eq!(resp.status(), rkt::http::Status::Ok);
     let body = resp.into_string().await.unwrap();
     assert!(body.contains("attempts_logged"), "body missing attempts_logged: {}", body);
     assert!(body.contains("active_students"), "body missing active_students: {}", body);
 }
 
-#[rocket::async_test]
+#[rkt::async_test]
 async fn dashboard_digest_route_returns_forbidden_for_student() {
     use crate::test::test_utils::{create_standard_test_db, login_test_user, setup_test_client};
     let db = create_standard_test_db().await;
@@ -1585,10 +1623,10 @@ async fn dashboard_digest_route_returns_forbidden_for_student() {
         .cookies(cookies)
         .dispatch()
         .await;
-    assert_eq!(resp.status(), rocket::http::Status::Forbidden);
+    assert_eq!(resp.status(), rkt::http::Status::Forbidden);
 }
 
-#[rocket::async_test]
+#[rkt::async_test]
 async fn dashboard_feed_route_returns_array_for_coach() {
     use crate::test::test_utils::{create_standard_test_db, login_test_user, setup_test_client};
     let db = create_standard_test_db().await;
@@ -1600,13 +1638,13 @@ async fn dashboard_feed_route_returns_array_for_coach() {
         .cookies(cookies)
         .dispatch()
         .await;
-    assert_eq!(resp.status(), rocket::http::Status::Ok);
+    assert_eq!(resp.status(), rkt::http::Status::Ok);
     let body = resp.into_string().await.unwrap();
     // Should be a JSON array (possibly empty in a fresh test DB).
     assert!(body.starts_with('['), "expected JSON array, got: {}", body);
 }
 
-#[rocket::async_test]
+#[rkt::async_test]
 async fn dashboard_feed_route_returns_forbidden_for_student() {
     use crate::test::test_utils::{create_standard_test_db, login_test_user, setup_test_client};
     let db = create_standard_test_db().await;
@@ -1618,5 +1656,5 @@ async fn dashboard_feed_route_returns_forbidden_for_student() {
         .cookies(cookies)
         .dispatch()
         .await;
-    assert_eq!(resp.status(), rocket::http::Status::Forbidden);
+    assert_eq!(resp.status(), rkt::http::Status::Forbidden);
 }

@@ -1,9 +1,9 @@
-use rocket::Request;
-use rocket::http::Status;
-use rocket::request::{FromRequest, Outcome};
-use rocket::response::Redirect;
-use rocket::response::status::Custom;
-use rocket::serde::json::Json;
+use rkt::Request;
+use rkt::http::Status;
+use rkt::request::{FromRequest, Outcome};
+use rkt::response::Redirect;
+use rkt::response::status::Custom;
+use rkt::serde::json::Json;
 use serde_json::{Value, json};
 use sqlx::SqlitePool;
 
@@ -11,7 +11,7 @@ use crate::db::{extend_session_expiry, get_session_by_token, get_user};
 
 use super::{User, UserSession};
 
-#[rocket::async_trait]
+#[rkt::async_trait]
 impl<'r> FromRequest<'r> for User {
     type Error = ();
 
@@ -55,8 +55,8 @@ impl<'r> FromRequest<'r> for User {
                         if let Err(err) = extend_session_expiry(db, &token, new_expiry).await {
                             tracing::warn!(error = ?err, "Failed to slide session expiry");
                         } else {
-                            use rocket::http::{Cookie, SameSite};
-                            let max_age = rocket::time::Duration::days(UserSession::LIFETIME_DAYS);
+                            use rkt::http::{Cookie, SameSite};
+                            let max_age = rkt::time::Duration::days(UserSession::LIFETIME_DAYS);
                             cookies.add_private(
                                 Cookie::build(("session_token", token.clone()))
                                     .same_site(SameSite::Lax)

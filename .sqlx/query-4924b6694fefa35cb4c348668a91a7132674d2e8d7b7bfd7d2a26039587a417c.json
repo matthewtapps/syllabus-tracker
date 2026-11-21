@@ -6,14 +6,20 @@
       {
         "name": "id!: i64",
         "ordinal": 0,
-        "type_info": "Integer"
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "thread_comments",
+            "name": "id"
+          }
+        }
       }
     ],
     "parameters": {
       "Right": 6
     },
     "nullable": [
-      true
+      null
     ]
   },
   "hash": "4924b6694fefa35cb4c348668a91a7132674d2e8d7b7bfd7d2a26039587a417c"

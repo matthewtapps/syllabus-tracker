@@ -15,7 +15,7 @@ mod tests {
             .unwrap()
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn migrator_creates_thread_tables() {
         let db = create_standard_test_db().await;
         let names: Vec<String> = sqlx::query_scalar(
@@ -29,7 +29,7 @@ mod tests {
         assert_eq!(names, vec!["thread_comments", "threads"]);
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn thread_comments_has_no_reference_columns() {
         // The clip-reference feature was dropped; the columns must not exist.
         let db = create_standard_test_db().await;
@@ -43,7 +43,7 @@ mod tests {
         assert!(cols.is_empty(), "unexpected clip-reference columns: {cols:?}");
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn create_private_profile_thread_persists_row() {
         let db = db_with_coach_and_student().await;
         let coach_id = db.user_id("coach_user").unwrap();
@@ -97,7 +97,7 @@ mod tests {
             .unwrap()
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn comments_and_visibility_round_trip() {
         let db = db_three_users().await;
         let coach_id = db.user_id("coach_user").unwrap();
@@ -159,7 +159,7 @@ mod tests {
         assert!(stranger.is_none(), "private thread leaked to another student");
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn reply_to_reply_is_rejected() {
         let db = db_three_users().await;
         let student_id = db.user_id("student_user").unwrap();
@@ -208,7 +208,7 @@ mod tests {
         assert!(nested.is_err(), "replying to a reply must be rejected");
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn soft_delete_tombstones_comment_body() {
         let db = db_three_users().await;
         let coach_id = db.user_id("coach_user").unwrap();
@@ -251,7 +251,7 @@ mod tests {
         assert!(c.body.is_none(), "deleted comment body must be tombstoned (None)");
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn list_filters_private_threads_for_non_scope_viewer() {
         use crate::db::threads::list_threads_for_anchor;
         let db = db_three_users().await;
@@ -277,7 +277,7 @@ mod tests {
         assert_eq!(as_other.len(), 0, "another student must not see the private profile thread");
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn soft_delete_thread_tombstones_body() {
         use crate::db::threads::soft_delete_thread;
         let db = db_three_users().await;
@@ -319,7 +319,7 @@ mod tests {
         .unwrap()
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn video_thread_round_trips() {
         use crate::db::threads::list_threads_for_anchor;
         let db = TestDbBuilder::new()
@@ -363,7 +363,7 @@ mod tests {
         assert_eq!(as_other.len(), 0, "private video thread must not leak to another student");
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn count_video_comments_respects_visibility() {
         use crate::db::threads::count_video_comments_visible;
         let db = TestDbBuilder::new()
@@ -410,7 +410,7 @@ mod tests {
         assert_eq!(mia_counts.get(&video_id).copied().unwrap_or(0), 1, "other student counts only their own");
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn video_timestamp_thread_surfaces_alongside_video_thread() {
         use crate::db::threads::list_threads_for_anchor;
         let db = TestDbBuilder::new()
@@ -469,7 +469,7 @@ mod tests {
         assert_eq!(views_ts.len(), 2, "video_timestamp anchor list must also return both kinds");
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn video_ts_seconds_exposed_on_thread_view() {
         use crate::db::threads::list_threads_for_anchor;
         let db = TestDbBuilder::new()
@@ -553,7 +553,7 @@ mod tests {
 
     /// CX-010: a video whose parent is a thread (a "video reply") must not be
     /// allowed to anchor a NEW thread. No endless reply chains.
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn cannot_start_thread_on_a_thread_reply_video() {
         use crate::db::{create_processing_video, VideoParent};
         let db = db_with_coach_and_student().await;
@@ -625,7 +625,7 @@ mod tests {
         }
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn validate_anchor_rejects_missing_video() {
         let db = TestDbBuilder::new()
             .coach("coach_user", Some("Coach"))
@@ -679,7 +679,7 @@ mod tests {
         .unwrap()
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn sst_thread_round_trips() {
         use crate::db::threads::list_threads_for_anchor;
         let db = TestDbBuilder::new()
@@ -718,7 +718,7 @@ mod tests {
 
     // ---- PinnedTechnique anchor tests ----
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn pinned_technique_thread_requires_pin_to_exist() {
         let db = TestDbBuilder::new()
             .coach("coach_user", Some("Coach"))
@@ -755,7 +755,7 @@ mod tests {
         assert!(result.is_err(), "pinned_technique thread must be rejected when no pin exists");
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn pinned_technique_thread_missing_student_rejected() {
         let db = TestDbBuilder::new()
             .coach("coach_user", Some("Coach"))
@@ -791,7 +791,7 @@ mod tests {
         assert!(result.is_err(), "pinned_technique thread without pinned_student_id must be rejected");
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn pinned_technique_thread_round_trips() {
         use crate::db::{pin_technique, threads::list_threads_for_anchor};
         let db = TestDbBuilder::new()
@@ -841,7 +841,7 @@ mod tests {
         assert_eq!(views[0].id, thread_id);
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn broadcast_on_profile_anchor_is_rejected() {
         let db = db_with_coach_and_student().await;
         let coach_id = db.user_id("coach_user").unwrap();
@@ -874,7 +874,7 @@ mod tests {
     /// technique itself is the content). A plain Camp anchor with an empty body
     /// and no video must still be rejected with a Validation error. This guards
     /// against the exemption being accidentally widened to other anchor kinds.
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn empty_body_camp_anchor_is_rejected() {
         use crate::db::camps::{create_camp, NewCamp};
         let db = db_with_coach_and_student().await;
@@ -925,10 +925,10 @@ mod tests {
     // --- HTTP endpoint tests ---
 
     use crate::test::test_utils::{login_test_user, setup_test_client, TestDbBuilder as TB};
-    use rocket::http::{ContentType, Status as HttpStatus};
+    use rkt::http::{ContentType, Status as HttpStatus};
     use serde_json::{json, Value};
 
-    async fn client_with_users() -> (rocket::local::asynchronous::Client, crate::test::test_utils::TestDb) {
+    async fn client_with_users() -> (rkt::local::asynchronous::Client, crate::test::test_utils::TestDb) {
         let db = TB::new()
             .coach("coach_user", Some("Coach"))
             .student("student_user", Some("Sam"))
@@ -937,7 +937,7 @@ mod tests {
         setup_test_client(db).await
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn coach_creates_profile_thread_student_replies() {
         let (client, db) = client_with_users().await;
         let student_id = db.user_id("student_user").unwrap();
@@ -955,7 +955,7 @@ mod tests {
         assert_eq!(reply.status(), HttpStatus::Ok);
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn student_cannot_post_on_another_students_profile() {
         let (client, db) = client_with_users().await;
         let victim_id = db.user_id("student2").unwrap();
@@ -968,7 +968,7 @@ mod tests {
 
     /// A student may start a camp-level thread on their OWN camp. The thread is
     /// forced Private and scoped to the camp's student regardless of the request.
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn student_creates_camp_level_thread_on_own_camp() {
         let (client, db) = client_with_users().await;
         let coach_id = db.user_id("coach_user").unwrap();
@@ -1004,7 +1004,7 @@ mod tests {
 
     /// A student must NOT be able to start a camp-level thread on another
     /// student's camp.
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn student_cannot_create_camp_thread_on_another_students_camp() {
         let (client, db) = client_with_users().await;
         let coach_id = db.user_id("coach_user").unwrap();
@@ -1026,7 +1026,7 @@ mod tests {
         assert_eq!(res.status(), HttpStatus::Forbidden);
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn student_cannot_broadcast() {
         let (client, _db) = client_with_users().await;
         login_test_user(&client, "student_user", "password123").await;
@@ -1041,7 +1041,7 @@ mod tests {
     /// Creating a private profile thread must insert exactly one activity row
     /// with verb='thread_comment_posted', thread_id = the new thread id, and
     /// target_student_id = the scope student.
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn private_profile_thread_emits_one_activity_row() {
         let db = db_with_coach_and_student().await;
         let coach_id = db.user_id("coach_user").unwrap();
@@ -1086,7 +1086,7 @@ mod tests {
 
     /// Two comments on the same thread by the same author within the same
     /// second must produce TWO separate activity rows (non-coalescing).
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn two_comments_produce_two_activity_rows() {
         let db = db_with_coach_and_student().await;
         let coach_id = db.user_id("coach_user").unwrap();
@@ -1141,7 +1141,7 @@ mod tests {
 
     /// A broadcast technique thread emits an activity row with
     /// target_student_id IS NULL.
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn broadcast_technique_thread_emits_null_target() {
         let db = TestDbBuilder::new()
             .coach("coach_user", Some("Coach"))
@@ -1199,7 +1199,7 @@ mod tests {
 
     /// A technique-anchored thread tags the activity row with the library
     /// context so the feed can deep-link to the library surface.
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn technique_thread_emits_library_context() {
         let db = TestDbBuilder::new()
             .coach("coach_user", Some("Coach"))
@@ -1250,7 +1250,7 @@ mod tests {
     /// A video-anchored comment denormalises the video's owning technique onto
     /// its activity row, so the feed can name the technique and deep-link to the
     /// library technique row (not just the bare video).
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn video_comment_emits_technique_context() {
         let db = TestDbBuilder::new()
             .coach("coach_user", Some("Coach"))
@@ -1307,7 +1307,7 @@ mod tests {
     /// An SST-anchored thread resolves and denormalises the syllabus id and the
     /// syllabus context_kind, so the feed can deep-link to the student's
     /// syllabus surface. A private thread keeps target_student_id = scope.
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn sst_thread_emits_syllabus_context() {
         let db = TestDbBuilder::new()
             .coach("coach_user", Some("Coach"))
@@ -1376,7 +1376,7 @@ mod tests {
 
     /// A comment (not just the thread-create) on an SST-anchored thread also
     /// carries the syllabus context, since deep-linking applies to every row.
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn sst_comment_emits_syllabus_context() {
         let db = TestDbBuilder::new()
             .coach("coach_user", Some("Coach"))
@@ -1432,7 +1432,7 @@ mod tests {
         assert!(row.syllabus_id.is_some(), "comment row must carry syllabus_id");
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn comment_carries_attached_video() {
         let db = db_with_coach_and_student().await;
         let coach_id = db.user_id("coach_user").unwrap();
@@ -1480,7 +1480,7 @@ mod tests {
     /// A comment can carry an optional `video_ts_seconds` pinning it to a moment
     /// in its thread's attached video. The value must round-trip through
     /// `create_comment` / `get_thread` unchanged.
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn comment_carries_video_timestamp() {
         use crate::db::camps::{create_camp, NewCamp};
         let db = db_with_coach_and_student().await;
@@ -1544,7 +1544,7 @@ mod tests {
 
     // ---- CampTechnique anchor tests ----
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn camp_technique_thread_stores_camp_and_technique() {
         use crate::db::camps::{create_camp, NewCamp};
         let db = TestDbBuilder::new()
@@ -1612,7 +1612,7 @@ mod tests {
     /// a camp_technique thread and its replies are conversation and must emit
     /// thread_comment_posted, or the camp feed would caption every discussion
     /// on a technique as another attach.
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn camp_technique_attach_and_reply_emit_different_verbs() {
         use crate::db::camps::{attach_camp_techniques, create_camp, NewCamp};
         let db = TestDbBuilder::new()
@@ -1715,7 +1715,7 @@ mod tests {
 
     /// A clip uploaded through a composer is nameless until someone names it, so
     /// the title the author typed has to land on the video the post carries.
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn an_attached_clip_takes_the_title_the_author_typed() {
         let db = TestDbBuilder::new()
             .coach("coach_user", Some("Coach"))
@@ -1805,7 +1805,7 @@ mod tests {
     /// is the attach step itself. No prior camp_techniques membership is required:
     /// the anchor is valid as long as the camp exists and the technique is global
     /// (scoped_camp_id IS NULL) or scoped to this specific camp.
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn camp_technique_thread_valid_without_pre_attach() {
         use crate::db::camps::{create_camp, NewCamp};
         let db = TestDbBuilder::new()
@@ -1861,7 +1861,7 @@ mod tests {
 
     /// A technique scoped to a DIFFERENT camp (scoped_camp_id = other_camp) must
     /// be rejected when posted to this camp via a camp_technique anchor.
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn camp_technique_thread_rejects_other_camps_scoped_technique() {
         use crate::db::camps::{create_camp, create_camp_technique_new, NewCamp, TechniqueScope};
         let db = TestDbBuilder::new()
@@ -1942,7 +1942,7 @@ mod tests {
     /// create a camp for `student_user` with the technique attached. Returns the
     /// (client, db, camp_id, technique_id).
     async fn client_with_camp_technique() -> (
-        rocket::local::asynchronous::Client,
+        rkt::local::asynchronous::Client,
         crate::test::test_utils::TestDb,
         i64,
         i64,
@@ -1978,7 +1978,7 @@ mod tests {
     /// A camp_technique thread is camp-scoped: it must be creatable and listable
     /// under the camp_technique anchor, but must NEVER appear in the global
     /// library technique thread list (anchor_kind='technique').
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn camp_technique_thread_not_visible_on_global_technique() {
         let (client, db, camp_id, technique_id) = client_with_camp_technique().await;
         let student_id = db.user_id("student_user").unwrap();
@@ -2018,7 +2018,7 @@ mod tests {
     /// (a camp's thread page). It must apply the SAME visibility rule the list
     /// does: a private thread scoped to one student is a 404 for another, not a
     /// readable thread just because its id was guessed.
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn get_thread_by_id_applies_visibility() {
         let (client, db, camp_id, technique_id) = client_with_camp_technique().await;
         let student_id = db.user_id("student_user").unwrap();
@@ -2058,7 +2058,7 @@ mod tests {
 
     /// A student may start a camp_technique thread on their OWN camp's technique.
     /// It is forced Private + scoped to the camp's student.
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn student_can_start_camp_technique_thread_on_own_camp() {
         let (client, db, camp_id, technique_id) = client_with_camp_technique().await;
         let student_id = db.user_id("student_user").unwrap();
@@ -2085,7 +2085,7 @@ mod tests {
 
     /// A student must NOT be able to start a camp_technique thread on another
     /// student's camp.
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn student_cannot_start_camp_technique_thread_on_another_camp() {
         use crate::db::camps::{create_camp, NewCamp};
         let db = TB::new()
@@ -2123,7 +2123,7 @@ mod tests {
     // ---- Reference-attach tests (P2T2) ----
 
     /// A reference-attach links the video without reparenting it.
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn reference_attach_links_without_reparenting() {
         use crate::db::camps::{create_camp, NewCamp};
         let db = TestDbBuilder::new()
@@ -2201,7 +2201,7 @@ mod tests {
 
     /// Reference attach with an empty video title backfills from the provided title;
     /// a video that already has a title is not modified.
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn reference_attach_backfills_empty_title() {
         use crate::db::camps::{create_camp, NewCamp};
         let db = TestDbBuilder::new()
@@ -2314,7 +2314,7 @@ mod tests {
     }
 
     /// Referencing a video not visible to the scope student must be rejected.
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn reference_attach_rejects_video_not_visible_to_student() {
         use crate::db::camps::{create_camp, NewCamp};
         let db = TestDbBuilder::new()
@@ -2402,7 +2402,7 @@ mod tests {
 
     /// POSTing a create-thread with `attached_video_is_reference=true` for a video
     /// that is NOT visible to the camp's scope student must return HTTP 403, not 400.
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn reference_attach_hidden_video_returns_forbidden() {
         use crate::db::camps::{create_camp, NewCamp};
         let db = TB::new()
@@ -2482,7 +2482,7 @@ mod tests {
 
     /// A comment with `video_is_reference=true` referencing a video NOT visible to
     /// the thread's scope student must return HTTP 403.
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn reference_attach_comment_hidden_video_returns_forbidden() {
         use crate::db::camps::{create_camp, NewCamp};
         let db = TB::new()
@@ -2566,7 +2566,7 @@ mod tests {
 
     /// A comment (reply) can reference an existing video without reparenting.
     /// No title is required for replies.
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn reference_attach_on_comment_no_reparent() {
         use crate::db::camps::{create_camp, NewCamp};
         let db = TestDbBuilder::new()

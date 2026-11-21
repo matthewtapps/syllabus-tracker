@@ -1,7 +1,7 @@
-use rocket::Request;
-use rocket::http::Status;
-use rocket::response::status::Custom;
-use rocket::serde::json::{Json, Value, json};
+use rkt::Request;
+use rkt::http::Status;
+use rkt::response::status::Custom;
+use rkt::serde::json::{Json, Value, json};
 use tracing::{error, warn};
 
 /// Common fields we log for every error catcher fire.

@@ -32,7 +32,7 @@ mod tests {
         (db, coach_id, home, away, video_id)
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn a_referenced_clip_shows_on_the_destination() {
         let (db, coach_id, _home, away, video_id) = fixture().await;
 
@@ -54,7 +54,7 @@ mod tests {
         assert!(listed[0].hidden_at.is_none());
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn referencing_the_same_clip_twice_is_the_same_reference() {
         let (db, coach_id, _home, away, video_id) = fixture().await;
 
@@ -86,7 +86,7 @@ mod tests {
 
     /// Naming an untitled clip is part of adding it somewhere new, so a repeat
     /// add must not rename it out from under the name it was given.
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn referencing_the_same_clip_twice_does_not_rename_it() {
         let (db, coach_id, home, away, _first_video) = fixture().await;
         let video_id = create_processing_video(
@@ -125,7 +125,7 @@ mod tests {
         );
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn a_clip_cannot_be_referenced_onto_its_own_parent() {
         let (db, coach_id, home, _away, video_id) = fixture().await;
 
@@ -142,7 +142,7 @@ mod tests {
         assert!(matches!(err, crate::error::AppError::Validation(_)));
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn hiding_a_reference_leaves_the_original_alone() {
         let (db, coach_id, _home, away, video_id) = fixture().await;
         let reference_id = add_video_reference(
@@ -173,7 +173,7 @@ mod tests {
         );
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn a_clip_deleted_at_its_source_drops_out_of_the_destination() {
         let (db, coach_id, _home, away, video_id) = fixture().await;
         add_video_reference(
@@ -194,7 +194,7 @@ mod tests {
         assert!(listed.is_empty());
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn a_students_syllabus_read_sees_a_reference_until_it_is_hidden() {
         use crate::db::list_videos_for_technique_in_syllabus_visible_to;
 
@@ -288,7 +288,7 @@ mod tests {
         assert!(visible.is_empty(), "a hidden reference is not shown here");
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn removing_a_reference_leaves_the_clip_in_place() {
         let (db, coach_id, _home, away, video_id) = fixture().await;
         let reference_id = add_video_reference(
@@ -403,7 +403,7 @@ mod tests {
     /// The scope guarantee the "also add to global library" switch sells: with
     /// the switch off, a coach adds an existing clip for one student and nobody
     /// else gets it.
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn a_reference_scoped_to_one_student_reaches_only_that_student() {
         use crate::db::list_videos_for_technique_in_syllabus_visible_to;
 

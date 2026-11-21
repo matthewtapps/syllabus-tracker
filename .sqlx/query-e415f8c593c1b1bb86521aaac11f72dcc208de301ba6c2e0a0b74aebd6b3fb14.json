@@ -6,7 +6,13 @@
       {
         "name": "s!: bool",
         "ordinal": 0,
-        "type_info": "Bool"
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "activity_seen_overrides",
+            "name": "seen"
+          }
+        }
       }
     ],
     "parameters": {

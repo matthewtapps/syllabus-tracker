@@ -44,7 +44,7 @@ mod tests {
         u
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn counts_sum_across_active_syllabi_not_distinct() {
         let db = TestDbBuilder::new()
             .coach("coach", None)
@@ -75,7 +75,7 @@ mod tests {
         assert_eq!(alice_row.red_count, Some(2)); // default status red
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn graduated_syllabi_excluded_from_counts_and_tallied_separately() {
         use crate::db::graduate;
 
@@ -123,7 +123,7 @@ mod tests {
         assert_eq!(alice_row.completed_syllabus_count, Some(1));
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn recent_syllabus_attempts_scoped_to_student() {
         use crate::db::{
             CreateSyllabusAttempt, create_syllabus_attempt,
@@ -164,7 +164,7 @@ mod tests {
         assert_eq!(recent[0].technique_name, "Armbar");
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn flat_sst_list_spans_all_active_assignments() {
         use crate::db::list_sst_flat_for_student;
         let db = TestDbBuilder::new()
@@ -204,7 +204,7 @@ mod tests {
         assert!(syllabus_ids.contains(&sid2));
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn recent_syllabus_attempts_excludes_other_students() {
         use crate::db::{
             CreateSyllabusAttempt, create_syllabus_attempt,
@@ -271,7 +271,7 @@ mod tests {
         assert_eq!(bob_recent.len(), 1, "bob should see exactly 1 attempt");
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn students_query_exposes_activity_log_timestamps() {
         use crate::db::{NewActivity, Verb, emit};
         let db = TestDbBuilder::new()
@@ -318,7 +318,7 @@ mod tests {
         );
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn students_query_exposes_pinned_and_recent_activity_counts() {
         use crate::db::{NewActivity, Verb, emit, pin_technique};
         let db = TestDbBuilder::new()
@@ -367,7 +367,7 @@ mod tests {
         );
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn coach_activity_timestamp_is_none_when_only_student_acted() {
         use crate::db::{NewActivity, Verb, emit};
         let db = TestDbBuilder::new()
@@ -403,7 +403,7 @@ mod tests {
         );
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn library_stats_status_counts_come_from_sst() {
         use crate::db::library_technique_stats;
         let db = TestDbBuilder::new()
@@ -438,7 +438,7 @@ mod tests {
         assert_eq!(stats.status_counts.red, 0);
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn unseen_flag_set_when_student_activity_newer_than_coach() {
         let db = TestDbBuilder::new()
             .coach("coach", None)
@@ -490,7 +490,7 @@ mod tests {
         assert_eq!(alice_row.has_unseen_activity, Some(true));
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn roster_page_slices_the_list_and_reports_the_full_total() {
         let db = TestDbBuilder::new()
             .coach("coach", None)
@@ -517,7 +517,7 @@ mod tests {
         assert_eq!(seen.len(), 3);
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn roster_search_matches_username_and_display_name() {
         let db = TestDbBuilder::new()
             .coach("coach", None)
@@ -549,7 +549,7 @@ mod tests {
         );
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn roster_hides_archived_students_unless_asked() {
         let db = TestDbBuilder::new()
             .coach("coach", None)

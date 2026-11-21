@@ -431,7 +431,7 @@ pub async fn search_camp_videos(
     // We dedup on video_id by taking the first matching row (lowest thread_id).
     let rows = sqlx::query!(
         r#"SELECT v.id AS "video_id!: i64",
-                  v.title,
+                  v.title AS "title!",
                   MIN(th.id) AS "thread_id?: i64"
            FROM (
                -- Branch 1: videos attached to a camp thread

@@ -18,7 +18,7 @@ migration-engine = { path = "../migration-engine" }
 sqlx = { workspace = true }
 
 # web framework
-rocket = { git = "https://github.com/rwf2/Rocket", branch = "master", features = ["trace", "json", "secrets", "tls"] }
+rkt = { version = "=1.3.0", features = ["trace", "json", "secrets", "tls"] }
 validator = { version = "0.20.0", features = ["derive"] }
 serde = { version = "1.0.219", features = ["derive"] }
 chrono = { workspace = true }

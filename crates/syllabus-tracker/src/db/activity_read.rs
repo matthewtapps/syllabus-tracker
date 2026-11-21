@@ -612,95 +612,74 @@ pub async fn dashboard_activity_feed(
 /// - `is_after_cursor = 1` (not seen by cursor or override)
 /// - `actor_user_id != viewer` (own actions are never unread)
 /// - `verb IN (<notifiable verbs>)` (non-notifiable verbs never count)
-///
-/// The notifiable-verb IN list is built dynamically from `Verb::ALL` at
-/// runtime. Because sqlx offline cache cannot verify a dynamically-composed
-/// query string, this uses the runtime-build pattern from `db/watch.rs`
-/// (`format!` + `.bind()` loop). The placeholder count is derived from the
-/// static `Verb::ALL` array (no user input), so there is no injection risk.
 pub async fn unread_count(pool: &Pool<Sqlite>, viewer: i64, role: Role) -> Result<i64, AppError> {
-    let notifiable_verbs: Vec<&'static str> = Verb::ALL
-        .iter()
-        .filter(|v| v.notifiable())
-        .map(|v| v.as_str())
-        .collect();
-
-    let placeholders = vec!["?"; notifiable_verbs.len()].join(", ");
+    let notifiable_verbs = serde_json::Value::from(
+        Verb::ALL
+            .iter()
+            .filter(|v| v.notifiable())
+            .map(|v| v.as_str())
+            .collect::<Vec<_>>(),
+    )
+    .to_string();
+    let is_student = matches!(role, Role::Student);
 
     // Student relevance mirrors the feed() student branch (pull model): targeted
     // to me, or a broadcast event on a technique/syllabus I have. Keep this in
-    // sync with feed(). `predicate_viewer_binds` is how many `?` it consumes.
-    const STUDENT_RELEVANCE: &str = r#"(
-        act.target_student_id = ?
-        OR (
-          act.target_student_id IS NULL
-          AND (
-            ( act.verb IN ('video_added','video_visibility_set','technique_edited')
-              AND act.technique_id IS NOT NULL
-              AND EXISTS (
-                SELECT 1 FROM syllabus_assignments a
-                  JOIN student_syllabus_techniques sst ON sst.assignment_id = a.id
-                  WHERE a.student_id = ? AND a.unassigned_at IS NULL
-                    AND sst.technique_id = act.technique_id AND sst.hidden_at IS NULL
-                UNION
-                SELECT 1 FROM student_pinned_techniques p
-                  WHERE p.student_id = ? AND p.technique_id = act.technique_id
-              ) )
-            OR
-            ( act.verb IN ('syllabus_technique_added','syllabus_technique_removed')
-              AND act.syllabus_id IS NOT NULL
-              AND EXISTS (
-                SELECT 1 FROM syllabus_assignments a
-                  WHERE a.student_id = ? AND a.unassigned_at IS NULL
-                    AND a.syllabus_id = act.syllabus_id
-              ) )
-          )
-        )
-      )"#;
-    let (feed_predicate, predicate_viewer_binds): (&str, usize) = match role {
-        Role::Student => (STUDENT_RELEVANCE, 4),
-        Role::Coach | Role::Admin => ("act.actor_user_id != ?", 1),
-    };
-
-    let query = format!(
-        r#"SELECT COUNT(*) FROM activity act
+    // sync with feed(). Coaches and admins see every row.
+    let count = sqlx::query_scalar!(
+        r#"SELECT COUNT(*) AS "count!: i64" FROM activity act
            LEFT JOIN videos v   ON v.id = act.video_id
            LEFT JOIN threads th ON th.id = act.thread_id
            LEFT JOIN camps cp   ON cp.id = act.camp_id
            LEFT JOIN activity_cursors c
-                  ON c.viewer_user_id = ?
+                  ON c.viewer_user_id = ?1
            LEFT JOIN activity_seen_overrides ov
-                  ON ov.viewer_user_id = ? AND ov.activity_id = act.id
-           WHERE {feed_predicate}
+                  ON ov.viewer_user_id = ?1 AND ov.activity_id = act.id
+           WHERE (NOT ?3 OR (
+                   act.target_student_id = ?1
+                   OR (
+                     act.target_student_id IS NULL
+                     AND (
+                       ( act.verb IN ('video_added','video_visibility_set','technique_edited')
+                         AND act.technique_id IS NOT NULL
+                         AND EXISTS (
+                           SELECT 1 FROM syllabus_assignments a
+                             JOIN student_syllabus_techniques sst ON sst.assignment_id = a.id
+                             WHERE a.student_id = ?1 AND a.unassigned_at IS NULL
+                               AND sst.technique_id = act.technique_id AND sst.hidden_at IS NULL
+                           UNION
+                           SELECT 1 FROM student_pinned_techniques p
+                             WHERE p.student_id = ?1 AND p.technique_id = act.technique_id
+                         ) )
+                       OR
+                       ( act.verb IN ('syllabus_technique_added','syllabus_technique_removed')
+                         AND act.syllabus_id IS NOT NULL
+                         AND EXISTS (
+                           SELECT 1 FROM syllabus_assignments a
+                             WHERE a.student_id = ?1 AND a.unassigned_at IS NULL
+                               AND a.syllabus_id = act.syllabus_id
+                         ) )
+                     )
+                   )
+                 ))
              AND (act.video_id IS NULL OR (v.id IS NOT NULL AND v.deleted_at IS NULL))
              AND (act.thread_id IS NULL OR (th.id IS NOT NULL AND th.deleted_at IS NULL))
              -- Keep in sync with feed(): an archived camp's rows are not in the
              -- feed, so they must not drive the unread badge either.
              AND (act.camp_id IS NULL OR cp.archived_at IS NULL)
-             AND act.actor_user_id != ?
-             AND act.verb IN ({placeholders})
+             AND act.actor_user_id != ?1
+             AND act.verb IN (SELECT value FROM json_each(?2))
              AND CASE
                    WHEN ov.seen = 1 THEN 0
                    WHEN ov.seen = 0 THEN 1
                    WHEN act.id <= COALESCE(c.max_seen_id, 0) THEN 0
                    ELSE 1
                  END = 1"#,
-        feed_predicate = feed_predicate,
-        placeholders = placeholders,
-    );
-
-    // Bind order: cursor join (viewer), override join (viewer),
-    // feed predicate (viewer x predicate_viewer_binds), actor != viewer (viewer),
-    // then one bind per notifiable verb.
-    let mut q = sqlx::query_scalar::<_, i64>(&query).bind(viewer).bind(viewer);
-    for _ in 0..predicate_viewer_binds {
-        q = q.bind(viewer);
-    }
-    q = q.bind(viewer);
-    for verb in &notifiable_verbs {
-        q = q.bind(*verb);
-    }
-
-    let count = q.fetch_one(pool).await?;
+        viewer,
+        notifiable_verbs,
+        is_student,
+    )
+    .fetch_one(pool)
+    .await?;
     Ok(count)
 }

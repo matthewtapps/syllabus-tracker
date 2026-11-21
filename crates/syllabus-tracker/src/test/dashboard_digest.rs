@@ -7,7 +7,7 @@ mod tests {
         d.metrics.iter().find(|m| m.key == key).expect("metric present")
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn digest_counts_student_attempts_in_current_window() {
         let db = TestDbBuilder::new()
             .coach("coach", None)
@@ -44,7 +44,7 @@ mod tests {
         assert_eq!(active.count, 1, "one distinct active student");
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn digest_backdated_attempt_counts_in_previous_window() {
         let db = TestDbBuilder::new()
             .coach("coach", None)
@@ -75,7 +75,7 @@ mod tests {
         assert_eq!(attempts.delta, -1);
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn digest_active_students_counts_distinct() {
         let db = TestDbBuilder::new()
             .coach("coach", None)
@@ -107,7 +107,7 @@ mod tests {
         assert_eq!(active.count, 2, "two distinct active students");
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn digest_ignores_coach_actor_activity() {
         let db = TestDbBuilder::new()
             .coach("coach", None)
@@ -137,7 +137,7 @@ mod tests {
 
     /// Coach performing sst_status_changed must appear in the dashboard feed,
     /// and target_student_name must be populated from the student user record.
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn dashboard_feed_surfaces_coach_sst_status_changed_with_student_name() {
         use crate::db::dashboard_activity_feed;
         let db = TestDbBuilder::new()
@@ -177,7 +177,7 @@ mod tests {
     /// Coach undo/delete history verbs (and thread comments) stay off the glance
     /// even though the coach arm is otherwise a denylist. Guards against the
     /// excluded set silently shrinking.
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn dashboard_feed_excludes_coach_history_and_comment_verbs() {
         use crate::db::dashboard_activity_feed;
         let db = TestDbBuilder::new()
@@ -205,7 +205,7 @@ mod tests {
         assert!(!rows.iter().any(|r| r.verb == "thread_comment_posted"), "thread comment stays off the glance");
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn dashboard_feed_includes_engagement_and_coach_curation() {
         use crate::db::dashboard_activity_feed;
         let db = TestDbBuilder::new()
