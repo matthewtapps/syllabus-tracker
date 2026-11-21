@@ -19,7 +19,7 @@ sqlx = { workspace = true }
 
 # web framework
 rkt = { version = "=1.3.0", features = ["trace", "json", "secrets", "tls"] }
-validator = { version = "0.20.0", features = ["derive"] }
+validator = { version = "0.21.0", features = ["derive"] }
 serde = { version = "1.0.219", features = ["derive"] }
 chrono = { workspace = true }
 serde_json = "1.0.140"
