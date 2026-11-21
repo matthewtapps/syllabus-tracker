@@ -9,7 +9,9 @@
 # specifically because anyone loading the page can read it.
 
 FROM node:22.23.5-alpine AS base
-RUN corepack enable
+# pnpm comes from corepack; npm is unused and carries its own CVEs.
+RUN corepack enable \
+    && rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx
 
 FROM base AS build
 WORKDIR /app
