@@ -525,14 +525,8 @@ mod tests {
         // SQLite stores timestamps with nanosecond precision; try with and
         // without fractional seconds.
         let last = page1.last().unwrap();
-        let before_ts =
-            chrono::NaiveDateTime::parse_from_str(&last.occurred_at, "%Y-%m-%d %H:%M:%S%.f")
-                .or_else(|_| {
-                    chrono::NaiveDateTime::parse_from_str(&last.occurred_at, "%Y-%m-%d %H:%M:%S")
-                })
-                .unwrap_or_else(|e| {
-                    panic!("failed to parse occurred_at {:?}: {}", last.occurred_at, e)
-                });
+        let before_ts = crate::api::parse_before_ts(&last.occurred_at)
+            .unwrap_or_else(|| panic!("failed to parse occurred_at {:?}", last.occurred_at));
         let before_id = last.id;
 
         // Page 2: limit 3, before = last of page 1.

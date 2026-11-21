@@ -11,15 +11,15 @@
 
 use std::str::FromStr;
 
-use chrono::{DateTime, NaiveDateTime, Utc};
 use sqlx::{Pool, Sqlite};
+use time::OffsetDateTime;
 use tracing::instrument;
 
 use crate::auth::{Role, User};
 use crate::error::AppError;
 use crate::models::{
     DashboardVideoOverview, DashboardVideoRow, StorageObjectRow, StorageOverview,
-    StudentWatchActivityRow, VideoStatsSnapshot, naive_to_utc,
+    StudentWatchActivityRow, VideoStatsSnapshot,
 };
 
 #[derive(sqlx::FromRow)]
@@ -29,25 +29,25 @@ struct UserWithActivityDto {
     pub role: Option<String>,
     pub display_name: Option<String>,
     pub archived: Option<bool>,
-    pub graduated_at: Option<NaiveDateTime>,
+    pub graduated_at: Option<OffsetDateTime>,
     pub email: Option<String>,
-    pub claimed_at: Option<NaiveDateTime>,
-    pub approved_at: Option<NaiveDateTime>,
+    pub claimed_at: Option<OffsetDateTime>,
+    pub approved_at: Option<OffsetDateTime>,
     pub first_name: Option<String>,
     pub last_name: Option<String>,
-    pub reset_requested_at: Option<NaiveDateTime>,
-    pub last_update: Option<NaiveDateTime>,
-    pub last_coach_update_at: Option<NaiveDateTime>,
+    pub reset_requested_at: Option<OffsetDateTime>,
+    pub last_update: Option<OffsetDateTime>,
+    pub last_coach_update_at: Option<OffsetDateTime>,
     pub total_techniques: Option<i64>,
     pub red_count: Option<i64>,
     pub amber_count: Option<i64>,
     pub green_count: Option<i64>,
     pub has_unseen_activity: Option<i64>,
-    pub latest_student_note_at: Option<NaiveDateTime>,
-    pub latest_watch_at: Option<NaiveDateTime>,
+    pub latest_student_note_at: Option<OffsetDateTime>,
+    pub latest_watch_at: Option<OffsetDateTime>,
     pub latest_watch_video_title: Option<String>,
-    pub last_student_activity_at: Option<NaiveDateTime>,
-    pub last_coach_activity_at: Option<NaiveDateTime>,
+    pub last_student_activity_at: Option<OffsetDateTime>,
+    pub last_coach_activity_at: Option<OffsetDateTime>,
     pub pinned_count: Option<i64>,
     pub recent_activity_count: Option<i64>,
     pub completed_syllabus_count: Option<i64>,
@@ -107,14 +107,14 @@ pub async fn list_students_page(
         r#"
         SELECT
             u.id, u.username, u.display_name, u.role, u.archived,
-            u.graduated_at as "graduated_at?: NaiveDateTime",
+            u.graduated_at as "graduated_at?: OffsetDateTime",
             u.email,
-            u.claimed_at as "claimed_at?: NaiveDateTime",
-            u.approved_at as "approved_at?: NaiveDateTime",
+            u.claimed_at as "claimed_at?: OffsetDateTime",
+            u.approved_at as "approved_at?: OffsetDateTime",
             u.first_name, u.last_name,
-            u.reset_requested_at as "reset_requested_at?: NaiveDateTime",
-            MAX(sst.updated_at) as "last_update?: NaiveDateTime",
-            MAX(sst.last_coach_update_at) as "last_coach_update_at?: NaiveDateTime",
+            u.reset_requested_at as "reset_requested_at?: OffsetDateTime",
+            MAX(sst.updated_at) as "last_update?: OffsetDateTime",
+            MAX(sst.last_coach_update_at) as "last_coach_update_at?: OffsetDateTime",
             -- Technique tallies cover only active, *ungraduated* syllabi so the
             -- progress bar reflects current work. Graduated syllabi are reported
             -- separately via completed_syllabus_count below.
@@ -164,10 +164,10 @@ pub async fn list_students_page(
                 WHEN datetime(MAX(sst.last_student_update_at)) > datetime(MAX(sst.last_coach_update_at)) THEN 1
                 ELSE 0
             END as "has_unseen_activity?: i64",
-            MAX(sst.last_student_update_at) as "latest_student_note_at?: NaiveDateTime",
+            MAX(sst.last_student_update_at) as "latest_student_note_at?: OffsetDateTime",
             (SELECT MAX(last_watched_at)
                FROM video_watch_aggregates
-              WHERE user_id = u.id) as "latest_watch_at?: NaiveDateTime",
+              WHERE user_id = u.id) as "latest_watch_at?: OffsetDateTime",
             (SELECT v.title
                FROM video_watch_aggregates a
                JOIN videos v ON v.id = a.video_id
@@ -177,13 +177,13 @@ pub async fn list_students_page(
             (SELECT MAX(a.occurred_at)
                FROM activity a
               WHERE a.target_student_id = u.id
-                AND a.actor_user_id = u.id) as "last_student_activity_at?: NaiveDateTime",
+                AND a.actor_user_id = u.id) as "last_student_activity_at?: OffsetDateTime",
             (SELECT MAX(a.occurred_at)
                FROM activity a
                JOIN users au ON au.id = a.actor_user_id
               WHERE a.target_student_id = u.id
                 AND a.actor_user_id <> u.id
-                AND au.role IN ('coach', 'admin')) as "last_coach_activity_at?: NaiveDateTime",
+                AND au.role IN ('coach', 'admin')) as "last_coach_activity_at?: OffsetDateTime",
             (SELECT COUNT(*)
                FROM student_pinned_techniques spt
               WHERE spt.student_id = u.id) as "pinned_count?: i64",
@@ -246,33 +246,25 @@ pub async fn list_students_page(
                 role: Role::from_str(&dto.role.unwrap_or_default()).unwrap(),
                 display_name: dto.display_name.unwrap_or_default(),
                 archived: dto.archived.unwrap_or_default(),
-                graduated_at: dto.graduated_at.map(|dt| naive_to_utc(dt).to_rfc3339()),
+                graduated_at: dto.graduated_at.map(crate::ts::rfc3339),
                 email: dto.email,
-                claimed_at: dto.claimed_at.map(|dt| naive_to_utc(dt).to_rfc3339()),
-                approved_at: dto.approved_at.map(|dt| naive_to_utc(dt).to_rfc3339()),
+                claimed_at: dto.claimed_at.map(crate::ts::rfc3339),
+                approved_at: dto.approved_at.map(crate::ts::rfc3339),
                 first_name: dto.first_name,
                 last_name: dto.last_name,
-                reset_requested_at: dto
-                    .reset_requested_at
-                    .map(|dt| naive_to_utc(dt).to_rfc3339()),
-                last_update: dto.last_update.map(|dt| naive_to_utc(dt).to_rfc3339()),
-                last_coach_update_at: dto
-                    .last_coach_update_at
-                    .map(|dt| naive_to_utc(dt).to_rfc3339()),
+                reset_requested_at: dto.reset_requested_at.map(crate::ts::rfc3339),
+                last_update: dto.last_update.map(crate::ts::rfc3339),
+                last_coach_update_at: dto.last_coach_update_at.map(crate::ts::rfc3339),
                 total_techniques: dto.total_techniques,
                 red_count: dto.red_count,
                 amber_count: dto.amber_count,
                 green_count: dto.green_count,
                 has_unseen_activity: dto.has_unseen_activity.map(|v| v != 0),
-                last_student_initiative_at: initiative.map(|dt| naive_to_utc(dt).to_rfc3339()),
-                last_watch_at: dto.latest_watch_at.map(|dt| naive_to_utc(dt).to_rfc3339()),
+                last_student_initiative_at: initiative.map(crate::ts::rfc3339),
+                last_watch_at: dto.latest_watch_at.map(crate::ts::rfc3339),
                 last_watch_video_title: dto.latest_watch_video_title,
-                last_student_activity_at: dto
-                    .last_student_activity_at
-                    .map(|dt| naive_to_utc(dt).to_rfc3339()),
-                last_coach_activity_at: dto
-                    .last_coach_activity_at
-                    .map(|dt| naive_to_utc(dt).to_rfc3339()),
+                last_student_activity_at: dto.last_student_activity_at.map(crate::ts::rfc3339),
+                last_coach_activity_at: dto.last_coach_activity_at.map(crate::ts::rfc3339),
                 pinned_count: dto.pinned_count,
                 recent_activity_count: dto.recent_activity_count,
                 completed_syllabus_count: dto.completed_syllabus_count,
@@ -322,7 +314,7 @@ pub async fn get_video_stats(
 pub async fn get_student_watch_activity(
     pool: &Pool<Sqlite>,
     student_id: i64,
-    since: DateTime<Utc>,
+    since: OffsetDateTime,
 ) -> Result<Vec<StudentWatchActivityRow>, AppError> {
     let rows = sqlx::query!(
         r#"SELECT v.id AS "video_id!: i64",
@@ -332,7 +324,7 @@ pub async fn get_student_watch_activity(
                   a.play_count AS "play_count!: i64",
                   a.completed_count AS "completed_count!: i64",
                   a.total_seconds_watched AS "total_seconds_watched!: i64",
-                  a.last_watched_at AS "last_watched_at: NaiveDateTime"
+                  a.last_watched_at AS "last_watched_at: OffsetDateTime"
            FROM video_watch_aggregates a
            JOIN videos v ON v.id = a.video_id
            JOIN techniques t ON t.id = v.technique_id
@@ -340,7 +332,7 @@ pub async fn get_student_watch_activity(
            ORDER BY a.last_watched_at DESC
            LIMIT 50"#,
         student_id,
-        since,
+        crate::ts::rfc3339(since),
     )
     .fetch_all(pool)
     .await?;
@@ -354,7 +346,7 @@ pub async fn get_student_watch_activity(
             play_count: r.play_count,
             completed_count: r.completed_count,
             total_seconds_watched: r.total_seconds_watched,
-            last_watched_at: r.last_watched_at.map(naive_to_utc),
+            last_watched_at: r.last_watched_at,
         })
         .collect())
 }
@@ -362,13 +354,13 @@ pub async fn get_student_watch_activity(
 #[instrument(skip(pool))]
 pub async fn get_dashboard_video_overview(
     pool: &Pool<Sqlite>,
-    since: DateTime<Utc>,
+    since: OffsetDateTime,
 ) -> Result<DashboardVideoOverview, AppError> {
     let totals_row = sqlx::query!(
         "SELECT COALESCE(SUM(seconds_watched), 0) AS seconds
          FROM video_watch_events
          WHERE event != 'opened' AND seconds_watched IS NOT NULL AND created_at >= ?",
-        since
+        crate::ts::rfc3339(since)
     )
     .fetch_one(pool)
     .await?;
@@ -392,7 +384,7 @@ pub async fn get_dashboard_video_overview(
            GROUP BY v.id
            ORDER BY COUNT(*) DESC, v.id DESC
            LIMIT 5"#,
-        since,
+        crate::ts::rfc3339(since),
     )
     .fetch_all(pool)
     .await?;

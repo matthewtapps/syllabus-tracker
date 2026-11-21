@@ -1,0 +1,98 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT a.id as \"id!: i64\",\n                  a.student_technique_id as \"student_technique_id!: i64\",\n                  st.technique_id as \"technique_id!: i64\",\n                  st.technique_name as \"technique_name: String\",\n                  a.attempted_at as \"attempted_at!: OffsetDateTime\",\n                  a.coach_note, a.student_note\n           FROM attempts a\n           JOIN student_techniques st ON st.id = a.student_technique_id\n           WHERE st.student_id = ?\n           ORDER BY a.attempted_at DESC, a.id DESC\n           LIMIT ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "id!: i64",
+        "ordinal": 0,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "attempts",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "name": "student_technique_id!: i64",
+        "ordinal": 1,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "attempts",
+            "name": "student_technique_id"
+          }
+        }
+      },
+      {
+        "name": "technique_id!: i64",
+        "ordinal": 2,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "student_techniques",
+            "name": "technique_id"
+          }
+        }
+      },
+      {
+        "name": "technique_name: String",
+        "ordinal": 3,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "student_techniques",
+            "name": "technique_name"
+          }
+        }
+      },
+      {
+        "name": "attempted_at!: OffsetDateTime",
+        "ordinal": 4,
+        "type_info": "Datetime",
+        "origin": {
+          "Table": {
+            "table": "attempts",
+            "name": "attempted_at"
+          }
+        }
+      },
+      {
+        "name": "coach_note",
+        "ordinal": 5,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "attempts",
+            "name": "coach_note"
+          }
+        }
+      },
+      {
+        "name": "student_note",
+        "ordinal": 6,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "attempts",
+            "name": "student_note"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      true,
+      false,
+      true,
+      true
+    ]
+  },
+  "hash": "9fc85fd9516dcfef543535323f8108237a8265917b02f3b9663106205e5f1d8c"
+}

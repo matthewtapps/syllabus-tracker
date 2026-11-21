@@ -1,5 +1,5 @@
-use chrono::{DateTime, NaiveDateTime, Utc};
 use serde::{Deserialize, Serialize};
+use time::OffsetDateTime;
 
 #[derive(Debug, Serialize, Clone)]
 pub struct Technique {
@@ -43,23 +43,29 @@ pub struct StudentTechnique {
     pub status: String,
     pub student_notes: String,
     pub coach_notes: String,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
-    pub last_coach_update_at: Option<DateTime<Utc>>,
+    #[serde(with = "crate::ts::utc")]
+    pub created_at: OffsetDateTime,
+    #[serde(with = "crate::ts::utc")]
+    pub updated_at: OffsetDateTime,
+    #[serde(with = "crate::ts::utc::option")]
+    pub last_coach_update_at: Option<OffsetDateTime>,
     pub last_coach_update_by_id: Option<i64>,
     pub last_coach_update_by_name: Option<String>,
-    pub last_student_update_at: Option<DateTime<Utc>>,
+    #[serde(with = "crate::ts::utc::option")]
+    pub last_student_update_at: Option<OffsetDateTime>,
     pub last_student_update_by_id: Option<i64>,
     pub last_student_update_by_name: Option<String>,
     pub collection_id: Option<i64>,
     pub collection_name: Option<String>,
     pub tags: Vec<Tag>,
     pub attempt_count: i64,
-    pub last_attempt_at: Option<DateTime<Utc>>,
+    #[serde(with = "crate::ts::utc::option")]
+    pub last_attempt_at: Option<OffsetDateTime>,
     /// When the viewer (whoever the request was made for) last opened this
     /// row. `None` means they have never opened it. Drives `has_unseen_activity`
     /// in the API response.
-    pub viewer_seen_at: Option<DateTime<Utc>>,
+    #[serde(with = "crate::ts::utc::option")]
+    pub viewer_seen_at: Option<OffsetDateTime>,
 }
 
 #[derive(sqlx::FromRow, Clone, Default)]
@@ -72,17 +78,13 @@ pub struct DbStudentTechnique {
     pub status: Option<String>,
     pub student_notes: Option<String>,
     pub coach_notes: Option<String>,
-    pub created_at: Option<NaiveDateTime>,
-    pub updated_at: Option<NaiveDateTime>,
-    pub last_coach_update_at: Option<NaiveDateTime>,
+    pub created_at: Option<OffsetDateTime>,
+    pub updated_at: Option<OffsetDateTime>,
+    pub last_coach_update_at: Option<OffsetDateTime>,
     pub last_coach_update_by_id: Option<i64>,
-    pub last_student_update_at: Option<NaiveDateTime>,
+    pub last_student_update_at: Option<OffsetDateTime>,
     pub last_student_update_by_id: Option<i64>,
     pub collection_id: Option<i64>,
-}
-
-pub fn naive_to_utc(dt: NaiveDateTime) -> DateTime<Utc> {
-    DateTime::<Utc>::from_naive_utc_and_offset(dt, Utc)
 }
 
 impl From<DbStudentTechnique> for StudentTechnique {
@@ -96,12 +98,12 @@ impl From<DbStudentTechnique> for StudentTechnique {
             status: db.status.unwrap_or_default(),
             student_notes: db.student_notes.unwrap_or_default(),
             coach_notes: db.coach_notes.unwrap_or_default(),
-            created_at: db.created_at.map(naive_to_utc).unwrap_or_else(Utc::now),
-            updated_at: db.updated_at.map(naive_to_utc).unwrap_or_else(Utc::now),
-            last_coach_update_at: db.last_coach_update_at.map(naive_to_utc),
+            created_at: db.created_at.unwrap_or_else(OffsetDateTime::now_utc),
+            updated_at: db.updated_at.unwrap_or_else(OffsetDateTime::now_utc),
+            last_coach_update_at: db.last_coach_update_at,
             last_coach_update_by_id: db.last_coach_update_by_id,
             last_coach_update_by_name: None,
-            last_student_update_at: db.last_student_update_at.map(naive_to_utc),
+            last_student_update_at: db.last_student_update_at,
             last_student_update_by_id: db.last_student_update_by_id,
             last_student_update_by_name: None,
             collection_id: db.collection_id,
@@ -120,14 +122,18 @@ pub struct Attempt {
     pub student_technique_id: i64,
     pub recorded_by_id: i64,
     pub recorded_by_name: Option<String>,
-    pub attempted_at: DateTime<Utc>,
+    #[serde(with = "crate::ts::utc")]
+    pub attempted_at: OffsetDateTime,
     pub coach_note: Option<String>,
     pub coach_note_by_id: Option<i64>,
     pub coach_note_by_name: Option<String>,
-    pub coach_note_at: Option<DateTime<Utc>>,
+    #[serde(with = "crate::ts::utc::option")]
+    pub coach_note_at: Option<OffsetDateTime>,
     pub student_note: Option<String>,
-    pub student_note_at: Option<DateTime<Utc>>,
-    pub created_at: DateTime<Utc>,
+    #[serde(with = "crate::ts::utc::option")]
+    pub student_note_at: Option<OffsetDateTime>,
+    #[serde(with = "crate::ts::utc")]
+    pub created_at: OffsetDateTime,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
@@ -215,12 +221,15 @@ pub struct Video {
     pub external_host: Option<String>,
     pub external_video_id: Option<String>,
     pub uploaded_by_id: i64,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
+    #[serde(with = "crate::ts::utc")]
+    pub created_at: OffsetDateTime,
+    #[serde(with = "crate::ts::utc")]
+    pub updated_at: OffsetDateTime,
     /// Global hide timestamp. `None` = visible to everyone; `Some` = hidden
     /// from students (coaches still see, badged). Per-student overrides may
     /// flip the effective visibility either way.
-    pub hidden_at: Option<DateTime<Utc>>,
+    #[serde(with = "crate::ts::utc::option")]
+    pub hidden_at: Option<OffsetDateTime>,
     /// Number of comment threads on this video that the requesting viewer can
     /// see (coach: all; student: broadcast + their own private). Annotated by
     /// the list routes after the DB fetch; `0` on a bare `From<DbVideo>`.
@@ -251,9 +260,9 @@ pub struct DbVideo {
     pub external_host: Option<String>,
     pub external_video_id: Option<String>,
     pub uploaded_by_id: Option<i64>,
-    pub created_at: Option<NaiveDateTime>,
-    pub updated_at: Option<NaiveDateTime>,
-    pub hidden_at: Option<NaiveDateTime>,
+    pub created_at: Option<OffsetDateTime>,
+    pub updated_at: Option<OffsetDateTime>,
+    pub hidden_at: Option<OffsetDateTime>,
 }
 
 impl From<DbVideo> for Video {
@@ -281,9 +290,9 @@ impl From<DbVideo> for Video {
             external_host: db.external_host,
             external_video_id: db.external_video_id,
             uploaded_by_id: db.uploaded_by_id.unwrap_or_default(),
-            created_at: db.created_at.map(naive_to_utc).unwrap_or_else(Utc::now),
-            updated_at: db.updated_at.map(naive_to_utc).unwrap_or_else(Utc::now),
-            hidden_at: db.hidden_at.map(naive_to_utc),
+            created_at: db.created_at.unwrap_or_else(OffsetDateTime::now_utc),
+            updated_at: db.updated_at.unwrap_or_else(OffsetDateTime::now_utc),
+            hidden_at: db.hidden_at,
             comment_count: 0,
         }
     }
@@ -316,7 +325,8 @@ pub struct Collection {
     pub name: String,
     pub description: String,
     pub coach_id: Option<i64>,
-    pub created_at: DateTime<Utc>,
+    #[serde(with = "crate::ts::utc")]
+    pub created_at: OffsetDateTime,
     pub technique_count: i64,
     pub student_count: i64,
     pub techniques: Vec<Technique>,
@@ -344,7 +354,8 @@ pub struct AttemptListItem {
     pub student_technique_id: i64,
     pub technique_id: i64,
     pub technique_name: String,
-    pub attempted_at: DateTime<Utc>,
+    #[serde(with = "crate::ts::utc")]
+    pub attempted_at: OffsetDateTime,
     pub coach_note: Option<String>,
     pub student_note: Option<String>,
 }
@@ -358,7 +369,8 @@ pub struct AttemptSummary {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct AttemptBucket {
-    pub date: chrono::NaiveDate,
+    #[serde(with = "crate::ts::date_iso")]
+    pub date: time::Date,
     pub count: i64,
 }
 
@@ -388,7 +400,8 @@ pub struct StudentWatchActivityRow {
     pub play_count: i64,
     pub completed_count: i64,
     pub total_seconds_watched: i64,
-    pub last_watched_at: Option<DateTime<Utc>>,
+    #[serde(with = "crate::ts::utc::option")]
+    pub last_watched_at: Option<OffsetDateTime>,
 }
 
 #[derive(Debug, Clone, Serialize)]

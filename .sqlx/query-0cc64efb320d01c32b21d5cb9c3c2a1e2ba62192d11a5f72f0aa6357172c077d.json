@@ -1,0 +1,170 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT id, username, password, role, display_name, archived,\n                  email, first_name, last_name,\n                  graduated_at as \"graduated_at?: time::OffsetDateTime\",\n                  claimed_at as \"claimed_at?: time::OffsetDateTime\",\n                  approved_at as \"approved_at?: time::OffsetDateTime\",\n                  reset_requested_at as \"reset_requested_at?: time::OffsetDateTime\"\n           FROM users WHERE username = ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "id",
+        "ordinal": 0,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "name": "username",
+        "ordinal": 1,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "username"
+          }
+        }
+      },
+      {
+        "name": "password",
+        "ordinal": 2,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "password"
+          }
+        }
+      },
+      {
+        "name": "role",
+        "ordinal": 3,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "role"
+          }
+        }
+      },
+      {
+        "name": "display_name",
+        "ordinal": 4,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "display_name"
+          }
+        }
+      },
+      {
+        "name": "archived",
+        "ordinal": 5,
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "archived"
+          }
+        }
+      },
+      {
+        "name": "email",
+        "ordinal": 6,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "email"
+          }
+        }
+      },
+      {
+        "name": "first_name",
+        "ordinal": 7,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "first_name"
+          }
+        }
+      },
+      {
+        "name": "last_name",
+        "ordinal": 8,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "last_name"
+          }
+        }
+      },
+      {
+        "name": "graduated_at?: time::OffsetDateTime",
+        "ordinal": 9,
+        "type_info": "Datetime",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "graduated_at"
+          }
+        }
+      },
+      {
+        "name": "claimed_at?: time::OffsetDateTime",
+        "ordinal": 10,
+        "type_info": "Datetime",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "claimed_at"
+          }
+        }
+      },
+      {
+        "name": "approved_at?: time::OffsetDateTime",
+        "ordinal": 11,
+        "type_info": "Datetime",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "approved_at"
+          }
+        }
+      },
+      {
+        "name": "reset_requested_at?: time::OffsetDateTime",
+        "ordinal": 12,
+        "type_info": "Datetime",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "reset_requested_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      true,
+      false,
+      false,
+      true,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "0cc64efb320d01c32b21d5cb9c3c2a1e2ba62192d11a5f72f0aa6357172c077d"
+}

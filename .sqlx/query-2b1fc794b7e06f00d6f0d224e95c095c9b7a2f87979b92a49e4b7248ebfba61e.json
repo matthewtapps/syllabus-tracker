@@ -1,0 +1,38 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT unassigned_at AS \"unassigned_at?: time::OffsetDateTime\",\n                  graduated_at AS \"graduated_at?: time::OffsetDateTime\"\n           FROM syllabus_assignments WHERE id = ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "unassigned_at?: time::OffsetDateTime",
+        "ordinal": 0,
+        "type_info": "Datetime",
+        "origin": {
+          "Table": {
+            "table": "syllabus_assignments",
+            "name": "unassigned_at"
+          }
+        }
+      },
+      {
+        "name": "graduated_at?: time::OffsetDateTime",
+        "ordinal": 1,
+        "type_info": "Datetime",
+        "origin": {
+          "Table": {
+            "table": "syllabus_assignments",
+            "name": "graduated_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      true,
+      true
+    ]
+  },
+  "hash": "2b1fc794b7e06f00d6f0d224e95c095c9b7a2f87979b92a49e4b7248ebfba61e"
+}

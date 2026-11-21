@@ -2,7 +2,7 @@
 //! membership, assignment lifecycle, per-student syllabus reads, SST
 //! mutation, syllabus attempts, per-syllabus video reads.
 
-use chrono::{DateTime, NaiveDateTime, Utc};
+use time::OffsetDateTime;
 use rkt::State;
 use rkt::http::Status;
 use rkt::serde::json::Json;
@@ -16,10 +16,8 @@ use crate::db::{PropagationMode, SstUpdate, SyllabusAttemptUpdate, VisibilitySco
 
 type ApiResult<T> = Result<T, crate::api::ApiError>;
 
-fn parse_iso(value: &str) -> Result<NaiveDateTime, Status> {
-    DateTime::parse_from_rfc3339(value)
-        .map(|dt| dt.with_timezone(&Utc).naive_utc())
-        .map_err(|_| Status::BadRequest)
+fn parse_iso(value: &str) -> Result<OffsetDateTime, Status> {
+    crate::ts::parse_rfc3339(value).map_err(|_| Status::BadRequest)
 }
 
 #[derive(Deserialize)]
@@ -710,7 +708,7 @@ pub async fn api_create_syllabus_attempt(
 ) -> ApiResult<Json<AttemptIdResponse>> {
     db::ensure_can_access_syllabus_sst(db, &user, sst_id).await?;
     let attempted_at = parse_iso(&body.attempted_at)?;
-    if attempted_at > chrono::Utc::now().naive_utc() {
+    if attempted_at > OffsetDateTime::now_utc() {
         return Err(Status::BadRequest.into());
     }
     let viewer_is_coach = user.has_permission(Permission::ViewAllStudents);

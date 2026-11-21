@@ -7,15 +7,15 @@ mod tests {
         error::AppError,
         test::test_utils::TestDbBuilder,
     };
-    use chrono::{Duration, NaiveDateTime, Utc};
     use migration_engine::migrations::{
         migrate_database_declaratively, read_schema_file_to_string,
     };
     use rkt::tokio;
     use sqlx::{Pool, Sqlite, SqlitePool};
+    use time::{Duration, OffsetDateTime};
     use uuid::Uuid;
 
-    async fn create_test_session() -> (i64, String, NaiveDateTime, Pool<Sqlite>) {
+    async fn create_test_session() -> (i64, String, OffsetDateTime, Pool<Sqlite>) {
         let test_db = TestDbBuilder::new()
             .student("test_session_user", None)
             .build()
@@ -28,7 +28,7 @@ mod tests {
 
         let token = format!("test_token_{}", Uuid::new_v4());
 
-        let expires_at = (Utc::now() + Duration::hours(1)).naive_utc();
+        let expires_at = OffsetDateTime::now_utc() + Duration::hours(1);
 
         (user_id, token, expires_at, test_db.pool)
     }
@@ -51,7 +51,7 @@ mod tests {
         assert_eq!(session.token, token);
 
         let expires_diff =
-            (session.expires_at.and_utc().timestamp() - expires_at.and_utc().timestamp()).abs();
+            (session.expires_at.unix_timestamp() - expires_at.unix_timestamp()).abs();
         assert!(
             expires_diff <= 1,
             "Expiration timestamps should match within 1 second"
@@ -132,17 +132,17 @@ mod tests {
         let token2 = format!("test_token_soon_{}", Uuid::new_v4());
         let token3 = format!("test_token_later_{}", Uuid::new_v4());
 
-        let expired_at = (Utc::now() - Duration::hours(1)).naive_utc();
+        let expired_at = OffsetDateTime::now_utc() - Duration::hours(1);
         create_user_session(&pool, user_id, &token1, expired_at)
             .await
             .expect("Failed to create expired session");
 
-        let expires_soon = (Utc::now() + Duration::minutes(1)).naive_utc();
+        let expires_soon = OffsetDateTime::now_utc() + Duration::minutes(1);
         create_user_session(&pool, user_id, &token2, expires_soon)
             .await
             .expect("Failed to create expiring soon session");
 
-        let expires_later = (Utc::now() + Duration::days(1)).naive_utc();
+        let expires_later = OffsetDateTime::now_utc() + Duration::days(1);
         create_user_session(&pool, user_id, &token3, expires_later)
             .await
             .expect("Failed to create future session");
@@ -180,7 +180,7 @@ mod tests {
             .expect("User not found");
 
         let expired_token = format!("test_token_expired_{}", Uuid::new_v4());
-        let expired_at = (Utc::now() - Duration::hours(1)).naive_utc();
+        let expired_at = OffsetDateTime::now_utc() - Duration::hours(1);
 
         create_user_session(&pool, user_id, &expired_token, expired_at)
             .await

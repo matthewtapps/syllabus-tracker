@@ -70,8 +70,10 @@ pub struct CampDetailResponse {
     pub coach_id: i64,
     pub name: String,
     pub description: Option<String>,
-    pub created_at: chrono::NaiveDateTime,
-    pub archived_at: Option<chrono::NaiveDateTime>,
+    #[serde(with = "crate::ts::naive_iso")]
+    pub created_at: time::OffsetDateTime,
+    #[serde(with = "crate::ts::naive_iso::option")]
+    pub archived_at: Option<time::OffsetDateTime>,
 }
 
 #[instrument(skip(req, pool, user))]

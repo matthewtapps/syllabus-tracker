@@ -199,7 +199,7 @@ mod tests {
     #[rkt::async_test]
     async fn attempt_log_emits_attempt_logged() {
         use crate::auth::{Role, User};
-        use chrono::Utc;
+        use time::OffsetDateTime;
 
         let db = TestDbBuilder::new()
             .coach("coach", None)
@@ -256,7 +256,7 @@ mod tests {
             &actor,
             sst_id,
             &crate::db::CreateSyllabusAttempt {
-                attempted_at: Utc::now().naive_utc(),
+                attempted_at: OffsetDateTime::now_utc(),
                 coach_note: None,
                 student_note: None,
             },
@@ -882,7 +882,7 @@ mod tests {
     #[rkt::async_test]
     async fn backfill_is_idempotent_and_seeds_expected_counts() {
         use crate::auth::{Role, User};
-        use chrono::Utc;
+        use time::OffsetDateTime;
 
         let db = TestDbBuilder::new()
             .coach("coach", None)
@@ -941,7 +941,7 @@ mod tests {
             &actor,
             sst_id,
             &crate::db::CreateSyllabusAttempt {
-                attempted_at: Utc::now().naive_utc(),
+                attempted_at: OffsetDateTime::now_utc(),
                 coach_note: None,
                 student_note: None,
             },

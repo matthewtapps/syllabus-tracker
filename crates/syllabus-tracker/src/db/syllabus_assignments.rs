@@ -1,9 +1,10 @@
 //! Which student has which syllabus, plus the lifecycle around it
 //! (assign / unassign). Graduation lands in PR 4.
 
-use chrono::NaiveDateTime;
+use crate::ts::rfc3339;
 use serde::Serialize;
 use sqlx::{Pool, Sqlite};
+use time::OffsetDateTime;
 use tracing::{info, instrument};
 
 use crate::db::activity::{NewActivity, Verb, emit};
@@ -55,10 +56,6 @@ pub struct SyllabusStudentRow {
     pub last_student_update_at: Option<String>,
 }
 
-fn rfc3339(dt: NaiveDateTime) -> String {
-    chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(dt, chrono::Utc).to_rfc3339()
-}
-
 #[instrument]
 pub async fn list_assignments_for_student(
     pool: &Pool<Sqlite>,
@@ -70,17 +67,17 @@ pub async fn list_assignments_for_student(
                   a.student_id AS "student_id!: i64",
                   a.syllabus_id AS "syllabus_id!: i64",
                   s.name AS "syllabus_name!: String",
-                  a.assigned_at AS "assigned_at!: NaiveDateTime",
+                  a.assigned_at AS "assigned_at!: OffsetDateTime",
                   a.assigned_by_id,
-                  a.unassigned_at AS "unassigned_at?: NaiveDateTime",
+                  a.unassigned_at AS "unassigned_at?: OffsetDateTime",
                   a.unassigned_by_id,
-                  a.graduated_at AS "graduated_at?: NaiveDateTime",
+                  a.graduated_at AS "graduated_at?: OffsetDateTime",
                   a.graduated_by_id,
                   COALESCE(SUM(CASE WHEN sst.status = 'red'   AND sst.hidden_at IS NULL THEN 1 ELSE 0 END), 0) AS "red_count!: i64",
                   COALESCE(SUM(CASE WHEN sst.status = 'amber' AND sst.hidden_at IS NULL THEN 1 ELSE 0 END), 0) AS "amber_count!: i64",
                   COALESCE(SUM(CASE WHEN sst.status = 'green' AND sst.hidden_at IS NULL THEN 1 ELSE 0 END), 0) AS "green_count!: i64",
                   COALESCE(SUM(CASE WHEN sst.hidden_at IS NULL THEN 1 ELSE 0 END), 0) AS "total_count!: i64",
-                  MAX(sst.updated_at) AS "last_activity_at?: NaiveDateTime",
+                  MAX(sst.updated_at) AS "last_activity_at?: OffsetDateTime",
                   (SELECT COUNT(*)
                      FROM syllabus_attempts sat
                      JOIN student_syllabus_techniques asst
@@ -134,17 +131,17 @@ pub async fn get_assignment(
                   a.student_id AS "student_id!: i64",
                   a.syllabus_id AS "syllabus_id!: i64",
                   s.name AS "syllabus_name!: String",
-                  a.assigned_at AS "assigned_at!: NaiveDateTime",
+                  a.assigned_at AS "assigned_at!: OffsetDateTime",
                   a.assigned_by_id,
-                  a.unassigned_at AS "unassigned_at?: NaiveDateTime",
+                  a.unassigned_at AS "unassigned_at?: OffsetDateTime",
                   a.unassigned_by_id,
-                  a.graduated_at AS "graduated_at?: NaiveDateTime",
+                  a.graduated_at AS "graduated_at?: OffsetDateTime",
                   a.graduated_by_id,
                   COALESCE(SUM(CASE WHEN sst.status = 'red'   AND sst.hidden_at IS NULL THEN 1 ELSE 0 END), 0) AS "red_count!: i64",
                   COALESCE(SUM(CASE WHEN sst.status = 'amber' AND sst.hidden_at IS NULL THEN 1 ELSE 0 END), 0) AS "amber_count!: i64",
                   COALESCE(SUM(CASE WHEN sst.status = 'green' AND sst.hidden_at IS NULL THEN 1 ELSE 0 END), 0) AS "green_count!: i64",
                   COALESCE(SUM(CASE WHEN sst.hidden_at IS NULL THEN 1 ELSE 0 END), 0) AS "total_count!: i64",
-                  MAX(sst.updated_at) AS "last_activity_at?: NaiveDateTime",
+                  MAX(sst.updated_at) AS "last_activity_at?: OffsetDateTime",
                   (SELECT COUNT(*)
                      FROM syllabus_attempts sat
                      JOIN student_syllabus_techniques asst
@@ -220,14 +217,14 @@ pub async fn list_syllabus_student_rows(
                   u.username AS "username!: String",
                   u.display_name AS "display_name!: String",
                   u.archived AS "archived!: bool",
-                  a.assigned_at AS "assigned_at!: NaiveDateTime",
-                  a.graduated_at AS "graduated_at?: NaiveDateTime",
+                  a.assigned_at AS "assigned_at!: OffsetDateTime",
+                  a.graduated_at AS "graduated_at?: OffsetDateTime",
                   COALESCE(SUM(CASE WHEN sst.status = 'red'   AND sst.hidden_at IS NULL THEN 1 ELSE 0 END), 0) AS "red_count!: i64",
                   COALESCE(SUM(CASE WHEN sst.status = 'amber' AND sst.hidden_at IS NULL THEN 1 ELSE 0 END), 0) AS "amber_count!: i64",
                   COALESCE(SUM(CASE WHEN sst.status = 'green' AND sst.hidden_at IS NULL THEN 1 ELSE 0 END), 0) AS "green_count!: i64",
                   COALESCE(SUM(CASE WHEN sst.hidden_at IS NULL THEN 1 ELSE 0 END), 0) AS "total_count!: i64",
-                  MAX(sst.updated_at) AS "last_activity_at?: NaiveDateTime",
-                  MAX(sst.last_student_update_at) AS "last_student_update_at?: NaiveDateTime"
+                  MAX(sst.updated_at) AS "last_activity_at?: OffsetDateTime",
+                  MAX(sst.last_student_update_at) AS "last_student_update_at?: OffsetDateTime"
            FROM syllabus_assignments a
            JOIN users u ON u.id = a.student_id
            LEFT JOIN student_syllabus_techniques sst ON sst.assignment_id = a.id
@@ -400,7 +397,7 @@ pub async fn unassign(
     .fetch_one(&mut *tx)
     .await?;
 
-    let now = chrono::Utc::now().naive_utc();
+    let now = crate::ts::sql(OffsetDateTime::now_utc());
     sqlx::query!(
         "UPDATE syllabus_assignments
          SET unassigned_at = ?, unassigned_by_id = ?
@@ -446,7 +443,7 @@ pub async fn graduate(
     .fetch_one(&mut *tx)
     .await?;
 
-    let now = chrono::Utc::now().naive_utc();
+    let now = crate::ts::sql(OffsetDateTime::now_utc());
     sqlx::query!(
         "UPDATE syllabus_assignments
          SET graduated_at = ?, graduated_by_id = ?
@@ -488,8 +485,8 @@ pub async fn ungraduate(pool: &Pool<Sqlite>, assignment_id: i64) -> Result<(), A
 
 #[derive(Debug)]
 pub struct AssignmentLifecycleFlags {
-    pub unassigned_at: Option<chrono::NaiveDateTime>,
-    pub graduated_at: Option<chrono::NaiveDateTime>,
+    pub unassigned_at: Option<time::OffsetDateTime>,
+    pub graduated_at: Option<time::OffsetDateTime>,
 }
 
 /// Cheap accessor used by the SST and attempts routes to gate student
@@ -500,8 +497,8 @@ pub async fn get_assignment_lifecycle(
     assignment_id: i64,
 ) -> Result<Option<AssignmentLifecycleFlags>, AppError> {
     let row = sqlx::query!(
-        r#"SELECT unassigned_at AS "unassigned_at?: chrono::NaiveDateTime",
-                  graduated_at AS "graduated_at?: chrono::NaiveDateTime"
+        r#"SELECT unassigned_at AS "unassigned_at?: time::OffsetDateTime",
+                  graduated_at AS "graduated_at?: time::OffsetDateTime"
            FROM syllabus_assignments WHERE id = ?"#,
         assignment_id,
     )

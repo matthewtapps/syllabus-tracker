@@ -3,8 +3,8 @@
 
 use std::collections::{HashMap, HashSet};
 
-use chrono::NaiveDateTime;
 use sqlx::{Pool, Sqlite};
+use time::OffsetDateTime;
 use tracing::{info, instrument};
 
 use crate::db::activity::{NewActivity, Verb, emit};
@@ -26,11 +26,11 @@ pub async fn list_pinned_for_student(
             t.id AS "id!: i64",
             t.name,
             t.description,
-            spt.pinned_at AS "pinned_at!: NaiveDateTime",
+            spt.pinned_at AS "pinned_at!: OffsetDateTime",
             COALESCE((SELECT COUNT(*) FROM collection_techniques ct WHERE ct.technique_id = t.id), 0) AS "collection_count!: i64",
             COALESCE((SELECT COUNT(DISTINCT st.student_id) FROM student_techniques st WHERE st.technique_id = t.id), 0) AS "student_count!: i64",
             COALESCE((SELECT COUNT(*) FROM videos v WHERE v.technique_id = t.id AND v.deleted_at IS NULL), 0) AS "video_count!: i64",
-            (SELECT MAX(st.updated_at) FROM student_techniques st WHERE st.technique_id = t.id) AS "last_activity_at?: NaiveDateTime"
+            (SELECT MAX(st.updated_at) FROM student_techniques st WHERE st.technique_id = t.id) AS "last_activity_at?: OffsetDateTime"
         FROM student_pinned_techniques spt
         JOIN techniques t ON t.id = spt.technique_id
         WHERE spt.student_id = ?
@@ -95,10 +95,7 @@ pub async fn list_pinned_for_student(
             collection_count: r.collection_count,
             student_count: r.student_count,
             video_count: r.video_count,
-            last_activity_at: r.last_activity_at.map(|dt| {
-                chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(dt, chrono::Utc)
-                    .to_rfc3339()
-            }),
+            last_activity_at: r.last_activity_at.map(crate::ts::rfc3339),
             is_pinned: true,
         })
         .collect())

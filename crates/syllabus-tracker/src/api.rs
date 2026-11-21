@@ -1,3 +1,4 @@
+use time::OffsetDateTime;
 use std::collections::HashMap;
 
 use rkt::FromForm;
@@ -204,14 +205,13 @@ async fn establish_session(
     db: &State<Pool<Sqlite>>,
     user: &User,
 ) -> Result<(), AppError> {
-    use chrono::Utc;
     use rkt::http::{Cookie, SameSite};
 
     let token = UserSession::generate_token();
-    let lifetime = chrono::Duration::days(UserSession::LIFETIME_DAYS);
+    let lifetime = time::Duration::days(UserSession::LIFETIME_DAYS);
     let cookie_max_age = rkt::time::Duration::days(UserSession::LIFETIME_DAYS);
-    let expires_at = Utc::now() + lifetime;
-    create_user_session(db, user.id, &token, expires_at.naive_utc()).await?;
+    let expires_at = OffsetDateTime::now_utc() + lifetime;
+    create_user_session(db, user.id, &token, expires_at).await?;
 
     cookies.add_private(
         Cookie::build(("session_token", token))
@@ -286,9 +286,9 @@ pub async fn api_login(
 /// opened this row, so any activity counts.
 pub fn compute_has_unseen_activity(
     viewer_is_owner: bool,
-    last_coach_update_at: Option<chrono::DateTime<chrono::Utc>>,
-    last_student_update_at: Option<chrono::DateTime<chrono::Utc>>,
-    viewer_seen_at: Option<chrono::DateTime<chrono::Utc>>,
+    last_coach_update_at: Option<time::OffsetDateTime>,
+    last_student_update_at: Option<time::OffsetDateTime>,
+    viewer_seen_at: Option<time::OffsetDateTime>,
 ) -> bool {
     let other_party_update = if viewer_is_owner {
         last_coach_update_at
@@ -376,18 +376,18 @@ pub async fn api_get_student_techniques(
                 status: t.status,
                 student_notes: t.student_notes,
                 coach_notes: t.coach_notes,
-                created_at: t.created_at.to_rfc3339(),
-                updated_at: t.updated_at.to_rfc3339(),
-                last_coach_update_at: t.last_coach_update_at.map(|d| d.to_rfc3339()),
+                created_at: crate::ts::rfc3339(t.created_at),
+                updated_at: crate::ts::rfc3339(t.updated_at),
+                last_coach_update_at: t.last_coach_update_at.map(crate::ts::rfc3339),
                 last_coach_update_by_name: t.last_coach_update_by_name,
-                last_student_update_at: t.last_student_update_at.map(|d| d.to_rfc3339()),
+                last_student_update_at: t.last_student_update_at.map(crate::ts::rfc3339),
                 last_student_update_by_name: t.last_student_update_by_name,
                 has_unseen_activity,
                 collection_id: t.collection_id,
                 collection_name: t.collection_name,
                 tags: t.tags.into_iter().map(TagResponse::from).collect(),
                 attempt_count: t.attempt_count,
-                last_attempt_at: t.last_attempt_at.map(|d| d.to_rfc3339()),
+                last_attempt_at: t.last_attempt_at.map(crate::ts::rfc3339),
             }
         })
         .collect();
@@ -1430,7 +1430,7 @@ fn collection_to_response(c: Collection, user: &User) -> CollectionResponse {
         name: c.name,
         description: c.description,
         coach_id: c.coach_id,
-        created_at: c.created_at.to_rfc3339(),
+        created_at: crate::ts::rfc3339(c.created_at),
         technique_count: c.technique_count,
         student_count: c.student_count,
         techniques: c
@@ -1670,14 +1670,14 @@ impl From<crate::models::Attempt> for AttemptResponse {
             student_technique_id: a.student_technique_id,
             recorded_by_id: a.recorded_by_id,
             recorded_by_name: a.recorded_by_name,
-            attempted_at: a.attempted_at.to_rfc3339(),
+            attempted_at: crate::ts::rfc3339(a.attempted_at),
             coach_note: a.coach_note,
             coach_note_by_id: a.coach_note_by_id,
             coach_note_by_name: a.coach_note_by_name,
-            coach_note_at: a.coach_note_at.map(|d| d.to_rfc3339()),
+            coach_note_at: a.coach_note_at.map(crate::ts::rfc3339),
             student_note: a.student_note,
-            student_note_at: a.student_note_at.map(|d| d.to_rfc3339()),
-            created_at: a.created_at.to_rfc3339(),
+            student_note_at: a.student_note_at.map(crate::ts::rfc3339),
+            created_at: crate::ts::rfc3339(a.created_at),
         }
     }
 }
@@ -1702,11 +1702,11 @@ pub struct CreateAttemptResponse {
 
 fn parse_optional_datetime(
     raw: Option<&str>,
-) -> Result<Option<chrono::DateTime<chrono::Utc>>, ApiError> {
+) -> Result<Option<time::OffsetDateTime>, ApiError> {
     match raw {
         None => Ok(None),
-        Some(s) => match chrono::DateTime::parse_from_rfc3339(s) {
-            Ok(dt) => Ok(Some(dt.with_timezone(&chrono::Utc))),
+        Some(s) => match crate::ts::parse_rfc3339(s) {
+            Ok(dt) => Ok(Some(dt)),
             Err(_) => Err(Status::BadRequest.into()),
         },
     }
@@ -1747,18 +1747,18 @@ pub async fn api_get_single_student_technique(
         status: st.status,
         student_notes: st.student_notes,
         coach_notes: st.coach_notes,
-        created_at: st.created_at.to_rfc3339(),
-        updated_at: st.updated_at.to_rfc3339(),
-        last_coach_update_at: st.last_coach_update_at.map(|d| d.to_rfc3339()),
+        created_at: crate::ts::rfc3339(st.created_at),
+        updated_at: crate::ts::rfc3339(st.updated_at),
+        last_coach_update_at: st.last_coach_update_at.map(crate::ts::rfc3339),
         last_coach_update_by_name: st.last_coach_update_by_name,
-        last_student_update_at: st.last_student_update_at.map(|d| d.to_rfc3339()),
+        last_student_update_at: st.last_student_update_at.map(crate::ts::rfc3339),
         last_student_update_by_name: st.last_student_update_by_name,
         has_unseen_activity,
         collection_id: st.collection_id,
         collection_name: st.collection_name,
         tags: st.tags.into_iter().map(TagResponse::from).collect(),
         attempt_count: st.attempt_count,
-        last_attempt_at: st.last_attempt_at.map(|d| d.to_rfc3339()),
+        last_attempt_at: st.last_attempt_at.map(crate::ts::rfc3339),
     };
 
     Ok(Json(SingleStudentTechniqueResponse {
@@ -1800,7 +1800,7 @@ pub async fn api_create_attempt(
 ) -> ApiResult<Json<CreateAttemptResponse>> {
     body.validate()?;
     let attempted_at =
-        parse_optional_datetime(body.attempted_at.as_deref())?.unwrap_or_else(chrono::Utc::now);
+        parse_optional_datetime(body.attempted_at.as_deref())?.unwrap_or_else(OffsetDateTime::now_utc);
     let result = create_attempt(db, &user, id, attempted_at, body.note.as_deref()).await?;
     let suggestion = match result.suggestion {
         AttemptSuggestion::Amber => Some("amber".to_string()),
@@ -1829,8 +1829,7 @@ pub async fn api_update_attempt(
 ) -> ApiResult<Status> {
     body.validate()?;
     if let Some(raw) = body.attempted_at.as_deref() {
-        let dt = chrono::DateTime::parse_from_rfc3339(raw)
-            .map_err(|e| {
+        let dt = crate::ts::parse_rfc3339(raw).map_err(|e| {
                 warn!(
                     attempt_id = id,
                     raw_value = raw,
@@ -1838,8 +1837,7 @@ pub async fn api_update_attempt(
                     "rejected attempt update: attempted_at not RFC3339"
                 );
                 ApiError::from(Status::BadRequest)
-            })?
-            .with_timezone(&chrono::Utc);
+            })?;
         update_attempt_timestamp(db, &user, id, dt).await?;
     }
     if body.clear_note == Some(true) {
@@ -1901,7 +1899,7 @@ pub async fn api_recent_attempts(
                 student_technique_id: item.student_technique_id,
                 technique_id: item.technique_id,
                 technique_name: item.technique_name,
-                attempted_at: item.attempted_at.to_rfc3339(),
+                attempted_at: crate::ts::rfc3339(item.attempted_at),
                 coach_note: item.coach_note,
                 student_note: item.student_note,
             })
@@ -1960,10 +1958,10 @@ pub async fn api_attempt_heatmap(
     if user.id != id && !user.has_permission(Permission::ViewAllStudents) {
         return Err(Status::Forbidden.into());
     }
-    let today = chrono::Utc::now().date_naive();
-    let default_from = today - chrono::Duration::days(365);
+    let today = OffsetDateTime::now_utc().date();
+    let default_from = today - time::Duration::days(365);
     let from = match params.from.as_deref() {
-        Some(s) => chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d").map_err(|e| {
+        Some(s) => crate::ts::parse_date(s).map_err(|e| {
             warn!(
                 student_id = id,
                 raw_value = s,
@@ -1975,7 +1973,7 @@ pub async fn api_attempt_heatmap(
         None => default_from,
     };
     let to = match params.to.as_deref() {
-        Some(s) => chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d").map_err(|e| {
+        Some(s) => crate::ts::parse_date(s).map_err(|e| {
             warn!(
                 student_id = id,
                 raw_value = s,
@@ -1991,7 +1989,7 @@ pub async fn api_attempt_heatmap(
         buckets: buckets
             .into_iter()
             .map(|b| AttemptBucketResponse {
-                date: b.date.format("%Y-%m-%d").to_string(),
+                date: crate::ts::date(b.date),
                 count: b.count,
             })
             .collect(),
@@ -2020,7 +2018,7 @@ pub async fn api_attempt_sparkline(
         buckets: buckets
             .into_iter()
             .map(|b| AttemptBucketResponse {
-                date: b.date.format("%Y-%m-%d").to_string(),
+                date: crate::ts::date(b.date),
                 count: b.count,
             })
             .collect(),
@@ -2040,13 +2038,14 @@ pub struct ActivityFeedQuery {
 }
 
 /// Parse an optional RFC3339 or SQLite naive-datetime string into
-/// `chrono::NaiveDateTime`. Returns `None` when the input is `None`.
-pub fn parse_before_ts(s: &str) -> Option<chrono::NaiveDateTime> {
-    // Try the SQLite storage format first (no T, no offset), then RFC3339,
-    // then RFC3339 with sub-seconds.
-    chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S%.f")
-        .or_else(|_| chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S"))
-        .or_else(|_| chrono::DateTime::parse_from_rfc3339(s).map(|dt| dt.naive_utc()))
+/// `time::OffsetDateTime`. Returns `None` when the input is `None`.
+pub fn parse_before_ts(s: &str) -> Option<time::OffsetDateTime> {
+    let sqlite = time::macros::format_description!(
+        "[year]-[month]-[day] [hour]:[minute]:[second][optional [.[subsecond]]]"
+    );
+    time::PrimitiveDateTime::parse(s, sqlite)
+        .map(|dt| dt.assume_utc())
+        .or_else(|_| crate::ts::parse_rfc3339(s))
         .ok()
 }
 
@@ -2258,18 +2257,18 @@ pub async fn api_student_activity_feed(
 /// Returns `Err(ApiError)` if either string is present but not YYYY-MM-DD.
 fn resolve_heatmap_window(
     params: &HeatmapQuery,
-) -> Result<(chrono::NaiveDate, chrono::NaiveDate), ApiError> {
-    let today = chrono::Utc::now().date_naive();
-    let default_from = today - chrono::Duration::days(365);
+) -> Result<(time::Date, time::Date), ApiError> {
+    let today = OffsetDateTime::now_utc().date();
+    let default_from = today - time::Duration::days(365);
     let from = match params.from.as_deref() {
-        Some(s) => chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d").map_err(|e| {
+        Some(s) => crate::ts::parse_date(s).map_err(|e| {
             warn!(raw = s, error = %e, "rejected heatmap: unparseable date");
             ApiError::from(Status::BadRequest)
         })?,
         None => default_from,
     };
     let to = match params.to.as_deref() {
-        Some(s) => chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d").map_err(|e| {
+        Some(s) => crate::ts::parse_date(s).map_err(|e| {
             warn!(raw = s, error = %e, "rejected heatmap: unparseable date");
             ApiError::from(Status::BadRequest)
         })?,

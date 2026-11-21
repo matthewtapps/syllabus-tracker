@@ -3,9 +3,10 @@
 //! can log retroactive attempts. The handler validates `attempted_at`
 //! is not in the future.
 
-use chrono::{DateTime, NaiveDateTime, Utc};
+use crate::ts::rfc3339;
 use serde::Serialize;
 use sqlx::{Pool, Sqlite};
+use time::OffsetDateTime;
 use tracing::{info, instrument};
 
 use crate::models::{AttemptBucket, AttemptListItem};
@@ -26,10 +27,6 @@ pub struct SyllabusAttempt {
     pub student_note: Option<String>,
     pub student_note_at: Option<String>,
     pub created_at: String,
-}
-
-fn rfc3339(dt: NaiveDateTime) -> String {
-    DateTime::<Utc>::from_naive_utc_and_offset(dt, Utc).to_rfc3339()
 }
 
 /// Walks SST → assignment to verify the actor may access this attempt
@@ -65,13 +62,13 @@ pub async fn list_syllabus_attempts_for_sst(
         r#"SELECT id AS "id!: i64",
                   student_syllabus_technique_id AS "student_syllabus_technique_id!: i64",
                   recorded_by_id AS "recorded_by_id!: i64",
-                  attempted_at AS "attempted_at!: NaiveDateTime",
+                  attempted_at AS "attempted_at!: OffsetDateTime",
                   coach_note,
                   coach_note_by_id,
-                  coach_note_at AS "coach_note_at?: NaiveDateTime",
+                  coach_note_at AS "coach_note_at?: OffsetDateTime",
                   student_note,
-                  student_note_at AS "student_note_at?: NaiveDateTime",
-                  created_at AS "created_at!: NaiveDateTime"
+                  student_note_at AS "student_note_at?: OffsetDateTime",
+                  created_at AS "created_at!: OffsetDateTime"
            FROM syllabus_attempts
            WHERE student_syllabus_technique_id = ?
            ORDER BY attempted_at DESC, id DESC"#,
@@ -98,7 +95,7 @@ pub async fn list_syllabus_attempts_for_sst(
 
 #[derive(Debug)]
 pub struct CreateSyllabusAttempt {
-    pub attempted_at: NaiveDateTime,
+    pub attempted_at: OffsetDateTime,
     pub coach_note: Option<String>,
     pub student_note: Option<String>,
 }
@@ -110,14 +107,14 @@ pub async fn create_syllabus_attempt(
     sst_id: i64,
     input: &CreateSyllabusAttempt,
 ) -> Result<i64, AppError> {
-    let now = Utc::now().naive_utc();
+    let now = crate::ts::sql(OffsetDateTime::now_utc());
     let coach_note_by_id = if input.coach_note.is_some() {
         Some(actor.id)
     } else {
         None
     };
     let coach_note_at = if input.coach_note.is_some() {
-        Some(now)
+        Some(now.clone())
     } else {
         None
     };
@@ -140,7 +137,7 @@ pub async fn create_syllabus_attempt(
          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
         sst_id,
         actor.id,
-        input.attempted_at,
+        crate::ts::sql(input.attempted_at),
         input.coach_note,
         coach_note_by_id,
         coach_note_at,
@@ -216,7 +213,7 @@ pub async fn delete_syllabus_attempt(
 
 #[derive(Debug, Default)]
 pub struct SyllabusAttemptUpdate {
-    pub attempted_at: Option<NaiveDateTime>,
+    pub attempted_at: Option<OffsetDateTime>,
     pub coach_note: Option<Option<String>>,
     pub student_note: Option<Option<String>>,
 }
@@ -228,14 +225,14 @@ pub async fn update_syllabus_attempt(
     actor: &User,
     update: &SyllabusAttemptUpdate,
 ) -> Result<(), AppError> {
-    let now = Utc::now().naive_utc();
+    let now = crate::ts::sql(OffsetDateTime::now_utc());
     let actor_is_coach = matches!(actor.role, Role::Coach | Role::Admin);
 
     let mut tx = pool.begin().await?;
     if let Some(ts) = update.attempted_at {
         sqlx::query!(
             "UPDATE syllabus_attempts SET attempted_at = ? WHERE id = ?",
-            ts,
+            crate::ts::sql(ts),
             attempt_id
         )
         .execute(&mut *tx)
@@ -323,7 +320,7 @@ pub async fn list_recent_syllabus_attempts_for_student(
                   sa.student_syllabus_technique_id AS "sst_id!: i64",
                   sst.technique_id AS "technique_id!: i64",
                   t.name AS "technique_name!: String",
-                  sa.attempted_at AS "attempted_at!: NaiveDateTime",
+                  sa.attempted_at AS "attempted_at!: OffsetDateTime",
                   sa.coach_note, sa.student_note
            FROM syllabus_attempts sa
            JOIN student_syllabus_techniques sst ON sst.id = sa.student_syllabus_technique_id
@@ -344,7 +341,7 @@ pub async fn list_recent_syllabus_attempts_for_student(
             student_technique_id: r.sst_id,
             technique_id: r.technique_id,
             technique_name: r.technique_name,
-            attempted_at: DateTime::<Utc>::from_naive_utc_and_offset(r.attempted_at, Utc),
+            attempted_at: r.attempted_at,
             coach_note: r.coach_note,
             student_note: r.student_note,
         })
@@ -357,11 +354,11 @@ pub async fn list_recent_syllabus_attempts_for_student(
 pub async fn syllabus_attempt_buckets_for_student(
     pool: &Pool<Sqlite>,
     student_id: i64,
-    from: chrono::NaiveDate,
-    to: chrono::NaiveDate,
+    from: time::Date,
+    to: time::Date,
 ) -> Result<Vec<AttemptBucket>, AppError> {
-    let from_str = from.format("%Y-%m-%d").to_string();
-    let to_str = to.format("%Y-%m-%d").to_string();
+    let from_str = crate::ts::date(from);
+    let to_str = crate::ts::date(to);
     let rows = sqlx::query!(
         r#"SELECT date(sa.attempted_at) as "date!: String",
                   COUNT(*) as "count!: i64"
@@ -381,7 +378,7 @@ pub async fn syllabus_attempt_buckets_for_student(
     Ok(rows
         .into_iter()
         .filter_map(|r| {
-            chrono::NaiveDate::parse_from_str(&r.date, "%Y-%m-%d")
+            crate::ts::parse_date(&r.date)
                 .ok()
                 .map(|date| AttemptBucket {
                     date,

@@ -4,9 +4,10 @@
 
 use std::collections::HashMap;
 
-use chrono::NaiveDateTime;
+use crate::ts::rfc3339;
 use serde::Serialize;
 use sqlx::{Pool, Sqlite};
+use time::OffsetDateTime;
 use tracing::instrument;
 
 use crate::auth::{Role, User};
@@ -50,10 +51,6 @@ pub struct SstUpdate {
     pub coach_notes: Option<String>,
 }
 
-fn rfc3339(dt: NaiveDateTime) -> String {
-    chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(dt, chrono::Utc).to_rfc3339()
-}
-
 #[instrument]
 pub async fn list_for_assignment(
     pool: &Pool<Sqlite>,
@@ -72,16 +69,16 @@ pub async fn list_for_assignment(
                   sst.status AS "status!: String",
                   sst.student_notes,
                   sst.coach_notes,
-                  sst.hidden_at AS "hidden_at?: NaiveDateTime",
-                  sst.created_at AS "created_at!: NaiveDateTime",
-                  sst.updated_at AS "updated_at!: NaiveDateTime",
-                  sst.last_coach_update_at AS "last_coach_update_at?: NaiveDateTime",
+                  sst.hidden_at AS "hidden_at?: OffsetDateTime",
+                  sst.created_at AS "created_at!: OffsetDateTime",
+                  sst.updated_at AS "updated_at!: OffsetDateTime",
+                  sst.last_coach_update_at AS "last_coach_update_at?: OffsetDateTime",
                   sst.last_coach_update_by_id,
-                  sst.last_student_update_at AS "last_student_update_at?: NaiveDateTime",
+                  sst.last_student_update_at AS "last_student_update_at?: OffsetDateTime",
                   sst.last_student_update_by_id,
                   COALESCE((SELECT COUNT(*) FROM syllabus_attempts WHERE student_syllabus_technique_id = sst.id), 0) AS "attempt_count!: i64",
                   COALESCE((SELECT COUNT(*) FROM videos v WHERE v.technique_id = sst.technique_id AND v.parent_kind = 'technique' AND v.deleted_at IS NULL), 0) AS "video_count!: i64",
-                  (SELECT MAX(attempted_at) FROM syllabus_attempts WHERE student_syllabus_technique_id = sst.id) AS "last_attempt_at?: NaiveDateTime",
+                  (SELECT MAX(attempted_at) FROM syllabus_attempts WHERE student_syllabus_technique_id = sst.id) AS "last_attempt_at?: OffsetDateTime",
                   st.position AS "syllabus_position?: i64"
            FROM student_syllabus_techniques sst
            JOIN techniques t ON t.id = sst.technique_id
@@ -186,7 +183,7 @@ pub async fn update_sst(
     actor: &User,
     update: &SstUpdate,
 ) -> Result<(), AppError> {
-    let now = chrono::Utc::now().naive_utc();
+    let now = crate::ts::sql(OffsetDateTime::now_utc());
     let actor_is_coach = matches!(actor.role, Role::Coach | Role::Admin);
 
     let mut tx = pool.begin().await?;
@@ -335,7 +332,7 @@ pub async fn set_hidden(
     sst_id: i64,
     hidden: bool,
 ) -> Result<(), AppError> {
-    let now = chrono::Utc::now().naive_utc();
+    let now = crate::ts::sql(OffsetDateTime::now_utc());
     let mut tx = pool.begin().await?;
 
     // Resolve owner for denormalised activity fields.
@@ -417,7 +414,7 @@ pub async fn add_technique_to_assignment(
     .fetch_optional(&mut *tx)
     .await?;
     let id = if let Some(id) = existing {
-        let now = chrono::Utc::now().naive_utc();
+        let now = crate::ts::sql(OffsetDateTime::now_utc());
         sqlx::query!(
             "UPDATE student_syllabus_techniques
              SET hidden_at = NULL, hidden_by_id = NULL, updated_at = ?
@@ -494,11 +491,11 @@ pub async fn list_sst_flat_for_student(
                   sa.syllabus_id AS "syllabus_id!: i64",
                   s.name AS "syllabus_name!: String",
                   sst.status AS "status!: String",
-                  sst.updated_at AS "updated_at!: NaiveDateTime",
+                  sst.updated_at AS "updated_at!: OffsetDateTime",
                   (SELECT MAX(attempted_at) FROM syllabus_attempts
-                    WHERE student_syllabus_technique_id = sst.id) AS "last_attempt_at?: NaiveDateTime",
-                  sst.last_coach_update_at AS "last_coach_update_at?: NaiveDateTime",
-                  sst.last_student_update_at AS "last_student_update_at?: NaiveDateTime"
+                    WHERE student_syllabus_technique_id = sst.id) AS "last_attempt_at?: OffsetDateTime",
+                  sst.last_coach_update_at AS "last_coach_update_at?: OffsetDateTime",
+                  sst.last_student_update_at AS "last_student_update_at?: OffsetDateTime"
            FROM student_syllabus_techniques sst
            JOIN syllabus_assignments sa ON sa.id = sst.assignment_id
            JOIN syllabi s ON s.id = sa.syllabus_id
@@ -587,7 +584,7 @@ pub async fn diff_for_assignment(
         r#"SELECT sst.id AS "sst_id!: i64",
                   sst.technique_id AS "technique_id!: i64",
                   t.name AS "name!: String",
-                  sst.hidden_at AS "hidden_at?: chrono::NaiveDateTime"
+                  sst.hidden_at AS "hidden_at?: time::OffsetDateTime"
            FROM student_syllabus_techniques sst
            JOIN syllabus_assignments a ON a.id = sst.assignment_id
            JOIN techniques t ON t.id = sst.technique_id

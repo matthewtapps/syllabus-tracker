@@ -2,9 +2,9 @@
 //! cursor operations (Task 20), and the keyset-paginated feed query and
 //! unread-count query. All SQL functions require sqlx-prepare after any change.
 
-use chrono::NaiveDateTime;
 use serde::Serialize;
 use sqlx::{Pool, Sqlite};
+use time::OffsetDateTime;
 
 use crate::auth::Role;
 use crate::db::activity::Verb;
@@ -207,12 +207,12 @@ pub async fn feed(
     pool: &Pool<Sqlite>,
     viewer: i64,
     role: Role,
-    before: Option<(NaiveDateTime, i64)>,
+    before: Option<(OffsetDateTime, i64)>,
     limit: i64,
     camp_id: Option<i64>,
 ) -> Result<Vec<ActivityRow>, AppError> {
     let (before_ts, before_id) = match before {
-        Some((ts, id)) => (Some(ts), Some(id)),
+        Some((ts, id)) => (Some(crate::ts::sql(ts)), Some(id)),
         None => (None, None),
     };
 

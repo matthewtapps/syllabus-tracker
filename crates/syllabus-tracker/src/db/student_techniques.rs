@@ -6,13 +6,13 @@
 
 use std::collections::{HashMap, hash_map::Entry};
 
-use chrono::{NaiveDateTime, Utc};
 use sqlx::{Pool, Sqlite};
+use time::OffsetDateTime;
 use tracing::{info, instrument};
 
 use crate::auth::{Role, User};
 use crate::error::AppError;
-use crate::models::{DbStudentTechnique, DbTag, StudentTechnique, Tag, Technique, naive_to_utc};
+use crate::models::{DbStudentTechnique, DbTag, StudentTechnique, Tag, Technique};
 
 #[instrument]
 pub async fn assign_technique_to_student(
@@ -55,7 +55,7 @@ pub async fn assign_technique_to_student(
     // Stamp the coach-update timestamps on creation so the assignment itself
     // counts as a coach action; the student sees an "unseen activity" dot
     // until they open it.
-    let now = Utc::now().naive_utc();
+    let now = crate::ts::sql(OffsetDateTime::now_utc());
     let res = sqlx::query!(
         "INSERT INTO student_techniques
      (student_id, student_notes, coach_notes, technique_id, technique_name, technique_description, collection_id, last_coach_update_at, last_coach_update_by_id)
@@ -96,8 +96,8 @@ pub async fn get_student_techniques(
                coll.name as "collection_name?",
                tag.id as "tag_id?: i64", tag.name as "tag_name?: String",
                COALESCE(att.attempt_count, 0) as "attempt_count!: i64",
-               att.last_attempt_at as "last_attempt_at?: NaiveDateTime",
-               stv.seen_at as "viewer_seen_at?: NaiveDateTime"
+               att.last_attempt_at as "last_attempt_at?: OffsetDateTime",
+               stv.seen_at as "viewer_seen_at?: OffsetDateTime"
         FROM student_techniques st
         LEFT JOIN users cu ON st.last_coach_update_by_id = cu.id
         LEFT JOIN users su ON st.last_student_update_by_id = su.id
@@ -146,20 +146,20 @@ pub async fn get_student_techniques(
                 status: row.status.unwrap_or_default(),
                 student_notes: row.student_notes.unwrap_or_default(),
                 coach_notes: row.coach_notes.unwrap_or_default(),
-                created_at: row.created_at.map(naive_to_utc).unwrap_or_else(Utc::now),
-                updated_at: row.updated_at.map(naive_to_utc).unwrap_or_else(Utc::now),
-                last_coach_update_at: row.last_coach_update_at.map(naive_to_utc),
+                created_at: row.created_at.unwrap_or_else(OffsetDateTime::now_utc),
+                updated_at: row.updated_at.unwrap_or_else(OffsetDateTime::now_utc),
+                last_coach_update_at: row.last_coach_update_at,
                 last_coach_update_by_id: row.last_coach_update_by_id,
                 last_coach_update_by_name: coach_updater_name,
-                last_student_update_at: row.last_student_update_at.map(naive_to_utc),
+                last_student_update_at: row.last_student_update_at,
                 last_student_update_by_id: row.last_student_update_by_id,
                 last_student_update_by_name: student_updater_name,
                 collection_id: row.collection_id,
                 collection_name: row.collection_name,
                 tags: Vec::new(),
                 attempt_count: row.attempt_count,
-                last_attempt_at: row.last_attempt_at.map(naive_to_utc),
-                viewer_seen_at: row.viewer_seen_at.map(naive_to_utc),
+                last_attempt_at: row.last_attempt_at,
+                viewer_seen_at: row.viewer_seen_at,
             };
             e.insert(technique);
         }
@@ -223,7 +223,7 @@ pub async fn get_student_technique(
 
     let agg = sqlx::query!(
         r#"SELECT COUNT(*) as "count!: i64",
-                  MAX(attempted_at) as "last?: NaiveDateTime"
+                  MAX(attempted_at) as "last?: OffsetDateTime"
            FROM attempts
            WHERE student_technique_id = ?"#,
         student_technique_id
@@ -231,10 +231,10 @@ pub async fn get_student_technique(
     .fetch_one(pool)
     .await?;
     technique.attempt_count = agg.count;
-    technique.last_attempt_at = agg.last.map(naive_to_utc);
+    technique.last_attempt_at = agg.last;
 
     let seen = sqlx::query!(
-        r#"SELECT seen_at as "seen_at?: NaiveDateTime"
+        r#"SELECT seen_at as "seen_at?: OffsetDateTime"
            FROM student_technique_views
            WHERE student_technique_id = ? AND user_id = ?"#,
         student_technique_id,
@@ -242,7 +242,7 @@ pub async fn get_student_technique(
     )
     .fetch_optional(pool)
     .await?;
-    technique.viewer_seen_at = seen.and_then(|r| r.seen_at).map(naive_to_utc);
+    technique.viewer_seen_at = seen.and_then(|r| r.seen_at);
 
     Ok(technique)
 }
@@ -257,7 +257,7 @@ pub async fn update_student_technique(
     coach_notes: &str,
 ) -> Result<(), AppError> {
     info!("Updating student technique");
-    let now = Utc::now().naive_utc();
+    let now = crate::ts::sql(OffsetDateTime::now_utc());
     let actor_id = actor.id;
 
     match actor.role {
@@ -308,7 +308,7 @@ pub async fn update_student_notes(
     student_notes: &str,
 ) -> Result<(), AppError> {
     info!("Updating student notes");
-    let now = Utc::now().naive_utc();
+    let now = crate::ts::sql(OffsetDateTime::now_utc());
     let actor_id = actor.id;
 
     match actor.role {
@@ -437,7 +437,7 @@ pub async fn mark_student_technique_seen(
     student_technique_id: i64,
     user_id: i64,
 ) -> Result<(), AppError> {
-    let now = Utc::now().naive_utc();
+    let now = crate::ts::sql(OffsetDateTime::now_utc());
     sqlx::query!(
         "INSERT INTO student_technique_views (student_technique_id, user_id, seen_at)
          VALUES (?, ?, ?)

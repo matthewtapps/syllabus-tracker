@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
-use chrono::Utc;
 use sqlx::{Pool, Sqlite};
+use time::OffsetDateTime;
 use tracing::instrument;
 
 use crate::db::activity::{NewActivity, Verb, emit, payload};
@@ -115,7 +115,7 @@ pub async fn ingest_watch_events(
         .await?;
     }
 
-    let now = Utc::now().naive_utc();
+    let now = crate::ts::sql(OffsetDateTime::now_utc());
     let play_increment: i64 = if has_new_play { 1 } else { 0 };
     let completed_increment: i64 = if has_new_completed { 1 } else { 0 };
     sqlx::query!(

@@ -1,5 +1,5 @@
-use chrono::Utc;
 use sqlx::{Pool, Sqlite};
+use time::OffsetDateTime;
 use tracing::{info, instrument};
 
 use crate::error::AppError;
@@ -17,13 +17,13 @@ pub struct InviteToken {
 pub async fn create_invite_token(pool: &Pool<Sqlite>, user_id: i64) -> Result<String, AppError> {
     info!("Creating invite token");
     let token = crate::auth::UserSession::generate_token();
-    let expires_at = (Utc::now() + chrono::Duration::days(7)).naive_utc();
+    let expires_at = OffsetDateTime::now_utc() + time::Duration::days(7);
 
     sqlx::query!(
         "INSERT INTO invite_tokens (user_id, token, expires_at) VALUES (?, ?, ?)",
         user_id,
         token,
-        expires_at
+        crate::ts::sql(expires_at)
     )
     .execute(pool)
     .await?;
@@ -39,8 +39,8 @@ pub async fn find_valid_invite_token(
     token: &str,
 ) -> Result<Option<InviteToken>, AppError> {
     let row = sqlx::query!(
-        r#"SELECT id, user_id, token, expires_at as "expires_at: chrono::NaiveDateTime",
-                  used_at as "used_at?: chrono::NaiveDateTime"
+        r#"SELECT id, user_id, token, expires_at as "expires_at: time::OffsetDateTime",
+                  used_at as "used_at?: time::OffsetDateTime"
            FROM invite_tokens WHERE token = ?"#,
         token
     )
@@ -55,8 +55,7 @@ pub async fn find_valid_invite_token(
     if row.used_at.is_some() {
         return Ok(None);
     }
-    let now = Utc::now().naive_utc();
-    if row.expires_at < now {
+    if row.expires_at < OffsetDateTime::now_utc() {
         return Ok(None);
     }
 
@@ -94,7 +93,7 @@ pub async fn claim_invite(
     }
 
     let hashed = bcrypt::hash(password, crate::db::BCRYPT_COST)?;
-    let now = Utc::now().naive_utc();
+    let now = crate::ts::sql(OffsetDateTime::now_utc());
 
     // Apply both updates. SQLite single-connection writes are serialized by the
     // pool, so this is effectively atomic for our purposes.

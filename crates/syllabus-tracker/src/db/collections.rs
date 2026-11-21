@@ -4,11 +4,12 @@
 // for prod migration. TODO: remove after 2026-09-10.
 
 use sqlx::{Pool, Sqlite};
+use time::OffsetDateTime;
 use tracing::{info, instrument};
 
 use crate::auth::{DbUser, User};
 use crate::error::AppError;
-use crate::models::{Collection, Technique, naive_to_utc};
+use crate::models::{Collection, Technique};
 
 #[instrument]
 pub async fn create_collection(
@@ -72,7 +73,7 @@ pub async fn get_all_collections(pool: &Pool<Sqlite>) -> Result<Vec<Collection>,
         r#"
         SELECT
             c.id, c.name, c.description, c.coach_id,
-            c.created_at as "created_at: chrono::NaiveDateTime",
+            c.created_at as "created_at: time::OffsetDateTime",
             (SELECT COUNT(*) FROM collection_techniques WHERE collection_id = c.id)
                 as "technique_count!: i64",
             (SELECT COUNT(DISTINCT student_id) FROM student_techniques WHERE collection_id = c.id)
@@ -91,10 +92,7 @@ pub async fn get_all_collections(pool: &Pool<Sqlite>) -> Result<Vec<Collection>,
             name: r.name,
             description: r.description.unwrap_or_default(),
             coach_id: r.coach_id,
-            created_at: r
-                .created_at
-                .map(naive_to_utc)
-                .unwrap_or_else(chrono::Utc::now),
+            created_at: r.created_at.unwrap_or_else(OffsetDateTime::now_utc),
             technique_count: r.technique_count,
             student_count: r.student_count,
             techniques: Vec::new(),
@@ -112,7 +110,7 @@ pub async fn get_collection(
         r#"
         SELECT
             c.id, c.name, c.description, c.coach_id,
-            c.created_at as "created_at: chrono::NaiveDateTime",
+            c.created_at as "created_at: time::OffsetDateTime",
             (SELECT COUNT(*) FROM collection_techniques WHERE collection_id = c.id)
                 as "technique_count!: i64",
             (SELECT COUNT(DISTINCT student_id) FROM student_techniques WHERE collection_id = c.id)
@@ -156,10 +154,7 @@ pub async fn get_collection(
         name: row.name,
         description: row.description.unwrap_or_default(),
         coach_id: row.coach_id,
-        created_at: row
-            .created_at
-            .map(naive_to_utc)
-            .unwrap_or_else(chrono::Utc::now),
+        created_at: row.created_at.unwrap_or_else(OffsetDateTime::now_utc),
         technique_count: row.technique_count,
         student_count: row.student_count,
         techniques,
@@ -292,12 +287,12 @@ pub async fn get_students_with_collection(
         DbUser,
         r#"
         SELECT DISTINCT u.id, u.username, u.role, u.display_name, u.archived,
-               u.graduated_at as "graduated_at: chrono::NaiveDateTime",
+               u.graduated_at as "graduated_at: time::OffsetDateTime",
                u.email,
-               u.claimed_at as "claimed_at: chrono::NaiveDateTime",
-               u.approved_at as "approved_at: chrono::NaiveDateTime",
+               u.claimed_at as "claimed_at: time::OffsetDateTime",
+               u.approved_at as "approved_at: time::OffsetDateTime",
                u.first_name, u.last_name,
-               u.reset_requested_at as "reset_requested_at: chrono::NaiveDateTime"
+               u.reset_requested_at as "reset_requested_at: time::OffsetDateTime"
         FROM users u
         JOIN student_techniques st ON st.student_id = u.id
         WHERE st.collection_id = ?

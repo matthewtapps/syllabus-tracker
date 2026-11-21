@@ -149,7 +149,7 @@ mod tests {
             &coach_actor(coach),
             sst,
             &CreateSyllabusAttempt {
-                attempted_at: chrono::Utc::now().naive_utc(),
+                attempted_at: time::OffsetDateTime::now_utc(),
                 coach_note: None,
                 student_note: None,
             },
@@ -236,7 +236,7 @@ mod tests {
             .await
             .unwrap();
 
-        let now = chrono::Utc::now().naive_utc();
+        let now = time::OffsetDateTime::now_utc();
         let attempt_input = CreateSyllabusAttempt {
             attempted_at: now,
             coach_note: None,

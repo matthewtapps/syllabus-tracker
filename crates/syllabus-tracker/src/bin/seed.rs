@@ -24,7 +24,8 @@ use std::process::ExitCode;
 use std::str::FromStr;
 
 use anyhow::{Context, Result};
-use chrono::{Duration, NaiveDateTime, Utc};
+use syllabus_tracker::ts;
+use time::{Duration, OffsetDateTime};
 use sqlx::SqlitePool;
 use sqlx::sqlite::SqliteConnectOptions;
 use syllabus_tracker::auth::Role;
@@ -424,9 +425,9 @@ async fn ensure_syllabus(
 /// spread so the feed orders believably.
 /// Call immediately after the helper, before any other emit, so `MAX(id)` is
 /// still the row we just wrote.
-async fn backdate_last_activity(pool: &SqlitePool, ts: NaiveDateTime) -> Result<()> {
+async fn backdate_last_activity(pool: &SqlitePool, ts: OffsetDateTime) -> Result<()> {
     sqlx::query("UPDATE activity SET occurred_at = ? WHERE id = (SELECT MAX(id) FROM activity)")
-        .bind(ts)
+        .bind(ts::sql(ts))
         .execute(pool)
         .await?;
     Ok(())
@@ -446,7 +447,7 @@ async fn seed_thread_with_replies(
     visibility: ThreadVisibility,
     scope_student_id: Option<i64>,
     body: &str,
-    started: NaiveDateTime,
+    started: OffsetDateTime,
     replies: &[(i64, &str, i64)],
 ) -> Result<i64> {
     let thread_id = create_thread(
@@ -464,8 +465,8 @@ async fn seed_thread_with_replies(
     )
     .await?;
     sqlx::query("UPDATE threads SET created_at = ?, last_activity_at = ? WHERE id = ?")
-        .bind(started)
-        .bind(started)
+        .bind(ts::sql(started))
+        .bind(ts::sql(started))
         .bind(thread_id)
         .execute(pool)
         .await?;
@@ -477,7 +478,7 @@ async fn seed_thread_with_replies(
         let comment_id = create_comment(pool, thread_id, None, *reply_author, reply_body, None, None, false, None).await?;
         let comment_time = started + Duration::hours(*hours_after);
         sqlx::query("UPDATE thread_comments SET created_at = ? WHERE id = ?")
-            .bind(comment_time)
+            .bind(ts::sql(comment_time))
             .bind(comment_id)
             .execute(pool)
             .await?;
@@ -488,7 +489,7 @@ async fn seed_thread_with_replies(
     // Bump the thread's last-activity to the final reply so the read side orders
     // it by genuine recency rather than the now() each comment stamped.
     sqlx::query("UPDATE threads SET last_activity_at = ? WHERE id = ?")
-        .bind(last)
+        .bind(ts::sql(last))
         .bind(thread_id)
         .execute(pool)
         .await?;
@@ -543,11 +544,9 @@ async fn run() -> Result<()> {
         .context("Failed to connect to database")?;
     reporter.phase_finished();
 
-    // Use NaiveDateTime so sqlx encodes timestamps as "%F %T%.f" (the same
-    // format CURRENT_TIMESTAMP and mark_seen use). Mixing DateTime<Utc> would
-    // store RFC3339 strings with a 'T' separator; the dashboard query then
-    // text-compares them against space-form values and the unread flag breaks.
-    let now: NaiveDateTime = Utc::now().naive_utc();
+    // Bind timestamps via `ts::sql` (CURRENT_TIMESTAMP's space form); a 'T'-form
+    // value text-compares wrongly and breaks the dashboard unread flag.
+    let now: OffsetDateTime = OffsetDateTime::now_utc();
 
     // 1. Coach
     reporter.phase_started(phases[1], Some(1));
@@ -714,7 +713,7 @@ async fn run() -> Result<()> {
             )
             .bind(student_id)
             .bind(syllabus_id)
-            .bind(assigned_at)
+            .bind(ts::sql(assigned_at))
             .bind(coach_id)
             .execute(&pool)
             .await?;
@@ -746,8 +745,8 @@ async fn run() -> Result<()> {
                 )
                 .bind(assignment_id)
                 .bind(technique_id)
-                .bind(created_at)
-                .bind(created_at)
+                .bind(ts::sql(created_at))
+                .bind(ts::sql(created_at))
                 .execute(&pool)
                 .await?;
 
@@ -799,10 +798,10 @@ async fn run() -> Result<()> {
                 .bind(status)
                 .bind(coach_note)
                 .bind(student_note)
-                .bind(updated_at)
-                .bind(st_coach_time)
+                .bind(ts::sql(updated_at))
+                .bind(ts::sql(st_coach_time))
                 .bind(coach_id)
-                .bind(st_student_time)
+                .bind(st_student_time.map(ts::sql))
                 .bind(st_student_time.map(|_| student_id))
                 .bind(assignment_id)
                 .bind(technique_id)
@@ -837,7 +836,7 @@ async fn run() -> Result<()> {
                      SET graduated_at = ?, graduated_by_id = ?
                      WHERE id = ?",
                 )
-                .bind(grad_time)
+                .bind(ts::sql(grad_time))
                 .bind(coach_id)
                 .bind(assignment_id)
                 .execute(&pool)
@@ -880,9 +879,9 @@ async fn run() -> Result<()> {
                              SET hidden_at = ?, hidden_by_id = ?, updated_at = ?
                              WHERE assignment_id = ? AND technique_id = ?",
                         )
-                        .bind(hidden_time)
+                        .bind(ts::sql(hidden_time))
                         .bind(coach_id)
-                        .bind(hidden_time)
+                        .bind(ts::sql(hidden_time))
                         .bind(assignment_id)
                         .bind(tid)
                         .execute(&pool)
@@ -996,12 +995,12 @@ async fn run() -> Result<()> {
                     )
                     .bind(sst_id)
                     .bind(recorder)
-                    .bind(attempted_at)
+                    .bind(ts::sql(attempted_at))
                     .bind(coach_note_text)
                     .bind(coach_note_by)
-                    .bind(coach_note_at)
+                    .bind(coach_note_at.map(ts::sql))
                     .bind(student_note_text)
-                    .bind(student_note_at)
+                    .bind(student_note_at.map(ts::sql))
                     .execute(&pool)
                     .await?;
                     reporter.phase_item(ItemOutcome::Created);
@@ -1030,7 +1029,7 @@ async fn run() -> Result<()> {
             )
             .bind(student_id)
             .bind(technique_id)
-            .bind(pinned_at)
+            .bind(ts::sql(pinned_at))
             .execute(&pool)
             .await?;
             reporter.phase_item(ItemOutcome::Created);
@@ -1180,8 +1179,8 @@ async fn run() -> Result<()> {
                     .bind(play_count)
                     .bind(completed_count)
                     .bind(total_seconds)
-                    .bind(first_watched)
-                    .bind(last_watched)
+                    .bind(ts::sql(first_watched))
+                    .bind(ts::sql(last_watched))
                     .execute(&pool)
                     .await?;
                     reporter.phase_item(ItemOutcome::Created);
@@ -1477,7 +1476,7 @@ async fn run() -> Result<()> {
         )
         .await?;
         sqlx::query("UPDATE camps SET created_at = ? WHERE id = ?")
-            .bind(created)
+            .bind(ts::sql(created))
             .bind(camp_id)
             .execute(&pool)
             .await?;

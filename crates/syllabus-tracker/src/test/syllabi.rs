@@ -558,14 +558,14 @@ mod tests {
             .unwrap()
             .unwrap();
         let _ = login_test_user(&client, "student_user", "password123").await;
-        let future = chrono::Utc::now() + chrono::Duration::days(7);
+        let future = time::OffsetDateTime::now_utc() + time::Duration::days(7);
         let resp = client
             .post(format!(
                 "/api/student_syllabus_techniques/{}/attempts",
                 sst_id
             ))
             .header(ContentType::JSON)
-            .body(json!({ "attempted_at": future.to_rfc3339() }).to_string())
+            .body(json!({ "attempted_at": crate::ts::rfc3339(future) }).to_string())
             .dispatch()
             .await;
         assert_eq!(resp.status(), Status::BadRequest);
@@ -725,7 +725,7 @@ mod pr4_tests {
         assert_eq!(resp.status(), Status::Forbidden);
 
         // POST attempt — same: 403.
-        let now = chrono::Utc::now().to_rfc3339();
+        let now = crate::ts::rfc3339(time::OffsetDateTime::now_utc());
         let resp = client
             .post(format!(
                 "/api/student_syllabus_techniques/{}/attempts",

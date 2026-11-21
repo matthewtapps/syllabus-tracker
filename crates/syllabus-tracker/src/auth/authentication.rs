@@ -1,3 +1,4 @@
+use time::OffsetDateTime;
 use rkt::Request;
 use rkt::http::Status;
 use rkt::request::{FromRequest, Outcome};
@@ -47,9 +48,9 @@ impl<'r> FromRequest<'r> for User {
                     // get logged out mid-session. Cookies use private
                     // (encrypted, server-issued) tokens so we re-emit them
                     // with the same token + a fresh max_age.
-                    let now = chrono::Utc::now().naive_utc();
-                    let lifetime = chrono::Duration::days(UserSession::LIFETIME_DAYS);
-                    let remaining = session.expires_at.signed_duration_since(now);
+                    let now = OffsetDateTime::now_utc();
+                    let lifetime = time::Duration::days(UserSession::LIFETIME_DAYS);
+                    let remaining = session.expires_at - now;
                     if remaining < lifetime / 2 {
                         let new_expiry = now + lifetime;
                         if let Err(err) = extend_session_expiry(db, &token, new_expiry).await {

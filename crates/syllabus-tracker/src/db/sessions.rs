@@ -1,5 +1,5 @@
-use chrono::{NaiveDateTime, Utc};
 use sqlx::{Pool, Sqlite};
+use time::OffsetDateTime;
 use tracing::{info, instrument};
 
 use crate::auth::{DbUserSession, UserSession};
@@ -10,7 +10,7 @@ pub async fn create_user_session(
     pool: &Pool<Sqlite>,
     user_id: i64,
     token: &str,
-    expires_at: NaiveDateTime,
+    expires_at: OffsetDateTime,
 ) -> Result<i64, AppError> {
     info!("Creating user session");
 
@@ -18,7 +18,7 @@ pub async fn create_user_session(
         "INSERT INTO user_sessions (user_id, token, expires_at) VALUES (?, ?, ?)",
         user_id,
         token,
-        expires_at
+        crate::ts::sql(expires_at)
     )
     .execute(pool)
     .await?;
@@ -53,11 +53,11 @@ pub async fn get_session_by_token(
 pub async fn extend_session_expiry(
     pool: &Pool<Sqlite>,
     token: &str,
-    new_expires_at: NaiveDateTime,
+    new_expires_at: OffsetDateTime,
 ) -> Result<(), AppError> {
     sqlx::query!(
         "UPDATE user_sessions SET expires_at = ? WHERE token = ?",
-        new_expires_at,
+        crate::ts::sql(new_expires_at),
         token
     )
     .execute(pool)
@@ -80,7 +80,7 @@ pub async fn invalidate_session(pool: &Pool<Sqlite>, token: &str) -> Result<(), 
 pub async fn clean_expired_sessions(pool: &Pool<Sqlite>) -> Result<u64, AppError> {
     info!("Cleaning expired sessions");
 
-    let now = Utc::now().naive_utc();
+    let now = crate::ts::sql(OffsetDateTime::now_utc());
 
     let result = sqlx::query!("DELETE FROM user_sessions WHERE expires_at < ?", now)
         .execute(pool)
