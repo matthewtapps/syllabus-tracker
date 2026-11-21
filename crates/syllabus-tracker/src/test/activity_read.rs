@@ -28,7 +28,7 @@ mod tests {
         assert!(!notifies(Verb::AttemptLogged.as_str(), 9, 5, false));
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn cursor_advance_on_view_sets_max_seen_to_snapshot_top_id() {
         let db = TestDbBuilder::new()
             .coach("coach", None)
@@ -70,7 +70,7 @@ mod tests {
         assert_eq!(max_seen, top_id);
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn orphaned_video_activity_is_hidden_from_feed() {
         use crate::db::{create_processing_video, delete_video, VideoParent};
 
@@ -119,7 +119,7 @@ mod tests {
         );
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn mark_one_read_keeps_older_unread() {
         let db = TestDbBuilder::new()
             .coach("coach", None)
@@ -189,7 +189,7 @@ mod tests {
         assert!(seen, "id2 should be marked seen=1");
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn mark_one_unread_on_below_cursor_row_makes_it_unread() {
         let db = TestDbBuilder::new()
             .coach("coach", None)
@@ -236,7 +236,7 @@ mod tests {
         assert!(!seen_val, "override should be seen=0 (unread)");
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn gc_deletes_redundant_seen1_overrides_keeps_seen0() {
         let db = TestDbBuilder::new()
             .coach("coach", None)
@@ -325,7 +325,7 @@ mod tests {
         );
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn mark_one_unread_above_cursor_is_noop() {
         let db = TestDbBuilder::new()
             .coach("coach", None)
@@ -374,7 +374,7 @@ mod tests {
 
     /// Own actions and non-notifiable verbs are excluded from unread_count but
     /// still appear in the feed.
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn notifies_excludes_own_and_non_notifiable_from_count_but_feed_lists_them() {
         let db = TestDbBuilder::new()
             .coach("coach", None)
@@ -432,7 +432,7 @@ mod tests {
     /// The gym (coach/admin) feed is a social feed: it lists the viewer's own
     /// actions too (e.g. a coach setting up a camp), not just everyone else's.
     /// The own rows render as already-read (notifies() excludes them).
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn gym_feed_includes_the_viewers_own_actions() {
         let db = TestDbBuilder::new()
             .coach("coach", None)
@@ -465,7 +465,7 @@ mod tests {
     }
 
     /// Pages are stable and non-overlapping across keyset cursor boundaries.
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn keyset_pagination_returns_stable_non_overlapping_pages() {
         let db = TestDbBuilder::new()
             .coach("coach", None)
@@ -544,7 +544,7 @@ mod tests {
 
     /// The gym (coach) feed includes both the coach's own rows and other
     /// actors' rows: it is a social feed of all gym activity.
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn coach_feed_includes_own_rows_and_other_actors() {
         let db = TestDbBuilder::new()
             .coach("coach", None)
@@ -593,7 +593,7 @@ mod tests {
 
     /// Seeding cursors marks all pre-existing activity as seen for every user,
     /// and a second run is a no-op (idempotent).
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn cursor_init_seeds_existing_users_to_current_max_and_is_idempotent() {
         use crate::db::run_cursor_init;
 
@@ -686,7 +686,7 @@ mod tests {
     }
 
     /// Student feed only includes rows where target_student_id = viewer.
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn student_feed_only_targets_self() {
         let db = TestDbBuilder::new()
             .coach("coach", None)
@@ -733,7 +733,7 @@ mod tests {
 
     /// GET /api/activity/feed returns rows and advances the cursor to the
     /// snapshot max, without marking rows that arrived AFTER the snapshot.
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn feed_endpoint_returns_rows_and_advances_cursor() {
         use crate::db::{advance_cursor_to, current_max_seen};
         use crate::test::test_utils::{login_test_user, setup_test_client};
@@ -767,7 +767,7 @@ mod tests {
 
         // Call the feed endpoint.
         let resp = client.get("/api/activity/feed").dispatch().await;
-        assert_eq!(resp.status(), rocket::http::Status::Ok, "feed returns 200");
+        assert_eq!(resp.status(), rkt::http::Status::Ok, "feed returns 200");
         let body: Vec<serde_json::Value> =
             serde_json::from_str(&resp.into_string().await.unwrap()).unwrap();
         assert_eq!(body.len(), 2, "both pre-request rows returned");
@@ -811,7 +811,7 @@ mod tests {
     }
 
     /// GET /api/activity/unread_count returns a JSON count.
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn unread_count_endpoint() {
         use crate::test::test_utils::{login_test_user, setup_test_client};
 
@@ -840,7 +840,7 @@ mod tests {
         let resp = client.get("/api/activity/unread_count").dispatch().await;
         assert_eq!(
             resp.status(),
-            rocket::http::Status::Ok,
+            rkt::http::Status::Ok,
             "unread_count returns 200"
         );
         let body: serde_json::Value =
@@ -849,7 +849,7 @@ mod tests {
     }
 
     /// POST /api/activity/mark_all_read zeroes the unread count.
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn mark_all_read_zeroes_unread_count() {
         use crate::test::test_utils::{login_test_user, setup_test_client};
 
@@ -883,7 +883,7 @@ mod tests {
         let resp = client.post("/api/activity/mark_all_read").dispatch().await;
         assert_eq!(
             resp.status(),
-            rocket::http::Status::NoContent,
+            rkt::http::Status::NoContent,
             "mark_all_read returns 204"
         );
 
@@ -896,7 +896,7 @@ mod tests {
 
     /// POST /api/activity/<id>/read marks the row seen and drops the unread
     /// count by one.
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn mark_one_read_route_marks_row_seen() {
         use crate::test::test_utils::{login_test_user, setup_test_client};
 
@@ -929,7 +929,7 @@ mod tests {
 
         // Confirm at least one unread row.
         let count_resp = client.get("/api/activity/unread_count").dispatch().await;
-        assert_eq!(count_resp.status(), rocket::http::Status::Ok);
+        assert_eq!(count_resp.status(), rkt::http::Status::Ok);
         let body: serde_json::Value =
             serde_json::from_str(&count_resp.into_string().await.unwrap()).unwrap();
         let count_before = body["count"].as_i64().unwrap();
@@ -940,13 +940,13 @@ mod tests {
         let resp = client.post(url).dispatch().await;
         assert_eq!(
             resp.status(),
-            rocket::http::Status::NoContent,
+            rkt::http::Status::NoContent,
             "mark-one-read returns 204"
         );
 
         // Unread count must have dropped by one.
         let count_resp2 = client.get("/api/activity/unread_count").dispatch().await;
-        assert_eq!(count_resp2.status(), rocket::http::Status::Ok);
+        assert_eq!(count_resp2.status(), rkt::http::Status::Ok);
         let body2: serde_json::Value =
             serde_json::from_str(&count_resp2.into_string().await.unwrap()).unwrap();
         let count_after = body2["count"].as_i64().unwrap();
@@ -958,7 +958,7 @@ mod tests {
     }
 
     /// POST /api/activity/<id>/unread re-flags a previously-seen row as unread.
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn mark_one_unread_route_marks_row_unseen() {
         use crate::test::test_utils::{login_test_user, setup_test_client};
 
@@ -991,7 +991,7 @@ mod tests {
 
         // Mark all read first so count is 0.
         let resp = client.post("/api/activity/mark_all_read").dispatch().await;
-        assert_eq!(resp.status(), rocket::http::Status::NoContent);
+        assert_eq!(resp.status(), rkt::http::Status::NoContent);
 
         let count_resp = client.get("/api/activity/unread_count").dispatch().await;
         let body: serde_json::Value =
@@ -1007,7 +1007,7 @@ mod tests {
         let resp = client.post(url).dispatch().await;
         assert_eq!(
             resp.status(),
-            rocket::http::Status::NoContent,
+            rkt::http::Status::NoContent,
             "mark-one-unread returns 204"
         );
 
@@ -1035,7 +1035,7 @@ mod tests {
     }
 
     /// GET /api/activity/feed with only before_id (missing before_ts) returns 400.
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn feed_partial_cursor_is_rejected() {
         use crate::test::test_utils::{login_test_user, setup_test_client};
 
@@ -1056,7 +1056,7 @@ mod tests {
             .await;
         assert_eq!(
             resp.status(),
-            rocket::http::Status::BadRequest,
+            rkt::http::Status::BadRequest,
             "partial cursor (before_id only) must return 400"
         );
     }
@@ -1065,7 +1065,7 @@ mod tests {
 
     /// GET /api/student/<sid>/activity_feed returns only rows targeting that
     /// student, even when requested by a coach (not gym-wide feed).
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn student_scoped_feed_returns_only_target_student_rows() {
         use crate::test::test_utils::{login_test_user, setup_test_client};
 
@@ -1107,7 +1107,7 @@ mod tests {
         let resp = client.get(url).dispatch().await;
         assert_eq!(
             resp.status(),
-            rocket::http::Status::Ok,
+            rkt::http::Status::Ok,
             "student scoped feed returns 200 for coach"
         );
         let body: Vec<serde_json::Value> =
@@ -1127,7 +1127,7 @@ mod tests {
     }
 
     /// A student requesting another student's scoped feed gets 403.
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn student_scoped_feed_forbidden_for_other_student() {
         use crate::test::test_utils::{login_test_user, setup_test_client};
 
@@ -1159,7 +1159,7 @@ mod tests {
         let resp = client.get(url).dispatch().await;
         assert_eq!(
             resp.status(),
-            rocket::http::Status::Forbidden,
+            rkt::http::Status::Forbidden,
             "another student requesting the feed gets 403"
         );
     }
@@ -1169,7 +1169,7 @@ mod tests {
     /// A broadcast `video_added` (NULL target) appears in the feed of a student
     /// who has the technique assigned, and one who has it pinned, but not an
     /// unrelated student. The coach gym feed shows it exactly once.
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn broadcast_video_added_resolves_relevance_at_read_time() {
         use crate::db::emit_broadcast;
         let db = TestDbBuilder::new()
@@ -1229,7 +1229,7 @@ mod tests {
     /// Unassigning the syllabus removes the broadcast from that student's feed
     /// (relevance is live, not a frozen snapshot), and a broadcast
     /// `syllabus_technique_added` only reaches students assigned to that syllabus.
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn broadcast_relevance_is_live_and_syllabus_scoped() {
         use crate::db::emit_broadcast;
         let db = TestDbBuilder::new()
@@ -1281,7 +1281,7 @@ mod tests {
     }
 
     /// A broadcast event counts as unread only for a relevant student.
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn broadcast_unread_count_is_relevance_scoped() {
         use crate::db::emit_broadcast;
         let db = TestDbBuilder::new()
@@ -1324,7 +1324,7 @@ mod tests {
         );
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn archived_camp_activity_is_hidden_from_the_feed_but_not_the_camp() {
         use crate::db::camps::{archive_camp, create_camp, unarchive_camp, NewCamp};
 

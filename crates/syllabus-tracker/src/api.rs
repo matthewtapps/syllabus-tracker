@@ -1,14 +1,14 @@
 use std::collections::HashMap;
 
-use rocket::FromForm;
-use rocket::Request;
-use rocket::State;
-use rocket::http::CookieJar;
-use rocket::http::Status;
-use rocket::response::Redirect;
-use rocket::response::Responder;
-use rocket::response::status::Custom;
-use rocket::serde::{Deserialize, Serialize, json::Json};
+use rkt::FromForm;
+use rkt::Request;
+use rkt::State;
+use rkt::http::CookieJar;
+use rkt::http::Status;
+use rkt::response::Redirect;
+use rkt::response::Responder;
+use rkt::response::status::Custom;
+use rkt::serde::{Deserialize, Serialize, json::Json};
 use sqlx::{Pool, Sqlite};
 use tracing::warn;
 use validator::Validate;
@@ -111,7 +111,7 @@ impl From<ApiError> for Custom<Json<ValidationResponse>> {
 pub type ApiResult<T> = Result<T, ApiError>;
 
 impl<'r> Responder<'r, 'static> for ApiError {
-    fn respond_to(self, req: &'r Request<'_>) -> rocket::response::Result<'static> {
+    fn respond_to(self, req: &'r Request<'_>) -> rkt::response::Result<'static> {
         let custom_response: Custom<Json<ValidationResponse>> = self.into();
         custom_response.respond_to(req)
     }
@@ -200,16 +200,16 @@ pub struct LoginRequest {
 
 /// Establishes the session cookies for a user. Shared by login and invite-claim.
 async fn establish_session(
-    cookies: &rocket::http::CookieJar<'_>,
+    cookies: &rkt::http::CookieJar<'_>,
     db: &State<Pool<Sqlite>>,
     user: &User,
 ) -> Result<(), AppError> {
     use chrono::Utc;
-    use rocket::http::{Cookie, SameSite};
+    use rkt::http::{Cookie, SameSite};
 
     let token = UserSession::generate_token();
     let lifetime = chrono::Duration::days(UserSession::LIFETIME_DAYS);
-    let cookie_max_age = rocket::time::Duration::days(UserSession::LIFETIME_DAYS);
+    let cookie_max_age = rkt::time::Duration::days(UserSession::LIFETIME_DAYS);
     let expires_at = Utc::now() + lifetime;
     create_user_session(db, user.id, &token, expires_at.naive_utc()).await?;
 
@@ -230,7 +230,7 @@ async fn establish_session(
             .same_site(SameSite::Lax)
             .max_age(cookie_max_age),
     );
-    let current_timestamp = rocket::time::OffsetDateTime::now_utc()
+    let current_timestamp = rkt::time::OffsetDateTime::now_utc()
         .unix_timestamp()
         .to_string();
     cookies.add_private(
@@ -249,7 +249,7 @@ async fn establish_session(
 #[post("/login", data = "<login>")]
 pub async fn api_login(
     login: Json<LoginRequest>,
-    cookies: &rocket::http::CookieJar<'_>,
+    cookies: &rkt::http::CookieJar<'_>,
     db: &State<Pool<Sqlite>>,
 ) -> ApiResult<Json<LoginResponse>> {
     login.validate()?;
@@ -815,11 +815,11 @@ pub async fn api_logout(cookies: &CookieJar<'_>, db: &State<Pool<Sqlite>>) -> Re
         let _ = invalidate_session(db, &token).await;
     }
 
-    cookies.remove_private(rocket::http::Cookie::build("session_token"));
-    cookies.remove_private(rocket::http::Cookie::build("user_id"));
-    cookies.remove_private(rocket::http::Cookie::build("logged_in"));
-    cookies.remove_private(rocket::http::Cookie::build("session_timestamp"));
-    cookies.remove_private(rocket::http::Cookie::build("user_role"));
+    cookies.remove_private(rkt::http::Cookie::build("session_token"));
+    cookies.remove_private(rkt::http::Cookie::build("user_id"));
+    cookies.remove_private(rkt::http::Cookie::build("logged_in"));
+    cookies.remove_private(rkt::http::Cookie::build("session_timestamp"));
+    cookies.remove_private(rkt::http::Cookie::build("user_role"));
 
     Redirect::to("/")
 }
@@ -1282,7 +1282,7 @@ pub struct ClaimInviteRequest {
 pub async fn api_claim_invite(
     token: String,
     body: Json<ClaimInviteRequest>,
-    cookies: &rocket::http::CookieJar<'_>,
+    cookies: &rkt::http::CookieJar<'_>,
     db: &State<Pool<Sqlite>>,
 ) -> ApiResult<Json<UserData>> {
     body.validate()?;
@@ -1342,7 +1342,7 @@ pub struct SelfRegisterRequest {
 #[post("/register/self", data = "<body>")]
 pub async fn api_self_register(
     body: Json<SelfRegisterRequest>,
-    cookies: &rocket::http::CookieJar<'_>,
+    cookies: &rkt::http::CookieJar<'_>,
     db: &State<Pool<Sqlite>>,
 ) -> ApiResult<Json<UserData>> {
     body.validate()?;

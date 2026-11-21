@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod tests {
-    use rocket::http::{ContentType, Status};
+    use rkt::http::{ContentType, Status};
     use serde_json::{Value, json};
 
     use crate::db;
@@ -10,7 +10,7 @@ mod tests {
     };
 
     async fn assign_syllabus_and_seed_techniques() -> (
-        rocket::local::asynchronous::Client,
+        rkt::local::asynchronous::Client,
         crate::test::test_utils::TestDb,
         i64, // syllabus_id
         i64, // student_id
@@ -56,7 +56,7 @@ mod tests {
         )
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn re_assigning_same_pair_clears_unassigned_at() {
         let (_client, db, syllabus_id, student_id, coach_id, _, _) =
             assign_syllabus_and_seed_techniques().await;
@@ -77,7 +77,7 @@ mod tests {
         assert!(assignment.unassigned_at.is_none());
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn eager_sst_materialization_on_assign() {
         let (_client, db, syllabus_id, student_id, coach_id, armbar_id, triangle_id) =
             assign_syllabus_and_seed_techniques().await;
@@ -99,7 +99,7 @@ mod tests {
         });
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn t3_video_does_not_inflate_technique_video_count() {
         use crate::db::{VideoParent, create_processing_video};
 
@@ -156,7 +156,7 @@ mod tests {
         );
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn cascade_add_inserts_sst_for_active_assignments() {
         // Seed an assignment first, then add a new technique with Cascade
         // and confirm the SST appears in the existing assignment.
@@ -217,7 +217,7 @@ mod tests {
         );
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn syllabus_only_add_does_not_fan_out() {
         let (_client, db, syllabus_id, student_id, coach_id, _, _) =
             assign_syllabus_and_seed_techniques().await;
@@ -255,7 +255,7 @@ mod tests {
         );
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn cascade_remove_soft_hides_sst() {
         let (_client, db, syllabus_id, student_id, coach_id, armbar_id, _) =
             assign_syllabus_and_seed_techniques().await;
@@ -286,7 +286,7 @@ mod tests {
         assert!(armbar_sst.hidden_at.is_some());
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn remove_technique_preserves_tier2_videos_as_soft_deleted() {
         use crate::db::{VideoParent, create_processing_video};
 
@@ -359,7 +359,7 @@ mod tests {
         );
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn re_assign_preserves_hidden_at_on_existing_sst() {
         let (_client, db, syllabus_id, student_id, coach_id, armbar_id, _) =
             assign_syllabus_and_seed_techniques().await;
@@ -407,7 +407,7 @@ mod tests {
         );
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn unique_student_syllabus_pair_enforced() {
         let test_db = TestDbBuilder::new()
             .coach("coach", None)
@@ -433,7 +433,7 @@ mod tests {
         assert_eq!(id1, id2);
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn permission_guards_block_students_from_syllabus_routes() {
         let test_db = create_standard_test_db().await;
         let (client, _db) = setup_test_client(test_db).await;
@@ -452,7 +452,7 @@ mod tests {
         assert_eq!(resp.status(), Status::Forbidden);
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn student_sees_own_assignments_only() {
         let (client, db, syllabus_id, student_id, coach_id, _, _) =
             assign_syllabus_and_seed_techniques().await;
@@ -471,7 +471,7 @@ mod tests {
         assert_eq!(body[0]["syllabus_id"].as_i64(), Some(syllabus_id));
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn coach_and_status_fields_rejected_for_student_on_sst_patch() {
         let (client, db, syllabus_id, student_id, coach_id, armbar_id, _) =
             assign_syllabus_and_seed_techniques().await;
@@ -512,7 +512,7 @@ mod tests {
         assert_eq!(resp.status(), Status::NoContent);
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn library_excludes_student_only_techniques() {
         let test_db = create_standard_test_db().await;
         sqlx::query!("INSERT INTO techniques (name, description) VALUES ('Global Move', '')")
@@ -531,7 +531,7 @@ mod tests {
         assert!(!names.contains(&"Private Move"));
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn list_for_assignment_exposes_is_global() {
         let (_client, db, syllabus_id, student_id, coach_id, _, _) =
             assign_syllabus_and_seed_techniques().await;
@@ -546,7 +546,7 @@ mod tests {
         assert!(rows[0].is_global);
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn syllabus_attempt_rejects_future_timestamp() {
         let (client, db, syllabus_id, student_id, coach_id, armbar_id, _) =
             assign_syllabus_and_seed_techniques().await;
@@ -578,7 +578,7 @@ mod soft_delete_tests {
     use crate::db::PropagationMode;
     use crate::test::test_utils::TestDbBuilder;
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn soft_delete_syllabus_hides_it_and_closes_assignments() {
         let test_db = TestDbBuilder::new()
             .coach("coach", None)
@@ -652,7 +652,7 @@ mod soft_delete_tests {
 
 #[cfg(test)]
 mod pr4_tests {
-    use rocket::http::{ContentType, Status};
+    use rkt::http::{ContentType, Status};
     use serde_json::{Value, json};
 
     use crate::db;
@@ -662,7 +662,7 @@ mod pr4_tests {
     };
 
     async fn seed_active_assignment() -> (
-        rocket::local::asynchronous::Client,
+        rkt::local::asynchronous::Client,
         crate::test::test_utils::TestDb,
         i64, // syllabus_id
         i64, // student_id
@@ -705,7 +705,7 @@ mod pr4_tests {
         )
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn graduate_blocks_student_sst_writes() {
         let (client, db, syllabus_id, student_id, coach_id, assignment_id, sst_id) =
             seed_active_assignment().await;
@@ -738,7 +738,7 @@ mod pr4_tests {
         assert_eq!(resp.status(), Status::Forbidden);
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn graduate_lets_coach_edit() {
         let (client, db, _, _, coach_id, assignment_id, sst_id) = seed_active_assignment().await;
         db::graduate(&db.pool, coach_id, assignment_id)
@@ -755,7 +755,7 @@ mod pr4_tests {
         assert_eq!(resp.status(), Status::NoContent);
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn graduated_assignment_skipped_by_cascade_add() {
         let test_db = TestDbBuilder::new()
             .coach("coach", None)
@@ -810,7 +810,7 @@ mod pr4_tests {
         );
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn set_hidden_toggles_sst_state() {
         let (_client, db, _, _, coach_id, _, sst_id) = seed_active_assignment().await;
         db::set_hidden(&db.pool, coach_id, sst_id, true)
@@ -843,7 +843,7 @@ mod pr4_tests {
             .assignment_id
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn diff_lists_ghosts_and_missing() {
         let (_client, db, syllabus_id, _, coach_id, assignment_id, _sst_id) =
             seed_active_assignment().await;
@@ -891,7 +891,7 @@ mod pr4_tests {
         );
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn diff_lists_hidden_and_student_only_videos() {
         use crate::db::{DiffVideoKind, VideoParent, VisibilityScope, create_processing_video};
         // Two students on the same syllabus so we can assert no cross-bleed.
@@ -983,7 +983,7 @@ mod pr4_tests {
         );
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn apply_diff_restores_and_promotes_videos() {
         use crate::db::{VideoParent, VisibilityScope, create_processing_video};
         let (client, db, syllabus_id, student_id, coach_id, assignment_id, sst_id) =
@@ -1085,7 +1085,7 @@ mod pr4_tests {
         assert_eq!(promoted.sst_id, None);
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn add_technique_to_assignment_unhides_existing() {
         let (_client, db, _, _, coach_id, assignment_id, sst_id) = seed_active_assignment().await;
         let armbar_id = db.technique_id("Armbar").unwrap();
@@ -1107,7 +1107,7 @@ mod pr4_tests {
         assert!(row.hidden_at.is_none());
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn ungraduate_clears_columns_without_touching_sst() {
         let (_client, db, _, _, coach_id, assignment_id, sst_id) = seed_active_assignment().await;
         db::graduate(&db.pool, coach_id, assignment_id)
@@ -1125,7 +1125,7 @@ mod pr4_tests {
         assert_eq!(owner.assignment_id, assignment_id);
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn video_syllabus_visibility_upsert_and_clear() {
         let test_db = create_standard_test_db().await;
         let coach_id = test_db.user_id("coach_user").unwrap();
@@ -1207,7 +1207,7 @@ mod pr4_tests {
         assert!(visible.iter().any(|v| v.id == video_id));
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn apply_diff_endpoint_executes_actions() {
         let (client, db, syllabus_id, student_id, coach_id, assignment_id, _) =
             seed_active_assignment().await;
@@ -1268,7 +1268,7 @@ mod pr4_tests {
 
     /// Gap 2 guard: `update_syllabus` must be a no-op when the syllabus has
     /// been soft-deleted. Patching a dead row must not change its name.
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn update_syllabus_is_noop_on_soft_deleted() {
         use crate::test::test_utils::TestDbBuilder;
 
@@ -1306,7 +1306,7 @@ mod pr4_tests {
         );
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn syllabus_roster_rows_carry_progress_and_respect_paging() {
         let (_client, db, syllabus_id, student_id, coach_id, _assignment_id, sst_id) =
             seed_active_assignment().await;
@@ -1362,7 +1362,7 @@ mod pr4_tests {
         );
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn syllabus_stats_bucket_each_student_once() {
         let test_db = TestDbBuilder::new()
             .coach("coach", None)
@@ -1446,7 +1446,7 @@ mod pr4_tests {
 
 #[cfg(test)]
 mod order_tests {
-    use rocket::http::{ContentType, Status};
+    use rkt::http::{ContentType, Status};
     use serde_json::{Value, json};
 
     use crate::db;
@@ -1454,7 +1454,7 @@ mod order_tests {
     use crate::test::test_utils::{create_standard_test_db, login_test_user, setup_test_client};
 
     async fn assign_syllabus_and_seed_techniques() -> (
-        rocket::local::asynchronous::Client,
+        rkt::local::asynchronous::Client,
         crate::test::test_utils::TestDb,
         i64, // syllabus_id
         i64, // student_id
@@ -1511,7 +1511,7 @@ mod order_tests {
         .collect()
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn adding_techniques_appends_at_the_end() {
         let test_db = create_standard_test_db().await;
         let coach_id = test_db.user_id("coach_user").unwrap();
@@ -1559,7 +1559,7 @@ mod order_tests {
         );
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn reorder_persists_positions_and_drives_the_listing() {
         let (client, db, syllabus_id, _student_id, _coach_id, armbar_id, triangle_id) =
             assign_syllabus_and_seed_techniques().await;
@@ -1598,7 +1598,7 @@ mod order_tests {
         assert_eq!(listed, vec![triangle_id, armbar_id]);
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn reorder_ignores_technique_ids_outside_the_syllabus() {
         let (_client, db, syllabus_id, _student_id, coach_id, armbar_id, triangle_id) =
             assign_syllabus_and_seed_techniques().await;
@@ -1622,7 +1622,7 @@ mod order_tests {
         );
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn reorder_is_denied_to_students() {
         let (client, _db, syllabus_id, _student_id, _coach_id, armbar_id, triangle_id) =
             assign_syllabus_and_seed_techniques().await;
@@ -1636,7 +1636,7 @@ mod order_tests {
             .await;
         assert_eq!(resp.status(), Status::Forbidden);
     }
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn sst_rows_carry_syllabus_position_and_null_for_student_only_extras() {
         let (_client, db, syllabus_id, student_id, coach_id, armbar_id, triangle_id) =
             assign_syllabus_and_seed_techniques().await;

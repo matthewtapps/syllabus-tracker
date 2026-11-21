@@ -8,7 +8,7 @@ mod tests {
         test::test_utils::TestDbBuilder,
     };
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn test_create_and_get_tags() {
         let test_db = TestDbBuilder::new()
             .coach("coach_user", Some("Coach User"))
@@ -39,7 +39,7 @@ mod tests {
         assert!(all_tags.iter().any(|t| t.name == "No Gi"));
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn test_add_and_get_technique_tags() {
         let test_db = TestDbBuilder::new()
             .coach("coach_user", Some("Coach User"))
@@ -74,7 +74,7 @@ mod tests {
         assert!(technique_tags.iter().any(|t| t.name == "Submission"));
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn test_remove_technique_tag() {
         let test_db = TestDbBuilder::new()
             .coach("coach_user", Some("Coach User"))
@@ -103,7 +103,7 @@ mod tests {
         assert_eq!(technique_tags.len(), 0);
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn test_delete_tag() {
         let test_db = TestDbBuilder::new()
             .coach("coach_user", Some("Coach User"))
@@ -149,7 +149,7 @@ mod tests {
         assert_eq!(all_tags.len(), 0);
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn test_duplicate_tag() {
         let test_db = TestDbBuilder::new()
             .build()
@@ -164,7 +164,7 @@ mod tests {
         assert!(result.is_err(), "Creating duplicate tag should fail");
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn test_add_same_tag_twice() {
         let test_db = TestDbBuilder::new()
             .coach("coach_user", Some("Coach User"))

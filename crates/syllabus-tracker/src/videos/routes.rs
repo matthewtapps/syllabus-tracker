@@ -1,11 +1,11 @@
 use chrono::{DateTime, Utc};
-use rocket::State;
-use rocket::data::{ByteUnit, Data, ToByteUnit};
-use rocket::form::{Errors as FormErrors, Form};
-use rocket::fs::TempFile;
-use rocket::http::Status;
-use rocket::serde::{Deserialize, Serialize, json::Json};
-use rocket::tokio;
+use rkt::State;
+use rkt::data::{ByteUnit, Data, ToByteUnit};
+use rkt::form::{Errors as FormErrors, Form};
+use rkt::fs::TempFile;
+use rkt::http::Status;
+use rkt::serde::{Deserialize, Serialize, json::Json};
+use rkt::tokio;
 use sqlx::{Pool, Sqlite};
 use tracing::{error, info, instrument, warn};
 use uuid::Uuid;
@@ -1215,18 +1215,18 @@ pub async fn api_admin_storage(
 // handler alongside a `Data<'_>` body parameter.
 pub struct SigHeader(pub Option<String>);
 
-#[rocket::async_trait]
-impl<'r> rocket::request::FromRequest<'r> for SigHeader {
+#[rkt::async_trait]
+impl<'r> rkt::request::FromRequest<'r> for SigHeader {
     type Error = ();
 
     async fn from_request(
-        req: &'r rocket::Request<'_>,
-    ) -> rocket::request::Outcome<Self, Self::Error> {
+        req: &'r rkt::Request<'_>,
+    ) -> rkt::request::Outcome<Self, Self::Error> {
         let val = req
             .headers()
             .get_one(video_job::SIGNATURE_HEADER)
             .map(|s| s.to_owned());
-        rocket::request::Outcome::Success(SigHeader(val))
+        rkt::request::Outcome::Success(SigHeader(val))
     }
 }
 
@@ -1343,7 +1343,7 @@ pub async fn api_processing_result(
 // ---------------------------------------------------------------------------
 
 /// Query parameters for `GET /videos/browse`.
-#[derive(Debug, rocket::serde::Deserialize, rocket::form::FromForm)]
+#[derive(Debug, rkt::serde::Deserialize, rkt::form::FromForm)]
 pub struct BrowseParams {
     /// The student whose visibility scopes the results. Absent means no student
     /// is in context (the global library), which only a coach may ask for.
@@ -1537,7 +1537,7 @@ pub async fn api_browse_videos(
 /// Any video container is accepted: the pipeline probes what actually arrived
 /// and transcodes anything that is not already an h264 mp4, so demanding mp4
 /// here would only turn iPhone recordings (`video/quicktime`) into a 415.
-fn is_video_upload(content_type: Option<&rocket::http::ContentType>) -> bool {
+fn is_video_upload(content_type: Option<&rkt::http::ContentType>) -> bool {
     match content_type {
         Some(ct) => ct.media_type().top() == "video",
         None => false,

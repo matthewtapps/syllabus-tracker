@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod tests {
-    use rocket::http::{ContentType, Header, Status};
-    use rocket::local::asynchronous::Client;
+    use rkt::http::{ContentType, Header, Status};
+    use rkt::local::asynchronous::Client;
     use serde_json::json;
 
     use crate::test::test_utils::{
@@ -110,7 +110,7 @@ mod tests {
         "timeout".to_string()
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn upload_requires_coach_permission() {
         let test_db = create_standard_test_db().await;
         let (client, db) = setup_test_client(test_db).await;
@@ -128,7 +128,7 @@ mod tests {
         assert_eq!(response.status(), Status::Forbidden);
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn upload_rejects_wrong_content_type() {
         let test_db = create_standard_test_db().await;
         let (client, db) = setup_test_client(test_db).await;
@@ -157,7 +157,7 @@ mod tests {
         assert_eq!(response.status(), Status::UnsupportedMediaType);
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn upload_accepts_a_quicktime_recording() {
         let test_db = create_standard_test_db().await;
         let (client, db) = setup_test_client(test_db).await;
@@ -186,7 +186,7 @@ mod tests {
         assert_eq!(response.status(), Status::Ok);
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn upload_creates_row_then_processes() {
         let test_db = create_standard_test_db().await;
         let (client, db) = setup_test_client(test_db).await;
@@ -212,7 +212,7 @@ mod tests {
         assert_eq!(final_status, "ready");
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn link_video_parses_youtube_url() {
         let test_db = create_standard_test_db().await;
         let (client, db) = setup_test_client(test_db).await;
@@ -241,7 +241,7 @@ mod tests {
         assert_eq!(body["external_video_id"], "dQw4w9WgXcQ");
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn link_video_handles_unknown_host() {
         let test_db = create_standard_test_db().await;
         let (client, db) = setup_test_client(test_db).await;
@@ -310,7 +310,7 @@ mod tests {
         (st_id, sst_id)
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn link_video_at_syllabus_technique_parent() {
         let test_db = create_standard_test_db().await;
         let (client, db) = setup_test_client(test_db).await;
@@ -348,7 +348,7 @@ mod tests {
         assert_eq!(row.syllabus_technique_id, Some(st_id));
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn upload_video_at_student_syllabus_technique_parent() {
         let test_db = create_standard_test_db().await;
         let (client, db) = setup_test_client(test_db).await;
@@ -385,7 +385,7 @@ mod tests {
         assert_eq!(row.student_syllabus_technique_id, Some(sst_id));
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn tiered_create_requires_coach_permission() {
         let test_db = create_standard_test_db().await;
         let (client, db) = setup_test_client(test_db).await;
@@ -428,7 +428,7 @@ mod tests {
         assert_eq!(response.status(), Status::Forbidden);
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn list_orders_by_position() {
         let test_db = create_standard_test_db().await;
         let (client, db) = setup_test_client(test_db).await;
@@ -465,7 +465,7 @@ mod tests {
         }
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn playback_url_only_when_ready() {
         let test_db = create_standard_test_db().await;
         let (client, db) = setup_test_client(test_db).await;
@@ -513,7 +513,7 @@ mod tests {
         assert!(body["url"].as_str().unwrap().starts_with("memory://"));
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn delete_video_requires_permission() {
         let test_db = create_standard_test_db().await;
         let (client, db) = setup_test_client(test_db).await;
@@ -546,7 +546,7 @@ mod tests {
         assert_eq!(response.status(), Status::NoContent);
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn reorder_videos_persists_positions() {
         let test_db = create_standard_test_db().await;
         let (client, db) = setup_test_client(test_db).await;
@@ -612,7 +612,7 @@ mod tests {
         video_id: i64,
         play_id: &str,
         events: Vec<serde_json::Value>,
-    ) -> rocket::http::Status {
+    ) -> rkt::http::Status {
         client
             .post(format!("/api/videos/{}/watch-events", video_id))
             .header(ContentType::JSON)
@@ -628,7 +628,7 @@ mod tests {
             .status()
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn watch_event_ingest_increments_aggregates() {
         let test_db = create_standard_test_db().await;
         let (client, db) = setup_test_client(test_db).await;
@@ -663,7 +663,7 @@ mod tests {
         assert_eq!(agg["total_seconds_watched"].as_i64().unwrap(), 30);
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn rewatch_with_new_play_id_increments_play_count() {
         let test_db = create_standard_test_db().await;
         let (client, db) = setup_test_client(test_db).await;
@@ -706,7 +706,7 @@ mod tests {
         assert_eq!(agg["total_seconds_watched"].as_i64().unwrap(), 50);
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn completed_idempotent_within_play_id() {
         let test_db = create_standard_test_db().await;
         let (client, db) = setup_test_client(test_db).await;
@@ -746,7 +746,7 @@ mod tests {
         assert_eq!(agg["completed_count"].as_i64().unwrap(), 1);
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn watch_event_rejects_unknown_event_name() {
         let test_db = create_standard_test_db().await;
         let (client, db) = setup_test_client(test_db).await;
@@ -766,7 +766,7 @@ mod tests {
         assert_eq!(status, Status::UnprocessableEntity);
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn video_stats_requires_coach_permission() {
         let test_db = create_standard_test_db().await;
         let (client, db) = setup_test_client(test_db).await;
@@ -793,7 +793,7 @@ mod tests {
         assert_eq!(body["video_id"].as_i64().unwrap(), video_id);
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn video_stats_aggregates_across_users() {
         let test_db = create_standard_test_db().await;
         let (client, db) = setup_test_client(test_db).await;
@@ -827,7 +827,7 @@ mod tests {
         assert_eq!(body["total_seconds_watched"].as_i64().unwrap(), 30);
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn admin_storage_returns_totals_and_top_objects() {
         let test_db = create_standard_test_db().await;
         let (client, db) = setup_test_client(test_db).await;
@@ -850,7 +850,7 @@ mod tests {
         assert!(body["top_objects"].as_array().unwrap().len() >= 2);
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn privacy_ack_persists() {
         let test_db = create_standard_test_db().await;
         let (client, _db) = setup_test_client(test_db).await;
@@ -870,7 +870,7 @@ mod tests {
         assert_eq!(body["acked"], true);
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn create_video_for_each_parent_kind_round_trips() {
         use crate::db::{
             create_processing_video, get_db_video, list_videos_for_parent_global_visible,
@@ -934,7 +934,7 @@ mod tests {
         assert_eq!(prof_list[0].technique_id, None);
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn create_video_for_syllabus_tiers_round_trips() {
         use crate::db::{create_processing_video, VideoParent};
         use crate::test::test_utils::TestDbBuilder;
@@ -1029,7 +1029,7 @@ mod tests {
         assert_eq!(sst_row.student_syllabus_technique_id, Some(sst_id));
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn effective_video_visible_precedence() {
         use crate::db::{
             clear_video_override, create_processing_video, effective_video_visible,
@@ -1251,7 +1251,7 @@ mod tests {
     /// rows that could mis-apply after SQLite reused the rowid. The typed-FK
     /// ON DELETE CASCADE removes the override with the entity. Also covers
     /// upsert idempotency (set twice -> a single row).
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn override_cascades_when_scope_entity_deleted() {
         use crate::db::{create_processing_video, set_video_override, VideoParent, VisibilityScope};
         use crate::test::test_utils::TestDbBuilder;
@@ -1340,7 +1340,7 @@ mod tests {
         assert_eq!(after, 0, "override must cascade on scope-entity delete");
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn anywhere_guard_respects_assignment_scope_hide() {
         use crate::db::{
             create_processing_video, set_video_override, video_visible_to_student,
@@ -1438,7 +1438,7 @@ mod tests {
         );
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn backfill_maps_legacy_visibility_and_skips_orphans() {
         use crate::db::{create_processing_video, run_video_visibility_backfill, VideoParent};
         use crate::test::test_utils::TestDbBuilder;
@@ -1605,7 +1605,7 @@ mod tests {
         assert_eq!(again.student_inserted, 0);
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn per_syllabus_read_unions_all_three_tiers_and_cascades() {
         use crate::db::{
             create_processing_video, list_videos_for_technique_in_syllabus_visible_to, VideoParent,
@@ -1784,7 +1784,7 @@ mod tests {
         );
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn create_video_rejects_missing_parent() {
         use crate::db::{create_processing_video, VideoParent};
         use crate::test::test_utils::TestDbBuilder;
@@ -1868,9 +1868,9 @@ mod tests {
         body: Vec<u8>,
         secret: Option<&str>,
         sig_override: Option<&str>,
-    ) -> rocket::http::Status {
+    ) -> rkt::http::Status {
         let mut req = client.post(format!("/api/videos/{}/processing-result", video_id));
-        req = req.header(rocket::http::Header::new(
+        req = req.header(rkt::http::Header::new(
             "Content-Type",
             "application/json",
         ));
@@ -1885,7 +1885,7 @@ mod tests {
             return resp.status();
         };
 
-        req.header(rocket::http::Header::new(
+        req.header(rkt::http::Header::new(
             video_job::SIGNATURE_HEADER,
             sig,
         ))
@@ -1895,7 +1895,7 @@ mod tests {
         .status()
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn processing_result_valid_ready_sets_row() {
         let test_db = create_standard_test_db().await;
         let (client, db) = setup_test_client_with_secret(test_db, WEBHOOK_SECRET).await;
@@ -1921,7 +1921,7 @@ mod tests {
         assert_eq!(parsed["processing_status"], "ready");
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn processing_result_bad_signature_returns_401() {
         let test_db = create_standard_test_db().await;
         let (client, db) = setup_test_client_with_secret(test_db, WEBHOOK_SECRET).await;
@@ -1951,7 +1951,7 @@ mod tests {
         assert_ne!(parsed["processing_status"], "failed");
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn processing_result_missing_signature_returns_401() {
         let test_db = create_standard_test_db().await;
         let (client, db) = setup_test_client_with_secret(test_db, WEBHOOK_SECRET).await;
@@ -1967,7 +1967,7 @@ mod tests {
         assert_eq!(status, Status::Unauthorized);
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn processing_result_failed_variant_sets_failed() {
         let test_db = create_standard_test_db().await;
         let (client, db) = setup_test_client_with_secret(test_db, WEBHOOK_SECRET).await;
@@ -1993,7 +1993,7 @@ mod tests {
         assert_eq!(status, Status::Ok);
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn processing_result_idempotent_ready_twice() {
         let test_db = create_standard_test_db().await;
         let (client, db) = setup_test_client_with_secret(test_db, WEBHOOK_SECRET).await;
@@ -2012,7 +2012,7 @@ mod tests {
         assert_eq!(s2, Status::Ok, "redelivery must be idempotent");
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn processing_result_unknown_video_id_returns_404() {
         let test_db = create_standard_test_db().await;
         let (client, _db) = setup_test_client_with_secret(test_db, WEBHOOK_SECRET).await;
@@ -2050,14 +2050,14 @@ mod tests {
         )
         .await;
 
-        let client = rocket::local::asynchronous::Client::tracked(rocket)
+        let client = rkt::local::asynchronous::Client::tracked(rocket)
             .await
             .expect("Failed to create test client");
 
         (client, test_db)
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn comment_with_external_video_reparents_draft_to_thread() {
         use crate::db;
         let db = crate::test::test_utils::TestDbBuilder::new()
@@ -2097,7 +2097,7 @@ mod tests {
         assert_eq!(th, Some(thread_id));
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn private_thread_reply_not_playable_by_other_student() {
         use crate::db;
         let tdb = crate::test::test_utils::TestDbBuilder::new()
@@ -2345,7 +2345,7 @@ mod tests {
 
     /// 1. Library source: visible video appears, hidden video does NOT, even
     ///    when a COACH calls the endpoint (no-back-door rule).
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn browse_library_visible_video_appears_hidden_does_not_even_for_coach() {
         let f = setup_browse_fixture().await;
         let results = crate::db::browse_library_videos_for_technique(&f.pool, f.technique_id)
@@ -2363,7 +2363,7 @@ mod tests {
     }
 
     /// 2. Another student's camp videos must not appear in student1's browse.
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn browse_camps_another_students_camp_never_appears() {
         let f = setup_browse_fixture().await;
         let parents = crate::db::browse_camp_parents(&f.pool, narrow(f.student1_id))
@@ -2400,7 +2400,7 @@ mod tests {
     /// A clip posted into a camp is reparented to the thread that carries it,
     /// so `videos.camp_id` is null. Browsing the camps source must still find
     /// it, or every video posted through a camp composer is unreachable.
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn browse_camps_finds_a_clip_posted_into_a_camp_thread() {
         let f = setup_browse_fixture().await;
 
@@ -2507,7 +2507,7 @@ mod tests {
 
     /// An untitled clip posted into a camp is named by the post that carried it,
     /// so a picker shows something other than "camp . X" for every one of them.
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn browse_camps_names_an_untitled_clip_after_its_post() {
         let f = setup_browse_fixture().await;
 
@@ -2588,7 +2588,7 @@ mod tests {
     }
 
     /// 3. Text search matches by title and respects visibility.
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn browse_search_matches_title_and_respects_visibility() {
         let f = setup_browse_fixture().await;
         // "guard pass" should hit the visible library video but NOT the hidden one.
@@ -2618,7 +2618,7 @@ mod tests {
     /// Widening is what lets a coach put another student's clip somewhere, so
     /// the widened reads must reach camps the narrow ones deliberately hide,
     /// and must say whose camp each one is.
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn browse_camps_widened_reaches_another_students_camp() {
         use crate::db::BrowseScope;
         let f = setup_browse_fixture().await;
@@ -2648,7 +2648,7 @@ mod tests {
     }
 
     /// The same reads, unwidened, keep the guarantee the narrow browse sells.
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn browse_camps_narrow_still_hides_another_students_camp() {
         use crate::db::BrowseScope;
         let f = setup_browse_fixture().await;
@@ -2681,7 +2681,7 @@ mod tests {
 
     /// The toggle widens search too: a search that hid what the toggle just
     /// revealed would read as broken.
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn browse_search_widens_with_the_scope() {
         use crate::db::BrowseScope;
         let f = setup_browse_fixture().await;
@@ -2700,7 +2700,7 @@ mod tests {
 
     /// A studentless browse is the global library technique page: no student is
     /// in context, so everything is on the table.
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn browse_without_a_student_sees_every_camp() {
         use crate::db::BrowseScope;
         let f = setup_browse_fixture().await;
@@ -2717,7 +2717,7 @@ mod tests {
     /// Search is the only browse read that spans sources, so it is the only one
     /// that has to work out where each hit came from. A picker uses this to
     /// decide whether landing the clip somewhere public exposes anything.
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn browse_search_tags_each_hit_with_its_source() {
         use crate::db::BrowseSource;
         let f = setup_browse_fixture().await;
@@ -2746,7 +2746,7 @@ mod tests {
 
     /// 4. 403 when a different student (not the subject, not a coach) calls
     ///    the HTTP endpoint with another student's id.
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn browse_http_forbidden_for_wrong_student() {
         let f = setup_browse_fixture().await;
         let (client, _db) = setup_test_client(browse_test_db(&f)).await;
@@ -2767,7 +2767,7 @@ mod tests {
 
     /// 5. A coach CAN call the endpoint but gets only the student's visibility
     ///    (the hidden library video must still not appear).
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn browse_http_coach_sees_only_student_visibility() {
         let f = setup_browse_fixture().await;
         let (client, _db) = setup_test_client(browse_test_db(&f)).await;
@@ -2797,7 +2797,7 @@ mod tests {
     /// Widening is a coach capability, and a student asking for it is refused
     /// rather than quietly narrowed: a caller must never be told it saw
     /// everything when it did not.
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn browse_http_widening_is_refused_for_a_student() {
         let f = setup_browse_fixture().await;
         let (client, _db) = setup_test_client(browse_test_db(&f)).await;
@@ -2821,7 +2821,7 @@ mod tests {
 
     /// The global library technique page: no student in context, so a coach
     /// browsing camps reaches every student's.
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn browse_http_coach_may_browse_without_a_student() {
         let f = setup_browse_fixture().await;
         let (client, _db) = setup_test_client(browse_test_db(&f)).await;
@@ -2848,7 +2848,7 @@ mod tests {
 
     /// A syllabus video's visibility resolves per assignment, so the source has
     /// nothing to answer without a student in context.
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn browse_http_syllabuses_needs_a_student() {
         let f = setup_browse_fixture().await;
         let (client, _db) = setup_test_client(browse_test_db(&f)).await;
@@ -2862,7 +2862,7 @@ mod tests {
     }
 
     /// 6. Syllabus source parents list and drill-in work.
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn browse_syllabus_parents_and_drill_in_work() {
         let f = setup_browse_fixture().await;
         let parents = crate::db::browse_syllabus_parents(&f.pool, f.student1_id)
@@ -3000,7 +3000,7 @@ mod db_tests {
     /// Gap 1 regression: a soft-deleted syllabus closes its assignments via
     /// `unassigned_at`. The student must then see NO videos through that closed
     /// assignment -- the lookup must gate on `unassigned_at IS NULL`.
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn student_sees_no_videos_for_soft_deleted_syllabus() {
         use crate::db::{
             create_processing_video, delete_syllabus,
@@ -3086,7 +3086,7 @@ mod db_tests {
     /// Gap 3 guard: syllabus-scope overrides must cascade away when the syllabus
     /// row is deleted. Even though the app soft-deletes, this verifies the FK
     /// constraint at the schema level.
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn syllabus_scope_override_cascades_on_syllabus_delete() {
         use crate::db::{create_processing_video, set_video_override, VideoParent, VisibilityScope};
         use crate::test::test_utils::TestDbBuilder;

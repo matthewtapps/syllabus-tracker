@@ -3,9 +3,9 @@
 //! mutation, syllabus attempts, per-syllabus video reads.
 
 use chrono::{DateTime, NaiveDateTime, Utc};
-use rocket::State;
-use rocket::http::Status;
-use rocket::serde::json::Json;
+use rkt::State;
+use rkt::http::Status;
+use rkt::serde::json::Json;
 use serde::{Deserialize, Serialize};
 use sqlx::{Pool, Sqlite};
 use validator::Validate;

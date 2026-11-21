@@ -14,8 +14,8 @@ pub mod test_utils {
     use migration_engine::migrations::{
         migrate_database_declaratively, read_schema_file_to_string,
     };
-    use rocket::http::{ContentType, Cookie};
-    use rocket::local::asynchronous::Client;
+    use rkt::http::{ContentType, Cookie};
+    use rkt::local::asynchronous::Client;
     use serde_json::json;
     use sqlx::{Pool, Sqlite, SqlitePool};
     use std::collections::HashMap;

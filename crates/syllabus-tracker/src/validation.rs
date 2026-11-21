@@ -1,7 +1,7 @@
 use crate::error::AppError;
-use rocket::http::Status;
-use rocket::response::status::Custom;
-use rocket::serde::json::Json;
+use rkt::http::Status;
+use rkt::response::status::Custom;
+use rkt::serde::json::Json;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use tracing::{error, instrument, warn};

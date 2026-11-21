@@ -11,7 +11,7 @@ mod tests {
     use migration_engine::migrations::{
         migrate_database_declaratively, read_schema_file_to_string,
     };
-    use rocket::tokio;
+    use rkt::tokio;
     use sqlx::{Pool, Sqlite, SqlitePool};
     use uuid::Uuid;
 

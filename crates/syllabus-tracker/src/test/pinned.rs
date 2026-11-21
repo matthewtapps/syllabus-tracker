@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod tests {
-    use rocket::http::{ContentType, Status};
+    use rkt::http::{ContentType, Status};
     use serde_json::{Value, json};
 
     use crate::db::{
@@ -11,14 +11,14 @@ mod tests {
     };
 
     async fn standard_db_with_client() -> (
-        rocket::local::asynchronous::Client,
+        rkt::local::asynchronous::Client,
         crate::test::test_utils::TestDb,
     ) {
         let test_db = create_standard_test_db().await;
         setup_test_client(test_db).await
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn pin_technique_is_idempotent() {
         let (_client, db) = standard_db_with_client().await;
         let student_id = db.user_id("student_user").unwrap();
@@ -39,7 +39,7 @@ mod tests {
         assert!(pinned_ids.contains(&technique_id));
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn unpin_never_pinned_is_no_op() {
         let (_client, db) = standard_db_with_client().await;
         let student_id = db.user_id("student_user").unwrap();
@@ -51,7 +51,7 @@ mod tests {
             .unwrap();
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn list_pinned_for_student_returns_only_owned_pins() {
         let test_db = TestDbBuilder::new()
             .coach("coach", None)
@@ -81,7 +81,7 @@ mod tests {
         assert_eq!(bob_pins[0].id, triangle);
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn api_techniques_open_to_students_and_coaches() {
         let (client, _db) = standard_db_with_client().await;
 
@@ -100,7 +100,7 @@ mod tests {
         assert_eq!(coach_resp.status(), Status::Ok);
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn api_technique_stats_stays_coach_only() {
         let (client, db) = standard_db_with_client().await;
         let technique_id = db.technique_id("Armbar").unwrap();
@@ -120,7 +120,7 @@ mod tests {
         assert_eq!(coach_resp.status(), Status::Ok);
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn api_student_library_returns_is_pinned_overlay() {
         let (client, db) = standard_db_with_client().await;
         let student_id = db.user_id("student_user").unwrap();
@@ -151,7 +151,7 @@ mod tests {
         assert_eq!(triangle["is_pinned"].as_bool(), Some(false));
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn api_pin_rejects_coach_pinning_on_student_behalf() {
         let (client, db) = standard_db_with_client().await;
         let student_id = db.user_id("student_user").unwrap();
@@ -173,7 +173,7 @@ mod tests {
         assert!(pinned.is_empty());
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn api_pin_unpin_roundtrip_for_owning_student() {
         let (client, db) = standard_db_with_client().await;
         let student_id = db.user_id("student_user").unwrap();
@@ -214,7 +214,7 @@ mod tests {
         assert!(after.is_empty());
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn api_student_library_blocked_for_other_students() {
         let test_db = TestDbBuilder::new()
             .coach("coach", None)
@@ -235,7 +235,7 @@ mod tests {
         assert_eq!(resp.status(), Status::Forbidden);
     }
 
-    #[rocket::async_test]
+    #[rkt::async_test]
     async fn student_library_videos_ignore_per_student_overrides() {
         use crate::db::{set_video_hidden_globally, set_video_student_visibility};
 

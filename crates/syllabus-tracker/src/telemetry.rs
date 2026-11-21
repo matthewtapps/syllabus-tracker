@@ -19,7 +19,7 @@ use opentelemetry_semantic_conventions::{
     },
     trace::{HTTP_REQUEST_METHOD, HTTP_RESPONSE_STATUS_CODE},
 };
-use rocket::{
+use rkt::{
     Data, Request, Response,
     fairing::{Fairing, Info, Kind},
     http::Status,
@@ -40,14 +40,14 @@ use tracing_subscriber::{
 pub struct TracingSpan<T = Span>(pub T);
 
 /// Cached handle to Rocket's per-request root span (the `#[instrument("request")]`
-/// span in `rocket::server`). We keep it separately from the main wide-event
+/// span in `rkt::server`). We keep it separately from the main wide-event
 /// span because it is the registry ancestor of every db span in the request, so
 /// it is where [`DbStatsLayer`] hangs the [`DbCallStats`] tally that
 /// [`TelemetryFairing::on_response`] flushes onto the main span.
 #[derive(Clone)]
 struct RocketRequestSpan(Option<Span>);
 
-#[rocket::async_trait]
+#[rkt::async_trait]
 impl<'r> FromRequest<'r> for TracingSpan {
     type Error = ();
 
@@ -84,7 +84,7 @@ pub fn set_main_attr(
 /// `&Request` around. Always succeeds; `set` is a no-op if the span is absent.
 pub struct MainSpan(Option<Span>);
 
-#[rocket::async_trait]
+#[rkt::async_trait]
 impl<'r> FromRequest<'r> for MainSpan {
     type Error = std::convert::Infallible;
 
@@ -120,7 +120,7 @@ impl Extractor for OwnedHeaderExtractor {
 #[derive(Debug)]
 pub struct TelemetryFairing;
 
-#[rocket::async_trait]
+#[rkt::async_trait]
 impl Fairing for TelemetryFairing {
     fn info(&self) -> Info {
         Info {
@@ -328,7 +328,7 @@ impl Fairing for TelemetryFairing {
 
 pub struct ErrorTelemetryFairing;
 
-#[rocket::async_trait]
+#[rkt::async_trait]
 impl Fairing for ErrorTelemetryFairing {
     fn info(&self) -> Info {
         Info {
@@ -374,9 +374,9 @@ struct DbSpanTimer(Instant);
 /// Spans whose `target` starts with this are counted as database operations.
 const DB_TARGET_PREFIX: &str = "syllabus_tracker::db";
 /// Rocket's per-request root span (`#[instrument("request")]` in
-/// `rocket::server`); the registry ancestor of every db span in a request.
+/// `rkt::server`); the registry ancestor of every db span in a request.
 const ROCKET_REQUEST_SPAN_NAME: &str = "request";
-const ROCKET_REQUEST_SPAN_TARGET: &str = "rocket::server";
+const ROCKET_REQUEST_SPAN_TARGET: &str = "rkt::server";
 
 /// Downcast bridge letting non-layer code (the response fairing) read a span's
 /// [`DbCallStats`] by id, mirroring tracing-opentelemetry's private
@@ -557,7 +557,7 @@ mod tests {
         let subscriber = Registry::default().with(DbStatsLayer::new());
 
         tracing::subscriber::with_default(subscriber, || {
-            let request = tracing::info_span!(target: "rocket::server", "request");
+            let request = tracing::info_span!(target: "rkt::server", "request");
             let _entered = request.enter();
 
             // Two top-level db calls plus one nested call (db fn -> db fn).
@@ -591,7 +591,7 @@ mod tests {
         let subscriber = Registry::default().with(DbStatsLayer::new());
 
         tracing::subscriber::with_default(subscriber, || {
-            let request = tracing::info_span!(target: "rocket::server", "request");
+            let request = tracing::info_span!(target: "rkt::server", "request");
             let _entered = request.enter();
             let (count, _) = read_db_stats(&request).expect("stats attached");
             assert_eq!(count, 0);
