@@ -150,19 +150,19 @@
           fontconfig
           freetype
           systemd
-          xorg.libX11
-          xorg.libXcomposite
-          xorg.libXdamage
-          xorg.libXext
-          xorg.libXfixes
-          xorg.libXrandr
-          xorg.libXrender
-          xorg.libXtst
-          xorg.libXcursor
-          xorg.libXi
-          xorg.libXScrnSaver
-          xorg.libxcb
-          xorg.libxshmfence
+          libx11
+          libxcomposite
+          libxdamage
+          libxext
+          libxfixes
+          libxrandr
+          libxrender
+          libxtst
+          libxcursor
+          libxi
+          libxscrnsaver
+          libxcb
+          libxshmfence
         ];
       in
       {
