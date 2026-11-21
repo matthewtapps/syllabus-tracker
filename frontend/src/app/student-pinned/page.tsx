@@ -8,7 +8,7 @@ import { EmptyState } from '@/components/empty-state';
 import { TechniqueRow } from '@/components/technique-row';
 import { TechniqueFilters } from '@/components/technique-row/technique-filters';
 import { useTechniqueListNav } from '@/components/technique-row/use-technique-list-nav';
-import { useAllUsers, useStudentPinnedTechniques } from '@/lib/queries';
+import { useUserById, useStudentPinnedTechniques } from '@/lib/queries';
 import { usePinTechnique, useUnpinTechnique } from '@/lib/mutations';
 import { useUser } from '@/lib/current-user-context';
 import { isCoachOrAdmin } from '@/lib/api';
@@ -45,15 +45,15 @@ function PinnedListing({
   const [exitingIds, setExitingIds] = useState<Set<number>>(new Set());
 
   const query = useStudentPinnedTechniques(studentId);
-  const usersQuery = useAllUsers();
+  const userQuery = useUserById(studentId);
   const pinMutation = usePinTechnique(studentId);
   const unpinMutation = useUnpinTechnique(studentId);
   const techniques = useMemo(() => query.data ?? [], [query.data]);
   const studentName = useMemo(() => {
     if (isOwnView) return null;
-    const u = (usersQuery.data ?? []).find((u) => u.id === studentId);
+    const u = userQuery.data;
     return u ? u.display_name || u.username : null;
-  }, [isOwnView, usersQuery.data, studentId]);
+  }, [isOwnView, userQuery.data]);
   const loading = query.isLoading;
   const error = query.error ? 'Failed to load pinned techniques.' : null;
 

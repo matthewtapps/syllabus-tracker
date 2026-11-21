@@ -7,6 +7,7 @@ export const qk = {
   capabilities: () => ["capabilities"] as const,
 
   users: () => ["users"] as const,
+  user: (id: number) => ["users", id] as const,
 
   students: (sort?: string, includeArchived?: boolean) =>
     ["students", { sort: sort ?? null, includeArchived: !!includeArchived }] as const,

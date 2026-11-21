@@ -3,7 +3,7 @@ import { Navigate, useParams, Link, useNavigate } from 'react-router-dom';
 import { Tent, ChevronRight, Plus } from 'lucide-react';
 import { useUser } from '@/lib/current-user-context';
 import { isCoachOrAdmin } from '@/lib/api';
-import { useAllUsers, useCampsForStudent } from '@/lib/queries';
+import { useUserById, useCampsForStudent } from '@/lib/queries';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogTrigger } from '@/components/ui/dialog';
 import { CreateCampDialog } from '@/components/camps/create-camp-dialog';
@@ -47,10 +47,10 @@ function CampsListing({
   // Coaches view any student's camps, so personalise the heading the same way
   // the sibling pinned/syllabi pages do. Falls back to "Camps" until the name
   // resolves. Skipped for the owner's own view.
-  const usersQuery = useAllUsers();
+  const userQuery = useUserById(studentId);
   const student = isOwnView
     ? undefined
-    : (usersQuery.data ?? []).find((u) => u.id === studentId);
+    : userQuery.data;
   const studentName = student?.display_name || student?.username;
 
   // Coaches create camps for a student; students don't create their own.

@@ -627,6 +627,17 @@ export async function removeTagFromTechnique(
   return response;
 }
 
+export async function getUser(id: number): Promise<User> {
+  const response = await fetch(`/api/users/${id}`, {
+    credentials: "include",
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to load user ${id}: ${response.status}`);
+  }
+  const user: User = await response.json();
+  return { ...user, role: normaliseRole(user.role) };
+}
+
 export async function getAllUsers(): Promise<User[]> {
   const response = await fetch("/api/admin/users", {
     credentials: "include",

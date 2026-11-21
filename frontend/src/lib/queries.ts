@@ -9,6 +9,7 @@ import {
 import {
   getAllTags,
   getAllUsers,
+  getUser,
   getActivityDigest,
   getActivityFeed,
   getCampComponents,
@@ -84,6 +85,14 @@ export function useAllUsers() {
   return useQuery({
     queryKey: qk.users(),
     queryFn: getAllUsers,
+  });
+}
+
+export function useUserById(id: number | undefined) {
+  return useQuery({
+    queryKey: qk.user(id ?? 0),
+    queryFn:
+      typeof id === "number" && Number.isFinite(id) ? () => getUser(id) : skipToken,
   });
 }
 

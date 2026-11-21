@@ -32,7 +32,7 @@ import { EmptyState } from "@/components/empty-state";
 import { TechniqueRow } from "@/components/technique-row";
 import {
   useStudentActivityFeed,
-  useAllUsers,
+  useUserById,
   useCampsForStudent,
   useThreadsForAnchor,
   useStudentSyllabi,
@@ -85,11 +85,11 @@ function ProfileHub({
   // For the owning student we already have the viewer; for coaches we
   // need to fetch the student by id. /api/me only returns the current
   // user, so coaches use the users list (cached, cheap) to resolve.
-  const usersQuery = useAllUsers();
+  const userQuery = useUserById(studentId);
   const student: User | undefined = useMemo(() => {
     if (isOwnView) return viewer;
-    return (usersQuery.data ?? []).find((u) => u.id === studentId);
-  }, [isOwnView, viewer, usersQuery.data, studentId]);
+    return userQuery.data;
+  }, [isOwnView, viewer, userQuery.data]);
   // Use the student-scoped feed so a coach sees only THIS student's activity
   // rather than the gym-wide coach feed.
   const feedQuery = useStudentActivityFeed(studentId);
@@ -119,7 +119,7 @@ function ProfileHub({
     });
   }
 
-  const loading = !isOwnView && usersQuery.isLoading;
+  const loading = !isOwnView && userQuery.isLoading;
 
   const viewerIsAdmin = isAdmin(viewer);
   const isCoach = isCoachOrAdmin(viewer);

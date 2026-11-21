@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import { Navigate, useParams } from 'react-router-dom';
 import { History } from 'lucide-react';
 import { ActivityFeedList } from '@/components/activity-feed-list';
-import { useStudentActivityFeed, useAllUsers } from '@/lib/queries';
+import { useStudentActivityFeed, useUserById } from '@/lib/queries';
 import { useUser } from '@/lib/current-user-context';
 import { isCoachOrAdmin } from '@/lib/api';
 
@@ -32,15 +32,15 @@ function ActivityHub({
   isOwnView: boolean;
 }) {
   const viewer = useUser();
-  const usersQuery = useAllUsers();
+  const userQuery = useUserById(studentId);
   const student = useMemo(() => {
     if (isOwnView) return viewer;
-    return (usersQuery.data ?? []).find((u) => u.id === studentId);
-  }, [isOwnView, viewer, usersQuery.data, studentId]);
+    return userQuery.data;
+  }, [isOwnView, viewer, userQuery.data]);
 
   const feedQuery = useStudentActivityFeed(studentId, 100);
 
-  const loading = !isOwnView && usersQuery.isLoading;
+  const loading = !isOwnView && userQuery.isLoading;
 
   if (loading || !student) {
     return (
