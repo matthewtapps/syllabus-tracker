@@ -83,7 +83,7 @@ services:
         condition: service_started
 
   litestream:
-    image: litestream/litestream:0.3.13
+    image: litestream/litestream:0.5.18
     container_name: sillybus-litestream
     restart: unless-stopped
     command: ["replicate", "-config", "/etc/litestream.yml"]

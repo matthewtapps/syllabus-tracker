@@ -565,7 +565,7 @@ jobs:
               --env-file /srv/sillybus/config/prod.env \
               --env-file /run/runtime-secrets/sillybus.env \
               --entrypoint /bin/sh \
-              litestream/litestream:0.3.13 \
+              litestream/litestream:0.5.18 \
               -c "
                 set -e
                 if [ -f /data/sqlite.db ]; then
@@ -577,7 +577,8 @@ jobs:
                   exit 1
                 fi
                 echo \"[restore] no local DB; restoring from \$LITESTREAM_BUCKET\"
-                if litestream restore -config /etc/litestream.yml /data/sqlite.db; then
+                litestream restore -if-replica-exists -config /etc/litestream.yml /data/sqlite.db
+                if [ -f /data/sqlite.db ]; then
                   echo \"[restore] restored from R2 (\$(du -h /data/sqlite.db | cut -f1))\"
                 else
                   echo \"[restore] no replica in bucket; creating empty DB so migrate can init schema\"
