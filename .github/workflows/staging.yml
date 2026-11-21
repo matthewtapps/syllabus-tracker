@@ -74,8 +74,8 @@ jobs:
       vm_ip:              ${{ steps.read.outputs.vm_ip }}
       host_age_recipient: ${{ steps.read.outputs.host_age_recipient }}
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-      - uses: cachix/install-nix-action@v27
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: cachix/install-nix-action@ba0dd844c9180cbf77aa72a116d6fbc515d0e87b # v27
         with:
           extra_nix_config: |
             experimental-features = nix-command flakes
@@ -104,7 +104,7 @@ jobs:
     outputs:
       sha: ${{ steps.sha.outputs.short }}
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           ref: ${{ github.event.inputs.branch || github.ref_name }}
       - name: Resolve branch HEAD SHA
@@ -113,13 +113,13 @@ jobs:
           SHORT=$(git rev-parse --short HEAD)
           echo "short=$SHORT" >> "$GITHUB_OUTPUT"
           echo "Building backend from ${{ github.event.inputs.branch || github.ref_name }} @ $SHORT"
-      - uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
-      - uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7.1.0
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
           file: ./Dockerfile
@@ -141,7 +141,7 @@ jobs:
     outputs:
       sha: ${{ steps.sha.outputs.short }}
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           ref: ${{ github.event.inputs.branch || github.ref_name }}
       - name: Resolve branch HEAD SHA
@@ -150,7 +150,7 @@ jobs:
           SHORT=$(git rev-parse --short HEAD)
           echo "short=$SHORT" >> "$GITHUB_OUTPUT"
           echo "Building frontend from ${{ github.event.inputs.branch || github.ref_name }} @ $SHORT"
-      - uses: cachix/install-nix-action@v27
+      - uses: cachix/install-nix-action@ba0dd844c9180cbf77aa72a116d6fbc515d0e87b # v27
         with:
           extra_nix_config: |
             experimental-features = nix-command flakes
@@ -171,13 +171,13 @@ jobs:
           VITE_HC=$(tofu output -raw _platform_honeycomb_browser_ingest)
           echo "::add-mask::$VITE_HC"
           echo "vite_key=$VITE_HC" >> "$GITHUB_OUTPUT"
-      - uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
-      - uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7.1.0
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: ./frontend
           file: ./frontend/Dockerfile
@@ -205,10 +205,10 @@ jobs:
       REFRESH_DB: ${{ github.event.inputs.refresh_db }}
       ALLOW_DESTRUCTIVE_MIGRATIONS: ${{ github.event.inputs.allow_destructive_migrations }}
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           ref: ${{ github.event.inputs.branch || github.ref_name }}
-      - uses: cachix/install-nix-action@v27
+      - uses: cachix/install-nix-action@ba0dd844c9180cbf77aa72a116d6fbc515d0e87b # v27
         with:
           extra_nix_config: |
             experimental-features = nix-command flakes
