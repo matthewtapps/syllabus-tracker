@@ -712,7 +712,7 @@ jobs:
             FRONTEND_IMAGE_TAG='${{ github.sha }}' \
             docker compose -f docker-compose.nixos.yml up -d --remove-orphans &&
             docker ps -q --filter label=com.docker.compose.project=sillybus --filter label=com.docker.compose.service=nginx |
-              xargs -r -I{} docker exec {} nginx -s reload
+              xargs -r -I{} docker exec {} nginx -g 'load_module modules/ngx_otel_module.so;' -s reload
           "
 
   verify:
