@@ -2,7 +2,7 @@
 # Build context is the REPO ROOT (the full workspace is needed).
 # Invoke as:
 #   docker build -f crates/video-worker/Dockerfile -t video-worker .
-FROM rust:1.100.0-slim-bookworm AS builder
+FROM rust:1.100.0-slim-trixie AS builder
 WORKDIR /app
 
 # Build-time system deps:
@@ -20,21 +20,18 @@ COPY . .
 
 RUN cargo build --release -p video-worker
 
-# ---- runtime ---------------------------------------------------------------
-FROM debian:bookworm-slim AS runtime
+FROM mwader/static-ffmpeg:7.1.1 AS ffmpeg
 
-# ffmpeg ships ffprobe in the same package.
-# ca-certificates is needed for reqwest (rustls uses the system trust store
-# via rustls-native-certs, which reads /etc/ssl/certs).
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends ffmpeg ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
+# ---- runtime ---------------------------------------------------------------
+# Ships glibc, CA certificates (rustls-native-certs reads /etc/ssl/certs) and a
+# nonroot user, and nothing else.
+FROM gcr.io/distroless/cc-debian13:nonroot AS runtime
+
+COPY --from=ffmpeg /ffmpeg /usr/local/bin/ffmpeg
+COPY --from=ffmpeg /ffprobe /usr/local/bin/ffprobe
 
 COPY --from=builder /app/target/release/video-worker      /usr/local/bin/video-worker
 COPY --from=builder /app/target/release/transcode-server  /usr/local/bin/transcode-server
-
-RUN useradd -r -s /usr/sbin/nologin -u 10001 worker
-USER worker
 
 # The container's job is to be the HTTP server: transcode-server handles
 # requests from the Cloudflare queue consumer (sync mode by default).
