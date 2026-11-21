@@ -18,7 +18,8 @@ services:
     ports:
       - "8080:80"
     volumes:
-      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+      # A directory mount so a replaced config file is visible to nginx -s reload.
+      - ./nginx:/etc/nginx/conf.d:ro
     depends_on:
       - app
       - frontend

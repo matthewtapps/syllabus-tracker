@@ -710,7 +710,9 @@ jobs:
             IMAGE_NAME='${{ env.IMAGE_NAME }}' \
             APP_IMAGE_TAG='${{ github.sha }}' \
             FRONTEND_IMAGE_TAG='${{ github.sha }}' \
-            docker compose -f docker-compose.nixos.yml up -d --remove-orphans
+            docker compose -f docker-compose.nixos.yml up -d --remove-orphans &&
+            docker ps -q --filter label=com.docker.compose.project=sillybus --filter label=com.docker.compose.service=nginx |
+              xargs -r -I{} docker exec {} nginx -s reload
           "
 
   verify:

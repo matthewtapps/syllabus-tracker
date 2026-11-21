@@ -469,7 +469,9 @@ jobs:
             FRONTEND_IMAGE_TAG='${FRONTEND_TAG}' \
             NGINX_HOST_PORT='${HOST_PORT}' \
             OTEL_COLLECTOR_HOST_PORT='${OTEL_COLLECTOR_PORT}' \
-            docker compose -p ${SIBLING_NAME} -f docker-compose.nixos.yml -f docker-compose.override.yml up -d --remove-orphans nginx app frontend otel-collector
+            docker compose -p ${SIBLING_NAME} -f docker-compose.nixos.yml -f docker-compose.override.yml up -d --remove-orphans nginx app frontend otel-collector &&
+            docker ps -q --filter label=com.docker.compose.project=${SIBLING_NAME} --filter label=com.docker.compose.service=nginx |
+              xargs -r -I{} docker exec {} nginx -s reload
           "
 
       - name: Ship Traefik dynamic config (HTTPS via Let's Encrypt)
