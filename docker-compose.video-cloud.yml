@@ -10,13 +10,13 @@
 #     up
 #
 # The app service gets the remote processor env vars; the mock-transcoder
-# service (started by --profile video-cloud) receives the same MinIO + secret
+# service (started by --profile video-cloud) receives the same S3 + secret
 # config and forwards real transcoding jobs to video-worker inside the same image.
 #
 # Required in .secrets.env (or set inline):
 #   VIDEO_CALLBACK_SECRET=<any secret, shared by app + mock-transcoder>
 #
-# All other values below are hard-coded for the dev MinIO stack.
+# All other values below are hard-coded for the dev S3 stack.
 
 services:
   app:
