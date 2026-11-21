@@ -7,7 +7,7 @@ COPY . .
 RUN rustup target add x86_64-unknown-linux-musl \
     && cargo build --release --target x86_64-unknown-linux-musl -p video-worker
 
-FROM mwader/static-ffmpeg:7.1.1 AS ffmpeg
+FROM mwader/static-ffmpeg:9.0.2-1 AS ffmpeg
 
 # Static binaries only: ships CA certificates (rustls-native-certs reads
 # /etc/ssl/certs) and a nonroot user, and no libc.
