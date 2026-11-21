@@ -14,7 +14,7 @@ ENV SQLX_OFFLINE=true
 RUN rustup target add x86_64-unknown-linux-musl
 RUN cargo chef cook --release --target x86_64-unknown-linux-musl
 
-FROM mwader/static-ffmpeg:7.1.1 AS ffmpeg
+FROM mwader/static-ffmpeg:9.0.2-1 AS ffmpeg
 
 FROM chef AS builder
 WORKDIR /app
