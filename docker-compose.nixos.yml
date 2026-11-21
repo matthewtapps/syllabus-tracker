@@ -11,7 +11,7 @@ name: sillybus
 
 services:
   nginx:
-    image: nginx:1.31-alpine-otel
+    image: nginx:1.31.9-alpine-otel
     restart: unless-stopped
     # `load_module` must live in nginx's main context; -g injects it
     # before the bundled nginx.conf is parsed.
