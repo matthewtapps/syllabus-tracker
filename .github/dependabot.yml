@@ -19,6 +19,9 @@ updates:
       security:
         applies-to: security-updates
         patterns: ["*"]
+      # These crates only work at matching versions, majors included.
+      opentelemetry:
+        patterns: ["opentelemetry*", "tracing-opentelemetry"]
       minor-and-patch:
         patterns: ["*"]
         exclude-patterns: ["rkt"]
@@ -86,6 +89,10 @@ updates:
       minor-and-patch:
         patterns: ["*"]
         update-types: [minor, patch]
+      # One PR per image across every Dockerfile that uses it.
+      same-image:
+        group-by: dependency-name
+        patterns: ["*"]
     # The Rust builder image moves in lockstep with the flake toolchain and
     # workspace rust-version, which Dependabot cannot bump together.
     ignore:

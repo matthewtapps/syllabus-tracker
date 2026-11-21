@@ -74,8 +74,8 @@ jobs:
       vm_ip:              ${{ steps.read.outputs.vm_ip }}
       host_age_recipient: ${{ steps.read.outputs.host_age_recipient }}
     steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
-      - uses: cachix/install-nix-action@ba0dd844c9180cbf77aa72a116d6fbc515d0e87b # v27
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: cachix/install-nix-action@3dc140bfc76c49fbd4dd958429132e3746bcb086 # v31
         with:
           extra_nix_config: |
             experimental-features = nix-command flakes
@@ -104,7 +104,7 @@ jobs:
     outputs:
       sha: ${{ steps.sha.outputs.short }}
     steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.event.inputs.branch || github.ref_name }}
       - name: Resolve branch HEAD SHA
@@ -141,7 +141,7 @@ jobs:
     outputs:
       sha: ${{ steps.sha.outputs.short }}
     steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.event.inputs.branch || github.ref_name }}
       - name: Resolve branch HEAD SHA
@@ -150,7 +150,7 @@ jobs:
           SHORT=$(git rev-parse --short HEAD)
           echo "short=$SHORT" >> "$GITHUB_OUTPUT"
           echo "Building frontend from ${{ github.event.inputs.branch || github.ref_name }} @ $SHORT"
-      - uses: cachix/install-nix-action@ba0dd844c9180cbf77aa72a116d6fbc515d0e87b # v27
+      - uses: cachix/install-nix-action@3dc140bfc76c49fbd4dd958429132e3746bcb086 # v31
         with:
           extra_nix_config: |
             experimental-features = nix-command flakes
@@ -205,10 +205,10 @@ jobs:
       REFRESH_DB: ${{ github.event.inputs.refresh_db }}
       ALLOW_DESTRUCTIVE_MIGRATIONS: ${{ github.event.inputs.allow_destructive_migrations }}
     steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.event.inputs.branch || github.ref_name }}
-      - uses: cachix/install-nix-action@ba0dd844c9180cbf77aa72a116d6fbc515d0e87b # v27
+      - uses: cachix/install-nix-action@3dc140bfc76c49fbd4dd958429132e3746bcb086 # v31
         with:
           extra_nix_config: |
             experimental-features = nix-command flakes

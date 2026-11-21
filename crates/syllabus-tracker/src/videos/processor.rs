@@ -224,7 +224,9 @@ impl VideoProcessor for RemoteProcessor {
         // disconnected one — `tokio::spawn` otherwise drops the parent span.
         let parent_cx = tracing::Span::current().context();
         let enqueue_span = tracing::info_span!("remote_video_enqueue", video_id = job.video_id);
-        enqueue_span.set_parent(parent_cx);
+        if let Err(e) = enqueue_span.set_parent(parent_cx) {
+            tracing::warn!(error = ?e, "could not parent the enqueue span");
+        }
 
         tokio::task::spawn(
             async move {

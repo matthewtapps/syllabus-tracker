@@ -158,13 +158,10 @@ impl Fairing for TelemetryFairing {
         // The request's single wide-event "main" span. We mint our own rather
         // than reuse Rocket's "request" span because (a) we need a dynamic name
         // and (b) tracing span names are static. It is created as a registry
-        // root (`parent: None`); the magic `otel.name` field is what
-        // tracing-opentelemetry maps onto the exported OTel span name. The name
-        // is declared empty here and recorded in `on_response`: request fairings
+        // root (`parent: None`) and renamed in `on_response`: request fairings
         // run BEFORE routing, so `request.route()` is always `None` at this
         // point (the name + http.route depend on the matched route).
-        let span =
-            tracing::info_span!(parent: None, "http.request", otel.name = tracing::field::Empty);
+        let span = tracing::info_span!(parent: None, "http.request");
 
         // Wire the trace graph: incoming distributed-trace context -> our main
         // span -> Rocket's request span (the registry ancestor of all
@@ -172,8 +169,7 @@ impl Fairing for TelemetryFairing {
         // `span.context()` carries the final trace id when we reparent Rocket's
         // span under it.
         let rocket_span = tracing::Span::current();
-        span.set_parent(parent_context);
-        rocket_span.set_parent(span.context());
+        link_request_spans(&span, &rocket_span, parent_context);
 
         // Baseline request attributes. Stamped via the OTel attribute API so
         // they actually land on the span (see `set_main_attr`).
@@ -258,7 +254,7 @@ impl Fairing for TelemetryFairing {
                 Some(route) => format!("{} {}", request.method().as_str(), route.uri),
                 None => format!("{} <unmatched>", request.method().as_str()),
             };
-            span.record("otel.name", span_name.as_str());
+            name_request_span(&span, span_name);
             if let Some(route) = request.route() {
                 span.set_attribute(HTTP_ROUTE, route.uri.to_string());
                 if let Some(name) = &route.name {
@@ -521,7 +517,7 @@ pub fn init_tracing(videos_enabled: bool) {
 
     let tracer = tracer_provider.tracer("syllabus-tracker");
 
-    let otel_layer = tracing_opentelemetry::layer().with_tracer(tracer);
+    let otel_layer = otel_layer(tracer);
 
     let env_filter = tracing_subscriber::EnvFilter::try_from_default_env()
         .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info"));
@@ -545,10 +541,86 @@ pub fn init_tracing(videos_enabled: bool) {
     global::set_meter_provider(meter_provider);
 }
 
+/// Context activation would start Rocket's request span on entry, and a
+/// started span can no longer be reparented by `link_request_spans`.
+fn otel_layer<S>(
+    tracer: opentelemetry_sdk::trace::SdkTracer,
+) -> tracing_opentelemetry::OpenTelemetryLayer<S, opentelemetry_sdk::trace::SdkTracer>
+where
+    S: tracing::Subscriber + for<'span> tracing_subscriber::registry::LookupSpan<'span>,
+{
+    tracing_opentelemetry::layer()
+        .with_tracer(tracer)
+        .with_context_activation(false)
+}
+
+/// The main span has already started (see `link_request_spans`), and a started
+/// span ignores a recorded `otel.name`, so rename it through the OTel API.
+fn name_request_span(span: &tracing::Span, name: String) {
+    use opentelemetry::trace::TraceContextExt as _;
+    span.context().span().update_name(name);
+}
+
+/// Parents `main` on the incoming distributed-trace context and reparents
+/// Rocket's already-entered `request` span under `main`.
+fn link_request_spans(main: &tracing::Span, request: &tracing::Span, incoming: opentelemetry::Context) {
+    if let Err(e) = main.set_parent(incoming) {
+        tracing::warn!(error = ?e, "could not parent the request span on the incoming trace");
+    }
+    if let Err(e) = request.set_parent(main.context()) {
+        tracing::warn!(error = ?e, "could not reparent Rocket's request span");
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use tracing_subscriber::layer::SubscriberExt;
+
+    /// Handler spans must land in the caller's trace, under the main span, and
+    /// the main span must export under its route name.
+    #[test]
+    fn request_spans_join_the_incoming_trace() {
+        use opentelemetry::trace::{
+            SpanContext, SpanId, TraceContextExt, TraceFlags, TraceId, TraceState,
+            TracerProvider as _,
+        };
+        use opentelemetry_sdk::trace::{InMemorySpanExporter, SdkTracerProvider};
+
+        let exporter = InMemorySpanExporter::default();
+        let provider = SdkTracerProvider::builder()
+            .with_simple_exporter(exporter.clone())
+            .build();
+        let subscriber = Registry::default()
+            .with(otel_layer(provider.tracer("test")));
+        let trace_id = TraceId::from_hex("4bf92f3577b34da6a3ce929d0e0e4736").unwrap();
+        let incoming = opentelemetry::Context::new().with_remote_span_context(SpanContext::new(
+            trace_id,
+            SpanId::from_hex("00f067aa0ba902b7").unwrap(),
+            TraceFlags::SAMPLED,
+            true,
+            TraceState::default(),
+        ));
+
+        tracing::subscriber::with_default(subscriber, || {
+            let request = tracing::info_span!(target: "rkt::server", "request");
+            let _r = request.enter();
+            let main = tracing::info_span!(parent: None, "http.request");
+            link_request_spans(&main, &request, incoming);
+            name_request_span(&main, "POST /api/login".to_string());
+            let handler = tracing::info_span!("handler");
+            let _h = handler.enter();
+        });
+
+        let spans = exporter.get_finished_spans().unwrap();
+        let by_name = |n: &str| spans.iter().find(|s| s.name == n).unwrap();
+        let (main, request, handler) = (by_name("POST /api/login"), by_name("request"), by_name("handler"));
+        for s in [main, request, handler] {
+            assert_eq!(s.span_context.trace_id(), trace_id, "{} left the trace", s.name);
+        }
+        assert_eq!(request.parent_span_id, main.span_context.span_id());
+        assert_eq!(handler.parent_span_id, request.span_context.span_id());
+    }
 
     /// The layer should count every db-target span against the request's root
     /// span and surface the tally through the `WithDbStats` downcast bridge.

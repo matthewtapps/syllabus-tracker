@@ -19,7 +19,7 @@ sqlx = { workspace = true }
 
 # web framework
 rkt = { version = "=1.3.0", features = ["trace", "json", "secrets", "tls"] }
-validator = { version = "0.20.0", features = ["derive"] }
+validator = { version = "0.21.0", features = ["derive"] }
 serde = { version = "1.0.219", features = ["derive"] }
 chrono = { workspace = true }
 serde_json = "1.0.140"
@@ -27,23 +27,21 @@ serde_json = "1.0.140"
 # auth
 thiserror = "1.0"
 anyhow = { workspace = true }
-bcrypt = "0.15.0"  # For password hashing
+bcrypt = "0.19.3"  # For password hashing
 
 # Otel
-opentelemetry_sdk = { version = "0.29.0", features = ["logs", "trace", "rt-tokio"] }
+opentelemetry_sdk = { version = "0.33.1", features = ["logs", "trace", "rt-tokio"] }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
-opentelemetry-otlp = { version = "0.29.0", features = ["metrics", "trace", "grpc-tonic", "tls", "tls-roots", "tls-webpki-roots"] }
-opentelemetry = { version = "0.29.1", features = ["trace"] }
-opentelemetry-semantic-conventions = { version = "0.29.0", features = ["semconv_experimental"] }
+opentelemetry-otlp = { version = "0.33.1", features = ["metrics", "trace", "grpc-tonic", "tls-aws-lc", "tls-roots", "tls-webpki-roots"] }
+opentelemetry = { version = "0.33.1", features = ["trace"] }
+opentelemetry-semantic-conventions = { version = "0.33.1", features = ["semconv_experimental"] }
 tracing-core = "0.1.33"
-tracing-opentelemetry = "0.30.0"
-tonic = { version = "0.12.3", features = ["transport", "tls", "tls-roots", "tls-webpki-roots"] }
+tracing-opentelemetry = "0.34.0"
 once_cell = "1.21.3"
-opentelemetry-http = "0.29.0"
 either = "1.15.0"
 env_logger = "0.11.8"
-rand = "0.9.1"
+rand = "0.10.3"
 uuid = { version = "1.16.0", features = ["v4"] }
 regex = { workspace = true }
 tokio = { workspace = true }
@@ -57,9 +55,10 @@ video-job = { path = "../video-job" }
 async-trait = "0.1.83"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 
+[dev-dependencies]
+opentelemetry_sdk = { version = "0.33.1", features = ["testing"] }
+
 [package.metadata.cargo-machete]
-# tonic / opentelemetry-http: activated via feature flags on opentelemetry-otlp
-# (grpc-tonic, http-proto); machete can't see feature-gated re-exports.
 # tracing-core: re-exported by the tracing crate; direct pin keeps version stable.
 # either: indirect dep pinned for semver consistency with opentelemetry ecosystem.
-ignored = ["tonic", "opentelemetry-http", "tracing-core", "either"]
+ignored = ["tracing-core", "either"]

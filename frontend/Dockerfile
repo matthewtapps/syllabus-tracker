@@ -8,9 +8,11 @@
 # browser ingest key minted by platform tofu has create_datasets=false
 # specifically because anyone loading the page can read it.
 
-FROM node:22.23.5-alpine AS base
-# pnpm comes from corepack; npm is unused and carries its own CVEs.
-RUN corepack enable \
+FROM node:26.13.1-alpine AS base
+# Node 25+ no longer bundles corepack, which supplies pnpm. npm is only needed
+# to install it, and carries its own CVEs, so it goes afterwards.
+RUN npm install -g corepack@0.36.0 \
+    && corepack enable \
     && rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx
 
 FROM base AS build
