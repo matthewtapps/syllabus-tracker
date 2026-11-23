@@ -8,7 +8,6 @@ import {
   createTag,
   getAllTags,
   type CreatedLibraryTechnique,
-  type Tag,
 } from '@/lib/api';
 import { qk } from '@/lib/query-keys';
 import { useAllTags } from '@/lib/queries';
@@ -155,14 +154,13 @@ export function NewTechniqueForm({
   // technique already exists, so we warn rather than blowing up the whole flow.
   async function attachTags(techniqueId: number) {
     if (pendingTags.length === 0) return;
-    let tagPool: Tag[] = allTags;
     for (const pending of pendingTags) {
       try {
         let tagId = pending.id;
         if (tagId == null) {
           const createResponse = await createTag(pending.name);
           if (!createResponse.ok) throw new Error('create tag failed');
-          tagPool = await getAllTags();
+          const tagPool = await getAllTags();
           tagId =
             tagPool.find(
               (t) => t.name.toLowerCase() === pending.name.toLowerCase(),

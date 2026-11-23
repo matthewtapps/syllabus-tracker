@@ -886,12 +886,12 @@ mod tests {
     }
 
     /// Helper: fetch `/api/students` as the given coach, return the parsed
-    /// `last_student_initiative_at` (chrono) for one student. None if absent.
+    /// `last_student_initiative_at` for one student. None if absent.
     async fn fetch_initiative(
         client: &rkt::local::asynchronous::Client,
         cookies: Vec<Cookie<'static>>,
         student_username: &str,
-    ) -> Option<chrono::DateTime<chrono::Utc>> {
+    ) -> Option<time::OffsetDateTime> {
         let response = client
             .get("/api/students")
             .cookies(cookies)
@@ -906,7 +906,7 @@ mod tests {
             .expect("student missing from response");
         s.last_student_initiative_at
             .as_deref()
-            .map(|raw| chrono::DateTime::parse_from_rfc3339(raw).unwrap().to_utc())
+            .map(|raw| crate::ts::parse_rfc3339(raw).unwrap())
     }
 
     #[rkt::async_test]
@@ -942,7 +942,7 @@ mod tests {
 
         let (client, _test_db) = setup_test_client(test_db).await;
 
-        let before = chrono::Utc::now();
+        let before = time::OffsetDateTime::now_utc();
         let student_cookies = login_test_user(&client, "student_user", "password123").await;
         let resp = client
             .patch(format!("/api/student_syllabus_techniques/{}", sst_id))
@@ -958,7 +958,7 @@ mod tests {
             .await
             .expect("expected last_student_initiative_at to be set after student note edit");
         assert!(
-            initiative >= before - chrono::Duration::seconds(5),
+            initiative >= before - time::Duration::seconds(5),
             "initiative timestamp {} should be at or after test start {}",
             initiative,
             before
@@ -982,7 +982,7 @@ mod tests {
         let technique_id = test_db.technique_id("Armbar").expect("Technique not found");
 
         // Direct inserts: a video row plus a watch aggregate timestamped now.
-        let watched_at = chrono::Utc::now().naive_utc();
+        let watched_at = time::OffsetDateTime::now_utc();
         let video_id: i64 = sqlx::query_scalar!(
             r#"INSERT INTO videos (technique_id, title, kind, processing_status, uploaded_by_id)
                VALUES (?, 'demo', 'upload', 'ready', ?)
@@ -999,7 +999,7 @@ mod tests {
              VALUES (?, ?, 1, 0, 30, ?)",
             video_id,
             student_id,
-            watched_at,
+            crate::ts::sql(watched_at),
         )
         .execute(&pool)
         .await
@@ -1009,10 +1009,9 @@ mod tests {
         let initiative = fetch_initiative(&client, coach_cookies, "student_user")
             .await
             .expect("expected last_student_initiative_at to be set from watch aggregate");
-        let watched_utc =
-            chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(watched_at, chrono::Utc);
+        let watched_utc = watched_at;
         assert!(
-            (initiative - watched_utc).num_seconds().abs() <= 1,
+            (initiative - watched_utc).whole_seconds().abs() <= 1,
             "initiative {} should match watch time {}",
             initiative,
             watched_utc
@@ -1040,12 +1039,12 @@ mod tests {
         let technique_id = test_db.technique_id("Armbar").expect("Technique not found");
 
         // Note edit 3 days ago, watch 1 day ago. Watch should win.
-        let note_at = (chrono::Utc::now() - chrono::Duration::days(3)).naive_utc();
-        let watched_at = (chrono::Utc::now() - chrono::Duration::days(1)).naive_utc();
+        let note_at = time::OffsetDateTime::now_utc() - time::Duration::days(3);
+        let watched_at = time::OffsetDateTime::now_utc() - time::Duration::days(1);
 
         sqlx::query!(
             "UPDATE student_techniques SET last_student_update_at = ? WHERE id = ?",
-            note_at,
+            crate::ts::sql(note_at),
             st_id
         )
         .execute(&pool)
@@ -1068,7 +1067,7 @@ mod tests {
              VALUES (?, ?, 1, 0, 30, ?)",
             video_id,
             student_id,
-            watched_at,
+            crate::ts::sql(watched_at),
         )
         .execute(&pool)
         .await
@@ -1078,10 +1077,9 @@ mod tests {
         let initiative = fetch_initiative(&client, coach_cookies, "student_user")
             .await
             .expect("expected initiative timestamp");
-        let watched_utc =
-            chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(watched_at, chrono::Utc);
+        let watched_utc = watched_at;
         assert!(
-            (initiative - watched_utc).num_seconds().abs() <= 1,
+            (initiative - watched_utc).whole_seconds().abs() <= 1,
             "initiative {} should equal the more recent watch {}",
             initiative,
             watched_utc

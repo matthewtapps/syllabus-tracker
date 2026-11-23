@@ -101,15 +101,15 @@ build:
 
 # Production-like stack: builds the `production` Dockerfile targets for app
 # and frontend, fronts them with nginx on http://localhost:8080, and points
-# S3 at the local MinIO container. The host's sqlite.db is bind-mounted so
+# S3 at the local RustFS container. The host's sqlite.db is bind-mounted so
 # this sees the same data as `just dev`. Depends on `migrate` to ensure the
 # host db file exists before docker tries to bind-mount it.
 [group('run')]
 up: migrate
     docker compose up -d --build
 
-# Native dev loop. Brings up only the supporting infra in docker (minio,
-# minio-init, otel-collector) and runs the backend + frontend on the host so
+# Native dev loop. Brings up only the supporting infra in docker (s3,
+# s3-init, otel-collector) and runs the backend + frontend on the host so
 # we reuse the warm `target/` cache instead of recompiling inside a container.
 # `vite_env` sets the frontend's VITE_ENVIRONMENT (feature-gate key); leave the
 # default for normal dev, or use `dev-prod` to preview production-gated UI.
@@ -117,7 +117,7 @@ up: migrate
 dev vite_env="development": migrate
     #!/usr/bin/env bash
     set -uo pipefail
-    docker compose up -d minio minio-init otel-collector
+    docker compose up -d s3 s3-init otel-collector
 
     set -a
     source config/common.env
@@ -146,7 +146,7 @@ dev vite_env="development": migrate
         kill -TERM $FRONTEND_PID $WATCHER_PID 2>/dev/null
         pkill -TERM -f target/debug/syllabus-tracker 2>/dev/null
         wait 2>/dev/null
-        docker compose stop minio minio-init otel-collector 2>/dev/null
+        docker compose stop s3 s3-init otel-collector 2>/dev/null
     }
     trap cleanup INT TERM EXIT
 

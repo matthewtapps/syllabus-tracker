@@ -5,7 +5,8 @@
 
 use std::collections::HashMap;
 
-use chrono::NaiveDateTime;
+use time::OffsetDateTime;
+use crate::ts::rfc3339;
 use serde::Serialize;
 use sqlx::{Pool, Sqlite};
 use tracing::instrument;
@@ -49,19 +50,15 @@ pub struct SyllabusTechniqueRow {
     pub tags: Vec<Tag>,
 }
 
-fn rfc3339(dt: NaiveDateTime) -> String {
-    chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(dt, chrono::Utc).to_rfc3339()
-}
-
 #[instrument]
 pub async fn list_syllabi(pool: &Pool<Sqlite>) -> Result<Vec<Syllabus>, AppError> {
     let rows = sqlx::query!(
         r#"SELECT s.id AS "id!: i64",
                   s.name AS "name!: String",
                   s.description,
-                  s.created_at AS "created_at!: NaiveDateTime",
+                  s.created_at AS "created_at!: OffsetDateTime",
                   s.created_by_id,
-                  s.updated_at AS "updated_at!: NaiveDateTime",
+                  s.updated_at AS "updated_at!: OffsetDateTime",
                   COALESCE((SELECT COUNT(*) FROM syllabus_techniques st WHERE st.syllabus_id = s.id), 0) AS "technique_count!: i64",
                   COALESCE((SELECT COUNT(*) FROM syllabus_assignments sa WHERE sa.syllabus_id = s.id AND sa.unassigned_at IS NULL), 0) AS "active_assignment_count!: i64"
            FROM syllabi s
@@ -91,9 +88,9 @@ pub async fn get_syllabus(pool: &Pool<Sqlite>, id: i64) -> Result<Option<Syllabu
         r#"SELECT s.id AS "id!: i64",
                   s.name AS "name!: String",
                   s.description,
-                  s.created_at AS "created_at!: NaiveDateTime",
+                  s.created_at AS "created_at!: OffsetDateTime",
                   s.created_by_id,
-                  s.updated_at AS "updated_at!: NaiveDateTime",
+                  s.updated_at AS "updated_at!: OffsetDateTime",
                   COALESCE((SELECT COUNT(*) FROM syllabus_techniques st WHERE st.syllabus_id = s.id), 0) AS "technique_count!: i64",
                   COALESCE((SELECT COUNT(*) FROM syllabus_assignments sa WHERE sa.syllabus_id = s.id AND sa.unassigned_at IS NULL), 0) AS "active_assignment_count!: i64"
            FROM syllabi s
@@ -152,7 +149,7 @@ pub async fn update_syllabus(
     if exists.is_none() {
         return Ok(());
     }
-    let now = chrono::Utc::now().naive_utc();
+    let now = crate::ts::sql(OffsetDateTime::now_utc());
     match (name, description) {
         (Some(n), Some(d)) => {
             sqlx::query!(
@@ -219,7 +216,7 @@ pub async fn list_syllabus_techniques(
                   t.name AS "name!: String",
                   t.description AS "description!: String",
                   st.position AS "position!: i64",
-                  st.added_at AS "added_at!: NaiveDateTime"
+                  st.added_at AS "added_at!: OffsetDateTime"
            FROM syllabus_techniques st
            JOIN techniques t ON t.id = st.technique_id
            WHERE st.syllabus_id = ?
@@ -389,7 +386,7 @@ pub async fn remove_technique_from_syllabus(
     // nothing to take. The CHECK constraint's `loose` branch requires every
     // parent FK NULL, which a T2 video already satisfies for all columns
     // except `syllabus_technique_id`, nulled here.
-    let now = chrono::Utc::now().naive_utc();
+    let now = crate::ts::sql(OffsetDateTime::now_utc());
     sqlx::query!(
         "UPDATE videos
          SET deleted_at = ?, updated_at = ?, parent_kind = 'loose', syllabus_technique_id = NULL

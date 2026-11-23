@@ -1,8 +1,8 @@
-use chrono::{NaiveDateTime, Utc};
 use rand::{RngExt, distr::Alphanumeric, rng};
 use rkt::http::Status;
 use serde::Serialize;
 use std::str::FromStr;
+use time::OffsetDateTime;
 
 use super::{Permission, Role};
 
@@ -54,17 +54,13 @@ pub struct DbUser {
     pub role: Option<String>,
     pub display_name: Option<String>,
     pub archived: Option<bool>,
-    pub graduated_at: Option<chrono::NaiveDateTime>,
+    pub graduated_at: Option<time::OffsetDateTime>,
     pub email: Option<String>,
-    pub claimed_at: Option<chrono::NaiveDateTime>,
-    pub approved_at: Option<chrono::NaiveDateTime>,
+    pub claimed_at: Option<time::OffsetDateTime>,
+    pub approved_at: Option<time::OffsetDateTime>,
     pub first_name: Option<String>,
     pub last_name: Option<String>,
-    pub reset_requested_at: Option<chrono::NaiveDateTime>,
-}
-
-fn naive_to_iso(dt: chrono::NaiveDateTime) -> String {
-    chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(dt, chrono::Utc).to_rfc3339()
+    pub reset_requested_at: Option<time::OffsetDateTime>,
 }
 
 impl From<DbUser> for User {
@@ -75,13 +71,13 @@ impl From<DbUser> for User {
             role: Role::from_str(&user.role.unwrap_or_default()).unwrap(),
             display_name: user.display_name.unwrap_or_default(),
             archived: user.archived.unwrap_or_default(),
-            graduated_at: user.graduated_at.map(naive_to_iso),
+            graduated_at: user.graduated_at.map(crate::ts::rfc3339),
             email: user.email,
-            claimed_at: user.claimed_at.map(naive_to_iso),
-            approved_at: user.approved_at.map(naive_to_iso),
+            claimed_at: user.claimed_at.map(crate::ts::rfc3339),
+            approved_at: user.approved_at.map(crate::ts::rfc3339),
             first_name: user.first_name,
             last_name: user.last_name,
-            reset_requested_at: user.reset_requested_at.map(naive_to_iso),
+            reset_requested_at: user.reset_requested_at.map(crate::ts::rfc3339),
             last_update: None,
             last_coach_update_at: None,
             total_techniques: None,
@@ -156,8 +152,8 @@ pub struct UserSession {
     pub id: i64,
     pub user_id: i64,
     pub token: String,
-    pub created_at: Option<NaiveDateTime>,
-    pub expires_at: NaiveDateTime,
+    pub created_at: Option<OffsetDateTime>,
+    pub expires_at: OffsetDateTime,
 }
 
 #[derive(Debug, sqlx::FromRow, Clone)]
@@ -165,8 +161,8 @@ pub struct DbUserSession {
     pub id: Option<i64>,
     pub user_id: Option<i64>,
     pub token: Option<String>,
-    pub created_at: Option<NaiveDateTime>,
-    pub expires_at: Option<NaiveDateTime>,
+    pub created_at: Option<OffsetDateTime>,
+    pub expires_at: Option<OffsetDateTime>,
 }
 
 impl From<DbUserSession> for UserSession {
@@ -178,7 +174,7 @@ impl From<DbUserSession> for UserSession {
             created_at: db_session.created_at,
             expires_at: db_session
                 .expires_at
-                .unwrap_or_else(|| Utc::now().naive_utc()),
+                .unwrap_or_else(OffsetDateTime::now_utc),
         }
     }
 }
@@ -190,7 +186,7 @@ impl UserSession {
     pub const LIFETIME_DAYS: i64 = 30;
 
     pub fn is_valid(&self) -> bool {
-        let now = Utc::now().naive_utc();
+        let now = OffsetDateTime::now_utc();
         self.expires_at > now
     }
 

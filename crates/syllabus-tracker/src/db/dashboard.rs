@@ -2,7 +2,7 @@
 //! lately" digest. Gym-wide (coach/admin see all students); counts only
 //! student-actor activity, since a coach already knows their own actions.
 
-use chrono::{Duration, Utc};
+use time::{Duration, OffsetDateTime};
 use serde::Serialize;
 use sqlx::{Pool, Sqlite};
 
@@ -49,10 +49,10 @@ pub async fn activity_digest(pool: &Pool<Sqlite>) -> Result<ActivityDigest, AppE
     // The 14 day-keys we care about, oldest first. day_keys[7..14] is the
     // current window; day_keys[0..7] is the previous window. date() in SQLite
     // yields 'YYYY-MM-DD', which we match against these.
-    let today = Utc::now().date_naive();
+    let today = OffsetDateTime::now_utc().date();
     let day_keys: Vec<String> = (0..14)
         .rev()
-        .map(|back| (today - Duration::days(back)).format("%Y-%m-%d").to_string())
+        .map(|back| crate::ts::date(today - Duration::days(back)))
         .collect();
 
     let count_rows = sqlx::query!(

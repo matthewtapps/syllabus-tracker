@@ -26,7 +26,7 @@ export async function handleApiFormError<T extends FieldValues>(
   knownFields: string[],
 ): Promise<boolean> {
   if (!(err instanceof Response)) return false;
-  let body: unknown = null;
+  let body: unknown;
   try {
     body = await err.json();
   } catch {

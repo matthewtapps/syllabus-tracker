@@ -1,7 +1,7 @@
 use std::str::FromStr;
 
-use chrono::Utc;
 use sqlx::{Pool, Sqlite};
+use time::OffsetDateTime;
 use tracing::{info, instrument};
 
 use crate::auth::{DbUser, Role, User};
@@ -106,10 +106,10 @@ pub async fn authenticate_user(
     let user_auth = sqlx::query!(
         r#"SELECT id, username, password, role, display_name, archived,
                   email, first_name, last_name,
-                  graduated_at as "graduated_at?: chrono::NaiveDateTime",
-                  claimed_at as "claimed_at?: chrono::NaiveDateTime",
-                  approved_at as "approved_at?: chrono::NaiveDateTime",
-                  reset_requested_at as "reset_requested_at?: chrono::NaiveDateTime"
+                  graduated_at as "graduated_at?: time::OffsetDateTime",
+                  claimed_at as "claimed_at?: time::OffsetDateTime",
+                  approved_at as "approved_at?: time::OffsetDateTime",
+                  reset_requested_at as "reset_requested_at?: time::OffsetDateTime"
            FROM users WHERE username = ?"#,
         username
     )
@@ -124,9 +124,7 @@ pub async fn authenticate_user(
                 return Ok(None);
             }
             if bcrypt::verify(password, &user.password)? {
-                let to_iso = |dt: chrono::NaiveDateTime| {
-                    chrono::DateTime::<Utc>::from_naive_utc_and_offset(dt, Utc).to_rfc3339()
-                };
+                let to_iso = |dt: time::OffsetDateTime| crate::ts::rfc3339(dt);
                 Ok(Some(User {
                     id: user.id,
                     username: user.username.clone().unwrap_or_default(),
@@ -298,7 +296,7 @@ pub async fn set_user_graduated(
     info!("Setting graduated state");
 
     if graduated {
-        let now = Utc::now().naive_utc();
+        let now = crate::ts::sql(OffsetDateTime::now_utc());
         sqlx::query!(
             "UPDATE users SET graduated_at = ?, graduated_by_id = ? WHERE id = ?",
             now,
@@ -345,7 +343,7 @@ pub async fn create_self_registered_user(
         (None, Some(l)) => l.to_string(),
         (None, None) => username.to_string(),
     };
-    let now = Utc::now().naive_utc();
+    let now = crate::ts::sql(OffsetDateTime::now_utc());
 
     let res = sqlx::query!(
         "INSERT INTO users
@@ -368,7 +366,7 @@ pub async fn create_self_registered_user(
 #[instrument]
 pub async fn approve_user(pool: &Pool<Sqlite>, user_id: i64) -> Result<(), AppError> {
     info!("Approving user");
-    let now = Utc::now().naive_utc();
+    let now = crate::ts::sql(OffsetDateTime::now_utc());
     sqlx::query!(
         "UPDATE users SET approved_at = ? WHERE id = ? AND approved_at IS NULL",
         now,
@@ -390,7 +388,7 @@ pub async fn create_user_stub(
 ) -> Result<i64, AppError> {
     info!("Creating stub user");
     // Coach-driven creates are implicitly approved.
-    let now = Utc::now().naive_utc();
+    let now = crate::ts::sql(OffsetDateTime::now_utc());
     let res = sqlx::query!(
         "INSERT INTO users (username, password, display_name, role, email, approved_at)
          VALUES (NULL, '', ?, ?, ?, ?)",
@@ -410,7 +408,7 @@ pub async fn create_user_stub(
 #[instrument]
 pub async fn request_password_reset(pool: &Pool<Sqlite>, username: &str) -> Result<(), AppError> {
     info!("Recording password reset request");
-    let now = Utc::now().naive_utc();
+    let now = crate::ts::sql(OffsetDateTime::now_utc());
     sqlx::query!(
         "UPDATE users SET reset_requested_at = ? WHERE username = ?",
         now,

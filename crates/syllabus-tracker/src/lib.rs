@@ -13,6 +13,7 @@ pub mod models;
 pub mod syllabi;
 pub mod telemetry;
 pub mod threads;
+pub mod ts;
 pub mod validation;
 pub mod videos;
 

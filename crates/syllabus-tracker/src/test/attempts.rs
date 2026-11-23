@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod tests {
-    use chrono::Utc;
+    use time::OffsetDateTime;
 
     use crate::auth::User;
     use crate::db::{
@@ -37,7 +37,7 @@ mod tests {
         let (db, st_id) = standard_setup_red().await;
         let student = fetch_user(&db.pool, db.user_id("student_user").unwrap()).await;
 
-        let res = create_attempt(&db.pool, &student, st_id, Utc::now(), None)
+        let res = create_attempt(&db.pool, &student, st_id, OffsetDateTime::now_utc(), None)
             .await
             .expect("Create attempt");
 
@@ -52,10 +52,10 @@ mod tests {
         let (db, st_id) = standard_setup_red().await;
         let student = fetch_user(&db.pool, db.user_id("student_user").unwrap()).await;
 
-        create_attempt(&db.pool, &student, st_id, Utc::now(), None)
+        create_attempt(&db.pool, &student, st_id, OffsetDateTime::now_utc(), None)
             .await
             .unwrap();
-        let res = create_attempt(&db.pool, &student, st_id, Utc::now(), None)
+        let res = create_attempt(&db.pool, &student, st_id, OffsetDateTime::now_utc(), None)
             .await
             .unwrap();
         assert_eq!(res.suggestion, AttemptSuggestion::None);
@@ -77,9 +77,15 @@ mod tests {
             .unwrap();
         let student = fetch_user(&test_db.pool, test_db.user_id("student_user").unwrap()).await;
 
-        let res = create_attempt(&test_db.pool, &student, st_id, Utc::now(), None)
-            .await
-            .unwrap();
+        let res = create_attempt(
+            &test_db.pool,
+            &student,
+            st_id,
+            OffsetDateTime::now_utc(),
+            None,
+        )
+        .await
+        .unwrap();
         assert_eq!(res.suggestion, AttemptSuggestion::None);
     }
 
@@ -88,9 +94,15 @@ mod tests {
         let (db, st_id) = standard_setup_red().await;
         let student = fetch_user(&db.pool, db.user_id("student_user").unwrap()).await;
 
-        let res = create_attempt(&db.pool, &student, st_id, Utc::now(), Some("nailed it"))
-            .await
-            .unwrap();
+        let res = create_attempt(
+            &db.pool,
+            &student,
+            st_id,
+            OffsetDateTime::now_utc(),
+            Some("nailed it"),
+        )
+        .await
+        .unwrap();
 
         assert_eq!(res.attempt.student_note.as_deref(), Some("nailed it"));
         assert!(res.attempt.coach_note.is_none());
@@ -102,9 +114,15 @@ mod tests {
         let (db, st_id) = standard_setup_red().await;
         let coach = fetch_user(&db.pool, db.user_id("coach_user").unwrap()).await;
 
-        let res = create_attempt(&db.pool, &coach, st_id, Utc::now(), Some("clean entry"))
-            .await
-            .unwrap();
+        let res = create_attempt(
+            &db.pool,
+            &coach,
+            st_id,
+            OffsetDateTime::now_utc(),
+            Some("clean entry"),
+        )
+        .await
+        .unwrap();
 
         assert_eq!(res.attempt.coach_note.as_deref(), Some("clean entry"));
         assert_eq!(res.attempt.coach_note_by_id, Some(coach.id));
@@ -128,7 +146,14 @@ mod tests {
             .unwrap();
         let other = fetch_user(&test_db.pool, test_db.user_id("student_b").unwrap()).await;
 
-        let res = create_attempt(&test_db.pool, &other, st_id, Utc::now(), None).await;
+        let res = create_attempt(
+            &test_db.pool,
+            &other,
+            st_id,
+            OffsetDateTime::now_utc(),
+            None,
+        )
+        .await;
         assert!(res.is_err());
     }
 
@@ -138,12 +163,13 @@ mod tests {
         let coach = fetch_user(&db.pool, db.user_id("coach_user").unwrap()).await;
         let student = fetch_user(&db.pool, db.user_id("student_user").unwrap()).await;
 
-        let coach_logged = create_attempt(&db.pool, &coach, st_id, Utc::now(), None)
+        let coach_logged = create_attempt(&db.pool, &coach, st_id, OffsetDateTime::now_utc(), None)
             .await
             .unwrap();
-        let student_logged = create_attempt(&db.pool, &student, st_id, Utc::now(), None)
-            .await
-            .unwrap();
+        let student_logged =
+            create_attempt(&db.pool, &student, st_id, OffsetDateTime::now_utc(), None)
+                .await
+                .unwrap();
 
         // Student deletes own: ok
         delete_attempt(&db.pool, &student, student_logged.attempt.id)
@@ -163,7 +189,7 @@ mod tests {
         let (db, st_id) = standard_setup_red().await;
         let coach = fetch_user(&db.pool, db.user_id("coach_user").unwrap()).await;
         let student = fetch_user(&db.pool, db.user_id("student_user").unwrap()).await;
-        let res = create_attempt(&db.pool, &student, st_id, Utc::now(), None)
+        let res = create_attempt(&db.pool, &student, st_id, OffsetDateTime::now_utc(), None)
             .await
             .unwrap();
         delete_attempt(&db.pool, &coach, res.attempt.id)
@@ -177,9 +203,15 @@ mod tests {
         let coach = fetch_user(&db.pool, db.user_id("coach_user").unwrap()).await;
         let student = fetch_user(&db.pool, db.user_id("student_user").unwrap()).await;
 
-        let res = create_attempt(&db.pool, &coach, st_id, Utc::now(), Some("coach saw it"))
-            .await
-            .unwrap();
+        let res = create_attempt(
+            &db.pool,
+            &coach,
+            st_id,
+            OffsetDateTime::now_utc(),
+            Some("coach saw it"),
+        )
+        .await
+        .unwrap();
 
         update_attempt_note(
             &db.pool,
@@ -199,9 +231,15 @@ mod tests {
     async fn empty_note_clears_actor_slot() {
         let (db, st_id) = standard_setup_red().await;
         let student = fetch_user(&db.pool, db.user_id("student_user").unwrap()).await;
-        let res = create_attempt(&db.pool, &student, st_id, Utc::now(), Some("oops"))
-            .await
-            .unwrap();
+        let res = create_attempt(
+            &db.pool,
+            &student,
+            st_id,
+            OffsetDateTime::now_utc(),
+            Some("oops"),
+        )
+        .await
+        .unwrap();
         update_attempt_note(&db.pool, &student, res.attempt.id, Some(""))
             .await
             .unwrap();
@@ -215,10 +253,10 @@ mod tests {
         let coach = fetch_user(&db.pool, db.user_id("coach_user").unwrap()).await;
         let student = fetch_user(&db.pool, db.user_id("student_user").unwrap()).await;
 
-        let res = create_attempt(&db.pool, &coach, st_id, Utc::now(), None)
+        let res = create_attempt(&db.pool, &coach, st_id, OffsetDateTime::now_utc(), None)
             .await
             .unwrap();
-        let earlier = Utc::now() - chrono::Duration::days(3);
+        let earlier = OffsetDateTime::now_utc() - time::Duration::days(3);
         let forbidden = update_attempt_timestamp(&db.pool, &student, res.attempt.id, earlier).await;
         assert!(forbidden.is_err());
     }
@@ -228,10 +266,10 @@ mod tests {
         let (db, st_id) = standard_setup_red().await;
         let coach = fetch_user(&db.pool, db.user_id("coach_user").unwrap()).await;
         let student = fetch_user(&db.pool, db.user_id("student_user").unwrap()).await;
-        let res = create_attempt(&db.pool, &student, st_id, Utc::now(), None)
+        let res = create_attempt(&db.pool, &student, st_id, OffsetDateTime::now_utc(), None)
             .await
             .unwrap();
-        let earlier = Utc::now() - chrono::Duration::days(3);
+        let earlier = OffsetDateTime::now_utc() - time::Duration::days(3);
         update_attempt_timestamp(&db.pool, &coach, res.attempt.id, earlier)
             .await
             .expect("coach can backdate");
@@ -242,9 +280,9 @@ mod tests {
         let (db, st_id) = standard_setup_red().await;
         let student = fetch_user(&db.pool, db.user_id("student_user").unwrap()).await;
 
-        let t1 = Utc::now() - chrono::Duration::days(2);
-        let t2 = Utc::now() - chrono::Duration::days(1);
-        let t3 = Utc::now();
+        let t1 = OffsetDateTime::now_utc() - time::Duration::days(2);
+        let t2 = OffsetDateTime::now_utc() - time::Duration::days(1);
+        let t3 = OffsetDateTime::now_utc();
 
         create_attempt(&db.pool, &student, st_id, t1, Some("a"))
             .await
@@ -267,7 +305,7 @@ mod tests {
     async fn cascade_delete_when_student_technique_removed() {
         let (db, st_id) = standard_setup_red().await;
         let student = fetch_user(&db.pool, db.user_id("student_user").unwrap()).await;
-        create_attempt(&db.pool, &student, st_id, Utc::now(), None)
+        create_attempt(&db.pool, &student, st_id, OffsetDateTime::now_utc(), None)
             .await
             .unwrap();
 
@@ -287,14 +325,14 @@ mod tests {
         let student_id = student.id;
 
         // Today, 3 days ago, 20 days ago, 60 days ago
-        create_attempt(&db.pool, &student, st_id, Utc::now(), None)
+        create_attempt(&db.pool, &student, st_id, OffsetDateTime::now_utc(), None)
             .await
             .unwrap();
         create_attempt(
             &db.pool,
             &student,
             st_id,
-            Utc::now() - chrono::Duration::days(3),
+            OffsetDateTime::now_utc() - time::Duration::days(3),
             None,
         )
         .await
@@ -303,7 +341,7 @@ mod tests {
             &db.pool,
             &student,
             st_id,
-            Utc::now() - chrono::Duration::days(20),
+            OffsetDateTime::now_utc() - time::Duration::days(20),
             None,
         )
         .await
@@ -312,7 +350,7 @@ mod tests {
             &db.pool,
             &student,
             st_id,
-            Utc::now() - chrono::Duration::days(60),
+            OffsetDateTime::now_utc() - time::Duration::days(60),
             None,
         )
         .await
@@ -330,9 +368,15 @@ mod tests {
     async fn recent_attempts_returns_with_technique_name() {
         let (db, st_id) = standard_setup_red().await;
         let student = fetch_user(&db.pool, db.user_id("student_user").unwrap()).await;
-        create_attempt(&db.pool, &student, st_id, Utc::now(), Some("note"))
-            .await
-            .unwrap();
+        create_attempt(
+            &db.pool,
+            &student,
+            st_id,
+            OffsetDateTime::now_utc(),
+            Some("note"),
+        )
+        .await
+        .unwrap();
         let recent = list_recent_attempts_for_student(&db.pool, student.id, 5)
             .await
             .unwrap();
@@ -345,19 +389,19 @@ mod tests {
     async fn heatmap_buckets_by_day() {
         let (db, st_id) = standard_setup_red().await;
         let student = fetch_user(&db.pool, db.user_id("student_user").unwrap()).await;
-        let today = Utc::now().date_naive();
-        let yesterday = today - chrono::Duration::days(1);
-        create_attempt(&db.pool, &student, st_id, Utc::now(), None)
+        let today = OffsetDateTime::now_utc().date();
+        let yesterday = today - time::Duration::days(1);
+        create_attempt(&db.pool, &student, st_id, OffsetDateTime::now_utc(), None)
             .await
             .unwrap();
-        create_attempt(&db.pool, &student, st_id, Utc::now(), None)
+        create_attempt(&db.pool, &student, st_id, OffsetDateTime::now_utc(), None)
             .await
             .unwrap();
         create_attempt(
             &db.pool,
             &student,
             st_id,
-            Utc::now() - chrono::Duration::days(1),
+            OffsetDateTime::now_utc() - time::Duration::days(1),
             None,
         )
         .await
@@ -377,14 +421,14 @@ mod tests {
     async fn sparkline_buckets_by_week() {
         let (db, st_id) = standard_setup_red().await;
         let student = fetch_user(&db.pool, db.user_id("student_user").unwrap()).await;
-        create_attempt(&db.pool, &student, st_id, Utc::now(), None)
+        create_attempt(&db.pool, &student, st_id, OffsetDateTime::now_utc(), None)
             .await
             .unwrap();
         create_attempt(
             &db.pool,
             &student,
             st_id,
-            Utc::now() - chrono::Duration::days(10),
+            OffsetDateTime::now_utc() - time::Duration::days(10),
             None,
         )
         .await
@@ -405,14 +449,14 @@ mod tests {
 
         // Establish baselines: the test seed leaves last_*_update_at NULL for
         // this assignment, so anything non-null is an improvement.
-        create_attempt(&db.pool, &student, st_id, Utc::now(), None)
+        create_attempt(&db.pool, &student, st_id, OffsetDateTime::now_utc(), None)
             .await
             .unwrap();
         let after_student = db.get_student_technique(st_id).await.unwrap();
         assert!(after_student.last_student_update_at.is_some());
         assert_eq!(after_student.last_student_update_by_id, Some(student.id));
 
-        create_attempt(&db.pool, &coach, st_id, Utc::now(), None)
+        create_attempt(&db.pool, &coach, st_id, OffsetDateTime::now_utc(), None)
             .await
             .unwrap();
         let after_coach = db.get_student_technique(st_id).await.unwrap();
@@ -428,17 +472,17 @@ mod tests {
         let (db, st_id) = standard_setup_red().await;
         let student = fetch_user(&db.pool, db.user_id("student_user").unwrap()).await;
         // Backdate by 10 days; the activity timestamp should still reflect now.
-        let backdate = Utc::now() - chrono::Duration::days(10);
+        let backdate = OffsetDateTime::now_utc() - time::Duration::days(10);
         create_attempt(&db.pool, &student, st_id, backdate, None)
             .await
             .unwrap();
         let after = db.get_student_technique(st_id).await.unwrap();
         let stamp = after.last_student_update_at.expect("activity set");
-        let age = Utc::now().signed_duration_since(stamp);
+        let age = OffsetDateTime::now_utc() - stamp;
         assert!(
-            age.num_seconds() < 60,
+            age.whole_seconds() < 60,
             "activity should be recent, was {}s old",
-            age.num_seconds()
+            age.whole_seconds()
         );
     }
 
@@ -447,7 +491,7 @@ mod tests {
         let (db, st_id) = standard_setup_red().await;
         let student = fetch_user(&db.pool, db.user_id("student_user").unwrap()).await;
 
-        let backdate = Utc::now() - chrono::Duration::days(3);
+        let backdate = OffsetDateTime::now_utc() - time::Duration::days(3);
         let res = create_attempt(&db.pool, &student, st_id, backdate, None)
             .await
             .unwrap();
@@ -475,10 +519,10 @@ mod tests {
         let (db, st_id) = standard_setup_red().await;
         let student = fetch_user(&db.pool, db.user_id("student_user").unwrap()).await;
         let student_id = student.id;
-        create_attempt(&db.pool, &student, st_id, Utc::now(), None)
+        create_attempt(&db.pool, &student, st_id, OffsetDateTime::now_utc(), None)
             .await
             .unwrap();
-        create_attempt(&db.pool, &student, st_id, Utc::now(), None)
+        create_attempt(&db.pool, &student, st_id, OffsetDateTime::now_utc(), None)
             .await
             .unwrap();
         let techs = crate::db::get_student_techniques(&db.pool, student_id, student_id)

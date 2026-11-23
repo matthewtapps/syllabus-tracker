@@ -1,6 +1,6 @@
 use std::collections::{HashMap, hash_map::Entry};
 
-use chrono::NaiveDateTime;
+use time::OffsetDateTime;
 use serde::Serialize;
 use sqlx::{Pool, Sqlite};
 use tracing::{info, instrument};
@@ -76,7 +76,7 @@ async fn list_techniques_scoped(
             COALESCE((SELECT COUNT(*) FROM collection_techniques ct WHERE ct.technique_id = t.id), 0) AS "collection_count!: i64",
             COALESCE((SELECT COUNT(DISTINCT st.student_id) FROM student_techniques st WHERE st.technique_id = t.id), 0) AS "student_count!: i64",
             COALESCE((SELECT COUNT(*) FROM videos v WHERE v.technique_id = t.id AND v.deleted_at IS NULL), 0) AS "video_count!: i64",
-            (SELECT MAX(st.updated_at) FROM student_techniques st WHERE st.technique_id = t.id) AS "last_activity_at?: NaiveDateTime"
+            (SELECT MAX(st.updated_at) FROM student_techniques st WHERE st.technique_id = t.id) AS "last_activity_at?: OffsetDateTime"
         FROM techniques t
         WHERE CASE WHEN ?1 IS NULL THEN t.is_global = 1
                    ELSE t.id IN (SELECT ct.technique_id
@@ -146,8 +146,7 @@ async fn list_techniques_scoped(
             student_count: r.student_count,
             video_count: r.video_count,
             last_activity_at: r.last_activity_at.map(|dt| {
-                chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(dt, chrono::Utc)
-                    .to_rfc3339()
+                crate::ts::rfc3339(dt)
             }),
             is_pinned: false,
         })
@@ -303,7 +302,7 @@ pub async fn library_technique_stats(
     let attempts_weekly_buckets = bucket_rows
         .into_iter()
         .filter_map(|r| {
-            chrono::NaiveDate::parse_from_str(&r.week_start, "%Y-%m-%d")
+            crate::ts::parse_date(&r.week_start)
                 .ok()
                 .map(|date| AttemptBucket {
                     date,

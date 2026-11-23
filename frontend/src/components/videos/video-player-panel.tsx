@@ -3,7 +3,7 @@ import type { Video } from "@/lib/api";
 import type { PlayerEvents } from "./player-events";
 import { DriveEmbed } from "./drive-embed";
 import { ExternalLinkCard } from "./external-link-card";
-import { VidstackPlayer } from "./vidstack-player";
+import { NativeVideoPlayer } from "./native-video-player";
 import { VideoProcessingTile } from "./video-processing-tile";
 import { VimeoLiteEmbed } from "./vimeo-lite-embed";
 import { YouTubeLiteEmbed } from "./youtube-lite-embed";
@@ -32,7 +32,7 @@ export function VideoPlayerPanel({
   switch (video.kind) {
     case "native":
       return (
-        <VidstackPlayer
+        <NativeVideoPlayer
           video={video}
           events={events}
           overlay={overlay}

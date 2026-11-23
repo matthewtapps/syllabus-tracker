@@ -1,4 +1,4 @@
-use chrono::{DateTime, Utc};
+use time::OffsetDateTime;
 use rkt::State;
 use rkt::data::{ByteUnit, Data, ToByteUnit};
 use rkt::form::{Errors as FormErrors, Form};
@@ -42,7 +42,8 @@ pub struct StatusResponse {
 #[derive(Serialize)]
 pub struct SignedUrlResponse {
     pub url: String,
-    pub expires_at: DateTime<Utc>,
+    #[serde(with = "crate::ts::utc")]
+    pub expires_at: OffsetDateTime,
 }
 
 #[derive(FromForm)]
@@ -967,7 +968,7 @@ pub async fn api_video_playback_url(
     video_metrics()
         .signed_url_mint_duration_ms
         .record(started.elapsed().as_millis() as u64, &[]);
-    let expires_at = Utc::now() + chrono::Duration::from_std(ttl).unwrap_or_default();
+    let expires_at = OffsetDateTime::now_utc() + time::Duration::try_from(ttl).unwrap_or_default();
     Ok(Json(SignedUrlResponse { url, expires_at }))
 }
 
@@ -1021,7 +1022,7 @@ pub async fn api_video_download_url(
     video_metrics()
         .signed_url_mint_duration_ms
         .record(started.elapsed().as_millis() as u64, &[]);
-    let expires_at = Utc::now() + chrono::Duration::from_std(ttl).unwrap_or_default();
+    let expires_at = OffsetDateTime::now_utc() + time::Duration::try_from(ttl).unwrap_or_default();
     Ok(Json(SignedUrlResponse { url, expires_at }))
 }
 
@@ -1158,7 +1159,7 @@ pub async fn api_student_watch_activity(
     pool: &State<Pool<Sqlite>>,
 ) -> Result<Json<StudentWatchActivityResponse>, Status> {
     user.require_permission(Permission::ViewWatchStats)?;
-    let since = Utc::now() - chrono::Duration::days(30);
+    let since = OffsetDateTime::now_utc() - time::Duration::days(30);
     let activity = db::get_student_watch_activity(pool.inner(), sid, since)
         .await
         .map_err(Status::from)?;
@@ -1190,7 +1191,7 @@ pub async fn api_dashboard_video_overview(
     pool: &State<Pool<Sqlite>>,
 ) -> Result<Json<db::DashboardVideoOverview>, Status> {
     user.require_permission(Permission::ViewWatchStats)?;
-    let since = Utc::now() - chrono::Duration::days(7);
+    let since = OffsetDateTime::now_utc() - time::Duration::days(7);
     let overview = db::get_dashboard_video_overview(pool.inner(), since)
         .await
         .map_err(Status::from)?;

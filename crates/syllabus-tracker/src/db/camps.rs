@@ -3,7 +3,7 @@
 //! through `camp_techniques`; camps predating that table hold theirs through
 //! camp_technique threads, which the membership reads still union in.
 
-use chrono::NaiveDateTime;
+use time::OffsetDateTime;
 use serde::Serialize;
 use sqlx::{Pool, Sqlite};
 use tracing::instrument;
@@ -27,8 +27,10 @@ pub struct Camp {
     pub coach_id: i64,
     pub name: String,
     pub description: Option<String>,
-    pub created_at: NaiveDateTime,
-    pub archived_at: Option<NaiveDateTime>,
+    #[serde(with = "crate::ts::naive_iso")]
+    pub created_at: OffsetDateTime,
+    #[serde(with = "crate::ts::naive_iso::option")]
+    pub archived_at: Option<OffsetDateTime>,
 }
 
 pub struct NewCamp {
@@ -68,8 +70,8 @@ pub async fn get_camp(pool: &Pool<Sqlite>, id: i64) -> Result<Option<Camp>, AppE
     let row = sqlx::query!(
         r#"SELECT id AS "id!: i64", student_id AS "student_id!: i64",
                   coach_id AS "coach_id!: i64", name, description,
-                  created_at AS "created_at!: NaiveDateTime",
-                  archived_at AS "archived_at?: NaiveDateTime"
+                  created_at AS "created_at!: OffsetDateTime",
+                  archived_at AS "archived_at?: OffsetDateTime"
            FROM camps WHERE id = ?"#,
         id
     )
@@ -95,8 +97,8 @@ pub async fn list_camps_for_student(
     let rows = sqlx::query!(
         r#"SELECT id AS "id!: i64", student_id AS "student_id!: i64",
                   coach_id AS "coach_id!: i64", name, description,
-                  created_at AS "created_at!: NaiveDateTime",
-                  archived_at AS "archived_at?: NaiveDateTime"
+                  created_at AS "created_at!: OffsetDateTime",
+                  archived_at AS "archived_at?: OffsetDateTime"
            FROM camps
            WHERE student_id = ? AND (? OR archived_at IS NULL)
            ORDER BY (archived_at IS NOT NULL), created_at DESC"#,
@@ -126,12 +128,15 @@ pub struct CampSummary {
     pub coach_id: i64,
     pub name: String,
     pub description: Option<String>,
-    pub created_at: NaiveDateTime,
-    pub archived_at: Option<NaiveDateTime>,
+    #[serde(with = "crate::ts::naive_iso")]
+    pub created_at: OffsetDateTime,
+    #[serde(with = "crate::ts::naive_iso::option")]
+    pub archived_at: Option<OffsetDateTime>,
     pub video_count: i64,
     /// Most recent activity timestamp for this camp (MAX over the activity
     /// table by camp_id). None when the camp has no activity rows.
-    pub last_activity_at: Option<NaiveDateTime>,
+    #[serde(with = "crate::ts::naive_iso::option")]
+    pub last_activity_at: Option<OffsetDateTime>,
 }
 
 /// Enriched camp list for the profile/list surfaces: bare camp columns plus
@@ -147,12 +152,12 @@ pub async fn list_camp_summaries_for_student(
         r#"SELECT
                c.id AS "id!: i64", c.student_id AS "student_id!: i64",
                c.coach_id AS "coach_id!: i64", c.name, c.description,
-               c.created_at AS "created_at!: NaiveDateTime",
-               c.archived_at AS "archived_at?: NaiveDateTime",
+               c.created_at AS "created_at!: OffsetDateTime",
+               c.archived_at AS "archived_at?: OffsetDateTime",
                (SELECT COUNT(*) FROM videos v WHERE v.camp_id = c.id)
                    AS "video_count!: i64",
                (SELECT MAX(a.occurred_at) FROM activity a WHERE a.camp_id = c.id)
-                   AS "last_activity_at?: NaiveDateTime"
+                   AS "last_activity_at?: OffsetDateTime"
            FROM camps c
            WHERE c.student_id = ? AND (? OR c.archived_at IS NULL)
            ORDER BY (c.archived_at IS NOT NULL),

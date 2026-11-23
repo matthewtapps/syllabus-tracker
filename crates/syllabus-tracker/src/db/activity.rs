@@ -5,9 +5,9 @@
 //! with the event it records. This module never deserialises payloads; the
 //! typed read side lands in PR 2 (`db/activity_read.rs`).
 
-use chrono::{NaiveDateTime, Utc};
 use serde_json::json;
 use sqlx::{Pool, Sqlite, Transaction};
+use time::OffsetDateTime;
 
 use crate::error::AppError;
 
@@ -326,18 +326,19 @@ const COALESCE_WINDOW_SECS: i64 = 30;
 /// Insert (or coalesce, Task 5) an activity row inside the caller's
 /// transaction. Atomic with the event being recorded.
 pub async fn emit(tx: &mut Transaction<'_, Sqlite>, ev: NewActivity) -> Result<(), AppError> {
-    let now = Utc::now().naive_utc();
+    let now_dt = OffsetDateTime::now_utc();
+    let now = crate::ts::sql(now_dt);
     let verb = ev.verb.as_str();
 
     // Non-coalescing verbs (e.g. ThreadCommentPosted) always produce a new row.
     // Coalescing verbs look for a recent same-key row within the window first.
     if ev.verb.coalesces() {
-        let window_start = now - chrono::Duration::seconds(COALESCE_WINDOW_SECS);
+        let window_start = crate::ts::sql(now_dt - time::Duration::seconds(COALESCE_WINDOW_SECS));
 
         // Find the most recent same-key row within the window. The key is
         // (actor, verb, primary entity col, target_student_id). The primary entity
         // column varies by verb, so branch on its kind.
-        let existing_id = find_coalesce_target(tx, &ev, verb, window_start).await?;
+        let existing_id = find_coalesce_target(tx, &ev, verb, &window_start).await?;
 
         if let Some(id) = existing_id {
             // Merge: bump occurred_at, and for sst_status_changed keep the original
@@ -387,7 +388,7 @@ async fn find_coalesce_target(
     tx: &mut Transaction<'_, Sqlite>,
     ev: &NewActivity,
     verb: &str,
-    window_start: NaiveDateTime,
+    window_start: &str,
 ) -> Result<Option<i64>, AppError> {
     let entity_id = match ev.primary_entity_id() {
         Some(id) => id,

@@ -9,7 +9,7 @@ version = "1.0.0"
 rust-version = "1.100"
 
 [workspace.dependencies]
-sqlx = { version = "0.9.1", features = ["runtime-tokio", "sqlite", "chrono", "macros"] }
+sqlx = { version = "0.9.1", features = ["runtime-tokio", "sqlite", "time", "macros"] }
 tokio = { version = "1.45.0", features = ["process", "fs", "io-util", "macros", "rt", "rt-multi-thread", "time", "sync"] }
 anyhow = "1.0"
 dotenvy = "0.15.7"
@@ -17,4 +17,4 @@ tracing = { version = "0.1.41", features = ["std", "attributes"] }
 tracing-subscriber = { version = "0.3.19", features = ["env-filter", "registry", "std", "fmt"] }
 indicatif = "0.18"
 regex = "1.11.1"
-chrono = { version = "0.4.40", features = ["serde"] }
+time = { version = "0.3.55", features = ["parsing", "macros"] }

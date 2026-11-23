@@ -4,7 +4,7 @@ Status as of this branch (`roadmap/threads-08-video-processing`):
 
 **Done + verified**
 - Code: `video-media`/`video-job`/`video-worker` crates, `VideoProcessor` seam (host + remote), HMAC webhook, sweeper, 720p cap. (Phases 1-3, merged-ready.)
-- Local validation: the `video-cloud` docker-compose profile (`mock-transcoder`) exercises the whole enqueue -> worker -> signed-webhook -> `ready` path against MinIO. `docker compose --profile video-cloud up`, app set to `VIDEO_PROCESSOR=remote`.
+- Local validation: the `video-cloud` docker-compose profile (`mock-transcoder`) exercises the whole enqueue -> worker -> signed-webhook -> `ready` path against the local S3 container. `docker compose --profile video-cloud up`, app set to `VIDEO_PROCESSOR=remote`.
 - Platform infra provisioned (live): GCP project `matthewtapps-sillybus`, Artifact Registry repo, deployer SA (WIF), runtime SA, and secrets exported as tofu outputs `_platform_video_enqueue_token` / `_platform_video_callback_secret` / `_platform_runtime_r2_access_key_id` / `_platform_runtime_r2_secret_access_key`.
 - Service wiring committed: `staging.yml` ships `VIDEO_ENQUEUE_TOKEN`/`VIDEO_CALLBACK_SECRET` in the runtime-secrets bundle; the staging override sets `VIDEO_PROCESSOR` (default `host`), `VIDEO_ENQUEUE_URL`, `VIDEO_CALLBACK_BASE_URL`.
 - CI rewritten: `.github/workflows/deploy-video-worker.yaml` builds to Artifact Registry and deploys to Cloud Run via WIF (workflow_dispatch-only until `VIDEO_ENQUEUE_URL` is set).

@@ -129,7 +129,7 @@ fn build_client(config: &S3Config, endpoint: &str) -> S3Client {
         .force_path_style(config.force_path_style)
         // aws-sdk-s3 defaults to adding a CRC32 checksum, which it sends as an
         // `aws-chunked` streaming trailer for file-backed bodies. Several
-        // S3-compatible backends (e.g. MinIO in the local stack) reject that
+        // S3-compatible backends (MinIO, for one) reject that
         // trailer, so larger uploads fail with a fast "put_object: service
         // error" while small in-memory bodies (checksummed inline) succeed.
         // Only checksum when an operation actually requires it.

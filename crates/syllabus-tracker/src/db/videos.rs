@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use chrono::Utc;
+use time::OffsetDateTime;
 use sqlx::{Pool, Sqlite};
 use tracing::{info, instrument};
 
@@ -319,7 +319,7 @@ pub async fn finalize_video_ready(
     height: Option<i64>,
 ) -> Result<(), AppError> {
     let status = ProcessingStatus::Ready.as_str();
-    let now = Utc::now().naive_utc();
+    let now = crate::ts::sql(OffsetDateTime::now_utc());
     sqlx::query!(
         "UPDATE videos
          SET processing_status = ?,
@@ -348,7 +348,7 @@ pub async fn finalize_video_ready(
 #[instrument(skip(pool))]
 pub async fn mark_video_failed(pool: &Pool<Sqlite>, id: i64, error: &str) -> Result<(), AppError> {
     let status = ProcessingStatus::Failed.as_str();
-    let now = Utc::now().naive_utc();
+    let now = crate::ts::sql(OffsetDateTime::now_utc());
     sqlx::query!(
         "UPDATE videos
          SET processing_status = ?, processing_error = ?, updated_at = ?
@@ -377,7 +377,7 @@ pub async fn finalize_video_ready_if_not_ready(
     height: Option<i64>,
 ) -> Result<(), AppError> {
     let ready_status = ProcessingStatus::Ready.as_str();
-    let now = Utc::now().naive_utc();
+    let now = crate::ts::sql(OffsetDateTime::now_utc());
     sqlx::query!(
         "UPDATE videos
          SET processing_status = ?,
@@ -415,7 +415,7 @@ pub async fn mark_video_failed_if_not_ready(
 ) -> Result<(), AppError> {
     let failed_status = ProcessingStatus::Failed.as_str();
     let ready_status = ProcessingStatus::Ready.as_str();
-    let now = Utc::now().naive_utc();
+    let now = crate::ts::sql(OffsetDateTime::now_utc());
     sqlx::query!(
         "UPDATE videos
          SET processing_status = ?, processing_error = ?, updated_at = ?
@@ -1300,7 +1300,7 @@ pub async fn fail_stale_processing(
 /// were left in-flight when the previous process was killed mid-transcode.
 /// Returns the number of rows updated.
 pub async fn reconcile_interrupted_processing(pool: &Pool<Sqlite>) -> Result<u64, AppError> {
-    let now = Utc::now().naive_utc();
+    let now = crate::ts::sql(OffsetDateTime::now_utc());
     let res = sqlx::query!(
         "UPDATE videos
          SET processing_status = 'failed',
@@ -1323,7 +1323,7 @@ pub async fn set_video_hidden_globally(
     hidden: bool,
     actor_id: i64,
 ) -> Result<bool, AppError> {
-    let now = Utc::now().naive_utc();
+    let now = crate::ts::sql(OffsetDateTime::now_utc());
     let technique_id = sqlx::query_scalar!(
         r#"SELECT technique_id AS "technique_id?: i64" FROM videos WHERE id = ?"#,
         video_id,
@@ -1422,7 +1422,7 @@ pub async fn update_video_metadata(
     description: Option<Option<&str>>,
     position: Option<i64>,
 ) -> Result<(), AppError> {
-    let now = Utc::now().naive_utc();
+    let now = crate::ts::sql(OffsetDateTime::now_utc());
     if let Some(title) = title {
         sqlx::query!(
             "UPDATE videos SET title = ?, updated_at = ? WHERE id = ?",
@@ -1463,7 +1463,7 @@ pub async fn reorder_videos(
     ordered_ids: &[i64],
 ) -> Result<(), AppError> {
     let mut tx = pool.begin().await?;
-    let now = Utc::now().naive_utc();
+    let now = crate::ts::sql(OffsetDateTime::now_utc());
     for (index, video_id) in ordered_ids.iter().enumerate() {
         let position = index as i64;
         sqlx::query!(
@@ -1488,7 +1488,7 @@ pub async fn reorder_videos(
 /// Returns `true` if a row was marked deleted (matched and was alive).
 #[instrument(skip(pool))]
 pub async fn delete_video(pool: &Pool<Sqlite>, id: i64) -> Result<bool, AppError> {
-    let now = Utc::now().naive_utc();
+    let now = crate::ts::sql(OffsetDateTime::now_utc());
     let result = sqlx::query!(
         "UPDATE videos
          SET deleted_at = ?, updated_at = ?
@@ -1506,7 +1506,7 @@ pub async fn delete_video(pool: &Pool<Sqlite>, id: i64) -> Result<bool, AppError
 pub async fn reset_video_to_processing(pool: &Pool<Sqlite>, id: i64) -> Result<(), AppError> {
     let status = ProcessingStatus::Processing.as_str();
     let kind = VideoKind::Native.as_str();
-    let now = Utc::now().naive_utc();
+    let now = crate::ts::sql(OffsetDateTime::now_utc());
     sqlx::query!(
         "UPDATE videos
          SET processing_status = ?,

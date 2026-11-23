@@ -1,0 +1,88 @@
+{
+  "db_name": "SQLite",
+  "query": "\n        SELECT\n            c.id, c.name, c.description, c.coach_id,\n            c.created_at as \"created_at: time::OffsetDateTime\",\n            (SELECT COUNT(*) FROM collection_techniques WHERE collection_id = c.id)\n                as \"technique_count!: i64\",\n            (SELECT COUNT(DISTINCT student_id) FROM student_techniques WHERE collection_id = c.id)\n                as \"student_count!: i64\"\n        FROM collections c\n        ORDER BY c.name\n        ",
+  "describe": {
+    "columns": [
+      {
+        "name": "id",
+        "ordinal": 0,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "collections",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "name": "name",
+        "ordinal": 1,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "collections",
+            "name": "name"
+          }
+        }
+      },
+      {
+        "name": "description",
+        "ordinal": 2,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "collections",
+            "name": "description"
+          }
+        }
+      },
+      {
+        "name": "coach_id",
+        "ordinal": 3,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "collections",
+            "name": "coach_id"
+          }
+        }
+      },
+      {
+        "name": "created_at: time::OffsetDateTime",
+        "ordinal": 4,
+        "type_info": "Datetime",
+        "origin": {
+          "Table": {
+            "table": "collections",
+            "name": "created_at"
+          }
+        }
+      },
+      {
+        "name": "technique_count!: i64",
+        "ordinal": 5,
+        "type_info": "Integer",
+        "origin": "Expression"
+      },
+      {
+        "name": "student_count!: i64",
+        "ordinal": 6,
+        "type_info": "Integer",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      true,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "2a67d7a4023574e8d2d883b478871a019ddd04de1c058278228ee1974cde492d"
+}

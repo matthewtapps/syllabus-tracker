@@ -3,7 +3,7 @@ extern crate rkt;
 
 pub use syllabus_tracker::{
     api, auth, camps, capabilities, catchers, db, env, error, models,
-    syllabi, telemetry, threads, validation, videos,
+    syllabi, telemetry, threads, ts, validation, videos,
 };
 
 #[cfg(test)]

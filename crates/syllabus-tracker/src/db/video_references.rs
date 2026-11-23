@@ -6,7 +6,7 @@ use sqlx::{Pool, Sqlite};
 use tracing::instrument;
 
 use crate::error::AppError;
-use crate::models::{DbVideo, Video, naive_to_utc};
+use crate::models::{DbVideo, Video};
 
 /// What a reference points at. Typed-column polymorphism, mirrors
 /// [`crate::db::videos::VideoParent`] but only for the tiers that can hold one.
@@ -47,7 +47,7 @@ pub struct ReferencedVideo {
     pub reference_id: i64,
     /// Set when the clip is hidden at this destination only; the original is
     /// untouched.
-    pub hidden_at: Option<chrono::DateTime<chrono::Utc>>,
+    pub hidden_at: Option<time::OffsetDateTime>,
 }
 
 /// Points `video_id` at `parent`. Idempotent: referencing the same clip twice
@@ -171,7 +171,7 @@ pub async fn list_referenced_videos(
     let parent_id = parent.id();
     let rows = sqlx::query!(
         r#"SELECT r.id AS "reference_id!: i64",
-                  r.hidden_at AS "reference_hidden_at?: chrono::NaiveDateTime",
+                  r.hidden_at AS "reference_hidden_at?: time::OffsetDateTime",
                   v.id, v.parent_kind, v.technique_id, v.student_id, v.thread_id,
                   v.camp_id AS "camp_id?: i64", v.title, v.description,
                   v.position, v.kind, v.processing_status, v.processing_error,
@@ -196,7 +196,7 @@ pub async fn list_referenced_videos(
         .into_iter()
         .map(|r| ReferencedVideo {
             reference_id: r.reference_id,
-            hidden_at: r.reference_hidden_at.map(naive_to_utc),
+            hidden_at: r.reference_hidden_at,
             video: Video::from(DbVideo {
                 id: Some(r.id),
                 parent_kind: r.parent_kind,

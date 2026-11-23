@@ -2,7 +2,7 @@
 //! anchor/visibility vocabulary, the (kind, visibility) allow-matrix, and the
 //! CRUD SQL. Activity-feed emission is handled here (PR5).
 
-use chrono::NaiveDateTime;
+use time::OffsetDateTime;
 use serde::Serialize;
 use sqlx::{Pool, Sqlite};
 use tracing::{info, instrument};
@@ -468,8 +468,10 @@ pub struct CommentView {
     /// Optional timestamp (seconds) into this comment's thread's attached video,
     /// for a reply pinned to a moment of the post's video. NULL = whole-video reply.
     pub video_ts_seconds: Option<i64>,
-    pub created_at: NaiveDateTime,
-    pub deleted_at: Option<NaiveDateTime>,
+    #[serde(with = "crate::ts::naive_iso")]
+    pub created_at: OffsetDateTime,
+    #[serde(with = "crate::ts::naive_iso::option")]
+    pub deleted_at: Option<OffsetDateTime>,
 }
 
 #[derive(Debug, Serialize)]
@@ -488,8 +490,10 @@ pub struct ThreadView {
     /// author-only-until-ready rule as a comment's video (a thread whose root
     /// video is still processing is hidden from everyone but its author).
     pub video: Option<Video>,
-    pub created_at: NaiveDateTime,
-    pub deleted_at: Option<NaiveDateTime>,
+    #[serde(with = "crate::ts::naive_iso")]
+    pub created_at: OffsetDateTime,
+    #[serde(with = "crate::ts::naive_iso::option")]
+    pub deleted_at: Option<OffsetDateTime>,
     pub comments: Vec<CommentView>,
 }
 
@@ -859,8 +863,8 @@ pub async fn get_thread(
                   t.video_ts_seconds AS "video_ts_seconds?: i64",
                   t.attached_video_id AS "attached_video_id?: i64",
                   t.body,
-                  t.created_at AS "created_at!: NaiveDateTime",
-                  t.deleted_at AS "deleted_at?: NaiveDateTime"
+                  t.created_at AS "created_at!: OffsetDateTime",
+                  t.deleted_at AS "deleted_at?: OffsetDateTime"
            FROM threads t
            JOIN users u ON u.id = t.created_by_id
            WHERE t.id = ?"#,
@@ -899,8 +903,8 @@ pub async fn get_thread(
                   c.body,
                   c.video_id AS "video_id?: i64",
                   c.video_ts_seconds AS "video_ts_seconds?: i64",
-                  c.created_at AS "created_at!: NaiveDateTime",
-                  c.deleted_at AS "deleted_at?: NaiveDateTime"
+                  c.created_at AS "created_at!: OffsetDateTime",
+                  c.deleted_at AS "deleted_at?: OffsetDateTime"
            FROM thread_comments c
            JOIN users u ON u.id = c.author_id
            WHERE c.thread_id = ?

@@ -4,15 +4,14 @@
 // frontend route is reachable for prod migration. TODO: remove after
 // 2026-09-10.
 
-use chrono::{NaiveDateTime, Utc};
 use sqlx::{Pool, Sqlite};
+use time::OffsetDateTime;
 use tracing::{info, instrument};
 
 use crate::auth::{Role, User};
 use crate::error::AppError;
 use crate::models::{
-    Attempt, AttemptBucket, AttemptCreateResult, AttemptListItem, AttemptSuggestion,
-    AttemptSummary, naive_to_utc,
+    Attempt, AttemptBucket, AttemptCreateResult, AttemptListItem, AttemptSuggestion, AttemptSummary,
 };
 
 #[allow(clippy::too_many_arguments)]
@@ -21,28 +20,28 @@ fn hydrate_attempt_row(
     student_technique_id: i64,
     recorded_by_id: i64,
     recorded_by_name: Option<String>,
-    attempted_at: NaiveDateTime,
+    attempted_at: OffsetDateTime,
     coach_note: Option<String>,
     coach_note_by_id: Option<i64>,
     coach_note_by_name: Option<String>,
-    coach_note_at: Option<NaiveDateTime>,
+    coach_note_at: Option<OffsetDateTime>,
     student_note: Option<String>,
-    student_note_at: Option<NaiveDateTime>,
-    created_at: NaiveDateTime,
+    student_note_at: Option<OffsetDateTime>,
+    created_at: OffsetDateTime,
 ) -> Attempt {
     Attempt {
         id,
         student_technique_id,
         recorded_by_id,
         recorded_by_name,
-        attempted_at: naive_to_utc(attempted_at),
+        attempted_at,
         coach_note,
         coach_note_by_id,
         coach_note_by_name,
-        coach_note_at: coach_note_at.map(naive_to_utc),
+        coach_note_at,
         student_note,
-        student_note_at: student_note_at.map(naive_to_utc),
-        created_at: naive_to_utc(created_at),
+        student_note_at,
+        created_at,
     }
 }
 
@@ -58,7 +57,7 @@ async fn bump_student_technique_activity(
     student_technique_id: i64,
     actor: &User,
 ) -> Result<(), AppError> {
-    let now = Utc::now().naive_utc();
+    let now = crate::ts::sql(OffsetDateTime::now_utc());
     let actor_id = actor.id;
     match actor.role {
         Role::Coach | Role::Admin => {
@@ -132,7 +131,7 @@ pub async fn create_attempt(
     pool: &Pool<Sqlite>,
     actor: &User,
     student_technique_id: i64,
-    attempted_at: chrono::DateTime<Utc>,
+    attempted_at: time::OffsetDateTime,
     note: Option<&str>,
 ) -> Result<AttemptCreateResult, AppError> {
     info!("Creating attempt");
@@ -164,7 +163,7 @@ pub async fn create_attempt(
     };
 
     let actor_id = actor.id;
-    let attempted_naive = attempted_at.naive_utc();
+    let attempted_naive = crate::ts::sql(attempted_at);
     let note_owned = note.map(|n| n.to_string());
 
     let (coach_note, coach_note_by, coach_note_at, student_note, student_note_at) = match actor.role
@@ -172,7 +171,7 @@ pub async fn create_attempt(
         Role::Coach | Role::Admin => (
             note_owned.clone(),
             note_owned.as_ref().map(|_| actor_id),
-            note_owned.as_ref().map(|_| attempted_naive),
+            note_owned.as_ref().map(|_| attempted_naive.clone()),
             None,
             None,
         ),
@@ -181,7 +180,7 @@ pub async fn create_attempt(
             None,
             None,
             note_owned.clone(),
-            note_owned.as_ref().map(|_| attempted_naive),
+            note_owned.as_ref().map(|_| attempted_naive.clone()),
         ),
     };
 
@@ -233,12 +232,12 @@ pub async fn get_attempt(pool: &Pool<Sqlite>, attempt_id: i64) -> Result<Attempt
         r#"SELECT a.id as "id!: i64", a.student_technique_id as "student_technique_id!: i64",
                   a.recorded_by_id as "recorded_by_id!: i64",
                   rec.display_name as "rec_display?: String", rec.username as "rec_username?: String",
-                  a.attempted_at as "attempted_at!: NaiveDateTime",
+                  a.attempted_at as "attempted_at!: OffsetDateTime",
                   a.coach_note, a.coach_note_by_id,
                   cnb.display_name as "cn_display?: String", cnb.username as "cn_username?: String",
-                  a.coach_note_at as "coach_note_at?: NaiveDateTime",
-                  a.student_note, a.student_note_at as "student_note_at?: NaiveDateTime",
-                  a.created_at as "created_at!: NaiveDateTime"
+                  a.coach_note_at as "coach_note_at?: OffsetDateTime",
+                  a.student_note, a.student_note_at as "student_note_at?: OffsetDateTime",
+                  a.created_at as "created_at!: OffsetDateTime"
            FROM attempts a
            LEFT JOIN users rec ON rec.id = a.recorded_by_id
            LEFT JOIN users cnb ON cnb.id = a.coach_note_by_id
@@ -274,12 +273,12 @@ pub async fn list_attempts(
         r#"SELECT a.id as "id!: i64", a.student_technique_id as "student_technique_id!: i64",
                   a.recorded_by_id as "recorded_by_id!: i64",
                   rec.display_name as "rec_display?: String", rec.username as "rec_username?: String",
-                  a.attempted_at as "attempted_at!: NaiveDateTime",
+                  a.attempted_at as "attempted_at!: OffsetDateTime",
                   a.coach_note, a.coach_note_by_id,
                   cnb.display_name as "cn_display?: String", cnb.username as "cn_username?: String",
-                  a.coach_note_at as "coach_note_at?: NaiveDateTime",
-                  a.student_note, a.student_note_at as "student_note_at?: NaiveDateTime",
-                  a.created_at as "created_at!: NaiveDateTime"
+                  a.coach_note_at as "coach_note_at?: OffsetDateTime",
+                  a.student_note, a.student_note_at as "student_note_at?: OffsetDateTime",
+                  a.created_at as "created_at!: OffsetDateTime"
            FROM attempts a
            LEFT JOIN users rec ON rec.id = a.recorded_by_id
            LEFT JOIN users cnb ON cnb.id = a.coach_note_by_id
@@ -322,7 +321,7 @@ pub async fn list_recent_attempts_for_student(
                   a.student_technique_id as "student_technique_id!: i64",
                   st.technique_id as "technique_id!: i64",
                   st.technique_name as "technique_name: String",
-                  a.attempted_at as "attempted_at!: NaiveDateTime",
+                  a.attempted_at as "attempted_at!: OffsetDateTime",
                   a.coach_note, a.student_note
            FROM attempts a
            JOIN student_techniques st ON st.id = a.student_technique_id
@@ -342,7 +341,7 @@ pub async fn list_recent_attempts_for_student(
             student_technique_id: row.student_technique_id,
             technique_id: row.technique_id,
             technique_name: row.technique_name.unwrap_or_default(),
-            attempted_at: naive_to_utc(row.attempted_at),
+            attempted_at: row.attempted_at,
             coach_note: row.coach_note,
             student_note: row.student_note,
         })
@@ -403,7 +402,7 @@ pub async fn update_attempt_note(
 
     ensure_can_access_student_technique(pool, actor, row.student_technique_id).await?;
 
-    let now = Utc::now().naive_utc();
+    let now = crate::ts::sql(OffsetDateTime::now_utc());
     let actor_id = actor.id;
     // Empty string clears the note.
     let normalised: Option<String> = note.map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
@@ -453,7 +452,7 @@ pub async fn update_attempt_timestamp(
     pool: &Pool<Sqlite>,
     actor: &User,
     attempt_id: i64,
-    attempted_at: chrono::DateTime<Utc>,
+    attempted_at: time::OffsetDateTime,
 ) -> Result<(), AppError> {
     let row = sqlx::query!(
         "SELECT recorded_by_id, student_technique_id FROM attempts WHERE id = ?",
@@ -477,7 +476,7 @@ pub async fn update_attempt_timestamp(
         }
     }
 
-    let stamp = attempted_at.naive_utc();
+    let stamp = crate::ts::sql(attempted_at);
     sqlx::query!(
         "UPDATE attempts SET attempted_at = ? WHERE id = ?",
         stamp,
@@ -520,11 +519,11 @@ pub async fn attempt_summary_for_student(
 pub async fn attempt_buckets_for_student(
     pool: &Pool<Sqlite>,
     student_id: i64,
-    from: chrono::NaiveDate,
-    to: chrono::NaiveDate,
+    from: time::Date,
+    to: time::Date,
 ) -> Result<Vec<AttemptBucket>, AppError> {
-    let from_str = from.format("%Y-%m-%d").to_string();
-    let to_str = to.format("%Y-%m-%d").to_string();
+    let from_str = crate::ts::date(from);
+    let to_str = crate::ts::date(to);
     let rows = sqlx::query!(
         r#"SELECT date(a.attempted_at) as "date!: String",
                   COUNT(*) as "count!: i64"
@@ -545,7 +544,7 @@ pub async fn attempt_buckets_for_student(
     Ok(rows
         .into_iter()
         .filter_map(|r| {
-            chrono::NaiveDate::parse_from_str(&r.date, "%Y-%m-%d")
+            crate::ts::parse_date(&r.date)
                 .ok()
                 .map(|date| AttemptBucket {
                     date,
@@ -581,7 +580,7 @@ pub async fn attempt_weekly_buckets_for_technique(
     Ok(rows
         .into_iter()
         .filter_map(|r| {
-            chrono::NaiveDate::parse_from_str(&r.week_start, "%Y-%m-%d")
+            crate::ts::parse_date(&r.week_start)
                 .ok()
                 .map(|date| AttemptBucket {
                     date,
