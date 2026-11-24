@@ -3,3 +3,4 @@ target/
 .gitignore
 sqlite.db
 frontend/node_modules
+data/

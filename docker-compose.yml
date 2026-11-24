@@ -34,7 +34,8 @@ services:
     env_file:
       - config/common.env
       - config/prod.env
-      - .secrets.env
+      - path: .secrets.env
+        required: false
     environment:
       # prod.env points S3 at Cloudflare R2 and uses prod creds; override for
       # the local S3 container. S3_PUBLIC_ENDPOINT is what the browser hits
@@ -76,7 +77,8 @@ services:
     env_file:
       - config/common.env
       - config/dev.env
-      - .secrets.env
+      - path: .secrets.env
+        required: false
     ports:
       - "4317:4317" # OTLP gRPC
       - "4318:4318" # OTLP HTTP

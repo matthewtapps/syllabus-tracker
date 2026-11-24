@@ -45,6 +45,35 @@ test-backend:
 test-frontend:
     @echo "No frontend tests yet."
 
+# Build the production images, seed a throwaway stack and run the Playwright
+# smoke suite against it through nginx. SMOKE_IN_DOCKER=1 runs the browser on
+# the compose network, for hosts that can't reach published container ports.
+[group('verify')]
+smoke:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    compose() { docker compose -p sillybus-smoke -f docker-compose.yml -f docker-compose.smoke.yml ${SMOKE_COMPOSE_EXTRA:-} "$@"; }
+    trap 'compose --profile seed down -v --remove-orphans >/dev/null 2>&1' EXIT
+    export SMOKE_SECRET_KEY=$(head -c 32 /dev/urandom | base64)
+    [ "${SMOKE_IN_DOCKER:-}" = 1 ] && export SMOKE_S3_PUBLIC_ENDPOINT=http://s3:9000
+    compose --profile seed build seed app frontend
+    compose --profile seed run --rm --no-deps --entrypoint /app/migrate seed
+    compose --profile seed run --rm --no-deps seed
+    compose up -d nginx
+    for _ in $(seq 60); do
+        compose exec -T nginx wget -qO- http://app:8000/api/health >/dev/null 2>&1 && break
+        sleep 2
+    done
+    if [ "${SMOKE_IN_DOCKER:-}" = 1 ]; then
+        docker run --rm --user "$(id -u):$(id -g)" --network sillybus-smoke_syllabus-net \
+            -v "$PWD/frontend:/work" -w /work -e HOME=/tmp \
+            -e SMOKE_BASE_URL=http://nginx mcr.microsoft.com/playwright:v1.65.1-noble \
+            npx playwright test || { compose logs --tail 200 nginx app; exit 1; }
+    else
+        (cd frontend && SMOKE_BASE_URL=http://localhost:8080 pnpm exec playwright test) \
+            || { compose logs --tail 200 nginx app; exit 1; }
+    fi
+
 # Format Rust code with cargo fmt.
 [group('verify')]
 fmt:
