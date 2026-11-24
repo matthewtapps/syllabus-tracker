@@ -1075,9 +1075,18 @@ pub async fn api_archive_student(
     Ok(Status::Ok)
 }
 
+// Reads the database, so deploy checks and rollbacks act on a working app,
+// not just a running process.
 #[get("/health")]
-pub fn health() -> &'static str {
-    "OK"
+pub async fn health(pool: &State<Pool<Sqlite>>) -> Result<&'static str, Status> {
+    sqlx::query("SELECT 1 FROM users LIMIT 1")
+        .fetch_optional(pool.inner())
+        .await
+        .map_err(|e| {
+            warn!(error = %e, "health check could not read the database");
+            Status::ServiceUnavailable
+        })?;
+    Ok("OK")
 }
 #[derive(Serialize, Deserialize)]
 pub struct TagsResponse {
