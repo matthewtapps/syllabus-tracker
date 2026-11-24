@@ -7,6 +7,8 @@
 //! - `--dry-run`: do the destructive-changes check and exit 0 if safe, 1 if not.
 //!   The deploy pipeline runs this against a copy of the prod DB as a gate
 //!   before swapping containers.
+//! - `--backup-to PATH`: write a consistent copy of the database to PATH (VACUUM
+//!   INTO) and exit. The deploy pipeline snapshots prod before migrating.
 //! - `--verbose`: re-enable the structured tracing logs (the default UI is a
 //!   compact, human-readable progress display).
 //!
@@ -29,14 +31,20 @@ use sqlx::sqlite::SqliteConnectOptions;
 struct Args {
     dry_run: bool,
     verbose: bool,
+    backup_to: Option<String>,
 }
 
 fn parse_args() -> Result<Args> {
     let mut dry_run = false;
     let mut verbose = false;
-    for arg in std::env::args().skip(1) {
+    let mut backup_to = None;
+    let mut args = std::env::args().skip(1);
+    while let Some(arg) = args.next() {
         match arg.as_str() {
             "--dry-run" => dry_run = true,
+            "--backup-to" => {
+                backup_to = Some(args.next().context("--backup-to needs a path")?);
+            }
             "--verbose" | "-v" => verbose = true,
             "--help" | "-h" => {
                 print_help();
@@ -47,17 +55,22 @@ fn parse_args() -> Result<Args> {
             }
         }
     }
-    Ok(Args { dry_run, verbose })
+    Ok(Args {
+        dry_run,
+        verbose,
+        backup_to,
+    })
 }
 
 fn print_help() {
-    println!("Usage: migrate [--dry-run] [--verbose]");
+    println!("Usage: migrate [--dry-run] [--verbose] [--backup-to PATH]");
     println!();
     println!("Applies config/schema.sql to the database at $DATABASE_URL.");
     println!();
     println!("Options:");
     println!("  --dry-run    Detect changes and exit, without applying them.");
     println!("  --verbose    Re-enable structured tracing logs (raw SQL, spans).");
+    println!("  --backup-to  Write a consistent copy of the database to PATH and exit.");
     println!();
     println!("Env:");
     println!("  DATABASE_URL                    sqlite:// URL of the target DB.");
@@ -106,6 +119,16 @@ async fn run() -> Result<()> {
     let pool = SqlitePool::connect_with(opts)
         .await
         .context("Failed to connect to database")?;
+
+    if let Some(path) = args.backup_to {
+        sqlx::query("VACUUM INTO ?")
+            .bind(&path)
+            .execute(&pool)
+            .await
+            .with_context(|| format!("Failed to back up the database to {path}"))?;
+        println!("Backed up the database to {path}.");
+        return Ok(());
+    }
 
     let schema = read_schema_file_to_string(Path::new(&schema_path))
         .map_err(|e| anyhow::anyhow!("Failed to read schema file at {}: {}", schema_path, e))?;
