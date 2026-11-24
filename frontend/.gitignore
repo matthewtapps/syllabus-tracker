@@ -27,3 +27,7 @@ dist-ssr
 # Vitest browser run artifacts (screenshots/attachments on failure)
 .vitest-attachments/
 **/__screenshots__/
+
+# Playwright smoke suite output
+/test-results/
+/playwright-report/

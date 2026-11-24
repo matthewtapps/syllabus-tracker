@@ -531,6 +531,7 @@ async fn run() -> Result<()> {
         "Seeding discussion threads",   // 15
         "Seeding camps",                // 16
         "Refreshing activity cursors",  // 17
+        "Mixing timestamp text forms",  // 18
     ];
     reporter.seed_started(&phases);
 
@@ -1541,6 +1542,31 @@ async fn run() -> Result<()> {
     .execute(&pool)
     .await?;
     reporter.phase_item(ItemOutcome::Created);
+    reporter.phase_finished();
+
+    // 18. Prod rows hold timestamps in several text forms written by earlier
+    //     releases. Spread those forms across seeded rows so every read path,
+    //     and the smoke suite, meets them too.
+    reporter.phase_started(phases[18], None);
+    let columns: Vec<(String, String)> = sqlx::query_as(
+        "SELECT m.name, p.name FROM sqlite_master m, pragma_table_info(m.name) p
+         WHERE m.type = 'table' AND p.type LIKE '%TIME%'
+           AND EXISTS (SELECT 1 FROM pragma_table_info(m.name) WHERE name = 'id' AND pk = 1)",
+    )
+    .fetch_all(&pool)
+    .await?;
+    for (table, column) in columns {
+        let sql = format!(
+            "UPDATE {table} SET {column} = CASE id % 4
+                WHEN 1 THEN strftime('%Y-%m-%dT%H:%M:%S+00:00', {column})
+                WHEN 2 THEN strftime('%Y-%m-%dT%H:%M:%f+00:00', {column})
+                WHEN 3 THEN strftime('%Y-%m-%d %H:%M:%f000000', {column})
+                ELSE {column} END
+             WHERE strftime('%s', {column}) IS NOT NULL"
+        );
+        sqlx::query(sqlx::AssertSqlSafe(sql)).execute(&pool).await?;
+        reporter.phase_item(ItemOutcome::Created);
+    }
     reporter.phase_finished();
 
     reporter.seed_finished();

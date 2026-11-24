@@ -1656,3 +1656,18 @@ async fn dashboard_feed_route_returns_forbidden_for_student() {
         .await;
     assert_eq!(resp.status(), rkt::http::Status::Forbidden);
 }
+
+#[rkt::async_test]
+async fn health_reports_an_unreadable_database() {
+    use crate::test::test_utils::{create_standard_test_db, setup_test_client};
+    use rkt::http::Status;
+
+    let (client, db) = setup_test_client(create_standard_test_db().await).await;
+    assert_eq!(client.get("/api/health").dispatch().await.status(), Status::Ok);
+
+    db.pool.close().await;
+    assert_eq!(
+        client.get("/api/health").dispatch().await.status(),
+        Status::ServiceUnavailable
+    );
+}

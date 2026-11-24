@@ -34,6 +34,21 @@ RUN cargo build --release --target x86_64-unknown-linux-musl \
 RUN cp target/x86_64-unknown-linux-musl/release/syllabus-tracker /app/syllabus-tracker
 RUN cp target/x86_64-unknown-linux-musl/release/migrate /app/migrate
 
+# Smoke-test seeding only; production builds never reach this stage.
+FROM builder AS seed-builder
+RUN cargo build --release --target x86_64-unknown-linux-musl -p syllabus-tracker --bin seed \
+    && cp target/x86_64-unknown-linux-musl/release/seed /app/seed
+
+FROM scratch AS seed
+WORKDIR /app
+COPY --from=seed-builder /app/seed /app/seed
+COPY --from=builder /app/migrate /app/migrate
+COPY config /app/config
+ENV SQLX_OFFLINE=true
+ENV SCHEMA_PATH=/app/config/schema.sql
+ENV DATABASE_URL=sqlite:///app/data/sqlite.db
+ENTRYPOINT ["/app/seed"]
+
 FROM scratch AS production
 WORKDIR /app
 COPY --from=builder /app/syllabus-tracker /app/syllabus-tracker

@@ -86,7 +86,7 @@ use videos::{
 use sqlx::SqlitePool;
 use sqlx::sqlite::SqliteConnectOptions;
 use std::str::FromStr;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 #[derive(Debug, Error)]
 pub enum Error {
@@ -160,7 +160,8 @@ async fn rocket() -> _ {
         }
     });
 
-    // Panic if db schema isn't up to date or database doesn't exist
+    // Panic if the db lacks schema this release needs. Extra tables, columns
+    // and indices are allowed so a rollback can run on a newer, expanded schema.
     let schema_path =
         dotenvy::var("SCHEMA_PATH").expect("SCHEMA_PATH environment variable not set");
     let schema = read_schema_file_to_string(std::path::Path::new(&schema_path))
@@ -169,31 +170,19 @@ async fn rocket() -> _ {
         .await
         .unwrap_or_else(|e| panic!("Failed to analyze database schema: {:?}", e));
 
-    if changes.has_any_changes() {
-        error!("Database schema is out of sync with config/schema.sql:");
+    if changes.lacks_required_schema() {
+        error!("Database schema lacks objects config/schema.sql needs:");
         if !changes.new_tables.is_empty() {
             error!("  Missing tables: {:?}", changes.new_tables);
         }
-        if !changes.removed_tables.is_empty() {
-            error!("  Unexpected tables: {:?}", changes.removed_tables);
-        }
         if !changes.new_indices.is_empty() {
             error!("  Missing indices: {:?}", changes.new_indices);
-        }
-        if !changes.removed_indices.is_empty() {
-            error!("  Unexpected indices: {:?}", changes.removed_indices);
         }
         for table in &changes.modified_tables {
             if !table.new_columns.is_empty() {
                 error!(
                     "  Missing columns on {}: {:?}",
                     table.name, table.new_columns
-                );
-            }
-            if !table.removed_columns.is_empty() {
-                error!(
-                    "  Unexpected columns on {}: {:?}",
-                    table.name, table.removed_columns
                 );
             }
         }
@@ -203,7 +192,16 @@ async fn rocket() -> _ {
              `just migrate-destructive`; in prod: the CI migrate_database job)."
         );
     }
-    info!("Database schema matches config/schema.sql");
+    if changes.has_any_changes() {
+        warn!(
+            tables = ?changes.removed_tables,
+            indices = ?changes.removed_indices,
+            columns = ?changes.modified_tables,
+            "Database has schema objects this release does not use"
+        );
+    } else {
+        info!("Database schema matches config/schema.sql");
+    }
 
     let video_stack = if videos_enabled {
         let storage_config = videos::S3Config::from_env()

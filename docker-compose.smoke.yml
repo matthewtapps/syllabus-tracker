@@ -1,0 +1,30 @@
+# Smoke-test overlay for docker-compose.yml: an isolated, seeded stack that
+# `just smoke` drives with Playwright. Runs the app with prod config and gates.
+services:
+  app:
+    build:
+      cache_from:
+        - type=registry,ref=ghcr.io/matthewtapps/syllabus-tracker/buildcache:backend
+    environment:
+      ROCKET_SECRET_KEY: ${SMOKE_SECRET_KEY:-}
+      VIDEO_PROCESSOR: host
+      S3_PUBLIC_ENDPOINT: ${SMOKE_S3_PUBLIC_ENDPOINT:-http://localhost:9000}
+    volumes:
+      - smoke-data:/app/data
+  frontend:
+    build:
+      args:
+        VITE_ENVIRONMENT: production
+  seed:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: seed
+      cache_from:
+        - type=registry,ref=ghcr.io/matthewtapps/syllabus-tracker/buildcache:backend
+    volumes:
+      - smoke-data:/app/data
+    profiles: [seed]
+
+volumes:
+  smoke-data:

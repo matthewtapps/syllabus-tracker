@@ -125,7 +125,7 @@ export function NativeVideoPlayer({
             <MuteIcon />
           </MuteButton>
 
-          <TimeSlider.Root className="group relative inline-flex h-5 flex-1 cursor-pointer items-center">
+          <TimeSlider.Root data-testid="time-slider" className="group relative inline-flex h-5 flex-1 cursor-pointer items-center">
             <TimeSlider.Track className="absolute top-1/2 h-1 w-full -translate-y-1/2 rounded-full bg-white/25">
               <TimeSlider.Buffer className="absolute h-full w-[var(--media-slider-buffer)] rounded-full bg-white/40" />
               <TimeSlider.Fill className="absolute h-full w-[var(--media-slider-fill)] rounded-full bg-primary" />

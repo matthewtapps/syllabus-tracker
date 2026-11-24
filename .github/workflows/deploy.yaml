@@ -226,6 +226,45 @@ jobs:
         run: pnpm test
         working-directory: frontend
 
+  # Builds the production images, seeds a throwaway stack and runs the
+  # Playwright smoke suite through nginx (`just smoke`) on every PR. Advisory:
+  # it sits outside ci-required, and the prod deploy does not wait on it.
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+        with:
+          version: 10.8.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 26
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+      - name: Install frontend deps
+        run: pnpm install --frozen-lockfile
+        working-directory: frontend
+      - name: Install Playwright browsers
+        run: pnpm exec playwright install --with-deps chromium
+        working-directory: frontend
+      - uses: cachix/install-nix-action@3dc140bfc76c49fbd4dd958429132e3746bcb086 # v31
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Smoke test
+        run: nix run nixpkgs#just -- smoke
+      - if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: playwright-report
+          path: frontend/playwright-report
+          retention-days: 7
+
   apply_tofu:
     needs: read_platform
     if: github.event_name != 'pull_request' && needs.read_platform.outputs.host_age_ready == 'true'
@@ -604,6 +643,9 @@ jobs:
     environment: production
     env:
       VM_IP: ${{ needs.read_platform.outputs.vm_ip }}
+    outputs:
+      prev_sha: ${{ steps.pre.outputs.prev_sha }}
+      additive: ${{ steps.pre.outputs.additive }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: cachix/install-nix-action@3dc140bfc76c49fbd4dd958429132e3746bcb086 # v31
@@ -636,6 +678,33 @@ jobs:
         run: |
           ssh -i ~/.ssh/id_ed25519 "deploy@$VM_IP" \
             "docker login ghcr.io -u '$GHCR_USER' --password-stdin" <<< "$GHCR_TOKEN"
+
+      # Records what is running now (the rollback target), snapshots the DB
+      # into the volume (newest 3 kept) and classifies the migration: a plan
+      # that drops nothing is additive, so the old release still runs on it.
+      - name: Record the running release, snapshot the DB, classify the migration
+        id: pre
+        run: |
+          IMG="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/app:${{ github.sha }}"
+          ssh -i ~/.ssh/id_ed25519 "deploy@$VM_IP" "
+            set -e
+            docker pull -q '$IMG' >/dev/null
+            PREV=\$(docker ps --filter label=com.docker.compose.project=sillybus \
+              --filter label=com.docker.compose.service=app --format '{{.Image}}' | head -1)
+            echo prev_sha=\${PREV##*:}
+            docker run --rm -v sillybus_app-data:/data --entrypoint /bin/sh litestream/litestream:0.5.18 \
+              -c 'rm -f /data/pre-deploy-${{ github.sha }}.db; ls -t /data/pre-deploy-*.db 2>/dev/null | tail -n +3 | xargs -r rm -f'
+            migrate() {
+              docker run --rm \
+                --env-file /run/runtime-secrets/sillybus.env \
+                --env-file /srv/sillybus/config/common.env \
+                --env-file /srv/sillybus/config/prod.env \
+                -v sillybus_app-data:/app/data \
+                --entrypoint /app/migrate '$IMG' \"\$@\" >&2
+            }
+            migrate --backup-to /app/data/pre-deploy-${{ github.sha }}.db
+            if migrate --dry-run; then echo additive=true; else echo additive=false; fi
+          " | tee -a "$GITHUB_OUTPUT"
 
       - name: Run DB migrations
         env:
@@ -728,6 +797,117 @@ jobs:
             sleep 10
           done
           echo "health check timed out"
+          exit 1
+
+  # Read-only smoke suite against prod after every deploy. Skipped with a
+  # warning until the SMOKE_PROD_USER / SMOKE_PROD_PASSWORD secrets exist.
+  prod_smoke:
+    needs: verify
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      SMOKE_BASE_URL: https://sillybus.app
+      SMOKE_REAL_DATA: "1"
+      SMOKE_COACH_USER: ${{ secrets.SMOKE_PROD_USER }}
+      SMOKE_COACH_PASSWORD: ${{ secrets.SMOKE_PROD_PASSWORD }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+        with:
+          version: 10.8.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 26
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+      - name: Install frontend deps
+        run: pnpm install --frozen-lockfile
+        working-directory: frontend
+      - name: Install Playwright browsers
+        run: pnpm exec playwright install --with-deps chromium
+        working-directory: frontend
+      - name: Smoke test prod (read-only)
+        working-directory: frontend
+        run: |
+          if [ -z "$SMOKE_COACH_USER" ]; then
+            echo "::warning::SMOKE_PROD_USER is not set; skipping the prod smoke test"
+            exit 0
+          fi
+          pnpm exec playwright test --project desktop
+
+  # Puts the previous release's images back when migrate, deploy or a
+  # post-deploy check fails. The schema stays: an additive migration still
+  # suits the old code. After a destructive one, recovery is manual, from the
+  # pre-deploy-<sha>.db snapshot in the app-data volume.
+  rollback:
+    needs: [read_platform, migrate, deploy, verify, prod_smoke]
+    if: >-
+      always()
+      && needs.migrate.outputs.additive == 'true'
+      && needs.migrate.outputs.prev_sha != ''
+      && needs.migrate.outputs.prev_sha != github.sha
+      && (needs.migrate.result == 'failure' || needs.deploy.result == 'failure'
+          || needs.verify.result == 'failure' || needs.prod_smoke.result == 'failure')
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      VM_IP: ${{ needs.read_platform.outputs.vm_ip }}
+      PREV_SHA: ${{ needs.migrate.outputs.prev_sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: cachix/install-nix-action@3dc140bfc76c49fbd4dd958429132e3746bcb086 # v31
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+      - name: Install opentofu via nix
+        run: |
+          nix profile install nixpkgs#opentofu
+          tofu version
+
+      - name: Pull SSH key from platform state
+        env:
+          AWS_ACCESS_KEY_ID:     ${{ secrets.PLATFORM_STATE_R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.PLATFORM_STATE_R2_SECRET_ACCESS_KEY }}
+          AWS_MAX_ATTEMPTS:      "5"
+        run: |
+          cd infra
+          i=0; until tofu init -input=false; do i=$((i+1)); [ $i -ge 30 ] && { echo "::error::tofu init failed after 30 attempts"; exit 1; }; echo "tofu init attempt $i failed; sleeping 30s"; sleep 30; done
+          tofu apply -refresh-only -auto-approve -input=false -lock=false
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          tofu output -raw _platform_ci_deploy_private_key > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H "$VM_IP" >> ~/.ssh/known_hosts
+
+      - name: docker login (this job's GITHUB_TOKEN)
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GHCR_USER:  ${{ github.actor }}
+        run: |
+          ssh -i ~/.ssh/id_ed25519 "deploy@$VM_IP" \
+            "docker login ghcr.io -u '$GHCR_USER' --password-stdin" <<< "$GHCR_TOKEN"
+
+      - name: Redeploy the previous release
+        run: |
+          echo "::error::deploy of ${{ github.sha }} failed; rolling back to $PREV_SHA"
+          ssh -i ~/.ssh/id_ed25519 "deploy@$VM_IP" "
+            set -e
+            cd /srv/sillybus &&
+            REGISTRY='${{ env.REGISTRY }}' \
+            IMAGE_NAME='${{ env.IMAGE_NAME }}' \
+            APP_IMAGE_TAG='$PREV_SHA' \
+            FRONTEND_IMAGE_TAG='$PREV_SHA' \
+            docker compose -f docker-compose.nixos.yml up -d --remove-orphans &&
+            docker ps -q --filter label=com.docker.compose.project=sillybus --filter label=com.docker.compose.service=nginx |
+              xargs -r -I{} docker exec {} nginx -g 'load_module modules/ngx_otel_module.so;' -s reload
+          "
+
+      - name: Health check the previous release
+        run: |
+          for _ in {1..30}; do
+            curl -fsSL https://sillybus.app/api/health && exit 0
+            sleep 10
+          done
+          echo "::error::the rolled-back release is not healthy either"
           exit 1
 
   # Single stable gate for branch protection. Always runs (so a required status
