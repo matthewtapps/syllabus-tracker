@@ -13,6 +13,7 @@ Common commands for working on this repo. Run from the repo root unless noted.
 | Sqlx offline cache fresh? | `just sqlx-check` |
 | Sqlx offline cache rebuild | `just sqlx-prepare` |
 | Unused dependency scan | `just unused-deps` |
+| End-to-end smoke suite on a seeded prod-image stack (docker + Playwright; CI runs it on every PR) | `just smoke` |
 
 `just check-fast` is `lint + test` only, no live DB required. `just verify` adds `sqlx-check` and `unused-deps` on top. If `sqlx-check` fails, you changed a query and need to run `just sqlx-prepare` (requires a live `sqlite.db` with the migrated schema, e.g. after `just dev` has run once).
 
@@ -92,7 +93,7 @@ AI agents are not expected to run these commands, ever. They are documented here
 
 The local SQLite DB lives under `./data/` (parent dir, not a single file) so the WAL sidecars (`sqlite.db-wal`, `sqlite.db-shm`) stay co-located with the main DB. WAL mode is on by default, set via `PRAGMA journal_mode=WAL` in both the app and the migrate binary's pool.
 
-`migrate` and `seed` are implemented as dedicated bins under `src/bin/`. The `migrate` bin also ships in the production image and is invoked by the deploy pipeline's dedicated `migrate_database` job, which dry-runs against a copy of the prod DB then applies against the real one. The main `syllabus-tracker` binary does **not** self-heal or migrate on boot: it panics if the live DB schema does not match `config/schema.sql`. Migration is the migrate binary's job, exclusively.
+`migrate` and `seed` are implemented as dedicated bins under `src/bin/`. The `migrate` bin also ships in the production image and is invoked by the deploy pipeline's dedicated `migrate_database` job, which dry-runs against a copy of the prod DB then applies against the real one. The main `syllabus-tracker` binary does **not** self-heal or migrate on boot: it panics if the live DB lacks a table, column or index that `config/schema.sql` defines. Extra ones only log a warning, so a rolled-back release still starts. Migration is the migrate binary's job, exclusively.
 
 ## Disaster recovery
 
@@ -114,7 +115,8 @@ When adding a new runtime feature flag, follow the same pattern: parameterize th
 - No em-dashes in copy. Use commas, periods, or parentheses.
 - Prefer editing existing files over creating new ones.
 - UI work belongs under `frontend/src/` and follows the shadcn/ui + Tailwind v4 + RHF/Zod pattern (see the `shadcn-ui-design` skill).
-- Migrations: `config/schema.sql` is the canonical schema. The dedicated `migrate` binary is the only thing that applies it; the app panics on boot if the live schema doesn't match.
+- Migrations: `config/schema.sql` is the canonical schema. The dedicated `migrate` binary is the only thing that applies it; the app panics on boot if the live schema lacks anything it defines.
+- Keep schema changes expand-contract. Add tables, indices and nullable or defaulted columns in one release; remove the old ones in a later release with `allow_destructive_migrations`. A failed deploy rolls back images only, so the previous release must still run on the new schema.
 
 ## Frontend / TypeScript
 
