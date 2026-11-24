@@ -508,7 +508,9 @@ impl DeclarativeMigrator {
     ) -> Result<(), MigrationError> {
         self.reporter.step_started(description);
         debug!("Database migration: {} with SQL:\n{}", description, sql);
-        sqlx::query(AssertSqlSafe(sql.to_owned())).execute(executor).await?;
+        sqlx::query(AssertSqlSafe(sql.to_owned()))
+            .execute(executor)
+            .await?;
         self.schema_changes_made += 1;
         self.reporter.step_finished();
         Ok(())
@@ -526,7 +528,9 @@ impl DeclarativeMigrator {
         executor: impl sqlx::Executor<'_, Database = Sqlite>,
     ) -> Result<(), MigrationError> {
         debug!("Database migration: {} with SQL:\n{}", description, sql);
-        sqlx::query(AssertSqlSafe(sql.to_owned())).execute(executor).await?;
+        sqlx::query(AssertSqlSafe(sql.to_owned()))
+            .execute(executor)
+            .await?;
         self.schema_changes_made += 1;
         Ok(())
     }
@@ -856,6 +860,17 @@ impl ChangesNeeded {
             || !self.modified_indices.is_empty()
             || self.pragma_changes
     }
+
+    /// True when the database lacks a table, column or index the schema needs.
+    /// Extra objects are fine: the previous release runs on an expanded schema.
+    pub fn lacks_required_schema(&self) -> bool {
+        !self.new_tables.is_empty()
+            || !self.new_indices.is_empty()
+            || self
+                .modified_tables
+                .iter()
+                .any(|t| !t.new_columns.is_empty())
+    }
 }
 
 pub fn read_schema_file_to_string(path: &Path) -> Result<String, MigrationError> {
@@ -867,6 +882,48 @@ impl From<std::io::Error> for MigrationError {
     fn from(error: std::io::Error) -> Self {
         MigrationError {
             message: format!("Migration error: {}", error),
+        }
+    }
+}
+
+#[cfg(test)]
+mod changes_needed_tests {
+    use super::{ChangesNeeded, ModifiedTable};
+
+    #[test]
+    fn only_missing_objects_are_required() {
+        let extra = ChangesNeeded {
+            removed_tables: vec!["probe".into()],
+            removed_indices: vec!["idx_probe".into()],
+            modified_tables: vec![ModifiedTable {
+                name: "users".into(),
+                removed_columns: vec!["probe".into()],
+                new_columns: vec![],
+            }],
+            ..Default::default()
+        };
+        assert!(extra.has_any_changes());
+        assert!(!extra.lacks_required_schema());
+
+        for missing in [
+            ChangesNeeded {
+                new_tables: vec!["t".into()],
+                ..Default::default()
+            },
+            ChangesNeeded {
+                new_indices: vec!["i".into()],
+                ..Default::default()
+            },
+            ChangesNeeded {
+                modified_tables: vec![ModifiedTable {
+                    name: "users".into(),
+                    new_columns: vec!["c".into()],
+                    ..Default::default()
+                }],
+                ..Default::default()
+            },
+        ] {
+            assert!(missing.lacks_required_schema(), "{missing:?}");
         }
     }
 }
